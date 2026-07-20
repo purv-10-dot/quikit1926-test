@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 
 export function FilterBar({ children }: { children: ReactNode }) {
   return (
-    <div className="flex flex-wrap items-center gap-3 bg-white border border-gray-200 rounded-lg px-3 py-2 shadow-sm">
+    <div className="flex flex-wrap items-center gap-3 bg-white border border-gray-200 rounded-xl px-4 py-2.5 shadow-sm">
       {children}
     </div>
   );
@@ -29,12 +29,12 @@ export function FilterSearch({
 }) {
   return (
     <div className={clsx("relative ml-auto min-w-[220px]", className)}>
-      <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 z-10" />
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full pl-8 pr-3 py-1.5 text-sm bg-gray-50 border border-gray-200 rounded-md focus:bg-white focus:border-[#16243A] focus:outline-none focus:ring-1 focus:ring-[#16243A]/20"
+        className="w-full ds-control pl-9"
       />
     </div>
   );
@@ -59,7 +59,7 @@ export function FilterPills<T extends string>({
           className={clsx(
             "px-3 py-1.5 text-xs font-semibold rounded transition",
             value === opt.value
-              ? "bg-white text-[#16243A] shadow-sm"
+              ? "bg-white text-[#166534] shadow-sm"
               : "text-gray-500 hover:text-gray-800",
           )}
         >

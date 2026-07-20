@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PAN_REGEX, TAN_REGEX, GSTIN_REGEX, CIN_REGEX } from "./identifiers";
+import { PAN_REGEX, TAN_REGEX, GSTIN_REGEX, CIN_REGEX, zPhoneLooseOptional } from "./identifiers";
 
 // Treat "", null, undefined as "not provided" so optional regex fields don't trip.
 // Cast preserves inferred string type (preprocess output otherwise typed `unknown`).
@@ -21,7 +21,7 @@ export const updateCompanySettingsSchema = z.object({
   ),
   website: z.string().url().optional().nullable().or(z.literal("")),
   email: z.string().email().optional().nullable().or(z.literal("")),
-  phone: z.string().optional().nullable(),
+  phone: zPhoneLooseOptional.nullable(),
   addressLine1: z.string().min(1, "Address is required"),
   addressLine2: z.string().optional().nullable(),
   city: z.string().optional().nullable(),
@@ -76,7 +76,7 @@ export const bulkCompanyHolidaySchema = z.object({
 export const ApprovalModuleEnum = z.enum([
   "Leave", "Expense", "Asset", "Onboarding", "Offboarding", "Attendance", "Document",
   "Engagement", "Feedback",
-  "Reimbursement", "ProofOfInvestment", "SalaryRevision", "OneTimeEarning",
+  "Reimbursement", "ProofOfInvestment", "SalaryRevision", "OneTimeEarning", "Requisition",
 ]);
 
 /**

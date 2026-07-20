@@ -1,16 +1,20 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, validationError, notFound, internalError } from "@/lib/api-response";
-import { sendMail } from "@/lib/services/mailer";
+import { resolveAndSend } from "@/lib/email/resolve";
 import { buildOfferEmail } from "@/lib/email-templates/offer";
 import { generateOfferPdf } from "@/lib/services/offer-pdf";
-import { offerSelect, offerFromApplication } from "@/lib/recruit/offer-shape";
+import { offerSelect, offerFromApplication, type OfferMeta } from "@/lib/recruit/offer-shape";
+import { getObject } from "@/lib/storage";
 
 const bodySchema = z.object({
   applicationId: z.string().min(1).optional(),
   offerId: z.string().min(1).optional(),
+  // When true, return the generated PDF for on-screen review WITHOUT emailing
+  // the candidate or changing the offer status.
+  preview: z.boolean().optional(),
 }).refine(v => v.applicationId || v.offerId, { message: "applicationId or offerId required" });
 
 function fmtDate(d: Date | null | undefined): string {
@@ -82,9 +86,21 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       signatoryName: company?.signatoryName ?? null,
       signatoryDesignation: company?.signatoryDesignation ?? null,
       footer: company?.offerLetterFooter ?? null,
+      bodyTemplate: company?.offerLetterBody ?? null,
     });
 
-    const { subject, html } = buildOfferEmail({
+    // Preview mode — hand back the PDF for on-screen review, no email/no status change.
+    if (parsed.data.preview) {
+      return new NextResponse(new Uint8Array(pdfBuffer), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `inline; filename="Offer-Preview-${candidate.firstName}.pdf"`,
+        },
+      });
+    }
+
+    const offerData = {
       candidateName,
       jobTitle,
       designation: offer.designation ?? "",
@@ -93,15 +109,52 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       joiningBonus: offer.joiningBonus ? Number(offer.joiningBonus) : null,
       expiresAt: offer.expiresAt ? fmtDate(offer.expiresAt) : null,
       companyName,
-    });
+    };
 
     const pdfName = `Offer-${candidate.firstName}-${candidate.lastName}.pdf`.replace(/\s+/g, "");
 
-    const result = await sendMail({
+    const attachments: { filename: string; content: Buffer; contentType: string }[] = [
+      { filename: pdfName, content: pdfBuffer, contentType: "application/pdf" },
+    ];
+
+    // Attach the HR-uploaded supporting documents (from the Send Offer wizard).
+    // Supports multiple docs; falls back to the legacy single-doc field for
+    // offers created before the multi-doc change. Best-effort per file — a
+    // fetch failure on one attachment must not block the offer email.
+    const meta = (app.offeredComponents ?? null) as OfferMeta | null;
+    const supportingDocs = meta?.supportingDocs?.length
+      ? meta.supportingDocs
+      : meta?.supportingDoc?.key
+        ? [meta.supportingDoc]
+        : [];
+    for (const doc of supportingDocs) {
+      if (!doc?.key) continue;
+      try {
+        const obj = await getObject(doc.key);
+        attachments.push({
+          filename: doc.name || doc.key.split("/").pop() || "attachment",
+          content: Buffer.from(obj.body),
+          contentType: obj.contentType,
+        });
+      } catch (e) {
+        console.error("[mail/offer] supporting doc attach failed:", doc.key, e);
+      }
+    }
+
+    const result = await resolveAndSend(orgId, {
+      key: "recruit.offer-branded",
       to: candidate.email,
-      subject,
-      html,
-      attachments: [{ filename: pdfName, content: pdfBuffer, contentType: "application/pdf" }],
+      vars: {
+        candidateName, jobTitle,
+        designation: offerData.designation,
+        offeredCTC: `₹${Number(offer.offeredCTC).toLocaleString("en-IN")}`,
+        joiningDate: offerData.joiningDate,
+        joiningBonus: offer.joiningBonus ? `₹${Number(offer.joiningBonus).toLocaleString("en-IN")}` : "",
+        expiresAt: offerData.expiresAt ?? "",
+        companyName,
+      },
+      fallback: () => buildOfferEmail(offerData),
+      attachments,
     });
 
     if (!result.sent) return internalError(`Mail send failed: ${result.error}`);

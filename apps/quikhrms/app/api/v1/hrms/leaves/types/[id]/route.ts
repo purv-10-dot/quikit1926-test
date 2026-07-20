@@ -50,7 +50,7 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
     console.error("PATCH /leaves/types/:id error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.leave.manage"] });
 
 export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }, params) => {
   try {
@@ -68,4 +68,4 @@ export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }, para
     console.error("DELETE /leaves/types/:id error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.leave.manage"] });

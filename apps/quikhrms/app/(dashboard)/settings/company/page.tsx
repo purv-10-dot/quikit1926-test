@@ -54,7 +54,7 @@ const MONTHS = [
 
 export default function CompanySettingsPage() {
   return (
-    <Suspense fallback={<div className="p-6 space-y-2"><SkeletonLine w="40%" h={16} /><SkeletonLine w="70%" h={12} /><SkeletonLine w="60%" h={12} /></div>}>
+    <Suspense fallback={<div className="p-4 space-y-2"><SkeletonLine w="40%" h={16} /><SkeletonLine w="70%" h={12} /><SkeletonLine w="60%" h={12} /></div>}>
       <CompanySettingsPageInner />
     </Suspense>
   );
@@ -96,12 +96,12 @@ function CompanySettingsPageInner() {
       setFieldErrors({});
       setSaved(true);
       window.scrollTo({ top: 0, behavior: "smooth" });
-      if (returnTo?.startsWith("/")) {
-        setTimeout(() => router.push(returnTo), 800);
-      } else {
-        setTimeout(() => setSaved(false), 3000);
-      }
+      // Honour an explicit ?returnTo, otherwise go back to the Settings hub
+      // after briefly showing the "Saved" confirmation.
+      const dest = returnTo?.startsWith("/") ? returnTo : "/settings";
+      setTimeout(() => router.push(dest), 800);
     },
+    meta: { suppressGlobalError: true },
     onError: (e: Error) => {
       if (e instanceof ApiError) {
         setSaveErr(e.message);
@@ -128,6 +128,7 @@ function CompanySettingsPageInner() {
       setUploadError(null);
       qc.invalidateQueries({ queryKey: ["settings", "company"] });
     },
+    meta: { suppressGlobalError: true },
     onError: (e: Error) => setUploadError(e.message),
   });
 
@@ -138,6 +139,7 @@ function CompanySettingsPageInner() {
       setUploadError(null);
       qc.invalidateQueries({ queryKey: ["settings", "company"] });
     },
+    meta: { suppressGlobalError: true },
     onError: (e: Error) => setUploadError(e.message),
   });
 
@@ -155,21 +157,21 @@ function CompanySettingsPageInner() {
   );
 
   return (
-    <div className="max-w-5xl">
-      <div className="flex items-center justify-between mb-6">
+    <div className="w-full">
+      <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <Building2 className="text-[#3b82f6]" />
-          <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">Company Settings</h1>
+          <Building2 className="text-[#22c55e]" />
+          <h1 className="text-base font-semibold text-gray-900">Company Settings</h1>
         </div>
       </div>
 
       {saved && (
-        <div className="mb-4 flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2.5">
+        <div className="mb-4 flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2.5">
           <CheckCircle2 size={16} /> Company settings saved successfully
         </div>
       )}
       {saveErr && (
-        <div className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5 space-y-1">
+        <div className="mb-4 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5 space-y-1">
           <p className="font-medium">{saveErr}</p>
           {Object.entries(fieldErrors).length > 0 && (
             <ul className="list-disc list-inside text-xs">
@@ -206,6 +208,11 @@ function CompanySettingsPageInner() {
             gstin: form.gstin || null,
             pan: form.pan || null,
             cin: form.cin || null,
+            tan: form.tan || null,
+            tdsCircleCodeArea: form.tdsCircleCodeArea || null,
+            tdsCircleCodeType: form.tdsCircleCodeType || null,
+            tdsCircleNumber: form.tdsCircleNumber || null,
+            tdsCircleSubNumber: form.tdsCircleSubNumber || null,
             timezone: form.timezone,
             dateFormat: form.dateFormat,
             currency: form.currency,
@@ -218,7 +225,7 @@ function CompanySettingsPageInner() {
       >
         {/* Brand */}
         <Section title="Brand" icon={<Building2 size={16} />}>
-          <div className="flex items-start gap-6">
+          <div className="flex items-start gap-4">
             <div className="shrink-0 w-44">
               <label className="block text-xs font-medium text-gray-600 mb-2">Company Logo</label>
               <input ref={logoInputRef} type="file" className="hidden" accept="image/png,image/jpeg,image/webp"
@@ -227,7 +234,7 @@ function CompanySettingsPageInner() {
               {form.logo ? (
                 <div className="flex flex-col items-center">
                   <div className="relative">
-                    <div className="w-36 h-36 rounded-full bg-gradient-to-br from-gray-50 to-white border border-gray-200 shadow-sm overflow-hidden p-1 ring-4 ring-[#dbeafe]/60">
+                    <div className="w-36 h-36 rounded-full bg-gradient-to-br from-gray-50 to-white border border-gray-200 shadow-sm overflow-hidden p-1 ring-4 ring-[#dcfce7]/60">
                       <div className="w-full h-full rounded-full overflow-hidden bg-white">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={withBasePath(form.logo)} alt="Logo" className="w-full h-full object-cover" />
@@ -235,25 +242,25 @@ function CompanySettingsPageInner() {
                     </div>
                     {logoUploadMut.isPending && (
                       <div className="absolute inset-0 rounded-full bg-white/70 backdrop-blur-sm flex items-center justify-center">
-                        <RefreshCw size={18} className="text-[#3b82f6] animate-spin" />
+                        <RefreshCw size={18} className="text-[#22c55e] animate-spin" />
                       </div>
                     )}
                   </div>
                   <div className="mt-3 flex items-center gap-2 w-full">
                     <button type="button" onClick={() => logoInputRef.current?.click()} disabled={logoUploadMut.isPending}
-                      className="flex-1 inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-[#16243A] hover:bg-[#1E3354] text-white rounded-md text-xs font-semibold shadow-sm transition disabled:opacity-60">
+                      className="flex-1 inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-xs font-semibold shadow-sm transition disabled:opacity-60">
                       <RefreshCw size={12} /> Replace
                     </button>
                     <button type="button" onClick={() => logoRemoveMut.mutate()} disabled={logoRemoveMut.isPending}
                       title="Remove logo"
                       className="inline-flex items-center justify-center p-1.5 bg-white border border-[var(--border)] hover:bg-red-50 hover:border-red-300 hover:text-red-600 text-gray-600 rounded-md transition disabled:opacity-60">
-                      <Trash2 size={13} />
+                      <Trash2 size={12} />
                     </button>
                   </div>
                 </div>
               ) : (
                 <button type="button" onClick={() => logoInputRef.current?.click()} disabled={logoUploadMut.isPending}
-                  className="group w-36 h-36 mx-auto rounded-full border-2 border-dashed border-gray-300 bg-gradient-to-br from-gray-50 to-white flex flex-col items-center justify-center gap-1 text-gray-400 hover:border-[#3b82f6] hover:from-[#dbeafe] hover:to-[#dbeafe] hover:text-[#3b82f6] transition disabled:opacity-60">
+                  className="group w-36 h-36 mx-auto rounded-full border-2 border-dashed border-gray-300 bg-gradient-to-br from-gray-50 to-white flex flex-col items-center justify-center gap-1 text-gray-400 hover:border-[#22c55e] hover:from-[#dcfce7] hover:to-[#dcfce7] hover:text-[#22c55e] transition disabled:opacity-60">
                   {logoUploadMut.isPending ? <RefreshCw size={22} className="animate-spin" /> : <ImageIcon size={22} />}
                   <span className="text-xs font-medium">{logoUploadMut.isPending ? "Uploading..." : "Upload logo"}</span>
                   <span className="text-[10px] text-gray-400 px-2 text-center">PNG · JPG · WEBP · 10MB</span>
@@ -264,7 +271,7 @@ function CompanySettingsPageInner() {
               )}
             </div>
 
-            <div className="flex-1 grid grid-cols-2 gap-3">
+            <div className="flex-1 grid grid-cols-2 xl:grid-cols-3 gap-3">
               <Field label="Company Name" required>
                 <input type="text" value={form.companyName ?? ""} onChange={(e) => setForm({ ...form, companyName: e.target.value })} required className={inputCls} />
               </Field>
@@ -286,7 +293,7 @@ function CompanySettingsPageInner() {
 
         {/* Address */}
         <Section title="Registered Address" icon={<MapPin size={16} />}>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 xl:grid-cols-3 gap-3">
             <Field label="Address Line 1" required className="col-span-2">
               <input type="text" value={form.addressLine1 ?? ""} onChange={(e) => setForm({ ...form, addressLine1: e.target.value })} required className={inputCls} />
             </Field>
@@ -315,7 +322,7 @@ function CompanySettingsPageInner() {
 
         {/* Statutory */}
         <Section title="Statutory" icon={<Landmark size={16} />}>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 xl:grid-cols-3 gap-3">
             <Field label="GSTIN" required>
               <input
                 type="text"
@@ -371,7 +378,7 @@ function CompanySettingsPageInner() {
             <label className="block text-xs font-medium text-gray-700 mb-1">
               TDS circle / AO code <span className="text-red-500">*</span>
             </label>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-4 gap-2 max-w-md">
               <input
                 placeholder="AAA" maxLength={3} required
                 value={form.tdsCircleCodeArea ?? ""}
@@ -402,7 +409,7 @@ function CompanySettingsPageInner() {
 
         {/* Locale & Work */}
         <Section title="Locale & Work Week" icon={<Globe size={16} />}>
-          <div className="grid grid-cols-2 gap-3 mb-4">
+          <div className="grid grid-cols-2 xl:grid-cols-3 gap-3 mb-4">
             <Field label="Timezone">
               <Select
                 value={form.timezone ?? "Asia/Kolkata"}
@@ -446,8 +453,8 @@ function CompanySettingsPageInner() {
                 const active = form.workWeek?.includes(d);
                 return (
                   <button type="button" key={d} onClick={() => toggleDay(d)}
-                    className={clsx("px-3 py-1.5 rounded-lg text-sm border transition",
-                      active ? "bg-[#16243A] text-white border-[#3b82f6]" : "bg-white text-gray-700 border-gray-300 hover:border-[#93c5fd]")}>
+                    className={clsx("px-3 py-1.5 rounded-lg text-xs font-medium border transition",
+                      active ? "bg-green-600 text-white border-[#22c55e]" : "bg-white text-gray-700 border-gray-300 hover:border-[#86efac]")}>
                     {d.slice(0, 3)}
                   </button>
                 );
@@ -458,8 +465,8 @@ function CompanySettingsPageInner() {
 
         <div className="flex justify-end pt-2">
           <button type="submit" disabled={saveMut.isPending}
-            className="flex items-center gap-2 bg-[#16243A] text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-[#2563eb] disabled:opacity-50">
-            <Save size={16} /> {saveMut.isPending ? "Saving..." : "Save Settings"}
+            className="flex items-center gap-2 bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-50">
+            <Save size={13} /> {saveMut.isPending ? "Saving..." : "Save Settings"}
           </button>
         </div>
       </form>
@@ -467,13 +474,13 @@ function CompanySettingsPageInner() {
   );
 }
 
-const inputCls = "w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]";
+const inputCls = "w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]";
 
 function Section({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
-      <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-900 mb-4">
-        <span className="text-[#3b82f6]">{icon}</span>
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+      <h2 className="flex items-center gap-2 text-[13px] font-semibold text-gray-900 mb-4">
+        <span className="text-[#22c55e]">{icon}</span>
         {title}
       </h2>
       {children}

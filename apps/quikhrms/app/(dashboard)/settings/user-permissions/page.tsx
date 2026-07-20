@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
 import { Search, Lock, Ban } from "lucide-react";
+import { Select } from "@/components/hrms/select";
 import { PERMISSION_TREE, ACTIONS } from "@/lib/rbac/permissions-tree";
 
 /**
@@ -151,45 +152,46 @@ export default function UserPermissionsPage() {
   return (
     <div className="bg-white">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-gray-200 flex items-center gap-4">
-        <h1 className="text-lg font-semibold text-gray-900">Users — Effective Permissions</h1>
+      <div className="px-5 py-4 border-b border-gray-200 flex items-center gap-4">
+        <h1 className="text-base font-semibold text-gray-900">Users — Effective Permissions</h1>
         <span className="text-xs text-gray-400">{employees.length} {statusFilter ? statusFilter.toLowerCase() : "total"} members</span>
         <div className="ml-auto flex items-center gap-2">
-          <select
+          <Select
+            clearable
+            placeholder="All statuses"
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-[#3b82f6]"
-          >
-            <option value="">All statuses</option>
-            <option value="Active">Active</option>
-            <option value="PreBoarding">PreBoarding</option>
-            <option value="OnLeave">OnLeave</option>
-            <option value="OnNotice">OnNotice</option>
-            <option value="Suspended">Suspended</option>
-            <option value="Relieved">Relieved</option>
-            <option value="Absconding">Absconding</option>
-          </select>
+            onChange={(v) => setStatusFilter(v)}
+            options={[
+              { value: "Active", label: "Active" },
+              { value: "PreBoarding", label: "PreBoarding" },
+              { value: "OnLeave", label: "OnLeave" },
+              { value: "OnNotice", label: "OnNotice" },
+              { value: "Suspended", label: "Suspended" },
+              { value: "Relieved", label: "Relieved" },
+              { value: "Absconding", label: "Absconding" },
+            ]}
+          />
           <div className="relative">
             <Search size={14} className="absolute left-3 top-2.5 text-gray-400" />
             <input
               placeholder="Search users..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-md w-72 focus:outline-none focus:ring-1 focus:ring-[#3b82f6]"
+              className="pl-9 pr-3 py-2 text-xs border border-gray-200 rounded-md w-72 focus:outline-none focus:ring-1 focus:ring-[#22c55e]"
             />
           </div>
         </div>
       </div>
 
       {/* Employee list */}
-      <table className="w-full text-sm">
+      <table className="w-full text-xs">
         <thead>
-          <tr className="bg-gray-50 border-b border-gray-200 text-xs uppercase text-gray-500">
-            <th className="px-6 py-2 text-left">User</th>
-            <th className="px-6 py-2 text-left">Email</th>
-            <th className="px-6 py-2 text-left">Role</th>
-            <th className="px-6 py-2 text-left">Status</th>
-            <th className="px-6 py-2"></th>
+          <tr className="bg-gray-50 border-b border-gray-200 text-[11px] font-semibold uppercase tracking-[0.04em] text-gray-500">
+            <th className="px-4 py-2.5 text-left">User</th>
+            <th className="px-4 py-2.5 text-left">Email</th>
+            <th className="px-4 py-2.5 text-left">Role</th>
+            <th className="px-4 py-2.5 text-left">Status</th>
+            <th className="px-4 py-2.5"></th>
           </tr>
         </thead>
         <tbody>
@@ -197,36 +199,36 @@ export default function UserPermissionsPage() {
             <Fragment key={emp.id}>
               <tr
                 className={`border-b border-gray-100 hover:bg-gray-50 cursor-pointer ${
-                  emp.id === expandedId ? "bg-blue-50/30" : ""
+                  emp.id === expandedId ? "bg-green-50/30" : ""
                 }`}
                 onClick={() => setExpandedId(emp.id === expandedId ? null : emp.id)}
               >
-                <td className="px-6 py-3 flex items-center gap-3">
+                <td className="px-4 py-2.5 flex items-center gap-3">
                   <div className="w-8 h-8 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center text-xs font-semibold">
                     {emp.firstName[0]}{emp.lastName[0]}
                   </div>
                   <span>{emp.firstName} {emp.lastName}</span>
                 </td>
-                <td className="px-6 py-3 text-gray-600">{emp.workEmail}</td>
-                <td className="px-6 py-3">
-                  <span className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded">
+                <td className="px-4 py-2.5 text-gray-600">{emp.workEmail}</td>
+                <td className="px-4 py-2.5">
+                  <span className="text-[11px] font-medium px-2 py-1 bg-gray-100 text-gray-700 rounded">
                     {emp.role?.name ?? "—"}
                   </span>
                 </td>
-                <td className="px-6 py-3">
-                  <span className={`text-xs flex items-center gap-1 ${emp.status === "Active" ? "text-green-600" : "text-gray-400"}`}>
+                <td className="px-4 py-2.5">
+                  <span className={`text-[11px] font-medium flex items-center gap-1 ${emp.status === "Active" ? "text-green-600" : "text-gray-400"}`}>
                     <span className="w-1.5 h-1.5 rounded-full bg-current" /> {emp.status}
                   </span>
                 </td>
-                <td className="px-6 py-3 text-gray-400">{emp.id === expandedId ? "▼" : "▶"}</td>
+                <td className="px-4 py-2.5 text-gray-400">{emp.id === expandedId ? "▼" : "▶"}</td>
               </tr>
               {emp.id === expandedId && (
                 <tr>
                   <td colSpan={5} className="p-0">
                     <div className="bg-white border-y border-gray-200">
-                      <div className="px-6 py-3 flex items-center gap-3 border-b border-gray-100">
-                        <h3 className="text-sm font-semibold">Effective permissions</h3>
-                        <span className="text-[10px] uppercase px-2 py-0.5 bg-amber-50 text-amber-700 rounded">
+                      <div className="px-5 py-3 flex items-center gap-3 border-b border-gray-100">
+                        <h3 className="text-[13px] font-semibold">Effective permissions</h3>
+                        <span className="text-[11px] font-medium uppercase px-2 py-0.5 bg-amber-50 text-amber-700 rounded">
                           Role: {emp.role?.name ?? "none"}
                         </span>
                         <button
@@ -236,14 +238,14 @@ export default function UserPermissionsPage() {
                           ✕
                         </button>
                       </div>
-                      <div className="mx-6 mt-3 px-4 py-2 bg-[#16243A] text-white text-xs rounded-md flex items-start gap-2">
+                      <div className="mx-6 mt-3 px-4 py-2 bg-green-600 text-white text-xs rounded-md flex items-start gap-2">
                         <span className="text-amber-300">ℹ</span>
                         <span>
                           Click cycles: <b>empty → <span className="text-amber-300">grant</span> → <span className="text-red-300">deny</span> → empty</b>.
                           Role cells (<Lock size={10} className="inline" />) can be denied as override.
                         </span>
                       </div>
-                      <div className="p-6">
+                      <div className="p-4">
                         <UserMatrix
                           roleCodes={roleCodes}
                           grants={draftGrants}
@@ -251,11 +253,11 @@ export default function UserPermissionsPage() {
                           onToggle={cycleCell}
                         />
                       </div>
-                      <div className="px-6 py-3 border-t border-gray-100 flex justify-end">
+                      <div className="px-5 py-3 border-t border-gray-100 flex justify-end">
                         <button
                           onClick={() => saveMut.mutate({ grants: Array.from(draftGrants), denies: Array.from(draftDenies) })}
                           disabled={!isDirty || saveMut.isPending}
-                          className="px-4 py-1.5 text-sm bg-[#16243A] text-white rounded-md hover:bg-[#2563eb] disabled:opacity-40"
+                          className="px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-40"
                         >
                           {saveMut.isPending ? "Saving..." : "Save extras"}
                         </button>
@@ -285,12 +287,12 @@ function UserMatrix({
 }) {
   return (
     <div className="border border-gray-200 rounded-md overflow-hidden">
-      <table className="w-full text-sm">
+      <table className="w-full text-xs">
         <thead>
-          <tr className="bg-gray-50 border-b border-gray-200 text-xs uppercase">
-            <th className="text-left px-4 py-2 font-semibold text-gray-700 w-1/2">Entity</th>
+          <tr className="bg-gray-50 border-b border-gray-200 text-[11px] font-semibold uppercase tracking-[0.04em]">
+            <th className="text-left px-4 py-2.5 font-semibold text-gray-700 w-1/2">Entity</th>
             {ACTIONS.map((a) => (
-              <th key={a} className="text-center px-4 py-2 font-semibold text-gray-700">
+              <th key={a} className="text-center px-4 py-2.5 font-semibold text-gray-700">
                 {a}
               </th>
             ))}
@@ -305,24 +307,24 @@ function UserMatrix({
             return (
               <Fragment key={mod.key}>
                 <tr className="bg-gray-50/40 border-t border-gray-200">
-                  <td className="px-4 py-2 font-semibold text-gray-800">
+                  <td className="px-4 py-2.5 font-semibold text-gray-800">
                     {mod.label}
-                    <span className="ml-2 text-[10px] font-normal px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded">
+                    <span className="ml-2 text-[11px] font-semibold px-1.5 py-0.5 bg-green-50 text-green-600 rounded">
                       {roleHits} role
                     </span>
                   </td>
                   {ACTIONS.map((a) => (
-                    <td key={a} className="px-4 py-2" />
+                    <td key={a} className="px-4 py-2.5" />
                   ))}
                 </tr>
                 {mod.leaves.map((leaf) => (
                   <tr key={leaf.resource} className="border-t border-gray-100">
-                    <td className="px-4 py-2 pl-10 text-gray-600">└ {leaf.label}</td>
+                    <td className="px-4 py-2.5 pl-10 text-gray-600">└ {leaf.label}</td>
                     {ACTIONS.map((a) => {
                       const code = leaf.actions[a].code;
                       if (!code) {
                         return (
-                          <td key={a} className="text-center px-4 py-2 text-gray-300">—</td>
+                          <td key={a} className="text-center px-4 py-2.5 text-gray-300">—</td>
                         );
                       }
                       const fromRole = roleCodes.has(code);
@@ -335,7 +337,7 @@ function UserMatrix({
                       else if (isDeny) state = "deny";
                       else if (isGrant) state = "grant";
                       return (
-                        <td key={a} className="text-center px-4 py-2">
+                        <td key={a} className="text-center px-4 py-2.5">
                           <button
                             type="button"
                             onClick={() => onToggle(code)}

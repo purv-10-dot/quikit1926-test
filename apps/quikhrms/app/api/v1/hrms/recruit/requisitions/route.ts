@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { withAuth } from "@/lib/with-auth";
+import { withAuth, withServiceAuth } from "@/lib/with-auth";
 import { successResponse, validationError, internalError } from "@/lib/api-response";
 import { createRequisitionSchema } from "@/lib/validations/recruit";
 import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
@@ -9,17 +9,19 @@ import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { fireWorkflow } from "@/lib/workflows/executor";
 import type { Prisma } from "@quikit/database";
 
-export const GET = withAuth(async (req: NextRequest, { orgId }) => {
+export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
   try {
     const { searchParams } = new URL(req.url);
     const { page, limit } = parsePagination(searchParams);
     const status = searchParams.get("status");
+    const priority = searchParams.get("priority");
     const search = searchParams.get("search");
 
     const { data, total } = await (async () => {
       const where: Prisma.JobRequisitionWhereInput = {
         orgId, deletedAt: null,
         ...(status && { status: status as Prisma.JobRequisitionWhereInput["status"] }),
+        ...(priority && { priority: priority as Prisma.JobRequisitionWhereInput["priority"] }),
         ...(search && { OR: [
           { title: { contains: search, mode: "insensitive" } },
           { requisitionNumber: { contains: search, mode: "insensitive" } },
@@ -82,7 +84,22 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         priority: data.priority,
         careerPageVisible: data.careerPageVisible,
         internalPostingOnly: data.internalPostingOnly,
+        postToJobPortal: data.postToJobPortal,
         referralBonusAmount: data.referralBonusAmount,
+        rolePurpose: data.rolePurpose,
+        // Previously dropped on create — persisted so they show up when editing.
+        interviewPanel: data.interviewPanelIds ? JSON.parse(JSON.stringify(data.interviewPanelIds)) : undefined,
+        jobOpeningName: data.jobOpeningName,
+        budget: data.budget,
+        jobGrade: data.jobGrade,
+        costCenter: data.costCenter,
+        jobLocation: data.jobLocation,
+        jobDuration: data.jobDuration,
+        workTimings: data.workTimings,
+        interviewMode: data.interviewMode,
+        etaToFillDays: data.etaToFillDays,
+        targetJoiningDate: data.targetJoiningDate ? new Date(data.targetJoiningDate) : undefined,
+        closedDate: data.closedDate ? new Date(data.closedDate) : undefined,
         createdById: creatorEmpId, hiringManagerId: data.hiringManagerId, recruiterId: data.recruiterId,
         createdBy: userId, updatedBy: userId,
       },
@@ -96,4 +113,4 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
 
     return successResponse(req_, undefined, 201);
   } catch (error) { console.error("POST /recruit/requisitions error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });

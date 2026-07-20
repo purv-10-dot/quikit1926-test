@@ -47,7 +47,7 @@ const inputCls = "w-full px-3 py-2 text-sm border border-[var(--border)] rounded
 function statusCls(s: LoanStatus) {
   switch (s) {
     case "Pending": return "bg-amber-100 text-amber-700";
-    case "Approved": return "bg-[#dbeafe] text-[#2563eb]";
+    case "Approved": return "bg-[#dcfce7] text-[#16a34a]";
     case "Disbursed": return "bg-emerald-100 text-emerald-700";
     case "Closed": return "bg-gray-100 text-gray-600";
     case "Rejected": return "bg-red-100 text-red-700";
@@ -119,29 +119,29 @@ export default function LoansPage() {
   });
 
   return (
-    <div className="w-full px-6 py-6 space-y-4">
+    <div className="w-full px-5 py-4 space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-start gap-3">
-          <Banknote size={28} className="text-[#3b82f6] mt-1.5" />
+          <Banknote size={28} className="text-[#22c55e] mt-1.5" />
           <div>
-            <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900 leading-tight">Loans</h1>
-            <p className="text-sm text-gray-500 mt-1">Employee loans and advances. EMIs auto-deduct in pay runs.</p>
+            <h1 className="text-page-title text-gray-900 leading-tight">Loans</h1>
+            <p className="text-xs text-gray-500 mt-1">Employee loans and advances. EMIs auto-deduct in pay runs.</p>
           </div>
         </div>
         <button onClick={() => setNewOpen(true)} className="btn btn-primary">
-          <Plus size={14} /> New loan
+          <Plus size={13} /> New loan
         </button>
       </div>
 
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
-        <div className="flex gap-2 px-5 py-3 border-b border-gray-100">
+        <div className="flex gap-2 px-4 py-3 border-b border-gray-100">
           {STATUSES.map((s) => (
             <button
               key={s}
               onClick={() => setStatus(s)}
               className={clsx(
                 "px-3 py-1 text-xs rounded-full border transition",
-                status === s ? "bg-[#16243A] text-white border-[#3b82f6]" : "bg-white text-gray-600 border-gray-300 hover:border-[#93c5fd]",
+                status === s ? "bg-green-600 text-white border-[#22c55e]" : "bg-white text-gray-600 border-gray-300 hover:border-[#86efac]",
               )}
             >{s}</button>
           ))}
@@ -150,11 +150,11 @@ export default function LoansPage() {
         {isLoading ? (
           <SkeletonTable rows={5} cols={5} />
         ) : rows.length === 0 ? (
-          <div className="py-10 text-center text-sm text-gray-500">{status === "All" ? "No loans yet." : `No ${status.toLowerCase()} loans.`}</div>
+          <div className="py-10 text-center text-xs text-gray-500">{status === "All" ? "No loans yet." : `No ${status.toLowerCase()} loans.`}</div>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full text-xs">
             <thead>
-              <tr className="text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">
+              <tr className="text-table-head font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">
                 <th className="text-left py-2 px-3">Employee</th>
                 <th className="text-left py-2 px-3">Type</th>
                 <th className="text-right py-2 px-3">Principal</th>
@@ -170,17 +170,17 @@ export default function LoansPage() {
               {rows.map((r, i) => (
                 <tr key={r.id} className="row-stagger border-b border-gray-50 hover:bg-gray-50" style={{ ["--i" as never]: Math.min(i, 10) }}>
                   <td className="py-3 px-3">
-                    <p className="font-medium text-gray-900">{r.employee ? `${r.employee.firstName} ${r.employee.lastName}` : "Unknown"}</p>
+                    <p className="text-[13px] font-medium text-gray-900">{r.employee ? `${r.employee.firstName} ${r.employee.lastName}` : "Unknown"}</p>
                     <p className="text-xs text-gray-500">{r.employee?.employeeCode}</p>
                   </td>
                   <td className="py-3 px-3 text-gray-700">{r.loanType}</td>
-                  <td className="py-3 px-3 text-right text-gray-900">₹{INR.format(Number(r.principalAmount))}</td>
-                  <td className="py-3 px-3 text-right text-gray-900">₹{INR.format(Number(r.emiAmount))}</td>
+                  <td className="py-3 px-3 text-right text-sm text-gray-900">₹{INR.format(Number(r.principalAmount))}</td>
+                  <td className="py-3 px-3 text-right text-sm text-gray-900">₹{INR.format(Number(r.emiAmount))}</td>
                   <td className="py-3 px-3 text-right text-gray-700">{r.tenureMonths}m</td>
-                  <td className="py-3 px-3 text-right text-gray-900 font-semibold">₹{INR.format(Number(r.outstandingAmount))}</td>
+                  <td className="py-3 px-3 text-right text-sm text-gray-900 font-semibold">₹{INR.format(Number(r.outstandingAmount))}</td>
                   <td className="py-3 px-3 text-right text-gray-700">{r.emisPaid}/{r.tenureMonths}</td>
                   <td className="py-3 px-3">
-                    <span className={clsx("text-xs font-semibold px-2 py-0.5 rounded", statusCls(r.status))}>{r.status}</span>
+                    <span className={clsx("text-[11px] font-medium px-2 py-0.5 rounded", statusCls(r.status))}>{r.status}</span>
                     {isPaused(r) && (
                       <span className="ml-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 whitespace-nowrap">
                         Paused → {new Date(r.holdUntil!).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
@@ -195,20 +195,20 @@ export default function LoansPage() {
                       </div>
                     )}
                     {r.status === "Approved" && (
-                      <button onClick={() => { setDisburseTarget(r.id); setDisburseDate(new Date().toISOString().slice(0, 10)); }} className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-[#16243A] hover:bg-[#1E3354] text-white rounded">
+                      <button onClick={() => { setDisburseTarget(r.id); setDisburseDate(new Date().toISOString().slice(0, 10)); }} className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-green-600 hover:bg-green-700 text-white rounded">
                         <Send size={12} /> Disburse
                       </button>
                     )}
                     {r.status === "Disbursed" && Number(r.outstandingAmount) > 0 && (
                       <div className="flex gap-1 justify-end">
-                        <button title="Prepay (lump sum)" onClick={() => setPrepayTarget(r)} className="inline-flex items-center px-1.5 py-1 text-xs border border-[var(--border)] hover:bg-emerald-50 text-emerald-700 rounded"><Coins size={13} /></button>
-                        <button title="Waive EMIs" onClick={() => setWaiveTarget(r)} className="inline-flex items-center px-1.5 py-1 text-xs border border-[var(--border)] hover:bg-amber-50 text-amber-700 rounded"><Eraser size={13} /></button>
+                        <button title="Prepay (lump sum)" onClick={() => setPrepayTarget(r)} className="inline-flex items-center px-1.5 py-1 text-xs border border-[var(--border)] hover:bg-emerald-50 text-emerald-700 rounded"><Coins size={12} /></button>
+                        <button title="Waive EMIs" onClick={() => setWaiveTarget(r)} className="inline-flex items-center px-1.5 py-1 text-xs border border-[var(--border)] hover:bg-amber-50 text-amber-700 rounded"><Eraser size={12} /></button>
                         {isPaused(r) ? (
-                          <button title="Resume EMIs" disabled={resumeMut.isPending} onClick={() => resumeMut.mutate(r.id)} className="inline-flex items-center px-1.5 py-1 text-xs border border-[var(--border)] hover:bg-blue-50 text-blue-700 rounded disabled:opacity-50"><Play size={13} /></button>
+                          <button title="Resume EMIs" disabled={resumeMut.isPending} onClick={() => resumeMut.mutate(r.id)} className="inline-flex items-center px-1.5 py-1 text-xs border border-[var(--border)] hover:bg-green-50 text-green-700 rounded disabled:opacity-50"><Play size={12} /></button>
                         ) : (
-                          <button title="Pause EMIs" onClick={() => setHoldTarget(r)} className="inline-flex items-center px-1.5 py-1 text-xs border border-[var(--border)] hover:bg-orange-50 text-orange-700 rounded"><Pause size={13} /></button>
+                          <button title="Pause EMIs" onClick={() => setHoldTarget(r)} className="inline-flex items-center px-1.5 py-1 text-xs border border-[var(--border)] hover:bg-orange-50 text-orange-700 rounded"><Pause size={12} /></button>
                         )}
-                        <button title="Close / write off" onClick={() => setCloseTarget(r.id)} className="inline-flex items-center px-1.5 py-1 text-xs border border-[var(--border)] hover:bg-gray-50 text-gray-700 rounded"><Lock size={13} /></button>
+                        <button title="Close / write off" onClick={() => setCloseTarget(r.id)} className="inline-flex items-center px-1.5 py-1 text-xs border border-[var(--border)] hover:bg-gray-50 text-gray-700 rounded"><Lock size={12} /></button>
                       </div>
                     )}
                   </td>
@@ -232,7 +232,7 @@ export default function LoansPage() {
               setRejectTarget(null);
             }
           }}
-          className="p-5 space-y-3"
+          className="p-4 space-y-3"
         >
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Rejection reason <span className="text-red-500">*</span></label>
@@ -243,12 +243,12 @@ export default function LoansPage() {
               autoFocus
               required
               placeholder="Explain why this loan is being rejected..."
-              className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[#16243A]"
+              className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[#166534]"
             />
           </div>
           <div className="flex justify-end gap-2 pt-1">
-            <button type="button" onClick={() => setRejectTarget(null)} className="px-3 py-1.5 text-sm border border-[var(--border)] rounded-md hover:bg-gray-50">Cancel</button>
-            <button type="submit" disabled={!rejectReason.trim() || rejectMut.isPending} className="px-4 py-1.5 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50">
+            <button type="button" onClick={() => setRejectTarget(null)} className="px-3 py-1.5 text-xs font-medium border border-[var(--border)] rounded-md hover:bg-gray-50">Cancel</button>
+            <button type="submit" disabled={!rejectReason.trim() || rejectMut.isPending} className="px-3 py-1.5 text-xs font-medium bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50">
               {rejectMut.isPending ? "Rejecting..." : "Reject Loan"}
             </button>
           </div>
@@ -264,7 +264,7 @@ export default function LoansPage() {
               setDisburseTarget(null);
             }
           }}
-          className="p-5 space-y-3"
+          className="p-4 space-y-3"
         >
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Disbursement date <span className="text-red-500">*</span></label>
@@ -274,13 +274,13 @@ export default function LoansPage() {
               onChange={(e) => setDisburseDate(e.target.value)}
               autoFocus
               required
-              className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[#16243A]"
+              className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[#166534]"
             />
             <p className="mt-1 text-xs text-gray-500">Date the loan amount is credited to employee.</p>
           </div>
           <div className="flex justify-end gap-2 pt-1">
-            <button type="button" onClick={() => setDisburseTarget(null)} className="px-3 py-1.5 text-sm border border-[var(--border)] rounded-md hover:bg-gray-50">Cancel</button>
-            <button type="submit" disabled={!disburseDate || disburseMut.isPending} className="px-4 py-1.5 text-sm bg-[#16243A] text-white rounded-md hover:bg-[#2563eb] disabled:opacity-50">
+            <button type="button" onClick={() => setDisburseTarget(null)} className="px-3 py-1.5 text-xs font-medium border border-[var(--border)] rounded-md hover:bg-gray-50">Cancel</button>
+            <button type="submit" disabled={!disburseDate || disburseMut.isPending} className="px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50">
               {disburseMut.isPending ? "Disbursing..." : "Disburse"}
             </button>
           </div>
@@ -288,12 +288,12 @@ export default function LoansPage() {
       </Modal>
 
       <Modal open={!!closeTarget} onClose={() => setCloseTarget(null)} title="Close Loan" size="md">
-        <div className="p-5 space-y-3">
-          <p className="text-sm text-gray-700">
+        <div className="p-4 space-y-3">
+          <p className="text-xs text-gray-700">
             Close this loan now? Remaining outstanding balance will be written off. This cannot be undone.
           </p>
           <div className="flex justify-end gap-2 pt-1">
-            <button type="button" onClick={() => setCloseTarget(null)} className="px-3 py-1.5 text-sm border border-[var(--border)] rounded-md hover:bg-gray-50">Cancel</button>
+            <button type="button" onClick={() => setCloseTarget(null)} className="px-3 py-1.5 text-xs font-medium border border-[var(--border)] rounded-md hover:bg-gray-50">Cancel</button>
             <button
               type="button"
               disabled={closeMut.isPending}
@@ -303,7 +303,7 @@ export default function LoansPage() {
                   setCloseTarget(null);
                 }
               }}
-              className="px-4 py-1.5 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
+              className="px-3 py-1.5 text-xs font-medium bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
             >
               {closeMut.isPending ? "Closing..." : "Close Loan"}
             </button>
@@ -352,12 +352,12 @@ function PrepayForm({ loan, isPending, onCancel, onSubmit }: { loan: Loan; isPen
   const [note, setNote] = useState("");
   const err = !amount || amount <= 0 ? "Enter an amount" : amount > outstanding ? "Amount exceeds outstanding balance" : null;
   return (
-    <form onSubmit={(e) => { e.preventDefault(); if (!err && amount) onSubmit(amount, note.trim() || undefined); }} className="p-5 space-y-3">
-      <p className="text-sm text-gray-600">Outstanding balance: <span className="font-semibold text-gray-900">₹{INR.format(outstanding)}</span></p>
+    <form onSubmit={(e) => { e.preventDefault(); if (!err && amount) onSubmit(amount, note.trim() || undefined); }} className="p-4 space-y-3">
+      <p className="text-xs text-gray-600">Outstanding balance: <span className="font-semibold text-gray-900">₹{INR.format(outstanding)}</span></p>
       <div>
         <label className="block text-xs font-medium text-gray-700 mb-1">Amount to pay (₹) <span className="text-red-500">*</span></label>
         <NumberInput value={amount} onChange={setAmount} required className={inputCls} />
-        <button type="button" onClick={() => setAmount(outstanding)} className="mt-1 text-[11px] text-[#2563eb] hover:underline">Pay full balance (₹{INR.format(outstanding)})</button>
+        <button type="button" onClick={() => setAmount(outstanding)} className="mt-1 text-[11px] text-[#16a34a] hover:underline">Pay full balance (₹{INR.format(outstanding)})</button>
       </div>
       <div>
         <label className="block text-xs font-medium text-gray-700 mb-1">Note</label>
@@ -365,8 +365,8 @@ function PrepayForm({ loan, isPending, onCancel, onSubmit }: { loan: Loan; isPen
       </div>
       {amount && amount >= outstanding && !err && <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded px-3 py-2">This clears the loan — it will be marked Closed.</p>}
       <div className="flex justify-end gap-2 pt-1">
-        <button type="button" onClick={onCancel} className="px-3 py-1.5 text-sm border border-[var(--border)] rounded-md hover:bg-gray-50">Cancel</button>
-        <button type="submit" disabled={!!err || isPending} className="px-4 py-1.5 text-sm bg-emerald-600 text-white rounded-md hover:bg-emerald-700 disabled:opacity-50">
+        <button type="button" onClick={onCancel} className="px-3 py-1.5 text-xs font-medium border border-[var(--border)] rounded-md hover:bg-gray-50">Cancel</button>
+        <button type="submit" disabled={!!err || isPending} className="px-3 py-1.5 text-xs font-medium bg-emerald-600 text-white rounded-md hover:bg-emerald-700 disabled:opacity-50">
           {isPending ? "Processing..." : "Record Prepayment"}
         </button>
       </div>
@@ -381,8 +381,8 @@ function WaiveForm({ loan, isPending, onCancel, onSubmit }: { loan: Loan; isPend
   const [note, setNote] = useState("");
   const waiveAmount = Math.min(outstanding, emi * emiCount);
   return (
-    <form onSubmit={(e) => { e.preventDefault(); onSubmit(emiCount, note.trim() || undefined); }} className="p-5 space-y-3">
-      <p className="text-sm text-gray-600">EMI: <span className="font-semibold text-gray-900">₹{INR.format(emi)}</span> · Outstanding: <span className="font-semibold text-gray-900">₹{INR.format(outstanding)}</span></p>
+    <form onSubmit={(e) => { e.preventDefault(); onSubmit(emiCount, note.trim() || undefined); }} className="p-4 space-y-3">
+      <p className="text-xs text-gray-600">EMI: <span className="font-semibold text-gray-900">₹{INR.format(emi)}</span> · Outstanding: <span className="font-semibold text-gray-900">₹{INR.format(outstanding)}</span></p>
       <div>
         <label className="block text-xs font-medium text-gray-700 mb-1">EMIs to waive</label>
         <Select value={String(emiCount)} onChange={(v) => setEmiCount(Number(v))} options={[1, 2, 3].map((n) => ({ value: String(n), label: `${n} EMI${n > 1 ? "s" : ""}` }))} />
@@ -395,8 +395,8 @@ function WaiveForm({ loan, isPending, onCancel, onSubmit }: { loan: Loan; isPend
         Writes off ₹{INR.format(waiveAmount)} from the balance.{waiveAmount >= outstanding ? " This clears the loan — it will be Closed." : ""}
       </p>
       <div className="flex justify-end gap-2 pt-1">
-        <button type="button" onClick={onCancel} className="px-3 py-1.5 text-sm border border-[var(--border)] rounded-md hover:bg-gray-50">Cancel</button>
-        <button type="submit" disabled={isPending} className="px-4 py-1.5 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50">
+        <button type="button" onClick={onCancel} className="px-3 py-1.5 text-xs font-medium border border-[var(--border)] rounded-md hover:bg-gray-50">Cancel</button>
+        <button type="submit" disabled={isPending} className="px-3 py-1.5 text-xs font-medium bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50">
           {isPending ? "Processing..." : "Waive EMIs"}
         </button>
       </div>
@@ -408,8 +408,8 @@ function HoldForm({ isPending, onCancel, onSubmit }: { isPending: boolean; onCan
   const [months, setMonths] = useState(1);
   const [note, setNote] = useState("");
   return (
-    <form onSubmit={(e) => { e.preventDefault(); onSubmit(months, note.trim() || undefined); }} className="p-5 space-y-3">
-      <p className="text-sm text-gray-600">Pause EMI auto-deduction. The loan resumes automatically afterwards and the end date is pushed out accordingly.</p>
+    <form onSubmit={(e) => { e.preventDefault(); onSubmit(months, note.trim() || undefined); }} className="p-4 space-y-3">
+      <p className="text-xs text-gray-600">Pause EMI auto-deduction. The loan resumes automatically afterwards and the end date is pushed out accordingly.</p>
       <div>
         <label className="block text-xs font-medium text-gray-700 mb-1">Pause for</label>
         <Select value={String(months)} onChange={(v) => setMonths(Number(v))} options={[1, 2, 3].map((n) => ({ value: String(n), label: `${n} month${n > 1 ? "s" : ""}` }))} />
@@ -419,8 +419,8 @@ function HoldForm({ isPending, onCancel, onSubmit }: { isPending: boolean; onCan
         <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Reason for pause" className={inputCls} />
       </div>
       <div className="flex justify-end gap-2 pt-1">
-        <button type="button" onClick={onCancel} className="px-3 py-1.5 text-sm border border-[var(--border)] rounded-md hover:bg-gray-50">Cancel</button>
-        <button type="submit" disabled={isPending} className="px-4 py-1.5 text-sm bg-orange-600 text-white rounded-md hover:bg-orange-700 disabled:opacity-50">
+        <button type="button" onClick={onCancel} className="px-3 py-1.5 text-xs font-medium border border-[var(--border)] rounded-md hover:bg-gray-50">Cancel</button>
+        <button type="submit" disabled={isPending} className="px-3 py-1.5 text-xs font-medium bg-orange-600 text-white rounded-md hover:bg-orange-700 disabled:opacity-50">
           {isPending ? "Pausing..." : "Pause EMIs"}
         </button>
       </div>
@@ -463,6 +463,7 @@ function NewLoanForm({ onCancel, onCreated }: { onCancel: () => void; onCreated:
   const mut = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.post("/api/v1/hrms/payroll/loans", body),
     onSuccess: onCreated,
+    meta: { suppressGlobalError: true },
     onError: (e: Error) => setErr(e.message),
   });
 
@@ -471,13 +472,16 @@ function NewLoanForm({ onCancel, onCreated }: { onCancel: () => void; onCreated:
       e.preventDefault();
       if (!form.employeeId) return setErr("Select employee");
       if (!form.principalAmount || form.principalAmount <= 0) return setErr("Enter principal");
+      if (!form.tenureMonths || form.tenureMonths <= 0) return setErr("Enter tenure in months");
       const emi = form.emiAmount || autoEMI();
       if (emi <= 0) return setErr("EMI must be positive");
+      if (emi > form.principalAmount) return setErr("EMI can’t exceed the loan principal");
+      if (emi * form.tenureMonths < form.principalAmount) return setErr("EMI × tenure must be at least the principal — increase EMI or tenure");
       mut.mutate({
         ...form,
         emiAmount: emi,
       });
-    }} className="p-5 space-y-3">
+    }} className="p-4 space-y-3">
       <EmployeeSelect
         label="Employee"
         required
@@ -519,10 +523,10 @@ function NewLoanForm({ onCancel, onCreated }: { onCancel: () => void; onCreated:
         <label className="block text-xs font-medium text-gray-700 mb-1">Reason</label>
         <input value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} className={inputCls} />
       </div>
-      {err && <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">{err}</p>}
+      {err && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">{err}</p>}
       <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
-        <button type="button" onClick={onCancel} className="px-4 py-2 border border-[var(--border)] bg-white hover:bg-gray-50 text-gray-700 rounded-md text-sm font-medium">Cancel</button>
-        <button type="submit" disabled={mut.isPending} className="px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 text-white rounded-md text-sm font-semibold shadow-sm">
+        <button type="button" onClick={onCancel} className="px-3 py-1.5 border border-[var(--border)] bg-white hover:bg-gray-50 text-gray-700 rounded-md text-xs font-medium">Cancel</button>
+        <button type="submit" disabled={mut.isPending} className="px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-md text-xs font-medium shadow-sm">
           {mut.isPending ? "Creating..." : "Submit"}
         </button>
       </div>

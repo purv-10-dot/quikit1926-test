@@ -30,7 +30,11 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
     const parsed = updateRequisitionSchema.safeParse(body);
     if (!parsed.success) return validationError("Validation failed", parsed.error.flatten().fieldErrors);
 
-    const { responsibilities, requirements, niceToHave, skills, skillWeights, benefits, ...rest } = parsed.data;
+    const {
+      responsibilities, requirements, niceToHave, skills, skillWeights, benefits,
+      interviewPanelIds, targetJoiningDate, closedDate,
+      ...rest
+    } = parsed.data;
     const r = await prisma.jobRequisition.update({
       where: { id: params.id },
       data: {
@@ -41,13 +45,16 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
         ...(skills && { skills: JSON.parse(JSON.stringify(skills)) }),
         ...(skillWeights && { skillWeights: JSON.parse(JSON.stringify(skillWeights)) }),
         ...(benefits && { benefits: JSON.parse(JSON.stringify(benefits)) }),
-        ...(rest.status === "ReqClosed" && { closedDate: new Date() }),
+        ...(interviewPanelIds && { interviewPanel: JSON.parse(JSON.stringify(interviewPanelIds)) }),
+        ...(targetJoiningDate !== undefined && { targetJoiningDate: targetJoiningDate ? new Date(targetJoiningDate) : null }),
+        ...(closedDate !== undefined && { closedDate: closedDate ? new Date(closedDate) : null }),
+        ...(rest.status === "ReqClosed" && !closedDate && { closedDate: new Date() }),
         updatedBy: userId,
       },
     });
     return successResponse(r);
   } catch (error) { console.error("PATCH /recruit/requisitions/:id error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });
 
 export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }, params) => {
   try {
@@ -56,4 +63,4 @@ export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }, para
     await prisma.jobRequisition.update({ where: { id: params.id }, data: { deletedAt: new Date(), updatedBy: userId } });
     return successResponse({ deleted: true });
   } catch (error) { console.error("DELETE /recruit/requisitions/:id error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });

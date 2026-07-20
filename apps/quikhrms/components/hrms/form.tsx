@@ -3,7 +3,7 @@
 import { forwardRef, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from "react";
 import { clsx } from "clsx";
 
-const baseField = "w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#16243A] focus:border-[#16243A] disabled:bg-gray-50 disabled:text-gray-500";
+const baseField = "w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#166534] focus:border-[#166534] disabled:bg-gray-50 disabled:text-gray-500";
 const errorField = "border-red-400 focus:ring-red-400 focus:border-red-400";
 
 interface FormFieldProps {
@@ -58,7 +58,7 @@ export function FormCheckbox({ label, className, ...rest }: FormCheckboxProps) {
   return (
     <label className={clsx("inline-flex items-center gap-2 text-sm text-gray-800 select-none cursor-pointer", className)}>
       <input type="checkbox" {...rest}
-        className="w-4 h-4 rounded border-gray-300 text-[#16243A] focus:ring-1 focus:ring-[#16243A]" />
+        className="w-4 h-4 rounded border-gray-300 text-[#166534] focus:ring-1 focus:ring-[#166534]" />
       {label}
     </label>
   );

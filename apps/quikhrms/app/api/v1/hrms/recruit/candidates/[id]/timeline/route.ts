@@ -19,7 +19,11 @@ type TimelineKind =
   | "OfferCreated"
   | "OfferSent"
   | "ApplicationRejected"
-  | "ApplicationHired";
+  | "ApplicationHired"
+  | "DocumentsRequested"
+  | "DocumentUploaded"
+  | "DocumentApproved"
+  | "DocumentRejected";
 
 interface TimelineEntry {
   id: string;
@@ -58,8 +62,27 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
       orderBy: { createdAt: "asc" },
     });
 
+    // Document requests + uploads across this candidate's applications, for the
+    // "requested / uploaded / approved / rejected" activity entries.
+    const appIds = applications.map((a) => a.id);
+    const docRequests = appIds.length
+      ? await prisma.candidateDocumentRequest.findMany({
+          where: { orgId, applicationId: { in: appIds }, deletedAt: null },
+          include: {
+            uploads: {
+              where: { deletedAt: null },
+              include: { documentType: { select: { name: true } } },
+            },
+          },
+        })
+      : [];
+
     const actorIds = new Set<string>();
     auditLogs.forEach((l) => actorIds.add(l.userId));
+    docRequests.forEach((r) => {
+      if (r.createdBy) actorIds.add(r.createdBy);
+      r.uploads.forEach((u) => { if (u.reviewedBy) actorIds.add(u.reviewedBy); });
+    });
     const actorMap = new Map<string, { id: string; name: string; jobTitle: string | null }>();
     if (actorIds.size > 0) {
       const emps = await prisma.employee.findMany({
@@ -142,7 +165,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
             id: `sc-${iv.id}`,
             kind: "FeedbackSubmitted",
             title: `Feedback: ${iv.recommendation}`,
-            description: `${stageName} · Rating ${iv.overallRating}/5${iv.overallComments ? ` — ${iv.overallComments.slice(0, 120)}` : ""}`,
+            description: `${stageName} · Rating ${iv.overallRating}/10${iv.overallComments ? ` — ${iv.overallComments.slice(0, 120)}` : ""}`,
             metadata: {
               scorecardId: iv.id,
               stage: stageName,
@@ -194,6 +217,54 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
           actor: resolveActor(app.updatedBy),
           at: app.updatedAt.toISOString(),
         });
+      }
+    }
+
+    // ─── Document events ───────────────────────────────────
+    const bundleLabel = (b: string) => (b === "PreOffer" ? "Pre-Offer" : "Post-Offer");
+    for (const r of docRequests) {
+      entries.push({
+        id: `docreq-${r.id}`,
+        kind: "DocumentsRequested",
+        title: `${bundleLabel(r.bundle)} documents requested`,
+        description: (r.reminderCount ?? 0) > 0 ? `${r.reminderCount} reminder${r.reminderCount === 1 ? "" : "s"} sent` : null,
+        metadata: { requestId: r.id, bundle: r.bundle },
+        actor: resolveActor(r.createdBy),
+        at: (r.requestSentAt ?? r.createdAt).toISOString(),
+      });
+
+      for (const u of r.uploads) {
+        const docName = u.documentType?.name ?? u.customLabel ?? u.fileName ?? "Document";
+        entries.push({
+          id: `docup-${u.id}-${u.uploadedAt.getTime()}`,
+          kind: "DocumentUploaded",
+          title: `${docName} uploaded`,
+          description: "Uploaded by candidate",
+          metadata: { uploadId: u.id, bundle: r.bundle },
+          actor: null,
+          at: u.uploadedAt.toISOString(),
+        });
+
+        if (u.reviewedAt && u.status === "Approved") {
+          entries.push({
+            id: `docapr-${u.id}`,
+            kind: "DocumentApproved",
+            title: `${docName} approved`,
+            metadata: { uploadId: u.id, bundle: r.bundle },
+            actor: resolveActor(u.reviewedBy),
+            at: u.reviewedAt.toISOString(),
+          });
+        } else if (u.reviewedAt && u.status === "Rejected") {
+          entries.push({
+            id: `docrej-${u.id}`,
+            kind: "DocumentRejected",
+            title: `${docName} rejected`,
+            description: u.rejectionReason ?? null,
+            metadata: { uploadId: u.id, bundle: r.bundle },
+            actor: resolveActor(u.reviewedBy),
+            at: u.reviewedAt.toISOString(),
+          });
+        }
       }
     }
 

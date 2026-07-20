@@ -59,16 +59,23 @@ export function getStageConfig(stages: unknown, name: string): StageConfig | nul
   return normalizeStages(stages).find((s) => s.name === name) ?? null;
 }
 
-export const REQUIRED_STAGES = ["Screening", "Offer", "Hired"] as const;
+export const REQUIRED_STAGES = ["Screening", "HRInterview", "Offer", "Hired"] as const;
 
-/** Ensure required stages exist — append any missing at sensible positions. */
+/** Ensure required stages exist — insert any missing at sensible positions. */
 export function ensureRequiredStages(stages: StageConfig[]): StageConfig[] {
   const next = [...stages];
   for (const req of REQUIRED_STAGES) {
-    if (!next.some((s) => s.name.toLowerCase() === req.toLowerCase())) {
-      const cfg: StageConfig = { name: req, sendMail: false, mailTemplate: inferDefaultTemplate(req) };
-      if (req === "Screening") next.unshift(cfg);
+    if (next.some((s) => s.name.toLowerCase() === req.toLowerCase())) continue;
+    const cfg: StageConfig = { name: req, sendMail: false, mailTemplate: inferDefaultTemplate(req) };
+    if (req === "Screening") {
+      next.unshift(cfg);
+    } else if (req === "HRInterview") {
+      // HR Interview is the last interview round — keep it just before Offer/Hired.
+      const offerIdx = next.findIndex((s) => /^(offer|hired)$/i.test(s.name));
+      if (offerIdx >= 0) next.splice(offerIdx, 0, cfg);
       else next.push(cfg);
+    } else {
+      next.push(cfg);
     }
   }
   return next;

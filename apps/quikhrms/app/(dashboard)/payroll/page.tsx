@@ -115,22 +115,22 @@ export default function PayrollAnalyticsPage() {
   const lowest = apiComp?.lowestCompensation ?? null;
 
   return (
-    <div className="w-full px-6 py-6 space-y-6">
+    <div className="w-full px-5 py-4 space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-start gap-3">
-          <Wallet size={28} className="text-[#3b82f6] mt-1.5" />
+          <Wallet size={28} className="text-[#22c55e] mt-1.5" />
           <div>
-            <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900 leading-tight">Payroll</h1>
-            <p className="text-sm text-gray-500 mt-1">Analytics, compensation and payroll operations.</p>
+            <h1 className="text-page-title text-gray-900 leading-tight">Payroll</h1>
+            <p className="text-xs text-gray-500 mt-1">Analytics, compensation and payroll operations.</p>
           </div>
         </div>
         <Link
           href="/payroll/setup"
           className="btn btn-primary"
         >
-          <Settings2 size={14} /> Payroll Setup
+          <Settings2 size={13} /> Payroll Setup
           {setup && !setup.setupCompleted && (
-            <span className="bg-white/20 px-2 py-0.5 rounded text-xs">
+            <span className="bg-white/20 px-2 py-0.5 rounded text-[11px] font-semibold">
               {setup.completedSteps}/{setup.totalSteps}
             </span>
           )}
@@ -155,21 +155,21 @@ export default function PayrollAnalyticsPage() {
       )}
 
       {!hasData && (
-        <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800 flex items-center gap-2">
+        <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800 flex items-center gap-2">
           <AlertCircle size={12} /> No payroll data yet — analytics populate after first pay run completes.
         </div>
       )}
 
       <div className="border-b border-gray-200">
-        <div className="flex gap-6 overflow-x-auto">
+        <div className="flex gap-4 overflow-x-auto">
           {TABS.map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
               data-active={tab === t}
               className={clsx(
-                "tab-underline whitespace-nowrap py-3 px-1 text-sm -mb-px",
-                tab === t ? "text-[#3b82f6] font-semibold" : "text-gray-500 hover:text-gray-700",
+                "tab-underline whitespace-nowrap py-3 px-1 text-[13px] font-semibold -mb-px",
+                tab === t ? "text-[#22c55e] font-semibold" : "text-gray-500 hover:text-gray-700",
               )}
             >
               {t}
@@ -209,12 +209,12 @@ export default function PayrollAnalyticsPage() {
           </div>
 
           <section>
-            <h2 className="text-lg font-semibold text-gray-900 mb-3">Compensation Summary</h2>
+            <h2 className="text-[13px] font-semibold text-gray-900 mb-3">Compensation Summary</h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <ChartCard title="Compensation Distribution by Department">
                 {deptData.length > 0 ? (
                   <div className="grid grid-cols-5 gap-4 items-center">
-                    <div className="col-span-3 h-72"><Donut data={deptData} /></div>
+                    <div className="col-span-3 h-64"><Donut data={deptData} /></div>
                     <div className="col-span-2 space-y-3 text-sm">
                       <Stat label="Total Compensation" value={INR_LAKH(totalComp)} />
                       {highest && <Stat label="Highest" value={`${highest.name} (${INR_LAKH(highest.total)})`} />}
@@ -222,30 +222,30 @@ export default function PayrollAnalyticsPage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="h-72 flex items-center justify-center text-sm text-gray-400">No data</div>
+                  <div className="h-40 flex items-center justify-center text-xs text-gray-400">No data</div>
                 )}
               </ChartCard>
               <ChartCard title="Compensation Distribution by Location">
                 {locData.length > 0 ? (
-                  <div className="h-72"><Donut data={locData} /></div>
+                  <div className="h-64"><Donut data={locData} /></div>
                 ) : (
-                  <div className="h-72 flex items-center justify-center text-sm text-gray-400">No data</div>
+                  <div className="h-40 flex items-center justify-center text-xs text-gray-400">No data</div>
                 )}
               </ChartCard>
             </div>
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-gray-900 mb-3">6-Month Trend</h2>
+            <h2 className="text-[13px] font-semibold text-gray-900 mb-3">6-Month Trend</h2>
             <ChartCard title="Monthly Payroll & Headcount">
-              <div className="h-72 flex items-center justify-center text-sm text-gray-400">
+              <div className="h-40 flex items-center justify-center text-xs text-gray-400">
                 No trend data — populates after multiple pay runs.
               </div>
             </ChartCard>
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-gray-900 mb-3">Quick Actions</h2>
+            <h2 className="text-[13px] font-semibold text-gray-900 mb-3">Quick Actions</h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <QuickLink href="/payroll/setup" icon={<Settings2 size={16} />} label="Payroll Setup" />
               <QuickLink href="/org-chart" icon={<Users size={16} />} label="People" />
@@ -276,9 +276,9 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 function QuickLink({ href, icon, label }: { href: string; icon: React.ReactNode; label: string }) {
   return (
-    <Link href={href} className="group rounded-lg border border-gray-200 bg-white p-3 flex items-center gap-2 hover:border-[#93c5fd] hover:shadow-sm transition">
-      <span className="text-[#3b82f6]">{icon}</span>
-      <span className="text-sm font-medium text-gray-800 group-hover:text-[#3b82f6]">{label}</span>
+    <Link href={href} className="group rounded-lg border border-gray-200 bg-white p-3 flex items-center gap-2 hover:border-[#86efac] hover:shadow-sm transition">
+      <span className="text-[#22c55e]">{icon}</span>
+      <span className="text-sm font-medium text-gray-800 group-hover:text-[#22c55e]">{label}</span>
     </Link>
   );
 }

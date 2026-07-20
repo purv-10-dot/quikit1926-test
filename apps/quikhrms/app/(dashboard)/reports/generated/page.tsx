@@ -48,21 +48,21 @@ export default function GeneratedReportsPage() {
 
   return (
     <div>
-      <Link href="/hrms/reports" className="inline-flex items-center gap-1 text-sm text-[#3b82f6] hover:underline mb-4">
-        <ArrowLeft size={14} /> Back to reports
+      <Link href="/reports" className="inline-flex items-center gap-1 text-xs text-[#22c55e] hover:underline mb-4">
+        <ArrowLeft size={13} /> Back to reports
       </Link>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <FileSpreadsheet className="text-[#3b82f6]" />
-          <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">Generated Reports</h1>
+          <FileSpreadsheet className="text-[#22c55e]" />
+          <h1 className="text-page-title text-gray-900">Generated Reports</h1>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => setShowSchedule(true)} className="flex items-center gap-1 border border-[var(--border)] px-3 py-2 rounded-lg text-sm hover:bg-gray-50">
-            <Clock size={14} /> Schedule
+          <button onClick={() => setShowSchedule(true)} className="flex items-center gap-1 border border-[var(--border)] px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-50">
+            <Clock size={13} /> Schedule
           </button>
           <button onClick={() => setShowGenerate(true)}
             className="flex items-center gap-2 btn btn-primary">
-            <Plus size={16} /> Generate
+            <Plus size={13} /> Generate
           </button>
         </div>
       </div>
@@ -73,8 +73,8 @@ export default function GeneratedReportsPage() {
         </div>
       ) : (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+          <table className="w-full text-xs">
+            <thead className="bg-gray-50 text-table-head uppercase text-gray-500">
               <tr>
                 <th className="text-left px-4 py-2">Name</th>
                 <th className="text-left px-4 py-2">Type</th>
@@ -88,11 +88,11 @@ export default function GeneratedReportsPage() {
             <tbody className="divide-y divide-gray-100">
               {reports.map((r, i) => (
                 <tr key={r.id} className="row-stagger" style={{ ["--i" as never]: Math.min(i, 10) }}>
-                  <td className="px-4 py-2 font-medium">{r.name}</td>
-                  <td className="px-4 py-2"><span className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded-full text-xs">{r.type}</span></td>
+                  <td className="px-4 py-2 text-[13px] font-medium">{r.name}</td>
+                  <td className="px-4 py-2"><span className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded-full text-[11px] font-medium">{r.type}</span></td>
                   <td className="px-4 py-2 text-xs">{r.format}</td>
                   <td className="px-4 py-2">
-                    <span className={clsx("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium",
+                    <span className={clsx("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium",
                       r.status === "ReportCompleted" ? "bg-green-100 text-green-700" :
                       r.status === "ReportFailed" ? "bg-red-100 text-red-700" : "bg-yellow-100 text-yellow-700")}>
                       {r.status === "ReportCompleted" ? <CheckCircle size={10} /> : r.status === "ReportFailed" ? <XCircle size={10} /> : <Clock size={10} />}
@@ -102,7 +102,7 @@ export default function GeneratedReportsPage() {
                   <td className="px-4 py-2 font-mono text-xs">{r.scheduleCron ?? "—"}</td>
                   <td className="px-4 py-2 text-xs text-gray-500">{r.lastRunAt ? new Date(r.lastRunAt).toLocaleString("en-IN") : "—"}</td>
                   <td className="px-4 py-2 text-right">
-                    {r.fileUrl && <a href={r.fileUrl} className="text-[#3b82f6] hover:text-[#1d4ed8]"><Download size={14} /></a>}
+                    {r.fileUrl && <a href={r.fileUrl} className="text-[#22c55e] hover:text-[#15803d]"><Download size={12} /></a>}
                   </td>
                 </tr>
               ))}
@@ -143,8 +143,8 @@ export default function GeneratedReportsPage() {
                 className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" /></div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setShowGenerate(false)} className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm">Cancel</button>
-            <button type="submit" className="px-4 py-2 bg-[#16243A] text-white rounded-lg text-sm font-medium hover:bg-[#2563eb]">Generate</button>
+            <button type="button" onClick={() => setShowGenerate(false)} className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium">Cancel</button>
+            <button type="submit" className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700">Generate</button>
           </div>
         </form>
       </Modal>
@@ -183,8 +183,8 @@ export default function GeneratedReportsPage() {
             <input value={schedForm.recipients} onChange={(e) => setSchedForm({ ...schedForm, recipients: e.target.value })}
               className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" /></div>
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setShowSchedule(false)} className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm">Cancel</button>
-            <button type="submit" className="px-4 py-2 bg-[#16243A] text-white rounded-lg text-sm font-medium hover:bg-[#2563eb]">Schedule</button>
+            <button type="button" onClick={() => setShowSchedule(false)} className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium">Cancel</button>
+            <button type="submit" className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700">Schedule</button>
           </div>
         </form>
       </Modal>

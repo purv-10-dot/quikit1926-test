@@ -131,8 +131,8 @@ export function Select({
   };
 
   const sizeClasses = size === "sm"
-    ? "px-2.5 py-1.5 text-xs"
-    : "px-3 py-2 text-sm";
+    ? "h-8 px-2.5 text-secondary"
+    : "h-10 px-3 text-body";
 
   return (
     <div ref={rootRef} className={clsx("relative", className)}>
@@ -148,7 +148,7 @@ export function Select({
           disabled && "opacity-60 cursor-not-allowed bg-slate-50",
           error
             ? "border-red-400 focus:ring-red-400"
-            : "border-slate-300 hover:border-slate-400 focus:ring-blue-500 focus:border-blue-500",
+            : "border-slate-300 hover:border-slate-400 focus:ring-green-500 focus:border-green-500",
           sizeClasses,
         )}
       >
@@ -191,13 +191,13 @@ export function Select({
                   onChange={(e) => { setQuery(e.target.value); setHighlight(0); }}
                   onKeyDown={onKeyDown}
                   placeholder="Search..."
-                  className="w-full pl-7 pr-2 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  className="w-full pl-7 pr-2 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-green-400"
                 />
               </div>
             </div>
           )}
           {filtered.length === 0 ? (
-            <div className="px-3 py-6 text-center text-xs text-slate-400">No results</div>
+            <div className="px-3 py-4 text-center text-xs text-slate-400">No results</div>
           ) : (
             grouped.map(([groupLabel, opts]) => (
               <div key={groupLabel || "_"}>
@@ -223,26 +223,26 @@ export function Select({
                         setQuery("");
                       }}
                       className={clsx(
-                        "w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm transition",
+                        "w-full flex items-center gap-2.5 px-3 py-2 text-left text-[13px] transition",
                         opt.disabled && "opacity-50 cursor-not-allowed",
-                        !opt.disabled && highlighted && "bg-blue-50",
-                        active && "bg-blue-50",
+                        !opt.disabled && highlighted && "bg-green-50",
+                        active && "bg-green-50",
                       )}
                     >
                       {opt.icon && (
-                        <span className={clsx("shrink-0", active ? "text-blue-600" : "text-slate-500")}>
+                        <span className={clsx("shrink-0", active ? "text-green-600" : "text-slate-500")}>
                           {opt.icon}
                         </span>
                       )}
                       <span className="flex-1 min-w-0">
-                        <span className={clsx("block truncate", active ? "text-blue-700 font-semibold" : "text-slate-800")}>
+                        <span className={clsx("block truncate", active ? "text-green-700 font-semibold" : "text-slate-800")}>
                           {opt.label}
                         </span>
                         {opt.description && (
                           <span className="block text-[11px] text-slate-400 truncate">{opt.description}</span>
                         )}
                       </span>
-                      {active && <Check size={14} className="text-blue-600 shrink-0" />}
+                      {active && <Check size={14} className="text-green-600 shrink-0" />}
                     </button>
                   );
                 })}

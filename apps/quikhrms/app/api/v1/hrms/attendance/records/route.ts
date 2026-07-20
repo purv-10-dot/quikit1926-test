@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { withAuth } from "@/lib/with-auth";
+import { withServiceAuth } from "@/lib/with-auth";
 import { successResponse, internalError, forbidden } from "@/lib/api-response";
 import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
 import { resolveScope, employeeScopeFilter } from "@/lib/rbac/scope";
@@ -8,7 +8,7 @@ import { getHierarchyAccessibleEmployeeIds, intersectEmployeeIds } from "@/lib/r
 import type { Prisma } from "@quikit/database";
 
 /** GET /api/v1/hrms/attendance/records — list attendance records */
-export const GET = withAuth(async (req: NextRequest, ctx) => {
+export const GET = withServiceAuth(async (req: NextRequest, ctx) => {
   try {
     const { orgId } = ctx;
     const { searchParams } = new URL(req.url);

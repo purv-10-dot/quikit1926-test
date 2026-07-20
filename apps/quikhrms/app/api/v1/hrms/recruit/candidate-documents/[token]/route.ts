@@ -63,6 +63,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
     docTypes,
     uploads: request.uploads,
     tokenExpiresAt: request.tokenExpiresAt,
+    submissionDeadline: request.submissionDeadline,
     submittedAt: request.submittedAt,
   });
 }

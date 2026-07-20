@@ -170,6 +170,8 @@ const GENDER_MAP: Record<string, string> = {
   "m": "Male",
   "female": "Female",
   "f": "Female",
+  "transgender": "Transgender",
+  "trans": "Transgender",
   "nonbinary": "NonBinary",
   "non-binary": "NonBinary",
   "preferNotToSay": "PreferNotToSay",

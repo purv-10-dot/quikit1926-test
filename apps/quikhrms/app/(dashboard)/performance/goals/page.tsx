@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Modal } from "@/components/hrms/modal";
+import { todayInput } from "@/lib/utils/date-input";
 import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { clsx } from "clsx";
@@ -33,7 +34,7 @@ interface GoalItem {
 
 const statusColors: Record<string, string> = {
   NotStarted: "bg-gray-100 text-gray-600",
-  InProgress: "bg-[#dbeafe] text-[#2563eb]",
+  InProgress: "bg-[#dcfce7] text-[#16a34a]",
   AtRisk: "bg-red-100 text-red-700",
   Completed: "bg-green-100 text-green-700",
   Exceeded: "bg-emerald-100 text-emerald-700",
@@ -57,7 +58,6 @@ export default function GoalsPage() {
       toast.success("Goal deleted");
       qc.invalidateQueries({ queryKey: ["goals"] });
     },
-    onError: (e: Error) => toast.error("Delete failed", e.message),
   });
 
   const confirmDeleteGoal = async (g: GoalItem) => {
@@ -154,7 +154,6 @@ export default function GoalsPage() {
       toast.success("Progress updated");
       setCheckInGoal(null);
     },
-    onError: (e: Error) => toast.error("Update failed", e.message),
   });
 
   // Goal currently being checked in (null = modal closed).
@@ -171,12 +170,12 @@ export default function GoalsPage() {
   const goals = data?.data ?? [];
 
   return (
-    <div className="w-full px-6 py-6">
+    <div className="w-full px-5 py-4">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-        <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">Goals &amp; OKRs</h1>
+        <h1 className="text-page-title text-gray-900">Goals &amp; OKRs</h1>
         <button onClick={() => { setForm({ type: "Individual", employeeId: "", departmentId: "", title: "", description: "", metric: "", targetValue: 100, unit: "%", weight: 0, startDate: "", dueDate: "", alignedTo: "", keyResults: [] }); setShowCreate(true); }}
           className="btn btn-primary">
-          <Plus size={14} /> New goal
+          <Plus size={13} /> New goal
         </button>
       </div>
 
@@ -219,7 +218,7 @@ export default function GoalsPage() {
           <button
             type="button"
             onClick={() => { setStatusFilter(""); setTypeFilter(""); setEmployeeFilter(""); }}
-            className="text-xs text-[#3b82f6] hover:underline"
+            className="text-xs text-[#22c55e] hover:underline"
           >
             Clear
           </button>
@@ -242,11 +241,11 @@ export default function GoalsPage() {
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
-                      <h3 className="font-medium text-gray-900">{g.title}</h3>
-                      <span className={clsx("px-2 py-0.5 rounded-full text-xs font-medium", statusColors[g.status])}>{g.status}</span>
-                      <span className="text-xs text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded">{g.type}</span>
+                      <h3 className="text-[13px] font-semibold text-gray-900">{g.title}</h3>
+                      <span className={clsx("px-2 py-0.5 rounded-full text-[11px] font-medium", statusColors[g.status])}>{g.status}</span>
+                      <span className="text-[11px] text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded">{g.type}</span>
                     </div>
-                    {g.description && <p className="text-sm text-gray-500 mt-1">{g.description}</p>}
+                    {g.description && <p className="text-xs text-gray-500 mt-1">{g.description}</p>}
                     <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
                       <span>{g.employee.firstName} {g.employee.lastName}</span>
                       <span>{formatDate(g.startDate)} — {formatDate(g.dueDate)}</span>
@@ -256,14 +255,14 @@ export default function GoalsPage() {
                   </div>
                   <div className="flex items-start gap-3 ml-4">
                     <div className="text-right">
-                      <p className="text-lg font-bold text-gray-900">{progress.toFixed(0)}%</p>
+                      <p className="text-base font-bold text-gray-900">{progress.toFixed(0)}%</p>
                       <p className="text-xs text-gray-500">{Number(g.currentValue)}/{Number(g.targetValue)} {g.unit}</p>
                     </div>
                     <button
                       type="button"
                       onClick={() => openCheckIn(g)}
                       title="Update progress"
-                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-[#16243A] bg-[#16243A]/10 hover:bg-[#16243A] hover:text-white rounded transition"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-normal text-[#166534] bg-[#166534]/10 hover:bg-[#166534] hover:text-white rounded transition"
                     >
                       <BarChart3 size={12} /> Check in
                     </button>
@@ -273,7 +272,7 @@ export default function GoalsPage() {
                       title="Delete goal"
                       className="p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 rounded transition"
                     >
-                      <Trash2 size={14} />
+                      <Trash2 size={12} />
                     </button>
                   </div>
                 </div>
@@ -283,7 +282,7 @@ export default function GoalsPage() {
                     className={clsx(
                       "h-2 rounded-full transition-all",
                       progress >= 100 ? "bg-emerald-500"
-                        : progress >= 50 ? "bg-blue-500"
+                        : progress >= 50 ? "bg-green-500"
                         : progress > 0 ? "bg-amber-500"
                         : "bg-gray-300",
                     )}
@@ -294,7 +293,7 @@ export default function GoalsPage() {
                 {g.keyResults.length > 0 && (
                   <div className="mt-3 space-y-1">
                     {g.keyResults.map((kr) => (
-                      <div key={kr.id} className="flex items-center gap-2 text-sm">
+                      <div key={kr.id} className="flex items-center gap-2 text-xs">
                         <TrendingUp size={12} className="text-gray-400" />
                         <span className="text-gray-700 flex-1">{kr.title}</span>
                         <span className="text-xs text-gray-500">{Number(kr.currentValue)}/{Number(kr.targetValue)}</span>
@@ -308,12 +307,24 @@ export default function GoalsPage() {
         </div>
       )}
 
-      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="New Goal">
-        <form onSubmit={(e) => { e.preventDefault(); createMut.mutate(form); }} className="space-y-5">
+      <Modal open={showCreate} onClose={() => setShowCreate(false)} size="2xl" title="New Goal">
+        <form onSubmit={(e) => {
+          e.preventDefault();
+          if (!form.title.trim()) return toast.error("Title is required");
+          if (!form.startDate || !form.dueDate) return toast.error("Start and due dates are required");
+          if (form.dueDate < form.startDate) return toast.error("Due date must be on or after the start date");
+          if (form.weight < 0 || form.weight > 100) return toast.error("Weight must be between 0 and 100");
+          if (form.keyResults.some((k) => k.weight < 0 || k.weight > 100)) return toast.error("Key-result weights must be between 0 and 100");
+          createMut.mutate(form);
+        }} className="space-y-4">
 
+          {/* Two equal columns so the form fits without scrolling. */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+          {/* ── Left column ─────────────────────────────── */}
+          <div className="space-y-4">
           {/* ── Scope ─────────────────────────────────── */}
           <section className="space-y-3">
-            <h4 className="text-[11px] font-bold uppercase tracking-wider text-[#16243A]">Scope</h4>
+            <h4 className="text-[11px] font-bold uppercase tracking-wider text-[#166534]">Scope</h4>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Goal type</label>
               <div className="grid grid-cols-2 gap-2">
@@ -323,7 +334,7 @@ export default function GoalsPage() {
                     className={clsx(
                       "flex items-center gap-2 px-3 py-2.5 rounded-lg border cursor-pointer transition",
                       form.type === t
-                        ? "border-[#16243A] bg-[#16243A]/5 ring-1 ring-[#16243A]/30"
+                        ? "border-[#166534] bg-[#166534]/5 ring-1 ring-[#166534]/30"
                         : "border-[var(--border)] hover:bg-gray-50",
                     )}
                   >
@@ -333,7 +344,7 @@ export default function GoalsPage() {
                       value={t}
                       checked={form.type === t}
                       onChange={() => setForm({ ...form, type: t, employeeId: "", departmentId: "" })}
-                      className="accent-[#16243A]"
+                      className="accent-[#166534]"
                     />
                     <span className="text-sm font-medium text-gray-800">{t}</span>
                   </label>
@@ -372,24 +383,27 @@ export default function GoalsPage() {
 
           {/* ── What ──────────────────────────────────── */}
           <section className="space-y-3">
-            <h4 className="text-[11px] font-bold uppercase tracking-wider text-[#16243A]">What</h4>
+            <h4 className="text-[11px] font-bold uppercase tracking-wider text-[#166534]">What</h4>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Goal title <span className="text-red-500">*</span></label>
               <input type="text" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required
                 placeholder="e.g. Increase MRR by 20% in Q2"
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Why does this matter?</label>
               <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={2}
                 placeholder="Context, motivation, expected outcome…"
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]" />
             </div>
           </section>
+          </div>
 
+          {/* ── Right column ────────────────────────────── */}
+          <div className="space-y-4">
           {goals.length > 0 && (
             <section>
-              <h4 className="text-[11px] font-bold uppercase tracking-wider text-[#16243A] mb-2">Alignment</h4>
+              <h4 className="text-[11px] font-bold uppercase tracking-wider text-[#166534] mb-2">Alignment</h4>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Aligned to <span className="text-gray-400 font-normal">(parent goal — optional)</span></label>
                 <Select
@@ -405,29 +419,29 @@ export default function GoalsPage() {
 
           {/* ── Measure ───────────────────────────────── */}
           <section className="space-y-3">
-            <h4 className="text-[11px] font-bold uppercase tracking-wider text-[#16243A]">Measure</h4>
+            <h4 className="text-[11px] font-bold uppercase tracking-wider text-[#166534]">Measure</h4>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Metric <span className="text-gray-400 font-normal">(what you track)</span></label>
               <input type="text" value={form.metric} onChange={(e) => setForm({ ...form, metric: e.target.value })}
                 placeholder="e.g. Monthly Revenue, NPS score, Tickets closed"
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]" />
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Target value</label>
                 <NumberInput value={form.targetValue} onChange={(v) => setForm({ ...form, targetValue: v ?? 0 })}
-                  className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                  className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
                 <input type="text" value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })}
                   placeholder="%, $, count…"
-                  className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                  className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1" title="Weight in review score (0–100)">Weight %</label>
                 <NumberInput value={form.weight} onChange={(v) => setForm({ ...form, weight: v ?? 0 })}
-                  className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                  className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]" />
               </div>
             </div>
             <p className="text-[11px] text-gray-400 -mt-1">Weight = how much this goal counts toward overall review score.</p>
@@ -435,27 +449,29 @@ export default function GoalsPage() {
 
           {/* ── Timeline ──────────────────────────────── */}
           <section>
-            <h4 className="text-[11px] font-bold uppercase tracking-wider text-[#16243A] mb-2">Timeline</h4>
+            <h4 className="text-[11px] font-bold uppercase tracking-wider text-[#166534] mb-2">Timeline</h4>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Start date <span className="text-red-500">*</span></label>
-                <input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} required
-                  className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                <input type="date" value={form.startDate} min={todayInput()} onChange={(e) => setForm({ ...form, startDate: e.target.value })} required
+                  className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Due date <span className="text-red-500">*</span></label>
-                <input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} required
-                  className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                <input type="date" value={form.dueDate} min={todayInput()} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} required
+                  className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]" />
               </div>
             </div>
           </section>
+          </div>
+          </div>
 
           {/* ── Key Results ───────────────────────────── */}
           <section>
             <div className="flex items-center justify-between mb-2">
-              <h4 className="text-[11px] font-bold uppercase tracking-wider text-[#16243A]">Key Results <span className="text-gray-400 font-normal normal-case tracking-normal">(optional)</span></h4>
+              <h4 className="text-[11px] font-bold uppercase tracking-wider text-[#166534]">Key Results <span className="text-gray-400 font-normal normal-case tracking-normal">(optional)</span></h4>
               <button type="button" onClick={() => setForm({ ...form, keyResults: [...form.keyResults, { title: "", targetValue: 0, unit: "", weight: 0 }] })}
-                className="text-xs font-semibold text-[#3b82f6] hover:underline inline-flex items-center gap-1">
+                className="text-xs font-semibold text-[#22c55e] hover:underline inline-flex items-center gap-1">
                 <Plus size={12} /> Add KR
               </button>
             </div>
@@ -467,16 +483,16 @@ export default function GoalsPage() {
                   <div key={i} className="grid grid-cols-12 gap-2 items-start">
                     <input type="text" placeholder="KR title" value={kr.title}
                       onChange={(e) => { const next = [...form.keyResults]; next[i] = { ...kr, title: e.target.value }; setForm({ ...form, keyResults: next }); }}
-                      className="col-span-6 border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                      className="col-span-6 border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]" />
                     <input type="number" placeholder="Target" value={kr.targetValue}
                       onChange={(e) => { const next = [...form.keyResults]; next[i] = { ...kr, targetValue: Number(e.target.value) }; setForm({ ...form, keyResults: next }); }}
-                      className="col-span-2 border border-[var(--border)] rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                      className="col-span-2 border border-[var(--border)] rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]" />
                     <input type="text" placeholder="Unit" value={kr.unit}
                       onChange={(e) => { const next = [...form.keyResults]; next[i] = { ...kr, unit: e.target.value }; setForm({ ...form, keyResults: next }); }}
-                      className="col-span-2 border border-[var(--border)] rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                      className="col-span-2 border border-[var(--border)] rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]" />
                     <input type="number" placeholder="Wt%" value={kr.weight}
                       onChange={(e) => { const next = [...form.keyResults]; next[i] = { ...kr, weight: Number(e.target.value) }; setForm({ ...form, keyResults: next }); }}
-                      className="col-span-1 border border-[var(--border)] rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                      className="col-span-1 border border-[var(--border)] rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]" />
                     <button type="button" onClick={() => setForm({ ...form, keyResults: form.keyResults.filter((_, j) => j !== i) })}
                       className="col-span-1 text-gray-400 hover:text-red-600 text-xs py-2">Remove</button>
                   </div>
@@ -486,8 +502,8 @@ export default function GoalsPage() {
           </section>
 
           <div className="flex justify-end gap-2 pt-2 border-t border-[var(--border)]">
-            <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm">Cancel</button>
-            <button type="submit" disabled={createMut.isPending} className="px-4 py-2 bg-[#16243A] text-white rounded-lg text-sm font-medium hover:bg-[#2563eb] disabled:opacity-60">
+            <button type="button" onClick={() => setShowCreate(false)} className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium">Cancel</button>
+            <button type="submit" disabled={createMut.isPending} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-60">
               {createMut.isPending ? "Creating…" : "Create goal"}
             </button>
           </div>
@@ -521,25 +537,25 @@ export default function GoalsPage() {
                   note: checkInNote.trim() || undefined,
                 });
               }}
-              className="p-5 space-y-4"
+              className="p-4 space-y-4"
             >
               {/* Current → New */}
               <div className="rounded-xl ring-1 ring-gray-200 bg-gray-50 p-3 grid grid-cols-3 gap-2 text-center">
                 <div>
                   <p className="text-[10px] uppercase text-gray-500 font-semibold">Previous</p>
-                  <p className="text-base font-bold text-gray-700 tabular-nums">
+                  <p className="text-sm font-bold text-gray-700 tabular-nums">
                     {previous} <span className="text-xs text-gray-400 font-normal">{checkInGoal.unit}</span>
                   </p>
                 </div>
                 <div className="border-x border-gray-200">
                   <p className="text-[10px] uppercase text-gray-500 font-semibold">Target</p>
-                  <p className="text-base font-bold text-gray-700 tabular-nums">
+                  <p className="text-sm font-bold text-gray-700 tabular-nums">
                     {target} <span className="text-xs text-gray-400 font-normal">{checkInGoal.unit}</span>
                   </p>
                 </div>
                 <div>
                   <p className="text-[10px] uppercase text-gray-500 font-semibold">New</p>
-                  <p className="text-base font-bold text-[#16243A] tabular-nums">
+                  <p className="text-sm font-bold text-[#166534] tabular-nums">
                     {value} <span className="text-xs text-gray-400 font-normal">{checkInGoal.unit}</span>
                   </p>
                 </div>
@@ -557,7 +573,7 @@ export default function GoalsPage() {
                   min="0"
                   step="0.01"
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#16243A]/20 focus:border-[#16243A]"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#166534]/20 focus:border-[#166534]"
                 />
                 {delta !== 0 && (
                   <p className={clsx(
@@ -579,7 +595,7 @@ export default function GoalsPage() {
                   <div
                     className={clsx(
                       "h-full transition-all",
-                      newProgress >= 100 ? "bg-emerald-500" : newProgress >= 50 ? "bg-blue-500" : "bg-amber-500",
+                      newProgress >= 100 ? "bg-emerald-500" : newProgress >= 50 ? "bg-green-500" : "bg-amber-500",
                     )}
                     style={{ width: `${newProgress}%` }}
                   />
@@ -596,7 +612,7 @@ export default function GoalsPage() {
                   value={checkInNote}
                   onChange={(e) => setCheckInNote(e.target.value)}
                   placeholder="What changed since last check-in?"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#16243A]/20 focus:border-[#16243A] resize-none"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#166534]/20 focus:border-[#166534] resize-none"
                 />
               </div>
 
@@ -604,14 +620,14 @@ export default function GoalsPage() {
                 <button
                   type="button"
                   onClick={() => setCheckInGoal(null)}
-                  className="px-4 py-2 border border-gray-300 bg-white rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  className="px-3 py-1.5 border border-gray-300 bg-white rounded-md text-xs font-medium text-gray-700 hover:bg-gray-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={checkInValue == null || checkInMut.isPending}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md text-sm font-semibold"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md text-xs font-medium"
                 >
                   {checkInMut.isPending && <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
                   {checkInMut.isPending ? "Saving…" : "Save check-in"}

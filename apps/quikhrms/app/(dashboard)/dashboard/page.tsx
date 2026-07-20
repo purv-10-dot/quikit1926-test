@@ -17,10 +17,7 @@ import {
   HomeStatRow,
   JobOpeningsWidget,
 } from "./_home/dashboard-widgets";
-import {
-  QuickLinksWidget,
-  MobileAppWidget,
-} from "./_home/extra-widgets";
+import { MobileAppWidget } from "./_home/extra-widgets";
 import { DeferredSection } from "@/components/hrms/deferred-section";
 
 export default function HRMSHomePage() {
@@ -29,16 +26,16 @@ export default function HRMSHomePage() {
       {/* Full-bleed hero */}
       <HeroBanner />
 
-      <div className="w-full px-4 lg:px-6 -mt-20 relative z-10 pb-6">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+      <div className="w-full px-4 lg:px-5 relative z-10 pb-4">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
           {/* Left column */}
-          <div className="lg:col-span-8 space-y-5">
+          <div className="lg:col-span-8 space-y-4">
             <RecentlyAssigned />
             <DeferredSection>
               <HolidaysWidget />
             </DeferredSection>
             <DeferredSection>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <BirthdaysWidget />
                 <AnniversariesWidget />
               </div>
@@ -57,8 +54,9 @@ export default function HRMSHomePage() {
             </DeferredSection>
           </div>
 
-          {/* Right column */}
-          <aside className="lg:col-span-4 space-y-5">
+          {/* Right column — sticks below the (sticky, translucent) top bar on
+              scroll so its content never slides under the frosted header. */}
+          <aside className="lg:col-span-4 space-y-4 lg:sticky lg:top-[72px] lg:self-start">
             <ProfileCardWidget />
             <AttendanceWidget />
             <DeferredSection>
@@ -68,9 +66,6 @@ export default function HRMSHomePage() {
               <AnnouncementsWidget />
             </DeferredSection>
             {/* AI Copilot widget hidden for now. */}
-            <DeferredSection>
-              <QuickLinksWidget />
-            </DeferredSection>
             <DeferredSection>
               <MobileAppWidget />
             </DeferredSection>

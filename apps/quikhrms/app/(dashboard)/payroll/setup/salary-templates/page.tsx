@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
-import { FileStack, ChevronLeft, Users, Trash2, Star, Plus } from "lucide-react";
+import { FileStack, Users, Trash2, Star, Plus } from "lucide-react";
 import { useDialog } from "@/components/hrms/dialog";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 
@@ -39,37 +39,33 @@ export default function SalaryTemplatesListPage() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-4">
-      <Link href="/payroll/setup" className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-[#3b82f6]">
-        <ChevronLeft size={14} /> Back to Payroll Setup
-      </Link>
-
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+        <div className="flex items-center justify-between px-4 py-4 border-b border-gray-100">
           <div className="flex items-center gap-2">
-            <FileStack size={18} className="text-[#3b82f6]" />
-            <h1 className="text-lg font-bold text-gray-900">Salary Templates</h1>
+            <FileStack size={18} className="text-[#22c55e]" />
+            <h1 className="text-base font-semibold text-gray-900">Salary Templates</h1>
           </div>
-          <Link href="/payroll/setup/salary-templates/new" className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#16243A] hover:bg-[#1E3354] text-white rounded-md text-xs font-semibold shadow-sm">
-            <Plus size={14} /> Add New Template
+          <Link href="/payroll/setup/salary-templates/new" className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-xs font-medium shadow-sm">
+            <Plus size={13} /> Add New Template
           </Link>
         </div>
 
-        <div className="p-5">
+        <div className="p-4">
           {isLoading ? (
             <SkeletonTable rows={5} cols={4} />
           ) : list.length === 0 ? (
             <div className="py-12 text-center">
-              <p className="text-sm text-gray-600">No salary templates yet.</p>
+              <p className="text-xs text-gray-600">No salary templates yet.</p>
               <p className="text-xs text-gray-500 mt-1">Create a template to quickly apply salary structures to employees.</p>
-              <Link href="/payroll/setup/salary-templates/new" className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] text-white rounded-md text-sm font-semibold shadow-sm">
-                <Plus size={14} /> Create Template
+              <Link href="/payroll/setup/salary-templates/new" className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-xs font-medium shadow-sm">
+                <Plus size={13} /> Create Template
               </Link>
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-xs">
                 <thead>
-                  <tr className="text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">
+                  <tr className="text-table-head font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">
                     <th className="text-left py-2 px-3">Name</th>
                     <th className="text-left py-2 px-3">Code</th>
                     <th className="text-left py-2 px-3">Components</th>
@@ -82,7 +78,7 @@ export default function SalaryTemplatesListPage() {
                   {list.map((r) => (
                     <tr key={r.id} className="border-b border-gray-50 hover:bg-gray-50">
                       <td className="py-3 px-3">
-                        <Link href={`/payroll/setup/salary-templates/${r.id}`} className="text-[#3b82f6] font-medium hover:underline flex items-center gap-1.5">
+                        <Link href={`/payroll/setup/salary-templates/${r.id}`} className="text-[13px] text-[#22c55e] font-semibold hover:underline flex items-center gap-1.5">
                           {r.isDefault && <Star size={12} className="text-amber-500 fill-amber-500" />}
                           {r.name}
                         </Link>
@@ -113,7 +109,7 @@ export default function SalaryTemplatesListPage() {
                           className="text-gray-400 hover:text-red-600 disabled:opacity-30 disabled:cursor-not-allowed"
                           title={r.isActive ? "Deactivate template before deleting" : r._count.employeeSalaries > 0 ? "Template is assigned to employees" : "Delete"}
                         >
-                          <Trash2 size={14} />
+                          <Trash2 size={12} />
                         </button>
                       </td>
                     </tr>

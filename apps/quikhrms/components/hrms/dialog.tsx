@@ -1,10 +1,10 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { AlertTriangle, Info, HelpCircle, X } from "lucide-react";
+import { AlertTriangle, Info, HelpCircle, X, AlertOctagon } from "lucide-react";
 import { clsx } from "clsx";
 
-type Variant = "info" | "warning" | "danger";
+type Variant = "info" | "warning" | "danger" | "error";
 
 interface BaseOpts {
   title: string;
@@ -132,7 +132,7 @@ function DialogHost({ state, onClose }: { state: DialogState; onClose: () => voi
           <X size={16} />
         </button>
 
-        <div className="p-6">
+        <div className="p-4">
           <div className="flex items-start gap-4">
             <div className={clsx("shrink-0 w-11 h-11 rounded-full flex items-center justify-center", v.iconBg)}>
               {v.icon}
@@ -157,13 +157,13 @@ function DialogHost({ state, onClose }: { state: DialogState; onClose: () => voi
                 onKeyDown={(e) => {
                   if (e.key === "Enter") { e.preventDefault(); handleConfirm(); }
                 }}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#3b82f6] focus:border-transparent"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#22c55e] focus:border-transparent"
               />
             </div>
           )}
         </div>
 
-        <div className="px-6 py-3 bg-gray-50 border-t border-gray-100 flex justify-end gap-2">
+        <div className="px-5 py-3 bg-gray-50 border-t border-gray-100 flex justify-end gap-2">
           {state.kind !== "alert" && (
             <button
               onClick={handleCancel}
@@ -190,9 +190,9 @@ function DialogHost({ state, onClose }: { state: DialogState; onClose: () => voi
 
 const variantConfig: Record<Variant, { icon: React.ReactNode; iconBg: string; btn: string }> = {
   info: {
-    icon: <Info size={20} className="text-[#2563eb]" />,
-    iconBg: "bg-[#dbeafe]",
-    btn: "bg-[#3b82f6] hover:bg-[#2563eb]",
+    icon: <Info size={20} className="text-[#16a34a]" />,
+    iconBg: "bg-[#dcfce7]",
+    btn: "bg-[#22c55e] hover:bg-green-700",
   },
   warning: {
     icon: <AlertTriangle size={20} className="text-amber-600" />,
@@ -201,6 +201,13 @@ const variantConfig: Record<Variant, { icon: React.ReactNode; iconBg: string; bt
   },
   danger: {
     icon: <HelpCircle size={20} className="text-red-600" />,
+    iconBg: "bg-red-100",
+    btn: "bg-red-600 hover:bg-red-700",
+  },
+  // "error" is for surfacing a failure that already happened (an alert), vs
+  // "danger" which asks the user to confirm a destructive action.
+  error: {
+    icon: <AlertOctagon size={20} className="text-red-600" />,
     iconBg: "bg-red-100",
     btn: "bg-red-600 hover:bg-red-700",
   },

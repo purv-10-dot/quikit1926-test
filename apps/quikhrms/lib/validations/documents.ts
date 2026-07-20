@@ -65,6 +65,9 @@ export const shareDocumentSchema = z.object({
   sharedWith: z.array(z.string()).min(1, "At least one recipient"),
   accessLevel: z.enum(["View", "Download"]).default("View"),
   expiresAt: z.string().optional().nullable(),
-});
+}).refine(
+  (d) => !d.expiresAt || new Date(d.expiresAt).getTime() > Date.now(),
+  { message: "Link expiry must be in the future", path: ["expiresAt"] },
+);
 
 export type CreateDocumentInput = z.infer<typeof createDocumentSchema>;

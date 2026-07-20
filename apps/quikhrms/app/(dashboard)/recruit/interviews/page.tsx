@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -8,14 +8,14 @@ import { Select } from "@/components/hrms/select";
 import { NumberInput } from "@/components/hrms/number-input";
 import { Tooltip } from "@/components/hrms/tooltip";
 import { clsx } from "clsx";
-import { Plus, Video, Phone, Users, Calendar, Link2, MapPin, Star, Check, X, AlertCircle, ExternalLink, Pencil, CalendarPlus, Repeat, Send, Mail, Bell, Search, Filter as FilterIcon, MoreHorizontal, ChevronLeft, ChevronRight, CheckCircle2, Clock, Hourglass, ArrowUpDown, Download } from "lucide-react";
+import { Plus, Video, Phone, Users, Calendar, Link2, MapPin, Star, Check, X, AlertCircle, ExternalLink, Pencil, CalendarPlus, Repeat, Bell, Search, Filter as FilterIcon, MoreHorizontal, ChevronLeft, ChevronRight, CheckCircle2, Clock, Hourglass, ArrowUpDown, Download, Copy } from "lucide-react";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { useToast } from "@/components/hrms/toast";
 
 const AVATAR_PALETTE: Array<{ bg: string; text: string }> = [
   { bg: "bg-rose-100",    text: "text-rose-700" },
   { bg: "bg-emerald-100", text: "text-emerald-700" },
-  { bg: "bg-blue-100",    text: "text-blue-700" },
+  { bg: "bg-green-100",    text: "text-green-700" },
   { bg: "bg-amber-100",   text: "text-amber-700" },
   { bg: "bg-violet-100",  text: "text-violet-700" },
   { bg: "bg-sky-100",     text: "text-sky-700" },
@@ -40,12 +40,12 @@ function Avatar({ first, last, size = 36 }: { first: string; last: string; size?
 
 const STAGE_PILL: Record<string, string> = {
   Screening:          "bg-emerald-50 text-emerald-700 ring-emerald-200",
-  PhoneScreen:        "bg-blue-50 text-blue-700 ring-blue-200",
+  PhoneScreen:        "bg-green-50 text-green-700 ring-green-200",
   TechnicalInterview: "bg-violet-50 text-violet-700 ring-violet-200",
   ManagerInterview:   "bg-orange-50 text-orange-700 ring-orange-200",
   HRInterview:        "bg-sky-50 text-sky-700 ring-sky-200",
   Assessment:         "bg-purple-50 text-purple-700 ring-purple-200",
-  FinalRound:         "bg-indigo-50 text-indigo-700 ring-indigo-200",
+  FinalRound:         "bg-green-50 text-green-700 ring-green-200",
 };
 const defaultStagePill = "bg-slate-50 text-slate-700 ring-slate-200";
 
@@ -53,7 +53,7 @@ interface AppOption {
   id: string;
   currentStage: string | null;
   candidate: { firstName: string; lastName: string; email: string };
-  requisition: { title: string; requisitionNumber: string; pipelineId: string | null };
+  requisition: { title: string; requisitionNumber: string; pipelineId: string | null; interviewPanel?: string[] | null };
 }
 
 interface EmpOption {
@@ -87,7 +87,7 @@ interface InterviewItem {
 }
 
 const statusColors: Record<string, string> = {
-  IntScheduled: "bg-[#dbeafe] text-[#2563eb]",
+  IntScheduled: "bg-[#dcfce7] text-[#16a34a]",
   IntCompleted: "bg-green-100 text-green-700",
   IntCancelled: "bg-red-100 text-red-700",
   IntNoShow: "bg-gray-100 text-gray-500",
@@ -116,9 +116,13 @@ export default function InterviewsPage() {
   const [feedbackTarget, setFeedbackTarget] = useState<InterviewItem | null>(null);
   const [rescheduleTarget, setRescheduleTarget] = useState<InterviewItem | null>(null);
   const [rescheduleForm, setRescheduleForm] = useState({ scheduledAt: "", meetingLink: "", location: "" });
-  const [feedback, setFeedback] = useState({ overallRating: 4, recommendation: "Hire" as string, strengths: "", concerns: "", overallComments: "" });
+  const [feedback, setFeedback] = useState({ overallRating: 7, recommendation: "Hire" as string, strengths: "", concerns: "", overallComments: "" });
   const [confirmAction, setConfirmAction] = useState<{ interview: InterviewItem; kind: "cancel" | "noshow" } | null>(null);
-  const [mailConfirm, setMailConfirm] = useState<InterviewItem | null>(null);
+  // After scheduling, the API auto-queues invite emails to both candidate and
+  // interviewer and (for Video/Panel) auto-generates a Teams meeting link. We
+  // hold the created interview so we can surface that link back to the recruiter
+  // — mirroring the pipeline page's Schedule flow instead of re-sending mail.
+  const [scheduleResult, setScheduleResult] = useState<InterviewItem | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["interviews"],
@@ -174,6 +178,16 @@ export default function InterviewsPage() {
     enabled: showCreate,
   });
 
+  // #3 — restrict the interviewer dropdown to the panel chosen on the JR.
+  // Falls back to all employees if the role has no panel (or none matched).
+  const panelIds: string[] = Array.isArray(selectedApp?.requisition?.interviewPanel)
+    ? (selectedApp!.requisition.interviewPanel as string[])
+    : [];
+  const allEmps = empData?.data ?? [];
+  const panelEmps = panelIds.length ? allEmps.filter((e) => panelIds.includes(e.id)) : [];
+  const interviewerChoices = panelEmps.length ? panelEmps : allEmps;
+  const panelRestricted = panelEmps.length > 0;
+
   const invalidateRecruit = () => {
     qc.invalidateQueries({ queryKey: ["interviews"] });
     qc.invalidateQueries({ queryKey: ["pipeline-apps"] });
@@ -185,33 +199,12 @@ export default function InterviewsPage() {
     onSuccess: (res) => {
       invalidateRecruit();
       setShowCreate(false);
-      if (res?.data) setMailConfirm(res.data);
-    },
-  });
-
-  const sendInterviewMailMut = useMutation({
-    mutationFn: ({ interviewId }: { interviewId: string }) =>
-      api.post<{
-        sent: boolean;
-        candidate: { sent: boolean; to: string; error: string | null };
-        interviewer: { sent: boolean; to: string | null; error: string | null };
-      }>("/api/v1/hrms/mail/interview", { interviewId }),
-    onSuccess: (res) => {
-      setMailConfirm(null);
-      const r = res?.data;
-      if (!r) return;
-      if (r.candidate.sent && r.interviewer.sent) {
-        toast.success("Invites sent", `Candidate (${r.candidate.to})${r.interviewer.to ? ` & interviewer (${r.interviewer.to})` : ""}`);
-      } else if (r.candidate.sent || r.interviewer.sent) {
-        const okSide = r.candidate.sent ? `candidate (${r.candidate.to})` : `interviewer (${r.interviewer.to})`;
-        const failSide = r.candidate.sent ? "interviewer" : "candidate";
-        const reason = r.candidate.sent ? r.interviewer.error : r.candidate.error;
-        toast.warning(`Sent to ${okSide}`, `${failSide} mail failed${reason ? ` — ${reason}` : ""}`);
-      } else {
-        toast.error("Mail failed", r.candidate.error ?? r.interviewer.error ?? "Both invites rejected by SMTP");
+      // The create endpoint already queues invite emails to both parties and
+      // auto-generates the Teams link — no separate send step. Show the result.
+      if (res?.data) {
+        setScheduleResult(res.data);
       }
     },
-    onError: (e: Error) => toast.error("Mail failed", e.message),
   });
 
   const updateMut = useMutation({
@@ -238,7 +231,7 @@ export default function InterviewsPage() {
     onSuccess: () => {
       invalidateRecruit();
       setFeedbackTarget(null);
-      setFeedback({ overallRating: 4, recommendation: "Hire", strengths: "", concerns: "", overallComments: "" });
+      setFeedback({ overallRating: 7, recommendation: "Hire", strengths: "", concerns: "", overallComments: "" });
     },
   });
 
@@ -248,18 +241,19 @@ export default function InterviewsPage() {
         `/api/v1/hrms/recruit/interviews/${id}/send-feedback-reminder`,
         {},
       ),
-    onSuccess: (res) => {
+    onSuccess: () => {
       invalidateRecruit();
-      const to = res?.data?.to;
-      toast.success("Reminder sent", to ? `Email sent to ${to}` : undefined);
-    },
-    onError: (err: unknown) => {
-      const msg = err instanceof Error ? err.message : "Failed to send reminder";
-      toast.error("Reminder failed", msg);
     },
   });
 
   const interviews = data?.data ?? [];
+
+  // "Feedback pending" quick filter — completed interviews still awaiting a scorecard.
+  const [feedbackPendingOnly, setFeedbackPendingOnly] = useState(false);
+  const feedbackPendingCount = useMemo(
+    () => interviews.filter((i) => !i.scorecard && i.status !== "IntCancelled" && i.status !== "IntNoShow" && new Date(i.scheduledAt).getTime() < Date.now()).length,
+    [interviews],
+  );
 
   // Highest round per application — used to hide the "Schedule next" icon on
   // older completed rounds once a later round already exists.
@@ -291,14 +285,25 @@ export default function InterviewsPage() {
   const [pageSize, setPageSize] = useState(10);
   const [sortDesc, setSortDesc] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
-  const [filters, setFilters] = useState<{ status: string[]; type: string[]; stage: string[] }>({ status: [], type: [], stage: [] });
+  const [filters, setFilters] = useState<{ status: string[]; type: string[]; stage: string[]; interviewer: string[]; requisition: string[] }>({ status: [], type: [], stage: [], interviewer: [], requisition: [] });
   const [openRowMenu, setOpenRowMenu] = useState<string | null>(null);
   const filterRef = useRef<HTMLDivElement>(null);
   const rowMenuRef = useRef<HTMLDivElement>(null);
 
   const STATUS_OPTS = ["IntScheduled", "IntCompleted", "IntCancelled", "IntNoShow", "IntRescheduled"];
   const TYPE_OPTS = ["Phone", "Video", "InPerson", "Panel", "TakeHome", "GroupDiscussion"];
-  const activeFilterCount = filters.status.length + filters.type.length + filters.stage.length;
+  const activeFilterCount = filters.status.length + filters.type.length + filters.stage.length + filters.interviewer.length + filters.requisition.length;
+
+  // Distinct interviewers + positions present in the loaded interviews — options for the new filters.
+  const interviewerOpts = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const i of interviews) m.set(i.interviewer.id, `${i.interviewer.firstName} ${i.interviewer.lastName}`.trim());
+    return Array.from(m, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [interviews]);
+  const requisitionOpts = useMemo(
+    () => Array.from(new Set(interviews.map((i) => i.application.requisition.title))).sort(),
+    [interviews],
+  );
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
@@ -340,13 +345,16 @@ export default function InterviewsPage() {
         const stageName = stageForInterview[i.round - 1] ?? `Round ${i.round}`;
         if (!filters.stage.includes(stageName)) return false;
       }
+      if (filters.interviewer.length && !filters.interviewer.includes(i.interviewer.id)) return false;
+      if (filters.requisition.length && !filters.requisition.includes(i.application.requisition.title)) return false;
+      if (feedbackPendingOnly && !(!i.scorecard && i.status !== "IntCancelled" && i.status !== "IntNoShow" && new Date(i.scheduledAt).getTime() < Date.now())) return false;
       return true;
     }).sort((a, b) => {
       const da = new Date(a.scheduledAt).getTime();
       const db = new Date(b.scheduledAt).getTime();
       return sortDesc ? db - da : da - db;
     });
-  }, [interviews, searchQuery, monthFilter, sortDesc, filters, stageForInterview]);
+  }, [interviews, searchQuery, monthFilter, sortDesc, filters, stageForInterview, feedbackPendingOnly]);
 
   const stats = useMemo(() => {
     const total = filtered.length;
@@ -416,7 +424,7 @@ export default function InterviewsPage() {
         i.status.replace("Int", ""),
         i.meetingLink ?? "",
         i.location ?? "",
-        i.scorecard ? `${i.scorecard.overallRating}/5` : "",
+        i.scorecard ? `${i.scorecard.overallRating}/10` : "",
         recLabel,
       ];
     });
@@ -436,23 +444,23 @@ export default function InterviewsPage() {
   };
 
   return (
-    <div className="w-full px-6 py-6">
+    <div className="w-full px-5 py-4">
       <div className="flex items-start justify-between mb-5 gap-4 flex-wrap">
         <div>
-          <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900 leading-tight">Interviews</h1>
-          <p className="text-sm text-gray-500 mt-1">Track and manage all candidate interviews in one place.</p>
+          <h1 className="text-page-title text-gray-900 leading-tight">Interviews</h1>
+          <p className="text-xs text-gray-500 mt-1">Track and manage all candidate interviews in one place.</p>
         </div>
         <button onClick={() => { setForm(emptyForm); setShowCreate(true); }} className="btn btn-primary">
-          <Plus size={14} /> Schedule interview
+          <Plus size={13} /> Schedule interview
         </button>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex items-center gap-3">
-          <div className="w-11 h-11 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center"><Calendar size={20} /></div>
+          <div className="w-11 h-11 rounded-lg bg-green-50 text-green-600 flex items-center justify-center"><Calendar size={20} /></div>
           <div>
             <p className="text-[11px] text-slate-500 font-medium">Total Interviews</p>
-            <p className="text-2xl font-bold text-slate-900 leading-tight">{stats.total}</p>
+            <p className="text-xl font-bold text-slate-900 leading-tight">{stats.total}</p>
             <p className="text-[11px] text-slate-400">{monthFilter === "all" ? "All time" : monthOptions.find((m) => m.value === monthFilter)?.label}</p>
           </div>
         </div>
@@ -460,7 +468,7 @@ export default function InterviewsPage() {
           <div className="w-11 h-11 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center"><CheckCircle2 size={20} /></div>
           <div>
             <p className="text-[11px] text-slate-500 font-medium">Completed</p>
-            <p className="text-2xl font-bold text-slate-900 leading-tight">{stats.completed}</p>
+            <p className="text-xl font-bold text-slate-900 leading-tight">{stats.completed}</p>
             <p className="text-[11px] text-emerald-600 font-semibold">{stats.completedPct}</p>
           </div>
         </div>
@@ -468,7 +476,7 @@ export default function InterviewsPage() {
           <div className="w-11 h-11 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center"><Clock size={20} /></div>
           <div>
             <p className="text-[11px] text-slate-500 font-medium">Scheduled</p>
-            <p className="text-2xl font-bold text-slate-900 leading-tight">{stats.scheduled}</p>
+            <p className="text-xl font-bold text-slate-900 leading-tight">{stats.scheduled}</p>
             <p className="text-[11px] text-sky-600 font-semibold">{stats.scheduledPct}</p>
           </div>
         </div>
@@ -476,7 +484,7 @@ export default function InterviewsPage() {
           <div className="w-11 h-11 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center"><Hourglass size={20} /></div>
           <div>
             <p className="text-[11px] text-slate-500 font-medium">Pending</p>
-            <p className="text-2xl font-bold text-slate-900 leading-tight">{stats.pending}</p>
+            <p className="text-xl font-bold text-slate-900 leading-tight">{stats.pending}</p>
             <p className="text-[11px] text-amber-600 font-semibold">{stats.pendingPct}</p>
           </div>
         </div>
@@ -490,26 +498,37 @@ export default function InterviewsPage() {
               value={searchQuery}
               onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
               placeholder="Search by candidate, position..."
-              className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#16243A]/30 focus:border-[#16243A]"
+              className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-xs bg-slate-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-green-500/30 focus:border-green-500"
             />
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => { setFeedbackPendingOnly((v) => !v); setPage(1); }}
+              className={clsx("inline-flex items-center gap-1.5 px-3 h-9 rounded-lg border text-xs font-semibold transition",
+                feedbackPendingOnly ? "border-amber-300 bg-amber-50 text-amber-700" : "border-slate-200 text-slate-600 hover:bg-slate-50")}
+              title="Show only completed interviews awaiting feedback"
+            >
+              <Bell size={13} /> Feedback pending
+              {feedbackPendingCount > 0 && (
+                <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold">{feedbackPendingCount}</span>
+              )}
+            </button>
             <div ref={filterRef} className="relative">
               <Tooltip content={activeFilterCount > 0 ? `Filters (${activeFilterCount} active)` : "Filters"} disabled={showFilters}>
                 <button
                   onClick={() => setShowFilters((v) => !v)}
                   className={clsx("relative inline-flex items-center justify-center w-9 h-9 rounded-lg border transition",
-                    showFilters ? "border-[#3b82f6] bg-blue-50 text-[#3b82f6]" : "border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-[#3b82f6]")}
+                    showFilters ? "border-[#22c55e] bg-green-50 text-[#22c55e]" : "border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-[#22c55e]")}
                 >
-                  <FilterIcon size={14} />
+                  <FilterIcon size={12} />
                   {activeFilterCount > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-[#16243A] text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">{activeFilterCount}</span>
+                    <span className="absolute -top-1 -right-1 bg-green-600 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">{activeFilterCount}</span>
                   )}
                 </button>
               </Tooltip>
               {showFilters && (() => {
                 const STATUS_META: Record<string, { label: string; selBg: string; selText: string; selRing: string }> = {
-                  IntScheduled:   { label: "Scheduled",   selBg: "bg-blue-500",    selText: "text-white", selRing: "ring-blue-500" },
+                  IntScheduled:   { label: "Scheduled",   selBg: "bg-green-500",    selText: "text-white", selRing: "ring-green-500" },
                   IntCompleted:   { label: "Completed",   selBg: "bg-emerald-500", selText: "text-white", selRing: "ring-emerald-500" },
                   IntCancelled:   { label: "Cancelled",   selBg: "bg-red-500",     selText: "text-white", selRing: "ring-red-500" },
                   IntNoShow:      { label: "No Show",     selBg: "bg-slate-500",   selText: "text-white", selRing: "ring-slate-500" },
@@ -524,14 +543,14 @@ export default function InterviewsPage() {
                   <div className="absolute right-0 top-full mt-2 w-[360px] bg-white border border-slate-200 rounded-xl shadow-2xl z-30 overflow-hidden">
                     <div className="px-4 py-3 bg-gradient-to-r from-slate-50 to-white border-b border-slate-100 flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <FilterIcon size={14} className="text-[#3b82f6]" />
-                        <h4 className="text-sm font-bold text-slate-900">Filter Interviews</h4>
+                        <FilterIcon size={14} className="text-[#22c55e]" />
+                        <h4 className="text-[13px] font-semibold text-slate-900">Filter Interviews</h4>
                         {activeFilterCount > 0 && (
-                          <span className="bg-[#16243A] text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{activeFilterCount}</span>
+                          <span className="bg-green-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{activeFilterCount}</span>
                         )}
                       </div>
                       <button onClick={() => setShowFilters(false)} className="text-slate-400 hover:text-slate-700 p-0.5 rounded">
-                        <X size={14} />
+                        <X size={12} />
                       </button>
                     </div>
 
@@ -540,7 +559,7 @@ export default function InterviewsPage() {
                         <div className="flex items-center justify-between mb-2">
                           <p className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Status</p>
                           {filters.status.length > 0 && (
-                            <button onClick={() => { setFilters({ ...filters, status: [] }); setPage(1); }} className="text-[10px] text-slate-400 hover:text-[#3b82f6]">Reset</button>
+                            <button onClick={() => { setFilters({ ...filters, status: [] }); setPage(1); }} className="text-[10px] text-slate-400 hover:text-[#22c55e]">Reset</button>
                           )}
                         </div>
                         <div className="flex flex-wrap gap-1.5">
@@ -566,7 +585,7 @@ export default function InterviewsPage() {
                         <div className="flex items-center justify-between mb-2">
                           <p className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Type</p>
                           {filters.type.length > 0 && (
-                            <button onClick={() => { setFilters({ ...filters, type: [] }); setPage(1); }} className="text-[10px] text-slate-400 hover:text-[#3b82f6]">Reset</button>
+                            <button onClick={() => { setFilters({ ...filters, type: [] }); setPage(1); }} className="text-[10px] text-slate-400 hover:text-[#22c55e]">Reset</button>
                           )}
                         </div>
                         <div className="flex flex-wrap gap-1.5">
@@ -577,7 +596,7 @@ export default function InterviewsPage() {
                                 key={t}
                                 onClick={() => { setFilters({ ...filters, type: toggleArr(filters.type, t) }); setPage(1); }}
                                 className={clsx("inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold ring-1 transition",
-                                  on ? "bg-[#16243A] text-white ring-[#3b82f6] shadow-sm" : "bg-white text-slate-600 ring-slate-200 hover:ring-slate-300 hover:bg-slate-50")}
+                                  on ? "bg-green-600 text-white ring-[#22c55e] shadow-sm" : "bg-white text-slate-600 ring-slate-200 hover:ring-slate-300 hover:bg-slate-50")}
                               >
                                 {TYPE_ICONS[t]} {t}
                               </button>
@@ -591,7 +610,7 @@ export default function InterviewsPage() {
                           <div className="flex items-center justify-between mb-2">
                             <p className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Pipeline Stage</p>
                             {filters.stage.length > 0 && (
-                              <button onClick={() => { setFilters({ ...filters, stage: [] }); setPage(1); }} className="text-[10px] text-slate-400 hover:text-[#3b82f6]">Reset</button>
+                              <button onClick={() => { setFilters({ ...filters, stage: [] }); setPage(1); }} className="text-[10px] text-slate-400 hover:text-[#22c55e]">Reset</button>
                             )}
                           </div>
                           <div className="flex flex-wrap gap-1.5">
@@ -612,6 +631,54 @@ export default function InterviewsPage() {
                           </div>
                         </div>
                       )}
+
+                      {interviewerOpts.length > 0 && (
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Interviewer (HR)</p>
+                            {filters.interviewer.length > 0 && (
+                              <button onClick={() => { setFilters({ ...filters, interviewer: [] }); setPage(1); }} className="text-[10px] text-slate-400 hover:text-[#22c55e]">Reset</button>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {interviewerOpts.map((o) => {
+                              const on = filters.interviewer.includes(o.id);
+                              return (
+                                <button key={o.id}
+                                  onClick={() => { setFilters({ ...filters, interviewer: toggleArr(filters.interviewer, o.id) }); setPage(1); }}
+                                  className={clsx("px-2.5 py-1 rounded-full text-[11px] font-semibold ring-1 transition",
+                                    on ? "bg-green-600 text-white ring-[#22c55e] shadow-sm" : "bg-white text-slate-600 ring-slate-200 hover:ring-slate-300 hover:bg-slate-50")}>
+                                  {on && <Check size={10} className="inline mr-0.5 -mt-0.5" />}{o.name}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {requisitionOpts.length > 0 && (
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Position</p>
+                            {filters.requisition.length > 0 && (
+                              <button onClick={() => { setFilters({ ...filters, requisition: [] }); setPage(1); }} className="text-[10px] text-slate-400 hover:text-[#22c55e]">Reset</button>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {requisitionOpts.map((t) => {
+                              const on = filters.requisition.includes(t);
+                              return (
+                                <button key={t}
+                                  onClick={() => { setFilters({ ...filters, requisition: toggleArr(filters.requisition, t) }); setPage(1); }}
+                                  className={clsx("px-2.5 py-1 rounded-full text-[11px] font-semibold ring-1 transition",
+                                    on ? "bg-green-600 text-white ring-[#22c55e] shadow-sm" : "bg-white text-slate-600 ring-slate-200 hover:ring-slate-300 hover:bg-slate-50")}>
+                                  {on && <Check size={10} className="inline mr-0.5 -mt-0.5" />}{t}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <div className="px-4 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
@@ -620,7 +687,7 @@ export default function InterviewsPage() {
                       </p>
                       <div className="flex items-center gap-2">
                         <button
-                          onClick={() => { setFilters({ status: [], type: [], stage: [] }); setPage(1); }}
+                          onClick={() => { setFilters({ status: [], type: [], stage: [], interviewer: [], requisition: [] }); setPage(1); }}
                           disabled={activeFilterCount === 0}
                           className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-white rounded-md disabled:opacity-40 disabled:cursor-not-allowed"
                         >
@@ -628,7 +695,7 @@ export default function InterviewsPage() {
                         </button>
                         <button
                           onClick={() => setShowFilters(false)}
-                          className="px-3 py-1.5 text-xs font-semibold bg-[#16243A] hover:bg-[#1E3354] text-white rounded-md shadow-sm"
+                          className="px-3 py-1.5 text-xs font-semibold bg-green-600 hover:bg-green-700 text-white rounded-md shadow-sm"
                         >
                           Done
                         </button>
@@ -642,20 +709,20 @@ export default function InterviewsPage() {
               <button
                 onClick={exportToExcel}
                 disabled={filtered.length === 0}
-                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 text-sm font-semibold hover:bg-emerald-100 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-medium hover:bg-emerald-100 transition disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <Download size={14} /> Export
+                <Download size={13} /> Export
               </button>
             </Tooltip>
-            <div className="inline-flex items-center gap-2 px-3 h-9 rounded-lg border border-slate-200">
+            <div className="inline-flex items-center gap-1.5">
               <Calendar size={14} className="text-slate-400" />
-              <select
+              <Select
                 value={monthFilter}
-                onChange={(e) => { setMonthFilter(e.target.value); setPage(1); }}
-                className="text-sm bg-transparent focus:outline-none text-slate-700 font-medium"
-              >
-                {monthOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
+                onChange={(v) => { setMonthFilter(v); setPage(1); }}
+                options={monthOptions}
+                size="sm"
+                className="min-w-[150px]"
+              />
             </div>
           </div>
         </div>
@@ -663,25 +730,25 @@ export default function InterviewsPage() {
         {isLoading ? <div className="p-4"><SkeletonTable rows={6} cols={5} /></div> : filtered.length === 0 ? (
           <div className="p-12 text-center text-slate-500">
             <Calendar size={36} className="mx-auto mb-2 text-slate-300" />
-            <p className="text-sm font-medium">No interviews found</p>
+            <p className="text-[13px] font-semibold">No interviews found</p>
             <p className="text-xs text-slate-400 mt-0.5">{searchQuery || monthFilter !== "all" ? "Try clearing filters" : "Schedule your first interview"}</p>
           </div>
         ) : (
           <table className="w-full">
             <thead>
               <tr className="bg-slate-50/60 border-b border-slate-200">
-                <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Candidate</th>
-                <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Position</th>
-                <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Interviewer</th>
-                <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-                  <button onClick={() => setSortDesc((v) => !v)} className="inline-flex items-center gap-1 hover:text-[#3b82f6]">
+                <th className="text-left px-4 py-2.5 text-table-head font-semibold text-slate-500 uppercase tracking-wide">Candidate</th>
+                <th className="text-left px-4 py-2.5 text-table-head font-semibold text-slate-500 uppercase tracking-wide">Position</th>
+                <th className="text-left px-4 py-2.5 text-table-head font-semibold text-slate-500 uppercase tracking-wide">Interviewer</th>
+                <th className="text-left px-4 py-2.5 text-table-head font-semibold text-slate-500 uppercase tracking-wide">
+                  <button onClick={() => setSortDesc((v) => !v)} className="inline-flex items-center gap-1 hover:text-[#22c55e]">
                     Schedule <ArrowUpDown size={11} />
                   </button>
                 </th>
-                <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Stage</th>
-                <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Status</th>
-                <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Rating</th>
-                <th className="text-right px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Actions</th>
+                <th className="text-left px-4 py-2.5 text-table-head font-semibold text-slate-500 uppercase tracking-wide">Stage</th>
+                <th className="text-left px-4 py-2.5 text-table-head font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+                <th className="text-left px-4 py-2.5 text-table-head font-semibold text-slate-500 uppercase tracking-wide">Rating</th>
+                <th className="text-right px-4 py-2.5 text-table-head font-semibold text-slate-500 uppercase tracking-wide">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -712,7 +779,7 @@ export default function InterviewsPage() {
                   )}
                   style={{ ["--i" as never]: Math.min(idx, 10) }}
                 >
-                  <td className={clsx("px-4 py-3", isChild && "pl-10")}>
+                  <td className={clsx("px-4 py-2.5", isChild && "pl-10")}>
                     <div className="flex items-center gap-2.5">
                       {!isChild && canExpand ? (
                         <button
@@ -720,7 +787,7 @@ export default function InterviewsPage() {
                           aria-label={isOpen ? "Collapse rounds" : `Show all ${rounds} rounds`}
                           className="w-5 h-5 inline-flex items-center justify-center rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
                         >
-                          <ChevronRight size={14} className={clsx("transition-transform", isOpen && "rotate-90")} />
+                          <ChevronRight size={12} className={clsx("transition-transform", isOpen && "rotate-90")} />
                         </button>
                       ) : !isChild ? (
                         <span className="w-5 h-5 inline-block" />
@@ -733,7 +800,7 @@ export default function InterviewsPage() {
                         <Avatar first={i.application.candidate.firstName} last={i.application.candidate.lastName} size={36} />
                       )}
                       <div className="min-w-0">
-                        <p className={clsx("font-semibold text-slate-900 truncate", isChild ? "text-[12px]" : "text-sm")}>
+                        <p className={clsx("font-semibold text-slate-900 truncate", isChild ? "text-[12px]" : "text-[13px]")}>
                           {i.application.candidate.firstName} {i.application.candidate.lastName}
                           {!isChild && canExpand && (
                             <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 ring-1 ring-slate-200">{rounds} rounds</span>
@@ -743,60 +810,71 @@ export default function InterviewsPage() {
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-sm text-slate-700">{i.application.requisition.title}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-2.5 text-xs text-slate-700">{i.application.requisition.title}</td>
+                  <td className="px-4 py-2.5">
                     <div className="flex items-center gap-2">
                       <Avatar first={i.interviewer.firstName} last={i.interviewer.lastName} size={28} />
-                      <span className="text-sm text-slate-700">{i.interviewer.firstName} {i.interviewer.lastName}</span>
+                      <span className="text-xs text-slate-700">{i.interviewer.firstName} {i.interviewer.lastName}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3">
-                    <div className="text-sm text-slate-700 flex items-center gap-1.5">
+                  <td className="px-4 py-2.5">
+                    <div className="text-xs text-slate-700 flex items-center gap-1.5">
                       <Calendar size={12} className="text-slate-400" />
                       {dt.toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className="text-[11px] text-slate-400 inline-flex items-center gap-1"><Clock size={10} /> {i.duration}min</span>
                       {i.meetingLink && (
-                        <a href={i.meetingLink} target="_blank" rel="noopener noreferrer" className="text-[11px] text-[#3b82f6] hover:underline inline-flex items-center gap-0.5">
+                        <a href={i.meetingLink} target="_blank" rel="noopener noreferrer" className="text-[11px] text-[#22c55e] hover:underline inline-flex items-center gap-0.5">
                           <ExternalLink size={10} /> Join link
                         </a>
                       )}
                     </div>
                     {i.location && <p className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1"><MapPin size={10} /> {i.location}</p>}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-2.5">
                     <span className={clsx("inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold ring-1", stageCls)}>
                       <span className="w-4 h-4 rounded-full bg-white/70 text-[9px] font-bold inline-flex items-center justify-center">{i.round}</span>
                       {stageName.replace(/([A-Z])/g, " $1").trim()}
                     </span>
                   </td>
-                  <td className="px-4 py-3">
-                    <span className={clsx("px-2.5 py-0.5 rounded-full text-[11px] font-semibold ring-1",
+                  <td className="px-4 py-2.5">
+                    <span className={clsx("px-2.5 py-0.5 rounded-full text-[11px] font-medium ring-1",
                       i.status === "IntCompleted" ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
-                      : i.status === "IntScheduled" ? "bg-blue-50 text-blue-700 ring-blue-200"
+                      : i.status === "IntScheduled" ? "bg-green-50 text-green-700 ring-green-200"
                       : i.status === "IntCancelled" ? "bg-red-50 text-red-700 ring-red-200"
                       : i.status === "IntNoShow" ? "bg-slate-100 text-slate-600 ring-slate-200"
                       : "bg-amber-50 text-amber-700 ring-amber-200",
                     )}>{statusLabel}</span>
                   </td>
-                  <td className="px-4 py-3 text-sm">
+                  <td className="px-4 py-2.5 text-xs">
                     {i.scorecard ? (() => {
                       const r = RECOMMENDATION_LABEL[i.scorecard.recommendation] ?? { label: i.scorecard.recommendation, color: "text-slate-600" };
                       return (
                         <div>
-                          <p className="font-semibold text-slate-900">{i.scorecard.overallRating}/5</p>
+                          <p className="font-semibold text-slate-900">{i.scorecard.overallRating}/10</p>
                           <p className={clsx("text-[11px] font-medium", r.color)}>{r.label}</p>
                         </div>
                       );
                     })() : <span className="text-[11px] text-slate-400">Pending</span>}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-2.5">
                     <div className="inline-flex items-center gap-1.5 justify-end">
                       {i.status === "IntScheduled" && !i.scorecard && (completedRoundsByApp.get(i.applicationId)?.has(i.round) ? (
                         <span className="text-[11px] text-slate-400 italic px-2">Superseded</span>
                       ) : (
                         <>
+                          {new Date(i.scheduledAt).getTime() < Date.now() && (
+                            <Tooltip content={i.feedbackRequestSentAt ? `Send feedback reminder (sent ${i.reminderCount ?? 0}x)` : "Send feedback request"}>
+                              <button
+                                onClick={() => toast.promise(remindMut.mutateAsync({ id: i.id }), { loading: "Sending reminder…", success: "Reminder sent", error: "Couldn't send reminder" })}
+                                disabled={remindMut.isPending && remindMut.variables?.id === i.id}
+                                className="w-8 h-8 inline-flex items-center justify-center rounded-md bg-white text-amber-600 ring-1 ring-amber-200 hover:bg-amber-50 transition disabled:opacity-50"
+                              >
+                                <Bell size={12} />
+                              </button>
+                            </Tooltip>
+                          )}
                           <Tooltip content="Reschedule interview">
                             <button
                               onClick={() => {
@@ -807,9 +885,9 @@ export default function InterviewsPage() {
                                 });
                                 setRescheduleTarget(i);
                               }}
-                              className="w-8 h-8 inline-flex items-center justify-center rounded-md bg-white text-slate-500 ring-1 ring-slate-200 hover:bg-slate-50 hover:text-[#3b82f6] transition"
+                              className="w-8 h-8 inline-flex items-center justify-center rounded-md bg-white text-slate-500 ring-1 ring-slate-200 hover:bg-slate-50 hover:text-[#22c55e] transition"
                             >
-                              <Repeat size={14} />
+                              <Repeat size={12} />
                             </button>
                           </Tooltip>
                           <Tooltip content="Mark as no-show">
@@ -817,7 +895,7 @@ export default function InterviewsPage() {
                               onClick={() => setConfirmAction({ interview: i, kind: "noshow" })}
                               className="w-8 h-8 inline-flex items-center justify-center rounded-md bg-white text-slate-500 ring-1 ring-slate-200 hover:bg-amber-50 hover:text-amber-600 hover:ring-amber-200 transition"
                             >
-                              <AlertCircle size={14} />
+                              <AlertCircle size={12} />
                             </button>
                           </Tooltip>
                           <Tooltip content="Cancel interview">
@@ -825,7 +903,7 @@ export default function InterviewsPage() {
                               onClick={() => setConfirmAction({ interview: i, kind: "cancel" })}
                               className="w-8 h-8 inline-flex items-center justify-center rounded-md bg-white text-red-500 ring-1 ring-red-200 hover:bg-red-50 transition"
                             >
-                              <X size={14} />
+                              <X size={12} />
                             </button>
                           </Tooltip>
                         </>
@@ -840,11 +918,11 @@ export default function InterviewsPage() {
                             {!i.scorecard && (
                               <Tooltip content={i.feedbackRequestSentAt ? `Send feedback reminder (sent ${i.reminderCount ?? 0}x)` : "Send feedback request"}>
                                 <button
-                                  onClick={() => remindMut.mutate({ id: i.id })}
+                                  onClick={() => toast.promise(remindMut.mutateAsync({ id: i.id }), { loading: "Sending reminder…", success: "Reminder sent", error: "Couldn't send reminder" })}
                                   disabled={remindMut.isPending && remindMut.variables?.id === i.id}
                                   className="w-8 h-8 inline-flex items-center justify-center rounded-md bg-white text-amber-600 ring-1 ring-amber-200 hover:bg-amber-50 transition disabled:opacity-50"
                                 >
-                                  <Bell size={14} />
+                                  <Bell size={12} />
                                 </button>
                               </Tooltip>
                             )}
@@ -866,9 +944,9 @@ export default function InterviewsPage() {
                                     });
                                     setShowCreate(true);
                                   }}
-                                  className="w-8 h-8 inline-flex items-center justify-center rounded-md bg-white text-[#3b82f6] ring-1 ring-[#bfdbfe] hover:bg-blue-50 transition"
+                                  className="w-8 h-8 inline-flex items-center justify-center rounded-md bg-white text-[#22c55e] ring-1 ring-[#bbf7d0] hover:bg-green-50 transition"
                                 >
-                                  <CalendarPlus size={14} />
+                                  <CalendarPlus size={12} />
                                 </button>
                               </Tooltip>
                             )}
@@ -887,9 +965,9 @@ export default function InterviewsPage() {
                                     });
                                     setRescheduleTarget(i);
                                   }}
-                                  className="w-8 h-8 inline-flex items-center justify-center rounded-md bg-white text-slate-500 ring-1 ring-slate-200 hover:bg-slate-50 hover:text-[#3b82f6] transition"
+                                  className="w-8 h-8 inline-flex items-center justify-center rounded-md bg-white text-slate-500 ring-1 ring-slate-200 hover:bg-slate-50 hover:text-[#22c55e] transition"
                                 >
-                                  <Repeat size={14} />
+                                  <Repeat size={12} />
                                 </button>
                               </Tooltip>
                             )}
@@ -907,9 +985,9 @@ export default function InterviewsPage() {
                               });
                               setRescheduleTarget(i);
                             }}
-                            className="w-8 h-8 inline-flex items-center justify-center rounded-md bg-white text-[#3b82f6] ring-1 ring-[#bfdbfe] hover:bg-blue-50 transition"
+                            className="w-8 h-8 inline-flex items-center justify-center rounded-md bg-white text-[#22c55e] ring-1 ring-[#bbf7d0] hover:bg-green-50 transition"
                           >
-                            <Repeat size={14} />
+                            <Repeat size={12} />
                           </button>
                         </Tooltip>
                       )}
@@ -934,40 +1012,39 @@ export default function InterviewsPage() {
                 <button
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={safePage === 1}
-                  className="w-8 h-8 inline-flex items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-[#3b82f6] disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="w-8 h-8 inline-flex items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-[#22c55e] disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <ChevronLeft size={14} />
+                  <ChevronLeft size={12} />
                 </button>
                 {Array.from({ length: totalPages }, (_, idx) => idx + 1).slice(Math.max(0, safePage - 2), Math.max(0, safePage - 2) + 3).map((p) => (
                   <button
                     key={p}
                     onClick={() => setPage(p)}
                     className={clsx("w-8 h-8 inline-flex items-center justify-center rounded-md text-xs font-semibold",
-                      p === safePage ? "bg-[#16243A] text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50")}
+                      p === safePage ? "bg-green-600 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50")}
                   >{p}</button>
                 ))}
                 <button
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                   disabled={safePage === totalPages}
-                  className="w-8 h-8 inline-flex items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-[#3b82f6] disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="w-8 h-8 inline-flex items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-[#22c55e] disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <ChevronRight size={14} />
+                  <ChevronRight size={12} />
                 </button>
               </div>
-              <select
-                value={pageSize}
-                onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
-                className="px-2 py-1.5 text-xs border border-slate-200 rounded-md bg-white text-slate-700 focus:outline-none"
-              >
-                {[10, 25, 50, 100].map((n) => <option key={n} value={n}>{n} / page</option>)}
-              </select>
+              <Select
+                value={String(pageSize)}
+                onChange={(v) => { setPageSize(Number(v)); setPage(1); }}
+                size="sm"
+                options={[10, 25, 50, 100].map((n) => ({ value: String(n), label: `${n} / page` }))}
+              />
             </div>
           </div>
         )}
       </div>
 
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Schedule Interview" size="xl">
-        <form onSubmit={(e) => { e.preventDefault(); createMut.mutate(form); }} className="space-y-4">
+        <form onSubmit={(e) => { e.preventDefault(); toast.promise(createMut.mutateAsync(form), { loading: "Sending interview invite…", success: "Invite sent", error: "Couldn't send invite" }); }} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Candidate <span className="text-red-500">*</span></label>
             <Select
@@ -1004,13 +1081,15 @@ export default function InterviewsPage() {
               onChange={(v) => setForm({ ...form, interviewerId: v })}
               placeholder="Select interviewer..."
               searchable
-              options={(empData?.data ?? []).map((e) => ({
+              options={interviewerChoices.map((e) => ({
                 value: e.id,
                 label: `${e.firstName} ${e.lastName}`,
                 description: `${e.employeeCode}${e.jobTitle ? ` · ${e.jobTitle}` : ""}`,
               }))}
             />
-            <p className="mt-1 text-[11px] text-gray-400">Any employee can be picked as interviewer.</p>
+            <p className="mt-1 text-[11px] text-gray-400">
+              {panelRestricted ? "Showing this role's interview panel." : "Any employee can be picked as interviewer."}
+            </p>
           </div>
 
           <div className="grid grid-cols-3 gap-4">
@@ -1047,16 +1126,19 @@ export default function InterviewsPage() {
                 value={form.type}
                 onChange={(v) => setForm({ ...form, type: v })}
                 options={[
-                  { value: "Phone", label: "Phone" },
-                  { value: "Video", label: "Video" },
-                  { value: "InPerson", label: "In-Person" },
+                  { value: "Video",           label: "Video Call",       description: "Zoom / Meet / Teams" },
+                  { value: "Phone",           label: "Phone Screen",     description: "Voice only" },
+                  { value: "InPerson",        label: "In-Person",        description: "On-site" },
+                  { value: "Panel",           label: "Panel",            description: "Multiple interviewers" },
+                  { value: "TakeHome",        label: "Take-Home Task",   description: "Async assignment" },
+                  { value: "GroupDiscussion", label: "Group Discussion", description: "Multi-candidate" },
                 ]}
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Duration (min)</label>
               <NumberInput allowDecimal={false} min={15} value={form.duration} onChange={(v) => setForm({ ...form, duration: v || 60 })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500" />
             </div>
           </div>
 
@@ -1068,42 +1150,45 @@ export default function InterviewsPage() {
               min={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
               value={form.scheduledAt}
               onChange={(e) => {
-                const v = e.target.value;
-                if (v && new Date(v).getTime() < Date.now() - 60000) return;
+                let v = e.target.value;
+                const minLocal = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+                if (v && v < minLocal) v = minLocal;
                 setForm({ ...form, scheduledAt: v });
               }}
-              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]"
+              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
             />
             <p className="mt-1 text-[11px] text-gray-400">Past dates are not allowed.</p>
           </div>
 
-          {(form.type === "Video" || form.type === "Phone") && (() => {
+          {(form.type === "Video" || form.type === "Panel") && (() => {
             const invalid = !!form.meetingLink && !/^https?:\/\//.test(form.meetingLink);
             return (
               <div>
                 <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1">
-                  <Link2 size={12} className="text-gray-400" /> Meeting Link <span className="text-red-500">*</span>
+                  <Link2 size={12} className="text-gray-400" /> Meeting Link
                 </label>
-                <input type="url" required placeholder="https://meet.google.com/..."
+                <input type="url" placeholder="Leave blank to auto-generate a Microsoft Teams link"
                   value={form.meetingLink}
                   onChange={(e) => setForm({ ...form, meetingLink: e.target.value })}
                   className={clsx(
                     "w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2",
-                    invalid ? "border-red-400 focus:ring-red-400" : "border-gray-300 focus:ring-[#16243A]",
+                    invalid ? "border-red-400 focus:ring-red-400" : "border-gray-300 focus:ring-green-500",
                   )} />
-                {invalid && <p className="mt-1 text-[11px] text-red-600">Must start with http:// or https://</p>}
+                {invalid
+                  ? <p className="mt-1 text-[11px] text-red-600">Must start with http:// or https://</p>
+                  : <p className="mt-1 text-[11px] text-gray-400">Leave blank and we&apos;ll create a Teams meeting automatically. Paste your own (Meet/Zoom/Teams) to override.</p>}
               </div>
             );
           })()}
 
-          {form.type === "InPerson" && (
+          {(form.type === "InPerson" || form.type === "Panel" || form.type === "GroupDiscussion") && (
             <div>
               <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1">
-                <MapPin size={12} className="text-gray-400" /> Location
+                <MapPin size={12} className="text-gray-400" /> Location {form.type === "InPerson" && <span className="text-red-500">*</span>}
               </label>
               <input type="text" placeholder="e.g. Meeting Room 3, HQ" value={form.location}
                 onChange={(e) => setForm({ ...form, location: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500" />
             </div>
           )}
 
@@ -1111,17 +1196,20 @@ export default function InterviewsPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Notes (optional)</label>
             <textarea rows={2} placeholder="Topics to cover, focus areas..."
               value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })}
-              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500" />
           </div>
 
           <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
-            <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm text-gray-700 hover:bg-gray-50">Cancel</button>
+            <button type="button" onClick={() => setShowCreate(false)} className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
             <button type="submit" disabled={
               createMut.isPending
               || !form.applicationId || !form.interviewerId || !form.scheduledAt || !form.stage
-              || ((form.type === "Video" || form.type === "Phone") && (!form.meetingLink || !/^https?:\/\//.test(form.meetingLink)))
+              // Meeting link is optional (auto-generated for Video/Panel) — only
+              // block on a malformed URL if one was actually typed.
+              || ((form.type === "Video" || form.type === "Panel") && !!form.meetingLink && !/^https?:\/\//.test(form.meetingLink))
+              || (form.type === "InPerson" && !form.location.trim())
             }
-              className="inline-flex items-center gap-1.5 px-5 py-2 bg-[#16243A] hover:bg-[#1E3354] text-white rounded-lg text-sm font-semibold shadow-sm disabled:opacity-50">
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium shadow-sm disabled:opacity-50">
               {createMut.isPending ? "Scheduling..." : "Schedule Interview"}
             </button>
           </div>
@@ -1131,7 +1219,7 @@ export default function InterviewsPage() {
       <Modal open={!!feedbackTarget} onClose={() => setFeedbackTarget(null)} title="Submit Interview Feedback" size="lg">
         {feedbackTarget && (
           <form onSubmit={(e) => { e.preventDefault(); feedbackMut.mutate({ id: feedbackTarget.id, body: feedback }); }} className="space-y-4">
-            <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-sm">
+            <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-xs">
               <div className="font-semibold text-slate-900">{feedbackTarget.application.candidate.firstName} {feedbackTarget.application.candidate.lastName}</div>
               <div className="text-xs text-slate-500 mt-0.5">
                 {feedbackTarget.application.requisition.title} · R{feedbackTarget.round} · {feedbackTarget.type}
@@ -1139,18 +1227,18 @@ export default function InterviewsPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Overall Rating</label>
-              <div className="flex items-center gap-2">
-                {[1, 2, 3, 4, 5].map((n) => (
+              <label className="block text-sm font-medium text-gray-700 mb-2">Overall Rating <span className="text-gray-400 font-normal">(out of 10)</span></label>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
                   <button key={n} type="button" onClick={() => setFeedback({ ...feedback, overallRating: n })}
-                    className={clsx("w-10 h-10 rounded-lg border-2 flex items-center justify-center transition",
+                    className={clsx("w-9 h-9 rounded-lg border-2 flex items-center justify-center text-sm font-semibold transition",
                       n <= feedback.overallRating
                         ? "border-amber-400 bg-amber-50 text-amber-600"
-                        : "border-slate-200 text-slate-300 hover:border-slate-300")}>
-                    <Star size={18} className={n <= feedback.overallRating ? "fill-current" : ""} />
+                        : "border-slate-200 text-slate-400 hover:border-slate-300")}>
+                    {n}
                   </button>
                 ))}
-                <span className="ml-2 text-sm font-semibold text-slate-700">{feedback.overallRating}/5</span>
+                <span className="ml-2 text-xs font-semibold text-slate-700">{feedback.overallRating}/10</span>
               </div>
             </div>
 
@@ -1171,13 +1259,13 @@ export default function InterviewsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Strengths</label>
                 <textarea rows={3} value={feedback.strengths} onChange={(e) => setFeedback({ ...feedback, strengths: e.target.value })}
                   placeholder="What they did well..."
-                  className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                  className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Concerns</label>
                 <textarea rows={3} value={feedback.concerns} onChange={(e) => setFeedback({ ...feedback, concerns: e.target.value })}
                   placeholder="Red flags or weak areas..."
-                  className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                  className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500" />
               </div>
             </div>
 
@@ -1185,15 +1273,15 @@ export default function InterviewsPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Overall Comments</label>
               <textarea rows={2} value={feedback.overallComments} onChange={(e) => setFeedback({ ...feedback, overallComments: e.target.value })}
                 placeholder="Summary..."
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500" />
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
               <button type="button" onClick={() => setFeedbackTarget(null)} disabled={feedbackMut.isPending}
-                className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancel</button>
+                className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancel</button>
               <button type="submit" disabled={feedbackMut.isPending}
-                className="inline-flex items-center gap-1.5 px-5 py-2 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-lg text-sm font-semibold shadow-sm disabled:opacity-50">
-                <Check size={14} /> {feedbackMut.isPending ? "Submitting..." : "Submit Feedback"}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-lg text-xs font-medium shadow-sm disabled:opacity-50">
+                <Check size={13} /> {feedbackMut.isPending ? "Submitting..." : "Submit Feedback"}
               </button>
             </div>
           </form>
@@ -1213,7 +1301,7 @@ export default function InterviewsPage() {
               },
             });
           }} className="space-y-4">
-            <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-sm">
+            <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-xs">
               <div className="font-semibold text-slate-900">{rescheduleTarget.application.candidate.firstName} {rescheduleTarget.application.candidate.lastName}</div>
               <div className="text-xs text-slate-500 mt-0.5">{rescheduleTarget.application.requisition.title} · R{rescheduleTarget.round} · {rescheduleTarget.type}</div>
             </div>
@@ -1225,11 +1313,12 @@ export default function InterviewsPage() {
                 min={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
                 value={rescheduleForm.scheduledAt}
                 onChange={(e) => {
-                  const v = e.target.value;
-                  if (v && new Date(v).getTime() < Date.now() - 60000) return;
+                  let v = e.target.value;
+                  const minLocal = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+                  if (v && v < minLocal) v = minLocal;
                   setRescheduleForm({ ...rescheduleForm, scheduledAt: v });
                 }}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]"
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
               />
             </div>
             {(rescheduleTarget.type === "Video" || rescheduleTarget.type === "Phone") && (
@@ -1238,7 +1327,7 @@ export default function InterviewsPage() {
                 <input type="url" value={rescheduleForm.meetingLink}
                   onChange={(e) => setRescheduleForm({ ...rescheduleForm, meetingLink: e.target.value })}
                   placeholder="https://meet.google.com/..."
-                  className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                  className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500" />
               </div>
             )}
             {rescheduleTarget.type === "InPerson" && (
@@ -1246,14 +1335,14 @@ export default function InterviewsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
                 <input type="text" value={rescheduleForm.location}
                   onChange={(e) => setRescheduleForm({ ...rescheduleForm, location: e.target.value })}
-                  className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                  className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500" />
               </div>
             )}
             <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
               <button type="button" onClick={() => setRescheduleTarget(null)} disabled={rescheduleMut.isPending}
-                className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm text-gray-700 hover:bg-gray-50">Cancel</button>
+                className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
               <button type="submit" disabled={rescheduleMut.isPending || !rescheduleForm.scheduledAt}
-                className="px-5 py-2 bg-[#16243A] hover:bg-[#1E3354]">
+                className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-xs font-medium">
                 {rescheduleMut.isPending ? "Saving..." : "Save"}
               </button>
             </div>
@@ -1268,18 +1357,18 @@ export default function InterviewsPage() {
           <div className="fixed inset-0 z-50 flex items-center justify-center">
             <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm"
               onClick={() => !updateMut.isPending && setConfirmAction(null)} />
-            <div className="relative bg-white rounded-xl shadow-2xl ring-1 ring-slate-200 w-full max-w-md mx-4 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-              <div className="p-6">
+            <div className="relative bg-white rounded-2xl shadow-2xl ring-1 ring-slate-200 w-full max-w-md mx-4 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+              <div className="p-4">
                 <div className="flex items-start gap-4">
                   <div className={clsx("shrink-0 flex items-center justify-center w-12 h-12 rounded-full ring-4",
                     isCancel ? "bg-red-50 ring-red-50/60" : "bg-slate-100 ring-slate-50/60")}>
                     {isCancel ? <X className="w-6 h-6 text-red-600" /> : <AlertCircle className="w-6 h-6 text-slate-600" />}
                   </div>
                   <div className="flex-1">
-                    <h3 className="text-lg font-semibold text-slate-900">
+                    <h3 className="text-[13px] font-semibold text-slate-900">
                       {isCancel ? "Cancel Interview?" : "Mark as No Show?"}
                     </h3>
-                    <p className="mt-1.5 text-sm text-slate-500 leading-relaxed">
+                    <p className="mt-1.5 text-xs text-slate-500 leading-relaxed">
                       {isCancel
                         ? <>This will cancel the scheduled interview for{" "}
                             <span className="font-semibold text-slate-700">{i.application.candidate.firstName} {i.application.candidate.lastName}</span>.
@@ -1294,17 +1383,17 @@ export default function InterviewsPage() {
                   </div>
                 </div>
               </div>
-              <div className="flex justify-end gap-2 px-6 py-4 bg-slate-50 border-t border-slate-100">
+              <div className="flex justify-end gap-2 px-5 py-4 bg-slate-50 border-t border-slate-100">
                 <button type="button" onClick={() => setConfirmAction(null)} disabled={updateMut.isPending}
-                  className="px-4 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition">
+                  className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition">
                   Not Now
                 </button>
                 <button type="button"
                   onClick={() => updateMut.mutate({ id: i.id, status: isCancel ? "IntCancelled" : "IntNoShow" })}
                   disabled={updateMut.isPending}
-                  className={clsx("inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold shadow-sm disabled:opacity-50 transition text-white",
+                  className={clsx("inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium shadow-sm disabled:opacity-50 transition text-white",
                     isCancel
-                      ? "bg-gradient-to-r from-red-600 to-blue-600 hover:from-red-700 hover:to-blue-700"
+                      ? "bg-gradient-to-r from-red-600 to-green-600 hover:from-red-700 hover:to-green-700"
                       : "bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-700 hover:to-slate-800")}>
                   {updateMut.isPending ? "Updating..." : isCancel ? "Yes, Cancel" : "Yes, Mark No Show"}
                 </button>
@@ -1314,46 +1403,66 @@ export default function InterviewsPage() {
         );
       })()}
 
-      {mailConfirm && (() => {
-        const i = mailConfirm;
+      {/* Post-schedule result — the API has already queued invite emails to both
+          parties and (for Video/Panel) auto-generated a Teams link. Surface that
+          link instead of re-sending mail. Mirrors the pipeline page's flow. */}
+      {scheduleResult && (() => {
+        const i = scheduleResult;
         const dt = new Date(i.scheduledAt);
+        const isVirtual = i.type === "Video" || i.type === "Panel";
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center">
-            <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm"
-              onClick={() => { if (!sendInterviewMailMut.isPending) sendInterviewMailMut.mutate({ interviewId: i.id }); }} />
-            <div className="relative bg-white rounded-xl shadow-2xl ring-1 ring-slate-200 w-full max-w-md mx-4 overflow-hidden">
-              <div className="p-6">
-                <div className="flex items-start gap-4">
-                  <div className="shrink-0 flex items-center justify-center w-12 h-12 rounded-full ring-4 bg-[#dbeafe] ring-[#dbeafe]/60">
-                    <Mail className="w-6 h-6 text-[#3b82f6]" />
+            <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setScheduleResult(null)} />
+            <div className="relative bg-white rounded-2xl shadow-2xl ring-1 ring-slate-200 w-full max-w-md mx-4 overflow-hidden">
+              <div className="p-4 space-y-4">
+                <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3 text-xs">
+                  <div className="flex items-center gap-2 text-emerald-700 font-semibold">
+                    <CheckCircle2 size={14} /> Interview scheduled
                   </div>
-                  <div className="flex-1">
-                    <h3 className="text-lg font-semibold text-slate-900">Send Interview Invite?</h3>
-                    <p className="mt-1.5 text-sm text-slate-500 leading-relaxed">Candidate will receive an invite with date, time and meeting link. Click outside to send automatically.</p>
-                    <div className="mt-3 text-xs bg-slate-50 border border-slate-100 rounded-md px-2.5 py-2 text-slate-600 space-y-0.5">
-                      <div className="font-semibold text-slate-800">{i.application.candidate.firstName} {i.application.candidate.lastName}</div>
-                      <div className="text-[11px] text-slate-500">To: {i.application.candidate.email}</div>
-                      <div className="text-[11px] text-slate-500">{i.application.requisition.title} · R{i.round} · {i.type}</div>
-                      <div className="text-[11px] text-slate-500">{dt.toLocaleString("en-IN", { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })} · {i.duration}min</div>
-                      <div className="text-[11px] text-slate-500">Interviewer: {i.interviewer.firstName} {i.interviewer.lastName}</div>
-                      {i.meetingLink && <div className="text-[11px] text-slate-500 truncate">Link: {i.meetingLink}</div>}
-                      {i.location && <div className="text-[11px] text-slate-500">Venue: {i.location}</div>}
-                    </div>
+                  <div className="text-xs text-slate-600 mt-1">
+                    Invite emails have been queued to {i.application.candidate.firstName} {i.application.candidate.lastName} and the interviewer.
                   </div>
                 </div>
+
+                <div className="text-xs bg-slate-50 border border-slate-100 rounded-md px-2.5 py-2 text-slate-600 space-y-0.5">
+                  <div className="font-semibold text-slate-800">{i.application.candidate.firstName} {i.application.candidate.lastName}</div>
+                  <div className="text-[11px] text-slate-500">{i.application.requisition.title} · R{i.round} · {i.type}</div>
+                  <div className="text-[11px] text-slate-500">{dt.toLocaleString("en-IN", { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })} · {i.duration}min</div>
+                  <div className="text-[11px] text-slate-500">Interviewer: {i.interviewer.firstName} {i.interviewer.lastName}</div>
+                  {i.location && <div className="text-[11px] text-slate-500">Venue: {i.location}</div>}
+                </div>
+
+                {isVirtual && (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1 flex items-center gap-1.5"><Link2 size={12} /> Meeting Link</label>
+                    {i.meetingLink ? (
+                      <div className="flex items-center gap-2">
+                        <input type="text" readOnly value={i.meetingLink} onFocus={(e) => e.currentTarget.select()}
+                          className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-xs bg-gray-50 text-gray-700 focus:outline-none focus:ring-1 focus:ring-green-500" />
+                        <button type="button"
+                          onClick={() => { navigator.clipboard?.writeText(i.meetingLink!); toast.success("Copied", "Meeting link copied to clipboard"); }}
+                          className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50" title="Copy link">
+                          <Copy size={13} /> Copy
+                        </button>
+                        <a href={i.meetingLink} target="_blank" rel="noopener noreferrer"
+                          className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50" title="Open link">
+                          <ExternalLink size={13} /> Open
+                        </a>
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                        No meeting link was generated — Teams may not be configured. You can add a link later by rescheduling.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
-              <div className="flex justify-end gap-2 px-6 py-4 bg-slate-50 border-t border-slate-100">
-                <button type="button"
-                  onClick={() => sendInterviewMailMut.mutate({ interviewId: i.id })}
-                  disabled={sendInterviewMailMut.isPending}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 text-white rounded-lg text-sm font-semibold shadow-sm disabled:opacity-50 bg-[#16243A] hover:bg-[#1E3354]">
-                  <Send size={14} />
-                  {sendInterviewMailMut.isPending ? "Sending..." : "Send Invite"}
+              <div className="flex justify-end gap-2 px-5 py-4 bg-slate-50 border-t border-slate-100">
+                <button type="button" onClick={() => setScheduleResult(null)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium shadow-sm">
+                  Done
                 </button>
               </div>
-              {sendInterviewMailMut.isError && (
-                <div className="px-6 pb-3 text-xs text-red-600">Mail send failed. Check SMTP config.</div>
-              )}
             </div>
           </div>
         );

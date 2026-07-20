@@ -79,8 +79,8 @@ export default function PayrollSetupPage() {
   const totalMinsLeft = STEPS.filter((s) => !status?.steps[s.key]?.completed).reduce((sum, s) => sum + s.estMinutes, 0);
 
   return (
-    <div className="space-y-6">
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#16243A] via-[#1E3354] to-[#16243A] text-white p-6 shadow-lg">
+    <div className="space-y-4">
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#166534] via-[#15803d] to-[#166534] text-white p-4 shadow-lg">
         <div className="absolute -right-8 -top-8 w-40 h-40 rounded-full bg-white/10 blur-2xl" />
         <div className="absolute -right-16 -bottom-16 w-56 h-56 rounded-full bg-white/5 blur-3xl" />
         <div className="relative flex items-start justify-between gap-4 flex-wrap">
@@ -89,29 +89,29 @@ export default function PayrollSetupPage() {
               <div className="w-9 h-9 rounded-lg bg-white/15 backdrop-blur flex items-center justify-center">
                 <Rocket size={18} />
               </div>
-              <h1 className="text-lg font-bold">Get started with QuikHRMS Payroll</h1>
+              <h1 className="text-base font-semibold">Get started with QuikHRMS Payroll</h1>
             </div>
-            <p className="text-sm text-white/80">Complete the following steps to have a hassle-free payroll experience.</p>
+            <p className="text-xs text-white/80">Complete the following steps to have a hassle-free payroll experience.</p>
             {nextStep && !status?.setupCompleted && (
               <Link
-                href={`${nextStep.href}${nextStep.href.includes("?") ? "&" : "?"}returnTo=/hrms/payroll/setup`}
-                className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-white text-[#16243A] hover:bg-[#faf4ef] rounded-full text-sm font-bold shadow-md transition group"
+                href={`${nextStep.href}${nextStep.href.includes("?") ? "&" : "?"}returnTo=/payroll/setup`}
+                className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 bg-white text-[#166534] hover:bg-[#faf4ef] rounded-full text-xs font-medium shadow-md transition group"
               >
-                <Sparkles size={14} />
+                <Sparkles size={13} />
                 Continue setup: {nextStep.title}
-                <ArrowRight size={14} className="group-hover:translate-x-0.5 transition" />
+                <ArrowRight size={13} className="group-hover:translate-x-0.5 transition" />
               </Link>
             )}
             {status?.setupCompleted && (
-              <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-emerald-500/20 border border-emerald-300/40 rounded-lg text-sm font-semibold">
+              <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-emerald-500/20 border border-emerald-300/40 rounded-lg text-[11px] font-medium">
                 <Check size={14} /> Payroll setup completed
               </div>
             )}
           </div>
           <div className="text-right">
             <p className="text-xs text-white/80 uppercase tracking-wider">Progress</p>
-            <p className="text-3xl font-bold leading-tight">
-              {isLoading ? "…" : completedCount}<span className="text-lg text-white/60">/{totalCount}</span>
+            <p className="text-2xl font-bold leading-tight">
+              {isLoading ? "…" : completedCount}<span className="text-base text-white/60">/{totalCount}</span>
             </p>
             <p className="text-xs text-white/60 mb-1.5">{percent}% completed</p>
             <div className="w-44 h-2 rounded-full bg-white/20 overflow-hidden">
@@ -139,7 +139,7 @@ export default function PayrollSetupPage() {
               stepState?.locked ||
               (!!step.requires && !status?.steps[step.requires]?.completed && !done);
             const isNext = nextStep?.key === step.key;
-            const href = `${step.href}${step.href.includes("?") ? "&" : "?"}returnTo=/hrms/payroll/setup`;
+            const href = `${step.href}${step.href.includes("?") ? "&" : "?"}returnTo=/payroll/setup`;
             const blocker = locked ? STEPS.find((s) => s.key === step.requires) : null;
 
             const RowWrap: React.ElementType = done || !locked ? Link : "div";
@@ -148,7 +148,7 @@ export default function PayrollSetupPage() {
             return (
               <li key={step.key} className="relative">
                 {isNext && (
-                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-[#16243A] to-[#1E3354]" />
+                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-[#166534] to-[#15803d]" />
                 )}
                 <RowWrap
                   {...wrapProps}
@@ -166,28 +166,28 @@ export default function PayrollSetupPage() {
                         : locked
                         ? "bg-gray-100 text-gray-400 ring-transparent"
                         : isNext
-                        ? "bg-[#16243A] text-white ring-[#16243A]/15 shadow-sm"
+                        ? "bg-green-600 text-white ring-[#166534]/15 shadow-sm"
                         : "bg-white border-2 border-gray-300 text-gray-500 ring-transparent",
                     )}
                   >
-                    {done ? <Check size={16} /> : locked ? <Lock size={14} /> : <span className="text-sm font-bold">{step.num}</span>}
+                    {done ? <Check size={16} /> : locked ? <Lock size={14} /> : <span className="text-[13px] font-semibold">{step.num}</span>}
                   </div>
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className={clsx("shrink-0", done ? "text-emerald-600" : isNext ? "text-[#16243A]" : "text-gray-400")}>
+                      <span className={clsx("shrink-0", done ? "text-emerald-600" : isNext ? "text-[#166534]" : "text-gray-400")}>
                         {step.icon}
                       </span>
-                      <p className={clsx("text-sm font-semibold", locked ? "text-gray-500" : "text-gray-900")}>
+                      <p className={clsx("text-[13px] font-semibold", locked ? "text-gray-500" : "text-gray-900")}>
                         {step.title}
                       </p>
                       {isNext && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#16243A] text-white rounded-full text-[10px] font-bold uppercase tracking-wide">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-600 text-white rounded-full text-[11px] font-semibold uppercase tracking-wide">
                           <Sparkles size={10} /> Start Here
                         </span>
                       )}
                       {!done && !locked && inProgress && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-full text-[10px] font-semibold uppercase tracking-wide">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-full text-[11px] font-medium uppercase tracking-wide">
                           In Progress
                         </span>
                       )}
@@ -206,10 +206,10 @@ export default function PayrollSetupPage() {
 
                   {done ? (
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full text-[11px] font-semibold">
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full text-[11px] font-medium">
                         <Check size={11} /> Completed
                       </span>
-                      <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 group-hover:text-[#16243A] transition">
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 group-hover:text-[#166534] transition">
                         <Pencil size={11} /> Edit
                       </span>
                     </div>
@@ -218,12 +218,12 @@ export default function PayrollSetupPage() {
                       <Lock size={11} /> Locked
                     </span>
                   ) : isNext ? (
-                    <span className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#16243A] group-hover:bg-[#1E3354] text-white rounded-full text-xs font-bold shadow-sm transition shrink-0">
-                      Complete Now <ArrowRight size={12} className="group-hover:translate-x-0.5 transition" />
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#166534] group-hover:bg-[#15803d] text-white rounded-full text-xs font-medium shadow-sm transition shrink-0">
+                      Complete Now <ArrowRight size={13} className="group-hover:translate-x-0.5 transition" />
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1.5 px-4 py-2 border border-[#16243A] text-[#16243A] group-hover:bg-[#16243A] group-hover:text-white rounded-full text-xs font-semibold transition shrink-0">
-                      Complete Now <ArrowRight size={12} className="group-hover:translate-x-0.5 transition" />
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-[#166534] text-[#166534] group-hover:bg-[#166534] group-hover:text-white rounded-full text-xs font-medium transition shrink-0">
+                      Complete Now <ArrowRight size={13} className="group-hover:translate-x-0.5 transition" />
                     </span>
                   )}
                 </RowWrap>
@@ -244,11 +244,11 @@ export default function PayrollSetupPage() {
                 {n.soon ? (
                   <p className="text-[10px] text-amber-600 mt-1 uppercase tracking-wide">Coming Soon</p>
                 ) : (
-                  <p className="text-[10px] text-[#16243A] mt-1 uppercase tracking-wide">Configure Now</p>
+                  <p className="text-[10px] text-[#166534] mt-1 uppercase tracking-wide">Configure Now</p>
                 )}
               </>
             );
-            const cls = "surface-card p-4 text-center hover:border-[#16243A]/30 hover:shadow-md transition cursor-pointer w-full";
+            const cls = "surface-card p-4 text-center hover:border-[#166534]/30 hover:shadow-md transition cursor-pointer w-full";
             if (n.soon) {
               return (
                 <button key={n.label} onClick={() => setSoonItem(n.label)} className={cls}>
@@ -266,12 +266,12 @@ export default function PayrollSetupPage() {
       </div>
 
       <Modal open={!!soonItem} onClose={() => setSoonItem(null)} title={soonItem ?? ""} size="sm">
-        <div className="p-6 text-center space-y-3">
+        <div className="p-4 text-center space-y-3">
           <div className="mx-auto w-14 h-14 rounded-full bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center">
             <Construction size={26} className="text-amber-600" />
           </div>
-          <p className="text-base font-bold text-gray-900">We are working on it</p>
-          <p className="text-sm text-gray-600">
+          <p className="text-[13px] font-semibold text-gray-900">We are working on it</p>
+          <p className="text-xs text-gray-600">
             {soonItem} is under active development. You&apos;ll be notified as soon as it&apos;s available.
           </p>
           <button onClick={() => setSoonItem(null)} className="btn btn-primary mt-2">

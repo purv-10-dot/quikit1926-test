@@ -1,5 +1,5 @@
-import { PDFDocument, StandardFonts, rgb, PDFImage } from "pdf-lib";
-import { getS3Object } from "@/lib/storage";
+import { PDFDocument, StandardFonts, rgb, PDFImage, PDFFont } from "pdf-lib";
+import { getObject } from "@/lib/storage";
 
 export interface OfferPdfInput {
   candidateName: string;
@@ -24,6 +24,34 @@ export interface OfferPdfInput {
   signatoryName?: string | null;
   signatoryDesignation?: string | null;
   footer?: string | null;
+  /**
+   * Editable body template with {{dynamic}} placeholders. When set, it fully
+   * replaces the built-in hardcoded letter body (see lib/recruit/offer-letter-fields.ts).
+   */
+  bodyTemplate?: string | null;
+}
+
+/** Resolve every {{field}} in a template against the offer's values. */
+function offerFieldValues(input: OfferPdfInput): Record<string, string> {
+  return {
+    candidateName: input.candidateName ?? "",
+    candidateAddress: input.candidateAddress ?? "",
+    jobTitle: input.jobTitle ?? "",
+    designation: input.designation ?? input.jobTitle ?? "",
+    ctc: inr(Number(input.offeredCTC)),
+    joiningDate: input.joiningDate ?? "",
+    joiningBonus: input.joiningBonus ? inr(Number(input.joiningBonus)) : "",
+    relocationBonus: input.relocationBonus ? inr(Number(input.relocationBonus)) : "",
+    equityGrant: input.equityGrant ?? "",
+    offerValidUntil: input.expiresAt ?? "",
+    department: input.department ?? "",
+    reportingManager: input.reportingTo ?? "",
+    companyName: input.companyName ?? "",
+    companyAddress: input.companyAddress ?? "",
+    letterDate: input.letterDate ?? "",
+    signatoryName: input.signatoryName ?? "",
+    signatoryDesignation: input.signatoryDesignation ?? "",
+  };
 }
 
 function inr(n: number): string {
@@ -32,7 +60,7 @@ function inr(n: number): string {
 
 async function fetchImage(pdf: PDFDocument, key: string): Promise<PDFImage | null> {
   try {
-    const obj = await getS3Object(key);
+    const obj = await getObject(key);
     const ct = (obj.contentType || "").toLowerCase();
     if (ct.includes("png")) return await pdf.embedPng(obj.body);
     if (ct.includes("jpeg") || ct.includes("jpg")) return await pdf.embedJpg(obj.body);
@@ -62,13 +90,23 @@ function wrapText(text: string, maxChars: number): string[] {
   return lines;
 }
 
+const A4: [number, number] = [595.28, 841.89];
+
 export async function generateOfferPdf(input: OfferPdfInput): Promise<Buffer> {
   const pdf = await PDFDocument.create();
-  const page = pdf.addPage([595.28, 841.89]); // A4
-  const { width, height } = page.getSize();
 
   const font = await pdf.embedFont(StandardFonts.TimesRoman);
   const fontBold = await pdf.embedFont(StandardFonts.TimesRomanBold);
+
+  // ── Editable-template path ──────────────────────────────────────────────
+  // When an org has authored a custom body, render it (with {{field}}
+  // substitution, wrapping and pagination) instead of the built-in letter.
+  if (input.bodyTemplate && input.bodyTemplate.trim()) {
+    return renderTemplatePdf(pdf, font, fontBold, input);
+  }
+
+  const page = pdf.addPage(A4); // A4
+  const { width, height } = page.getSize();
 
   // Letterhead background (full page)
   if (input.letterheadKey) {
@@ -191,6 +229,91 @@ export async function generateOfferPdf(input: OfferPdfInput): Promise<Buffer> {
     const footerLines = wrapText(input.footer, 110);
     let fy = 60;
     for (const line of footerLines.slice(0, 2)) {
+      page.drawText(line, { x: marginX, y: fy, size: 9, font, color: rgb(0.4, 0.4, 0.4) });
+      fy -= 11;
+    }
+  }
+
+  const bytes = await pdf.save();
+  return Buffer.from(bytes);
+}
+
+/**
+ * Renders an org's editable body template: substitutes {{fields}}, wraps long
+ * lines, and paginates over as many A4 pages as needed (letterhead repeated on
+ * each). `{{signature}}` on its own line draws the uploaded signature image at
+ * that position; the seal + footer are placed on the final page.
+ */
+async function renderTemplatePdf(
+  pdf: PDFDocument,
+  font: PDFFont,
+  fontBold: PDFFont,
+  input: OfferPdfInput,
+): Promise<Buffer> {
+  const [width, height] = A4;
+  const black = rgb(0.1, 0.1, 0.1);
+  const marginX = 60;
+  const topY = height - 150; // leave room for the letterhead header band
+  const bottomY = 130; // leave room for seal / footer
+
+  const letterhead = input.letterheadKey ? await fetchImage(pdf, input.letterheadKey) : null;
+  const signature = input.signatureKey ? await fetchImage(pdf, input.signatureKey) : null;
+
+  const newPage = () => {
+    const p = pdf.addPage(A4);
+    if (letterhead) p.drawImage(letterhead, { x: 0, y: 0, width, height });
+    return p;
+  };
+
+  let page = newPage();
+  let y = topY;
+
+  const values = offerFieldValues(input);
+  const body = (input.bodyTemplate ?? "").replace(/\{\{\s*(\w+)\s*\}\}/g, (_m, k: string) =>
+    Object.prototype.hasOwnProperty.call(values, k) ? values[k] : `{{${k}}}`,
+  );
+
+  const drawLine = (text: string, bold: boolean) => {
+    if (y < bottomY) { page = newPage(); y = topY; }
+    page.drawText(text, { x: marginX, y, size: 11, font: bold ? fontBold : font, color: black });
+    y -= 15;
+  };
+
+  let signatureDrawn = false;
+  const drawSignature = () => {
+    if (!signature) return;
+    const base = signature.scale(0.35);
+    const dims = base.width > 160 ? signature.scale((160 / base.width) * 0.35) : base;
+    if (y - dims.height < bottomY) { page = newPage(); y = topY; }
+    page.drawImage(signature, { x: marginX, y: y - dims.height, width: dims.width, height: dims.height });
+    y -= dims.height + 6;
+    signatureDrawn = true;
+  };
+
+  for (const rawLine of body.split(/\r?\n/)) {
+    const trimmed = rawLine.trim();
+    if (trimmed === "{{signature}}") { drawSignature(); continue; }
+    if (trimmed === "") { y -= 8; if (y < bottomY) { page = newPage(); y = topY; } continue; }
+    const bold = /^subject:/i.test(trimmed);
+    for (const line of wrapText(rawLine, 92)) drawLine(line, bold);
+  }
+
+  // If the template never placed the signature, drop it after the body.
+  if (!signatureDrawn) drawSignature();
+
+  // Seal (bottom-right) on the final page.
+  if (input.sealKey) {
+    const seal = await fetchImage(pdf, input.sealKey);
+    if (seal) {
+      const s = 90;
+      page.drawImage(seal, { x: width - marginX - s, y: 110, width: s, height: s, opacity: 0.85 });
+    }
+  }
+
+  // Footer text on the final page.
+  if (input.footer) {
+    let fy = 60;
+    for (const line of wrapText(input.footer, 110).slice(0, 2)) {
       page.drawText(line, { x: marginX, y: fy, size: 9, font, color: rgb(0.4, 0.4, 0.4) });
       fy -= 11;
     }

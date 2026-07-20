@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
-import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
 import { NumberInput } from "@/components/hrms/ui/number-input";
-import { ChevronLeft, Upload, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
+import { Select } from "@/components/hrms/select";
+import { Upload, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
 import { clsx } from "clsx";
 
 interface Line {
@@ -72,7 +72,6 @@ export default function ReconcilePage() {
       setCsv(""); setFileName("");
       qc.invalidateQueries({ queryKey: ["payroll", "reconcile", runId] });
     },
-    onError: (e: Error) => toast.error("Reconcile failed", e.message),
   });
 
   const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -84,16 +83,12 @@ export default function ReconcilePage() {
   };
 
   const inputCls =
-    "w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A] focus:border-[#16243A]";
+    "w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[#166534] focus:border-[#166534]";
 
   return (
     <div className="space-y-4">
-      <Link href={`/payroll/runs/${runId}`} className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-[#3b82f6]">
-        <ChevronLeft size={14} /> Back to Pay Run
-      </Link>
-
-      <div className="rounded-lg border border-gray-200 bg-white shadow-sm p-5">
-        <h1 className="text-lg font-bold text-gray-900">Bank Reconciliation</h1>
+      <div className="rounded-lg border border-gray-200 bg-white shadow-sm p-4">
+        <h1 className="text-page-title text-gray-900">Bank Reconciliation</h1>
         <p className="text-xs text-gray-500 mt-1">
           Upload bank debit statement (CSV) to auto-match against payslips by amount + name/account.
         </p>
@@ -104,17 +99,18 @@ export default function ReconcilePage() {
               type="file"
               accept=".csv,.txt"
               onChange={onFileChange}
-              className="text-xs text-gray-700 file:mr-3 file:px-3 file:py-1.5 file:bg-[#3b82f6] file:hover:bg-[#2563eb] file:text-white file:font-semibold file:rounded-md file:border-0"
+              className="text-xs text-gray-700 file:mr-3 file:px-3 file:py-1.5 file:bg-[#22c55e] file:hover:bg-green-700 file:text-white file:font-semibold file:rounded-md file:border-0"
             />
-            <select
+            <Select
               value={delimiter === "\t" ? "tab" : delimiter}
-              onChange={(e) => setDelimiter((e.target.value === "tab" ? "\t" : e.target.value) as "," | "|" | "\t")}
-              className={inputCls + " w-32"}
-            >
-              <option value=",">Comma</option>
-              <option value="|">Pipe</option>
-              <option value="tab">Tab</option>
-            </select>
+              onChange={(v) => setDelimiter((v === "tab" ? "\t" : v) as "," | "|" | "\t")}
+              className="w-32"
+              options={[
+                { value: ",", label: "Comma" },
+                { value: "|", label: "Pipe" },
+                { value: "tab", label: "Tab" },
+              ]}
+            />
           </div>
 
           <div className="grid grid-cols-6 gap-2">
@@ -147,39 +143,39 @@ export default function ReconcilePage() {
             <button
               onClick={() => uploadMut.mutate()}
               disabled={!csv.trim() || uploadMut.isPending}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 text-white rounded-md text-sm font-semibold"
+              className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-md text-xs font-medium"
             >
-              <Upload size={14} /> {uploadMut.isPending ? "Processing…" : "Upload & Match"}
+              <Upload size={13} /> {uploadMut.isPending ? "Processing…" : "Upload & Match"}
             </button>
           </div>
         </div>
       </div>
 
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-100">
-          <h2 className="text-sm font-bold text-gray-900">Reconciliation History</h2>
+        <div className="px-4 py-3 border-b border-gray-100">
+          <h2 className="text-[13px] font-semibold text-gray-900">Reconciliation History</h2>
         </div>
         {isLoading ? (
-          <div className="p-6 text-center text-sm text-gray-500">Loading…</div>
+          <div className="p-4 text-center text-xs text-gray-500">Loading…</div>
         ) : recons.length === 0 ? (
-          <div className="py-12 text-center text-sm text-gray-500">No reconciliation runs yet.</div>
+          <div className="py-12 text-center text-xs text-gray-500">No reconciliation runs yet.</div>
         ) : (
           recons.map((r) => (
             <div key={r.id} className="border-b border-gray-100">
-              <div className="px-5 py-3 flex items-center justify-between bg-gray-50/50">
+              <div className="px-4 py-3 flex items-center justify-between bg-gray-50/50">
                 <div>
-                  <p className="text-sm font-bold text-gray-900">{r.fileName ?? "Pasted CSV"}</p>
+                  <p className="text-[13px] font-semibold text-gray-900">{r.fileName ?? "Pasted CSV"}</p>
                   <p className="text-xs text-gray-500">{new Date(r.uploadedAt).toLocaleString("en-IN")} · {r.lines.length} lines</p>
                 </div>
                 <div className="flex items-center gap-3 text-xs">
                   <span className="text-gray-600">Debited: <strong>₹{INR.format(Number(r.totalDebited))}</strong></span>
                   <span className="text-gray-600">Matched: <strong className="text-emerald-700">₹{INR.format(Number(r.totalMatched))}</strong></span>
-                  <span className={clsx("inline-block px-2 py-0.5 rounded font-semibold", STATUS_CLS[r.status])}>{r.status}</span>
+                  <span className={clsx("inline-block px-2 py-0.5 rounded text-[11px] font-medium", STATUS_CLS[r.status])}>{r.status}</span>
                 </div>
               </div>
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="text-[10px] font-bold text-gray-500 uppercase border-b border-gray-200">
+                  <tr className="text-table-head font-bold text-gray-500 uppercase border-b border-gray-200">
                     <th className="text-left py-1.5 px-3">Date</th>
                     <th className="text-left py-1.5 px-3">Name (bank)</th>
                     <th className="text-left py-1.5 px-3">Account</th>
@@ -192,7 +188,7 @@ export default function ReconcilePage() {
                   {r.lines.map((l) => (
                     <tr key={l.id} className={clsx("border-b border-gray-50", !l.matched && "bg-red-50/40")}>
                       <td className="py-1.5 px-3 text-gray-700">{l.txnDate ? new Date(l.txnDate).toLocaleDateString("en-IN") : "—"}</td>
-                      <td className="py-1.5 px-3 text-gray-900">{l.employeeName}</td>
+                      <td className="py-1.5 px-3 text-[13px] font-medium text-gray-900">{l.employeeName}</td>
                       <td className="py-1.5 px-3 text-gray-700 font-mono">{l.bankAccount ?? "—"}</td>
                       <td className="py-1.5 px-3 text-gray-700 font-mono">{l.txnRef ?? "—"}</td>
                       <td className="py-1.5 px-3 text-right text-gray-900">₹{INR.format(Number(l.amount))}</td>

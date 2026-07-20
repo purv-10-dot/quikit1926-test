@@ -1,12 +1,12 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { withAuth } from "@/lib/with-auth";
+import { withServiceAuth } from "@/lib/with-auth";
 import { successResponse, forbidden, internalError } from "@/lib/api-response";
 import { canAccessEmployee } from "@/lib/rbac/hierarchy";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 
 /** GET /api/v1/hrms/leaves/balances?employeeId=...&year=... */
-export const GET = withAuth(async (req: NextRequest, ctx) => {
+export const GET = withServiceAuth(async (req: NextRequest, ctx) => {
   try {
     const { orgId, userId } = ctx;
     const { searchParams } = new URL(req.url);

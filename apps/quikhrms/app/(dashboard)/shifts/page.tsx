@@ -33,7 +33,7 @@ export default function ShiftsPage() {
     breakDuration: number | null; graceMinutes: number | null; isFlexible: boolean; isNightShift: boolean;
     effectiveFrom: string; isDefault: boolean;
   }>({
-    name: "", code: "", color: "#3b82f6", startTime: "09:00", endTime: "18:00",
+    name: "", code: "", color: "#22c55e", startTime: "09:00", endTime: "18:00",
     breakDuration: null, graceMinutes: null, isFlexible: false, isNightShift: false,
     effectiveFrom: new Date().toISOString().split("T")[0], isDefault: false,
   });
@@ -74,12 +74,12 @@ export default function ShiftsPage() {
   ];
 
   const openAdd = () => {
-    setForm({ name: "", code: "", color: "#3b82f6", startTime: "09:00", endTime: "18:00", breakDuration: null, graceMinutes: null, isFlexible: false, isNightShift: false, effectiveFrom: new Date().toISOString().split("T")[0], isDefault: false });
+    setForm({ name: "", code: "", color: "#22c55e", startTime: "09:00", endTime: "18:00", breakDuration: null, graceMinutes: null, isFlexible: false, isNightShift: false, effectiveFrom: new Date().toISOString().split("T")[0], isDefault: false });
     setModal({ open: true, item: null });
   };
 
   const openEdit = (item: ShiftItem) => {
-    setForm({ name: item.name, code: item.code, color: item.color ?? "#3b82f6", startTime: item.startTime, endTime: item.endTime, breakDuration: item.breakDuration, graceMinutes: item.graceMinutes, isFlexible: item.isFlexible, isNightShift: item.isNightShift, effectiveFrom: new Date().toISOString().split("T")[0], isDefault: item.isDefault });
+    setForm({ name: item.name, code: item.code, color: item.color ?? "#22c55e", startTime: item.startTime, endTime: item.endTime, breakDuration: item.breakDuration, graceMinutes: item.graceMinutes, isFlexible: item.isFlexible, isNightShift: item.isNightShift, effectiveFrom: new Date().toISOString().split("T")[0], isDefault: item.isDefault });
     setModal({ open: true, item });
   };
 
@@ -120,24 +120,20 @@ export default function ShiftsPage() {
               <FormInput type="text" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} required />
             </FormField>
           </div>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <FormField label="Start Time" required>
               <FormInput type="time" value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} required />
             </FormField>
             <FormField label="End Time" required>
               <FormInput type="time" value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} required />
             </FormField>
-            <FormField label="Color">
-              <input type="color" value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })}
-                className="w-full h-[38px] border border-[var(--border)] rounded-lg" />
-            </FormField>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <FormField label="Break (min)">
-              <NumberInput allowDecimal={false} value={form.breakDuration} onChange={(v) => setForm({ ...form, breakDuration: v })} className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#16243A] focus:border-[#16243A]" />
+              <NumberInput allowDecimal={false} value={form.breakDuration} onChange={(v) => setForm({ ...form, breakDuration: v })} className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#166534] focus:border-[#166534]" />
             </FormField>
             <FormField label="Grace (min)">
-              <NumberInput allowDecimal={false} value={form.graceMinutes} onChange={(v) => setForm({ ...form, graceMinutes: v })} className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#16243A] focus:border-[#16243A]" />
+              <NumberInput allowDecimal={false} value={form.graceMinutes} onChange={(v) => setForm({ ...form, graceMinutes: v })} className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#166534] focus:border-[#166534]" />
             </FormField>
           </div>
           <div className="flex flex-wrap gap-4">

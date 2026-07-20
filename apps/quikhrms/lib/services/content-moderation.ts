@@ -3,21 +3,27 @@ import { prisma } from "@/lib/prisma";
 export type ModerationModule = "Engagement" | "Feedback";
 
 /**
- * Returns true when an active ApprovalChain exists for the given module
- * in the tenant. When true, content (Announcement / SocialPost / Recognition /
- * ContinuousFeedback) is created in `Pending` and held until approval.
+ * Whether content must be held for approval before it goes live.
  *
- * Cached briefly per call site only — keep DB hit lightweight (indexed).
+ * Policy: approval is ALWAYS required — content (Announcement / SocialPost /
+ * Recognition / ContinuousFeedback) is never auto-published. It is created in
+ * `Pending` and held until a moderator acts on it.
+ *
+ * Who moderates:
+ *  - When the tenant has configured an active ApprovalChain for the module,
+ *    that module's designated approvers (holders of the approve permission)
+ *    handle it.
+ *  - When NO chain is configured (or no approver permission has been granted),
+ *    it falls back to org admins (see `notifyApprovers`).
+ *
+ * `orgId`/`module` are kept in the signature for call-site clarity and future
+ * per-module opt-outs; the current policy returns `true` unconditionally.
  */
 export async function moderationRequired(
-  orgId: string,
-  module: ModerationModule,
+  _orgId: string,
+  _module: ModerationModule,
 ): Promise<boolean> {
-  const chain = await prisma.approvalChain.findFirst({
-    where: { orgId, module, isActive: true, deletedAt: null },
-    select: { id: true },
-  });
-  return !!chain;
+  return true;
 }
 
 export const APPROVED_STATUS = "Approved" as const;
@@ -39,8 +45,10 @@ const APPROVER_PERM: Record<ModerationModule, string> = {
 };
 
 /**
- * Notify all employees with the approval permission for a pending item.
- * Best-effort: never throw.
+ * Notify the moderators of a pending item. Resolves to the module's designated
+ * approvers (holders of the approve permission); when none exist — i.e. no
+ * approval chain has been configured — it falls back to org admins so nothing
+ * is ever left un-moderated. Best-effort: never throw.
  */
 export async function notifyApprovers(
   orgId: string,
@@ -55,7 +63,7 @@ export async function notifyApprovers(
     const lastDot = perm.lastIndexOf(".");
     const resource = lastDot < 0 ? perm : perm.slice(0, lastDot);
     const action = lastDot < 0 ? "*" : perm.slice(lastDot + 1);
-    const approvers = await prisma.employee.findMany({
+    let approvers = await prisma.employee.findMany({
       where: {
         orgId,
         deletedAt: null,
@@ -70,6 +78,19 @@ export async function notifyApprovers(
       },
       select: { id: true },
     });
+    // Fallback: no chain configured / no approver permission granted → route to
+    // org admins (the "admin" role carries `*`, so they can action it).
+    if (approvers.length === 0) {
+      approvers = await prisma.employee.findMany({
+        where: {
+          orgId,
+          deletedAt: null,
+          status: "Active",
+          appRoles: { some: { role: { name: "admin" } } },
+        },
+        select: { id: true },
+      });
+    }
     if (approvers.length === 0) return;
     await prisma.hrmsNotification.createMany({
       data: approvers.map((a) => ({

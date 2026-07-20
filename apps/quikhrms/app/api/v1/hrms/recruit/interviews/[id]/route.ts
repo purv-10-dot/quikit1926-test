@@ -3,7 +3,6 @@ import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, notFound, validationError, internalError } from "@/lib/api-response";
 import { updateInterviewSchema, createScorecardSchema } from "@/lib/validations/recruit";
-import { stageNames } from "@/lib/services/pipeline-stages";
 
 export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
   try {
@@ -61,30 +60,16 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
         overallComments: updated.overallComments, submittedAt: updated.scorecardSubmittedAt,
       };
 
-      // Auto-advance / reject based on recommendation
+      // Submitting feedback does NOT auto-advance the pipeline stage. Advancing
+      // is a deliberate action from the pipeline UI (PATCH /applications/:id),
+      // which (a) requires this feedback to exist before moving and (b) creates
+      // the next stage's interview stub. Auto-advancing here bypassed both and
+      // pushed candidates into the next stage with no interview scheduled.
+      //
+      // A strongly negative recommendation still auto-rejects the application —
+      // rejection is terminal and needs no downstream scheduling.
       const rec = parsed.data.recommendation;
-      if (rec === "Hire" || rec === "StrongHire") {
-        const pipeline = await prisma.hiringPipeline.findFirst({
-          where: { orgId, deletedAt: null, isDefault: true },
-        });
-        const stages = stageNames(pipeline?.stages);
-        if (stages.length > 0) {
-          const app = await prisma.jobApplication.findFirst({
-            where: { id: existing.applicationId, orgId, deletedAt: null },
-            select: { currentStage: true },
-          });
-          const currentIdx = app?.currentStage ? stages.indexOf(app.currentStage) : -1;
-          const nextStage = currentIdx >= 0 && currentIdx < stages.length - 1
-            ? stages[currentIdx + 1]
-            : stages[Math.min(stages.length - 1, Math.max(0, currentIdx + 1))];
-          if (nextStage && nextStage !== app?.currentStage) {
-            await prisma.jobApplication.update({
-              where: { id: existing.applicationId },
-              data: { currentStage: nextStage, updatedBy: userId },
-            });
-          }
-        }
-      } else if (rec === "NoHire" || rec === "StrongNoHire") {
+      if (rec === "NoHire" || rec === "StrongNoHire") {
         await prisma.jobApplication.update({
           where: { id: existing.applicationId },
           data: { status: "AppRejected", updatedBy: userId },
@@ -103,6 +88,8 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
       data: {
         ...(data.status && { status: data.status }),
         ...(data.scheduledAt && { scheduledAt: new Date(data.scheduledAt) }),
+        ...(data.location !== undefined && { location: data.location }),
+        ...(data.meetingLink !== undefined && { meetingLink: data.meetingLink }),
         ...(data.candidateFeedback && { candidateFeedback: data.candidateFeedback }),
         updatedBy: userId,
       },

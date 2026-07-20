@@ -44,3 +44,9 @@ next-env.d.ts
 
 /generated/prisma
 public/uploads/
+
+# Local-only: not tracked in this app (removed from index intentionally)
+*.md
+vercel.json
+__tests__/**/*.test.ts
+__tests__/**/*.test.tsx

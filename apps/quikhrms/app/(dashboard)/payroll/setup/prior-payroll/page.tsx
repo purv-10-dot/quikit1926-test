@@ -1,11 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Select } from "@/components/hrms/ui/select";
-import { History, ChevronLeft, Save, Calendar, CheckCircle2 } from "lucide-react";
+import { History, Save, Calendar, CheckCircle2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { SkeletonLine } from "@/components/hrms/skeleton";
 import { PriorPayrollUpload } from "./_components/prior-payroll-upload";
@@ -26,7 +25,7 @@ interface Res {
   paySchedulePresent: boolean;
 }
 
-const inputCls = "w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[#16243A] focus:border-transparent";
+const inputCls = "w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[#166534] focus:border-transparent";
 
 function currentFinancialYear(): string {
   const now = new Date();
@@ -37,7 +36,7 @@ function currentFinancialYear(): string {
 
 export default function PriorPayrollPage() {
   return (
-    <Suspense fallback={<div className="p-6 space-y-2"><SkeletonLine w="40%" h={16} /><SkeletonLine w="70%" h={12} /><SkeletonLine w="60%" h={12} /></div>}>
+    <Suspense fallback={<div className="p-4 space-y-2"><SkeletonLine w="40%" h={16} /><SkeletonLine w="70%" h={12} /><SkeletonLine w="60%" h={12} /></div>}>
       <PriorPayrollPageInner />
     </Suspense>
   );
@@ -104,7 +103,7 @@ function PriorPayrollPageInner() {
   });
 
   if (isLoading) return (
-    <div className="p-8 space-y-2">
+    <div className="p-5 space-y-2">
       <SkeletonLine w="40%" h={16} />
       <SkeletonLine w="70%" h={12} />
       <SkeletonLine w="60%" h={12} />
@@ -113,35 +112,31 @@ function PriorPayrollPageInner() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-4">
-      <Link href="/payroll/setup" className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-[#3b82f6]">
-        <ChevronLeft size={14} /> Back to Payroll Setup
-      </Link>
-
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
-        <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
-          <History size={18} className="text-[#3b82f6]" />
-          <h1 className="text-lg font-bold text-gray-900">Mid-year Joiners</h1>
+        <div className="flex items-center gap-2 px-4 py-4 border-b border-gray-100">
+          <History size={18} className="text-[#22c55e]" />
+          <h1 className="text-base font-semibold text-gray-900">Mid-year Joiners</h1>
         </div>
 
         {!paySchedulePresent ? (
-          <div className="py-16 px-6 text-center">
-            <div className="mx-auto w-28 h-28 rounded-xl bg-gradient-to-br from-[#dbeafe] to-[#dbeafe] flex items-center justify-center mb-4">
-              <Calendar size={48} className="text-[#bfdbfe]" strokeWidth={1.5} />
+          <div className="py-16 px-5 text-center">
+            <div className="mx-auto w-28 h-28 rounded-xl bg-gradient-to-br from-[#dcfce7] to-[#dcfce7] flex items-center justify-center mb-4">
+              <Calendar size={48} className="text-[#bbf7d0]" strokeWidth={1.5} />
             </div>
-            <p className="text-sm text-gray-600 max-w-md mx-auto">
+            <p className="text-xs text-gray-600 max-w-md mx-auto">
               You need to configure your pay schedule first in order to enter your past payroll details.
             </p>
             <div className="mt-5 flex items-center justify-center gap-2">
               <button
                 onClick={() => router.push("/payroll/setup/pay-schedule")}
-                className="px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] text-white rounded-md text-sm font-semibold shadow-sm"
+                className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-xs font-medium shadow-sm"
               >
                 Configure Pay Schedule
               </button>
               <button
                 onClick={() => disableMut.mutate()}
                 disabled={disableMut.isPending}
-                className="px-4 py-2 border border-[var(--border)] bg-white hover:bg-gray-50 text-gray-700 rounded-md text-sm font-medium disabled:opacity-60"
+                className="px-3 py-1.5 border border-[var(--border)] bg-white hover:bg-gray-50 text-gray-700 rounded-md text-xs font-medium disabled:opacity-60"
               >
                 {disableMut.isPending ? "Disabling..." : "Disable Prior Payroll"}
               </button>
@@ -159,9 +154,9 @@ function PriorPayrollPageInner() {
                 notes: form.notes || null,
               });
             }}
-            className="p-5 space-y-5"
+            className="p-4 space-y-4"
           >
-            <div className="rounded-md border border-[#dbeafe] bg-[#dbeafe] px-3 py-2 text-xs text-[#1d4ed8]">
+            <div className="rounded-md border border-[#dcfce7] bg-[#dcfce7] px-3 py-2 text-xs text-[#15803d]">
               <p className="font-semibold">Go-live with mid-year payroll</p>
               <p className="mt-1">Upload your previously processed payrolls for the current financial year so that tax projections, YTD and tax computation include historical data.</p>
             </div>
@@ -195,7 +190,7 @@ function PriorPayrollPageInner() {
             </div>
 
             {saved && (
-              <div className="flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-3 py-2">
+              <div className="flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-3 py-2">
                 <CheckCircle2 size={16} />
                 {returnTo && returnTo.startsWith("/")
                   ? "Prior payroll saved. Redirecting..."
@@ -205,14 +200,14 @@ function PriorPayrollPageInner() {
 
             <div className="flex items-center justify-between pt-3 border-t border-gray-100">
               <div className="flex gap-2">
-                <button type="submit" disabled={saveMut.isPending} className="inline-flex items-center gap-2 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 text-white rounded-md text-sm font-semibold shadow-sm">
-                  <Save size={14} /> {saveMut.isPending ? "Saving..." : "Save"}
+                <button type="submit" disabled={saveMut.isPending} className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-md text-xs font-medium shadow-sm">
+                  <Save size={13} /> {saveMut.isPending ? "Saving..." : "Save"}
                 </button>
                 <button
                   type="button"
                   onClick={() => disableMut.mutate()}
                   disabled={disableMut.isPending}
-                  className="px-4 py-2 border border-[var(--border)] bg-white hover:bg-gray-50 text-gray-700 rounded-md text-sm font-medium disabled:opacity-60"
+                  className="px-3 py-1.5 border border-[var(--border)] bg-white hover:bg-gray-50 text-gray-700 rounded-md text-xs font-medium disabled:opacity-60"
                 >
                   Disable Prior Payroll
                 </button>

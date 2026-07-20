@@ -37,7 +37,7 @@ export default function GeographicalDifferentialsTab() {
     return { companyAvg, companyMedian, locations, headcount: rows.length };
   }, [rows]);
 
-  if (isLoading) return <div className="rounded-lg border border-gray-200 bg-white p-12 text-center text-gray-400 text-sm">Loading…</div>;
+  if (isLoading) return <div className="rounded-lg border border-gray-200 bg-white p-12 text-center text-gray-400 text-xs">Loading…</div>;
   if (rows.length === 0) return <Empty />;
 
   const maxAvg = Math.max(...stats.locations.map((l) => l.avg), 1);
@@ -51,18 +51,18 @@ export default function GeographicalDifferentialsTab() {
       </div>
 
       <div className="rounded-lg border border-gray-200 bg-white p-4">
-        <h3 className="text-sm font-semibold text-gray-800 mb-3">Location-wise breakdown</h3>
+        <h3 className="text-[13px] font-semibold text-gray-800 mb-3">Location-wise breakdown</h3>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50">
-                <th className="text-left py-2 px-3">Location</th>
-                <th className="text-right py-2 px-3">Headcount</th>
-                <th className="text-right py-2 px-3">Avg CTC</th>
-                <th className="text-right py-2 px-3">Median</th>
-                <th className="text-right py-2 px-3">Min — Max</th>
-                <th className="text-right py-2 px-3">vs Company Avg</th>
-                <th className="text-left py-2 px-3 w-40">Avg vs Top</th>
+              <tr className="text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em] border-b border-gray-200 bg-gray-50">
+                <th className="text-left px-4 py-2.5">Location</th>
+                <th className="text-right px-4 py-2.5">Headcount</th>
+                <th className="text-right px-4 py-2.5">Avg CTC</th>
+                <th className="text-right px-4 py-2.5">Median</th>
+                <th className="text-right px-4 py-2.5">Min — Max</th>
+                <th className="text-right px-4 py-2.5">vs Company Avg</th>
+                <th className="text-left px-4 py-2.5 w-40">Avg vs Top</th>
               </tr>
             </thead>
             <tbody>
@@ -75,23 +75,23 @@ export default function GeographicalDifferentialsTab() {
                   : "text-gray-500";
                 return (
                   <tr key={l.name} className="border-b border-gray-50 hover:bg-gray-50">
-                    <td className="py-2 px-3">
-                      <span className="inline-flex items-center gap-1.5 font-medium text-gray-900">
+                    <td className="px-4 py-2.5">
+                      <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-gray-900">
                         <MapPin size={11} className="text-gray-400" /> {l.name}
                       </span>
                     </td>
-                    <td className="py-2 px-3 text-right tabular-nums text-gray-700">{l.headcount}</td>
-                    <td className="py-2 px-3 text-right tabular-nums font-semibold">{INR_LAKH(l.avg)}</td>
-                    <td className="py-2 px-3 text-right tabular-nums text-gray-700">{INR_LAKH(l.median)}</td>
-                    <td className="py-2 px-3 text-right tabular-nums text-gray-500 text-xs">
+                    <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">{l.headcount}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums font-semibold">{INR_LAKH(l.avg)}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">{INR_LAKH(l.median)}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums text-gray-500 text-xs">
                       {INR_LAKH(l.minCtc)} — {INR_LAKH(l.maxCtc)}
                     </td>
-                    <td className={`py-2 px-3 text-right tabular-nums font-semibold ${diffColor}`}>
+                    <td className={`px-4 py-2.5 text-right tabular-nums font-semibold ${diffColor}`}>
                       {l.diffFromCompany > 0 ? "+" : ""}{l.diffFromCompany.toFixed(1)}%
                     </td>
-                    <td className="py-2 px-3">
+                    <td className="px-4 py-2.5">
                       <div className="w-36 h-2 bg-gray-100 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full" style={{ width: `${bar}%`, background: "#3b82f6" }} />
+                        <div className="h-full rounded-full" style={{ width: `${bar}%`, background: "#22c55e" }} />
                       </div>
                     </td>
                   </tr>

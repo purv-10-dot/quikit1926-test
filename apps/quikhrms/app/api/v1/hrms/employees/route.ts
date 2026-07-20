@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { withAuth } from "@/lib/with-auth";
+import { withAuth, withServiceAuth } from "@/lib/with-auth";
 import { successResponse, validationError, internalError } from "@/lib/api-response";
 import { createEmployeeSchema } from "@/lib/validations/employee";
 import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
@@ -10,15 +10,13 @@ import { resolveScope, employeeScopeFilter } from "@/lib/rbac/scope";
 import { getHierarchyAccessibleEmployeeIds, intersectEmployeeIds } from "@/lib/rbac/hierarchy";
 import { APP_ID } from "@/lib/rbac/registry";
 import { forbidden } from "@/lib/api-response";
-import { sendMail } from "@/lib/services/mailer";
-import { buildWelcomeEmail } from "@/lib/email-templates/welcome";
-import { inviteSingleEmployee } from "@/lib/services/invitation";
 import { scheduleOrgChartRebuild } from "@/lib/org-chart-rebuild";
 import { allocateProRataLeaveBalances } from "@/lib/services/leave-allocation";
+import { emitEmployeeIndex } from "@/lib/search/search-index";
 import type { Prisma } from "@quikit/database";
 
 /** GET /api/v1/hrms/employees — list with search, filter, pagination */
-export const GET = withAuth(async (req: NextRequest, ctx) => {
+export const GET = withServiceAuth(async (req: NextRequest, ctx) => {
   try {
     const { orgId } = ctx;
     const { searchParams } = new URL(req.url);
@@ -36,6 +34,15 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
     const fields = searchParams.get("fields")?.split(",").filter(Boolean) ?? [];
     const includeDeleted = searchParams.get("includeDeleted") === "1";
     const onlyDeleted = searchParams.get("onlyDeleted") === "1";
+    // Opt-in: only employees who actually have a login account — either linked to
+    // central SSO (authUserId set) or provisioned a native password (passwordHash
+    // set). Used by the Users & Invitations screen so it lists real users, not
+    // every employee record.
+    const provisioned = searchParams.get("provisioned") === "true";
+    // Opt-in: only employees who can still be invited — no login account yet
+    // (no authUserId, no passwordHash) AND no Pending invitation. Powers the
+    // "Not yet invited" list on the Users & Invitations screen.
+    const invitable = searchParams.get("invitable") === "true";
     // Opt-in: further restrict to the caller's role-priority hierarchy.
     const accessible = searchParams.get("accessible") === "true";
 
@@ -52,11 +59,30 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
       const hierarchy = await getHierarchyAccessibleEmployeeIds(ctx);
       scopeIds = intersectEmployeeIds(scopeIds ?? undefined, hierarchy) ?? null;
     }
+    // For the "invitable" list we exclude anyone with a Pending invitation.
+    const pendingInviteEmails = invitable
+      ? (await prisma.invitation.findMany({
+          where: { orgId, status: "Pending", deletedAt: null },
+          select: { email: true },
+        })).map((i) => i.email.toLowerCase())
+      : [];
+
     const { data, total } = await (async () => {
       const where: Prisma.EmployeeWhereInput = {
         orgId,
         ...(onlyDeleted ? { deletedAt: { not: null } } : includeDeleted ? {} : { deletedAt: null }),
         ...(scopeIds && { id: { in: scopeIds } }),
+        // AND (not OR) so this doesn't collide with the `search` OR below.
+        ...(provisioned && {
+          AND: [{ OR: [{ authUserId: { not: null } }, { passwordHash: { not: null } }] }],
+        }),
+        // Invitable = no login account yet AND has a work email AND not already
+        // sitting in a Pending invitation.
+        ...(invitable && {
+          authUserId: null,
+          passwordHash: null,
+          workEmail: { notIn: pendingInviteEmails },
+        }),
         ...(search && {
           OR: [
             { firstName: { contains: search, mode: "insensitive" } },
@@ -92,6 +118,7 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
         workLocation: true,
         dateOfJoining: true,
         gender: true,
+        reportingManagerId: true,
         department: { select: { id: true, name: true } },
         designation: { select: { id: true, title: true } },
         officeLocation: { select: { id: true, name: true, city: true } },
@@ -104,6 +131,60 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
         }),
         ...(fields.includes("team") && {
           team: { select: { id: true, name: true } },
+        }),
+        // `fields=full` — the complete, export-grade field set. Opt-in only
+        // (used by CSV export) so normal directory paging stays lean. Covers
+        // every scalar/JSON field captured on the employee form so a download
+        // contains all the input data, not a subset.
+        ...(fields.includes("full") && {
+          middleName: true,
+          dateOfBirth: true,
+          bloodGroup: true,
+          maritalStatus: true,
+          nationality: true,
+          isHandicapped: true,
+          isSeniorCitizen: true,
+          personalEmail: true,
+          personalPhone: true,
+          workPhone: true,
+          linkedinUrl: true,
+          githubUrl: true,
+          portfolioUrl: true,
+          currentAddress: true,
+          permanentAddress: true,
+          emergencyContacts: true,
+          workerType: true,
+          confirmationDate: true,
+          probationEndDate: true,
+          noticePeriodDays: true,
+          tentativeJoiningDate: true,
+          lastWorkingDate: true,
+          previousExperience: true,
+          sourceOfHire: true,
+          currentSalary: true,
+          expectedSalary: true,
+          offerLetterUrl: true,
+          highestQualification: true,
+          skillSet: true,
+          additionalInfo: true,
+          panNumber: true,
+          aadhaarNumber: true,
+          taxIdentificationNumber: true,
+          uanNumber: true,
+          pfAccountNumber: true,
+          esiNumber: true,
+          epfApplicable: true,
+          esiApplicable: true,
+          ptApplicable: true,
+          skills: true,
+          certifications: true,
+          languages: true,
+          educations: true,
+          pastExperiences: true,
+          customFields: true,
+          reportingManager: { select: { id: true, firstName: true, lastName: true } },
+          team: { select: { id: true, name: true } },
+          grade: { select: { id: true, name: true } },
         }),
       };
 
@@ -158,6 +239,17 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       if (dup) {
         return validationError("Validation failed", { personalEmail: ["This personal email is already used by another employee"] });
       }
+    }
+
+    // Validate the salary template BEFORE any writes. Otherwise an invalid
+    // template returns a 400 *after* the employee + role rows are created,
+    // orphaning a half-provisioned employee (no salary) in the tenant.
+    const structure = await prisma.salaryStructure.findFirst({
+      where: { id: data.salaryTemplateId, orgId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!structure) {
+      return validationError("Salary template not found");
     }
 
     const employeeCode = await generateEmployeeCode(orgId);
@@ -245,14 +337,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       });
     }
 
-    // Salary assignment — required on create.
-    const structure = await prisma.salaryStructure.findFirst({
-      where: { id: data.salaryTemplateId, orgId, deletedAt: null },
-      select: { id: true },
-    });
-    if (!structure) {
-      return validationError("Salary template not found");
-    }
+    // Salary assignment — required on create. Template validated before writes.
     await prisma.employeeSalary.create({
       data: {
         orgId,
@@ -295,53 +380,12 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       },
     });
 
-    void (async () => {
-      try {
-        if (!employee.workEmail) return;
+    // Search index (§S-3): add the new employee to the locator index (§13-safe).
+    emitEmployeeIndex(orgId, employee.id, "create");
 
-        // If HR chose to invite (popup on the Add form), send the account-setup
-        // invite instead of the welcome email: creates a Pending Invitation linked
-        // to this employee and queues the activation email so they set a password.
-        if (data.sendInvite) {
-          // Single employee → send the invite directly via SMTP (no BullMQ).
-          await inviteSingleEmployee(orgId, userId, {
-            id: employee.id,
-            workEmail: employee.workEmail,
-            firstName: employee.firstName,
-            lastName: employee.lastName,
-            roleId: assignedRoleId,
-          });
-          return;
-        }
-
-        const [company, manager] = await Promise.all([
-          prisma.companySettings.findUnique({ where: { orgId }, select: { companyName: true } }),
-          employee.reportingManagerId
-            ? prisma.employee.findUnique({
-                where: { id: employee.reportingManagerId },
-                select: { firstName: true, lastName: true },
-              })
-            : Promise.resolve(null),
-        ]);
-
-        const { subject, html } = buildWelcomeEmail({
-          employeeName: `${employee.firstName} ${employee.lastName}`.trim(),
-          employeeCode: employee.employeeCode,
-          jobTitle: employee.jobTitle,
-          department: employee.department?.name ?? null,
-          dateOfJoining: new Date(employee.dateOfJoining).toLocaleDateString("en-IN", {
-            day: "2-digit", month: "long", year: "numeric",
-          }),
-          managerName: manager ? `${manager.firstName} ${manager.lastName}`.trim() : null,
-          companyName: company?.companyName ?? "QuikIT HRMS",
-          portalUrl: process.env.APP_URL,
-        });
-        // Single employee → send the welcome email directly via SMTP (no BullMQ).
-        await sendMail({ to: employee.workEmail, subject, html });
-      } catch (err) {
-        console.error("[mail] welcome email failed:", err);
-      }
-    })();
+    // No invite / welcome email is sent on create. Invitations are triggered
+    // manually from the Users & Invitations screen (the new employee appears
+    // there under "Not yet invited").
 
     return successResponse(employee, undefined, 201);
   } catch (error) {

@@ -95,6 +95,7 @@ export function NewEarningForm({ onCancel, onCreated }: { onCancel: () => void; 
   const createMut = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.post("/api/v1/hrms/payroll/salary-components", body),
     onSuccess: () => { onCreated(); setErr(null); },
+    meta: { suppressGlobalError: true },
     onError: (e: Error) => setErr(e.message),
   });
 
@@ -123,8 +124,8 @@ export function NewEarningForm({ onCancel, onCreated }: { onCancel: () => void; 
   };
 
   return (
-    <form onSubmit={submit} className="p-5 space-y-5">
-      <div className="grid grid-cols-2 gap-6">
+    <form onSubmit={submit} className="p-4 space-y-4">
+      <div className="grid grid-cols-2 gap-4">
         {/* LEFT */}
         <div className="space-y-4">
           <div>
@@ -135,7 +136,7 @@ export function NewEarningForm({ onCancel, onCreated }: { onCancel: () => void; 
               <button
                 type="button"
                 onClick={() => setTypeDropOpen((v) => !v)}
-                className="w-full px-3 py-2 text-sm bg-white border border-[var(--border)] rounded-md flex items-center justify-between hover:border-[#93c5fd]"
+                className="w-full px-3 py-2 text-xs bg-white border border-[var(--border)] rounded-md flex items-center justify-between hover:border-[#86efac]"
               >
                 <span>{selectedPreset.label}</span>
                 <ChevronDown size={14} className="text-gray-400" />
@@ -148,7 +149,7 @@ export function NewEarningForm({ onCancel, onCreated }: { onCancel: () => void; 
                       <input
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
-                        className="w-full pl-7 pr-2 py-1.5 text-sm border border-[var(--border)] rounded"
+                        className="w-full pl-7 pr-2 py-1.5 text-xs border border-[var(--border)] rounded"
                         autoFocus
                       />
                     </div>
@@ -160,8 +161,8 @@ export function NewEarningForm({ onCancel, onCreated }: { onCancel: () => void; 
                         key={p.key}
                         onClick={() => pickPreset(p)}
                         className={
-                          "w-full text-left px-3 py-2 text-sm hover:bg-[#dbeafe] flex items-center justify-between " +
-                          (selectedPreset.key === p.key ? "bg-[#16243A] text-white hover:bg-[#2563eb]" : "text-gray-700")
+                          "w-full text-left px-3 py-2 text-xs hover:bg-[#dcfce7] flex items-center justify-between " +
+                          (selectedPreset.key === p.key ? "bg-green-600 text-white hover:bg-green-700" : "text-gray-700")
                         }
                       >
                         {p.label}
@@ -169,7 +170,7 @@ export function NewEarningForm({ onCancel, onCreated }: { onCancel: () => void; 
                       </button>
                     ))}
                   </div>
-                  <button type="button" onClick={pickCustom} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-[#3b82f6] border-t border-gray-100 hover:bg-[#dbeafe]">
+                  <button type="button" onClick={pickCustom} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#22c55e] border-t border-gray-100 hover:bg-[#dcfce7]">
                     <Plus size={14} /> New Custom Allowance
                   </button>
                 </div>
@@ -205,20 +206,20 @@ export function NewEarningForm({ onCancel, onCreated }: { onCancel: () => void; 
                     type="button"
                     onClick={() => setForm({ ...form, amountType: opt.v })}
                     className={clsx(
-                      "relative text-left rounded-md border px-3 py-2.5 transition focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/30",
+                      "relative text-left rounded-md border px-3 py-2.5 transition focus:outline-none focus:ring-2 focus:ring-[#22c55e]/30",
                       active
-                        ? "border-[#3b82f6] bg-[#3b82f6]/5 ring-1 ring-[#3b82f6]/40"
+                        ? "border-[#22c55e] bg-[#22c55e]/5 ring-1 ring-[#22c55e]/40"
                         : "border-gray-200 hover:border-gray-300 bg-white",
                     )}
                   >
                     <div className="flex items-center gap-2">
                       <span className={clsx(
                         "w-3.5 h-3.5 rounded-full border-2 shrink-0 flex items-center justify-center",
-                        active ? "border-[#3b82f6]" : "border-gray-300",
+                        active ? "border-[#22c55e]" : "border-gray-300",
                       )}>
-                        {active && <span className="w-1.5 h-1.5 rounded-full bg-[#3b82f6]" />}
+                        {active && <span className="w-1.5 h-1.5 rounded-full bg-[#22c55e]" />}
                       </span>
-                      <span className={clsx("text-sm font-medium", active ? "text-[#1d4ed8]" : "text-gray-800")}>
+                      <span className={clsx("text-[13px] font-medium", active ? "text-[#15803d]" : "text-gray-800")}>
                         {opt.label}
                       </span>
                     </div>
@@ -229,20 +230,20 @@ export function NewEarningForm({ onCancel, onCreated }: { onCancel: () => void; 
             </div>
           </div>
 
-          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer pt-2">
-            <input type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} className="text-[#3b82f6] rounded" />
+          <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer pt-2">
+            <input type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} className="text-[#22c55e] rounded" />
             Mark this as Active
           </label>
         </div>
 
         {/* RIGHT */}
-        <div className="space-y-4 border-l border-gray-200 pl-6">
-          <div className="rounded-md bg-[#dbeafe] border border-[#dbeafe] px-3 py-2 text-xs text-[#1d4ed8] flex items-start gap-2">
+        <div className="space-y-4 border-l border-gray-200 pl-5">
+          <div className="rounded-md bg-[#dcfce7] border border-[#dcfce7] px-3 py-2 text-xs text-[#15803d] flex items-start gap-2">
             <Info size={14} className="mt-0.5 shrink-0" />
             <span>{selectedPreset.description}</span>
           </div>
 
-          <p className="text-sm font-semibold text-gray-900">Other Configurations</p>
+          <p className="text-[13px] font-semibold text-gray-900">Other Configurations</p>
 
           <Toggle label="Make this earning a part of the employee's salary structure" checked={form.partOfSalaryStructure} onChange={(v) => setForm({ ...form, partOfSalaryStructure: v })} />
           <ToggleDescribed
@@ -259,18 +260,18 @@ export function NewEarningForm({ onCancel, onCreated }: { onCancel: () => void; 
           />
 
           <div>
-            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-              <input type="checkbox" checked={form.considerForEPF} onChange={(e) => setForm({ ...form, considerForEPF: e.target.checked })} className="text-[#3b82f6] rounded" />
+            <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+              <input type="checkbox" checked={form.considerForEPF} onChange={(e) => setForm({ ...form, considerForEPF: e.target.checked })} className="text-[#22c55e] rounded" />
               Consider for EPF Contribution
             </label>
             {form.considerForEPF && (
-              <div className="ml-6 mt-1 space-y-1 text-sm">
+              <div className="ml-6 mt-1 space-y-1 text-xs">
                 <label className="flex items-center gap-2">
-                  <input type="radio" checked={!form.considerEPFIfPFWageLT15k} onChange={() => setForm({ ...form, considerEPFIfPFWageLT15k: false })} className="text-[#3b82f6]" />
+                  <input type="radio" checked={!form.considerEPFIfPFWageLT15k} onChange={() => setForm({ ...form, considerEPFIfPFWageLT15k: false })} className="text-[#22c55e]" />
                   Always
                 </label>
                 <label className="flex items-center gap-2">
-                  <input type="radio" checked={form.considerEPFIfPFWageLT15k} onChange={() => setForm({ ...form, considerEPFIfPFWageLT15k: true })} className="text-[#3b82f6]" />
+                  <input type="radio" checked={form.considerEPFIfPFWageLT15k} onChange={() => setForm({ ...form, considerEPFIfPFWageLT15k: true })} className="text-[#22c55e]" />
                   Only when PF Wage is less than ₹ 15,000 <Info size={12} className="text-gray-400" />
                 </label>
               </div>
@@ -286,14 +287,14 @@ export function NewEarningForm({ onCancel, onCreated }: { onCancel: () => void; 
         <span className="font-semibold">Note:</span> Once you associate this component with an employee, you will only be able to edit the Name and Amount/Percentage. The changes you make to Amount/Percentage will apply only to new employees.
       </div>
 
-      {err && <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">{err}</p>}
+      {err && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">{err}</p>}
 
       <div className="flex items-center justify-between pt-3 border-t border-gray-100">
         <div className="flex gap-2">
-          <button type="submit" disabled={createMut.isPending} className="px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 text-white rounded-md text-sm font-semibold shadow-sm">
+          <button type="submit" disabled={createMut.isPending} className="px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-md text-xs font-medium shadow-sm">
             {createMut.isPending ? "Saving..." : "Save"}
           </button>
-          <button type="button" onClick={onCancel} className="px-4 py-2 border border-[var(--border)] bg-white hover:bg-gray-50 text-gray-700 rounded-md text-sm font-medium">
+          <button type="button" onClick={onCancel} className="px-3 py-1.5 border border-[var(--border)] bg-white hover:bg-gray-50 text-gray-700 rounded-md text-xs font-medium">
             Cancel
           </button>
         </div>
@@ -305,8 +306,8 @@ export function NewEarningForm({ onCancel, onCreated }: { onCancel: () => void; 
 
 function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
-    <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="text-[#3b82f6] rounded" />
+    <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="text-[#22c55e] rounded" />
       {label}
     </label>
   );
@@ -315,8 +316,8 @@ function Toggle({ label, checked, onChange }: { label: string; checked: boolean;
 function ToggleDescribed({ label, description, checked, onChange }: { label: string; description: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
     <div>
-      <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-        <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="text-[#3b82f6] rounded" />
+      <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+        <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="text-[#22c55e] rounded" />
         {label}
       </label>
       <p className="text-xs text-gray-500 ml-6 mt-0.5">{description}</p>

@@ -25,13 +25,10 @@ import {
   Clock,
   CheckSquare,
   FileText,
-  Box,
   ShieldCheck,
   Accessibility,
   Check,
   X as XIcon,
-  KeyRound,
-  Copy,
 } from "lucide-react";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 import { withBasePath } from "@/lib/utils/base-path";
@@ -91,6 +88,7 @@ interface EmployeeDetail {
     fieldOfStudy?: string;
     startYear: number;
     endYear?: number;
+    grade?: string;
   }> | null;
   languages: Array<{ language: string; proficiency: string }> | null;
   department: { id: string; name: string; code: string } | null;
@@ -151,8 +149,8 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
-      <h3 className="flex items-center gap-2 font-semibold text-gray-900 mb-4">
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+      <h3 className="flex items-center gap-2 text-[13px] font-semibold text-gray-900 mb-4">
         {icon}
         {title}
       </h3>
@@ -165,7 +163,7 @@ function InfoRow({ label, value }: { label: string; value: string | null | undef
   return (
     <div>
       <dt className="text-xs text-gray-500">{label}</dt>
-      <dd className="text-sm text-gray-900">{value || "—"}</dd>
+      <dd className="text-xs text-gray-900">{value || "—"}</dd>
     </div>
   );
 }
@@ -174,7 +172,7 @@ interface RoleLite { id: string; code: string; name: string; priority: number; i
 
 export default function EmployeeProfilePage() {
   return (
-    <Suspense fallback={<div className="p-6 space-y-2"><SkeletonLine w="40%" h={16} /><SkeletonLine w="70%" h={12} /><SkeletonLine w="60%" h={12} /></div>}>
+    <Suspense fallback={<div className="p-4 space-y-2"><SkeletonLine w="40%" h={16} /><SkeletonLine w="70%" h={12} /><SkeletonLine w="60%" h={12} /></div>}>
       <EmployeeProfilePageInner />
     </Suspense>
   );
@@ -208,6 +206,20 @@ function EmployeeProfilePageInner() {
   const isSelf = meData?.data?.id === id;
   const canEditProfile = isSelf || hasPermission("hrms.employee.write");
 
+  // "Back to Directory" only makes sense for users who can actually open the
+  // People directory. A self-service employee reaching their own profile via
+  // "My Profile" has no directory to go back to — send them to the dashboard
+  // (and honour an explicit ?returnTo when present).
+  const canViewDirectory =
+    hasPermission("hrms.employee.read") ||
+    hasPermission("hrms.employee.read_team") ||
+    hasPermission("hrms.org.read");
+  const backNav = returnTo
+    ? { href: returnTo, label: "Back" }
+    : canViewDirectory
+      ? { href: "/org-chart", label: "Back to Directory" }
+      : { href: "/dashboard", label: "Back to Dashboard" };
+
   const { data: rolesResp } = useQuery({
     queryKey: ["roles"],
     queryFn: () => api.get<RoleLite[]>("/api/v1/hrms/settings/roles"),
@@ -220,15 +232,6 @@ function EmployeeProfilePageInner() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["employee", id] }),
   });
 
-  // Admin-set temporary password (forces change on next login).
-  const [tempPwResult, setTempPwResult] = useState<{ tempPassword: string; expiresAt: string } | null>(null);
-  const [tempPwCopied, setTempPwCopied] = useState(false);
-  const tempPwMut = useMutation({
-    mutationFn: () => api.post<{ tempPassword: string; expiresAt: string }>(`/api/v1/hrms/employees/${id}/temp-password`, {}),
-    onSuccess: (res) => { setTempPwResult(res.data); setTempPwCopied(false); },
-    onError: (e: Error) => toast.error("Could not set password", e.message),
-  });
-
   // Admin unlock for accounts frozen by repeated failed logins.
   const unlockMut = useMutation({
     mutationFn: () => api.post(`/api/v1/hrms/employees/${id}/unlock`, {}),
@@ -236,7 +239,6 @@ function EmployeeProfilePageInner() {
       toast.success("Account unlocked", "They can log in again now.");
       qc.invalidateQueries({ queryKey: ["employee", id] });
     },
-    onError: (e: Error) => toast.error("Unlock failed", e.message),
   });
 
   const photoInputRef = useRef<HTMLInputElement>(null);
@@ -256,6 +258,7 @@ function EmployeeProfilePageInner() {
       qc.invalidateQueries({ queryKey: ["me", "sidebar"] });
       setPhotoErr(null);
     },
+    meta: { suppressGlobalError: true },
     onError: (e: Error) => setPhotoErr(e.message),
   });
 
@@ -287,7 +290,7 @@ function EmployeeProfilePageInner() {
 
   if (isLoading) {
     return (
-      <div className="p-6 space-y-2">
+      <div className="p-4 space-y-2">
         <SkeletonLine w="30%" h={16} />
         <SkeletonLine w="70%" h={12} />
         <SkeletonLine w="60%" h={12} />
@@ -300,7 +303,7 @@ function EmployeeProfilePageInner() {
   if (!emp) {
     const status = (error as { status?: number } | null)?.status;
     const isForbidden = status === 403;
-    const backHref = returnTo || "/org-chart";
+    const backHref = backNav.href;
     return (
       <div className="flex flex-col items-center justify-center py-24 px-4 text-center">
         <div
@@ -320,9 +323,9 @@ function EmployeeProfilePageInner() {
         </p>
         <Link
           href={backHref}
-          className="mt-6 inline-flex items-center gap-1.5 btn btn-primary"
+          className="mt-4 inline-flex items-center gap-1.5 btn btn-primary"
         >
-          <ArrowLeft size={14} /> Back to Directory
+          <ArrowLeft size={14} /> Back
         </Link>
       </div>
     );
@@ -330,7 +333,7 @@ function EmployeeProfilePageInner() {
 
   const statusColors: Record<string, string> = {
     Active: "bg-green-100 text-green-700",
-    PreBoarding: "bg-[#dbeafe] text-[#2563eb]",
+    PreBoarding: "bg-[#dcfce7] text-[#16a34a]",
     OnLeave: "bg-yellow-100 text-yellow-700",
     OnNotice: "bg-orange-100 text-orange-700",
     Suspended: "bg-red-100 text-red-700",
@@ -339,18 +342,26 @@ function EmployeeProfilePageInner() {
 
   return (
     <div>
-      <Link
-        href="/org-chart"
-        className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 mb-4"
+      <button
+        type="button"
+        onClick={() => {
+          // Prefer real "go back" to the previous page. Fall back to the
+          // computed href only when there's no in-app history to return to
+          // (e.g. the profile was opened via a direct link).
+          if (returnTo) router.push(returnTo);
+          else if (window.history.length > 1) router.back();
+          else router.push(backNav.href);
+        }}
+        className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-900 mb-4"
       >
         <ArrowLeft size={14} />
-        Back to Directory
-      </Link>
+        Back
+      </button>
 
       {/* HiBob-style Cover + Profile Header */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden mb-6">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden mb-4">
         <div
-          className="h-28 bg-gradient-to-br from-[#dbeafe] via-[#bfdbfe] to-[#93c5fd] relative bg-cover bg-center"
+          className="h-28 bg-gradient-to-br from-[#dcfce7] via-[#bbf7d0] to-[#86efac] relative bg-cover bg-center"
           style={emp.coverImage ? { backgroundImage: `url(${emp.coverImage})` } : undefined}
         >
           <input
@@ -380,7 +391,7 @@ function EmployeeProfilePageInner() {
                 className="w-9 h-9 rounded-full bg-white/90 hover:bg-white shadow-sm border border-white/50 flex items-center justify-center text-gray-700 disabled:opacity-60"
                 title={emp.coverImage ? "Cover options" : "Add cover image"}
               >
-                {coverUploadMut.isPending ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
+                {coverUploadMut.isPending ? <Loader2 size={12} className="animate-spin" /> : <Camera size={12} />}
               </button>
               {coverMenuOpen && emp.coverImage && (
                 <>
@@ -415,9 +426,9 @@ function EmployeeProfilePageInner() {
             </div>
           )}
         </div>
-        <div className="px-6 pb-5">
-          <div className="flex items-end justify-between gap-5">
-            <div className="flex items-start gap-5 min-w-0">
+        <div className="px-5 pb-5">
+          <div className="flex items-end justify-between gap-4">
+            <div className="flex items-start gap-4 min-w-0">
             <div className="relative group flex-shrink-0 -mt-12">
               <input
                 ref={photoInputRef}
@@ -443,8 +454,8 @@ function EmployeeProfilePageInner() {
                 {emp.profilePhoto ? (
                   <img src={withBasePath(emp.profilePhoto)} alt="" className="w-full h-full object-cover" />
                 ) : (
-                  <div className="w-full h-full bg-gradient-to-br from-[#dbeafe] to-[#93c5fd] flex items-center justify-center">
-                    <User size={36} className="text-[#2563eb]" />
+                  <div className="w-full h-full bg-gradient-to-br from-[#dcfce7] to-[#86efac] flex items-center justify-center">
+                    <User size={36} className="text-[#16a34a]" />
                   </div>
                 )}
                 {canEditProfile && (
@@ -479,17 +490,17 @@ function EmployeeProfilePageInner() {
             </div>
             <div className="min-w-0 pt-1">
               <div className="flex items-center gap-3">
-                <h1 className="hibob-display text-2xl font-bold text-gray-900 truncate">
+                <h1 className="text-base font-semibold text-gray-900 truncate">
                   {[emp.firstName, emp.middleName, emp.lastName].filter(Boolean).join(" ").trim()
                     || emp.displayName
                     || emp.workEmail
                     || emp.employeeCode}
                 </h1>
-                <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${statusColors[emp.status] ?? "bg-gray-100 text-gray-600"}`}>
+                <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-medium ${statusColors[emp.status] ?? "bg-gray-100 text-gray-600"}`}>
                   {emp.status}
                 </span>
               </div>
-              <p className="text-gray-600 mt-0.5 text-sm">
+              <p className="text-gray-600 mt-0.5 text-xs">
                 {emp.designation?.title ?? emp.jobTitle ?? "No designation"}
               </p>
               <p className="text-xs text-gray-500 mt-0.5">
@@ -506,7 +517,7 @@ function EmployeeProfilePageInner() {
                   href={returnTo ? `/employees/${emp.id}/edit?returnTo=${encodeURIComponent(returnTo)}` : `/employees/${emp.id}/edit`}
                   className="flex items-center gap-1.5 btn btn-primary"
                 >
-                  <Pencil size={14} /> Edit
+                  <Pencil size={13} /> Edit
                 </Link>
               </div>
             ) : (
@@ -520,20 +531,19 @@ function EmployeeProfilePageInner() {
           </div>
 
           {/* Icon tab rail (HiBob-style) */}
-          <div className="flex items-center gap-8 mt-5 pt-4 border-t border-gray-100">
+          <div className="flex items-center gap-5 mt-5 pt-4 border-t border-gray-100">
             {[
               { label: "Time off", icon: Palmtree, href: `/leaves/my-leaves?employeeId=${emp.id}` },
               { label: "Attendance", icon: Clock, href: `/attendance?employeeId=${emp.id}` },
               { label: "Tasks", icon: CheckSquare, href: "/tasks" },
-              { label: "Assets", icon: Box, href: "/assets/my-assets" },
               { label: "Docs", icon: FileText, href: "/documents/my-vault" },
             ].map((t) => (
               <Link
                 key={t.label}
                 href={t.href}
-                className="group flex flex-col items-center gap-1 text-xs font-medium text-gray-600 hover:text-[#3b82f6] transition"
+                className="group flex flex-col items-center gap-1 text-xs font-medium text-gray-600 hover:text-[#22c55e] transition"
               >
-                <span className="w-10 h-10 rounded-lg bg-gray-50 group-hover:bg-[#dbeafe] flex items-center justify-center text-gray-500 group-hover:text-[#3b82f6] transition">
+                <span className="w-10 h-10 rounded-lg bg-gray-50 group-hover:bg-[#dcfce7] flex items-center justify-center text-gray-500 group-hover:text-[#22c55e] transition">
                   <t.icon size={18} strokeWidth={1.75} />
                 </span>
                 {t.label}
@@ -542,13 +552,13 @@ function EmployeeProfilePageInner() {
           </div>
 
           {emp.bio && (
-            <p className="text-sm text-gray-600 mt-4 italic">{emp.bio}</p>
+            <p className="text-xs text-gray-600 mt-4 italic">{emp.bio}</p>
           )}
         </div>
       </div>
 
       {/* Grid layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Contact */}
         <Section title="Contact Information" icon={<Mail size={16} />}>
           <dl className="grid grid-cols-2 gap-4">
@@ -564,7 +574,7 @@ function EmployeeProfilePageInner() {
                   href={emp.linkedinUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-[#3b82f6] text-sm hover:underline"
+                  className="text-[#22c55e] text-xs hover:underline"
                 >
                   LinkedIn
                 </a>
@@ -574,7 +584,7 @@ function EmployeeProfilePageInner() {
                   href={emp.githubUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-[#3b82f6] text-sm hover:underline"
+                  className="text-[#22c55e] text-xs hover:underline"
                 >
                   GitHub
                 </a>
@@ -584,7 +594,7 @@ function EmployeeProfilePageInner() {
                   href={emp.portfolioUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-[#3b82f6] text-sm hover:underline"
+                  className="text-[#22c55e] text-xs hover:underline"
                 >
                   Portfolio
                 </a>
@@ -660,7 +670,7 @@ function EmployeeProfilePageInner() {
               <p className="text-xs text-gray-500 mb-1">Reports to</p>
               <Link
                 href={`/employees/${emp.reportingManager.id}`}
-                className="flex items-center gap-2 text-[#3b82f6] hover:underline text-sm"
+                className="flex items-center gap-2 text-[#22c55e] hover:underline text-xs"
               >
                 <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center">
                   <User size={12} className="text-gray-500" />
@@ -670,7 +680,7 @@ function EmployeeProfilePageInner() {
               </Link>
             </div>
           ) : (
-            <p className="text-sm text-gray-500 mb-4">No reporting manager</p>
+            <p className="text-xs text-gray-500 mb-4">No reporting manager</p>
           )}
 
           {(emp.directReports?.length ?? 0) > 0 && (
@@ -683,7 +693,7 @@ function EmployeeProfilePageInner() {
                   <Link
                     key={dr.id}
                     href={`/employees/${dr.id}`}
-                    className="flex items-center gap-2 text-sm text-[#3b82f6] hover:underline"
+                    className="flex items-center gap-2 text-xs text-[#22c55e] hover:underline"
                   >
                     <div className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center">
                       <User size={10} className="text-gray-500" />
@@ -703,7 +713,7 @@ function EmployeeProfilePageInner() {
               {emp.role ? (
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-[#dbeafe] text-[#2563eb]">
+                    <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold bg-[#dcfce7] text-[#16a34a]">
                       {emp.role.name}
                     </span>
                     <code className="text-xs text-gray-400 bg-gray-100 px-1 rounded">{emp.role.code}</code>
@@ -713,7 +723,7 @@ function EmployeeProfilePageInner() {
                   )}
                 </div>
               ) : (
-                <p className="text-sm text-gray-400">No role assigned</p>
+                <p className="text-xs text-gray-400">No role assigned</p>
               )}
             </div>
             {canManageRbac && (
@@ -753,7 +763,7 @@ function EmployeeProfilePageInner() {
           {canManageRbac && emp.lockedUntil && new Date(emp.lockedUntil).getTime() > Date.now() && (
             <div className="mt-4 flex items-center justify-between gap-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5">
               <div>
-                <p className="text-sm font-semibold text-red-700">Account locked</p>
+                <p className="text-xs font-semibold text-red-700">Account locked</p>
                 <p className="text-xs text-red-600">
                   Too many failed sign-in attempts. Lifts at{" "}
                   <strong>{new Date(emp.lockedUntil).toLocaleString()}</strong>.
@@ -769,34 +779,9 @@ function EmployeeProfilePageInner() {
                   if (ok) unlockMut.mutate();
                 }}
                 disabled={unlockMut.isPending}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-[13px] font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-700 disabled:opacity-50"
               >
                 {unlockMut.isPending ? "Unlocking…" : "Unlock"}
-              </button>
-            </div>
-          )}
-
-          {canManageRbac && (
-            <div className="mt-4 flex items-center justify-between gap-4 border-t border-gray-100 pt-4">
-              <div>
-                <p className="text-sm font-medium text-gray-900">Temporary password</p>
-                <p className="text-xs text-gray-500">
-                  Set a one-time password for {emp.workEmail}. They'll be required to change it on first login.
-                </p>
-              </div>
-              <button
-                onClick={async () => {
-                  const ok = await dialog.confirm({
-                    title: "Set a temporary password?",
-                    description: "This replaces any existing password. The employee must change it on next login. The password is shown to you only once.",
-                    confirmLabel: "Generate",
-                  });
-                  if (ok) tempPwMut.mutate();
-                }}
-                disabled={tempPwMut.isPending}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-[13px] font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
-              >
-                <KeyRound size={14} /> {tempPwMut.isPending ? "Setting…" : "Set temporary password"}
               </button>
             </div>
           )}
@@ -807,14 +792,15 @@ function EmployeeProfilePageInner() {
           <Section title="Education" icon={<GraduationCap size={16} />}>
             <div className="space-y-3">
               {emp.educations.map((edu, i) => (
-                <div key={i} className="border-l-2 border-[#bfdbfe] pl-3">
-                  <p className="font-medium text-sm text-gray-900">
+                <div key={i} className="border-l-2 border-[#bbf7d0] pl-3">
+                  <p className="font-medium text-xs text-gray-900">
                     {edu.degree}
                     {edu.fieldOfStudy ? ` in ${edu.fieldOfStudy}` : ""}
                   </p>
-                  <p className="text-sm text-gray-600">{edu.institution}</p>
+                  <p className="text-xs text-gray-600">{edu.institution}</p>
                   <p className="text-xs text-gray-400">
                     {edu.startYear}–{edu.endYear ?? "Present"}
+                    {edu.grade ? ` · ${edu.grade}` : ""}
                   </p>
                 </div>
               ))}
@@ -829,10 +815,10 @@ function EmployeeProfilePageInner() {
               {emp.skills.map((skill, i) => (
                 <span
                   key={i}
-                  className="inline-flex items-center gap-1 bg-[#dbeafe] text-[#2563eb] px-2.5 py-1 rounded-full text-xs"
+                  className="inline-flex items-center gap-1 bg-[#dcfce7] text-[#16a34a] px-2.5 py-1 rounded-full text-xs"
                 >
                   {skill.name}
-                  <span className="text-[#93c5fd] text-[10px]">
+                  <span className="text-[#86efac] text-[10px]">
                     {skill.proficiency}
                   </span>
                 </span>
@@ -846,7 +832,7 @@ function EmployeeProfilePageInner() {
           <Section title="Emergency Contacts" icon={<Phone size={16} />}>
             <div className="space-y-2">
               {emp.emergencyContacts.map((ec, i) => (
-                <div key={i} className="text-sm">
+                <div key={i} className="text-xs">
                   <p className="font-medium text-gray-900">
                     {ec.name}{" "}
                     <span className="text-gray-400 font-normal">
@@ -866,7 +852,7 @@ function EmployeeProfilePageInner() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-xs text-gray-500 mb-1">Current Address</p>
-                <p className="text-sm text-gray-900">
+                <p className="text-xs text-gray-900">
                   {emp.currentAddress.line1}
                   {emp.currentAddress.line2 && `, ${emp.currentAddress.line2}`}
                   <br />
@@ -879,7 +865,7 @@ function EmployeeProfilePageInner() {
               {emp.permanentAddress && (
                 <div>
                   <p className="text-xs text-gray-500 mb-1">Permanent Address</p>
-                  <p className="text-sm text-gray-900">
+                  <p className="text-xs text-gray-900">
                     {emp.permanentAddress.line1}
                     {emp.permanentAddress.line2 &&
                       `, ${emp.permanentAddress.line2}`}
@@ -895,44 +881,6 @@ function EmployeeProfilePageInner() {
           </Section>
         )}
       </div>
-
-      {/* Temporary password result — shown once */}
-      <Modal
-        open={!!tempPwResult}
-        onClose={() => setTempPwResult(null)}
-        title="Temporary password set"
-        subtitle="Share this with the employee securely. It won't be shown again."
-        headerIcon={<KeyRound size={18} />}
-        bodyClassName="p-5"
-      >
-        {tempPwResult && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5">
-              <code className="select-all font-mono text-base font-semibold tracking-wide text-gray-900">
-                {tempPwResult.tempPassword}
-              </code>
-              <button
-                onClick={() => { navigator.clipboard?.writeText(tempPwResult.tempPassword); setTempPwCopied(true); }}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-[13px] font-medium text-gray-700 transition hover:bg-gray-50"
-              >
-                {tempPwCopied ? <><Check size={14} className="text-emerald-600" /> Copied</> : <><Copy size={14} /> Copy</>}
-              </button>
-            </div>
-            <p className="text-[13px] text-gray-500">
-              The employee must change this on first login. It expires on{" "}
-              <strong className="text-gray-700">{new Date(tempPwResult.expiresAt).toLocaleString()}</strong>.
-            </p>
-            <div className="flex justify-end">
-              <button
-                onClick={() => setTempPwResult(null)}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        )}
-      </Modal>
     </div>
   );
 }
@@ -977,14 +925,14 @@ function StatPill({
   const cls = enabled
     ? kindOn === "ok"
       ? "bg-emerald-50 text-emerald-700 ring-emerald-100"
-      : "bg-blue-50 text-blue-700 ring-blue-100"
+      : "bg-green-50 text-green-700 ring-green-100"
     : kindOff === "warn"
       ? "bg-amber-50 text-amber-800 ring-amber-200"
       : "bg-gray-100 text-gray-600 ring-gray-200";
   return (
     <span
       title={hint}
-      className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md ring-1 text-[11px] font-bold ${cls}`}
+      className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md ring-1 text-[11px] font-medium ${cls}`}
     >
       {enabled ? <Check size={11} /> : <XIcon size={11} />}
       {label}

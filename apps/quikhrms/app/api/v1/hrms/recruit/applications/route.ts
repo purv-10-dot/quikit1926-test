@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { withAuth } from "@/lib/with-auth";
+import { withAuth, withServiceAuth } from "@/lib/with-auth";
 import { successResponse, validationError, conflict, internalError } from "@/lib/api-response";
 import { createApplicationSchema } from "@/lib/validations/recruit";
 import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
@@ -8,7 +8,7 @@ import { fireWorkflow } from "@/lib/workflows/executor";
 import { stageNames } from "@/lib/services/pipeline-stages";
 import { scoreResumeAgainstJD, parsedResumeToText, type SkillWeight } from "@/lib/ai/ats-scorer";
 
-export const GET = withAuth(async (req: NextRequest, { orgId }) => {
+export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
   try {
     const { searchParams } = new URL(req.url);
     const { page, limit } = parsePagination(searchParams);
@@ -16,10 +16,20 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     const status = searchParams.get("status");
     const stage = searchParams.get("stage");
 
+    // `status` accepts a single value or a comma-separated list (e.g.
+    // "AppActive,AppOffered") so the pipeline board can show candidates through
+    // the whole offer lifecycle, not just AppActive.
+    type AppStatus = "AppActive" | "AppHired" | "AppRejected" | "AppOnHold" | "AppWithdrawn" | "AppOffered" | "AppDeclined";
+    const statuses = status ? status.split(",").map((s) => s.trim()).filter(Boolean) as AppStatus[] : [];
+
     const where = {
       orgId, deletedAt: null,
       ...(requisitionId && { requisitionId }),
-      ...(status && { status: status as "AppActive" | "AppHired" | "AppRejected" }),
+      ...(statuses.length === 1
+        ? { status: statuses[0] }
+        : statuses.length > 1
+          ? { status: { in: statuses } }
+          : {}),
       ...(stage && { currentStage: stage }),
     };
 
@@ -27,8 +37,8 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
       prisma.jobApplication.findMany({
         where, orderBy: { appliedDate: "desc" }, skip: (page - 1) * limit, take: limit,
         include: {
-          candidate: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, currentCompany: true, totalExperience: true, expectedCTC: true } },
-          requisition: { select: { id: true, title: true, requisitionNumber: true, pipelineId: true } },
+          candidate: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, location: true, source: true, currentCompany: true, currentDesignation: true, totalExperience: true, noticePeriod: true, currentCTC: true, expectedCTC: true, skills: true, linkedinUrl: true, portfolioUrl: true, resumeUrl: true } },
+          requisition: { select: { id: true, title: true, requisitionNumber: true, pipelineId: true, interviewPanel: true } },
           _count: { select: { interviews: true } },
         },
       }),
@@ -43,12 +53,20 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
       location: string | null; meetingLink: string | null;
       interviewer: { id: string; firstName: string; lastName: string } | null;
     }>();
+    // PostOffer document-request status per application — powers the Offer-stage
+    // card's "Send Reminder" / "Docs received" states (mirrors /recruit/offers).
+    const docRequestMap = new Map<string, {
+      status: "Pending" | "Completed" | "Cancelled";
+      lastReminderAt: Date | null; reminderCount: number | null;
+    }>();
+    // Per-application gate: is any requested doc not yet approved, and which ones.
+    const docGateMap = new Map<string, { blocking: boolean; pending: string[] }>();
     // Offer data now lives on the JobApplication row itself (offer* columns),
     // so it's read straight off each `a` below — no separate offer query.
     if (apps.length) {
       const appIds = apps.map((a) => a.id);
 
-      const [scorecards, interviews] = await Promise.all([
+      const [scorecards, interviews, docRequests, allDocReqs] = await Promise.all([
         // Scorecard data now lives on Interview itself (overallRating set = submitted).
         prisma.interview.findMany({
           where: { orgId, deletedAt: null, applicationId: { in: appIds }, overallRating: { not: null } },
@@ -62,6 +80,23 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
             id: true, applicationId: true, round: true, type: true, status: true,
             scheduledAt: true, duration: true, location: true, meetingLink: true,
             interviewer: { select: { id: true, firstName: true, lastName: true } },
+          },
+        }),
+        prisma.candidateDocumentRequest.findMany({
+          where: { orgId, applicationId: { in: appIds }, bundle: "PostOffer", deletedAt: null },
+          select: { applicationId: true, status: true, lastReminderAt: true, reminderCount: true },
+        }),
+        // All (non-cancelled) doc requests across both bundles — powers the
+        // "all requested docs must be approved before advancing" gate. A request
+        // is fully approved only when its status is "Completed".
+        prisma.candidateDocumentRequest.findMany({
+          where: { orgId, applicationId: { in: appIds }, deletedAt: null, status: { not: "Cancelled" } },
+          select: {
+            applicationId: true, status: true, bundle: true,
+            uploads: {
+              where: { deletedAt: null },
+              select: { status: true, customLabel: true, fileName: true, documentType: { select: { name: true } } },
+            },
           },
         }),
       ]);
@@ -82,6 +117,27 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
           });
         }
       }
+      for (const dr of docRequests) {
+        docRequestMap.set(dr.applicationId, {
+          status: dr.status as "Pending" | "Completed" | "Cancelled",
+          lastReminderAt: dr.lastReminderAt, reminderCount: dr.reminderCount,
+        });
+      }
+      for (const r of allDocReqs) {
+        const entry = docGateMap.get(r.applicationId) ?? { blocking: false, pending: [] };
+        // Only block on documents the candidate has actually UPLOADED that HR
+        // hasn't approved yet (Pending review or Rejected). A bundle that's
+        // merely requested with nothing uploaded must NOT block — post-offer
+        // docs are collected after the offer is accepted, so requiring them
+        // first would deadlock the offer.
+        const awaitingReview = r.uploads.filter((u) => u.status !== "Approved");
+        for (const u of awaitingReview) {
+          entry.blocking = true;
+          const name = u.documentType?.name ?? u.customLabel ?? u.fileName ?? "Document";
+          entry.pending.push(u.status === "Rejected" ? `${name} (rejected — awaiting re-upload)` : `${name} (awaiting your review)`);
+        }
+        docGateMap.set(r.applicationId, entry);
+      }
     }
     const enriched = apps.map((a) => ({
       ...a,
@@ -95,6 +151,8 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
             sentAt: a.offerSentAt, respondedAt: a.offerRespondedAt,
           }
         : null,
+      docRequest: docRequestMap.get(a.id) ?? null,
+      docGate: docGateMap.get(a.id) ?? null,
     }));
 
     return successResponse(enriched, paginationMeta(page, limit, total));

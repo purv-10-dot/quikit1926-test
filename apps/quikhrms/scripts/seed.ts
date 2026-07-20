@@ -5,8 +5,10 @@ import { PERMISSIONS, DEFAULT_ROLES } from "../lib/rbac/permissions";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL ?? "" });
 const prisma = new PrismaClient();
-const TENANT = "tenant_dev_001";
-const ADMIN = "user_dev_001";
+// Target org/admin are overridable so the same seed can populate a real SSO org
+// (pass SEED_ORG_ID / SEED_ADMIN_ID) instead of the throwaway dev tenant.
+const TENANT = process.env.SEED_ORG_ID || "tenant_dev_001";
+const ADMIN = process.env.SEED_ADMIN_ID || "user_dev_001";
 const APP_ID = "quikhrms";
 
 function splitCode(code: string): { resource: string; action: string } {
@@ -871,7 +873,7 @@ async function seed() {
 
   const goalSeed = [
     { empIdx: 1, title: "Close $500K ARR in Q2", type: "Individual" as const, category: "Business" as const, target: 500000, unit: "USD", weight: 40 },
-    { empIdx: 2, title: "Launch mobile onboarding v2", type: "Team" as const, category: "Project" as const, target: 100, unit: "%", weight: 30 },
+    { empIdx: 2, title: "Launch mobile onboarding v2", type: "HrmsTeam" as const, category: "Project" as const, target: 100, unit: "%", weight: 30 },
     { empIdx: 3, title: "Reduce p95 API latency below 200ms", type: "Individual" as const, category: "Business" as const, target: 200, unit: "ms", weight: 25 },
     { empIdx: 4, title: "Complete AWS Solutions Architect cert", type: "Individual" as const, category: "Development" as const, target: 1, unit: "cert", weight: 15 },
   ];
@@ -916,6 +918,188 @@ async function seed() {
     });
   }
   console.log(`  Feedback: ${feedbackSeed.length}`);
+
+  // ── PERFORMANCE: Review Forms + KRA Templates + KRA Assignments + PIP ─
+  const perfDept = await prisma.department.findFirst({
+    where: { orgId: TENANT, deletedAt: null },
+    select: { id: true },
+  });
+
+  // Review forms (Performance → Reviews)
+  const reviewFormSeed = [
+    {
+      name: "Annual Review Form FY2026",
+      sections: [
+        { name: "Goals & Achievements", weight: 40, type: "Goals", questions: [
+          { text: "How well did the employee meet their goals this year?", type: "Rating", ratingScale: { min: 1, max: 5, labels: ["Poor", "Below", "Meets", "Exceeds", "Outstanding"] }, isRequired: true },
+          { text: "Summarise the key achievements this cycle.", type: "Text", isRequired: true },
+        ] },
+        { name: "Core Competencies", weight: 40, type: "Competencies", questions: [
+          { text: "Communication", type: "Rating", ratingScale: { min: 1, max: 5, labels: [] }, isRequired: true },
+          { text: "Ownership & Accountability", type: "Rating", ratingScale: { min: 1, max: 5, labels: [] }, isRequired: true },
+        ] },
+        { name: "Company Values", weight: 20, type: "Values", questions: [
+          { text: "Consistently demonstrates our core values.", type: "Scale", isRequired: true },
+        ] },
+      ],
+    },
+    {
+      name: "Quarterly Check-in Form",
+      sections: [
+        { name: "Quarterly Goals", weight: 60, type: "Goals", questions: [
+          { text: "Progress against quarterly objectives.", type: "Rating", ratingScale: { min: 1, max: 5, labels: [] }, isRequired: true },
+        ] },
+        { name: "Support & Blockers", weight: 40, type: "CustomQuestions", questions: [
+          { text: "What support do you need next quarter?", type: "Text", isRequired: false },
+        ] },
+      ],
+    },
+  ];
+  for (const rf of reviewFormSeed) {
+    const existing = await prisma.reviewForm.findFirst({
+      where: { orgId: TENANT, name: rf.name, deletedAt: null },
+    });
+    if (existing) continue;
+    await prisma.reviewForm.create({
+      data: { orgId: TENANT, name: rf.name, sections: rf.sections, createdBy: ADMIN, updatedBy: ADMIN },
+    });
+  }
+  console.log(`  Review forms: ${reviewFormSeed.length}`);
+
+  // KRA/KPI scorecard templates (Performance → KRA/KPI Templates)
+  const kraScorecardSeed = [
+    {
+      name: "Software Engineer Scorecard",
+      description: "Standard KRA/KPI scorecard for engineering roles.",
+      kras: [
+        { title: "Delivery & Quality", weight: 40, kpis: [
+          { title: "Sprint commitments met", target: "90", unit: "%", weight: 50, measurementMethod: "Jira sprint reports" },
+          { title: "Production defects", target: "< 3 / quarter", unit: "count", weight: 50, measurementMethod: "Incident tracker" },
+        ] },
+        { title: "Technical Excellence", weight: 35, kpis: [
+          { title: "Code review turnaround", target: "24", unit: "hours", weight: 60, measurementMethod: "PR metrics" },
+          { title: "Automated test coverage", target: "80", unit: "%", weight: 40, measurementMethod: "Coverage report" },
+        ] },
+        { title: "Collaboration", weight: 25, kpis: [
+          { title: "Peer feedback score", target: "4", unit: "/5", weight: 100, measurementMethod: "360° feedback" },
+        ] },
+      ],
+    },
+    {
+      name: "Sales Executive Scorecard",
+      description: "KRA/KPI scorecard for sales roles.",
+      kras: [
+        { title: "Revenue", weight: 50, kpis: [
+          { title: "Quarterly quota attainment", target: "100", unit: "%", weight: 70, measurementMethod: "CRM" },
+          { title: "New logos closed", target: "5", unit: "count", weight: 30, measurementMethod: "CRM" },
+        ] },
+        { title: "Pipeline Health", weight: 30, kpis: [
+          { title: "Qualified pipeline coverage", target: "3", unit: "x quota", weight: 100, measurementMethod: "CRM" },
+        ] },
+        { title: "Customer Success", weight: 20, kpis: [
+          { title: "Renewal rate", target: "90", unit: "%", weight: 100, measurementMethod: "CRM" },
+        ] },
+      ],
+    },
+  ];
+  type SeededCard = {
+    id: string; name: string;
+    kras: { id: string; title: string; description: string | null; weight: number;
+      kpis: { id: string; title: string; description: string | null; measurementMethod: string; target: string; unit: string; weight: number; sortOrder: number }[] }[];
+  };
+  const seededScorecards: SeededCard[] = [];
+  for (const [scIdx, sc] of kraScorecardSeed.entries()) {
+    const krasWithIds = sc.kras.map((k, ki) => ({
+      id: `kra-${scIdx}-${ki}`,
+      title: k.title,
+      description: null as string | null,
+      weight: k.weight,
+      kpis: k.kpis.map((kp, kpi) => ({
+        id: `kpi-${scIdx}-${ki}-${kpi}`,
+        title: kp.title,
+        description: null as string | null,
+        measurementMethod: kp.measurementMethod,
+        target: kp.target,
+        unit: kp.unit,
+        weight: kp.weight,
+        sortOrder: kpi,
+      })),
+    }));
+    let scorecard = await prisma.kraScorecard.findFirst({
+      where: { orgId: TENANT, name: sc.name, deletedAt: null },
+    });
+    if (!scorecard) {
+      scorecard = await prisma.kraScorecard.create({
+        data: {
+          orgId: TENANT, name: sc.name, description: sc.description,
+          departmentId: perfDept?.id ?? null, effectiveFrom: daysAgo(30),
+          isActive: true, tags: [], createdBy: ADMIN, updatedBy: ADMIN,
+        },
+      });
+      for (const [ki, k] of krasWithIds.entries()) {
+        await prisma.kraTemplateEntry.create({
+          data: { scorecardId: scorecard.id, title: k.title, weight: k.weight, sortOrder: ki, kpis: k.kpis },
+        });
+      }
+    }
+    seededScorecards.push({ id: scorecard.id, name: sc.name, kras: krasWithIds });
+  }
+  console.log(`  KRA templates: ${kraScorecardSeed.length}`);
+
+  // KRA assignments — assign the first scorecard to a few employees (Performance → KRA Assignments)
+  const primaryCard = seededScorecards[0];
+  if (primaryCard) {
+    const snapshot = {
+      scorecardName: primaryCard.name,
+      effectiveFromAtAssignment: daysAgo(30).toISOString().slice(0, 10),
+      kras: primaryCard.kras.map((k) => ({
+        id: k.id, title: k.title, description: k.description, weight: k.weight,
+        kpis: k.kpis.map((kp) => ({
+          id: kp.id, title: kp.title, description: kp.description,
+          measurementMethod: kp.measurementMethod, target: kp.target, unit: kp.unit, weight: kp.weight,
+        })),
+      })),
+    };
+    let kraAssigned = 0;
+    for (const emp of employees.slice(1, 5)) {
+      const existing = await prisma.employeeKraAssignment.findFirst({
+        where: { orgId: TENANT, employeeId: emp.id, scorecardId: primaryCard.id, deletedAt: null },
+      });
+      if (existing) continue;
+      await prisma.employeeKraAssignment.create({
+        data: {
+          orgId: TENANT, employeeId: emp.id, scorecardId: primaryCard.id,
+          effectiveFrom: daysAgo(30), snapshot, progress: {}, status: "Active", createdBy: ADMIN,
+        },
+      });
+      kraAssigned++;
+    }
+    console.log(`  KRA assignments: ${kraAssigned}`);
+  }
+
+  // PIP — one active plan (Performance → PIP)
+  const pipEmp = employees[5];
+  if (pipEmp) {
+    const existingPip = await prisma.pIP.findFirst({
+      where: { orgId: TENANT, employeeId: pipEmp.id, deletedAt: null },
+    });
+    if (!existingPip) {
+      await prisma.pIP.create({
+        data: {
+          orgId: TENANT, employeeId: pipEmp.id, initiatedById: adminEmpId,
+          reason: "Consistently missed sprint commitments across the last two quarters; quality metrics below the team baseline.",
+          startDate: daysAgo(15), endDate: daysAhead(45), status: "PIPActive",
+          objectives: [
+            { title: "Meet at least 90% of sprint commitments", description: "Tracked weekly via Jira", targetDate: daysAhead(30).toISOString().slice(0, 10), status: "Pending" },
+            { title: "Reduce production defects to < 3 / month", description: "Reviewed in weekly 1:1s", targetDate: daysAhead(45).toISOString().slice(0, 10), status: "Pending" },
+          ],
+          supportProvided: ["Assigned a senior mentor", "Weekly coaching sessions", "Access to advanced training"],
+          createdBy: ADMIN, updatedBy: ADMIN,
+        },
+      });
+    }
+    console.log(`  PIP: 1`);
+  }
 
   // ── DOCUMENTS ───────────────────────────────────
   const documentSeed = [
@@ -990,15 +1174,6 @@ async function seed() {
       autoApproveAfterDays: null,
     },
     {
-      name: "Asset Request Approval",
-      module: "Asset" as const,
-      levels: [
-        { level: 1, approverType: "ReportingManager", escalateAfterHours: 24, allowSkip: false },
-        { level: 2, approverType: "HR",               escalateAfterHours: 48, allowSkip: false },
-      ],
-      autoApproveAfterDays: null,
-    },
-    {
       name: "Offboarding Clearance",
       module: "Offboarding" as const,
       levels: [
@@ -1024,165 +1199,385 @@ async function seed() {
   }
   console.log(`  Approval Chains: ${approvalChainSeed.length}`);
 
-
-  // ── TICKETS: Categories + Sample Tickets ────────
-  console.log("  Ticket categories...");
-  // Categories mirror real departments (one-to-one).
-  const ticketCategorySeed = departments.map((d) => ({
-    slug: d.code.toLowerCase(),
-    name: d.name,
-    description: `${d.name} department tickets`,
-    slaResponseHours: 8,
-    slaResolveHours: 48,
-    departmentId: d.id,
-  }));
-
-  // Default assignee per category = first employee in that department.
-  const firstEmpByDept = new Map<string, string>();
-  for (const e of employees) {
-    if (e.departmentId && !firstEmpByDept.has(e.departmentId)) {
-      firstEmpByDept.set(e.departmentId, e.id);
-    }
-  }
-  const ticketCategories: Array<Awaited<ReturnType<typeof prisma.ticketCategory.create>>> = [];
-
-  for (const c of ticketCategorySeed) {
-    const existing = await prisma.ticketCategory.findFirst({
-      where: { orgId: TENANT, slug: c.slug, deletedAt: null },
-    });
-    const targetAssignee = firstEmpByDept.get(c.departmentId) ?? employees[0]?.id ?? null;
-    if (existing) {
-      const updated = await prisma.ticketCategory.update({
-        where: { id: existing.id },
+  // ── WFH REQUESTS ────────────────────────────────
+  if ((await prisma.wfhRequest.count({ where: { orgId: TENANT } })) === 0) {
+    const wfhSeed = [
+      { emp: active[1], start: daysAhead(3), end: daysAhead(3), days: 1, half: false, session: "FullDay", reason: "Home internet installation", status: "Pending" },
+      { emp: active[2], start: daysAgo(4), end: daysAgo(4), days: 0.5, half: true, session: "FirstHalf", reason: "Doctor visit in the morning", status: "Approved" },
+      { emp: active[3], start: daysAgo(10), end: daysAgo(8), days: 3, half: false, session: "FullDay", reason: "Relocation week", status: "Approved" },
+      { emp: active[4], start: daysAhead(7), end: daysAhead(8), days: 2, half: false, session: "FullDay", reason: "Family commitment", status: "Rejected" },
+    ];
+    for (const w of wfhSeed) {
+      if (!w.emp) continue;
+      const req = await prisma.wfhRequest.create({
         data: {
-          name: c.name,
-          description: c.description,
-          departmentId: c.departmentId,
-          defaultAssigneeId: targetAssignee,
+          orgId: TENANT, employeeId: w.emp.id,
+          startDate: w.start, endDate: w.end, days: w.days,
+          isHalfDay: w.half, session: w.session as "FullDay",
+          reason: w.reason, status: w.status as "Pending",
+          createdBy: ADMIN, updatedBy: ADMIN,
         },
-      });
-      ticketCategories.push(updated);
-      continue;
+      }).catch(() => null);
+      if (req) {
+        await prisma.wfhApproval.create({
+          data: {
+            orgId: TENANT, wfhRequestId: req.id, approverId: adminEmpId,
+            level: 1, role: "Manager",
+            status: (w.status === "Approved" ? "Approved" : w.status === "Rejected" ? "Rejected" : "Pending") as "Pending",
+          },
+        }).catch(() => null);
+      }
     }
-    const created = await prisma.ticketCategory.create({
-      data: {
-        orgId: TENANT,
-        ...c,
-        defaultAssigneeId: targetAssignee,
-        isActive: true,
-        createdBy: ADMIN,
-        updatedBy: ADMIN,
-      },
-    });
-    ticketCategories.push(created);
+    console.log(`  WFH requests: ${wfhSeed.length}`);
   }
-  console.log(`    Ticket Categories: ${ticketCategories.length}`);
 
-  // Sample tickets (slugs map to department codes lowercased)
-  const sampleTickets = [
-    {
-      slug: "ops",
-      title: "Laptop running slow",
-      description: "My work laptop has been very slow since yesterday, especially when opening Chrome.",
-      priority: "High" as const,
-      status: "Open" as const,
-      raiserIdx: 1,
-    },
-    {
-      slug: "hr",
-      title: "Question about leave policy",
-      description: "How many casual leaves do I have remaining for this quarter?",
-      priority: "Low" as const,
-      status: "InProgress" as const,
-      raiserIdx: 2,
-    },
-    {
-      slug: "fin",
-      title: "Payslip not received for April",
-      description: "I have not received my April 2026 payslip on email yet.",
-      priority: "Medium" as const,
-      status: "Open" as const,
-      raiserIdx: 3,
-    },
-    {
-      slug: "ops",
-      title: "Need new ID card",
-      description: "Lost my office ID card. Need replacement.",
-      priority: "Medium" as const,
-      status: "Resolved" as const,
-      raiserIdx: 4,
-    },
-    {
-      slug: "ops",
-      title: "VPN access not working",
-      description: "Unable to connect to VPN from home since last night.",
-      priority: "Urgent" as const,
-      status: "InProgress" as const,
-      raiserIdx: 5,
-    },
-  ];
-
-  let ticketSeedCount = 0;
-  let seqCounter = 1;
-  const ticketYear = new Date().getFullYear();
-
-  for (const t of sampleTickets) {
-    const cat = ticketCategories.find((c) => c.slug === t.slug);
-    const raiser = employees[t.raiserIdx];
-    if (!cat || !raiser) continue;
-
-    const ticketNo = `TKT-${ticketYear}-${String(seqCounter).padStart(4, "0")}`;
-    seqCounter++;
-
-    const existing = await prisma.ticket.findFirst({
-      where: { orgId: TENANT, ticketNo },
-    });
-    if (existing) {
-      await prisma.ticket.update({
-        where: { id: existing.id },
-        data: { assignedToId: cat.defaultAssigneeId },
-      });
-      continue;
+  // ── TASKS / TODO ────────────────────────────────
+  if ((await prisma.task.count({ where: { orgId: TENANT } })) === 0) {
+    const taskSeed = [
+      { emp: active[0], title: "Approve pending leave requests", priority: "High", due: daysAhead(1), status: "Open" },
+      { emp: active[1], title: "Finalize Q2 hiring plan", priority: "Normal", due: daysAhead(5), status: "InProgress" },
+      { emp: active[2], title: "Complete security awareness training", priority: "Normal", due: daysAgo(2), status: "Completed" },
+      { emp: active[3], title: "Submit timesheet for last week", priority: "Urgent", due: daysAgo(1), status: "Open" },
+      { emp: active[4], title: "Update CRM opportunities", priority: "Low", due: daysAhead(3), status: "Open" },
+    ];
+    for (const t of taskSeed) {
+      if (!t.emp) continue;
+      await prisma.task.create({
+        data: {
+          orgId: TENANT, title: t.title, assigneeId: t.emp.id,
+          requesterId: adminEmpId, dueDate: t.due,
+          priority: t.priority as "Normal", status: t.status as "Open",
+          ...(t.status === "Completed" ? { completedAt: daysAgo(2), completedBy: t.emp.id } : {}),
+          createdBy: ADMIN, updatedBy: ADMIN,
+        },
+      }).catch(() => null);
     }
+    console.log(`  Tasks: ${taskSeed.length}`);
+  }
 
+  // ── ATTENDANCE REGULARIZATIONS ──────────────────
+  if ((await prisma.attendanceRecord.count({ where: { orgId: TENANT, regularizationStatus: { not: "None" } } })) === 0) {
+    const recs = await prisma.attendanceRecord.findMany({
+      where: { orgId: TENANT, regularizationStatus: "None" },
+      orderBy: { date: "desc" }, take: 3,
+    });
+    for (const r of recs) {
+      await prisma.attendanceRecord.update({
+        where: { id: r.id },
+        data: { regularizationStatus: "Pending", regularizationReason: "Forgot to check out", updatedBy: ADMIN },
+      }).catch(() => null);
+    }
+    console.log(`  Attendance regularizations: ${recs.length}`);
+  }
+
+  // ── TIMESHEETS ──────────────────────────────────
+  if ((await prisma.timesheet.count({ where: { orgId: TENANT } })) === 0) {
+    const tsEmps = active.slice(0, 5);
+    for (const emp of tsEmps) {
+      await prisma.timesheet.create({
+        data: {
+          orgId: TENANT, employeeId: emp.id,
+          periodType: "Weekly", periodStart: daysAgo(7), periodEnd: daysAgo(1),
+          totalHours: 40, billableHours: 32,
+          status: "TsSubmitted", createdBy: ADMIN, updatedBy: ADMIN,
+        },
+      }).catch(() => null);
+    }
+    console.log(`  Timesheets: ${tsEmps.length}`);
+  }
+
+  // ── NOTIFICATIONS ───────────────────────────────
+  if ((await prisma.hrmsNotification.count({ where: { orgId: TENANT } })) === 0) {
+    const notifSeed = [
+      { emp: active[0], type: "Action", title: "Leave request pending", message: "A team member applied for 2 days casual leave.", link: "/leaves" },
+      { emp: active[0], type: "Action", title: "Expense claim to review", message: "A new expense claim needs your approval.", link: "/expenses" },
+      { emp: active[1], type: "Success", title: "Leave approved", message: "Your medical leave was approved.", link: "/leaves" },
+      { emp: active[2], type: "Info", title: "New announcement", message: "Q2 all-hands is scheduled for Friday.", link: "/engage/announcements" },
+      { emp: active[3], type: "Warning", title: "Timesheet due", message: "Please submit your weekly timesheet by end of day.", link: "/timesheets" },
+    ];
+    await prisma.hrmsNotification.createMany({
+      data: notifSeed.filter((n) => n.emp).map((n) => ({
+        orgId: TENANT, employeeId: n.emp!.id, type: n.type as "Info", channel: "InApp" as const,
+        title: n.title, message: n.message, link: n.link,
+      })),
+    });
+    console.log(`  Notifications: ${notifSeed.length}`);
+  }
+
+  // ── ENGAGE: Surveys ─────────────────────────────
+  if ((await prisma.hrmsSurvey.count({ where: { orgId: TENANT } })) === 0) {
+    const questions = [
+      { id: "q1", type: "NPS", text: "How likely are you to recommend us as a place to work?" },
+      { id: "q2", type: "SurveyRating", text: "How satisfied are you with your work-life balance?" },
+      { id: "q3", type: "FreeText", text: "What is one thing we could improve?" },
+    ];
+    const survey = await prisma.hrmsSurvey.create({
+      data: {
+        orgId: TENANT, title: "Q2 Employee Engagement Pulse", type: "Engagement",
+        questions, isAnonymous: true,
+        startDate: daysAgo(3), endDate: daysAhead(11),
+        status: "SurveyActive", createdBy: ADMIN, updatedBy: ADMIN,
+      },
+    }).catch(() => null);
+    if (survey) {
+      await prisma.hrmsSurveyResponse.createMany({
+        data: [
+          { orgId: TENANT, surveyId: survey.id, answers: { q1: 9, q2: 4, q3: "More flexible hours" } },
+          { orgId: TENANT, surveyId: survey.id, answers: { q1: 7, q2: 5, q3: "Great team culture" } },
+        ],
+      }).catch(() => null);
+    }
+    console.log("  Surveys: 1 (+2 responses)");
+  }
+
+  // ── ENGAGE: Recognition / Kudos ─────────────────
+  if ((await prisma.recognition.count({ where: { orgId: TENANT } })) === 0) {
+    const recogSeed = [
+      { from: active[0], to: active[3], type: "Kudos", message: "Great job shipping the onboarding flow!", points: 50, badge: undefined as string | undefined },
+      { from: active[1], to: active[2], type: "Shoutout", message: "Thanks for mentoring the new joiners.", points: 30, badge: undefined },
+      { from: active[4], to: active[1], type: "Award", message: "Employee of the month!", points: 100, badge: "Star Performer" },
+    ];
+    for (const r of recogSeed) {
+      if (!r.from || !r.to) continue;
+      await prisma.recognition.create({
+        data: {
+          orgId: TENANT, fromEmployeeId: r.from.id, toEmployeeId: r.to.id,
+          type: r.type as "Kudos", message: r.message, points: r.points,
+          ...(r.badge ? { badge: r.badge } : {}),
+          isPublic: true, approvalStatus: "Approved", approvedById: adminEmpId, approvedAt: new Date(),
+        },
+      }).catch(() => null);
+    }
+    console.log(`  Recognition: ${recogSeed.length}`);
+  }
+
+  // ── PAYROLL: Employee Salaries (linked to a full salary structure) ──
+  {
+    // Reuse the org's real active salary structure (prefer the default) so each
+    // employee gets a complete Basic/HRA/Allowance breakdown on My Salary.
+    const structure = await prisma.salaryStructure.findFirst({
+      where: { orgId: TENANT, deletedAt: null, isActive: true },
+      orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+      select: { id: true },
+    });
+    let salaryCount = 0;
+    for (const emp of active) {
+      const already = await prisma.employeeSalary.findFirst({
+        where: { orgId: TENANT, employeeId: emp.id, isActive: true, deletedAt: null },
+        select: { id: true },
+      });
+      if (already) continue; // keep any salary the admin already assigned
+      const ctc = 600000 + Math.floor(Math.random() * 20) * 100000; // ₹6L–₹25L
+      const created = await prisma.employeeSalary.create({
+        data: {
+          orgId: TENANT, employeeId: emp.id,
+          structureId: structure?.id ?? null,
+          ctc, currency: "INR", effectiveFrom: daysAgo(365), isActive: true,
+          revisionReason: "Initial salary on joining",
+          createdBy: ADMIN, updatedBy: ADMIN,
+        },
+      }).catch(() => null);
+      if (created) salaryCount++;
+    }
+    console.log(`  Employee salaries: +${salaryCount} (structure ${structure ? "linked" : "none"})`);
+  }
+
+  // ── PAYROLL: Pay Run + Payslips (last month) ─────
+  if ((await prisma.payRun.count({ where: { orgId: TENANT } })) === 0) {
     const now = new Date();
-    const slaResponseDueAt = new Date(now.getTime() + cat.slaResponseHours * 3600 * 1000);
-    const slaResolveDueAt = new Date(now.getTime() + cat.slaResolveHours * 3600 * 1000);
-
-    const ticket = await prisma.ticket.create({
+    const periodStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const periodEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+    const payDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    const run = await prisma.payRun.create({
       data: {
-        orgId: TENANT,
-        ticketNo,
-        title: t.title,
-        description: t.description,
-        categoryId: cat.id,
-        priority: t.priority,
-        status: t.status,
-        source: "Web",
-        raisedById: raiser.id,
-        assignedToId: cat.defaultAssigneeId,
-        slaResponseDueAt,
-        slaResolveDueAt,
-        firstResponseAt: t.status !== "Open" ? now : null,
-        resolvedAt: t.status === "Resolved" ? now : null,
-        createdBy: ADMIN,
-        updatedBy: ADMIN,
+        orgId: TENANT, periodStart, periodEnd, payDate,
+        payFrequency: "Monthly", status: "Paid",
+        employeeCount: active.length, currency: "INR",
+        createdBy: ADMIN, updatedBy: ADMIN,
       },
-    });
-
-    await prisma.ticketActivity.create({
-      data: {
-        orgId: TENANT,
-        ticketId: ticket.id,
-        actorId: raiser.id,
-        action: "Created",
-        toVal: ticket.status,
-      },
-    });
-
-    ticketSeedCount++;
+    }).catch(() => null);
+    if (run) {
+      for (const emp of active) {
+        const gross = 50000 + Math.floor(Math.random() * 10) * 5000;
+        const ded = Math.round(gross * 0.12);
+        await prisma.payslip.create({
+          data: {
+            orgId: TENANT, payRunId: run.id, employeeId: emp.id,
+            periodStart, periodEnd,
+            workingDays: 22, paidDays: 22, lopDays: 0,
+            grossEarnings: gross, totalDeductions: ded, netPay: gross - ded,
+            currency: "INR", status: "Released",
+          },
+        }).catch(() => null);
+      }
+      console.log(`  Payroll: 1 pay run + ${active.length} payslips`);
+    }
   }
-  console.log(`    Sample Tickets: ${ticketSeedCount}`);
+
+  // ── EMPLOYMENT HISTORY ──────────────────────────
+  if ((await prisma.employmentHistory.count({ where: { orgId: TENANT } })) === 0) {
+    const historySeed = [
+      { emp: active[2], changeType: "Promotion", fromValue: { jobTitle: "Software Engineer" }, toValue: { jobTitle: "Senior Software Engineer" }, effectiveDate: daysAgo(120), reason: "Annual promotion cycle" },
+      { emp: active[1], changeType: "SalaryChange", fromValue: { ctc: 1200000 }, toValue: { ctc: 1500000 }, effectiveDate: daysAgo(200), reason: "Merit increment" },
+      { emp: active[3], changeType: "ConfirmationChange", fromValue: { status: "Probation" }, toValue: { status: "Confirmed" }, effectiveDate: daysAgo(90), reason: "Probation completed" },
+      { emp: active[4], changeType: "DepartmentChange", fromValue: { department: "Marketing" }, toValue: { department: "Sales" }, effectiveDate: daysAgo(60), reason: "Internal transfer" },
+      { emp: active[5], changeType: "ManagerChange", fromValue: { manager: "Rahul Verma" }, toValue: { manager: "Vikram Singh" }, effectiveDate: daysAgo(45), reason: "Team reorganisation" },
+    ];
+    for (const h of historySeed) {
+      if (!h.emp) continue;
+      await prisma.employmentHistory.create({
+        data: {
+          orgId: TENANT, employeeId: h.emp.id,
+          changeType: h.changeType as "Promotion",
+          fromValue: h.fromValue, toValue: h.toValue,
+          effectiveDate: h.effectiveDate, reason: h.reason,
+          approvedBy: adminEmpId, createdBy: ADMIN,
+        },
+      }).catch(() => null);
+    }
+    console.log(`  Employment history: ${historySeed.length}`);
+  }
+
+  // ── RECRUIT: Requisition Approvals (pending queue) ──
+  {
+    const pendingReqs = [
+      { num: "REQ-2026-004", title: "Senior Data Engineer", positions: 1, raiser: active[2] },
+      { num: "REQ-2026-005", title: "Customer Success Lead", positions: 1, raiser: active[4] },
+    ];
+    for (const pr of pendingReqs) {
+      const req = await prisma.jobRequisition.upsert({
+        where: { orgId_requisitionNumber: { orgId: TENANT, requisitionNumber: pr.num } },
+        create: {
+          orgId: TENANT, requisitionNumber: pr.num, title: pr.title,
+          positions: pr.positions, type: "NewPosition",
+          status: "PendingApproval", priority: "High",
+          departmentId: deptMap.ENG.id,
+          raisedById: pr.raiser?.id ?? adminEmpId, raisedAt: daysAgo(3),
+          experienceMin: 4, experienceMax: 9,
+          salaryMin: 1800000, salaryMax: 3800000,
+          jobDescription: `${pr.title} — pending leadership approval`,
+          skills: ["Leadership", "Communication"],
+          careerPageVisible: false,
+          createdBy: ADMIN, updatedBy: ADMIN,
+        },
+        update: {},
+      }).catch(() => null);
+      if (req && (await prisma.requisitionApproval.count({ where: { orgId: TENANT, requisitionId: req.id } })) === 0) {
+        // Level 1 (DeptHead) assigned to the signed-in admin (ADMIN) so it's
+        // actionable in "My approvals"; level 2 (HR) waits behind it.
+        await prisma.requisitionApproval.createMany({
+          data: [
+            { orgId: TENANT, requisitionId: req.id, approverId: ADMIN, level: 1, role: "DeptHead", status: "Pending" },
+            { orgId: TENANT, requisitionId: req.id, approverId: ADMIN, level: 2, role: "HR", status: "Pending" },
+          ],
+        }).catch(() => null);
+      }
+    }
+    console.log(`  Requisition approvals: ${pendingReqs.length} pending`);
+  }
+
+  // ── DUTY ROSTER ─────────────────────────────────
+  if ((await prisma.roster.count({ where: { orgId: TENANT } })) === 0) {
+    // Current week, Monday → Sunday.
+    const t0 = daysAgo(0);
+    const monday = new Date(t0); monday.setDate(t0.getDate() - ((t0.getDay() + 6) % 7));
+    const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+    const roster = await prisma.roster.create({
+      data: {
+        orgId: TENANT,
+        name: `Weekly Roster — ${monday.toLocaleDateString("en-IN")}`,
+        periodStart: monday, periodEnd: sunday,
+        status: "Published", publishedAt: new Date(), publishedBy: ADMIN,
+        createdBy: ADMIN, updatedBy: ADMIN,
+      },
+    }).catch(() => null);
+    if (roster) {
+      const rosterEmpIds = [...new Set([...active.map((e) => e.id), ADMIN])];
+      const entries = rosterEmpIds.flatMap((employeeId) =>
+        Array.from({ length: 7 }, (_, i) => {
+          const date = new Date(monday); date.setDate(monday.getDate() + i);
+          const weekend = date.getDay() === 0 || date.getDay() === 6;
+          return {
+            orgId: TENANT, rosterId: roster.id, employeeId, date,
+            shiftId: weekend ? null : shift.id,
+            type: (weekend ? "WeekOff" : "Duty") as "Duty",
+            createdBy: ADMIN, updatedBy: ADMIN,
+          };
+        }),
+      );
+      await prisma.rosterEntry.createMany({ data: entries, skipDuplicates: true }).catch(() => null);
+      console.log(`  Duty roster: 1 published (${rosterEmpIds.length} employees × 7 days)`);
+    }
+  }
+
+  // ── LOGGED-IN ADMIN (e.g. Ashwin) PERSONAL DATA ──
+  // The signed-in admin (SEED_ADMIN_ID) usually isn't part of the demo employee
+  // set, so their own "My …" self-service views would be empty. Seed personal
+  // data for them so every self-service page has content. Per-subject guards
+  // keep it idempotent.
+  const meId = ADMIN;
+  const meExists = await prisma.employee.findFirst({ where: { id: meId, orgId: TENANT, deletedAt: null }, select: { id: true } });
+  if (meExists && meId !== adminEmpId) {
+    // Delegations — one I own (My Delegations) + one delegated to me.
+    if ((await prisma.delegation.count({ where: { orgId: TENANT, OR: [{ delegatorId: meId }, { delegateeId: meId }] } })) === 0) {
+      await prisma.delegation.create({ data: { orgId: TENANT, delegatorId: meId, delegateeId: active[2].id, type: "DelegationTemporary", modules: [{ module: "Leave", permissions: ["hrms.leave.approve"] }, { module: "Expense", permissions: ["hrms.expense.approve"] }], fromDate: daysAhead(1), toDate: daysAhead(7), notifyMode: "NotifyBoth", description: "On leave next week — delegating approvals", isActive: true, createdBy: ADMIN, updatedBy: ADMIN } }).catch(() => null);
+      await prisma.delegation.create({ data: { orgId: TENANT, delegatorId: active[1].id, delegateeId: meId, type: "DelegationTemporary", modules: [{ module: "Leave", permissions: ["hrms.leave.approve"] }], fromDate: daysAgo(2), toDate: daysAhead(5), notifyMode: "NotifyBoth", description: "HRBP offsite — approvals delegated to you", isActive: true, createdBy: ADMIN, updatedBy: ADMIN } }).catch(() => null);
+    }
+    // Leave balances + a couple of requests.
+    for (const lt of leaveTypes) {
+      await prisma.leaveBalance.upsert({
+        where: { orgId_employeeId_leaveTypeId_year: { orgId: TENANT, employeeId: meId, leaveTypeId: lt.id, year } },
+        create: { orgId: TENANT, employeeId: meId, leaveTypeId: lt.id, year, opening: lt.maxBalance, accrued: 0, taken: 0, createdBy: ADMIN, updatedBy: ADMIN },
+        update: {},
+      });
+    }
+    if ((await prisma.leaveRequest.count({ where: { orgId: TENANT, employeeId: meId } })) === 0) {
+      await prisma.leaveRequest.create({ data: { orgId: TENANT, employeeId: meId, leaveTypeId: clType.id, startDate: daysAhead(4), endDate: daysAhead(5), duration: 2, reason: "Short vacation", status: "Pending", createdBy: ADMIN, updatedBy: ADMIN } }).catch(() => null);
+      await prisma.leaveRequest.create({ data: { orgId: TENANT, employeeId: meId, leaveTypeId: slType.id, startDate: daysAgo(12), endDate: daysAgo(12), duration: 1, reason: "Fever", status: "Approved", createdBy: ADMIN, updatedBy: ADMIN } }).catch(() => null);
+    }
+    // Shift + attendance (last 7 days).
+    await prisma.shiftAssignment.create({ data: { orgId: TENANT, employeeId: meId, shiftId: shift.id, effectiveFrom: daysAgo(365), createdBy: ADMIN, updatedBy: ADMIN } }).catch(() => null);
+    for (let i = 0; i < 7; i++) {
+      const date = daysAgo(i); const dow = date.getDay(); if (dow === 0 || dow === 6) continue;
+      const ci = new Date(date); ci.setHours(9, 12); const co = new Date(date); co.setHours(18, 20);
+      const hrs = (co.getTime() - ci.getTime()) / 3600000;
+      await prisma.attendanceRecord.upsert({
+        where: { orgId_employeeId_date: { orgId: TENANT, employeeId: meId, date } },
+        create: { orgId: TENANT, employeeId: meId, date, checkIn: ci, checkOut: co, grossHours: Math.round(hrs * 100) / 100, effectiveHours: Math.round((hrs - 1) * 100) / 100, status: "Present", source: "Web", createdBy: ADMIN, updatedBy: ADMIN },
+        update: {},
+      });
+    }
+    // WFH.
+    if ((await prisma.wfhRequest.count({ where: { orgId: TENANT, employeeId: meId } })) === 0) {
+      await prisma.wfhRequest.create({ data: { orgId: TENANT, employeeId: meId, startDate: daysAhead(2), endDate: daysAhead(2), days: 1, isHalfDay: false, session: "FullDay", reason: "Focused work day", status: "Pending", createdBy: ADMIN, updatedBy: ADMIN } }).catch(() => null);
+    }
+    // Expense claim.
+    if ((await prisma.expenseClaim.count({ where: { orgId: TENANT, employeeId: meId } })) === 0) {
+      await prisma.expenseClaim.create({ data: { orgId: TENANT, employeeId: meId, category: "Travel", title: "Conference travel — Bangalore", totalAmount: 9800, currency: "INR", status: "Submitted", description: "Flights + cab for the HR tech conference", expenseDate: daysAgo(6), createdBy: ADMIN, updatedBy: ADMIN } }).catch(() => null);
+    }
+    // Tasks.
+    if ((await prisma.task.count({ where: { orgId: TENANT, assigneeId: meId } })) === 0) {
+      await prisma.task.create({ data: { orgId: TENANT, title: "Approve pending requisitions", assigneeId: meId, requesterId: meId, dueDate: daysAhead(1), priority: "Urgent", status: "Open", createdBy: ADMIN, updatedBy: ADMIN } }).catch(() => null);
+      await prisma.task.create({ data: { orgId: TENANT, title: "Review Q2 headcount plan", assigneeId: meId, requesterId: meId, dueDate: daysAhead(4), priority: "High", status: "InProgress", createdBy: ADMIN, updatedBy: ADMIN } }).catch(() => null);
+    }
+    // Timesheet.
+    if ((await prisma.timesheet.count({ where: { orgId: TENANT, employeeId: meId } })) === 0) {
+      await prisma.timesheet.create({ data: { orgId: TENANT, employeeId: meId, periodType: "Weekly", periodStart: daysAgo(7), periodEnd: daysAgo(1), totalHours: 40, billableHours: 30, status: "TsSubmitted", createdBy: ADMIN, updatedBy: ADMIN } }).catch(() => null);
+    }
+    // Notifications.
+    if ((await prisma.hrmsNotification.count({ where: { orgId: TENANT, employeeId: meId } })) === 0) {
+      await prisma.hrmsNotification.createMany({ data: [
+        { orgId: TENANT, employeeId: meId, type: "Action" as const, channel: "InApp" as const, title: "2 requisitions need your approval", message: "Senior Data Engineer and Customer Success Lead are awaiting your approval.", link: "/recruit/approvals" },
+        { orgId: TENANT, employeeId: meId, type: "Info" as const, channel: "InApp" as const, title: "Welcome to QuikHRMS", message: "Your workspace is set up and ready to go.", link: "/dashboard" },
+      ] }).catch(() => null);
+    }
+    // Payslip in the most recent pay run.
+    const lastRun = await prisma.payRun.findFirst({ where: { orgId: TENANT }, orderBy: { createdAt: "desc" }, select: { id: true, periodStart: true, periodEnd: true } });
+    if (lastRun && (await prisma.payslip.count({ where: { orgId: TENANT, employeeId: meId } })) === 0) {
+      await prisma.payslip.create({ data: { orgId: TENANT, payRunId: lastRun.id, employeeId: meId, periodStart: lastRun.periodStart, periodEnd: lastRun.periodEnd, workingDays: 22, paidDays: 22, lopDays: 0, grossEarnings: 100000, totalDeductions: 12000, netPay: 88000, currency: "INR", status: "Released" } }).catch(() => null);
+    }
+    console.log("  Admin personal data (delegations, leave, attendance, wfh, expense, tasks, timesheet, notifications, payslip)");
+  }
 
   console.log("✅ Seed complete.\n");
   console.log("Test Users (x-user-id header):");

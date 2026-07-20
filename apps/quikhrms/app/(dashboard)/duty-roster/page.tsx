@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/hrms/empty-state";
 import { useToast } from "@/components/hrms/toast";
 import { ChevronLeft, ChevronRight, CalendarDays, Plus, Users, CalendarOff, X, CheckCircle2, Lock } from "lucide-react";
 import { clsx } from "clsx";
+import { todayInput } from "@/lib/utils/date-input";
 
 type CellType = "Duty" | "WeekOff" | "Leave" | "Holiday" | "Empty";
 
@@ -119,14 +120,12 @@ export default function DutyRosterPage() {
     mutationFn: (entries: Record<string, unknown>[]) =>
       api.post(`/api/v1/hrms/roster/${activeRoster!.id}/entries`, { entries }),
     onSuccess: () => { refresh(); setEditCell(null); setShowBulk(false); },
-    onError: (e: Error) => toast.error("Could not save", e.message),
   });
 
   const publishMut = useMutation({
     mutationFn: (v: { id: string; action: "publish" | "reopen" }) =>
       api.post(`/api/v1/hrms/roster/${v.id}/publish`, { action: v.action }),
     onSuccess: (_d, v) => { refresh(); toast.success(v.action === "publish" ? "Roster published" : "Roster reopened"); },
-    onError: (e: Error) => toast.error("Action failed", e.message),
   });
 
   const label = mode === "Month"
@@ -134,42 +133,44 @@ export default function DutyRosterPage() {
     : `${fmt(from)} — ${fmt(to)}`;
 
   return (
-    <div className="w-full px-6 py-6">
+    <div className="w-full px-5 py-4">
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
         <div>
-          <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">Duty Roster</h1>
-          <p className="text-sm text-gray-500 mt-1">Who works which shift on which day — with week-offs, leaves and holidays.</p>
+          <h1 className="text-base font-semibold text-gray-900">Duty Roster</h1>
+          <p className="text-xs text-gray-500 mt-1">Who works which shift on which day — with week-offs, leaves and holidays.</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <select value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} className="border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-white">
-            <option value="">All departments</option>
-            {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
+          <Select
+            value={departmentId}
+            onChange={(v) => setDepartmentId(v)}
+            placeholder="All departments"
+            options={[{ value: "", label: "All departments" }, ...departments.map((d) => ({ value: d.id, label: d.name }))]}
+          />
           <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden">
             {(["Week", "Month"] as Mode[]).map((m) => (
-              <button key={m} onClick={() => setMode(m)} className={clsx("px-3 py-2 text-xs font-semibold", mode === m ? "bg-[#3b82f6] text-white" : "bg-white text-gray-600 hover:bg-gray-50")}>{m}</button>
+              <button key={m} onClick={() => setMode(m)} className={clsx("px-2.5 py-1 text-xs font-medium", mode === m ? "bg-[#22c55e] text-white" : "bg-white text-gray-600 hover:bg-gray-50")}>{m}</button>
             ))}
           </div>
           {canManage && (
             <>
-              <button onClick={() => setShowWeekOff(true)} className="inline-flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-lg text-xs font-semibold text-gray-700 hover:bg-gray-50"><CalendarOff size={13} /> Week-offs</button>
-              <button onClick={() => setShowBulk(true)} disabled={!editable} className="inline-flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-lg text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40"><Users size={13} /> Bulk assign</button>
+              <button onClick={() => setShowWeekOff(true)} className="inline-flex items-center gap-1.5 px-2.5 py-1 border border-gray-200 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50"><CalendarOff size={13} /> Week-offs</button>
+              <button onClick={() => setShowBulk(true)} disabled={!editable} className="inline-flex items-center gap-1.5 px-2.5 py-1 border border-gray-200 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"><Users size={13} /> Bulk assign</button>
               {draftRoster && (
                 <button
                   onClick={() => { if (confirm("Publish this roster? Employees will be notified and it will drive attendance.")) publishMut.mutate({ id: draftRoster.id, action: "publish" }); }}
                   disabled={publishMut.isPending}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-600 text-white rounded-lg text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-medium hover:bg-emerald-700 disabled:opacity-50"
                 ><CheckCircle2 size={13} /> Publish</button>
               )}
               {!draftRoster && publishedRoster && (
                 <button
                   onClick={() => publishMut.mutate({ id: publishedRoster.id, action: "reopen" })}
                   disabled={publishMut.isPending}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-lg text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 border border-gray-200 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                 ><Lock size={13} /> Reopen</button>
               )}
               {!draftRoster && !publishedRoster && (
-                <button onClick={() => setShowCreate(true)} className="inline-flex items-center gap-1.5 px-3 py-2 bg-[#16243A] text-white rounded-lg text-xs font-semibold hover:bg-[#243a5e]"><Plus size={13} /> New draft</button>
+                <button onClick={() => setShowCreate(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-[#243a5e]"><Plus size={13} /> New draft</button>
               )}
             </>
           )}
@@ -179,10 +180,10 @@ export default function DutyRosterPage() {
       {/* Period nav + status + legend */}
       <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
         <div className="flex items-center gap-2">
-          <button onClick={() => setCursor(shiftCursor(cursor, mode, -1))} className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50"><ChevronLeft size={14} /></button>
-          <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-gray-900 min-w-[180px] justify-center"><CalendarDays size={14} className="text-gray-500" /> {label}</span>
-          <button onClick={() => setCursor(shiftCursor(cursor, mode, 1))} className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50"><ChevronRight size={14} /></button>
-          <button onClick={() => setCursor(todayLocalISO())} className="px-3 py-2 border border-gray-200 rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-50">Today</button>
+          <button onClick={() => setCursor(shiftCursor(cursor, mode, -1))} className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50"><ChevronLeft size={12} /></button>
+          <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-gray-900 min-w-[180px] justify-center"><CalendarDays size={14} className="text-gray-500" /> {label}</span>
+          <button onClick={() => setCursor(shiftCursor(cursor, mode, 1))} className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50"><ChevronRight size={12} /></button>
+          <button onClick={() => setCursor(todayLocalISO())} className="px-2.5 py-1 border border-gray-200 rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-50">Today</button>
           {draftRoster ? (
             <span className="ml-1 inline-flex items-center gap-1 px-2 py-1 rounded-md bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-semibold">
               Draft · {draftRoster.name}
@@ -201,14 +202,14 @@ export default function DutyRosterPage() {
             </span>
           ))}
           <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-gray-100 border border-gray-300" /> Week-off</span>
-          <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-blue-50 border border-blue-200" /> Leave</span>
+          <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-green-50 border border-green-200" /> Leave</span>
           <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-purple-50 border border-purple-200" /> Holiday</span>
         </div>
       </div>
 
       {canManage && !draftRoster && !publishedRoster && (
         <div className="mb-3 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-          No roster covers this period. Create a <button onClick={() => setShowCreate(true)} className="text-[#3b82f6] font-semibold hover:underline">new draft</button> to start assigning shifts.
+          No roster covers this period. Create a <button onClick={() => setShowCreate(true)} className="text-[#22c55e] font-semibold hover:underline">new draft</button> to start assigning shifts.
         </div>
       )}
       {canManage && publishedRoster && !draftRoster && (
@@ -219,13 +220,13 @@ export default function DutyRosterPage() {
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-x-auto">
         {isLoading ? (
-          <div className="py-12 text-center text-sm text-gray-500">Loading roster…</div>
+          <div className="py-12 text-center text-xs text-gray-500">Loading roster…</div>
         ) : employees.length === 0 ? (
           <div className="p-1"><EmptyState variant="bot" title="No employees" description="No accessible employees for this filter." className="border-0 shadow-none" /></div>
         ) : (
           <table className="text-sm border-collapse">
             <thead>
-              <tr className="bg-gray-50 text-gray-600 text-[11px]">
+              <tr className="bg-gray-50 text-gray-600 text-table-head">
                 <th className="sticky left-0 z-10 bg-gray-50 text-left px-3 py-2 font-medium border-b border-r border-gray-200 min-w-[180px]">Employee</th>
                 {days.map((d) => (
                   <th key={d.date} className={clsx("px-2 py-2 font-medium border-b border-gray-200 text-center min-w-[64px]", d.isHoliday && "bg-purple-50")}>
@@ -239,7 +240,7 @@ export default function DutyRosterPage() {
               {employees.map((emp) => (
                 <tr key={emp.id} className="border-b border-gray-100 hover:bg-gray-50/50">
                   <td className="sticky left-0 z-10 bg-white px-3 py-2 border-r border-gray-200">
-                    <div className="font-medium text-gray-900 truncate max-w-[170px]">{emp.name}</div>
+                    <div className="text-[13px] font-semibold text-gray-900 truncate max-w-[170px]">{emp.name}</div>
                     <div className="text-[11px] text-gray-500">{emp.employeeCode ?? "—"}{emp.department ? ` · ${emp.department}` : ""}</div>
                   </td>
                   {days.map((d) => (
@@ -266,7 +267,7 @@ export default function DutyRosterPage() {
             <div className="text-[11px] font-semibold text-gray-500 uppercase">Assign shift</div>
             <div className="grid grid-cols-2 gap-2">
               {shifts.map((s) => {
-                const color = s.color ?? "#3b82f6";
+                const color = s.color ?? "#22c55e";
                 const active = editCell.cell?.type === "Duty" && editCell.cell?.shiftId === s.id;
                 return (
                   <button
@@ -318,10 +319,10 @@ export default function DutyRosterPage() {
 }
 
 function Cell({ cell, editable, onClick }: { cell?: RosterCell; editable?: boolean; onClick?: () => void }) {
-  const base = clsx("px-1.5 py-1 text-center border-l border-gray-100", editable && "cursor-pointer hover:bg-blue-50/60");
+  const base = clsx("px-1.5 py-1 text-center border-l border-gray-100", editable && "cursor-pointer hover:bg-green-50/60");
   if (!cell || cell.type === "Empty") return <td className={clsx(base, "text-gray-300")} onClick={onClick}>—</td>;
   if (cell.type === "Duty") {
-    const color = cell.shiftColor ?? "#3b82f6";
+    const color = cell.shiftColor ?? "#22c55e";
     return (
       <td className={base} onClick={onClick}>
         <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold border truncate max-w-[60px]" style={{ backgroundColor: color + "22", borderColor: color + "66", color }} title={[cell.shiftName, cell.shiftStart && cell.shiftEnd ? `${cell.shiftStart}–${cell.shiftEnd}` : null, cell.note].filter(Boolean).join(" · ")}>
@@ -331,7 +332,7 @@ function Cell({ cell, editable, onClick }: { cell?: RosterCell; editable?: boole
     );
   }
   if (cell.type === "WeekOff") return <td className={clsx(base, "bg-gray-100/70")} onClick={onClick}><span className="text-[10px] font-medium text-gray-500">WO</span></td>;
-  if (cell.type === "Leave") return <td className={clsx(base, "bg-blue-50")} onClick={onClick} title={cell.leaveTypeName ?? "Leave"}><span className="text-[10px] font-medium text-blue-700">Leave</span></td>;
+  if (cell.type === "Leave") return <td className={clsx(base, "bg-green-50")} onClick={onClick} title={cell.leaveTypeName ?? "Leave"}><span className="text-[10px] font-medium text-green-700">Leave</span></td>;
   return <td className={clsx(base, "bg-purple-50")} onClick={onClick} title={cell.holidayName ?? "Holiday"}><span className="text-[10px] font-medium text-purple-700">Hol</span></td>;
 }
 
@@ -340,7 +341,6 @@ function CreateRosterModal({ defaultName, from, to, departmentId, departments, o
   departments: { id: string; name: string }[]; onClose: () => void; onCreated: () => void;
 }) {
   const api = useApiClient();
-  const toast = useToast();
   const [name, setName] = useState(defaultName);
   const [periodStart, setPeriodStart] = useState(from);
   const [periodEnd, setPeriodEnd] = useState(to);
@@ -348,7 +348,6 @@ function CreateRosterModal({ defaultName, from, to, departmentId, departments, o
   const mut = useMutation({
     mutationFn: () => api.post("/api/v1/hrms/roster", { name, periodStart, periodEnd, departmentId: dept || undefined }),
     onSuccess: onCreated,
-    onError: (e: Error) => toast.error("Could not create roster", e.message),
   });
   return (
     <Modal open onClose={onClose} title="New draft roster" size="sm">
@@ -356,15 +355,18 @@ function CreateRosterModal({ defaultName, from, to, departmentId, departments, o
         <FormField label="Name" required><FormInput value={name} onChange={(e) => setName(e.target.value)} required placeholder="e.g. Ops — June 2026" /></FormField>
         <FormField label="Period" required>
           <div className="grid grid-cols-2 gap-2">
-            <FormInput type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} required />
-            <FormInput type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} required />
+            <FormInput type="date" min={todayInput()} value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} required />
+            <FormInput type="date" min={todayInput()} value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} required />
           </div>
         </FormField>
         <FormField label="Department">
-          <select value={dept} onChange={(e) => setDept(e.target.value)} className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-white">
-            <option value="">All departments</option>
-            {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
+          <Select
+            value={dept}
+            onChange={(v) => setDept(v)}
+            placeholder="All departments"
+            className="w-full"
+            options={[{ value: "", label: "All departments" }, ...departments.map((d) => ({ value: d.id, label: d.name }))]}
+          />
         </FormField>
         <FormActions>
           <button type="button" onClick={onClose} className="btn btn-ghost">Cancel</button>
@@ -409,8 +411,8 @@ function BulkAssignModal({ shifts, days, onClose, onSubmit, pending }: {
           {picked.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-2">
               {picked.map((p) => (
-                <span key={p.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-medium">
-                  {p.name}<button type="button" onClick={() => setPicked((arr) => arr.filter((x) => x.id !== p.id))} className="hover:text-blue-900"><X size={12} /></button>
+                <span key={p.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-green-50 text-green-700 text-xs font-medium">
+                  {p.name}<button type="button" onClick={() => setPicked((arr) => arr.filter((x) => x.id !== p.id))} className="hover:text-green-900"><X size={12} /></button>
                 </span>
               ))}
             </div>
@@ -420,7 +422,7 @@ function BulkAssignModal({ shifts, days, onClose, onSubmit, pending }: {
           <Select value={shiftId} onChange={setShiftId} placeholder="Select shift" searchable
             options={shifts.map((s) => ({ value: s.id, label: `${s.name} (${s.startTime}–${s.endTime})` }))} />
         </FormField>
-        <label className="flex items-center gap-2 text-sm text-gray-700">
+        <label className="flex items-center gap-2 text-xs text-gray-700">
           <input type="checkbox" checked={skipWeekoff} onChange={(e) => setSkipWeekoff(e.target.checked)} />
           Skip Saturdays &amp; Sundays
         </label>
@@ -437,14 +439,12 @@ function BulkAssignModal({ shifts, days, onClose, onSubmit, pending }: {
 
 function WeekOffModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const api = useApiClient();
-  const toast = useToast();
   const [picked, setPicked] = useState<{ id: string; name: string }[]>([]);
   const [days, setDays] = useState<string[]>(["Saturday", "Sunday"]);
   const [error, setError] = useState<string | null>(null);
   const mut = useMutation({
     mutationFn: () => api.put("/api/v1/hrms/roster/weekly-offs", { employeeIds: picked.map((p) => p.id), days }),
     onSuccess: onSaved,
-    onError: (e: Error) => toast.error("Could not save week-offs", e.message),
   });
   const toggle = (d: string) => setDays((arr) => arr.includes(d) ? arr.filter((x) => x !== d) : [...arr, d]);
   return (
@@ -457,8 +457,8 @@ function WeekOffModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
           {picked.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-2">
               {picked.map((p) => (
-                <span key={p.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-medium">
-                  {p.name}<button type="button" onClick={() => setPicked((arr) => arr.filter((x) => x.id !== p.id))} className="hover:text-blue-900"><X size={12} /></button>
+                <span key={p.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-green-50 text-green-700 text-xs font-medium">
+                  {p.name}<button type="button" onClick={() => setPicked((arr) => arr.filter((x) => x.id !== p.id))} className="hover:text-green-900"><X size={12} /></button>
                 </span>
               ))}
             </div>
@@ -467,7 +467,7 @@ function WeekOffModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
         <FormField label="Week-off days">
           <div className="flex flex-wrap gap-1.5">
             {WEEKDAY_FULL.map((d) => (
-              <button key={d} type="button" onClick={() => toggle(d)} className={clsx("px-2.5 py-1.5 rounded-md text-xs font-semibold border", days.includes(d) ? "bg-[#3b82f6] text-white border-[#3b82f6]" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50")}>
+              <button key={d} type="button" onClick={() => toggle(d)} className={clsx("px-2.5 py-1.5 rounded-md text-xs font-semibold border", days.includes(d) ? "bg-[#22c55e] text-white border-[#22c55e]" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50")}>
                 {d.slice(0, 3)}
               </button>
             ))}

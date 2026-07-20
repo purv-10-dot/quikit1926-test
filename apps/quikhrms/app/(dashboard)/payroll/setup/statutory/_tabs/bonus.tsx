@@ -20,7 +20,7 @@ interface BonusCfg {
   payoutFrequency: "Monthly" | "Quarterly" | "HalfYearly" | "Yearly" | "OneTime";
 }
 
-const inputCls = "w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[#16243A] focus:border-transparent";
+const inputCls = "w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[#166534] focus:border-transparent";
 
 export function BonusTab({ onSaved }: { onSaved?: () => void } = {}) {
   const api = useApiClient();
@@ -70,13 +70,13 @@ export function BonusTab({ onSaved }: { onSaved?: () => void } = {}) {
     return (
       <div className="text-center py-10">
         <div className="text-4xl mb-3">💰</div>
-        <p className="text-base font-semibold text-gray-900">Are your employees eligible to receive statutory bonus?</p>
+        <p className="text-[13px] font-semibold text-gray-900">Are your employees eligible to receive statutory bonus?</p>
         <p className="text-xs text-gray-500 max-w-xl mx-auto mt-2">
           According to the Payment of Bonus Act, 1965, an eligible employee can receive a statutory bonus of 8.33% (min) to 20% (max) of their salary earned during a financial year. Configure statutory bonus of your organisation and start paying your employees.
         </p>
         <button
           onClick={() => setForm({ ...form, enabled: true })}
-          className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] text-white rounded-md text-sm font-semibold shadow-sm"
+          className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-xs font-medium shadow-sm"
         >
           Enable Statutory Bonus
         </button>
@@ -89,7 +89,7 @@ export function BonusTab({ onSaved }: { onSaved?: () => void } = {}) {
       onSubmit={(e) => { e.preventDefault(); saveMut.mutate({ ...form, enabled: true }); }}
       className="max-w-2xl space-y-4"
     >
-      <h2 className="text-base font-bold text-gray-900">Statutory Bonus</h2>
+      <h2 className="text-[13px] font-semibold text-gray-900">Statutory Bonus</h2>
       <p className="text-[11px] text-gray-500 -mt-2">
         Min &amp; Max % locked per Code on Wages, 2019 (replaces Payment of Bonus Act, 1965 from 21-Nov-2025).
         Computed on Basic + DA, capped at Calculation Wage Cap. Provision accrued monthly; pay-out per chosen frequency.
@@ -144,10 +144,10 @@ export function BonusTab({ onSaved }: { onSaved?: () => void } = {}) {
       </div>
 
       <div className="flex gap-2 pt-2">
-        <button type="submit" disabled={saveMut.isPending} className="inline-flex items-center gap-2 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 text-white rounded-md text-sm font-semibold shadow-sm">
-          <Save size={14} /> {saveMut.isPending ? "Saving..." : "Save"}
+        <button type="submit" disabled={saveMut.isPending} className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-md text-xs font-medium shadow-sm">
+          <Save size={13} /> {saveMut.isPending ? "Saving..." : "Save"}
         </button>
-        <button type="button" onClick={() => setForm({ ...form, enabled: false })} className="px-4 py-2 border border-[var(--border)] bg-white hover:bg-gray-50 text-gray-700 rounded-md text-sm font-medium">
+        <button type="button" onClick={() => setForm({ ...form, enabled: false })} className="px-3 py-1.5 border border-[var(--border)] bg-white hover:bg-gray-50 text-gray-700 rounded-md text-xs font-medium">
           Disable
         </button>
       </div>

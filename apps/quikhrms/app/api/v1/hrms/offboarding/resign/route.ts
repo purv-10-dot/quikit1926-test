@@ -5,7 +5,7 @@ import { successResponse, validationError, conflict, notFound, internalError } f
 import { createAuditLog } from "@/lib/utils/audit";
 import { fireWorkflow } from "@/lib/workflows/executor";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
-import { queueEmail } from "@/lib/services/mailer";
+import { resolveAndSend } from "@/lib/email/resolve";
 import { buildResignationNoticeEmail } from "@/lib/email-templates/resignation-notice";
 
 /**
@@ -38,7 +38,12 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     const existing = await prisma.offboardingInstance.findFirst({
       where: { orgId, employeeId, deletedAt: null },
     });
-    if (existing) return conflict("A resignation is already on record. Contact HR for changes.");
+    // A previously REJECTED resignation can be re-submitted (we reopen the same
+    // row to respect the unique(orgId, employeeId) constraint). Any other
+    // existing instance blocks a new one.
+    if (existing && existing.resignationApprovalStatus !== "Rejected") {
+      return conflict("A resignation is already on record. Contact HR for changes.");
+    }
 
     const body = await req.json().catch(() => ({}));
     const reason = body.reason ? String(body.reason).trim() : null;
@@ -65,19 +70,29 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       `Submitted by employee via self-service.`,
     ].filter(Boolean).join("\n");
 
-    const instance = await prisma.offboardingInstance.create({
-      data: {
-        orgId,
-        employeeId,
-        resignationDate,
-        lastWorkingDate,
-        reason: "Resignation",
-        status: "Initiated",
-        notes: combinedNotes,
-        createdBy: userId,
-        updatedBy: userId,
-      },
-    });
+    // Approval routing: the employee's direct reporting manager approves. If
+    // there's no manager, there's nobody to approve → auto-approve so behaviour
+    // matches the pre-approval flow.
+    const approverId = employee.reportingManagerId ?? null;
+    const approvalStatus = approverId ? "Pending" : "Approved";
+
+    const resignData = {
+      resignationDate,
+      lastWorkingDate,
+      reason: "Resignation" as const,
+      status: "Initiated" as const,
+      notes: combinedNotes,
+      resignationApprovalStatus: approvalStatus,
+      resignationApproverId: approverId,
+      resignationDecisionById: null,
+      resignationDecisionAt: null,
+      resignationRejectionReason: null,
+      updatedBy: userId,
+    };
+
+    const instance = existing
+      ? await prisma.offboardingInstance.update({ where: { id: existing.id }, data: resignData })
+      : await prisma.offboardingInstance.create({ data: { orgId, employeeId, createdBy: userId, ...resignData } });
 
     await prisma.employee.update({
       where: { id: employeeId },
@@ -88,6 +103,20 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       orgId, userId, action: "Create", entityType: "OffboardingInstance", entityId: instance.id,
       changes: { action: "SelfResignation", reason, lastWorkingDate: lastWorkingDate.toISOString() },
     });
+
+    // In-app notification to the approving manager (in addition to the emails
+    // below) so it surfaces in their bell with a link to act on it.
+    if (approverId) {
+      await prisma.hrmsNotification.create({
+        data: {
+          orgId, employeeId: approverId, type: "Action", channel: "InApp",
+          title: "Resignation awaiting your approval",
+          message: `${employee.firstName} ${employee.lastName} has submitted a resignation. Review and approve or reject it.`,
+          link: "/resign",
+          entityType: "OffboardingInstance", entityId: instance.id,
+        },
+      }).catch((e) => console.error("resignation approver notification failed:", e));
+    }
 
     void fireWorkflow({
       orgId,
@@ -129,9 +158,9 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         mailStatus.push({ to: `${mgr.firstName} ${mgr.lastName}`, sent: false, error: "workEmail missing" });
         return;
       }
-      const tpl = buildResignationNoticeEmail({
+      const resignData = {
         recipientName: `${mgr.firstName} ${mgr.lastName}`.trim(),
-        recipientRole: idx === 0 ? "direct_manager" : "skip_level",
+        recipientRole: (idx === 0 ? "direct_manager" : "skip_level") as "direct_manager" | "skip_level",
         employeeName,
         employeeCode: employee.employeeCode,
         jobTitle: employee.jobTitle,
@@ -142,9 +171,27 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         reason,
         notes: userNotes,
         companyName,
-      });
+      };
       // sent = queued; the email worker handles delivery + retries.
-      await queueEmail(orgId, { to: mgr.workEmail, subject: tpl.subject, html: tpl.html, kind: "offboarding.resignation-notice" });
+      await resolveAndSend(orgId, {
+        key: "offboarding.resignation-notice",
+        to: mgr.workEmail,
+        vars: {
+          recipientName: resignData.recipientName,
+          employeeName: resignData.employeeName,
+          employeeCode: resignData.employeeCode,
+          jobTitle: resignData.jobTitle ?? "",
+          department: resignData.department ?? "",
+          resignationDate: resignData.resignationDate,
+          lastWorkingDate: resignData.lastWorkingDate,
+          noticePeriodDays: resignData.noticePeriodDays,
+          reason: resignData.reason ?? "",
+          notes: resignData.notes ?? "",
+          portalUrl: "",
+          companyName: resignData.companyName,
+        },
+        fallback: () => buildResignationNoticeEmail(resignData),
+      });
       mailStatus.push({ to: mgr.workEmail, sent: true });
     })).catch((e) => console.error("resignation hierarchy mail failed:", e));
 

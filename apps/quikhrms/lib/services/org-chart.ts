@@ -13,6 +13,8 @@ export interface OrgChartEmployee {
   firstName: string;
   lastName: string;
   jobTitle: string | null;
+  workEmail: string | null;
+  personalEmail: string | null;
   profilePhoto: string | null;
   status: string;
   reportingManagerId: string | null;
@@ -37,6 +39,8 @@ export async function computeOrgChart(orgId: string): Promise<OrgChartSnapshot> 
       firstName: true,
       lastName: true,
       jobTitle: true,
+      workEmail: true,
+      personalEmail: true,
       profilePhoto: true,
       status: true,
       reportingManagerId: true,
@@ -57,6 +61,8 @@ export async function computeOrgChart(orgId: string): Promise<OrgChartSnapshot> 
     firstName: r.firstName,
     lastName: r.lastName,
     jobTitle: r.jobTitle,
+    workEmail: r.workEmail,
+    personalEmail: r.personalEmail,
     profilePhoto: r.profilePhoto,
     status: r.status,
     reportingManagerId: r.reportingManagerId,
