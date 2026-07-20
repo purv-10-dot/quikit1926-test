@@ -316,6 +316,10 @@ export async function findAll(orgId?: string) {
 type PopulatedActor = { _id: string; firstName: string; lastName: string; email: string } | null;
 type PopulatedTenant = { _id: string; orgName: string; contactEmail: string } | null;
 type ApprovalItem = Omit<CertificateTemplate, 'submittedBy' | 'submittedByTenantId'> & {
+  /** Mongo-compat alias for `id`. Declared because the approval queue's Approve
+   *  and Reject actions address the template by it — dropping it silently sent
+   *  them to `/certificates/undefined`. */
+  _id: string;
   submittedBy: PopulatedActor;
   submittedByTenantId: PopulatedTenant;
 };
@@ -357,6 +361,12 @@ async function hydrateApprovalActors(certs: CertificateTemplate[]): Promise<Appr
   const tenantMap = new Map(tenants.map((t) => [t.id, { _id: t.id, orgName: t.orgName, contactEmail: t.contactEmail }]));
 
   return certs.map((c) => ({
+    // `_id` is REQUIRED, not decoration. Every certificate screen keys its
+    // actions off `_id` (the Mongo-compat alias `shapeTemplate` emits), so a row
+    // returned without it makes the Super Admin queue POST to
+    // `/certificates/undefined/approve` — which 404s as "Certificate template
+    // not found" against a template that plainly exists.
+    _id: c.id,
     ...c,
     submittedBy: (c.submittedBy && userMap.get(c.submittedBy)) || null,
     submittedByTenantId: (c.submittedByTenantId && tenantMap.get(c.submittedByTenantId)) || null,
@@ -380,10 +390,15 @@ export async function findAllApprovalItems(): Promise<ApprovalItem[]> {
 }
 
 export async function findBySubmittedTenant(orgId: string) {
-  return prisma.lmsCertificate.findMany({
+  const certs = await prisma.lmsCertificate.findMany({
     where: { OR: [{ submittedByTenantId: orgId }, { selectedTenants: { some: { orgId } } }] },
     orderBy: { updatedAt: 'desc' },
+    include: { selectedTenants: { select: { orgId: true } } },
   });
+  // Shaped like every other template read: the tenant-admin list drives Edit and
+  // Delete off `_id`, so returning bare Prisma rows here sent both to
+  // `/certificates/undefined`.
+  return certs.map(shapeTemplate);
 }
 
 async function deactivateOtherTenantTemplates(excludeId: string, orgId?: string | null, submittedByTenantId?: string | null) {

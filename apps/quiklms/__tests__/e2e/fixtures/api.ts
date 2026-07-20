@@ -12,11 +12,21 @@ import { mintSessionToken, type RoleKey } from "./auth";
 
 const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3020";
 
-export async function apiAs(role: RoleKey): Promise<APIRequestContext> {
+/**
+ * `timeout` sets the default per-request timeout for every call made through the
+ * returned context, overriding the config's 15s `actionTimeout`. Pass it for
+ * feature areas whose endpoints are legitimately slow against the dev server
+ * (the `/api/course-assignments/*` lists, for example, run several seconds each
+ * because they resolve every row's course with a separate query). Without it a
+ * slow-but-correct response fails as a timeout and masks the assertion the test
+ * was actually making.
+ */
+export async function apiAs(role: RoleKey, opts: { timeout?: number } = {}): Promise<APIRequestContext> {
   const token = await mintSessionToken(role);
   return request.newContext({
     baseURL: BASE,
     extraHTTPHeaders: { Cookie: `next-auth.session-token=${token}` },
+    ...(opts.timeout ? { timeout: opts.timeout } : {}),
   });
 }
 

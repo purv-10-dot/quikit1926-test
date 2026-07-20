@@ -15,9 +15,7 @@ const ORG_MEMBER_ROLE: Record<string, string> = {
 };
 
 async function token(role: string) {
-  const u = process.env.OVERRIDE_ID
-    ? { userId: process.env.OVERRIDE_ID, email: process.env.OVERRIDE_EMAIL || 'x@x.test' }
-    : MANIFEST.users[role];
+  const u = MANIFEST.users[role];
   return encode({
     secret: SECRET, maxAge: 60 * 60 * 8,
     token: {

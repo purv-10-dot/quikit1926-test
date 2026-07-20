@@ -62,6 +62,13 @@ async function wipe(orgId: string) {
   await prisma.lmsCourseAssignment.deleteMany({ where: scope }).catch(() => {});
   await prisma.lmsAssessment.deleteMany({ where: scope }).catch(() => {});
   await prisma.lmsExam.deleteMany({ where: scope }).catch(() => {});
+  // Messaging/meeting/homework rows added for the wave-2 domain phases.
+  // Participants and messages cascade from the conversation.
+  await prisma.lmsConversation.deleteMany({ where: scope }).catch(() => {});
+  await prisma.lmsMeeting.deleteMany({ where: scope }).catch(() => {});
+  await prisma.lmsHomework.deleteMany({ where: scope }).catch(() => {});
+  await prisma.lmsAttendance.deleteMany({ where: scope }).catch(() => {});
+  await prisma.lmsScheduledClass.deleteMany({ where: scope }).catch(() => {});
   await prisma.lmsBatch.deleteMany({ where: scope }).catch(() => {});
   // Modules/lessons cascade from course.
   await prisma.lmsCourse.deleteMany({ where: scope }).catch(() => {});
@@ -317,6 +324,87 @@ async function main() {
     }).catch((e) => console.warn("  ! exam skipped:", e.message.split("\n")[0]));
   }
 
+  // ── Wave-2 domain data ────────────────────────────────────────────────────
+  // Scheduling, meetings, homework and messaging account for ~50 API routes
+  // between them. Without rows here those phases assert empty lists and pass
+  // while exercising nothing, so each gets one realistic record.
+  let scheduledClassId: string | null = null;
+  let meetingId: string | null = null;
+  let homeworkId: string | null = null;
+  let conversationId: string | null = null;
+
+  if (batch) {
+    console.log("🗓️  Creating scheduled class / meeting / homework / conversation...");
+    const cls = await prisma.lmsScheduledClass.create({
+      data: {
+        orgId: org.id,
+        batchId: batch.id,
+        teacherId: ids.teacher.lmsUserId,
+        title: "E2E Class 1",
+        startTime: new Date(Date.now() + 2 * 36e5),
+        endTime: new Date(Date.now() + 3 * 36e5),
+        status: "scheduled" as never,
+      },
+    }).catch((e) => { console.warn("  ! class skipped:", e.message.split("\n")[0]); return null; });
+    scheduledClassId = cls?.id ?? null;
+
+    const meeting = await prisma.lmsMeeting.create({
+      data: {
+        orgId: org.id,
+        scheduledClassId: cls?.id ?? null,
+        hostId: ids.teacher.lmsUserId,
+        createdBy: ids.teacher.lmsUserId,
+        provider: "jitsi" as never,
+        joinUrl: "https://meet.jit.si/e2e-test-room",
+        title: "E2E Meeting",
+        scheduledStartTime: new Date(Date.now() + 2 * 36e5),
+        scheduledEndTime: new Date(Date.now() + 3 * 36e5),
+        status: "scheduled" as never,
+      },
+    }).catch((e) => { console.warn("  ! meeting skipped:", e.message.split("\n")[0]); return null; });
+    meetingId = meeting?.id ?? null;
+
+    const hw = await prisma.lmsHomework.create({
+      data: {
+        orgId: org.id,
+        batchId: batch.id,
+        teacherId: ids.teacher.lmsUserId,
+        title: "E2E Homework 1",
+        description: "Seeded homework.",
+        dueDate: new Date(Date.now() + 7 * 864e5),
+        assignedToStudentIds: [ids.learner.lmsUserId],
+        maxScore: 100,
+        status: "published" as never,
+        publishedAt: new Date(),
+      },
+    }).catch((e) => { console.warn("  ! homework skipped:", e.message.split("\n")[0]); return null; });
+    homeworkId = hw?.id ?? null;
+  }
+
+  // A direct conversation between teacher and learner, with one message, so
+  // the 20 messaging routes have a real thread to act on.
+  const convo = await prisma.lmsConversation.create({
+    data: {
+      orgId: org.id,
+      type: "direct" as never,
+      createdBy: ids.teacher.lmsUserId,
+      messageCount: 1,
+      lastMessageText: "Hello from the E2E seed.",
+      lastMessageAt: new Date(),
+      lastMessageBy: ids.teacher.lmsUserId,
+      participants: {
+        create: [
+          { userId: ids.teacher.lmsUserId, role: "admin" as never },
+          { userId: ids.learner.lmsUserId, role: "member" as never },
+        ],
+      },
+      messages: {
+        create: [{ senderId: ids.teacher.lmsUserId, text: "Hello from the E2E seed." }],
+      },
+    },
+  }).catch((e) => { console.warn("  ! conversation skipped:", e.message.split("\n")[0]); return null; });
+  conversationId = convo?.id ?? null;
+
   // ── Second tenant ─────────────────────────────────────────────────────────
   // Cross-tenant isolation is unprovable with a single org: every "leak" test
   // needs a resource that legitimately belongs to somebody else. This org is
@@ -378,6 +466,10 @@ async function main() {
     modules: published.modules.map((m) => ({ id: m.id, lessons: m.lessons.map((l) => l.id) })),
     assessmentId: assessment.id,
     batchId: batch?.id ?? null,
+    scheduledClassId,
+    meetingId,
+    homeworkId,
+    conversationId,
     other: {
       orgId: org2.id,
       tenantId: org2.id,
