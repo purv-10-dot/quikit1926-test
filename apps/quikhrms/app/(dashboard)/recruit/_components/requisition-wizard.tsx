@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
 import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { clsx } from "clsx";
 import { Plus, X, Check, ChevronDown, Sparkles, Trash2, ArrowLeft, ArrowRight, Search as SearchIcon } from "lucide-react";
+import { INDIAN_CITIES } from "@/lib/data/indian-cities";
 
 export interface DeptOption { id: string; name: string; code?: string | null; }
 export interface PipelineOption { id: string; name: string; isDefault: boolean; stages: { name: string }[]; }
@@ -22,17 +24,6 @@ export interface EmpOption {
   designation?: { title: string } | null;
 }
 
-// Common Indian cities for the Job Location autocomplete (free-text still allowed).
-const INDIAN_CITIES = [
-  "Mumbai, MH", "Delhi, DL", "Bengaluru, KA", "Hyderabad, TG", "Chennai, TN",
-  "Kolkata, WB", "Pune, MH", "Ahmedabad, GJ", "Jaipur, RJ", "Surat, GJ",
-  "Lucknow, UP", "Kanpur, UP", "Nagpur, MH", "Indore, MP", "Bhopal, MP",
-  "Patna, BR", "Vadodara, GJ", "Ghaziabad, UP", "Ludhiana, PB", "Coimbatore, TN",
-  "Kochi, KL", "Thiruvananthapuram, KL", "Chandigarh, CH", "Noida, UP", "Gurugram, HR",
-  "Visakhapatnam, AP", "Nashik, MH", "Rajkot, GJ", "Ranchi, JH", "Raipur, CG",
-  "Guwahati, AS", "Bhubaneswar, OD", "Dehradun, UK", "Mysuru, KA", "Mangaluru, KA",
-  "Vijayawada, AP", "Madurai, TN", "Jodhpur, RJ", "Amritsar, PB", "Faridabad, HR",
-];
 
 export interface ReqFormShape {
   title: string;
@@ -151,12 +142,37 @@ function MultiSelect({
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const ref = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Dropdown is portaled to <body> so the modal's `overflow-y-auto` can't clip
+  // it; we position it manually under the trigger and keep it in sync on
+  // scroll/resize.
+  const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null);
+
+  const reposition = () => {
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setRect({ top: r.bottom + 4, left: r.left, width: r.width });
+  };
 
   useEffect(() => {
     if (!open) { setQ(""); return; }
-    const onClick = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    reposition();
+    const onClick = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (ref.current?.contains(t) || panelRef.current?.contains(t)) return;
+      setOpen(false);
+    };
+    const onScrollResize = () => reposition();
     document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
+    window.addEventListener("resize", onScrollResize);
+    // capture=true so scrolling inside the modal body also repositions the panel
+    window.addEventListener("scroll", onScrollResize, true);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      window.removeEventListener("resize", onScrollResize);
+      window.removeEventListener("scroll", onScrollResize, true);
+    };
   }, [open]);
 
   const filtered = q.trim()
@@ -195,8 +211,12 @@ function MultiSelect({
         </div>
       )}
 
-      {open && (
-        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden">
+      {open && rect && createPortal(
+        <div
+          ref={panelRef}
+          style={{ position: "fixed", top: rect.top, left: rect.left, width: rect.width, zIndex: 9999 }}
+          className="bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden"
+        >
           <div className="p-2 border-b border-gray-100 bg-gray-50">
             <div className="relative">
               <SearchIcon size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -226,7 +246,8 @@ function MultiSelect({
               );
             })}
           </ul>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
@@ -421,12 +442,13 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
               {(form.workLocation === "Office" || form.workLocation === "Hybrid") && (
               <div>
                 <label className={reqLabel}>Job Location <span className="text-red-500">*</span></label>
-                <input value={form.jobLocation} onChange={(e) => setForm({ ...form, jobLocation: e.target.value })}
-                  list="job-location-cities" autoComplete="off"
-                  placeholder="e.g. Indore, MP" className={reqInput} />
-                <datalist id="job-location-cities">
-                  {INDIAN_CITIES.map((c) => <option key={c} value={c} />)}
-                </datalist>
+                <Select
+                  value={form.jobLocation}
+                  onChange={(v) => setForm({ ...form, jobLocation: v })}
+                  searchable
+                  placeholder="Search city…"
+                  options={INDIAN_CITIES.map((c) => ({ value: c, label: c }))}
+                />
                 {!form.jobLocation.trim() && <p className="mt-1 text-[11px] text-red-500">Required for Office / Hybrid roles.</p>}
               </div>
               )}
@@ -552,19 +574,19 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                 </div>
                 <div>
                   <label className={reqLabel}>Salary Min (LPA) <span className="text-red-500">*</span></label>
-                  <NumberInput value={form.salaryMin}
+                  <NumberInput clamp min={0} max={999} value={form.salaryMin}
                     onChange={(v) => setForm({ ...form, salaryMin: v })}
                     className={clsx(reqInput, compErrors.salary && errRing)} />
                 </div>
                 <div>
                   <label className={reqLabel}>Salary Max (LPA) <span className="text-red-500">*</span></label>
-                  <NumberInput value={form.salaryMax}
+                  <NumberInput clamp min={0} max={999} value={form.salaryMax}
                     onChange={(v) => setForm({ ...form, salaryMax: v })}
                     className={clsx(reqInput, (compErrors.salary || compErrors.budget) && errRing)} />
                 </div>
                 <div>
                   <label className={reqLabel}>Budget (LPA)</label>
-                  <NumberInput value={form.budget} onChange={(v) => setForm({ ...form, budget: v })} className={clsx(reqInput, compErrors.budget && errRing)} />
+                  <NumberInput clamp min={0} max={999} value={form.budget} onChange={(v) => setForm({ ...form, budget: v })} className={clsx(reqInput, compErrors.budget && errRing)} />
                 </div>
               </div>
               {(compErrors.exp || compErrors.salary || compErrors.budget) && (
@@ -656,7 +678,7 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                 </div>
                 <div>
                   <label className={reqLabel}>Year of passing <span className="text-gray-400 font-normal">(optional)</span></label>
-                  <NumberInput allowDecimal={false} min={1950} max={2100} value={form.passingYear}
+                  <NumberInput allowDecimal={false} clamp min={1950} max={2100} maxLength={4} value={form.passingYear}
                     onChange={(v) => setForm({ ...form, passingYear: v })}
                     placeholder="e.g. 2020" className={reqInput} />
                 </div>

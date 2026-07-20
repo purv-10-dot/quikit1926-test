@@ -6,6 +6,7 @@ import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { stageNames } from "@/lib/services/pipeline-stages";
 import { resolveAndSend } from "@/lib/email/resolve";
 import { buildOnHoldEmail } from "@/lib/email-templates/application-on-hold";
+import { buildInterviewPassedEmail } from "@/lib/email-templates/interview-passed";
 import { sendRejectionEmail } from "@/lib/recruit/rejection-mail";
 
 /**
@@ -92,27 +93,53 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
     // Apply decision
     const deferStageMove = body.deferStageMove === true;
     let stageAdvanced = false;
-    if ((recommendation === "Hire" || recommendation === "StrongHire") && !deferStageMove) {
-      const nextStage = currentIdx >= 0 && currentIdx < stages.length - 1
-        ? stages[currentIdx + 1]
-        : currentStage;
-      if (nextStage && nextStage !== currentStage) {
-        const history = Array.isArray(app.stageHistory) ? (app.stageHistory as unknown[]) : [];
-        await prisma.jobApplication.update({
-          where: { id: app.id },
-          data: {
-            currentStage: nextStage,
-            // A positive recommendation clears any prior On-Hold state.
-            ...(app.status === "AppOnHold" ? { status: "AppActive" } : {}),
-            stageHistory: JSON.parse(JSON.stringify([
-              ...history,
-              { stage: nextStage, date: new Date().toISOString(), movedBy: userId, reason: `Approved at ${currentStage}` },
-            ])),
-            updatedBy: userId,
-          },
-        });
-        stageAdvanced = true;
+    if (recommendation === "Hire" || recommendation === "StrongHire") {
+      if (!deferStageMove) {
+        const nextStage = currentIdx >= 0 && currentIdx < stages.length - 1
+          ? stages[currentIdx + 1]
+          : currentStage;
+        if (nextStage && nextStage !== currentStage) {
+          const history = Array.isArray(app.stageHistory) ? (app.stageHistory as unknown[]) : [];
+          await prisma.jobApplication.update({
+            where: { id: app.id },
+            data: {
+              currentStage: nextStage,
+              // A positive recommendation clears any prior On-Hold state.
+              ...(app.status === "AppOnHold" ? { status: "AppActive" } : {}),
+              stageHistory: JSON.parse(JSON.stringify([
+                ...history,
+                { stage: nextStage, date: new Date().toISOString(), movedBy: userId, reason: `Approved at ${currentStage}` },
+              ])),
+              updatedBy: userId,
+            },
+          });
+          stageAdvanced = true;
+        }
       }
+      // Congratulate the candidate on clearing this round — same email the
+      // interview-decision path sends. Previously the pipeline "approve" path
+      // advanced the candidate silently with no email. Best-effort, background.
+      void (async () => {
+        try {
+          const [cand, company, req_] = await Promise.all([
+            prisma.candidate.findFirst({ where: { id: app.candidateId, orgId }, select: { firstName: true, lastName: true, email: true } }),
+            prisma.companySettings.findUnique({ where: { orgId }, select: { companyName: true } }),
+            prisma.jobRequisition.findUnique({ where: { id: app.requisitionId }, select: { title: true } }),
+          ]);
+          if (!cand?.email) return;
+          const candidateName = `${cand.firstName} ${cand.lastName}`.trim();
+          const jobTitle = req_?.title ?? "the role";
+          const companyName = company?.companyName ?? "Our Company";
+          await resolveAndSend(orgId, {
+            key: "recruit.interview-passed",
+            to: cand.email,
+            vars: { candidateName, jobTitle, companyName, roundName: currentStage },
+            fallback: () => buildInterviewPassedEmail({ candidateName, jobTitle, companyName, roundName: currentStage }),
+          });
+        } catch (e) {
+          console.error("[stage-feedback] cleared-round mail failed:", e);
+        }
+      })();
     } else if (recommendation === "MaybeHire") {
       // On Hold — park the candidate AND move them to the Archive so they drop
       // off the active pipeline board (the applications query hides archived

@@ -21,7 +21,7 @@ export default defineConfig({
   reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",
 
   use: {
-    baseURL: "http://localhost:3009",
+    baseURL: "http://localhost:3019",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
@@ -34,13 +34,17 @@ export default defineConfig({
     },
   ],
 
+  // Dedicated test server on port 3019 in DEV-BYPASS mode: with
+  // NEXT_PUBLIC_QUIKIT_URL empty, the middleware skips central-auth (no SSO
+  // redirect), the client AuthGuard is dev-permissive, and API auth uses the
+  // header-based dev flow. This lets e2e reach authenticated pages locally.
+  // Runs on 3019 so it never collides with a real SSO dev server on 3009.
   webServer: {
-    // Use next directly (not `npm run dev`) — npm's workspace mode errors with
-    // ENOWORKSPACES when Playwright spawns it. Reused if a server is already up.
-    command: "npx next dev -p 3009",
-    url: "http://localhost:3009",
+    command: "npx next dev -p 3019",
+    url: "http://localhost:3019",
+    env: { NEXT_PUBLIC_QUIKIT_URL: "" },
     reuseExistingServer: !process.env.CI,
-    timeout: 180_000,
+    timeout: 240_000,
     stdout: "ignore",
     stderr: "pipe",
   },

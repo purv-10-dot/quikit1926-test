@@ -32,6 +32,15 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
   try {
     const existing = await prisma.candidate.findFirst({ where: { id: params.id, orgId, deletedAt: null } });
     if (!existing) return notFound("Candidate not found");
+    // Blacklisted / archived candidates are read-only — restore or unblock first.
+    // (Un-block / un-archive use their own dedicated endpoints, not this PATCH.)
+    if (existing.isBlacklisted || existing.isArchived) {
+      return validationError(
+        existing.isBlacklisted
+          ? "This candidate is blacklisted and can't be edited. Lift the blacklist first."
+          : "This candidate is archived and can't be edited. Restore them first.",
+      );
+    }
     const body = await req.json();
     const parsed = updateCandidateSchema.safeParse(body);
     if (!parsed.success) return validationError("Validation failed", parsed.error.flatten().fieldErrors);

@@ -58,6 +58,11 @@ export function Select({
     return options.filter((o) => o.label.toLowerCase().includes(q));
   }, [options, query, searchable]);
 
+  // Cap how many rows we actually render — with large option sets (e.g. the
+  // ~4k-city list) rendering everything on open is janky. Users type to narrow.
+  const MAX_RENDER = 100;
+  const visible = useMemo(() => filtered.slice(0, MAX_RENDER), [filtered]);
+
   useEffect(() => {
     if (!open) return;
     const onClick = (e: MouseEvent) => {
@@ -140,9 +145,9 @@ export function Select({
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (!open) return;
-    if (e.key === "ArrowDown") { e.preventDefault(); setHighlight((h) => Math.min(h + 1, filtered.length - 1)); }
+    if (e.key === "ArrowDown") { e.preventDefault(); setHighlight((h) => Math.min(h + 1, visible.length - 1)); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setHighlight((h) => Math.max(h - 1, 0)); }
-    else if (e.key === "Enter") { e.preventDefault(); const opt = filtered[highlight]; if (opt) pick(opt); }
+    else if (e.key === "Enter") { e.preventDefault(); const opt = visible[highlight]; if (opt) pick(opt); }
     else if (e.key === "Escape") { e.preventDefault(); setOpen(false); }
   };
 
@@ -216,7 +221,7 @@ export function Select({
             <ul className="flex-1 min-h-0 overflow-y-auto py-1">
               {filtered.length === 0 ? (
                 <li className="px-3 py-3 text-center text-xs text-gray-400">No matches</li>
-              ) : filtered.map((o, i) => {
+              ) : visible.map((o, i) => {
                 const isSelected = o.value === value;
                 const isHighlight = i === highlight;
                 return (
@@ -249,6 +254,11 @@ export function Select({
                   </li>
                 );
               })}
+              {filtered.length > MAX_RENDER && (
+                <li className="px-3 py-2 text-center text-[11px] text-gray-400 border-t border-gray-100">
+                  Showing {MAX_RENDER} of {filtered.length} — type to narrow
+                </li>
+              )}
             </ul>
           </div>,
           document.body,

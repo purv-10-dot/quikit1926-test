@@ -11,18 +11,23 @@ interface ReqOption { id: string; title: string; requisitionNumber: string }
 interface ParsedRow {
   firstName?: string; lastName?: string; email?: string; phone?: string;
   currentCompany?: string; currentDesignation?: string; totalExperience?: number;
-  skills?: string[]; source?: string; location?: string; linkedinUrl?: string;
+  currentCTC?: number; expectedCTC?: number; noticePeriod?: number;
+  skills?: string[]; source?: string; location?: string;
+  linkedinUrl?: string; resumeUrl?: string;
 }
 interface ImportResult { created: number; applied: number; skipped: number; failed: number; errors: { row: number; error: string }[] }
 
 const TEMPLATE_HEADERS = [
   "First Name", "Last Name", "Email", "Phone", "Current Company",
-  "Current Designation", "Total Experience (Years)", "Skills", "Source", "Location", "LinkedIn URL",
+  "Current Designation", "Total Experience (Years)", "Current CTC (LPA)", "Expected CTC (LPA)",
+  "Notice Period (Days)", "Skills", "Source", "Location", "LinkedIn URL", "Resume URL",
 ];
 const MANDATORY_HEADERS = ["First Name", "Last Name", "Email"];
 const SAMPLE_ROW = [
   "Rahul", "Verma", "rahul.verma@example.com", "9876543210", "Acme Corp",
-  "Software Engineer", "4", "React, Node.js", "LinkedIn", "Pune, MH", "https://linkedin.com/in/rahulv",
+  "Software Engineer", "4", "12", "18",
+  "30", "React, Node.js", "LinkedIn", "Pune, Maharashtra",
+  "https://linkedin.com/in/rahulv", "https://drive.google.com/file/resume.pdf",
 ];
 
 const norm = (h: string) => h.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -35,10 +40,14 @@ function mapHeader(h: string): keyof ParsedRow | null {
   if (["currentcompany", "company"].includes(n)) return "currentCompany";
   if (["currentdesignation", "designation", "title", "jobtitle"].includes(n)) return "currentDesignation";
   if (["totalexperienceyears", "totalexperience", "experience", "experienceyears", "exp"].includes(n)) return "totalExperience";
+  if (["currentctclpa", "currentctc", "ctc", "currentsalary"].includes(n)) return "currentCTC";
+  if (["expectedctclpa", "expectedctc", "ectc", "expectedsalary"].includes(n)) return "expectedCTC";
+  if (["noticeperioddays", "noticeperiod", "notice"].includes(n)) return "noticePeriod";
   if (["skills", "skillset"].includes(n)) return "skills";
   if (["source", "sourceofhire"].includes(n)) return "source";
   if (["location", "city"].includes(n)) return "location";
   if (["linkedinurl", "linkedin"].includes(n)) return "linkedinUrl";
+  if (["resumeurl", "resume", "cv", "resumelink", "cvlink"].includes(n)) return "resumeUrl";
   return null;
 }
 
@@ -49,6 +58,9 @@ function toRow(headers: string[], values: string[]): ParsedRow {
     const val = (values[i] ?? "").trim();
     if (!key || !val) return;
     if (key === "totalExperience") { const n = Number(val); if (Number.isFinite(n)) row.totalExperience = Math.round(n); }
+    else if (key === "noticePeriod") { const n = Number(val); if (Number.isFinite(n)) row.noticePeriod = Math.round(n); }
+    else if (key === "currentCTC") { const n = Number(val); if (Number.isFinite(n)) row.currentCTC = n; }
+    else if (key === "expectedCTC") { const n = Number(val); if (Number.isFinite(n)) row.expectedCTC = n; }
     else if (key === "skills") row.skills = val.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
     else (row as Record<string, unknown>)[key] = val;
   });
@@ -154,7 +166,7 @@ export function CandidateBulkImport({
     setImporting(true);
     try {
       const res = await api.post<ImportResult>("/api/v1/hrms/recruit/candidates/bulk-import", {
-        requisitionId: reqId || undefined,
+        requisitionId: reqId,
         candidates: rows,
       });
       setResult(res.data ?? null);
@@ -213,14 +225,16 @@ export function CandidateBulkImport({
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Apply all to a requisition <span className="text-gray-400 font-normal">(optional)</span></label>
-            <Select value={reqId} onChange={setReqId} placeholder="— No requisition (just add to pool) —"
-              options={[{ value: "", label: "— No requisition (just add to pool) —" }, ...requisitions.map((r) => ({ value: r.id, label: `${r.title} (${r.requisitionNumber})` }))]} />
+            <label className="block text-xs font-medium text-gray-700 mb-1">Apply all to a requisition <span className="text-red-500">*</span></label>
+            <Select value={reqId} onChange={setReqId} placeholder="Select a requisition…"
+              options={requisitions.map((r) => ({ value: r.id, label: `${r.title} (${r.requisitionNumber})` }))} />
+            {!reqId && <p className="mt-1 text-[11px] text-gray-400">Every uploaded candidate will be applied to this requisition.</p>}
           </div>
 
           <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
             <button type="button" onClick={close} className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
-            <button type="button" onClick={runImport} disabled={validCount === 0 || importing}
+            <button type="button" onClick={runImport} disabled={validCount === 0 || !reqId || importing}
+              title={!reqId ? "Select a requisition first" : undefined}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium disabled:opacity-50">
               <Upload size={13} /> {importing ? "Importing..." : `Import ${validCount || ""}`}
             </button>

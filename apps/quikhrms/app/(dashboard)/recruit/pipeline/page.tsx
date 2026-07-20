@@ -95,22 +95,22 @@ const PIPELINE_EXCEL_COLUMNS = [
   { header: "Applied", key: "applied", width: 16 },
 ];
 
-// Static screening-call checklist — the same for every job. Shown only in the
-// Screening stage as a quick reference for the recruiter of what to capture.
-const SCREENING_CHECKLIST: { label: string; hint?: string }[] = [
-  { label: "Name" },
-  { label: "Contact number" },
-  { label: "Email" },
-  { label: "Tech stack" },
-  { label: "Experience", hint: "total / relevant" },
-  { label: "Location", hint: "current location & hometown" },
-  { label: "Reason for job change" },
-  { label: "Notice period" },
-  { label: "Current salary" },
-  { label: "Expected salary" },
-  { label: "Communication", hint: "rate on the call" },
-  { label: "Interview scheduled", hint: "date & time confirmed?" },
-  { label: "Status", hint: "shortlisted / on hold / rejected" },
+// Screening-call questionnaire — the same for every job. Shown only in the
+// Screening stage; the recruiter captures each answer live on the call.
+const SCREENING_CHECKLIST: { key: string; label: string; question: string; hint?: string; type?: "text" | "select"; options?: string[] }[] = [
+  { key: "name", label: "Name", question: "What is your name?" },
+  { key: "contact", label: "Contact number", question: "What is your contact number?" },
+  { key: "email", label: "Email", question: "What is your email address?" },
+  { key: "techStack", label: "Tech stack", question: "What is your tech stack?" },
+  { key: "experience", label: "Experience", question: "How much experience do you have?", hint: "total / relevant" },
+  { key: "location", label: "Location", question: "Where are you located?", hint: "current location & hometown" },
+  { key: "reasonForChange", label: "Reason for job change", question: "Why are you looking for a change?" },
+  { key: "noticePeriod", label: "Notice period", question: "What is your notice period?" },
+  { key: "currentSalary", label: "Current salary", question: "What is your current salary?" },
+  { key: "expectedSalary", label: "Expected salary", question: "What is your expected salary?" },
+  { key: "communication", label: "Communication", question: "How was the communication?", hint: "rate on the call" },
+  { key: "interviewScheduled", label: "Interview scheduled", question: "Is the interview scheduled?", hint: "date & time confirmed?" },
+  { key: "status", label: "Status", question: "What is the status?", hint: "shortlisted / on hold / rejected", type: "select", options: ["Shortlisted", "On hold", "Rejected"] },
 ];
 
 const stageColors: Record<string, string> = {
@@ -231,8 +231,7 @@ export default function PipelinePage() {
 
   const [scheduleApp, setScheduleApp] = useState<{ app: ApplicationItem; stage: string } | null>(null);
   const [schedule, setSchedule] = useState({
-    interviewerId: "",
-    additionalInterviewerIds: [] as string[],
+    interviewerIds: [] as string[],
     scheduledAt: "",
     duration: 60 as number | null,
     type: "Video" as "Phone" | "Video" | "InPerson" | "Panel" | "TakeHome" | "GroupDiscussion",
@@ -367,7 +366,7 @@ export default function PipelinePage() {
       const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
       tomorrow.setMinutes(0, 0, 0);
       const iso = new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-      setSchedule({ interviewerId: "", additionalInterviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "" });
+      setSchedule({ interviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "" });
       setScheduleResult(null);
       setScheduleApp({ app, stage: next });
     } else {
@@ -451,7 +450,7 @@ export default function PipelinePage() {
         const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
         tomorrow.setMinutes(0, 0, 0);
         const iso = new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-        setSchedule({ interviewerId: "", additionalInterviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "" });
+        setSchedule({ interviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "" });
         setScheduleResult(null);
         setScheduleApp({ app, stage: vars.target });
       } else {
@@ -486,7 +485,7 @@ export default function PipelinePage() {
         const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
         tomorrow.setMinutes(0, 0, 0);
         const iso = new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-        setSchedule({ interviewerId: "", additionalInterviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "" });
+        setSchedule({ interviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "" });
         setScheduleResult(null);
         setScheduleApp({ app, stage: nextStage });
       }
@@ -602,8 +601,8 @@ export default function PipelinePage() {
         applicationId: scheduleApp.app.id,
         round,
         type: schedule.type,
-        interviewerId: schedule.interviewerId,
-        additionalInterviewerIds: schedule.additionalInterviewerIds,
+        interviewerId: schedule.interviewerIds[0],
+        additionalInterviewerIds: schedule.interviewerIds.slice(1),
         scheduledAt: new Date(schedule.scheduledAt).toISOString(),
         duration: schedule.duration ?? 60,
         location: schedule.location || undefined,
@@ -1025,7 +1024,7 @@ export default function PipelinePage() {
                         )}
                         {showScreening(app) && (
                           <button onClick={() => setScreeningApp(app)}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-teal-50 text-teal-700 ring-1 ring-teal-200 hover:bg-teal-100 rounded text-[11px] font-semibold" title="Screening checklist">
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-teal-50 text-teal-700 ring-1 ring-teal-200 hover:bg-teal-100 rounded text-[11px] font-semibold" title="Screening questions">
                             <ClipboardList size={10} /> Screening
                           </button>
                         )}
@@ -1195,7 +1194,7 @@ export default function PipelinePage() {
                         <Clock size={12} />
                       </button>
                       {showScreening(app) && (
-                        <button onClick={() => setScreeningApp(app)} title="Screening checklist"
+                        <button onClick={() => setScreeningApp(app)} title="Screening questions"
                           className="inline-flex items-center justify-center w-8 h-8 bg-white text-gray-500 ring-1 ring-gray-200 hover:bg-teal-50 hover:text-teal-600 hover:ring-teal-200 rounded-lg transition">
                           <ClipboardList size={12} />
                         </button>
@@ -1761,7 +1760,7 @@ export default function PipelinePage() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              if (!schedule.interviewerId) return toast.error("Interviewer required");
+              if (schedule.interviewerIds.length === 0) return toast.error("Select at least one interviewer");
               if (!schedule.scheduledAt) return toast.error("Date & time required");
               if (schedule.type === "InPerson" && !schedule.location) return toast.error("Location required for in-person");
               toast.promise(scheduleMut.mutateAsync(), { loading: "Sending interview invite…", success: "Invite sent", error: "Couldn't send invite" });
@@ -1799,47 +1798,35 @@ export default function PipelinePage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Interviewer *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Interviewers *</label>
                 <Select
-                  value={schedule.interviewerId}
-                  onChange={(v) => setSchedule({ ...schedule, interviewerId: v })}
-                  options={[{ value: "", label: "Select interviewer…" },
-                    ...scheduleInterviewerChoices.map((e) => ({ value: e.id, label: `${e.firstName} ${e.lastName}`, description: e.jobTitle ?? undefined })),
+                  value=""
+                  onChange={(v) => { if (v && !schedule.interviewerIds.includes(v)) setSchedule({ ...schedule, interviewerIds: [...schedule.interviewerIds, v] }); }}
+                  options={[{ value: "", label: "Add interviewer…" },
+                    ...scheduleInterviewerChoices
+                      .filter((e) => !schedule.interviewerIds.includes(e.id))
+                      .map((e) => ({ value: e.id, label: `${e.firstName} ${e.lastName}`, description: e.jobTitle ?? undefined })),
                   ]}
                 />
                 <p className="mt-1 text-[11px] text-gray-400">
-                  {schedulePanelEmps.length > 0 ? "Showing this role's interview panel." : "Any employee can be picked as interviewer."}
+                  {schedulePanelEmps.length > 0 ? "Showing this role's interview panel." : "Pick one or more interviewers."}
                 </p>
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Additional interviewers <span className="text-gray-400 font-normal">(optional)</span>
-              </label>
-              <Select
-                value=""
-                onChange={(v) => {
-                  if (!v || v === schedule.interviewerId || schedule.additionalInterviewerIds.includes(v)) return;
-                  setSchedule({ ...schedule, additionalInterviewerIds: [...schedule.additionalInterviewerIds, v] });
-                }}
-                options={[{ value: "", label: "Add another interviewer…" },
-                  ...scheduleInterviewerChoices
-                    .filter((e) => e.id !== schedule.interviewerId && !schedule.additionalInterviewerIds.includes(e.id))
-                    .map((e) => ({ value: e.id, label: `${e.firstName} ${e.lastName}`, description: e.jobTitle ?? undefined })),
-                ]}
-              />
-              {schedule.additionalInterviewerIds.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {schedule.additionalInterviewerIds.map((id) => {
+              {schedule.interviewerIds.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {schedule.interviewerIds.map((id, idx) => {
                     const emp = scheduleInterviewerChoices.find((e) => e.id === id);
                     const name = emp ? `${emp.firstName} ${emp.lastName}` : id;
                     return (
                       <span key={id} className="inline-flex items-center gap-1 rounded-full bg-green-50 text-green-700 text-xs font-medium pl-2.5 pr-1 py-1 ring-1 ring-green-200">
                         {name}
+                        {idx === 0 && <span className="text-[10px] font-semibold text-green-500">· Primary</span>}
                         <button
                           type="button"
-                          onClick={() => setSchedule({ ...schedule, additionalInterviewerIds: schedule.additionalInterviewerIds.filter((x) => x !== id) })}
+                          onClick={() => setSchedule({ ...schedule, interviewerIds: schedule.interviewerIds.filter((x) => x !== id) })}
                           className="inline-flex items-center justify-center w-4 h-4 rounded-full text-green-500 hover:bg-green-100"
                         >
                           <X size={11} />
@@ -1848,9 +1835,11 @@ export default function PipelinePage() {
                     );
                   })}
                 </div>
+              ) : (
+                <p className="text-[11px] text-gray-400">No interviewers selected yet — add at least one above.</p>
               )}
               <p className="mt-1 text-[11px] text-gray-400">
-                They receive the same invite email and calendar entry. Feedback is submitted by the primary interviewer.
+                The first interviewer is the primary (submits feedback); everyone receives the same invite email &amp; calendar entry.
               </p>
             </div>
 
@@ -2139,7 +2128,7 @@ export default function PipelinePage() {
         )}
       </Modal>
 
-      <Modal open={!!screeningApp} onClose={() => setScreeningApp(null)} title="Screening Checklist" size="md">
+      <Modal open={!!screeningApp} onClose={() => setScreeningApp(null)} title="Screening Questions" size="md">
         {screeningApp && (
           <div>
             <div className="flex items-center gap-2 mb-3 text-xs text-slate-500">
@@ -2149,18 +2138,22 @@ export default function PipelinePage() {
               <span>·</span>
               <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 text-[10px] font-semibold">Screening</span>
             </div>
-            <p className="text-[11px] text-slate-400 mb-2">Capture these on the screening call.</p>
-            <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+            <p className="text-[11px] text-slate-400 mb-3">Ask these on the screening call.</p>
+            <ol className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2.5 list-none">
               {SCREENING_CHECKLIST.map((q, i) => (
-                <li key={i} className="flex items-start gap-2 bg-slate-50 ring-1 ring-slate-100 rounded px-2.5 py-1.5">
-                  <span className="mt-0.5 w-4 h-4 rounded border border-slate-300 shrink-0" />
-                  <span className="text-[13px] text-slate-700 leading-snug">
-                    {q.label}
-                    {q.hint && <span className="block text-[11px] text-slate-400">{q.hint}</span>}
+                <li key={q.key} className="flex items-start gap-2 text-[13px] text-slate-700 leading-snug">
+                  <span className="mt-0.5 text-[11px] font-semibold text-teal-600 shrink-0 w-4 text-right">{i + 1}.</span>
+                  <span>
+                    {q.question}
+                    {q.hint && <span className="block text-[11px] text-slate-400">({q.hint})</span>}
                   </span>
                 </li>
               ))}
-            </ul>
+            </ol>
+            <div className="flex justify-end pt-4 mt-4 border-t border-slate-100">
+              <button type="button" onClick={() => setScreeningApp(null)}
+                className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50">Close</button>
+            </div>
           </div>
         )}
       </Modal>

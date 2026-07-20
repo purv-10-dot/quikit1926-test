@@ -118,6 +118,40 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
         },
       });
 
+      // Carry the accepted offer's CTC into the employee's permanent salary, so
+      // HR sets it once in Send Offer and doesn't re-enter it. Matches the offer's
+      // salary template by name (falls back to any structure). Skipped only if no
+      // CTC was offered or the org has no salary structure yet.
+      if (application.offeredCTC != null) {
+        const comp = (application.offeredComponents ?? {}) as { salaryTemplateName?: string };
+        const structure =
+          (comp.salaryTemplateName
+            ? await tx.salaryStructure.findFirst({
+                where: { orgId, deletedAt: null, name: comp.salaryTemplateName },
+                select: { id: true },
+              })
+            : null) ??
+          (await tx.salaryStructure.findFirst({
+            where: { orgId, deletedAt: null },
+            orderBy: { createdAt: "asc" },
+            select: { id: true },
+          }));
+        if (structure) {
+          await tx.employeeSalary.create({
+            data: {
+              orgId,
+              employeeId: emp.id,
+              structureId: structure.id,
+              ctc: Number(application.offeredCTC),
+              effectiveFrom: new Date(),
+              isActive: true,
+              createdBy: userId,
+              updatedBy: userId,
+            },
+          });
+        }
+      }
+
       await tx.jobApplication.update({
         where: { id: application.id },
         data: {

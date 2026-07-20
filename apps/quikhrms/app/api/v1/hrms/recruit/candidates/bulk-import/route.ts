@@ -14,14 +14,21 @@ const rowSchema = z.object({
   currentCompany: z.string().trim().optional(),
   currentDesignation: z.string().trim().optional(),
   totalExperience: z.number().int().min(0).max(60).optional(),
+  currentCTC: z.number().min(0).max(999).optional(),
+  expectedCTC: z.number().min(0).max(999).optional(),
+  noticePeriod: z.number().int().min(0).max(365).optional(),
   skills: z.array(z.string()).optional(),
+  tags: z.array(z.string()).optional(),
   source: z.string().optional(),
   location: z.string().optional(),
   linkedinUrl: z.string().optional(),
+  portfolioUrl: z.string().optional(),
+  resumeUrl: z.string().optional(),
+  willingToRelocate: z.boolean().optional(),
 });
 
 const bodySchema = z.object({
-  requisitionId: z.string().optional(),
+  requisitionId: z.string().min(1, "A requisition is required"),
   candidates: z.array(z.record(z.string(), z.unknown())).min(1, "No rows found").max(500, "At most 500 candidates per upload"),
 });
 
@@ -69,8 +76,10 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       const norm = rowSchema.safeParse({
         firstName: raw.firstName, lastName: raw.lastName, email: raw.email,
         phone: raw.phone, currentCompany: raw.currentCompany, currentDesignation: raw.currentDesignation,
-        totalExperience: raw.totalExperience, skills: raw.skills,
+        totalExperience: raw.totalExperience, currentCTC: raw.currentCTC, expectedCTC: raw.expectedCTC,
+        noticePeriod: raw.noticePeriod, skills: raw.skills, tags: raw.tags,
         source: raw.source, location: raw.location, linkedinUrl: raw.linkedinUrl,
+        portfolioUrl: raw.portfolioUrl, resumeUrl: raw.resumeUrl, willingToRelocate: raw.willingToRelocate,
       });
       if (!norm.success) {
         errors.push({ row: i + 1, error: norm.error.issues.map((e) => e.message).join(", ") });
@@ -92,10 +101,17 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
             currentCompany: d.currentCompany || undefined,
             currentDesignation: d.currentDesignation || undefined,
             totalExperience: d.totalExperience ?? undefined,
+            currentCTC: d.currentCTC ?? undefined,
+            expectedCTC: d.expectedCTC ?? undefined,
+            noticePeriod: d.noticePeriod ?? undefined,
             skills: d.skills && d.skills.length ? JSON.parse(JSON.stringify(d.skills)) : undefined,
+            tags: d.tags && d.tags.length ? JSON.parse(JSON.stringify(d.tags)) : undefined,
             source: mapSource(d.source) as never,
             location: d.location || undefined,
             linkedinUrl: d.linkedinUrl || undefined,
+            portfolioUrl: d.portfolioUrl || undefined,
+            resumeUrl: d.resumeUrl || undefined,
+            willingToRelocate: d.willingToRelocate ?? undefined,
             createdBy: userId, updatedBy: userId,
           },
         });
