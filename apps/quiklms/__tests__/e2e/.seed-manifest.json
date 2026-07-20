@@ -1,0 +1,79 @@
+{
+  "orgId": "cmrt4oyxb0000kj85bo7wbnci",
+  "tenantId": "cmrt4oyxb0000kj85bo7wbnci",
+  "subdomain": "quiklms-e2e",
+  "password": "E2ETest123!",
+  "users": {
+    "superAdmin": {
+      "userId": "cmrt4oyzk0003kj85bes8kv7e",
+      "lmsUserId": "cmrt4oyzk0003kj85bes8kv7e",
+      "email": "e2e-superadmin@quiklms.test",
+      "role": "SUPER_ADMIN"
+    },
+    "tenantAdmin": {
+      "userId": "cmrt4oyzt0008kj853q8iuln2",
+      "lmsUserId": "cmrt4oyzt0008kj853q8iuln2",
+      "email": "e2e-tenantadmin@quiklms.test",
+      "role": "TENANT_ADMIN"
+    },
+    "subAdmin": {
+      "userId": "cmrt4oyzx000dkj85h36l0rzr",
+      "lmsUserId": "cmrt4oyzx000dkj85h36l0rzr",
+      "email": "e2e-subadmin@quiklms.test",
+      "role": "SUB_ADMIN"
+    },
+    "manager": {
+      "userId": "cmrt4oz01000ikj85zaup9b6d",
+      "lmsUserId": "cmrt4oz01000ikj85zaup9b6d",
+      "email": "e2e-manager@quiklms.test",
+      "role": "MANAGER"
+    },
+    "teacher": {
+      "userId": "cmrt4oz05000nkj85t9vw4n08",
+      "lmsUserId": "cmrt4oz05000nkj85t9vw4n08",
+      "email": "e2e-teacher@quiklms.test",
+      "role": "TEACHER"
+    },
+    "parent": {
+      "userId": "cmrt4oz09000skj85ru3xme8a",
+      "lmsUserId": "cmrt4oz09000skj85ru3xme8a",
+      "email": "e2e-parent@quiklms.test",
+      "role": "PARENT"
+    },
+    "learner": {
+      "userId": "cmrt4oz0c000xkj85yfe1r6q9",
+      "lmsUserId": "cmrt4oz0c000xkj85yfe1r6q9",
+      "email": "e2e-learner@quiklms.test",
+      "role": "LEARNER"
+    }
+  },
+  "courses": {
+    "published": "c9d5674f-4b0d-4f6c-8c05-34214151a9de",
+    "draft": "73b9e55d-281a-440b-9451-8fdd136a3491"
+  },
+  "modules": [
+    {
+      "id": "e2013ee5-207a-4433-8ce7-fd1e4114185a",
+      "lessons": [
+        "f8da48f0-91ba-484e-8b63-4c3625f73e27",
+        "c045bb1c-c2af-4203-98e7-b632d9e3093e",
+        "1845892e-bb77-4f14-9d0f-ec9b0c7fb2b0"
+      ]
+    },
+    {
+      "id": "c9be24f5-a252-4b94-83a9-86e60670655a",
+      "lessons": [
+        "20c5a372-d00f-4d50-bf25-8c15d627561f"
+      ]
+    }
+  ],
+  "assessmentId": "d7e894ea-6071-4ec8-b8df-746ec429a797",
+  "batchId": "6fbbef69-4469-434c-b79e-4e2db2c295c9",
+  "other": {
+    "orgId": "cmrt4oz100012kj85d0kygd9o",
+    "tenantId": "cmrt4oz100012kj85d0kygd9o",
+    "adminUserId": "cmrt4oz150015kj8531by8lzp",
+    "adminEmail": "e2e-other-admin@quiklms.test",
+    "courseId": "0b5ed718-cf19-4992-ba0d-4396ff13a43f"
+  }
+}
