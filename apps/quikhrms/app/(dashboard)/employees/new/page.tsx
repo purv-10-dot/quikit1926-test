@@ -23,6 +23,21 @@ import { SkeletonLine } from "@/components/hrms/skeleton";
 import { BankDetailsFields } from "@/components/hrms/bank-details-fields";
 import { SalaryBreakdown } from "@/components/hrms/salary-breakdown";
 import { INDIA_STATE_OPTS as STATE_OPTS } from "@/lib/data/india-states";
+import { INDIAN_CITIES } from "@/lib/data/indian-cities";
+
+// city (lowercased) → state, built once from the "City, State" dataset. Used to
+// auto-fill Country + State when a known Indian city is typed in the address.
+const CITY_STATE: Map<string, string> = (() => {
+  const m = new Map<string, string>();
+  for (const entry of INDIAN_CITIES) {
+    const i = entry.lastIndexOf(",");
+    if (i === -1) continue;
+    const city = entry.slice(0, i).trim().toLowerCase();
+    const state = entry.slice(i + 1).trim();
+    if (city && state && !m.has(city)) m.set(city, state);
+  }
+  return m;
+})();
 
 type EmploymentType = "FullTime" | "PartTime" | "Contract" | "Intern";
 type WorkLocation = "Office" | "Remote" | "Hybrid";
@@ -284,6 +299,15 @@ function NewEmployeePageInner() {
       toast.error("Invalid work phone", "Work phone must be exactly 10 digits.");
       scrollToStep("contact");
       return;
+    }
+    // Emergency-contact number: any filled row's Contact Number must be 10 digits.
+    for (const ec of form.emergencyContacts) {
+      const filled = ec.name.trim() || ec.relationship.trim() || ec.phone.trim();
+      if (filled && phoneDigits(ec.phone).length !== 10) {
+        toast.error("Invalid contact number", "Emergency contact number must be exactly 10 digits.");
+        scrollToStep("contact");
+        return;
+      }
     }
     if (!form.jobTitle.trim() || !form.designationId || !form.departmentId || !form.officeLocationId) {
       toast.error("Employment details required", "Job title, designation, department and office location are mandatory.");
@@ -1320,7 +1344,13 @@ function AddressBlock({
       </div>
       <div className="col-span-2">
         <Lbl text="City" star />
-        <FormInput placeholder="City" value={value.city} onChange={(e) => onChange("city", e.target.value)} />
+        <FormInput placeholder="City" value={value.city} onChange={(e) => {
+          const city = e.target.value;
+          onChange("city", city);
+          // Auto-fill Country + State when a known Indian city is entered.
+          const st = CITY_STATE.get(city.trim().toLowerCase());
+          if (st) { onChange("country", "IN"); onChange("state", st); }
+        }} />
       </div>
       <div className="col-span-2">
         <Lbl text="Country" star />

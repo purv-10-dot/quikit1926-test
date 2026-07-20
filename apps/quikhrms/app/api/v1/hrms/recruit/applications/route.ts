@@ -41,7 +41,7 @@ export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
         where, orderBy: { appliedDate: "desc" }, skip: (page - 1) * limit, take: limit,
         include: {
           candidate: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, location: true, source: true, currentCompany: true, currentDesignation: true, totalExperience: true, noticePeriod: true, currentCTC: true, expectedCTC: true, skills: true, linkedinUrl: true, portfolioUrl: true, resumeUrl: true } },
-          requisition: { select: { id: true, title: true, requisitionNumber: true, pipelineId: true, interviewPanel: true, technicalQuestions: true } },
+          requisition: { select: { id: true, title: true, requisitionNumber: true, pipelineId: true, interviewPanel: true, technicalQuestions: true, jobDescription: true } },
           _count: { select: { interviews: true } },
         },
       }),

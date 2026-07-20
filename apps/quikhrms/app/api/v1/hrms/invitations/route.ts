@@ -22,6 +22,40 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
       orderBy: { createdAt: "desc" },
     });
 
+    // Reconcile stale invites. Acceptance happens in central QuikIT (a separate
+    // DB), so the local Invitation row never flips to Accepted on its own — it
+    // lingers as "Pending" even after the person becomes an active, provisioned
+    // employee, showing a duplicate (Active member + Pending invite). Here we
+    // detect any pending invite whose email now belongs to a provisioned
+    // employee (authUserId or passwordHash set), mark it Accepted, and hide it
+    // from the list so only the active member remains.
+    const pendingEmails = [...new Set(
+      invitations.filter((i) => i.status === "Pending").map((i) => i.email.toLowerCase()),
+    )];
+    let acceptedEmails = new Set<string>();
+    if (pendingEmails.length) {
+      const emps = await prisma.employee.findMany({
+        where: {
+          orgId, deletedAt: null,
+          OR: pendingEmails.map((e) => ({ workEmail: { equals: e, mode: "insensitive" as const } })),
+        },
+        select: { workEmail: true, authUserId: true, passwordHash: true },
+      });
+      acceptedEmails = new Set(
+        emps.filter((e) => e.authUserId != null || e.passwordHash != null)
+          .map((e) => e.workEmail.toLowerCase()),
+      );
+      const toAccept = invitations.filter(
+        (i) => i.status === "Pending" && acceptedEmails.has(i.email.toLowerCase()),
+      );
+      if (toAccept.length) {
+        await prisma.invitation.updateMany({
+          where: { id: { in: toAccept.map((i) => i.id) } },
+          data: { status: "Accepted", acceptedAt: new Date() },
+        }).catch(() => { /* best-effort; still filtered from the response below */ });
+      }
+    }
+
     // Resolve role + inviter names for display.
     const roleIds = [...new Set(invitations.flatMap((i) => i.roleIds))];
     const inviterIds = [...new Set(invitations.map((i) => i.invitedBy))];
@@ -33,6 +67,9 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     const inviterName = new Map(inviters.map((e) => [e.id, `${e.firstName} ${e.lastName}`.trim()]));
 
     const shaped = invitations
+      // Hide invites already fulfilled by a provisioned employee — the active
+      // member row represents them now, so showing the invite too is a duplicate.
+      .filter((i) => !acceptedEmails.has(i.email.toLowerCase()))
       .map((i) => ({
         id: i.id,
         email: i.email,

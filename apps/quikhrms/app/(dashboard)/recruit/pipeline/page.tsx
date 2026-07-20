@@ -31,7 +31,13 @@ interface ApplicationItem {
     currentCTC: string | null; expectedCTC: string | null;
     skills: string[] | null; linkedinUrl: string | null; portfolioUrl: string | null; resumeUrl: string | null;
   };
-  requisition: { id: string; title: string; requisitionNumber: string; interviewPanel?: string[] | null; technicalQuestions?: string[] | null };
+  requisition: { id: string; title: string; requisitionNumber: string; interviewPanel?: string[] | null; technicalQuestions?: string[] | null; jobDescription?: string | null };
+  screeningAnswers?: {
+    answers?: Record<string, string>;
+    technical?: { question: string; answer: string }[];
+    comments?: string;
+    submittedAt?: string;
+  } | null;
   _count: { interviews: number; scorecards: number };
   avgRating: number | null;
   latestScorecard: { round: number; recommendation: string; submittedAt: string } | null;
@@ -97,21 +103,37 @@ const PIPELINE_EXCEL_COLUMNS = [
 
 // Screening-call questionnaire — the same for every job. Shown only in the
 // Screening stage; the recruiter captures each answer live on the call.
-const SCREENING_CHECKLIST: { key: string; label: string; question: string; hint?: string; type?: "text" | "select"; options?: string[] }[] = [
-  { key: "name", label: "Name", question: "What is your name?" },
-  { key: "contact", label: "Contact number", question: "What is your contact number?" },
-  { key: "email", label: "Email", question: "What is your email address?" },
-  { key: "techStack", label: "Tech stack", question: "What is your tech stack?" },
-  { key: "experience", label: "Experience", question: "How much experience do you have?", hint: "total / relevant" },
-  { key: "location", label: "Location", question: "Where are you located?", hint: "current location & hometown" },
-  { key: "reasonForChange", label: "Reason for job change", question: "Why are you looking for a change?" },
-  { key: "noticePeriod", label: "Notice period", question: "What is your notice period?" },
-  { key: "currentSalary", label: "Current salary", question: "What is your current salary?" },
-  { key: "expectedSalary", label: "Expected salary", question: "What is your expected salary?" },
-  { key: "communication", label: "Communication", question: "How was the communication?", hint: "rate on the call" },
-  { key: "interviewScheduled", label: "Interview scheduled", question: "Is the interview scheduled?", hint: "date & time confirmed?" },
-  { key: "status", label: "Status", question: "What is the status?", hint: "shortlisted / on hold / rejected", type: "select", options: ["Shortlisted", "On hold", "Rejected"] },
+const SCREENING_CHECKLIST: { key: string; label: string; hint?: string; type?: "text" | "select"; options?: string[] }[] = [
+  { key: "name", label: "Name" },
+  { key: "contact", label: "Number" },
+  { key: "email", label: "Email" },
+  { key: "techStack", label: "Tech stack" },
+  { key: "experience", label: "EXP", hint: "years" },
+  { key: "location", label: "Location", hint: "current location & hometown" },
+  { key: "reasonForChange", label: "Reason for job change" },
+  { key: "noticePeriod", label: "Notice period", hint: "days" },
+  { key: "currentSalary", label: "Current salary", hint: "LPA" },
+  { key: "expectedSalary", label: "Expected salary", hint: "LPA" },
+  { key: "communication", label: "Communication" },
 ];
+
+// Pre-fill the screening sheet from what we already know about the candidate,
+// so the recruiter only types the few things we don't have (reason, comms…).
+function screeningPrefill(c: ApplicationItem["candidate"]): Record<string, string> {
+  return {
+    name: `${c.firstName} ${c.lastName}`.trim(),
+    contact: c.phone ?? "",
+    email: c.email ?? "",
+    techStack: Array.isArray(c.skills) ? c.skills.join(", ") : "",
+    experience: c.totalExperience != null ? String(Math.floor(c.totalExperience / 12)) : "",
+    location: c.location ?? "",
+    reasonForChange: "",
+    noticePeriod: c.noticePeriod != null ? String(c.noticePeriod) : "",
+    currentSalary: c.currentCTC != null ? String(c.currentCTC) : "",
+    expectedSalary: c.expectedCTC != null ? String(c.expectedCTC) : "",
+    communication: "",
+  };
+}
 
 const stageColors: Record<string, string> = {
   Screening: "bg-gray-50 border-gray-200",
@@ -215,7 +237,6 @@ export default function PipelinePage() {
   const [moveTarget, setMoveTarget] = useState<string>("");
 
   const [historyApp, setHistoryApp] = useState<ApplicationItem | null>(null);
-  const [questionsApp, setQuestionsApp] = useState<ApplicationItem | null>(null);
   const [screeningApp, setScreeningApp] = useState<ApplicationItem | null>(null);
   // Reject-with-reason: X opens this dialog instead of rejecting immediately.
   const [rejectApp, setRejectApp] = useState<ApplicationItem | null>(null);
@@ -229,6 +250,45 @@ export default function PipelinePage() {
   const [docRequestSelected, setDocRequestSelected] = useState<Set<string>>(new Set());
   const [docRequestDeadline, setDocRequestDeadline] = useState("");
 
+  const [screeningAnswers, setScreeningAnswers] = useState<Record<string, string>>({});
+  // Prefill from a previously-saved sheet if present, else from the candidate.
+  useEffect(() => {
+    if (!screeningApp) { setScreeningAnswers({}); return; }
+    const saved = screeningApp.screeningAnswers;
+    if (saved && typeof saved === "object") {
+      const next: Record<string, string> = { ...(saved.answers ?? {}), comments: saved.comments ?? "" };
+      (saved.technical ?? []).forEach((t, i) => { next[`techq_${i}`] = t.answer ?? ""; });
+      setScreeningAnswers(next);
+    } else {
+      setScreeningAnswers(screeningPrefill(screeningApp.candidate));
+    }
+  }, [screeningApp?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const submitScreeningMut = useMutation({
+    mutationFn: () => {
+      const app = screeningApp;
+      if (!app) throw new Error("No candidate selected");
+      const answers: Record<string, string> = {};
+      for (const q of SCREENING_CHECKLIST) {
+        const v = (screeningAnswers[q.key] ?? "").trim();
+        if (v) answers[q.key] = v;
+      }
+      const technical = (app.requisition.technicalQuestions ?? []).map((question, i) => ({
+        question, answer: (screeningAnswers[`techq_${i}`] ?? "").trim(),
+      }));
+      return api.post(`/api/v1/hrms/recruit/applications/${app.id}/screening`, {
+        answers, technical, comments: (screeningAnswers.comments ?? "").trim(),
+      });
+    },
+    onSuccess: () => {
+      invalidateAll();
+      qc.invalidateQueries({ queryKey: ["candidate"] });
+      toast.success("Screening saved");
+      setScreeningApp(null);
+    },
+    onError: (e) => toast.error("Couldn't save screening", e instanceof Error ? e.message : undefined),
+  });
+
   const [scheduleApp, setScheduleApp] = useState<{ app: ApplicationItem; stage: string } | null>(null);
   const [schedule, setSchedule] = useState({
     interviewerIds: [] as string[],
@@ -237,10 +297,28 @@ export default function PipelinePage() {
     type: "Video" as "Phone" | "Video" | "InPerson" | "Panel" | "TakeHome" | "GroupDiscussion",
     location: "",
     meetingLink: "",
+    jobDescription: "",
   });
   // After scheduling, hold the result so we can show the (possibly auto-generated
   // Teams) meeting link back to the recruiter instead of closing immediately.
   const [scheduleResult, setScheduleResult] = useState<{ meetingLink: string | null; type: string } | null>(null);
+
+  // Prefill the Job Description from the requisition (fresh) whenever the schedule
+  // dialog opens for a technical round — so the interviewer always sees the JR's JD.
+  useEffect(() => {
+    if (!scheduleApp) return;
+    const isTech = /technical/i.test(scheduleApp.stage) || /technical/i.test(scheduleApp.app.currentStage ?? "");
+    if (!isTech) return;
+    let cancelled = false;
+    api.get<{ jobDescription?: string | null }>(`/api/v1/hrms/recruit/requisitions/${scheduleApp.app.requisition.id}`)
+      .then((res) => {
+        const jd = res.data?.jobDescription;
+        if (!cancelled && jd) setSchedule((s) => (s.jobDescription ? s : { ...s, jobDescription: jd }));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scheduleApp]);
 
   // Send Offer — the 4-step wizard (create/edit the offer + email it in one flow).
   // Replaces the old single-page offer modal and send-confirm dialog.
@@ -270,15 +348,9 @@ export default function PipelinePage() {
   const STAGES: string[] = stageConfigs.map((s) => s.name);
   const stageHasMail = (name: string) => stageConfigs.find((s) => s.name === name)?.sendMail ?? false;
   const isInterviewStage = (s: string | null | undefined) => !!s && /interview|screen/i.test(s);
-  // Technical interview questions (from the requisition) are surfaced on every
-  // pipeline stage EXCEPT Screening, Offer, and Hired.
-  const showQuestions = (app: ApplicationItem) => {
-    const qs = app.requisition.technicalQuestions;
-    if (!qs || qs.length === 0) return false;
-    return !/screen|offer|hire/i.test(app.currentStage ?? "");
-  };
   // Static screening checklist — shown ONLY in the Screening stage.
-  const showScreening = (app: ApplicationItem) => /screen/i.test(app.currentStage ?? "");
+  // Screening sheet is only for the Screening round itself (not Phone Screen etc.).
+  const showScreening = (app: ApplicationItem) => (app.currentStage ?? "").trim().toLowerCase() === "screening";
   // Manual "Move forward" / "Skip" only advances through pre-offer stages — a
   // candidate can be pushed up to (and into) the HR/interview rounds, but NOT
   // into Offer/Hired via these buttons. Those transitions happen through the
@@ -366,7 +438,7 @@ export default function PipelinePage() {
       const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
       tomorrow.setMinutes(0, 0, 0);
       const iso = new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-      setSchedule({ interviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "" });
+      setSchedule({ interviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "", jobDescription: app.requisition.jobDescription ?? "" });
       setScheduleResult(null);
       setScheduleApp({ app, stage: next });
     } else {
@@ -450,7 +522,7 @@ export default function PipelinePage() {
         const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
         tomorrow.setMinutes(0, 0, 0);
         const iso = new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-        setSchedule({ interviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "" });
+        setSchedule({ interviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "", jobDescription: app.requisition.jobDescription ?? "" });
         setScheduleResult(null);
         setScheduleApp({ app, stage: vars.target });
       } else {
@@ -485,7 +557,7 @@ export default function PipelinePage() {
         const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
         tomorrow.setMinutes(0, 0, 0);
         const iso = new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-        setSchedule({ interviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "" });
+        setSchedule({ interviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "", jobDescription: app.requisition.jobDescription ?? "" });
         setScheduleResult(null);
         setScheduleApp({ app, stage: nextStage });
       }
@@ -607,6 +679,8 @@ export default function PipelinePage() {
         duration: schedule.duration ?? 60,
         location: schedule.location || undefined,
         meetingLink: schedule.meetingLink || undefined,
+        // JD override for technical rounds (target round OR current technical stage).
+        jobDescription: (/technical/i.test(scheduleApp.stage) || /technical/i.test(scheduleApp.app.currentStage ?? "")) ? (schedule.jobDescription || undefined) : undefined,
       });
     },
     onSuccess: (res) => {
@@ -1028,12 +1102,6 @@ export default function PipelinePage() {
                             <ClipboardList size={10} /> Screening
                           </button>
                         )}
-                        {showQuestions(app) && (
-                          <button onClick={() => setQuestionsApp(app)}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 hover:bg-indigo-100 rounded text-[11px] font-semibold" title="Technical interview questions">
-                            <HelpCircle size={10} /> Questions
-                          </button>
-                        )}
                         <button onClick={() => setHistoryApp(app)}
                           className="inline-flex items-center gap-1 px-2 py-1 bg-green-50 text-green-700 ring-1 ring-green-200 hover:bg-green-100 rounded text-[11px] font-semibold" title="Feedback history">
                           <Clock size={10} /> History
@@ -1197,12 +1265,6 @@ export default function PipelinePage() {
                         <button onClick={() => setScreeningApp(app)} title="Screening questions"
                           className="inline-flex items-center justify-center w-8 h-8 bg-white text-gray-500 ring-1 ring-gray-200 hover:bg-teal-50 hover:text-teal-600 hover:ring-teal-200 rounded-lg transition">
                           <ClipboardList size={12} />
-                        </button>
-                      )}
-                      {showQuestions(app) && (
-                        <button onClick={() => setQuestionsApp(app)} title="Technical interview questions"
-                          className="inline-flex items-center justify-center w-8 h-8 bg-white text-gray-500 ring-1 ring-gray-200 hover:bg-indigo-50 hover:text-indigo-600 hover:ring-indigo-200 rounded-lg transition">
-                          <HelpCircle size={12} />
                         </button>
                       )}
                       {stage !== "Hired" && isInterviewStage(app.currentStage ?? "") && canMoveForward(app.currentStage) && (
@@ -1783,7 +1845,7 @@ export default function PipelinePage() {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Interview Type *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Interview Type <span className="text-red-500">*</span></label>
                 <Select
                   value={schedule.type}
                   onChange={(v) => setSchedule({ ...schedule, type: v as typeof schedule.type })}
@@ -1798,7 +1860,7 @@ export default function PipelinePage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Interviewers *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Interviewers <span className="text-red-500">*</span></label>
                 <Select
                   value=""
                   onChange={(v) => { if (v && !schedule.interviewerIds.includes(v)) setSchedule({ ...schedule, interviewerIds: [...schedule.interviewerIds, v] }); }}
@@ -1845,7 +1907,7 @@ export default function PipelinePage() {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Date & Time *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Date &amp; Time <span className="text-red-500">*</span></label>
                 <input
                   type="datetime-local"
                   required
@@ -1864,7 +1926,7 @@ export default function PipelinePage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Duration (min) *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Duration (min) <span className="text-red-500">*</span></label>
                 <NumberInput
                   allowDecimal={false}
                   min={15}
@@ -1899,6 +1961,20 @@ export default function PipelinePage() {
                   onChange={(e) => setSchedule({ ...schedule, location: e.target.value })}
                   className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
                 />
+              </div>
+            )}
+
+            {(/technical/i.test(scheduleApp.stage) || /technical/i.test(scheduleApp.app.currentStage ?? "")) && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5"><FileText size={12} /> Job Description <span className="text-gray-400 font-normal">(sent to interviewers)</span></label>
+                <textarea
+                  rows={5}
+                  value={schedule.jobDescription}
+                  onChange={(e) => setSchedule({ ...schedule, jobDescription: e.target.value })}
+                  placeholder="Job description shared with the interviewer(s) in their invite email…"
+                  className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 resize-y"
+                />
+                <p className="text-[11px] text-gray-500 mt-1">Pre-filled from the requisition. Edit as needed — this exact text is emailed to the interviewer(s) for this technical round.</p>
               </div>
             )}
 
@@ -2109,26 +2185,7 @@ export default function PipelinePage() {
         <FeedbackHistoryModal app={historyApp} onClose={() => setHistoryApp(null)} />
       )}
 
-      <Modal open={!!questionsApp} onClose={() => setQuestionsApp(null)} title="Technical Questions" size="md">
-        {questionsApp && (
-          <div>
-            <div className="flex items-center gap-2 mb-3 text-xs text-slate-500">
-              <span className="font-semibold text-slate-700">{questionsApp.candidate.firstName} {questionsApp.candidate.lastName}</span>
-              <span>·</span>
-              <span>{questionsApp.requisition.title}</span>
-              {questionsApp.currentStage && (<><span>·</span><span className="inline-flex items-center px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-semibold">{questionsApp.currentStage}</span></>)}
-            </div>
-            <p className="text-[11px] text-slate-400 mb-2">Suggested questions for the interviewer — from the job requisition.</p>
-            <ol className="list-decimal pl-5 space-y-1.5">
-              {(questionsApp.requisition.technicalQuestions ?? []).map((q, i) => (
-                <li key={i} className="text-sm text-slate-700 leading-relaxed">{q}</li>
-              ))}
-            </ol>
-          </div>
-        )}
-      </Modal>
-
-      <Modal open={!!screeningApp} onClose={() => setScreeningApp(null)} title="Screening Questions" size="md">
+      <Modal open={!!screeningApp} onClose={() => setScreeningApp(null)} title="Screening Questions" size="3xl">
         {screeningApp && (
           <div>
             <div className="flex items-center gap-2 mb-3 text-xs text-slate-500">
@@ -2138,21 +2195,97 @@ export default function PipelinePage() {
               <span>·</span>
               <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 text-[10px] font-semibold">Screening</span>
             </div>
-            <p className="text-[11px] text-slate-400 mb-3">Ask these on the screening call.</p>
-            <ol className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2.5 list-none">
-              {SCREENING_CHECKLIST.map((q, i) => (
-                <li key={q.key} className="flex items-start gap-2 text-[13px] text-slate-700 leading-snug">
-                  <span className="mt-0.5 text-[11px] font-semibold text-teal-600 shrink-0 w-4 text-right">{i + 1}.</span>
-                  <span>
-                    {q.question}
-                    {q.hint && <span className="block text-[11px] text-slate-400">({q.hint})</span>}
-                  </span>
-                </li>
+            <p className="text-[11px] text-slate-400 mb-3">Prefilled from the candidate — edit as needed on the call.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-3">
+              {SCREENING_CHECKLIST.map((q) => (
+                <div key={q.key}>
+                  <label className="block text-[12px] font-semibold text-slate-700 mb-1">
+                    {q.label}
+                    {q.hint && <span className="ml-1 font-normal text-[11px] text-slate-400">({q.hint})</span>}
+                  </label>
+                  {q.type === "select" ? (
+                    <select
+                      value={screeningAnswers[q.key] ?? ""}
+                      onChange={(e) => setScreeningAnswers((a) => ({ ...a, [q.key]: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-[13px] bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500"
+                    >
+                      <option value="">Select…</option>
+                      {(q.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  ) : (
+                    <input
+                      value={screeningAnswers[q.key] ?? ""}
+                      onChange={(e) => setScreeningAnswers((a) => ({ ...a, [q.key]: e.target.value }))}
+                      placeholder="Type answer…"
+                      className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-[13px] text-slate-800 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500"
+                    />
+                  )}
+                </div>
               ))}
-            </ol>
-            <div className="flex justify-end pt-4 mt-4 border-t border-slate-100">
+            </div>
+
+            {(screeningApp.requisition.technicalQuestions ?? []).length > 0 && (
+              <div className="mt-5 pt-4 border-t border-slate-100">
+                <p className="text-[12px] font-semibold text-slate-700 mb-2">
+                  Technical Questions <span className="font-normal text-[11px] text-slate-400">(from the requisition)</span>
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-3">
+                  {(screeningApp.requisition.technicalQuestions ?? []).map((tq, i) => (
+                    <div key={i}>
+                      <label className="block text-[12px] font-medium text-slate-700 mb-1">{i + 1}. {tq}</label>
+                      <input
+                        value={screeningAnswers[`techq_${i}`] ?? ""}
+                        onChange={(e) => setScreeningAnswers((a) => ({ ...a, [`techq_${i}`]: e.target.value }))}
+                        placeholder="Type answer…"
+                        className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-[13px] text-slate-800 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-5 pt-4 border-t border-slate-100">
+              <label className="block text-[12px] font-semibold text-slate-700 mb-1">Comments</label>
+              <textarea
+                rows={3}
+                value={screeningAnswers.comments ?? ""}
+                onChange={(e) => setScreeningAnswers((a) => ({ ...a, comments: e.target.value }))}
+                placeholder="Overall notes / observations from the screening call…"
+                className="w-full border border-slate-200 rounded-lg px-2.5 py-2 text-[13px] text-slate-800 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500 resize-y"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4 mt-4 border-t border-slate-100">
               <button type="button" onClick={() => setScreeningApp(null)}
                 className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50">Close</button>
+              <button type="button" onClick={() => {
+                const c = screeningApp;
+                if (!c) return;
+                const lines = SCREENING_CHECKLIST
+                  .map((q) => ({ label: q.label, v: (screeningAnswers[q.key] ?? "").trim() }))
+                  .filter((x) => x.v)
+                  .map((x) => `${x.label}: ${x.v}`);
+                const techLines = (c.requisition.technicalQuestions ?? [])
+                  .map((tq, i) => ({ label: tq, v: (screeningAnswers[`techq_${i}`] ?? "").trim() }))
+                  .filter((x) => x.v)
+                  .map((x) => `${x.label}: ${x.v}`);
+                const comments = (screeningAnswers.comments ?? "").trim();
+                if (lines.length === 0 && techLines.length === 0 && !comments) { toast.error("Nothing to copy"); return; }
+                const techBlock = techLines.length ? `\n\nTechnical Questions\n${techLines.join("\n")}` : "";
+                const commentBlock = comments ? `\n\nComments\n${comments}` : "";
+                const text = `Screening — ${c.candidate.firstName} ${c.candidate.lastName} · ${c.requisition.title}\n${lines.join("\n")}${techBlock}${commentBlock}`;
+                navigator.clipboard?.writeText(text)
+                  .then(() => toast.success("Screening notes copied"))
+                  .catch(() => toast.error("Couldn't copy"));
+              }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white ring-1 ring-teal-200 text-teal-700 hover:bg-teal-50 rounded-lg text-xs font-medium">
+                Copy Notes
+              </button>
+              <button type="button" onClick={() => submitScreeningMut.mutate()} disabled={submitScreeningMut.isPending}
+                className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-semibold disabled:opacity-60">
+                <Check size={13} /> {submitScreeningMut.isPending ? "Saving…" : "Submit"}
+              </button>
             </div>
           </div>
         )}

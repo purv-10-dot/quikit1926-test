@@ -205,9 +205,15 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       : await prisma.hiringPipeline.findFirst({ where: { orgId, deletedAt: null, isDefault: true } });
     const pipelineStageNames = stageNames(pipeline?.stages);
     const roundStage = pipelineStageNames[data.round - 1] ?? "";
-    // JD is shared with interviewers only on technical rounds so they can prep.
+    // JD sent to interviewers: an explicit override from the schedule dialog wins
+    // (any round); otherwise the requisition JD is auto-shared on technical rounds.
     const isTechnicalRound = /technical/i.test(roundStage);
-    const roundJobDescription = isTechnicalRound ? (interview.application?.requisition?.jobDescription ?? null) : null;
+    const roundJobDescription =
+      (data.jobDescription && data.jobDescription.trim())
+        ? data.jobDescription.trim()
+        : isTechnicalRound
+          ? (interview.application?.requisition?.jobDescription ?? null)
+          : null;
 
     // Auto-send invite emails to BOTH candidate and interviewer (regardless of interview type).
     let mailStatus: { candidate: { sent: boolean; to: string | null; error?: string }; interviewer: { sent: boolean; to: string | null; error?: string } } = {

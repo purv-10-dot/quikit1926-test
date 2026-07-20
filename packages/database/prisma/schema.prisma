@@ -12116,6 +12116,8 @@ model JobApplication {
   appliedDate  DateTime @default(now())
   currentStage String?
   stageHistory Json?
+  // Screening-call sheet captured from the pipeline (answers + technical Q&A + comments).
+  screeningAnswers Json?
 
   status ApplicationStatus @default(AppActive)
 
