@@ -10,8 +10,8 @@ import { placeCall } from '../notify.js';
 interface ReminderCfg { gracePeriodMinutes: number; callIntervalSeconds: number; maxCallAttempts: number }
 const DEFAULTS: ReminderCfg = { gracePeriodMinutes: 5, callIntervalSeconds: 90, maxCallAttempts: 3 };
 
-async function cfg(tenantId: string): Promise<ReminderCfg> {
-  const t = await prisma.lmsTenant.findUnique({ where: { id: tenantId }, select: { enhancementConfig: true } });
+async function cfg(orgId: string): Promise<ReminderCfg> {
+  const t = await prisma.lmsTenant.findUnique({ where: { id: orgId }, select: { enhancementConfig: true } });
   const e = (t?.enhancementConfig as { studentReminder?: Partial<ReminderCfg> } | null)?.studentReminder;
   return { ...DEFAULTS, ...(e || {}) };
 }
@@ -20,11 +20,11 @@ export async function runStudentReminders(): Promise<void> {
   const now = Date.now();
   const inProgress = await prisma.lmsScheduledClass.findMany({
     where: { status: 'in_progress', startTime: { lt: new Date(now) } },
-    select: { id: true, tenantId: true, batchId: true, startTime: true },
+    select: { id: true, orgId: true, batchId: true, startTime: true },
   });
 
   for (const c of inProgress) {
-    const conf = await cfg(c.tenantId);
+    const conf = await cfg(c.orgId);
     const minutesLate = (now - new Date(c.startTime).getTime()) / 60_000;
     if (minutesLate < conf.gracePeriodMinutes) continue;
 
@@ -35,12 +35,12 @@ export async function runStudentReminders(): Promise<void> {
       if (att && (att.status === 'present' || att.status === 'late')) continue;
 
       let rec = await prisma.lmsStudentReminderCall.findFirst({
-        where: { tenantId: c.tenantId, scheduledClassId: c.id, studentId },
+        where: { orgId: c.orgId, scheduledClassId: c.id, studentId },
         include: { callAttempts: true },
       });
       if (!rec) {
         rec = await prisma.lmsStudentReminderCall.create({
-          data: { tenantId: c.tenantId, scheduledClassId: c.id, studentId, batchId: c.batchId, status: 'calling' },
+          data: { orgId: c.orgId, scheduledClassId: c.id, studentId, batchId: c.batchId, status: 'calling' },
           include: { callAttempts: true },
         });
       }

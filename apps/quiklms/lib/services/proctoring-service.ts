@@ -5,6 +5,7 @@
  */
 import type { Prisma, LmsProctoringEventType as ProctoringEventType, LmsProctoringSeverity as ProctoringSeverity } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { incrementProctoringFlags } from '@/lib/services/proctoring-flags';
 import { NotFound } from '@/lib/http';
 import type { AuthUser } from '@/lib/auth/context';
 
@@ -35,6 +36,21 @@ export async function logEvent(
 ) {
   const orgId = user.orgId as string;
 
+  /**
+   * The session must belong to the CALLER.
+   *
+   * Neither the legacy nor the first port checked, so any learner could POST
+   * proctoring events against another learner's sessionId — inflating a
+   * classmate's cheating flags, pushing their `severityLevel` to high, and
+   * potentially getting their exam voided. That is not a data leak; it is
+   * framing someone for cheating, from an endpoint every learner can reach.
+   */
+  const own = await prisma.lmsExamSession.findFirst({
+    where: { id: sessionId, orgId, studentId },
+    select: { id: true },
+  });
+  if (!own) throw NotFound('Session not found');
+
   const count = await prisma.lmsProctoringLog.count({
     where: { sessionId, eventType: eventType as ProctoringEventType },
   });
@@ -57,19 +73,11 @@ export async function logEvent(
     },
   });
 
+  // Atomic — see proctoring-flags.ts. Read-modify-write here lost increments
+  // under the burst writes this endpoint receives.
   const flagField = getFlagField(eventType);
   if (flagField) {
-    const session = await prisma.lmsExamSession.findUnique({ where: { id: sessionId }, select: { proctoringFlags: true } });
-    if (session) {
-      const flags = (session.proctoringFlags as unknown as ProctoringFlags) || {};
-      flags[flagField] = ((flags[flagField] as number) || 0) + 1;
-      flags.totalFlags = ((flags.totalFlags as number) || 0) + 1;
-      flags.severityLevel = severity;
-      await prisma.lmsExamSession.update({
-        where: { id: sessionId },
-        data: { proctoringFlags: flags as unknown as Prisma.InputJsonValue },
-      });
-    }
+    await incrementProctoringFlags('exam_sessions', sessionId, flagField, severity);
   }
 
   return log;
@@ -89,6 +97,26 @@ export async function getExamIncidents(user: AuthUser, examId: string) {
   const sessions = await prisma.lmsExamSession.findMany({
     where: { orgId, examId, proctoringFlags: { path: ['totalFlags'], gt: 0 } },
   });
+
+  /**
+   * Batch the student lookups instead of one `findUnique` per session.
+   *
+   * The legacy resolved these with a single `.populate()` (one extra query);
+   * doing it inside the loop meant 300 flagged sessions issued 300+ sequential
+   * round trips, so the incidents dashboard timed out where Mongo took two
+   * queries. `_id` is exposed too — the ported page keys rows off `inc._id`,
+   * and without it React reused DOM nodes across incidents, so after a
+   * save+refetch one student's flags could render against another's row.
+   */
+  const studentMap = await (async () => {
+    const ids = [...new Set(sessions.map((x) => x.studentId).filter(Boolean))];
+    if (!ids.length) return new Map<string, Record<string, unknown>>();
+    const users = await prisma.lmsUser.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, firstName: true, lastName: true, email: true },
+    });
+    return new Map(users.map((u) => [u.id, { _id: u.id, ...u }]));
+  })();
 
   const incidents: unknown[] = [];
   for (const session of sessions) {
@@ -113,12 +141,10 @@ export async function getExamIncidents(user: AuthUser, examId: string) {
       });
     }
 
-    const student = await prisma.lmsUser.findUnique({
-      where: { id: session.studentId },
-      select: { id: true, firstName: true, lastName: true, email: true },
-    });
+    const student = studentMap.get(session.studentId) ?? null;
 
     incidents.push({
+      _id: incident.id,
       ...incident,
       student,
       sessionStatus: session.status,

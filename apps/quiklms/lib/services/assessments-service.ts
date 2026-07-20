@@ -12,6 +12,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { BadRequest, NotFound } from '@/lib/http';
+import { getSessionManifest } from '@/lib/services/quiz-proctoring-service';
 
 type AnyRec = Record<string, unknown>;
 
@@ -137,8 +138,31 @@ export async function submitQuiz(orgId: string, learnerId: string, dto: SubmitQu
   const retryLimit = typeof retryLimitRaw === 'number' && retryLimitRaw > 0 ? retryLimitRaw : Number.POSITIVE_INFINITY;
   if (priorAttempts >= retryLimit) throw BadRequest(`You have used all ${retryLimit} attempts for this quiz.`);
 
-  // No proctoring-session slicing in this build: score against the main bank.
-  const questionsToScore = (assessment.questions as AnyRec[]) || [];
+  // Score against the SAME question set the learner was shown.
+  //
+  // For a proctored/randomized attempt the GET route serves questions rebuilt
+  // from the session manifest — a subset of the main bank, possibly in a
+  // different order and with additional-pool questions swapped in
+  // (`app/api/assessments/[id]/route.ts:33-52`). The learner's answers are keyed
+  // by DISPLAYED position. Grading against `assessment.questions` (the raw bank
+  // in creator order) therefore mis-graded every proctored/randomized attempt:
+  // a learner who answered correctly could be failed, and vice versa. This
+  // rebuilds `questionsToScore` from the manifest exactly as the original did
+  // (`assessments.service.ts:259-277`).
+  let questionsToScore = (assessment.questions as AnyRec[]) || [];
+  if (dto.sessionId) {
+    const manifest = await getSessionManifest(dto.sessionId);
+    if (manifest && manifest.length > 0) {
+      const main = (assessment.questions as AnyRec[]) || [];
+      const additional = ((assessment as AnyRec).additionalQuestions as AnyRec[]) || [];
+      questionsToScore = manifest
+        .map((entry) => {
+          const pool = entry.pool === 'additional' ? additional : main;
+          return entry.index >= 0 && entry.index < pool.length ? pool[entry.index] : null;
+        })
+        .filter((q): q is AnyRec => q !== null);
+    }
+  }
 
   let totalPoints = 0;
   let earnedPoints = 0;

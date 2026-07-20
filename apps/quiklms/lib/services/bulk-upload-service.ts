@@ -1,14 +1,25 @@
 /**
  * Bulk upload service — ported from BulkUploadService (Prisma).
- * Parses CSV → creates users via provisionLmsUser (centralized identity), which
- * handles per-tenant id generation, parent↔child linking (UserParent join) and
- * deferred parent-email linking. Each row is provisioned with a temp password in
- * the ORG identity DB; the invitation/welcome email (with those credentials) is
- * dispatched centrally by createCentralIdentity — one email per invited user.
+ *
+ * Parses CSV → creates users via `provisionLmsUser` (centralized identity), then
+ * applies the LMS-side enrichment ITSELF.
+ *
+ * An earlier docblock here claimed `provisionLmsUser` "handles per-tenant id
+ * generation, parent↔child linking and deferred parent-email linking". It does
+ * not — `registerUser` writes a fixed column subset and ignores the rest. Every
+ * bulk-created user therefore had a null roll number; every teacher lost their
+ * subjects, pay rate, qualification and availability; and parents were never
+ * linked to their children — all while the row reported "success". Those writes
+ * now happen here, against LMS tables only, so the off-limits auth/identity path
+ * is consumed exactly as-is.
+ *
+ * Each row is provisioned with a temp password in the ORG identity DB; the
+ * invitation email is dispatched centrally by `createCentralIdentity`.
  */
 import { randomBytes } from 'crypto';
 import { prisma } from '@/lib/prisma';
 import { provisionLmsUser } from './identity-service';
+import { getNextId } from './counters';
 
 export interface RowResult {
   row: number;
@@ -64,6 +75,108 @@ function parseAvailability(raw: string): { dayOfWeek: number; startTime: string;
 
 const randomPassword = () => randomBytes(16).toString('hex') + 'A1!';
 
+/**
+ * LMS-side enrichment after `provisionLmsUser`.
+ *
+ * WHY THIS EXISTS. `provisionLmsUser` → `registerUser` lives in the centralized
+ * auth/identity path, which is OFF-LIMITS to this migration, and it writes only
+ * a fixed subset of columns. Everything this module passed beyond that subset —
+ * the roll-number counters, all teacher rate/subject/qualification fields, the
+ * availability slots, and the parent→child links — was silently dropped, while
+ * the row still reported as "success". These helpers write those LMS columns
+ * ourselves, so auth is consumed exactly as-is and nothing is lost.
+ *
+ * Each is best-effort per row: a failure here must not fail an already-created
+ * user, but it IS surfaced so the report stays trustworthy.
+ */
+
+/** Mint and persist the per-tenant roll number (SCH-T-0001 / SCH-S-0001 / SCH-P-0001). */
+async function assignGeneratedId(
+  userId: string,
+  orgId: string,
+  type: 'teacher' | 'student' | 'parent',
+): Promise<string | undefined> {
+  try {
+    const code = await getNextId(orgId, type);
+    const field = type === 'teacher' ? 'employeeId' : type === 'student' ? 'studentId' : 'parentCode';
+    await prisma.lmsUser.update({ where: { id: userId }, data: { [field]: code } });
+    return code;
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(`[bulk-upload] failed to assign ${type} id for ${userId}:`, err);
+    return undefined;
+  }
+}
+
+interface TeacherProfileFields {
+  subjects?: string[];
+  ratePerClass?: number;
+  rateType?: string;
+  qualification?: string;
+  monthlyPayout?: number;
+  availableSlots?: { dayOfWeek: number; startTime: string; endTime: string }[];
+}
+
+/**
+ * Write the teacher-only columns `registerUser` does not handle, plus the
+ * availability slots (an embedded array in Mongo, the `LmsUserAvailabilitySlot`
+ * relation here). Without this a bulk-uploaded teacher has no subjects, no pay
+ * rate and no availability — unschedulable and mis-paid downstream.
+ */
+async function applyTeacherProfile(userId: string, fields: TeacherProfileFields): Promise<void> {
+  const data: Record<string, unknown> = {};
+  if (fields.subjects?.length) data.subjects = fields.subjects;
+  if (fields.ratePerClass !== undefined && !Number.isNaN(fields.ratePerClass)) data.ratePerClass = fields.ratePerClass;
+  if (fields.rateType) data.rateType = fields.rateType;
+  if (fields.qualification) data.qualification = fields.qualification;
+  if (fields.monthlyPayout !== undefined && !Number.isNaN(fields.monthlyPayout)) data.monthlyPayout = fields.monthlyPayout;
+
+  if (Object.keys(data).length) {
+    await prisma.lmsUser.update({ where: { id: userId }, data });
+  }
+  if (fields.availableSlots?.length) {
+    await prisma.lmsUserAvailabilitySlot.createMany({
+      data: fields.availableSlots.map((s) => ({ userId, dayOfWeek: s.dayOfWeek, startTime: s.startTime, endTime: s.endTime })),
+      skipDuplicates: true,
+    });
+  }
+}
+
+/** Link a parent to explicit children (from `studentEmail`). */
+async function linkChildren(parentId: string, childIds: string[]): Promise<void> {
+  for (const childId of childIds) {
+    await prisma.lmsUserParent.upsert({
+      where: { parentId_childId: { parentId, childId } },
+      create: { parentId, childId },
+      update: {},
+    });
+  }
+}
+
+/**
+ * Resolve the deferred student→parent links — port of `bulk-upload.service.ts:345-365`.
+ *
+ * The student upload stores an unmatched `parentEmail` as a placeholder. When
+ * that parent is later created, those students must be linked and the
+ * placeholder cleared. Nothing did this, so the common "students first, parents
+ * second" workflow left every such student permanently unlinked.
+ */
+async function resolveDeferredChildren(parentId: string, parentEmail: string, orgId: string): Promise<number> {
+  const pending = await prisma.lmsUser.findMany({
+    where: { orgId, parentEmail: parentEmail.trim().toLowerCase(), role: 'LEARNER' },
+    select: { id: true },
+  });
+  if (!pending.length) return 0;
+
+  await linkChildren(parentId, pending.map((s) => s.id));
+  // Clear the placeholder now that the real link exists.
+  await prisma.lmsUser.updateMany({
+    where: { id: { in: pending.map((s) => s.id) } },
+    data: { parentEmail: null },
+  });
+  return pending.length;
+}
+
 export async function uploadTeachers(orgId: string, csvContent: string): Promise<{ success: RowResult[]; failed: RowResult[] }> {
   const rows = parseCsv(csvContent);
   const success: RowResult[] = [];
@@ -79,17 +192,25 @@ export async function uploadTeachers(orgId: string, csvContent: string): Promise
       const exists = await prisma.lmsUser.findFirst({ where: { email: row.email.toLowerCase() } });
       if (exists) { failed.push({ row: rowNum, email: row.email, reason: 'Email already exists' }); continue; }
 
-      const { userId, lms } = await provisionLmsUser({
-        email: row.email, password: randomPassword(), firstName: row.firstName, lastName: row.lastName,
-        lmsRole: 'TEACHER', orgId, phone: row.phone || undefined,
-        subjects: row.subjects ? row.subjects.split(';').map((s) => s.trim()) : undefined,
+      const profile = {
+        subjects: row.subjects ? row.subjects.split(';').map((s) => s.trim()).filter(Boolean) : undefined,
         ratePerClass: row.ratePerClass ? Number(row.ratePerClass) : undefined,
         rateType: row.rateType || 'per_class',
         qualification: row.qualification || undefined,
         monthlyPayout: row.monthlyPayout ? Number(row.monthlyPayout) : undefined,
         availableSlots: parseAvailability(row.availability),
+      };
+
+      const { userId } = await provisionLmsUser({
+        email: row.email, password: randomPassword(), firstName: row.firstName, lastName: row.lastName,
+        lmsRole: 'TEACHER', orgId, phone: row.phone || undefined,
       });
-      success.push({ row: rowNum, email: row.email, userId, generatedId: lms?.employeeId ?? undefined });
+
+      // registerUser writes only a fixed column subset — persist the rest here.
+      await applyTeacherProfile(userId, profile);
+      const generatedId = await assignGeneratedId(userId, orgId, 'teacher');
+
+      success.push({ row: rowNum, email: row.email, userId, generatedId });
     } catch (err) {
       failed.push({ row: rowNum, email: row.email, reason: err instanceof Error ? err.message : String(err) });
     }
@@ -126,7 +247,7 @@ export async function uploadStudents(orgId: string, csvContent: string): Promise
         else parentEmail = pe;
       }
 
-      const { userId, lms } = await provisionLmsUser({
+      const { userId } = await provisionLmsUser({
         email, password: randomPassword(), firstName: row.firstName, lastName: row.lastName,
         lmsRole: 'LEARNER', orgId, phone: row.phone || undefined,
         grade: row.grade || undefined, section: row.section || undefined, skipEmail,
@@ -139,7 +260,8 @@ export async function uploadStudents(orgId: string, csvContent: string): Promise
         });
       }
 
-      success.push({ row: rowNum, email, userId, generatedId: (lms as { studentId?: string } | undefined)?.studentId ?? undefined });
+      const generatedId = await assignGeneratedId(userId, orgId, 'student');
+      success.push({ row: rowNum, email, userId, generatedId });
     } catch (err) {
       failed.push({ row: rowNum, email: row.email, reason: err instanceof Error ? err.message : String(err) });
     }
@@ -168,15 +290,21 @@ export async function uploadParents(orgId: string, csvContent: string): Promise<
         if (student) childrenIds.push(student.id);
       }
 
-      // Centralized: platform identity + LMS row. registerUser (inside) handles
-      // PARENT id generation, children linking AND deferred student auto-link.
-      const { userId, lms } = await provisionLmsUser({
+      // Centralized identity + LMS row. registerUser does NOT do id generation,
+      // children linking, or the deferred student auto-link — an earlier comment
+      // here claimed it did. All three are done below, LMS-side.
+      const { userId } = await provisionLmsUser({
         email: row.email, password: randomPassword(), firstName: row.firstName, lastName: row.lastName,
         lmsRole: 'PARENT', orgId, phone: row.phone || undefined,
         guardianRelation: row.guardianRelation || undefined,
-        childrenIds: childrenIds.length ? childrenIds : undefined,
       });
-      success.push({ row: rowNum, email: row.email, userId, generatedId: (lms as { parentCode?: string } | undefined)?.parentCode ?? undefined });
+
+      if (childrenIds.length) await linkChildren(userId, childrenIds);
+      // Students uploaded earlier with this address as a placeholder.
+      await resolveDeferredChildren(userId, row.email, orgId);
+      const generatedId = await assignGeneratedId(userId, orgId, 'parent');
+
+      success.push({ row: rowNum, email: row.email, userId, generatedId });
     } catch (err) {
       failed.push({ row: rowNum, email: row.email, reason: err instanceof Error ? err.message : String(err) });
     }

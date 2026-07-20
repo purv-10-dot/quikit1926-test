@@ -10,32 +10,46 @@ import { placeCall } from '../notify.js';
 interface EscalationCfg { gracePeriodMinutes: number; callIntervalSeconds: number; maxCallAttempts: number }
 const DEFAULTS: EscalationCfg = { gracePeriodMinutes: 2, callIntervalSeconds: 60, maxCallAttempts: 3 };
 
-async function cfg(tenantId: string): Promise<EscalationCfg> {
-  const t = await prisma.lmsTenant.findUnique({ where: { id: tenantId }, select: { enhancementConfig: true } });
+async function cfg(orgId: string): Promise<EscalationCfg> {
+  const t = await prisma.lmsTenant.findUnique({ where: { id: orgId }, select: { enhancementConfig: true } });
   const e = (t?.enhancementConfig as { escalation?: Partial<EscalationCfg> } | null)?.escalation;
   return { ...DEFAULTS, ...(e || {}) };
 }
 
+/**
+ * How far back to look for un-started classes.
+ *
+ * The legacy bounded this deliberately (`escalation.service.ts:51-58`:
+ * `startTime: { $lte: minGrace, $gte: windowStart }` with a 60-minute floor).
+ * This job had NO lower bound, so its first successful run would escalate every
+ * class ever left in `scheduled` — including ones from months ago — and start
+ * Twilio-dialing teachers about classes that ended long before. Real money and
+ * real angry teachers.
+ */
+const ESCALATION_LOOKBACK_MINUTES = 60;
+
 export async function runEscalations(): Promise<void> {
   const now = Date.now();
-  // Classes that should have started but are still 'scheduled' (teacher not started)
+  // Classes that should have started but are still 'scheduled' (teacher not started),
+  // bounded to the recent past — see ESCALATION_LOOKBACK_MINUTES.
+  const windowStart = new Date(now - ESCALATION_LOOKBACK_MINUTES * 60_000);
   const candidates = await prisma.lmsScheduledClass.findMany({
-    where: { status: 'scheduled', startTime: { lt: new Date(now) } },
-    select: { id: true, tenantId: true, teacherId: true, startTime: true },
+    where: { status: 'scheduled', startTime: { lt: new Date(now), gte: windowStart } },
+    select: { id: true, orgId: true, teacherId: true, startTime: true },
   });
 
   for (const c of candidates) {
-    const conf = await cfg(c.tenantId);
+    const conf = await cfg(c.orgId);
     const minutesLate = (now - new Date(c.startTime).getTime()) / 60_000;
     if (minutesLate < conf.gracePeriodMinutes) continue;
 
     let esc = await prisma.lmsCallEscalation.findFirst({
-      where: { tenantId: c.tenantId, scheduledClassId: c.id },
+      where: { orgId: c.orgId, scheduledClassId: c.id },
       include: { callAttempts: true },
     });
     if (!esc) {
       esc = await prisma.lmsCallEscalation.create({
-        data: { tenantId: c.tenantId, scheduledClassId: c.id, teacherId: c.teacherId, status: 'escalating' },
+        data: { orgId: c.orgId, scheduledClassId: c.id, teacherId: c.teacherId, status: 'escalating' },
         include: { callAttempts: true },
       });
     }

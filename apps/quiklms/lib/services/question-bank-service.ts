@@ -72,11 +72,29 @@ export async function softDeleteQuestion(orgId: string, id: string) {
   return prisma.lmsQuestion.update({ where: { id }, data: { isActive: false } });
 }
 
+/**
+ * Bulk import — ALL-OR-NOTHING.
+ *
+ * The legacy used `insertMany` (`question-bank.service.ts:98`), which with the
+ * default `ordered: true` validates every document and writes none if any fails.
+ * The port used `Promise.all` of independent creates, so importing 50 questions
+ * where #37 is invalid **committed the other 49** and returned a 500 — the admin
+ * then re-uploaded the corrected file and got duplicates, with no way to tell
+ * which rows had landed.
+ *
+ * A single `$transaction` restores the legacy's contract: the bank is either
+ * fully updated or untouched.
+ */
 export async function bulkCreateQuestions(orgId: string, userId: string, questions: Record<string, unknown>[]) {
-  const created = await Promise.all(
-    questions.map((q) => createQuestion(orgId, userId, q)),
+  if (!questions.length) return [];
+  return prisma.$transaction(
+    questions.map((q) => {
+      const { id: _id, orgId: _t, createdBy: _c, createdAt: _ca, updatedAt: _ua, ...rest } = q;
+      return prisma.lmsQuestion.create({
+        data: { ...(rest as Prisma.LmsQuestionCreateInput), orgId, createdBy: userId },
+      });
+    }),
   );
-  return created;
 }
 
 export async function getQuestionSubjects(orgId: string): Promise<string[]> {

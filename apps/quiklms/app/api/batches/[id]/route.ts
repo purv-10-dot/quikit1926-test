@@ -21,13 +21,18 @@ const updateSchema = z.object({
   substituteTeacherIds: z.array(z.string()).optional(),
   academicYear: z.string().regex(/^\d{4}-\d{4}$/).optional(),
   term: z.string().optional(),
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
+  startDate: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}/)).optional(),
+  endDate: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}/)).optional(),
   schedule: z.array(scheduleItem).min(1).optional(),
   studentIds: z.array(z.string()).optional(),
   maxCapacity: z.number().min(1).optional(),
-  defaultMeetingProvider: z.string().optional(),
-  classType: z.string().optional(),
+  // Enums, not free-form strings. `z.string()` let an invalid value through Zod
+  // and into Postgres, which rejected it as an opaque 500 where the legacy's
+  // Mongoose enum validator returned a clear 400. Note `teams` is a valid
+  // LmsMeetingProvider but deliberately NOT a batch provider, so this is
+  // realistic input.
+  defaultMeetingProvider: z.enum(['zoom', 'google_meet', 'jitsi', 'manual']).optional(),
+  classType: z.enum(['regular', 'demo', 'trial']).optional(),
   trialClassCount: z.number().min(0).optional(),
   creditPerClass: z.number().min(0.25).optional(),
   ratePerClass: z.number().min(0).optional(),

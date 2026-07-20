@@ -11,15 +11,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const h = vi.hoisted(() => ({
-  send: vi.fn(),
+  put: vi.fn(),
+  getFrom: vi.fn(),
   certCreate: vi.fn(),
   certUpdate: vi.fn(),
   certFindFirst: vi.fn(),
   templateFindUnique: vi.fn(),
 }));
 
-vi.mock('@/lib/env', () => ({ optionalEnv: () => 'ap-south-1', env: { ENCRYPTION_KEY: 'k'.repeat(32) } }));
-vi.mock('@/lib/s3', () => ({ s3: { send: h.send }, S3_BUCKET: 'test-bucket', presignFromUrlOrKey: vi.fn() }));
+vi.mock('@/lib/env', () => ({ optionalEnv: () => '', env: { ENCRYPTION_KEY: 'k'.repeat(32) } }));
+vi.mock('@/lib/s3', () => ({
+  putObject: h.put,
+  getObjectBufferFrom: h.getFrom,
+  S3_BUCKET: 'test-bucket',
+  presignFromUrlOrKey: vi.fn(),
+}));
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     lmsCertificateIssued: { create: h.certCreate, update: h.certUpdate, findFirst: h.certFindFirst },
@@ -77,14 +83,10 @@ const PNG_1x1 = Buffer.from(
   'base64',
 );
 
-/** Mock S3: GetObject returns a real PNG; PutObject succeeds. */
+/** Mock storage: object reads return a real PNG; writes succeed. */
 function mockS3() {
-  h.send.mockImplementation(async (cmd: { constructor: { name: string } }) => {
-    if (cmd.constructor.name === 'GetObjectCommand') {
-      return { ContentType: 'image/png', Body: { transformToByteArray: async () => new Uint8Array(PNG_1x1) } };
-    }
-    return {};
-  });
+  h.getFrom.mockResolvedValue(Buffer.from(PNG_1x1));
+  h.put.mockResolvedValue(undefined);
 }
 
 beforeEach(() => {
@@ -113,10 +115,8 @@ describe('buildCertificatePdf', () => {
 
   it('loads the template images rather than ignoring them', async () => {
     await buildCertificatePdf(CERT as never, TEMPLATE as never);
-    const gets = h.send.mock.calls
-      .map((c) => c[0])
-      .filter((c: any) => c.constructor.name === 'GetObjectCommand')
-      .map((c: any) => c.input.Key);
+    // getObjectBufferFrom(bucket, key) — the key is the 2nd argument.
+    const gets = h.getFrom.mock.calls.map((c: any) => c[1]);
     // background + logo + signature — the three the old renderer dropped.
     expect(gets).toEqual(expect.arrayContaining(['bg.png', 'logo.png', 'sig.png']));
   });
@@ -140,7 +140,7 @@ describe('buildCertificatePdf', () => {
   });
 
   it('does not fail issuance when an image fetch throws', async () => {
-    h.send.mockRejectedValue(new Error('S3 down'));
+    h.getFrom.mockRejectedValue(new Error('storage down'));
     const buf = await buildCertificatePdf(CERT as never, TEMPLATE as never);
     expect(buf.subarray(0, 5).toString()).toBe('%PDF-');
     expect(buf.toString('latin1')).toContain('Ada Lovelace');
@@ -177,10 +177,8 @@ describe('generateCertificate — no more empty pdfUrl/qrCodeUrl', () => {
     const newId = h.certCreate.mock.calls[0][0].data.certificateId as string;
     expect(newId).toMatch(/^CERT-\d+-[a-z0-9]+$/);
 
-    const puts = h.send.mock.calls
-      .map((c) => c[0])
-      .filter((c: any) => c.constructor.name === 'PutObjectCommand')
-      .map((c: any) => ({ key: c.input.Key, type: c.input.ContentType }));
+    // putObject(key, body, contentType)
+    const puts = h.put.mock.calls.map((c: any) => ({ key: c[0], type: c[2] }));
 
     expect(puts).toEqual(
       expect.arrayContaining([
@@ -194,11 +192,8 @@ describe('generateCertificate — no more empty pdfUrl/qrCodeUrl', () => {
     expect(out.qrCodeUrl).not.toBe('');
   });
 
-  it('keeps the certificate record when S3 upload fails — a storage outage must not cost a certificate', async () => {
-    h.send.mockImplementation(async (cmd: { constructor: { name: string } }) => {
-      if (cmd.constructor.name === 'PutObjectCommand') throw new Error('S3 down');
-      return { ContentType: 'image/png', Body: { transformToByteArray: async () => new Uint8Array(PNG_1x1) } };
-    });
+  it('keeps the certificate record when the upload fails — a storage outage must not cost a certificate', async () => {
+    h.put.mockRejectedValue(new Error('storage down'));
 
     const out = await generateCertificate(input);
     // The record survives with the id it was created under.

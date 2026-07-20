@@ -3,15 +3,63 @@
  *
  * courseId is scalar (refs MasterCourse or legacy Course). Group membership is
  * resolved via the groupMember join table (Group.memberIds → GroupMember).
- * S3 thumbnail presigning is SKIPPED (stored url returned). Reminder scheduling
- * (handleNewAssignment / cancelAssignmentReminders) is handled by the worker —
- * omitted here (noted).
+ *
+ * S3 thumbnail presigning is DONE — see `enrichAssignmentsWithPresignedUrls`.
+ *
+ * REMINDERS: the immediate "course assigned" email is sent HERE, at assign time
+ * (`handleNewAssignments`), which is what the worker's cron docblock already
+ * assumed. An earlier note claimed the worker handled it; the worker claimed the
+ * REST layer did, so nobody sent it. The day-10/20 follow-ups remain the
+ * worker's job — it scans `assignedAt` windows daily rather than pre-scheduling
+ * BullMQ jobs (BullMQ is not installed here).
+ *
+ * `cancelAssignmentReminders` has no equivalent and needs none: there are no
+ * scheduled jobs to cancel under the scan model — a deleted assignment simply
+ * stops matching the cron's query.
  */
 import type { LmsAssignmentTargetType as AssignmentTargetType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { NotFound, BadRequest, Forbidden } from '@/lib/http';
+import { presignFromUrlOrKey } from '@/lib/s3';
+import { handleNewAssignments } from '@/lib/services/course-assignment-reminders-service';
 
 const DEFAULT_DEADLINE_DAYS = 21;
+
+type AnyRec = Record<string, unknown>;
+
+/**
+ * Add `thumbnailUrlPresigned` beside `thumbnailUrl` — port of the controller's
+ * private `enrichCoursesWithPresignedUrls` (`course-assignments.controller.ts:41-55`).
+ *
+ * Deliberately NOT `courses-service.enrichCoursesWithPresignedUrls`, which is a
+ * superset (lesson contentUrl, scormLaunchUrl, captions, resourceData). This
+ * endpoint's legacy enrich touches the thumbnail ONLY — plus the nested
+ * `courseId.thumbnailUrl` when courseId is populated, which is what
+ * `my-assignments` returns. Reusing the bigger one would add fields and queries
+ * the legacy never produced.
+ *
+ * The stored url is left untouched; the presigned one is added alongside, and
+ * `presignFromUrlOrKey` never throws.
+ */
+export async function enrichAssignmentsWithPresignedUrls<T extends AnyRec>(items: T[]): Promise<T[]> {
+  return Promise.all(
+    (items || []).map(async (item) => {
+      const obj = { ...item } as AnyRec;
+      if (typeof obj.thumbnailUrl === 'string' && obj.thumbnailUrl) {
+        obj.thumbnailUrlPresigned = await presignFromUrlOrKey(obj.thumbnailUrl);
+      }
+      const course = obj.courseId;
+      if (course && typeof course === 'object') {
+        const c = { ...(course as AnyRec) };
+        if (typeof c.thumbnailUrl === 'string' && c.thumbnailUrl) {
+          c.thumbnailUrlPresigned = await presignFromUrlOrKey(c.thumbnailUrl);
+          obj.courseId = c;
+        }
+      }
+      return obj as T;
+    }),
+  );
+}
 
 export interface AssignCourseInput {
   courseId: string;
@@ -184,6 +232,7 @@ export async function assignCourse(orgId: string, assignedBy: string, dto: Assig
 
   const assignments: unknown[] = [];
   const alreadyAssignedIds: string[] = [];
+  const newAssignmentIds: string[] = [];
   const assignedAt = new Date();
   const dueDate = dto.dueDate ? new Date(dto.dueDate) : new Date(assignedAt.getTime() + DEFAULT_DEADLINE_DAYS * 86400000);
 
@@ -202,8 +251,16 @@ export async function assignCourse(orgId: string, assignedBy: string, dto: Assig
         },
       });
       assignments.push(created);
+      newAssignmentIds.push(created.id);
     }
   }
+
+  // Immediate "course assigned" email per NEWLY created assignment — port of the
+  // fire-and-forget `handleNewAssignment` loop (`course-assignments.service.ts:479-486`).
+  // Not awaited: "Failures here must not block the assignment creation."
+  // `handleNewAssignments` never throws, so there is no unhandled rejection.
+  if (newAssignmentIds.length) void handleNewAssignments(newAssignmentIds);
+
   return {
     assignments,
     newCount: assignments.length - alreadyAssignedIds.length,

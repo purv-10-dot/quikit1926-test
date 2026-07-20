@@ -14,7 +14,7 @@ import { BadRequest, NotFound } from '@/lib/http';
 
 export async function pushToAllTenants(
   masterCourseId: string,
-): Promise<{ success: boolean; sharedCount: number; tenantIds: string[] }> {
+): Promise<{ success: boolean; sharedCount: number; tenantIds: string[]; failedTenantIds: string[] }> {
   const masterCourse = await prisma.lmsCourse.findUnique({
     where: { id: masterCourseId },
     include: { modules: { include: { lessons: true } } },
@@ -25,6 +25,7 @@ export async function pushToAllTenants(
   const activeTenants = await prisma.lmsTenant.findMany({ where: { status: 'Active' } });
 
   const sharedTenantIds: string[] = [];
+  const failedTenantIds: string[] = [];
   let sharedCount = 0;
 
   for (const tenant of activeTenants) {
@@ -86,12 +87,20 @@ export async function pushToAllTenants(
       });
       sharedTenantIds.push(tenant.id);
       sharedCount++;
-    } catch {
-      // Log error but continue with other tenants (parity with legacy).
+    } catch (err) {
+      // The legacy LOGGED which tenant failed and why
+      // (`shared-content.service.ts:97-100`); this swallowed it silently, so
+      // `pushToAllTenants` could report "shared with 12 tenants" when 38 failed
+      // and nothing anywhere recorded which ones.
+      // eslint-disable-next-line no-console
+      console.error(`[shared-content] failed to share course with tenant ${tenant.id}:`, err);
+      failedTenantIds.push(tenant.id);
     }
   }
 
-  return { success: true, sharedCount, tenantIds: sharedTenantIds };
+  // Surface the failures to the caller too — an admin seeing "shared with 12"
+  // had no way to discover the other 38.
+  return { success: true, sharedCount, tenantIds: sharedTenantIds, failedTenantIds };
 }
 
 export async function getSharedContentForTenant(orgId: string) {

@@ -7,6 +7,7 @@
  */
 import type { Prisma, LmsAttendanceStatus as AttendanceStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { generatePayouts } from '@/lib/services/payouts-service';
 import { ApiError, BadRequest, Forbidden, NotFound } from '@/lib/http';
 import { deductCredit, getZeroCreditStatus } from './credits-service';
 import { markAttendanceTimestamp } from './scheduling-service';
@@ -131,7 +132,32 @@ export async function markAttendance(orgId: string, dto: MarkAttendanceInput, ma
 
   await markAttendanceTimestamp(dto.scheduledClassId);
 
-  // Auto payout generation → worker (Phase 4), non-blocking in legacy.
+  /**
+   * Refresh the teacher's payout draft for this class's month — port of
+   * `attendance.service.ts:156-170`.
+   *
+   * This was deferred to "the worker", but the worker has no payout job at all
+   * (grep for `payout` across `worker/src` returns nothing), so teacher payout
+   * drafts never materialised or refreshed as classes were taught: `/api/payouts`
+   * showed nothing until an admin manually POSTed `/api/payouts/generate` for
+   * each month. In the legacy this was self-maintaining, and it needs no worker
+   * — the month is derivable right here.
+   *
+   * Non-blocking and fire-and-forget, exactly as the legacy had it: a payout
+   * recomputation must never fail the attendance the teacher just marked.
+   */
+  try {
+    const cls = await prisma.lmsScheduledClass.findUnique({
+      where: { id: dto.scheduledClassId },
+      select: { startTime: true },
+    });
+    if (cls?.startTime) {
+      const when = new Date(cls.startTime);
+      void generatePayouts(orgId, { month: when.getMonth() + 1, year: when.getFullYear() }).catch(() => {});
+    }
+  } catch {
+    /* non-blocking */
+  }
 
   return {
     success: true,

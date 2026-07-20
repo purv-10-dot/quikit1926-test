@@ -21,6 +21,15 @@ import { sendEmail } from '@/lib/email';
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://quikskills.quikit.ai';
 
+/** Escape text destined for email HTML. */
+function escapeHtml(s: string): string {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 /**
  * Find an existing direct conversation between two users in a tenant, or create
  * one. Mirrors the messages-service direct-conversation logic but without the
@@ -140,7 +149,11 @@ export async function notifyUsers(opts: NotifyOptions): Promise<NotifyResult> {
       await sendEmail({
         to: r.email,
         subject,
-        html: `<p>Hi ${r.firstName} ${r.lastName},</p><p>${message}</p>` +
+        // Escaped: `message` is caller-supplied and, since the manager nudge
+        // endpoints accept a free-text `{message}` body, it is USER input on its
+        // way into email HTML. Every caller passes plain text, so escaping
+        // changes nothing they rely on and closes the injection.
+        html: `<p>Hi ${escapeHtml(r.firstName)} ${escapeHtml(r.lastName)},</p><p>${escapeHtml(message)}</p>` +
           `<p><a href="${FRONTEND_URL}">Open QuikSkill</a></p>`,
       });
     } catch (err) {

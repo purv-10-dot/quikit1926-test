@@ -107,9 +107,13 @@ describe('findAll — a rejected template must never be auto-approved back to li
 
     expect(out).toEqual([]);
     // The rescue query must filter rejected out rather than fetching everything.
-    expect(h.templateFindMany).toHaveBeenLastCalledWith({
-      where: { AND: [expect.anything(), { approvalStatus: { not: 'rejected' } }] },
-    });
+    // `expect.objectContaining` on the where only — the query also carries an
+    // `include` for selectedTenants, which is orthogonal to this assertion.
+    expect(h.templateFindMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: { AND: [expect.anything(), { approvalStatus: { not: 'rejected' } }] },
+      }),
+    );
     // Nothing was flipped to approved.
     expect(h.templateUpdateMany).not.toHaveBeenCalled();
   });

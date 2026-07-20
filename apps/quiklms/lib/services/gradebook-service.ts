@@ -23,7 +23,21 @@ export async function computeStudentGrades(orgId: string, studentId: string, bat
     where: { orgId, studentId, homework: { batchId } },
     select: { finalScore: true, score: true },
   });
-  const hwScores = submissions.map((s) => s.finalScore ?? s.score ?? 0);
+  /**
+   * UNGRADED submissions are EXCLUDED from the average, not counted as zero.
+   *
+   * The legacy used `$avg: { $ifNull: ['$finalScore', '$score'] }`
+   * (`gradebook.service.ts:63-73`). When both fields are null the expression
+   * yields null, and Mongo's `$avg` drops nulls from BOTH the numerator and the
+   * denominator. The port coerced them to `0`, which then counted in the
+   * divisor: a student with `[80, ungraded]` scored 80 under Mongo and **40**
+   * here — and since `overallPercentage` is 70% homework, that turns a B into
+   * an F, then feeds the class rankings. Every student with an unmarked
+   * submission was graded wrong.
+   */
+  const hwScores = submissions
+    .map((s) => s.finalScore ?? s.score)
+    .filter((v): v is number => typeof v === 'number');
   const homeworkAverage = hwScores.length
     ? Math.round((hwScores.reduce((a, b) => a + b, 0) / hwScores.length) * 100) / 100
     : 0;
@@ -38,14 +52,39 @@ export async function computeStudentGrades(orgId: string, studentId: string, bat
   const { finalGrade, gradePoints } = computeLetterGrade(overallPercentage);
   const resolvedTerm = term ?? batch.term ?? null;
 
-  // term is nullable, so the composite unique can't be used in upsert.where — find then create/update.
-  const existing = await prisma.lmsGradeRecord.findFirst({ where: { orgId, studentId, batchId, term: resolvedTerm } });
   const data = {
     subject: batch.subject, academicYear: batch.academicYear, homeworkAverage, assessmentAverage: 0,
     attendancePercent, finalGrade, gradePoints, overallPercentage, gradedAt: new Date(),
   };
-  if (existing) return prisma.lmsGradeRecord.update({ where: { id: existing.id }, data });
-  return prisma.lmsGradeRecord.create({ data: { orgId, studentId, batchId, term: resolvedTerm, ...data } });
+
+  /**
+   * `term` is nullable so the composite unique cannot drive `upsert.where`, and
+   * the find-then-write below is therefore racy: the legacy did this in ONE
+   * `findOneAndUpdate({upsert:true})` (`gradebook.service.ts:111-132`). Two
+   * concurrent batch computes both missed the row and the second `create`
+   * violated `@@unique([orgId, studentId, batchId, term])`, 500ing partway
+   * through and leaving half the class graded.
+   *
+   * The transaction closes the window, and the P2002 catch makes the loser of a
+   * genuine race retry as an update instead of failing the whole batch.
+   */
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const existing = await tx.lmsGradeRecord.findFirst({
+        where: { orgId, studentId, batchId, term: resolvedTerm },
+      });
+      if (existing) return tx.lmsGradeRecord.update({ where: { id: existing.id }, data });
+      return tx.lmsGradeRecord.create({ data: { orgId, studentId, batchId, term: resolvedTerm, ...data } });
+    });
+  } catch (err) {
+    if ((err as { code?: string }).code === 'P2002') {
+      const existing = await prisma.lmsGradeRecord.findFirst({
+        where: { orgId, studentId, batchId, term: resolvedTerm },
+      });
+      if (existing) return prisma.lmsGradeRecord.update({ where: { id: existing.id }, data });
+    }
+    throw err;
+  }
 }
 
 async function enrichRecords<T extends { studentId: string; batchId: string }>(records: T[]) {
@@ -75,7 +114,11 @@ export async function getTranscript(orgId: string, studentId: string, academicYe
 
 export async function getClassRanking(orgId: string, batchId: string, term?: string) {
   const records = await prisma.lmsGradeRecord.findMany({
-    where: { orgId, batchId, ...(term ? { term } : {}) }, orderBy: { overallPercentage: 'desc' },
+    where: { orgId, batchId, ...(term ? { term } : {}) },
+    // `nulls: 'last'` is required for parity: Mongo sorts null LAST on a
+    // descending sort, Postgres puts NULLS FIRST — so any record written before
+    // compute ran was ranking #1 in the class.
+    orderBy: { overallPercentage: { sort: 'desc', nulls: 'last' } },
   });
   return enrichRecords(records);
 }

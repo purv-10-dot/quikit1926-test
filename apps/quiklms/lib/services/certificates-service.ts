@@ -34,14 +34,32 @@ import type {
 } from '@prisma/client';
 import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
-import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { prisma } from '@/lib/prisma';
 import { NotFound } from '@/lib/http';
-import { s3, S3_BUCKET, presignGet, presignFromUrlOrKey } from '@/lib/s3';
-import { optionalEnv } from '@/lib/env';
+import {
+  S3_BUCKET,
+  presignGet,
+  presignFromUrlOrKey,
+  putObject,
+  getObjectBufferFrom,
+} from '@/lib/s3';
+import { sendTemplateEmail } from '@/lib/services/email-templates-service';
 
 const FRONTEND_URL = process.env.FRONTEND_URL || process.env.BASE_URL || 'https://quikskills.quikit.ai';
-const REGION = optionalEnv('AWS_REGION') || 'ap-south-1';
+
+/**
+ * Host for the PUBLIC certificate download link mailed to the learner
+ * (`progress.service.ts:755`).
+ *
+ * DELIBERATE DEVIATION. The legacy defaulted to the standalone NestJS
+ * deployment (`https://quikskillsbackend.moreyeahs.in`) because its API and
+ * frontend were separate hosts. Here they are the same origin, and that host is
+ * being retired — defaulting to it would mail every learner a dead link. So the
+ * fallback chain ends at FRONTEND_URL, and the path carries Next's `/api`
+ * prefix (the legacy had no global prefix — verified in `main.ts`).
+ */
+const BACKEND_URL = process.env.BACKEND_URL || process.env.API_BASE_URL || FRONTEND_URL;
+const PLATFORM_NAME = process.env.PLATFORM_NAME || 'QuikSkill LMS';
 
 // ── Certificate rendering geometry ───────────────────────────────────────────
 // Ported from the original's CSS (`generateCertificateHTML`) so a template
@@ -109,18 +127,29 @@ async function imageUrlToDataUrl(url?: string | null): Promise<string> {
 
   try {
     const parsed = new URL(url);
-    const hostMatch = parsed.hostname.match(/^(.+?)\.s3[.-].*\.amazonaws\.com$/);
-    if (hostMatch) {
-      const res = await s3.send(
-        new GetObjectCommand({ Bucket: hostMatch[1], Key: decodeURIComponent(parsed.pathname.slice(1)) }),
-      );
-      const body = res.Body as { transformToByteArray?: () => Promise<Uint8Array> } | undefined;
-      const bytes = await body?.transformToByteArray?.();
-      if (!bytes) return '';
-      return `data:${res.ContentType || 'image/png'};base64,${Buffer.from(bytes).toString('base64')}`;
+    // Storage-hosted background: read the bytes with our credentials rather
+    // than fetching the URL, which would 403 against the private bucket.
+    // Both GCS layouts, plus the legacy S3 host form for pre-migration rows.
+    const host = parsed.hostname;
+    const path = decodeURIComponent(parsed.pathname.slice(1));
+    let target: { bucket: string; key: string } | null = null;
+    if (host === 'storage.googleapis.com') {
+      const slash = path.indexOf('/');
+      if (slash > 0) target = { bucket: path.slice(0, slash), key: path.slice(slash + 1) };
+    } else {
+      const m = host.match(/^(.+?)\.storage\.googleapis\.com$/) ?? host.match(/^(.+?)\.s3[.-].*\.amazonaws\.com$/);
+      if (m) target = { bucket: m[1], key: path };
     }
 
-    // Non-S3 http(s) — fetch directly.
+    if (target) {
+      const bytes = await getObjectBufferFrom(target.bucket, target.key);
+      if (!bytes?.length) return '';
+      const ext = target.key.split('.').pop()?.toLowerCase();
+      const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'svg' ? 'image/svg+xml' : 'image/png';
+      return `data:${mime};base64,${bytes.toString('base64')}`;
+    }
+
+    // Not one of our buckets — fetch directly.
     const res = await fetch(url);
     if (!res.ok) return '';
     const buf = Buffer.from(await res.arrayBuffer());
@@ -169,24 +198,20 @@ export async function uploadCertificateAsset(
   const key = `${prefix}/${Date.now()}-${file.originalName.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
 
   try {
-    await s3.send(
-      new PutObjectCommand({
-        Bucket: S3_BUCKET,
-        Key: key,
-        Body: new Uint8Array(file.buffer),
-        ContentType: file.mimeType,
-      }),
-    );
+    await putObject(key, file.buffer, file.mimeType);
   } catch (error) {
-    const e = error as { name?: string; Code?: string };
-    if (e.name === 'AccessDenied' || e.Code === 'AccessDenied') {
+    // GCS surfaces authorization failures as an HTTP 403; the legacy S3 client
+    // used a named error. Both are mapped to the same caller-facing result so
+    // the route keeps returning its friendly "ask your admin" message.
+    const e = error as { name?: string; Code?: string; code?: number | string };
+    if (e.name === 'AccessDenied' || e.Code === 'AccessDenied' || e.code === 403 || e.code === '403') {
       return { success: false, message: accessDeniedMessage, error: 'S3_ACCESS_DENIED' };
     }
     throw error;
   }
 
   const dataUrl = `data:${file.mimeType};base64,${file.buffer.toString('base64')}`;
-  const permanentUrl = `https://${S3_BUCKET}.s3.${REGION}.amazonaws.com/${key}`;
+  const permanentUrl = `https://storage.googleapis.com/${S3_BUCKET}/${key}`;
   const presignedUrl = await presignFromUrlOrKey(permanentUrl);
 
   return { success: true, data: { url: dataUrl, permanentUrl: presignedUrl || permanentUrl, dataUrl, s3Key: key } };
@@ -194,8 +219,47 @@ export async function uploadCertificateAsset(
 
 // ── Templates ────────────────────────────────────────────────────────────────
 
+/**
+ * `selectedTenants` was an inline array on the Mongo document, so every
+ * `find()` returned it for free. Here it is the `LmsCertificateSelectedTenant`
+ * child table and must be included explicitly — without it
+ * `certificate-templates/page.tsx:208` sees `undefined`, and every
+ * tenant-restricted template renders the "Global Availability" badge instead of
+ * "N Restricted Nodes".
+ */
+const SELECTED_TENANTS_INCLUDE = { selectedTenants: { select: { orgId: true } } } as const;
+
+/** Flatten the join rows back to the id array the legacy exposed. */
+function shapeTemplate<T extends Record<string, unknown>>(t: T) {
+  const rows = t.selectedTenants as Array<{ orgId: string }> | undefined;
+  return { _id: t.id, ...t, selectedTenants: Array.isArray(rows) ? rows.map((r) => r.orgId) : [] };
+}
+
+
+/**
+ * Columns a client may set on a template. Anything else in the payload is
+ * DROPPED, not forwarded.
+ *
+ * The route body is `passthrough()`, and Mongoose silently ignored keys outside
+ * the schema (`new this.certificateModel(data)`), so the designer UI could send
+ * `_id`, `tenantId`, `createdAt` or its own UI state harmlessly. Prisma instead
+ * throws `Unknown argument`, so any stray field 500'd template creation.
+ */
+const TEMPLATE_WRITABLE = [
+  'name', 'backgroundImageUrl', 'logoImageUrl', 'signatureImageUrl', 'designation', 'signatoryName',
+  'textPlacements', 'logoPlacement', 'signaturePlacement', 'isActive',
+  'approvalStatus', 'submittedBy', 'submittedByTenantId', 'orgId',
+] as const;
+
+function pickTemplateFields(data: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const k of TEMPLATE_WRITABLE) if (data[k] !== undefined) out[k] = data[k];
+  return out;
+}
+
 export async function createTemplate(data: Record<string, unknown>) {
-  const { selectedTenants, ...rest } = data as { selectedTenants?: string[] } & Record<string, unknown>;
+  const { selectedTenants } = data as { selectedTenants?: string[] };
+  const rest = pickTemplateFields(data);
   const created = await prisma.lmsCertificate.create({
     data: {
       ...(rest as object),
@@ -218,9 +282,9 @@ export async function findAll(orgId?: string) {
         { submittedByTenantId: orgId },
       ],
     };
-    let certs = await prisma.lmsCertificate.findMany({ where: { AND: [where, { isActive: true }] } });
+    let certs = await prisma.lmsCertificate.findMany({ where: { AND: [where, { isActive: true }] }, include: SELECTED_TENANTS_INCLUDE });
     if (certs.length === 0) {
-      certs = await prisma.lmsCertificate.findMany({ where: { AND: [where, { approvalStatus: 'approved' }] } });
+      certs = await prisma.lmsCertificate.findMany({ where: { AND: [where, { approvalStatus: 'approved' }] }, include: SELECTED_TENANTS_INCLUDE });
       if (certs.length) {
         await prisma.lmsCertificate.updateMany({ where: { id: { in: certs.map((c) => c.id) } }, data: { isActive: true } });
         certs = certs.map((c) => ({ ...c, isActive: true }));
@@ -238,15 +302,15 @@ export async function findAll(orgId?: string) {
     // templates were rejected gets none, and issuance falls back to the built-in
     // default certificate rather than resurrecting a refused design.
     if (certs.length === 0) {
-      certs = await prisma.lmsCertificate.findMany({ where: { AND: [where, { approvalStatus: { not: 'rejected' } }] } });
+      certs = await prisma.lmsCertificate.findMany({ where: { AND: [where, { approvalStatus: { not: 'rejected' } }] }, include: SELECTED_TENANTS_INCLUDE });
       if (certs.length) {
         await prisma.lmsCertificate.updateMany({ where: { id: { in: certs.map((c) => c.id) } }, data: { isActive: true, approvalStatus: 'approved' } });
         certs = certs.map((c) => ({ ...c, isActive: true, approvalStatus: 'approved' as const }));
       }
     }
-    return certs;
+    return certs.map(shapeTemplate);
   }
-  return prisma.lmsCertificate.findMany();
+  return (await prisma.lmsCertificate.findMany({ include: SELECTED_TENANTS_INCLUDE })).map(shapeTemplate);
 }
 
 type PopulatedActor = { _id: string; firstName: string; lastName: string; email: string } | null;
@@ -371,20 +435,48 @@ function tenantTemplateScope(orgId?: string | null) {
 
 export async function findOne(id: string, orgId?: string | null) {
   const scope = tenantTemplateScope(orgId);
-  const cert = await prisma.lmsCertificate.findFirst({ where: scope ? { AND: [{ id }, scope] } : { id } });
+  const cert = await prisma.lmsCertificate.findFirst({ where: scope ? { AND: [{ id }, scope] } : { id }, include: SELECTED_TENANTS_INCLUDE });
   if (!cert) throw NotFound('Certificate template not found');
-  return cert;
+  return shapeTemplate(cert);
 }
 
 export async function updateTemplate(id: string, data: Record<string, unknown>, orgId?: string | null) {
-  const { selectedTenants, ...rest } = data as { selectedTenants?: string[] } & Record<string, unknown>;
+  const { selectedTenants } = data as { selectedTenants?: string[] };
+  const rest = pickTemplateFields(data);
   const scope = tenantTemplateScope(orgId);
   const result = await prisma.lmsCertificate.updateMany({
     where: scope ? { AND: [{ id }, scope] } : { id },
     data: rest as never,
   });
   if (result.count === 0) throw NotFound('Certificate template not found');
-  return prisma.lmsCertificate.findUnique({ where: { id } });
+
+  /**
+   * Persist the tenant assignment too.
+   *
+   * `selectedTenants` was destructured out and then never written — unlike
+   * `createTemplate`, which does create the child rows. So a Super Admin
+   * re-assigning an existing template to a different set of tenants got a 200
+   * and no change at all. Mongo stored the array inline, so
+   * `findByIdAndUpdate(id, data)` wrote it for free
+   * (`certificates.service.ts:347-353`).
+   *
+   * Replace-in-place inside a transaction: the array was the full assignment
+   * list, not a delta.
+   */
+  if (selectedTenants !== undefined) {
+    const ids = [...new Set((selectedTenants || []).filter(Boolean))];
+    await prisma.$transaction(async (tx) => {
+      await tx.lmsCertificateSelectedTenant.deleteMany({ where: { certificateId: id } });
+      if (ids.length) {
+        await tx.lmsCertificateSelectedTenant.createMany({
+          data: ids.map((tenantOrgId) => ({ certificateId: id, orgId: tenantOrgId })),
+          skipDuplicates: true,
+        });
+      }
+    });
+  }
+
+  return prisma.lmsCertificate.findUnique({ where: { id }, include: SELECTED_TENANTS_INCLUDE });
 }
 
 export async function deleteTemplate(id: string) {
@@ -401,8 +493,25 @@ export async function deleteAllTemplates() {
 }
 
 /** Keeps the oldest issued cert per (tenant, learner, course); removes the rest. */
-export async function removeDuplicateIssuedCertificates() {
-  const all = await prisma.lmsCertificateIssued.findMany({ orderBy: { createdAt: 'asc' } });
+/**
+ * Keep the oldest issued cert per (org, learner, course); remove the rest.
+ *
+ * SCOPED and PROJECTED. This previously loaded EVERY issued certificate in
+ * EVERY tenant, full rows, with no cap — and it runs on every template creation
+ * (`app/api/certificates/route.ts:18`), so at six-figure certificate counts
+ * `POST /api/certificates` would OOM or time out. The legacy did the grouping
+ * server-side with `$group` and only returned duplicate groups
+ * (`certificates.service.ts:373-383`).
+ *
+ * `orgId` is optional so the super-admin cleanup endpoint can still sweep
+ * everything deliberately, while the create path passes its own tenant.
+ */
+export async function removeDuplicateIssuedCertificates(orgId?: string) {
+  const all = await prisma.lmsCertificateIssued.findMany({
+    where: orgId ? { orgId } : undefined,
+    select: { id: true, orgId: true, learnerId: true, courseId: true },
+    orderBy: { createdAt: 'asc' },
+  });
   const seen = new Map<string, string>();
   const toRemove: string[] = [];
   for (const c of all) {
@@ -434,7 +543,35 @@ interface GenerateInput {
 export async function generateCertificate(data: GenerateInput) {
   const { orgId, learnerId, courseId } = data;
   const existing = await prisma.lmsCertificateIssued.findFirst({ where: { orgId, learnerId, courseId } });
-  if (existing) return existing;
+  if (existing) {
+    /**
+     * Re-point + regenerate when the tenant's active template has CHANGED.
+     *
+     * The legacy did this (`certificates.service.ts:437-462`); the port returned
+     * the stale record, so after an admin published a new design a re-issue kept
+     * pointing at the retired one. The learner-facing `/download` paths recover
+     * (they regenerate via `selectTemplateForIssued`), but the stored
+     * `pdfUrl`/`certificateTemplateId` stayed wrong.
+     */
+    if (data.certificateTemplateId && data.certificateTemplateId !== existing.certificateTemplateId) {
+      try {
+        const template = await prisma.lmsCertificate.findUnique({ where: { id: data.certificateTemplateId } });
+        const { pdfUrl, qrCodeUrl } = await renderAndUploadCertificateAssets(existing, template, data.designation);
+        return await prisma.lmsCertificateIssued.update({
+          where: { id: existing.id },
+          data: {
+            certificateTemplateId: data.certificateTemplateId,
+            ...(pdfUrl ? { pdfUrl } : {}),
+            ...(qrCodeUrl ? { qrCodeUrl } : {}),
+          },
+        });
+      } catch {
+        // A regeneration failure must never lose the existing certificate.
+        return existing;
+      }
+    }
+    return existing;
+  }
 
   const certificateId = newCertificateId();
   const verificationUrl = `${FRONTEND_URL}/verify-certificate/${certificateId}`;
@@ -547,18 +684,54 @@ export async function generateCertificateForCompletion(orgId: string, learnerId:
 
   const passed = progress.isPassed === true ? true : certScore == null ? undefined : false;
 
-  if (active) {
-    await generateCertificate({
-      certificateTemplateId: active.id, learnerId, courseId, orgId, userName,
-      courseName: course.title, designation: active.designation || tenant?.contactRoleInOrganization || '',
-      isComplianceCertificate, expiresAt, score: certScore, passingScore: certPassingScore, passed,
+  const newCertificate = active
+    ? await generateCertificate({
+        certificateTemplateId: active.id, learnerId, courseId, orgId, userName,
+        courseName: course.title, designation: active.designation || tenant?.contactRoleInOrganization || '',
+        isComplianceCertificate, expiresAt, score: certScore, passingScore: certPassingScore, passed,
+      })
+    : await generateDefaultCertificate({
+        learnerId, courseId, orgId, userName, courseName: course.title,
+        designation: tenant?.contactRoleInOrganization || 'Course Administrator',
+        isComplianceCertificate, expiresAt, score: certScore, passingScore: certPassingScore, passed,
+      });
+
+  // Certificate-earned email — port of `progress.service.ts:745-778`. The
+  // learner is otherwise never told the certificate exists.
+  //
+  // Wrapped like the legacy: "Don't throw — certificate is saved; email failure
+  // must not break the flow". `sendTemplateEmail` already swallows its own
+  // errors; this guard covers the date/score formatting above it.
+  try {
+    const issueDateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    const completionDateStr = progress.completedAt
+      ? new Date(progress.completedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+      : issueDateStr;
+    // Legacy's exact fallback ladder, '100%' included.
+    const scoreStr = progress.scorePercentage != null
+      ? `${progress.scorePercentage}%`
+      : progress.quizScore != null ? `${progress.quizScore}%` : '100%';
+    const certificateUrl = `${BACKEND_URL}/api/verify-certificate/${newCertificate.certificateId}/download`;
+
+    await sendTemplateEmail({
+      to: user.email,
+      template: 'certificate-earned',
+      data: {
+        studentName: userName,
+        userName,
+        courseName: course.title,
+        completionDate: completionDateStr,
+        issueDate: issueDateStr,
+        score: scoreStr,
+        certificateId: newCertificate.certificateId,
+        platformName: PLATFORM_NAME,
+        certificateUrl,
+        downloadUrl: certificateUrl,
+        loginUrl: FRONTEND_URL,
+      },
     });
-  } else {
-    await generateDefaultCertificate({
-      learnerId, courseId, orgId, userName, courseName: course.title,
-      designation: tenant?.contactRoleInOrganization || 'Course Administrator',
-      isComplianceCertificate, expiresAt, score: certScore, passingScore: certPassingScore, passed,
-    });
+  } catch {
+    /* certificate is saved; an email failure must not break the flow */
   }
 }
 
@@ -634,8 +807,50 @@ export async function findIssuedById(id: string) {
   return prisma.lmsCertificateIssued.findUnique({ where: { id } });
 }
 
+/**
+ * Public certificate verification.
+ *
+ * The legacy populated learner, course and template
+ * (`certificates.service.ts:1179-1185`). The port returned the bare row, so the
+ * public trust page — which reads `certificate.learnerId.name`,
+ * `.courseId.title` and `.certificateTemplateId.name`
+ * (`app/verify-certificate/[certificateId]/page.tsx:118-141`) — was reading
+ * properties off raw uuid STRINGS. Strings are truthy, so every block rendered
+ * and every one printed **"N/A"**: the page confirmed "Certificate Verified"
+ * while naming no learner, no course and no template.
+ */
 export async function verifyCertificate(certificateId: string) {
-  return prisma.lmsCertificateIssued.findUnique({ where: { certificateId } });
+  const cert = await prisma.lmsCertificateIssued.findUnique({ where: { certificateId } });
+  if (!cert) return cert;
+
+  const [learner, template] = await Promise.all([
+    cert.learnerId
+      ? prisma.lmsUser.findUnique({
+          where: { id: cert.learnerId },
+          select: { id: true, firstName: true, lastName: true, email: true },
+        })
+      : null,
+    cert.certificateTemplateId
+      ? prisma.lmsCertificate.findUnique({
+          where: { id: cert.certificateTemplateId },
+          select: { id: true, name: true },
+        })
+      : null,
+  ]);
+
+  // Course title comes from MasterCourse first, then the legacy Course — the
+  // same order the rest of this service uses for the scalar courseId.
+  const courseMap = await resolveCourseMap([cert.courseId].filter(Boolean));
+  const course = courseMap.get(cert.courseId);
+
+  return {
+    ...cert,
+    learnerId: learner
+      ? { _id: learner.id, ...learner, name: `${learner.firstName} ${learner.lastName}`.trim() }
+      : cert.learnerId,
+    courseId: course ?? (cert.courseId ? { _id: cert.courseId, title: cert.courseName || 'Course' } : null),
+    certificateTemplateId: template ? { _id: template.id, ...template } : cert.certificateTemplateId,
+  };
 }
 
 /** Download permission gate result — used by the authenticated download route. */
@@ -979,33 +1194,26 @@ async function renderAndUploadCertificateAssets(
   try {
     const pdfBuffer = await buildCertificatePdf(cert, template, designationOverride);
     const pdfKey = `certificates/templates/generated/${cert.certificateId}.pdf`;
-    await s3.send(
-      new PutObjectCommand({
-        Bucket: S3_BUCKET,
-        Key: pdfKey,
-        Body: new Uint8Array(pdfBuffer),
-        ContentType: 'application/pdf',
-      }),
-    );
+    await putObject(pdfKey, pdfBuffer, 'application/pdf');
 
     const qrTarget = cert.verificationUrl || `${FRONTEND_URL}/verify-certificate/${cert.certificateId}`;
     const qrDataUrl = await QRCode.toDataURL(qrTarget);
     const qrKey = `certificates/templates/qr/${cert.certificateId}.png`;
-    await s3.send(
-      new PutObjectCommand({
-        Bucket: S3_BUCKET,
-        Key: qrKey,
-        Body: new Uint8Array(Buffer.from(qrDataUrl.split(',')[1], 'base64')),
-        ContentType: 'image/png',
-      }),
-    );
+    await putObject(qrKey, Buffer.from(qrDataUrl.split(',')[1], 'base64'), 'image/png');
 
     return {
-      pdfUrl: `https://${S3_BUCKET}.s3.${REGION}.amazonaws.com/${pdfKey}`,
-      qrCodeUrl: `https://${S3_BUCKET}.s3.${REGION}.amazonaws.com/${qrKey}`,
+      pdfUrl: `https://storage.googleapis.com/${S3_BUCKET}/${pdfKey}`,
+      qrCodeUrl: `https://storage.googleapis.com/${S3_BUCKET}/${qrKey}`,
     };
-  } catch {
+  } catch (error) {
     // Legacy: "PDF generation/upload failed … saving record without PDF".
+    // The swallow is deliberate — a storage outage must not block issuance —
+    // but it is now LOGGED. Silently returning '' is how certificates were
+    // shipping with an empty pdfUrl for months without anyone noticing.
+    console.error(
+      `[certificates] asset upload failed for ${cert.certificateId}; issuing without PDF:`,
+      error instanceof Error ? error.message : error,
+    );
     return { pdfUrl: '', qrCodeUrl: '' };
   }
 }
@@ -1029,23 +1237,22 @@ async function renderIssuedCertificate(cert: CertificateIssued) {
 
   try {
     const pdfKey = `certificates/templates/generated/${cert.certificateId}.pdf`;
-    await s3.send(
-      new PutObjectCommand({
-        Bucket: S3_BUCKET,
-        Key: pdfKey,
-        Body: new Uint8Array(buffer),
-        ContentType: 'application/pdf',
-      }),
-    );
+    await putObject(pdfKey, buffer, 'application/pdf');
     certificate = await prisma.lmsCertificateIssued.update({
       where: { id: cert.id },
       data: {
-        pdfUrl: `https://${S3_BUCKET}.s3.${REGION}.amazonaws.com/${pdfKey}`,
+        pdfUrl: `https://storage.googleapis.com/${S3_BUCKET}/${pdfKey}`,
         ...(template ? { certificateTemplateId: template.id } : {}),
       },
     });
-  } catch {
-    // Legacy: "PDF buffer is still returned even if S3 fails".
+  } catch (error) {
+    // Legacy: "PDF buffer is still returned even if storage fails" — but log it,
+    // so a persistent upload failure is visible rather than inferred later from
+    // a table full of empty pdfUrls.
+    console.error(
+      `[certificates] re-render upload failed for ${cert.certificateId}:`,
+      error instanceof Error ? error.message : error,
+    );
   }
 
   return { buffer, certificate };
@@ -1087,8 +1294,18 @@ export async function getPresignedDownloadUrl(id: string, orgId: string | null, 
 
   // Legacy key extraction: everything after the first '.com/', else a
   // conventional path built from the public certificate id.
+  //
+  // GCS path-style urls put the BUCKET between the host and the key
+  // (`storage.googleapis.com/<bucket>/<key>`), so the legacy split alone would
+  // hand the bucket name back as part of the key and presign a path that does
+  // not exist. Strip it for that form only; the virtual-host forms (GCS and
+  // legacy S3) already have the key immediately after '.com/'.
   const parts = cert.pdfUrl.split('.com/');
-  const key = parts.length > 1 ? parts[1] : `certificates/${cert.certificateId}.pdf`;
+  let key = parts.length > 1 ? parts[1] : `certificates/${cert.certificateId}.pdf`;
+  if (parts.length > 1 && cert.pdfUrl.includes('storage.googleapis.com/')) {
+    const slash = key.indexOf('/');
+    if (slash > 0) key = key.slice(slash + 1);
+  }
   return presignGet(key, 3600);
 }
 

@@ -11,14 +11,14 @@ import { autoSubmitSession } from '../jobs/exam-auto-submit.js';
 
 interface ExamSocket extends Socket {
   userId?: string;
-  tenantId?: string | null;
+  orgId?: string | null;
   examSessionId?: string;
 }
 
 const timers = new Map<string, NodeJS.Timeout>();
 
-async function status(tenantId: string, sessionId: string) {
-  const session = await prisma.lmsExamSession.findFirst({ where: { id: sessionId, tenantId } });
+async function status(orgId: string, sessionId: string) {
+  const session = await prisma.lmsExamSession.findFirst({ where: { id: sessionId, orgId } });
   if (!session) return null;
   const deadline = session.serverDeadline ? new Date(session.serverDeadline).getTime() : 0;
   const remainingSeconds = deadline ? Math.max(0, Math.floor((deadline - Date.now()) / 1000)) : 0;
@@ -34,7 +34,9 @@ export function registerExamNamespace(io: Server): void {
     const claims = token ? await verifySocketToken(token) : null;
     if (!claims?.sub) return next(new Error('unauthorized'));
     socket.userId = claims.sub;
-    socket.tenantId = claims.tenantId ?? null;
+    // The CLAIM is named `tenantId` (wire-compat with the token route and the
+    // legacy gateway); the socket field is `orgId` after the org-wide rename.
+    socket.orgId = claims.tenantId ?? null;
     next();
   });
 
@@ -48,7 +50,7 @@ export function registerExamNamespace(io: Server): void {
       if (!timers.has(key)) {
         const interval = setInterval(async () => {
           try {
-            const s = await status(socket.tenantId!, data.sessionId);
+            const s = await status(socket.orgId!, data.sessionId);
             if (!s) throw new Error('gone');
             socket.emit('timerSync', { remainingSeconds: s.remainingSeconds, answeredCount: s.answeredCount });
             if (s.remainingSeconds <= 300 && s.remainingSeconds > 270) {

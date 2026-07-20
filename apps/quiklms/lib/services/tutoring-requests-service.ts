@@ -16,7 +16,7 @@
 import type { Prisma, LmsTutoringRequestStatus as TutoringRequestStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { NotFound, BadRequest, Internal } from '@/lib/http';
-import { generateClasses } from '@/lib/services/scheduling-service';
+import { generateClasses, validateTeacherSchedule } from '@/lib/services/scheduling-service';
 import { createMeeting } from '@/lib/services/meetings-service';
 
 type Slot = { date: string; startTime: string; endTime: string };
@@ -56,7 +56,7 @@ async function shapeMany(rows: { id: string; studentId: string; teacherId: strin
 async function getStudentBalance(orgId: string, studentId: string) {
   const packages = await prisma.lmsCreditPackage.findMany({
     where: { orgId, studentId, status: 'active' },
-    orderBy: { expiresAt: 'asc' },
+    orderBy: { expiresAt: { sort: 'asc', nulls: 'first' } }, // Mongo sorts nulls first — see credits-service.deductCredit
   });
   const available = packages.reduce((sum, p) => sum + p.remainingCredits, 0);
   return { available };
@@ -65,7 +65,7 @@ async function getStudentBalance(orgId: string, studentId: string) {
 async function holdCredit(orgId: string, studentId: string, amount: number, notes: string): Promise<string> {
   const packages = await prisma.lmsCreditPackage.findMany({
     where: { orgId, studentId, status: 'active', remainingCredits: { gt: 0 } },
-    orderBy: [{ expiresAt: 'asc' }, { purchaseDate: 'asc' }],
+    orderBy: [{ expiresAt: { sort: 'asc', nulls: 'first' } }, { purchaseDate: 'asc' }], // Mongo sorts nulls first
   });
   if (packages.length === 0) throw BadRequest('No credits available for this student');
 
@@ -230,6 +230,23 @@ export async function accept(
   const dayOfWeek = confirmedDate.getDay();
   const dateStr = confirmedDate.toISOString().split('T')[0];
 
+  /**
+   * Teacher double-booking guard — restored.
+   *
+   * The legacy routed this through `BatchesService.create`
+   * (`tutoring-requests.service.ts:202-222`), which runs
+   * `validateTeacherSchedule` (`batches.service.ts:66-76`) and throws a 400 with
+   * the conflict reason if the confirmed slot collides with an existing batch.
+   * The port inlined a raw `lmsBatch.create`, so none of that ran: a teacher
+   * accepting a request for a slot they already teach silently got an
+   * overlapping batch, class AND video meeting — two live classes at once.
+   */
+  const conflicts = await validateTeacherSchedule(teacherId, [
+    { dayOfWeek, startTime: dto.confirmedSlot.startTime, endTime: dto.confirmedSlot.endTime },
+  ]);
+  const blocked = conflicts.find((c) => !c.available);
+  if (blocked) throw BadRequest(blocked.reason || 'Teacher is not available for the confirmed slot');
+
   // 2. Create the one-on-one batch (BatchesService.create equivalent)
   let batch;
   try {
@@ -257,6 +274,9 @@ export async function accept(
     throw err;
   }
 
+  // Hoisted so the catch below can persist it — see the rollback note there.
+  let createdClassId: string | null = null;
+
   try {
     // 3. Generate the class session for this batch
     let scheduledClass: { id: string; startTime: Date; endTime: Date } | null = null;
@@ -268,6 +288,7 @@ export async function accept(
       if (!classes || classes.length === 0) throw new Error('No class sessions generated');
       scheduledClass = classes[0];
     }
+    createdClassId = scheduledClass.id;
 
     // 4. Create the meeting (provider from tenant videoConfig, default jitsi)
     let provider: 'zoom' | 'google_meet' | 'jitsi' | 'manual' = 'jitsi';
@@ -306,8 +327,17 @@ export async function accept(
 
     // 6. Notifications — worker owns email dispatch (Phase 4).
   } catch {
-    // Partial rollback: keep batchId if set, leave request pending — matches legacy.
-    await prisma.lmsTutoringRequest.update({ where: { id: request.id }, data: { batchId: batch.id } }).catch(() => {});
+    // Partial rollback: keep batchId AND scheduledClassId, leave request pending.
+    // The legacy assigned scheduledClassId onto the document before meeting
+    // creation and persisted both in its catch (`tutoring-requests.service.ts:254,331`).
+    // Dropping it orphaned the generated class: nothing could re-associate it,
+    // and the payout path keys `completedClasses` off `scheduledClassId`.
+    await prisma.lmsTutoringRequest
+      .update({
+        where: { id: request.id },
+        data: { batchId: batch.id, ...(createdClassId ? { scheduledClassId: createdClassId } : {}) },
+      })
+      .catch(() => {});
     throw Internal('Session setup incomplete. Admin has been notified.');
   }
 

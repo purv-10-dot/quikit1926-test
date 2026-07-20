@@ -96,13 +96,32 @@ async function findCompletedClassesForPayout(orgId: string, teacherId: string, p
 }
 
 // ═══════════════ TEACHER LEVEL RATE (teacher-level helper) ═══════════════
-async function getTeacherRateByLevel(orgId: string, teacherId: string, baseRate: number): Promise<number> {
+/** Exported for direct unit testing of the rate ladder — see phase4-misc.test.ts. */
+export async function getTeacherRateByLevel(orgId: string, teacherId: string, baseRate: number): Promise<number> {
   try {
     const level = await prisma.lmsTeacherLevel.findFirst({ where: { orgId, teacherId } });
     const tenant = await prisma.lmsTenant.findUnique({ where: { id: orgId } });
     const levelConfig = (tenant as Record<string, any> | null)?.enhancementConfig?.teacherLevel;
-    if (!level || !levelConfig) return baseRate;
-    switch (level.currentLevel) {
+    if (!levelConfig) return baseRate;
+
+    /**
+     * A teacher with NO level row is a `beginner`, not "unrated".
+     *
+     * The legacy resolved the level through `TeacherLevelService.getTeacherLevel`
+     * (`teacher-level.service.ts:37-51`), which **auto-creates** the row when
+     * missing; the schema defaults `currentLevel` to BEGINNER
+     * (`teacher-level.schema.ts:20`). So every teacher always had a level, and
+     * an unrated one was paid `beginnerRate`.
+     *
+     * The port returned `baseRate` whenever the row was absent, so every teacher
+     * who had never had a level computed was paid their raw `ratePerClass`
+     * instead of the configured beginner rate — systematically over- or
+     * under-paying new teachers on every generated payout. Defaulting to
+     * `beginner` restores the money. (Read-only: unlike the legacy this does not
+     * write a level row, which is a side effect payout generation should not have.)
+     */
+    const currentLevel = level?.currentLevel ?? 'beginner';
+    switch (currentLevel) {
       case 'lead':
         return levelConfig.leadRate || baseRate;
       case 'intermediate':
@@ -388,29 +407,57 @@ export async function addAdjustment(
   if (!payout) throw NotFound('Payout not found');
   if (payout.status === 'paid') throw BadRequest('Cannot add adjustments to a paid payout');
 
-  await prisma.lmsPayoutAdjustment.create({
-    data: {
-      payoutId,
-      type: dto.type,
-      amount: dto.amount,
-      reason: dto.reason,
-      appliedBy,
-      appliedAt: new Date(),
-    },
-  });
+  /**
+   * ATOMIC — this is money.
+   *
+   * The legacy pushed the adjustment, recomputed the totals, and wrote all of it
+   * in ONE `payout.save()` (`payouts.service.ts:287-306`). The port split it into
+   * a `create` and a separate `update`, so a failure in between left the
+   * adjustment row visible in the detail view while `netAmount` still ignored it
+   * — the admin sees a bonus that the payable amount does not include.
+   *
+   * `grossAmount` / `nonTeachingWorkAmount` are also re-read INSIDE the
+   * transaction: the previous code computed `netAmount` from a pre-create
+   * snapshot, so a `generatePayouts` run interleaving here produced a net based
+   * on a stale gross.
+   */
+  await prisma.$transaction(async (tx) => {
+    await tx.lmsPayoutAdjustment.create({
+      data: {
+        payoutId,
+        type: dto.type,
+        amount: dto.amount,
+        reason: dto.reason,
+        appliedBy,
+        appliedAt: new Date(),
+      },
+    });
 
-  const adjustments = await prisma.lmsPayoutAdjustment.findMany({ where: { payoutId } });
-  let totalBonus = 0;
-  let totalDeductions = 0;
-  for (const adj of adjustments) {
-    if (adj.type === 'bonus' || adj.type === 'reimbursement') totalBonus += adj.amount;
-    if (adj.type === 'deduction') totalDeductions += adj.amount;
-  }
+    const [adjustments, fresh] = await Promise.all([
+      tx.lmsPayoutAdjustment.findMany({ where: { payoutId } }),
+      tx.lmsTeacherPayout.findUnique({
+        where: { id: payoutId },
+        select: { grossAmount: true, nonTeachingWorkAmount: true },
+      }),
+    ]);
 
-  const netAmount = payout.grossAmount + (payout.nonTeachingWorkAmount || 0) + totalBonus - totalDeductions;
-  await prisma.lmsTeacherPayout.update({
-    where: { id: payoutId },
-    data: { totalBonus, totalDeductions, netAmount },
+    let totalBonus = 0;
+    let totalDeductions = 0;
+    for (const adj of adjustments) {
+      if (adj.type === 'bonus' || adj.type === 'reimbursement') totalBonus += adj.amount;
+      if (adj.type === 'deduction') totalDeductions += adj.amount;
+    }
+
+    const netAmount =
+      (fresh?.grossAmount ?? payout.grossAmount) +
+      (fresh?.nonTeachingWorkAmount ?? payout.nonTeachingWorkAmount ?? 0) +
+      totalBonus -
+      totalDeductions;
+
+    await tx.lmsTeacherPayout.update({
+      where: { id: payoutId },
+      data: { totalBonus, totalDeductions, netAmount },
+    });
   });
 
   return findOne(orgId, payoutId);

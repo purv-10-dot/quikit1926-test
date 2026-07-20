@@ -12,7 +12,11 @@ export const GET = route(async (req, { params }) => {
   requireRoles(user, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN', 'MANAGER', 'LEARNER']);
   if (!user.id) throw new Error('User ID is required');
 
-  const { certificate } = await regeneratePdfForIssuedCertificate(params!.id);
+  // ORG-SCOPED. Unscoped, any authenticated user in the five permitted roles
+  // could force a re-render of ANY tenant's certificate — an S3 overwrite plus a
+  // DB update of pdfUrl/certificateTemplateId, i.e. a cross-tenant write and an
+  // existence oracle. The sibling /download route already passes orgId.
+  const { certificate } = await regeneratePdfForIssuedCertificate(params!.id, user.orgId);
   const url = await getPresignedDownloadUrl(certificate.id, user.orgId ?? null, user.id);
   return json({ success: true, data: { url } });
 });

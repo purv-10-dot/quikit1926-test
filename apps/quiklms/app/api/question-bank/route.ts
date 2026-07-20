@@ -12,8 +12,14 @@ export const GET = route(async (req) => {
   requireRoles(actor, [...ROLES]);
   if (!actor.orgId) throw BadRequest('Tenant ID required');
   const url = new URL(req.url);
-  const tagsRaw = url.searchParams.get('tags');
-  const tags = tagsRaw ? tagsRaw.split(',').map((t) => t.trim()).filter(Boolean) : undefined;
+  // `getAll`, not `get`: Express parsed a repeated `?tags=a&tags=b` into an
+  // array, while `searchParams.get()` returns only the FIRST value — so the
+  // repeated form silently filtered on one tag and under-filtered the results
+  // (and /count). Both forms are supported: repeated params and `?tags=a,b`.
+  const tagsRaw = url.searchParams.getAll('tags');
+  const tags = tagsRaw.length
+    ? tagsRaw.flatMap((t) => t.split(',')).map((t) => t.trim()).filter(Boolean)
+    : undefined;
   const page = url.searchParams.get('page');
   const limit = url.searchParams.get('limit');
   const result = await findAllQuestions(actor.orgId, {
@@ -36,5 +42,7 @@ export const POST = route(async (req) => {
   if (!actor.orgId) throw BadRequest('Tenant ID required');
   const body = await parseBody(req, z.object({}).passthrough());
   const question = await createQuestion(actor.orgId, actor.id, body as Record<string, unknown>);
-  return json({ success: true, data: question });
+  // 201 on creation — NestJS's @Post() default, and this repo's own standard
+  // (CLAUDE.md: "POST returns 201 on creation").
+  return json({ success: true, data: question }, 201);
 });

@@ -17,6 +17,51 @@ export interface TenantLogFilters {
   skip?: number;
 }
 
+export interface CreateTenantLogInput {
+  orgId: string;
+  actionType: TenantActionType;
+  description: string;
+  performedBy: string;
+  metadata?: Prisma.InputJsonValue;
+  ipAddress?: string;
+}
+
+/**
+ * Write a tenant audit log — port of `TenantAuditService.createLog`
+ * (`tenant-audit.service.ts:16-35`). The port had the READ side only, so every
+ * caller that was supposed to record an action silently recorded nothing
+ * (GAP_REPORT §3.2 course-assignments).
+ *
+ * `metadata` defaults to `{}` rather than null, as the legacy did.
+ */
+export async function createLog(data: CreateTenantLogInput) {
+  return prisma.lmsTenantLog.create({
+    data: {
+      orgId: data.orgId,
+      actionType: data.actionType,
+      description: data.description,
+      performedBy: data.performedBy,
+      metadata: data.metadata ?? {},
+      ipAddress: data.ipAddress ?? null,
+    },
+  });
+}
+
+/**
+ * `createLog` that never throws — audit is observability, and the legacy wrapped
+ * every one of these call sites in `try {} catch { /* don't fail main action
+ * for audit *\/ }` (`course-assignments.controller.ts:138-149` et al). Losing a
+ * log must never fail the assignment the user actually asked for.
+ */
+export async function tryCreateLog(data: CreateTenantLogInput): Promise<void> {
+  try {
+    await createLog(data);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[tenant-audit] log write failed (non-fatal):', err);
+  }
+}
+
 function buildWhere(orgId: string, filters?: TenantLogFilters): Prisma.LmsTenantLogWhereInput {
   const where: Prisma.LmsTenantLogWhereInput = { orgId };
   if (filters?.startDate || filters?.endDate) {

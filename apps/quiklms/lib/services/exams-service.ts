@@ -63,7 +63,9 @@ export async function createExam(user: AuthUser, userId: string, data: Record<st
 
   const computedMarks = totalMarks || questions.reduce((sum, q) => sum + (q.points || 1), 0);
 
-  const cleanQuestions = questions.map((q) => ({
+  // Deduped for the same reason as updateExam — @@unique([examId, questionId])
+  // rejects a repeat that Mongo's plain array accepted.
+  const cleanQuestions = dedupeQuestions(questions).map((q) => ({
     questionId: q.questionId,
     points: q.points || 1,
     order: q.order,
@@ -108,6 +110,115 @@ export async function createExam(user: AuthUser, userId: string, data: Record<st
   return exam;
 }
 
+/**
+ * Reshape a Prisma exam into the shape `.populate()` produced.
+ *
+ * THE BUG THIS FIXES. Mongoose `.populate('batchId', ...)` REPLACES the field:
+ * `exam.batchId` becomes `{_id, name, grade, subject}`. The port instead added
+ * the relation under a NEW key (`batch`) and left `batchId` a raw uuid string.
+ * Three consequences, all live in the UI:
+ *
+ *  - `exams/page.tsx:129` — `{exam.batchId && <span>Batch: {exam.batchId.name}</span>}`:
+ *    a string is truthy and `.name` is undefined, so every batch-bound exam
+ *    rendered "Batch: " with a blank name.
+ *  - `exams/create/page.tsx:76` — `batchId: exam.batchId?._id || ''` yields `''`
+ *    on a string. An admin opening a draft to fix a typo and saving would
+ *    **destroy the batch assignment** (`updateExam` disconnects on falsy), and
+ *    the now-null-batch exam becomes visible to EVERY learner in the org
+ *    (`getStudentExams` shows null-batch exams org-wide). Silent data loss plus
+ *    unintended exposure.
+ *  - `exams/create/page.tsx:82-85` — same shape bug on `questions[].questionId`
+ *    left `_question` a string, so the editor listed raw UUIDs instead of
+ *    question text.
+ *
+ * Rather than patch each caller, the API contract is restored: the scalar FK is
+ * REPLACED by the populated object, exactly as before.
+ */
+/**
+ * Keep the FIRST occurrence of each questionId.
+ *
+ * Mongo stored `questions` as a plain array, so the same question twice was
+ * accepted. Postgres has `@@unique([examId, questionId])`, so a duplicate throws
+ * P2002 — and in `updateExam` that fired AFTER the join rows were deleted,
+ * wiping the exam's questions. De-duplicating keeps the save working instead of
+ * 500ing on a payload the legacy accepted.
+ */
+function dedupeQuestions(questions: QuestionInput[]): QuestionInput[] {
+  const seen = new Set<string>();
+  return questions.filter((q) => {
+    if (seen.has(q.questionId)) return false;
+    seen.add(q.questionId);
+    return true;
+  });
+}
+
+type RawExam = Record<string, unknown> & { batchId?: string | null; batch?: unknown; questions?: unknown };
+
+function shapeExam<T extends RawExam>(exam: T) {
+  const { batch, questions, ...rest } = exam as RawExam;
+  const shaped: Record<string, unknown> = { ...rest };
+
+  // populate('batchId', 'name grade subject') → replace the id with the doc.
+  shaped.batchId = batch ? { _id: rest.batchId, ...(batch as object) } : rest.batchId ?? null;
+
+  if (Array.isArray(questions)) {
+    shaped.questions = (questions as Array<Record<string, unknown>>).map((q) => {
+      const { question, ...qRest } = q;
+      return {
+        ...qRest,
+        // populate('questions.questionId') → replace the id with the doc.
+        questionId: question ? { _id: q.questionId, ...(question as object) } : q.questionId,
+      };
+    });
+  }
+  return shaped;
+}
+
+/**
+ * Strip the answer key from an exam's questions.
+ *
+ * `GET /exams/:id` is open to LEARNER, and both the original and the first port
+ * returned every question in full — `correctAnswer`, each option's `isCorrect`
+ * flag, and `explanation`. A learner could `curl` the exam before starting and
+ * read every answer. This is a pre-existing hole (the legacy leaked it too), so
+ * it is a DELIBERATE DEVIATION from parity, taken on the product owner's
+ * instruction (2026-07-18): a cheating hole should not survive the migration
+ * just because it predates it.
+ *
+ * Teachers/admins are unaffected — they need the key to author and grade.
+ * `exam-sessions.getSessionWithQuestions` already redacts on the sit-the-exam
+ * path (`:136`); this closes the direct-read path it left open.
+ */
+function stripAnswerKey(exam: Record<string, unknown>): Record<string, unknown> {
+  const questions = exam.questions;
+  if (!Array.isArray(questions)) return exam;
+
+  return {
+    ...exam,
+    questions: questions.map((q) => {
+      const row = q as Record<string, unknown>;
+      const inner = row.questionId;
+      if (!inner || typeof inner !== 'object') return row;
+
+      const { correctAnswer: _ca, explanation: _ex, options, ...safe } = inner as Record<string, unknown>;
+      return {
+        ...row,
+        questionId: {
+          ...safe,
+          // Keep the option TEXT (the learner must see the choices) but drop the
+          // isCorrect flag that marks the right one.
+          options: Array.isArray(options)
+            ? options.map((o) => {
+                const opt = o as Record<string, unknown>;
+                return { text: opt.text };
+              })
+            : options,
+        },
+      };
+    }),
+  };
+}
+
 export async function findAllExams(
   user: AuthUser,
   filters: { batchId?: string; status?: string; subject?: string },
@@ -117,13 +228,19 @@ export async function findAllExams(
   if (filters.status) where.status = filters.status as Prisma.LmsExamWhereInput['status'];
   if (filters.subject) where.subject = filters.subject;
 
-  return prisma.lmsExam.findMany({
+  const exams = await prisma.lmsExam.findMany({
     where,
     include: {
       batch: { select: { name: true, grade: true, subject: true } },
+      // `questions` was an EMBEDDED array in Mongo, so the legacy list carried it
+      // for free (with raw question refs — findAll did not populate them).
+      // Without it `exams/page.tsx:132` renders "Questions: 0" for every exam,
+      // including published ones with 40 questions.
+      questions: { select: { questionId: true, points: true, order: true } },
     },
     orderBy: { createdAt: 'desc' },
   });
+  return exams.map(shapeExam);
 }
 
 export async function findOneExam(user: AuthUser, id: string) {
@@ -136,7 +253,18 @@ export async function findOneExam(user: AuthUser, id: string) {
   });
   if (!exam) throw NotFound('Exam not found');
   assertTenantMatch(user, exam.orgId);
-  return exam;
+
+  const shaped = shapeExam(exam);
+  // Learners never receive the answer key — see stripAnswerKey.
+  const isStaff =
+    user.role === 'TEACHER' ||
+    user.role === 'TENANT_ADMIN' ||
+    user.role === 'SUB_ADMIN' ||
+    user.role === 'SUPER_ADMIN' ||
+    user.secondaryRole === 'TEACHER' ||
+    user.secondaryRole === 'TENANT_ADMIN' ||
+    user.secondaryRole === 'SUB_ADMIN';
+  return isStaff ? shaped : stripAnswerKey(shaped);
 }
 
 async function findOneRaw(user: AuthUser, id: string) {
@@ -170,8 +298,9 @@ export async function updateExam(user: AuthUser, id: string, data: Record<string
   update.batch = data.batchId ? { connect: { id: data.batchId as string } } : { disconnect: true };
   update.subject = (data.subject as string) || (data.title as string) || exam.title || 'General';
 
+  let replaceQuestions: QuestionInput[] | null = null;
   if (data.questions) {
-    const questions = data.questions as QuestionInput[];
+    const questions = dedupeQuestions(data.questions as QuestionInput[]);
     update.totalMarks = questions.reduce((sum, q) => sum + (q.points || 1), 0);
     // Tenant-scope client-supplied question IDs: only this tenant's questions may be attached.
     const ids = [...new Set(questions.map((q) => q.questionId))];
@@ -181,14 +310,35 @@ export async function updateExam(user: AuthUser, id: string, data: Record<string
       const foreign = ids.filter((qid) => !ownedSet.has(qid));
       if (foreign.length) throw BadRequest('One or more question IDs are invalid for this tenant');
     }
-    // Replace the exam_questions join rows
-    await prisma.lmsExamQuestion.deleteMany({ where: { examId: id } });
-    update.questions = {
-      create: questions.map((q) => ({ questionId: q.questionId, points: q.points || 1, order: q.order })),
-    };
+    replaceQuestions = questions;
   }
 
-  return prisma.lmsExam.update({ where: { id }, data: update, include: { questions: true } });
+  /**
+   * ATOMIC. The legacy rebuilt `questions` in memory and wrote it in a SINGLE
+   * `findByIdAndUpdate($set)` — atomic by construction. The port did
+   * `deleteMany` and then a separate `update`, so any failure in between (a
+   * stale `batchId` → P2025, a duplicate question → P2002) committed the delete
+   * and left the exam with **zero questions** while returning a 500. The admin's
+   * question set was gone and the exam unpublishable.
+   */
+  const updated = await prisma.$transaction(async (tx) => {
+    if (replaceQuestions) {
+      await tx.lmsExamQuestion.deleteMany({ where: { examId: id } });
+      update.questions = {
+        create: replaceQuestions.map((q) => ({ questionId: q.questionId, points: q.points || 1, order: q.order })),
+      };
+    }
+    return tx.lmsExam.update({
+      where: { id },
+      data: update,
+      include: {
+        batch: { select: { name: true, grade: true, subject: true } },
+        questions: { include: { question: true } },
+      },
+    });
+  });
+
+  return shapeExam(updated);
 }
 
 export async function publishExam(user: AuthUser, id: string) {

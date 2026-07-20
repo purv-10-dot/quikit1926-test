@@ -22,20 +22,28 @@ const createSchema = z.object({
   substituteTeacherIds: z.array(z.string()).optional(),
   academicYear: z.string().regex(/^\d{4}-\d{4}$/),
   term: z.string().optional(),
-  startDate: z.string(),
-  endDate: z.string(),
+  // Datetime-validated: a bare string let "next tuesday" through to `new Date()`
+  // → Invalid Date, which then passed the start>end check (NaN comparisons are
+  // always false) and died in Postgres as a 500 instead of a field-level 400.
+  startDate: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}/)),
+  endDate: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}/)),
   schedule: z.array(scheduleItem).min(1),
   studentIds: z.array(z.string()).optional(),
   maxCapacity: z.number().min(1).optional(),
-  defaultMeetingProvider: z.string().optional(),
-  classType: z.string().optional(),
+  // Enums, not free-form strings. `z.string()` let an invalid value through Zod
+  // and into Postgres, which rejected it as an opaque 500 where the legacy's
+  // Mongoose enum validator returned a clear 400. Note `teams` is a valid
+  // LmsMeetingProvider but deliberately NOT a batch provider, so this is
+  // realistic input.
+  defaultMeetingProvider: z.enum(['zoom', 'google_meet', 'jitsi', 'manual']).optional(),
+  classType: z.enum(['regular', 'demo', 'trial']).optional(),
   trialClassCount: z.number().min(0).optional(),
   creditPerClass: z.number().min(0.25).optional(),
   ratePerClass: z.number().min(0).optional(),
   ratePerHour: z.number().min(0).optional(),
   status: z.enum(['draft', 'active', 'archived']).optional(),
-  batchType: z.string().optional(),
-  source: z.string().optional(),
+  batchType: z.enum(['regular', 'one_on_one']).optional(),
+  source: z.enum(['manual', 'auto_tutoring']).optional(),
   tutoringRequestId: z.string().optional(),
 });
 

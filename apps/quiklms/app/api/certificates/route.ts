@@ -15,7 +15,9 @@ export const POST = route(async (req) => {
   requireRoles(user, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
   const orgId = user.orgId;
 
-  await removeDuplicateIssuedCertificates().catch(() => {});
+  // Scoped to this tenant — unscoped it swept every issued certificate in every
+  // org on every template creation.
+  await removeDuplicateIssuedCertificates(orgId ?? undefined).catch(() => {});
 
   const body = (await parseBody(req, z.object({}).passthrough())) as Record<string, unknown>;
 

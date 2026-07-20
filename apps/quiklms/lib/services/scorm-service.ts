@@ -19,12 +19,8 @@
 import JSZip from 'jszip';
 import { parseStringPromise } from 'xml2js';
 import { randomUUID } from 'crypto';
-import { PutObjectCommand } from '@aws-sdk/client-s3';
-import { s3, S3_BUCKET } from '@/lib/s3';
-import { optionalEnv } from '@/lib/env';
+import { S3_BUCKET, putObject } from '@/lib/s3';
 import { BadRequest } from '@/lib/http';
-
-const REGION = optionalEnv('AWS_REGION') || 'ap-south-1';
 
 /** A zip member, normalized to the legacy adm-zip entry shape. */
 interface ZipEntry {
@@ -272,16 +268,13 @@ export async function processScormFile(
 
     // Upload ALL files preserving directory structure. Sequential, as in the
     // original — a SCORM package can hold thousands of members and parallelising
-    // would change S3 throttling behavior.
+    // would change storage throttling behavior.
     for (const entry of zipEntries) {
       if (!entry.isDirectory) {
-        await s3.send(
-          new PutObjectCommand({
-            Bucket: S3_BUCKET,
-            Key: `${basePath}/${entry.entryName}`,
-            Body: await entry.getData(),
-            ContentType: contentTypeFor(entry.entryName),
-          }),
+        await putObject(
+          `${basePath}/${entry.entryName}`,
+          await entry.getData(),
+          contentTypeFor(entry.entryName),
         );
       }
     }
@@ -291,17 +284,10 @@ export async function processScormFile(
 
     // Re-upload the entry point with the bridge injected, overwriting the original.
     const originalHtml = (await launchEntry.getData()).toString('utf8');
-    await s3.send(
-      new PutObjectCommand({
-        Bucket: S3_BUCKET,
-        Key: entryKey,
-        Body: Buffer.from(injectScormBridge(originalHtml), 'utf8'),
-        ContentType: 'text/html',
-      }),
-    );
+    await putObject(entryKey, Buffer.from(injectScormBridge(originalHtml), 'utf8'), 'text/html');
 
     return {
-      indexHtmlUrl: `https://${S3_BUCKET}.s3.${REGION}.amazonaws.com/${entryKey}`,
+      indexHtmlUrl: `https://storage.googleapis.com/${S3_BUCKET}/${entryKey}`,
       manifest,
       title: courseTitle,
       scormVersion,

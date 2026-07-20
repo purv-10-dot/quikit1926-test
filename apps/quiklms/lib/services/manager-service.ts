@@ -2,15 +2,19 @@
  * Manager service — ported from ManagerService (Prisma).
  *
  * Mongo aggregation pipelines → Prisma queries + JS reduction. Course titles are
- * resolved from BOTH Course and MasterCourse (scalar courseId). Audit logging
- * (TenantAuditService) and email sending are best-effort no-ops here (noted):
- * the audit module is out of scope for this batch. The ZIP/Excel export
- * endpoints return the underlying JSON data (S3/file generation deferred).
+ * resolved from BOTH Course and MasterCourse (scalar courseId).
+ *
+ * Audit logging and email are LIVE, not no-ops — an earlier note here said
+ * otherwise and was stale. `notify-service` wires an in-app Message row, a
+ * best-effort email, and a TenantLog row; nudges really do reach people.
+ *
+ * The ZIP and XLSX exports are real files — see `manager-export-service.ts`.
  */
 import type { LmsProgressStatus as ProgressStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import { Forbidden, NotFound } from '@/lib/http';
+import { Forbidden, NotFound, Internal } from '@/lib/http';
 import { notifyUsers, type NudgeRecipient } from '@/lib/services/notify-service';
+import { tryCreateLog } from '@/lib/services/tenant-audit-service';
 
 async function buildCourseNameMap(rawCourseIds: string[]) {
   const map = new Map<string, { title: string; description?: string | null }>();
@@ -305,9 +309,9 @@ export async function nudgeUser(managerId: string, orgId: string, userId: string
     subject: 'A reminder from your manager',
     auditAction: 'UserNudgedByManager',
   });
-  if (deliveredCount === 0) {
-    return { success: false, message: 'Failed to deliver nudge' };
-  }
+  // A delivery failure is a real failure and must not be reported as 200 OK —
+  // the caller cannot distinguish "nudged" from "silently dropped" otherwise.
+  if (deliveredCount === 0) throw Internal('Failed to deliver nudge');
   return { success: true, message: `Nudge sent to ${user.firstName} ${user.lastName}` };
 }
 
@@ -403,7 +407,7 @@ export async function nudgeBulk(managerId: string, orgId: string, dto: { userIds
     subject: 'A reminder from your manager',
     auditAction: 'UserNudgedByManager',
   });
-  if (deliveredCount === 0) return { success: false, message: 'Failed to deliver nudges' };
+  if (deliveredCount === 0) throw Internal('Failed to deliver nudges');
   return { success: true, nudgedCount: deliveredCount, message: `Nudge sent to ${deliveredCount} team member(s)` };
 }
 
@@ -413,8 +417,52 @@ export async function markAttendance(managerId: string, orgId: string, dto: { us
   return { success: true, markedCount: users.length, message: `Attendance marked for ${users.length} team member(s)` };
 }
 
+/**
+ * Manager acknowledges a team member's certificate.
+ *
+ * REBUILT (2026-07-17) rather than ported, because the legacy is wrong in three
+ * ways (`manager.service.ts:1264-1280`):
+ *   1. It writes an audit log and NOTHING else, yet returns
+ *      "Certificate approved successfully" — it reports success for work it
+ *      never did.
+ *   2. It logs `QUIZ_PASSING_SCORE_UPDATED` for a certificate approval, which
+ *      poisons the audit trail with quiz events that never happened.
+ *   3. It never checks the certificate exists, belongs to this tenant, or
+ *      belongs to this manager's team — so ANY id returns success, including a
+ *      typo or another tenant's certificate.
+ *
+ * There is no approval column on `LmsCertificateIssued`, so the audit row IS the
+ * record of the acknowledgement — that part of the legacy design is kept. What
+ * changes: the certificate is verified first (404 when absent, 403 when outside
+ * the manager's team), and the action is logged as `CertificateApprovedByManager`.
+ *
+ * No UI in either codebase calls this endpoint, so persisting an approval state
+ * would mean a schema migration for a feature nobody consumes. Validating and
+ * logging honestly is the right scope; if an approval state is ever needed, add
+ * the column then.
+ */
 export async function approveCertificate(managerId: string, orgId: string, certificateId: string) {
-  void managerId; void orgId; void certificateId;
+  const cert = await prisma.lmsCertificateIssued.findFirst({
+    where: { orgId, OR: [{ id: certificateId }, { certificateId }] },
+    select: { id: true, certificateId: true, learnerId: true },
+  });
+  if (!cert) throw NotFound('Certificate not found');
+
+  // The learner must be on this manager's team — the legacy checked nothing.
+  const member = await prisma.lmsUser.findFirst({
+    where: { id: cert.learnerId, managerId, orgId, isActive: true },
+    select: { id: true },
+  });
+  if (!member) throw Forbidden('You do not have authority over this user');
+
+  await tryCreateLog({
+    orgId,
+    performedBy: managerId,
+    actionType: 'CertificateApprovedByManager',
+    description: `Manager approved certificate ${cert.certificateId}`,
+    metadata: { certificateId: cert.certificateId, learnerId: cert.learnerId },
+  });
+
   return { success: true, message: 'Certificate approved successfully' };
 }
 

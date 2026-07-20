@@ -1,16 +1,16 @@
+import { NextResponse } from 'next/server';
 import type { LmsTenantActionType as TenantActionType } from '@prisma/client';
-import { route, json, ApiError } from '@/lib/http';
+import { route, json } from '@/lib/http';
 import { requireAuth, requireRoles } from '@/lib/auth/context';
 import { getLogsForPDF } from '@/lib/services/tenant-audit-service';
+import { buildTenantAuditPdf, type AuditPdfLog } from '@/lib/services/tenant-audit-pdf';
 
 // GET /api/tenant-audit/export-pdf?startDate=&endDate=&actionType= — TENANT_ADMIN | SUB_ADMIN
 //
-// STUB: the legacy handler streams a PDF generated with `pdfkit`. pdfkit is not a
-// dependency of this build (and deps cannot be added in this phase), so PDF
-// streaming is deferred. The data-fetch path is ported faithfully; rendering the
-// PDF document is left to a follow-up once pdfkit (or a serverless-friendly PDF
-// lib) is wired in. We return 501 to make the gap explicit rather than emit a
-// non-PDF body under a PDF content-type.
+// Returns a real PDF. This previously returned 501 pending a pdfkit dependency;
+// it is now rendered with jsPDF, which the app already ships (the certificate
+// renderer uses it) and which returns a buffer rather than needing an Express
+// stream. Same A4-landscape table the legacy produced.
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN']);
@@ -25,8 +25,18 @@ export const GET = route(async (req) => {
   const endDate = url.searchParams.get('endDate') ? new Date(url.searchParams.get('endDate')!) : undefined;
   const actionType = (url.searchParams.get('actionType') as TenantActionType | null) || undefined;
 
-  // Data path is preserved (validates filters / scoping) even though we cannot render.
-  await getLogsForPDF(orgId, startDate, endDate, actionType);
+  const logs = await getLogsForPDF(orgId, startDate, endDate, actionType);
+  const buffer = buildTenantAuditPdf(logs as unknown as AuditPdfLog[], { startDate, endDate, actionType });
 
-  throw new ApiError(501, 'PDF export is not yet available in this build (pdfkit dependency pending).', 'Not Implemented');
+  const filename = `audit-trail-${new Date().toISOString().split('T')[0]}.pdf`;
+  const body = new Uint8Array(buffer);
+  return new NextResponse(body, {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': body.length.toString(),
+      'Cache-Control': 'no-store',
+    },
+  });
 });

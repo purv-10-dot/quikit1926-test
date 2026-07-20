@@ -171,14 +171,32 @@ export async function saveAnswers(user: AuthUser, studentId: string, sessionId: 
   const now = new Date();
   if (session.serverDeadline && now > session.serverDeadline) throw BadRequest('Session has timed out');
 
-  const current = (session.answers as unknown as AnswersMap) || {};
-  for (const [qId, answer] of Object.entries(answers)) {
-    current[qId] = { ...answer, submittedAt: now.toISOString() };
-  }
-
-  await prisma.lmsExamSession.update({
-    where: { id: sessionId },
-    data: { answers: current as unknown as Prisma.InputJsonValue, lastSavedAt: now },
+  /**
+   * Re-read INSIDE the transaction before merging — a lost-update guard.
+   *
+   * Mongoose's `session.answers.set(qId, ...)` + `save()` emitted
+   * `$set: { 'answers.<qId>': ... }` for only the modified paths
+   * (`exam-sessions.service.ts:199-203`), so two concurrent saves touching
+   * different questions both persisted. The port read the blob, mutated it in
+   * JS, and wrote the WHOLE map back — so a 30s autosave racing a manual save
+   * clobbered the other writer's answers mid-exam, silently.
+   *
+   * Merging against a fresh read inside the transaction keeps every question
+   * that was written between our original read and this write.
+   */
+  await prisma.$transaction(async (tx) => {
+    const fresh = await tx.lmsExamSession.findUnique({
+      where: { id: sessionId },
+      select: { answers: true },
+    });
+    const merged = ((fresh?.answers as unknown as AnswersMap) || {}) as AnswersMap;
+    for (const [qId, answer] of Object.entries(answers)) {
+      merged[qId] = { ...answer, submittedAt: now.toISOString() };
+    }
+    await tx.lmsExamSession.update({
+      where: { id: sessionId },
+      data: { answers: merged as unknown as Prisma.InputJsonValue, lastSavedAt: now },
+    });
   });
 
   return { saved: true, lastSavedAt: now };
@@ -327,15 +345,43 @@ export async function getResult(user: AuthUser, studentId: string, sessionId: st
     throw Forbidden('Results have not been published yet');
   }
 
-  return session;
+  // `.populate('examId', ...)` REPLACED the field. The port added a sibling
+  // `exam` key and left `examId` a raw uuid, so `session.examId.title` — what
+  // the results screen reads — came back undefined.
+  const { exam: _exam, ...rest } = session;
+  return { _id: session.id, ...rest, examId: { _id: exam.id, ...exam } };
 }
 
 export async function getSubmissions(user: AuthUser, examId: string) {
   const orgId = user.orgId as string;
-  return prisma.lmsExamSession.findMany({
+  const sessions = await prisma.lmsExamSession.findMany({
     where: { orgId, examId },
-    orderBy: { score: 'desc' },
+    // `nulls: 'last'` for parity: Mongo sorts null last on a descending sort,
+    // Postgres puts NULLS FIRST — so every ungraded submission jumped to the top
+    // of the teacher's ranked evaluation table.
+    orderBy: { score: { sort: 'desc', nulls: 'last' } },
   });
+
+  // Restore `.populate('studentId', 'firstName lastName email studentId grade')`
+  // (`exam-sessions.service.ts:396`) — dropped entirely, so the evaluation
+  // screen's Student column rendered blank.
+  const studentIds = [...new Set(sessions.map((s) => s.studentId).filter(Boolean))];
+  const students = studentIds.length
+    ? await prisma.lmsUser.findMany({
+        where: { id: { in: studentIds } },
+        select: { id: true, firstName: true, lastName: true, email: true, studentId: true, grade: true },
+      })
+    : [];
+  const studentMap = new Map(students.map((u) => [u.id, { _id: u.id, ...u }]));
+
+  // `_id` too: the ported evaluation page keys rows and builds its grade/void
+  // URLs from `sub._id`, so without it every action POSTed to `/undefined` and
+  // 404'd — grading and voiding were dead from the UI.
+  return sessions.map((s) => ({
+    _id: s.id,
+    ...s,
+    studentId: studentMap.get(s.studentId) ?? s.studentId,
+  }));
 }
 
 export async function evaluateSession(

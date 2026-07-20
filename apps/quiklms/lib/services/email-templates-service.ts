@@ -7,6 +7,7 @@
 import type { LmsEmailTemplateType as EmailTemplateType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { BadRequest } from '@/lib/http';
+import { sendEmail } from '@/lib/email';
 
 // Map wire string → Prisma enum member. Prisma enum members are the @map values
 // here because Prisma exposes the enum by member name, not the mapped DB value.
@@ -44,6 +45,60 @@ export async function getTemplateWithDefaults(type: string): Promise<{ subject: 
   const template = await getTemplate(type);
   if (template) return { subject: template.subject, htmlContent: template.htmlContent };
   return getDefaultTemplate(type);
+}
+
+/**
+ * Replace every `{{key}}` with `data[key]` — port of
+ * `EmailService.replaceGenericPlaceholders` (`email.service.ts:178-187`).
+ *
+ * Placeholders with no matching key are left as literal `{{key}}`, exactly as
+ * the legacy did: it iterated the DATA, not the template.
+ */
+function replaceGenericPlaceholders(template: string, data: Record<string, unknown>): string {
+  if (!template) return '';
+  let result = template;
+  for (const key of Object.keys(data)) {
+    // A function replacer inserts the value literally. `String.replace` with a
+    // string treats `$&`/`$1` as backreferences, so a course title containing
+    // one would corrupt the mail body.
+    result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), () => String(data[key]));
+  }
+  return result;
+}
+
+/** Legacy template aliases — `EmailService.send` (`email.service.ts:145-155`). */
+const TEMPLATE_ALIASES: Record<string, string> = {
+  'certificate-earned': 'certificate',
+  certificate: 'certificate',
+  'course-completion': 'course-completion',
+  'welcome-kit': 'welcome-kit',
+};
+
+/**
+ * Render a stored (or default) template with `data` and send it — port of
+ * `EmailService.send` (`email.service.ts:133-172`).
+ *
+ * NEVER throws. The legacy caught and logged, returning null, because a mail
+ * failure must not roll back the thing that triggered it — an unsendable email
+ * cannot be allowed to cost a learner their certificate.
+ */
+export async function sendTemplateEmail(options: {
+  to: string;
+  template: string;
+  data: Record<string, unknown>;
+}): Promise<void> {
+  try {
+    const type = TEMPLATE_ALIASES[options.template] ?? options.template;
+    const tpl = await getTemplateWithDefaults(type);
+    await sendEmail({
+      to: options.to,
+      subject: replaceGenericPlaceholders(tpl.subject, options.data),
+      html: replaceGenericPlaceholders(tpl.htmlContent, options.data),
+    });
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error(`[email] Failed to send '${options.template}' template email to ${options.to}:`, error);
+  }
 }
 
 function getDefaultTemplate(type: string): { subject: string; htmlContent: string } {

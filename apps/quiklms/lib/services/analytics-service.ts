@@ -469,10 +469,22 @@ export async function getTeacherPerformance(orgId: string, dateFrom?: string, da
     const completedClasses = await prisma.lmsScheduledClass.count({ where: { ...baseWhere, status: 'completed' } });
     const totalClasses = await prisma.lmsScheduledClass.count({ where: { ...baseWhere, status: { notIn: ['cancelled', 'rescheduled'] } } });
 
-    // On-time start rate — legacy computed this from ScheduledClass.actualStartTime,
-    // a field that does not exist in the Postgres schema. With no data source we
-    // return 0 (documented deviation), preserving the response shape.
-    const onTimeRate = 0;
+    /**
+     * On-time start rate — NOT AVAILABLE, reported as null rather than 0.
+     *
+     * The legacy computed it from `ScheduledClass.actualStartTime` with a
+     * 5-minute grace (`analytics.service.ts:581-590`); that column does not
+     * exist in the Postgres schema, so there is no faithful source. Returning
+     * `0` was actively misleading: the dashboard's `onTimeRate < 60` rule
+     * painted the ENTIRE faculty red and made the top-performer badge
+     * (`>= 80`) unwinnable. `null` reads as "no data" instead of "never on time".
+     *
+     * TODO(schema): `LmsMeetingAttendance.joinedAt` and
+     * `LmsCallEscalation.teacherJoinedAt` both record when a teacher actually
+     * joined and could back a real metric — needs a product decision on which
+     * is authoritative before wiring.
+     */
+    const onTimeRate: number | null = null;
 
     // Attendance across the teacher's classes
     let attendanceRate = 0;
@@ -557,7 +569,11 @@ export async function getTeacherDashboard(orgId: string, teacherId: string) {
   try {
     teacherLevel = await prisma.lmsTeacherLevel.findFirst({
       where: { orgId, teacherId },
-      include: { levelHistory: true },
+      // Ordered: Postgres guarantees no row order without ORDER BY, so the
+      // `.slice(-3)` below was picking three ARBITRARY months (often the oldest),
+      // and the set could change between identical page loads. Mongo's embedded
+      // array was insertion-ordered.
+      include: { levelHistory: { orderBy: { calculatedAt: 'asc' } } },
     });
   } catch { /* ignore */ }
 
@@ -665,8 +681,19 @@ export async function getStudentProgress(orgId: string, studentId: string) {
     }
   } catch { /* ignore */ }
 
-  // creditBalance — legacy read a 'CreditBalance' collection that has no Prisma model; default 0.
-  const creditBalance = 0;
+  /**
+   * Credit balance — read from the real data.
+   *
+   * The previous comment claimed the legacy's `CreditBalance` collection "has no
+   * Prisma model", so this was hardcoded to 0 and the student panel always
+   * showed zero credits remaining. `LmsCreditPackage.remainingCredits` holds
+   * exactly this (`schema.prisma:17292`) and is what `credits-service` sums.
+   */
+  const creditAgg = await prisma.lmsCreditPackage.aggregate({
+    where: { orgId, studentId, status: 'active' },
+    _sum: { remainingCredits: true },
+  });
+  const creditBalance = creditAgg._sum.remainingCredits ?? 0;
 
   return {
     student: { _id: studentId, firstName: student.firstName, lastName: student.lastName, email: student.email },
@@ -832,9 +859,29 @@ export async function getFinancialAnalytics(orgId: string, dateFrom?: string, da
     pendingPayoutAmount = pendingAgg._sum.netAmount || 0;
   } catch { /* ignore */ }
 
-  // totalUnusedCredits — legacy 'CreditBalance' collection has no Prisma model; default 0.
-  const totalUnusedCredits = 0;
-  const expiringCredits = 0;
+  /**
+   * Org-wide credit exposure — read from the real data (see the per-student note
+   * above). Hardcoding 0 meant the financial dashboard reported no outstanding
+   * prepaid liability regardless of the actual balance, so finance could not see
+   * credit exposure at all.
+   */
+  const [unusedAgg, expiringAgg] = await Promise.all([
+    prisma.lmsCreditPackage.aggregate({
+      where: { orgId, status: 'active' },
+      _sum: { remainingCredits: true },
+    }),
+    prisma.lmsCreditPackage.aggregate({
+      // "Expiring" = active credits with an expiry inside the next 30 days.
+      where: {
+        orgId,
+        status: 'active',
+        expiresAt: { not: null, lte: new Date(Date.now() + 30 * 86_400_000), gte: new Date() },
+      },
+      _sum: { remainingCredits: true },
+    }),
+  ]);
+  const totalUnusedCredits = unusedAgg._sum.remainingCredits ?? 0;
+  const expiringCredits = expiringAgg._sum.remainingCredits ?? 0;
 
   const totalStudents = await prisma.lmsUser.count({ where: { orgId, role: 'LEARNER', isActive: true } });
   const avgRevenuePerStudent = totalStudents > 0 ? Math.round(totalRevenue / totalStudents) : 0;

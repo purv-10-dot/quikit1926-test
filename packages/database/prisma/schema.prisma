@@ -17308,6 +17308,34 @@ model LmsCreditPackage {
   @@schema("app_quiklms")
 }
 
+/// Purchasable credit-package DEFINITIONS (tenant catalogue).
+///
+/// Previously these lived inside the `LmsTenant.creditConfig` JSON blob. Every
+/// edit was a read-modify-write of the whole object, so two admins editing
+/// packages concurrently silently lost one of the edits — and the blob rewrite
+/// could also clobber a concurrent change to any OTHER creditConfig key
+/// (expiryMonths, lowCreditThreshold, zeroCreditPolicy). Mongo's `$push`/`$pull`
+/// on the subdocument array could not lose a sibling write that way.
+///
+/// Promoted to a real table so each definition is an independently-updatable row.
+/// The remaining scalar settings stay on `creditConfig`.
+model LmsCreditPackageDefinition {
+  id             String  @id @default(uuid())
+  orgId          String
+  name           String
+  credits        Float
+  price          Float
+  validityMonths Int
+  isActive       Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, isActive])
+  @@map("credit_package_definitions")
+  @@schema("app_quiklms")
+}
+
 model LmsCreditTransaction {
   id                  String          @id @default(uuid())
   orgId            String

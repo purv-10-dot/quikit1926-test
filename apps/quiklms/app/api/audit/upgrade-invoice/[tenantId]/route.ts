@@ -7,7 +7,7 @@ export const POST = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['SUPER_ADMIN']);
   try {
-    const result = await sendUpgradeInvoice(params!.orgId);
+    const result = await sendUpgradeInvoice(params!.tenantId);
     return json({
       success: result.success,
       message: result.success

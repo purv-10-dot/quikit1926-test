@@ -15,11 +15,11 @@ function daysAgoWindow(days: number) {
 async function remindForAge(days: number) {
   const assignments = await prisma.lmsCourseAssignment.findMany({
     where: { targetType: 'USER', assignedAt: daysAgoWindow(days) },
-    select: { id: true, courseId: true, targetId: true, tenantId: true },
+    select: { id: true, courseId: true, targetId: true, orgId: true },
   });
   for (const a of assignments) {
     const progress = await prisma.lmsProgress.findFirst({
-      where: { tenantId: a.tenantId, learnerId: a.targetId, courseId: a.courseId },
+      where: { orgId: a.orgId, learnerId: a.targetId, courseId: a.courseId },
       select: { status: true },
     });
     if (progress?.status === 'Completed') continue; // skip completed

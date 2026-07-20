@@ -1,4 +1,6 @@
+import { z } from 'zod';
 import { route, json, BadRequest } from '@/lib/http';
+import { presignFromUrlOrKey } from '@/lib/s3';
 import { requireAuth } from '@/lib/auth/context';
 import { prisma } from '@/lib/prisma';
 
@@ -31,21 +33,42 @@ export const GET = route(async (req) => {
     role: row?.role ?? actor.role,
     phone: row?.phone ?? null,
     profilePicture: row?.profilePicture ?? null,
-    profilePictureUrl: row?.profilePicture ?? null,
+    // PRESIGNED. The stored value is an unsigned S3 url, which 403s against the
+    // private bucket, so avatars simply never loaded. `presignFromUrlOrKey`
+    // passes data:/non-S3 urls through untouched and never throws.
+    profilePictureUrl: row?.profilePicture ? await presignFromUrlOrKey(row.profilePicture) : null,
     timezone: row?.timezone ?? null,
   };
   return json({ success: true, data });
 });
 
-const PROFILE_FIELDS = ['firstName', 'lastName', 'profilePicture', 'timezone', 'phone'] as const;
+/**
+ * Typed profile schema.
+ *
+ * The allowlist alone did no type checking, so `{"firstName": 12345}` was
+ * written straight to a String column — Prisma then either coerced it or threw
+ * an opaque 500. Every other route in this app validates with zod; this one did
+ * not.
+ */
+const profileSchema = z
+  .object({
+    firstName: z.string().trim().min(1).max(100),
+    lastName: z.string().trim().min(1).max(100),
+    profilePicture: z.string().max(2048),
+    timezone: z.string().max(100),
+    phone: z.string().max(32),
+  })
+  .partial()
+  .strict();
 
 // PATCH /api/auth/profile — update only the caller's own profile fields.
 export const PATCH = route(async (req) => {
   const actor = await requireAuth(req);
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const raw = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = profileSchema.parse(raw);
 
   const data: Record<string, unknown> = {};
-  for (const k of PROFILE_FIELDS) if (body[k] !== undefined) data[k] = body[k];
+  for (const [k, v] of Object.entries(body)) if (v !== undefined) data[k] = v;
   if (Object.keys(data).length === 0) throw BadRequest('No updatable profile fields provided');
 
   const existing = await prisma.lmsUser.findUnique({ where: { id: actor.id }, select: { id: true } });

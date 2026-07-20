@@ -1,18 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import JSZip from 'jszip';
 
-const h = vi.hoisted(() => ({ send: vi.fn() }));
+const h = vi.hoisted(() => ({ put: vi.fn() }));
 
-// S3 is the only side effect in this module; the zip/manifest logic is pure.
+// Object storage (GCS) is the only side effect in this module; the zip/manifest
+// logic is pure. `put` stands in for `putObject(key, body, contentType)`.
 vi.mock('@/lib/s3', () => ({
-  s3: { send: h.send },
+  putObject: h.put,
   S3_BUCKET: 'test-bucket',
   presignFromUrlOrKey: vi.fn(),
 }));
 
 // lib/env validates the whole environment at import time and throws without a
-// real .env; the service only reads AWS_REGION from it.
-vi.mock('@/lib/env', () => ({ optionalEnv: (k: string) => (k === 'AWS_REGION' ? 'ap-south-1' : '') }));
+// real .env.
+vi.mock('@/lib/env', () => ({ optionalEnv: () => '' }));
 
 import {
   parseScormPackage,
@@ -47,8 +48,8 @@ const HAPPY = () =>
   });
 
 beforeEach(() => {
-  h.send.mockReset();
-  h.send.mockResolvedValue({});
+  h.put.mockReset();
+  h.put.mockResolvedValue(undefined);
 });
 
 describe('parseScormPackage', () => {
@@ -112,7 +113,7 @@ describe('extractScormFiles', () => {
 
   it('writes nothing — the legacy service never extracted', async () => {
     await extractScormFiles(await HAPPY(), '../../etc/passwd');
-    expect(h.send).not.toHaveBeenCalled();
+    expect(h.put).not.toHaveBeenCalled();
   });
 });
 
@@ -271,22 +272,22 @@ describe('processScormFile', () => {
   it('uploads every file, then overwrites the entry point with the bridge injected', async () => {
     const result = await processScormFile(await HAPPY(), 'org-1');
 
-    const keys = h.send.mock.calls.map((c) => c[0].input.Key);
+    const keys = h.put.mock.calls.map((c) => c[0]);
     // 3 members + 1 bridge-injected overwrite of the entry point.
     expect(keys).toHaveLength(4);
     expect(keys.filter((k: string) => k.endsWith('content/start.html'))).toHaveLength(2);
     expect(keys.every((k: string) => k.startsWith('tenants/org-1/scorm/'))).toBe(true);
 
-    const overwrite = h.send.mock.calls.at(-1)![0].input;
-    expect(overwrite.ContentType).toBe('text/html');
-    expect(overwrite.Body.toString('utf8')).toContain('__scormBridgeLoaded');
+    const overwrite = h.put.mock.calls.at(-1)!;
+    expect(overwrite[2]).toBe('text/html');
+    expect(overwrite[1].toString('utf8')).toContain('__scormBridgeLoaded');
     expect(result.entryPoint).toBe('content/start.html');
     expect(result.launchPath).toBe('content/start.html');
   });
 
   it('routes master-course packages to the master prefix', async () => {
     await processScormFile(await HAPPY(), 'master');
-    const keys = h.send.mock.calls.map((c) => c[0].input.Key);
+    const keys = h.put.mock.calls.map((c) => c[0]);
     expect(keys.every((k: string) => k.startsWith('master-courses/scorm/'))).toBe(true);
   });
 
@@ -309,7 +310,7 @@ describe('processScormFile', () => {
   it('assigns per-file content types', async () => {
     await processScormFile(await HAPPY(), 'org-1');
     const byKey = Object.fromEntries(
-      h.send.mock.calls.map((c) => [c[0].input.Key.split('/scorm/')[1].split('/').slice(1).join('/'), c[0].input.ContentType]),
+      h.put.mock.calls.map((c) => [c[0].split('/scorm/')[1].split('/').slice(1).join('/'), c[2]]),
     );
     expect(byKey['content/style.css']).toBe('text/css');
     expect(byKey['imsmanifest.xml']).toBe('application/xml');
@@ -356,7 +357,7 @@ describe('processScormFile', () => {
   });
 
   it('wraps an S3 failure in the legacy 400 message', async () => {
-    h.send.mockRejectedValue(new Error('AccessDenied'));
+    h.put.mockRejectedValue(new Error('AccessDenied'));
     await expect(processScormFile(await HAPPY(), 'org-1')).rejects.toMatchObject({
       statusCode: 400,
       message: 'Failed to process SCORM file: AccessDenied',

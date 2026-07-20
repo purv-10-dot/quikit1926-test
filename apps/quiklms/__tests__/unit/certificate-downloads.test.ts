@@ -17,7 +17,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const h = vi.hoisted(() => ({
-  send: vi.fn(),
+  put: vi.fn(),
+  getFrom: vi.fn(),
   presignGet: vi.fn(),
   presignFromUrlOrKey: vi.fn(),
   certFindFirst: vi.fn(),
@@ -30,9 +31,10 @@ const h = vi.hoisted(() => ({
   tenantFindMany: vi.fn(),
 }));
 
-vi.mock('@/lib/env', () => ({ optionalEnv: () => 'ap-south-1', env: { ENCRYPTION_KEY: 'k'.repeat(32) } }));
+vi.mock('@/lib/env', () => ({ optionalEnv: () => '', env: { ENCRYPTION_KEY: 'k'.repeat(32) } }));
 vi.mock('@/lib/s3', () => ({
-  s3: { send: h.send },
+  putObject: h.put,
+  getObjectBufferFrom: h.getFrom,
   S3_BUCKET: 'test-bucket',
   presignGet: h.presignGet,
   presignFromUrlOrKey: h.presignFromUrlOrKey,
@@ -101,7 +103,8 @@ const tpl = (over: Record<string, unknown>) => ({
 
 beforeEach(() => {
   Object.values(h).forEach((fn) => fn.mockReset());
-  h.send.mockResolvedValue({});
+  h.put.mockResolvedValue(undefined);
+  h.getFrom.mockResolvedValue(Buffer.from(PNG_1x1));
   h.presignGet.mockResolvedValue('https://signed.example/cert.pdf?X-Amz-Expires=3600');
   h.presignFromUrlOrKey.mockImplementation(async (u: string) => `${u}?signed`);
   h.certUpdate.mockImplementation(async ({ data }: any) => ({ ...CERT, ...data }));
@@ -115,7 +118,7 @@ describe('getPresignedDownloadUrl — no more permanent public links', () => {
   it('returns a short-lived presigned S3 url, never the verification url', async () => {
     h.certFindFirst.mockResolvedValue({
       ...CERT,
-      pdfUrl: 'https://test-bucket.s3.ap-south-1.amazonaws.com/certificates/templates/generated/CERT-1.pdf',
+      pdfUrl: 'https://storage.googleapis.com/test-bucket/certificates/templates/generated/CERT-1.pdf',
     });
 
     const url = await getPresignedDownloadUrl('i1', 'org-1', 'u1');
@@ -169,11 +172,11 @@ describe('regeneratePdfForIssuedCertificate — uploads and persists', () => {
     expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
     // Drawn with the tenant's template, NOT the generic fallback layout.
     expect(buffer.toString('latin1')).not.toContain('This is proudly presented to');
-    const puts = h.send.mock.calls.map((c) => c[0]).filter((c: any) => c.constructor.name === 'PutObjectCommand');
-    expect(puts).toHaveLength(1);
-    expect(puts[0].input.Key).toBe('certificates/templates/generated/CERT-1.pdf');
+    // putObject(key, body, contentType)
+    expect(h.put.mock.calls).toHaveLength(1);
+    expect(h.put.mock.calls[0][0]).toBe('certificates/templates/generated/CERT-1.pdf');
     expect(certificate.pdfUrl).toBe(
-      'https://test-bucket.s3.ap-south-1.amazonaws.com/certificates/templates/generated/CERT-1.pdf',
+      'https://storage.googleapis.com/test-bucket/certificates/templates/generated/CERT-1.pdf',
     );
   });
 
@@ -188,10 +191,10 @@ describe('regeneratePdfForIssuedCertificate — uploads and persists', () => {
     );
   });
 
-  it('still returns a PDF when S3 is down — a storage outage must not block a download', async () => {
+  it('still returns a PDF when storage is down — a storage outage must not block a download', async () => {
     h.certFindFirst.mockResolvedValue(CERT);
     h.templateFindMany.mockResolvedValue([tpl({ id: 't-new' })]);
-    h.send.mockRejectedValue(new Error('S3 down'));
+    h.put.mockRejectedValue(new Error('storage down'));
 
     const { buffer } = await regeneratePdfForIssuedCertificate('i1');
     expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
@@ -238,8 +241,8 @@ describe('selectTemplateForIssued — legacy candidate order', () => {
   });
 
   it('switches template when the chosen background fails to load', async () => {
-    // t-broken is active but its S3 background 404s; t-b64 carries an embedded one.
-    h.send.mockRejectedValue(new Error('AccessDenied'));
+    // t-broken is active but its stored background 404s; t-b64 carries an embedded one.
+    h.getFrom.mockRejectedValue(new Error('AccessDenied'));
     h.templateFindMany.mockResolvedValue([
       tpl({ id: 't-broken', isActive: true, backgroundImageUrl: 'https://b.s3.ap-south-1.amazonaws.com/gone.png' }),
       tpl({ id: 't-b64', isActive: false, backgroundImageUrl: DATA_BG }),
@@ -261,24 +264,23 @@ describe('uploadCertificateAsset — s3Key is no longer always null', () => {
       'denied',
     );
 
-    const put = h.send.mock.calls[0][0] as any;
-    expect(put.constructor.name).toBe('PutObjectCommand');
-    expect(put.input.ContentType).toBe('image/png');
+    const put = h.put.mock.calls[0] as any;
+    expect(put[2]).toBe('image/png');
     // Legacy sanitisation: anything outside [A-Za-z0-9.-] becomes '_'.
-    expect(put.input.Key).toMatch(/^certificates\/logos\/\d+-my_logo_\.png$/);
+    expect(put[0]).toMatch(/^certificates\/logos\/\d+-my_logo_\.png$/);
 
     expect(result.success).toBe(true);
     if (!result.success) return;
-    expect(result.data.s3Key).toBe(put.input.Key);
+    expect(result.data.s3Key).toBe(put[0]);
     expect(result.data.dataUrl).toBe(DATA_BG);
     // The data url stays the primary `url` — templates embed it so reading it
-    // back never needs s3:GetObject.
+    // back never needs a storage read.
     expect(result.data.url).toBe(DATA_BG);
     expect(result.data.permanentUrl).toContain('?signed');
   });
 
   it('reports AccessDenied as a body rather than throwing', async () => {
-    h.send.mockRejectedValue(Object.assign(new Error('nope'), { name: 'AccessDenied' }));
+    h.put.mockRejectedValue(Object.assign(new Error('nope'), { name: 'AccessDenied' }));
     const result = await uploadCertificateAsset(
       { buffer: PNG_1x1, originalName: 'a.png', mimeType: 'image/png' },
       'certificates/templates',
@@ -287,8 +289,8 @@ describe('uploadCertificateAsset — s3Key is no longer always null', () => {
     expect(result).toEqual({ success: false, message: 'Storage permission denied.', error: 'S3_ACCESS_DENIED' });
   });
 
-  it('rethrows every other S3 error', async () => {
-    h.send.mockRejectedValue(Object.assign(new Error('boom'), { name: 'NetworkingError' }));
+  it('rethrows every other storage error', async () => {
+    h.put.mockRejectedValue(Object.assign(new Error('boom'), { name: 'NetworkingError' }));
     await expect(
       uploadCertificateAsset({ buffer: PNG_1x1, originalName: 'a.png', mimeType: 'image/png' }, 'certificates/logos', 'd'),
     ).rejects.toThrow('boom');

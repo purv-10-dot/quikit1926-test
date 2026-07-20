@@ -94,7 +94,12 @@ export async function deductCredit(
 ): Promise<CreditDeductionResult> {
   const packages = await prisma.lmsCreditPackage.findMany({
     where: { orgId, studentId, status: 'active', remainingCredits: { gt: 0 } },
-    orderBy: [{ expiresAt: 'asc' }, { purchaseDate: 'asc' }],
+    // `nulls: 'first'` is REQUIRED for parity, not a style choice. Mongo sorts
+    // missing values FIRST, so the legacy drained never-expiring packages before
+    // expiring ones (`credits.service.ts:96-103`). Prisma/Postgres put NULLs LAST
+    // by default, which silently inverted FIFO package selection for any student
+    // holding a mix — the opposite package gets consumed.
+    orderBy: [{ expiresAt: { sort: 'asc', nulls: 'first' } }, { purchaseDate: 'asc' }],
   });
   if (packages.length === 0) throw BadRequest('No credits available for this student');
 
@@ -155,7 +160,7 @@ export async function getTotalRemainingCredits(studentId: string): Promise<numbe
 export async function getStudentBalance(orgId: string, studentId: string) {
   const packages = await prisma.lmsCreditPackage.findMany({
     where: { orgId, studentId, status: 'active' },
-    orderBy: { expiresAt: 'asc' },
+    orderBy: { expiresAt: { sort: 'asc', nulls: 'first' } }, // Mongo sorts nulls first — see deductCredit
   });
 
   const totalRemaining = packages.reduce((sum, p) => sum + p.remainingCredits, 0);
@@ -226,6 +231,21 @@ export async function refundCredits(
   const pkg = await prisma.lmsCreditPackage.findFirst({ where: { id: dto.packageId, orgId } });
   if (!pkg) throw NotFound('Credit package not found');
 
+  /**
+   * A refund cannot exceed what was actually used.
+   *
+   * Neither the legacy nor the first port bounded this, so refunding more than
+   * `usedCredits` inflated `remainingCredits` without limit — free credits from
+   * a typo, on a balance real money was paid for. Clamped to the used amount,
+   * which is the most that can legitimately be given back.
+   */
+  if (dto.amount <= 0) throw BadRequest('Refund amount must be greater than zero');
+  if (dto.amount > pkg.usedCredits) {
+    throw BadRequest(
+      `Cannot refund ${dto.amount} credits — only ${pkg.usedCredits} have been used from this package.`,
+    );
+  }
+
   const newUsed = Math.max(0, pkg.usedCredits - dto.amount);
   const newRemaining = pkg.remainingCredits + dto.amount;
   const newStatus = newRemaining > 0 && pkg.status === 'exhausted' ? 'active' : pkg.status;
@@ -251,8 +271,32 @@ export async function refundCredits(
   return { success: true, newBalance: newRemaining };
 }
 
-// ═══════════════ CREDIT PACKAGE DEFINITIONS (TENANT CONFIG) ═══════════════
+// ═══════════════ CREDIT PACKAGE DEFINITIONS (TENANT CATALOGUE) ═══════════════
+/**
+ * Backed by the `LmsCreditPackageDefinition` TABLE, not the `creditConfig` JSON
+ * blob (schema change approved by the product owner, 2026-07-18).
+ *
+ * Every edit used to be a read-modify-write of the whole `creditConfig` object,
+ * so two admins editing packages concurrently silently lost one edit — and the
+ * blob rewrite could clobber a concurrent change to any OTHER creditConfig key
+ * (`expiryMonths`, `lowCreditThreshold`, `zeroCreditPolicy`). Mongo's
+ * `$push`/`$pull` on the subdocument array could not lose a sibling write that
+ * way. Each definition is now an independently-updatable row, so concurrent
+ * edits to different packages cannot collide at all, and an edit to the same
+ * package is a single atomic UPDATE.
+ *
+ * MIGRATION NOTE: any definitions still living in `creditConfig.packages` are
+ * read back as a fallback in `getPackageDefinitions` until they are moved. Writes
+ * only ever go to the table.
+ */
 export async function getPackageDefinitions(orgId: string) {
+  const rows = await prisma.lmsCreditPackageDefinition.findMany({
+    where: { orgId },
+    orderBy: { createdAt: 'asc' },
+  });
+  if (rows.length) return rows;
+
+  // Legacy fallback — tenants whose catalogue has not been migrated off the blob.
   return (await getCreditConfig(orgId)).packages || [];
 }
 
@@ -260,22 +304,16 @@ export async function createPackageDefinition(
   orgId: string,
   dto: { name: string; credits: number; price: number; validityMonths: number; isActive?: boolean },
 ) {
-  const config = await getCreditConfig(orgId);
-  const id = crypto.randomUUID();
-  const newPkg = {
-    id,
-    name: dto.name,
-    credits: dto.credits,
-    price: dto.price,
-    validityMonths: dto.validityMonths,
-    isActive: dto.isActive !== false,
-  };
-  const packages = [...(config.packages || []), newPkg];
-  await prisma.lmsTenant.update({
-    where: { id: orgId },
-    data: { creditConfig: { ...(config as Record<string, unknown>), packages } as Prisma.InputJsonValue },
+  return prisma.lmsCreditPackageDefinition.create({
+    data: {
+      orgId,
+      name: dto.name,
+      credits: dto.credits,
+      price: dto.price,
+      validityMonths: dto.validityMonths,
+      isActive: dto.isActive !== false,
+    },
   });
-  return { id, ...dto, isActive: dto.isActive !== false };
 }
 
 export async function updatePackageDefinition(
@@ -283,31 +321,25 @@ export async function updatePackageDefinition(
   packageId: string,
   dto: { name?: string; credits?: number; price?: number; validityMonths?: number; isActive?: boolean },
 ) {
-  const config = await getCreditConfig(orgId);
-  const packages = (config.packages || []).map((p) => {
-    if ((p as { id?: string }).id !== packageId) return p;
-    const updated = { ...p };
-    if (dto.name !== undefined) updated.name = dto.name;
-    if (dto.credits !== undefined) updated.credits = dto.credits;
-    if (dto.price !== undefined) updated.price = dto.price;
-    if (dto.validityMonths !== undefined) updated.validityMonths = dto.validityMonths;
-    if (dto.isActive !== undefined) updated.isActive = dto.isActive;
-    return updated;
+  // Scoped update — a definition from another tenant cannot be touched, and the
+  // whole change is one atomic statement.
+  const result = await prisma.lmsCreditPackageDefinition.updateMany({
+    where: { id: packageId, orgId },
+    data: {
+      ...(dto.name !== undefined ? { name: dto.name } : {}),
+      ...(dto.credits !== undefined ? { credits: dto.credits } : {}),
+      ...(dto.price !== undefined ? { price: dto.price } : {}),
+      ...(dto.validityMonths !== undefined ? { validityMonths: dto.validityMonths } : {}),
+      ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+    },
   });
-  await prisma.lmsTenant.update({
-    where: { id: orgId },
-    data: { creditConfig: { ...(config as Record<string, unknown>), packages } as Prisma.InputJsonValue },
-  });
+  if (result.count === 0) throw NotFound('Credit package definition not found');
   return { success: true };
 }
 
 export async function deletePackageDefinition(orgId: string, packageId: string) {
-  const config = await getCreditConfig(orgId);
-  const packages = (config.packages || []).filter((p) => (p as { id?: string }).id !== packageId);
-  await prisma.lmsTenant.update({
-    where: { id: orgId },
-    data: { creditConfig: { ...(config as Record<string, unknown>), packages } as Prisma.InputJsonValue },
-  });
+  const result = await prisma.lmsCreditPackageDefinition.deleteMany({ where: { id: packageId, orgId } });
+  if (result.count === 0) throw NotFound('Credit package definition not found');
   return { success: true };
 }
 

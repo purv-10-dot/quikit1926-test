@@ -13,5 +13,5 @@ export const POST = route(async (req) => {
   if (!actor.orgId) throw BadRequest('Tenant ID required');
   const body = await parseBody(req, schema);
   const result = await bulkCreateQuestions(actor.orgId, actor.id, body.questions as Record<string, unknown>[]);
-  return json({ success: true, data: result, count: result.length });
+  return json({ success: true, data: result, count: result.length }, 201);
 });

@@ -12,6 +12,7 @@
 import { Prisma } from '@prisma/client';
 import type { LmsQuizProctoringEventType as QuizProctoringEventType, LmsProctoringSeverity as ProctoringSeverity } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { incrementProctoringFlags } from '@/lib/services/proctoring-flags';
 import { BadRequest, NotFound } from '@/lib/http';
 import type { AuthUser } from '@/lib/auth/context';
 
@@ -404,16 +405,13 @@ export async function logEvent(
     },
   });
 
+  // Atomic — see proctoring-flags.ts. Also fixes the face_camera_error
+  // double-count: that event maps to `totalFlags`, and incrementing the mapped
+  // field AND totalFlags separately made it +2 where Mongo's duplicate-key
+  // $inc object collapsed to +1.
   const flagField = getFlagField(eventType);
   if (flagField) {
-    const flags = (session.proctoringFlags as unknown as ProctoringFlags) || {};
-    flags[flagField] = ((flags[flagField] as number) || 0) + 1;
-    flags.totalFlags = ((flags.totalFlags as number) || 0) + 1;
-    flags.severityLevel = severity;
-    await prisma.lmsQuizProctoringSession.update({
-      where: { id: sessionId },
-      data: { proctoringFlags: flags as unknown as Prisma.InputJsonValue },
-    });
+    await incrementProctoringFlags('quiz_proctoring_sessions', sessionId, flagField, severity);
   }
 
   return { severity: log.severity };
@@ -460,6 +458,21 @@ export async function getAllIncidents(user: AuthUser) {
 type QuizSessionRecord = Prisma.LmsQuizProctoringSessionGetPayload<object>;
 
 async function buildIncidentList(sessions: QuizSessionRecord[], orgId: string, defaultAssessmentId?: string) {
+  // Batch the learner lookups — one findUnique per session meant the
+  // /incidents/all page (take:100) issued up to 100 extra sequential queries
+  // where the legacy's .populate() used one. `_id` is exposed too: the ported
+  // page keys incident cards off `_id`, so without it every card had
+  // key={undefined} and selection state jumped rows on refetch.
+  const learnerMap = await (async () => {
+    const ids = [...new Set(sessions.map((x) => x.learnerId).filter(Boolean))];
+    if (!ids.length) return new Map<string, Record<string, unknown>>();
+    const users = await prisma.lmsUser.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, firstName: true, lastName: true, email: true, employeeId: true },
+    });
+    return new Map(users.map((u) => [u.id, { _id: u.id, ...u }]));
+  })();
+
   const incidents: unknown[] = [];
   for (const session of sessions) {
     let incident = await prisma.lmsQuizIncidentReport.findFirst({ where: { sessionId: session.id, orgId } });
@@ -482,12 +495,10 @@ async function buildIncidentList(sessions: QuizSessionRecord[], orgId: string, d
       });
     }
 
-    const learner = await prisma.lmsUser.findUnique({
-      where: { id: session.learnerId },
-      select: { id: true, firstName: true, lastName: true, email: true, employeeId: true },
-    });
+    const learner = learnerMap.get(session.learnerId) ?? null;
 
     incidents.push({
+      _id: incident.id,
       ...incident,
       learner,
       sessionStatus: session.status,
@@ -593,7 +604,29 @@ export async function allowRetake(user: AuthUser, sessionId: string) {
   const session = await prisma.lmsQuizProctoringSession.findFirst({ where: { id: sessionId, orgId } });
   if (!session) throw NotFound('Session not found');
   if (session.status !== 'voided') throw BadRequest('Only voided sessions can be allowed for retake');
-  await prisma.lmsQuizProctoringSession.delete({ where: { id: sessionId } });
+
+  /**
+   * Preserve the forensic trail — flip the status instead of deleting.
+   *
+   * The legacy `deleteOne` (`quiz-proctoring.service.ts:678`) removed only the
+   * session document; Mongo has no cascades, so the proctoring logs and the
+   * reviewed incident (carrying the admin's own disposition and remarks)
+   * survived for compliance export. Under Postgres both relations are
+   * `onDelete: Cascade` (`schema.prisma:17972,17992`), so the identical call
+   * destroyed the entire record of *why* the session was voided — at the exact
+   * moment an admin overrides that decision, which is when the audit matters
+   * most.
+   *
+   * `startSession` already resets a `submitted`/`auto_submitted` session in
+   * place for a fresh attempt (the retake branch), so marking it
+   * `auto_submitted` grants the retake with identical downstream behaviour and
+   * keeps every log and incident attached.
+   */
+  await prisma.lmsQuizProctoringSession.update({
+    where: { id: sessionId },
+    data: { status: 'auto_submitted', endedAt: session.endedAt ?? new Date() },
+  });
+
   return { message: 'Learner can now retake the quiz' };
 }
 

@@ -70,7 +70,7 @@ async function assertUsersInTenant(
 }
 
 /** Shape a batch row + child tables into the legacy populated response. */
-async function shapeBatch(batchId: string, opts: { fullTeacher?: boolean; fullStudents?: boolean; subs?: boolean } = {}) {
+async function shapeBatch(batchId: string, opts: { fullTeacher?: boolean; fullStudents?: boolean; subs?: boolean; rawStudentIds?: boolean } = {}) {
   const batch = await prisma.lmsBatch.findUnique({
     where: { id: batchId },
     include: {
@@ -83,11 +83,71 @@ async function shapeBatch(batchId: string, opts: { fullTeacher?: boolean; fullSt
   return enrichBatch(batch, opts);
 }
 
+type EnrichableBatch = Prisma.LmsBatchGetPayload<{
+  include: { schedule: true; students: { select: { studentId: true } }; substituteTeachers: { select: { teacherId: true } } };
+}>;
+
+/**
+ * List-friendly enrichment: resolves EVERY batch's teacher and students in a
+ * fixed 2 queries instead of 2 per batch.
+ *
+ * `enrichBatch` issues a `findUnique` + `findMany` each time, so mapping it over
+ * a list made `findAll` 2×N queries — 200 batches meant 400 concurrent user
+ * queries per request, exhausting the connection pool on tenants that loaded
+ * fine before. The legacy's two `.populate()` calls resolved the whole result
+ * set in two.
+ */
+async function enrichBatches(
+  batches: EnrichableBatch[],
+  opts: { fullTeacher?: boolean; fullStudents?: boolean; subs?: boolean; rawStudentIds?: boolean } = {},
+) {
+  if (!batches.length) return [];
+
+  const teacherSelect: Prisma.LmsUserSelect = opts.fullTeacher
+    ? { ...USER_NAME, subjects: true, ratePerClass: true }
+    : USER_NAME;
+  const studentSelect: Prisma.LmsUserSelect = opts.fullStudents
+    ? { ...USER_NAME, grade: true, section: true, studentId: true }
+    : { ...USER_NAME, grade: true };
+
+  const teacherIds = [...new Set(batches.map((b) => b.teacherId).filter(Boolean))];
+  const studentIds = opts.rawStudentIds
+    ? []
+    : [...new Set(batches.flatMap((b) => b.students.map((x) => x.studentId)))];
+  const subIds = opts.subs
+    ? [...new Set(batches.flatMap((b) => b.substituteTeachers.map((x) => x.teacherId)))]
+    : [];
+
+  const [teachers, students, subs] = await Promise.all([
+    teacherIds.length ? prisma.lmsUser.findMany({ where: { id: { in: teacherIds } }, select: teacherSelect }) : [],
+    studentIds.length ? prisma.lmsUser.findMany({ where: { id: { in: studentIds } }, select: studentSelect }) : [],
+    subIds.length ? prisma.lmsUser.findMany({ where: { id: { in: subIds } }, select: USER_NAME }) : [],
+  ]);
+
+  const tMap = new Map((teachers as { id: string }[]).map((u) => [u.id, u]));
+  const sMap = new Map((students as { id: string }[]).map((u) => [u.id, u]));
+  const subMap = new Map((subs as { id: string }[]).map((u) => [u.id, u]));
+
+  return batches.map((batch) => {
+    const bStudentIds = batch.students.map((x) => x.studentId);
+    const bSubIds = batch.substituteTeachers.map((x) => x.teacherId);
+    const out: Record<string, unknown> = {
+      ...batch,
+      teacherId: tMap.get(batch.teacherId) ?? batch.teacherId,
+      studentIds: opts.rawStudentIds ? bStudentIds : bStudentIds.map((id) => sMap.get(id)).filter(Boolean),
+    };
+    delete out.students;
+    delete out.substituteTeachers;
+    out.substituteTeacherIds = opts.subs ? bSubIds.map((id) => subMap.get(id)).filter(Boolean) : bSubIds;
+    return out;
+  });
+}
+
 async function enrichBatch(
   batch: Prisma.LmsBatchGetPayload<{
     include: { schedule: true; students: { select: { studentId: true } }; substituteTeachers: { select: { teacherId: true } } };
   }>,
-  opts: { fullTeacher?: boolean; fullStudents?: boolean; subs?: boolean } = {},
+  opts: { fullTeacher?: boolean; fullStudents?: boolean; subs?: boolean; rawStudentIds?: boolean } = {},
 ) {
   const studentIds = batch.students.map((s) => s.studentId);
   const substituteTeacherIds = batch.substituteTeachers.map((t) => t.teacherId);
@@ -100,7 +160,7 @@ async function enrichBatch(
     : { ...USER_NAME, grade: true };
 
   const teacher = await prisma.lmsUser.findUnique({ where: { id: batch.teacherId }, select: teacherSelect });
-  const students = studentIds.length
+  const students = studentIds.length && !opts.rawStudentIds
     ? await prisma.lmsUser.findMany({ where: { id: { in: studentIds } }, select: studentSelect })
     : [];
   const studentMap = new Map(students.map((s) => [s.id, s]));
@@ -108,7 +168,7 @@ async function enrichBatch(
   const out: Record<string, unknown> = {
     ...batch,
     teacherId: teacher ?? batch.teacherId,
-    studentIds: studentIds.map((id) => studentMap.get(id)).filter(Boolean),
+    studentIds: opts.rawStudentIds ? studentIds : studentIds.map((id) => studentMap.get(id)).filter(Boolean),
   };
   delete (out as Record<string, unknown>).students;
   delete (out as Record<string, unknown>).substituteTeachers;
@@ -234,7 +294,7 @@ export async function findAll(
       substituteTeachers: { select: { teacherId: true } },
     },
   });
-  return Promise.all(batches.map((b) => enrichBatch(b)));
+  return enrichBatches(batches);
 }
 
 // ═══════════════ FIND ONE BATCH ═══════════════
@@ -290,7 +350,19 @@ export async function findByStudent(orgId: string, studentId: string) {
       substituteTeachers: { select: { teacherId: true } },
     },
   });
-  return Promise.all(batches.map((b) => enrichBatch(b)));
+
+  /**
+   * PRIVACY: `studentIds` stays a RAW ID ARRAY here.
+   *
+   * The legacy populated only `teacherId` on this route
+   * (`batches.service.ts:216-224`); `studentIds` was left as ids. Routing it
+   * through `enrichBatch` expanded it, so every LEARNER hitting
+   * `GET /api/batches/student/my-batches` received the full name, email and
+   * grade of **every classmate** — data students were never shown before. It
+   * also silently broke `batch.studentIds.includes(myId)`, since the array now
+   * held objects.
+   */
+  return enrichBatches(batches, { rawStudentIds: true });
 }
 
 // ═══════════════ UPDATE BATCH ═══════════════
@@ -434,7 +506,13 @@ export async function removeStudent(orgId: string, batchId: string, studentId: s
 export async function archive(orgId: string, batchId: string) {
   const batch = await prisma.lmsBatch.findUnique({ where: { id: batchId } });
   if (!batch || batch.orgId !== orgId) throw NotFound('Batch not found');
-  return prisma.lmsBatch.update({ where: { id: batchId }, data: { status: 'archived' } });
+  await prisma.lmsBatch.update({ where: { id: batchId }, data: { status: 'archived' } });
+  // Shaped, like the sibling `unarchive`. A bare `update()` returns scalars
+  // only, so `studentIds` / `substituteTeacherIds` / `schedule` were ABSENT from
+  // the response — any UI re-rendering off it hit
+  // `Cannot read properties of undefined`. The legacy's findByIdAndUpdate
+  // always returned the full document.
+  return shapeBatch(batchId);
 }
 
 // ═══════════════ DELETE BATCH (draft/archived only) ═══════════════
@@ -446,6 +524,42 @@ export async function remove(orgId: string, batchId: string): Promise<void> {
       'Active batches cannot be deleted directly. Please archive the batch first, then delete it.',
     );
   }
+
+  /**
+   * REFUSE to delete a batch that still holds academic history.
+   *
+   * Mongo has no referential actions, so `findByIdAndDelete`
+   * (`batches.service.ts:426`) removed only the batch document — scheduled
+   * classes, homework, grades and attendance survived as orphans and stayed
+   * queryable. Under Postgres, `LmsBatch` has SEVEN `onDelete: Cascade`
+   * back-relations, so the identical call now irreversibly wipes every grade,
+   * attendance record, homework submission and scheduled class for that batch.
+   *
+   * Permanent delete is only allowed on draft/archived batches, and ARCHIVED
+   * batches are precisely the ones with a full term of history — so this was the
+   * common case, not the edge case. A metadata cleanup must never destroy a
+   * term's academic record; the admin is told what is blocking instead.
+   */
+  const [classes, homework, grades, attendance] = await Promise.all([
+    prisma.lmsScheduledClass.count({ where: { batchId } }),
+    prisma.lmsHomework.count({ where: { batchId } }),
+    prisma.lmsGradeRecord.count({ where: { batchId } }),
+    prisma.lmsAttendance.count({ where: { batchId } }),
+  ]);
+  const blocking = [
+    classes && `${classes} scheduled class(es)`,
+    homework && `${homework} homework assignment(s)`,
+    grades && `${grades} grade record(s)`,
+    attendance && `${attendance} attendance record(s)`,
+  ].filter(Boolean) as string[];
+
+  if (blocking.length) {
+    throw BadRequest(
+      `This batch cannot be permanently deleted because it still has ${blocking.join(', ')}. ` +
+        'Deleting it would erase that academic history. Keep the batch archived instead.',
+    );
+  }
+
   await prisma.lmsBatch.delete({ where: { id: batchId } });
 }
 

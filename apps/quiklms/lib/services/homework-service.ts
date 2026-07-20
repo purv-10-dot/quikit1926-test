@@ -1,13 +1,20 @@
 /**
  * Homework service — ported from NestJS HomeworkService (Mongoose → Prisma).
  * Tenant scoping via explicit orgId arguments. Submission rubric scores map to
- * the HomeworkRubricScore child table. The legacy S3 presigning of attachment
- * URLs is an external-infra enrichment; URLs are returned as stored (passthrough)
- * to preserve the response shape without inventing presign behavior.
+ * the HomeworkRubricScore child table.
+ *
+ * S3 read-presigning is LIVE. Attachments (`attachmentUrls`) and graded feedback
+ * files (`correctedFileUrl`) are stored as unsigned S3 URLs, which 403 against
+ * the private bucket. The legacy presigned them on every read path
+ * (`homework.service.ts:41-74`); the first port returned them raw, so every
+ * homework attachment, student submission, and teacher-corrected file failed to
+ * open. `enrichHomework` / `enrichSubmission` presign on the way out, matching
+ * the peer `courses-service` fix.
  */
 import type { Prisma, LmsHomeworkStatus as HomeworkStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { BadRequest, NotFound } from '@/lib/http';
+import { presignFromUrlOrKey } from '@/lib/s3';
 
 type ResourceLink = { url: string; label?: string };
 type RubricScore = { criterion: string; maxScore: number; score: number; comment?: string };
@@ -69,6 +76,27 @@ function normalizeUrls(urls: string[]): string[] {
   return urls.map((u) => stripPresignedParams(u));
 }
 
+/** Presign a list of stored S3 urls; never throws (presignFromUrlOrKey passes through on failure). */
+async function presignUrls(urls: unknown): Promise<string[]> {
+  if (!Array.isArray(urls) || urls.length === 0) return (urls as string[]) ?? [];
+  return Promise.all(urls.map(async (u) => (typeof u === 'string' ? (await presignFromUrlOrKey(u)) ?? u : u)));
+}
+
+/** Presign a homework record's `attachmentUrls` in place — port of `enrichHomework`. */
+async function enrichHomework<T extends Record<string, unknown>>(hw: T): Promise<T> {
+  if ('attachmentUrls' in hw) (hw as Record<string, unknown>).attachmentUrls = await presignUrls(hw.attachmentUrls);
+  return hw;
+}
+
+/** Presign a submission's `attachmentUrls` + `correctedFileUrl` — port of `enrichSubmission`. */
+async function enrichSubmission<T extends Record<string, unknown>>(sub: T): Promise<T> {
+  if ('attachmentUrls' in sub) (sub as Record<string, unknown>).attachmentUrls = await presignUrls(sub.attachmentUrls);
+  if (typeof sub.correctedFileUrl === 'string' && sub.correctedFileUrl) {
+    (sub as Record<string, unknown>).correctedFileUrl = (await presignFromUrlOrKey(sub.correctedFileUrl)) ?? sub.correctedFileUrl;
+  }
+  return sub;
+}
+
 async function batchLite(batchId: string, withStudents = false) {
   if (withStudents) {
     const batch = await prisma.lmsBatch.findUnique({
@@ -120,7 +148,7 @@ export async function getTeacherHomework(
 
   const results = await prisma.lmsHomework.findMany({ where, orderBy: { createdAt: 'desc' } });
   return Promise.all(
-    results.map(async (hw) => ({ ...hw, batchId: (await batchLite(hw.batchId)) ?? hw.batchId })),
+    results.map(async (hw) => enrichHomework({ ...hw, batchId: (await batchLite(hw.batchId)) ?? hw.batchId })),
   );
 }
 
@@ -132,7 +160,7 @@ export async function findOne(orgId: string, homeworkId: string) {
     batchLite(homework.batchId, true),
     prisma.lmsUser.findUnique({ where: { id: homework.teacherId }, select: { id: true, firstName: true, lastName: true } }),
   ]);
-  return { ...homework, batchId: batch ?? homework.batchId, teacherId: teacher ?? homework.teacherId };
+  return enrichHomework({ ...homework, batchId: batch ?? homework.batchId, teacherId: teacher ?? homework.teacherId });
 }
 
 // ═══════════════ UPDATE HOMEWORK ═══════════════
@@ -152,13 +180,35 @@ export async function update(orgId: string, homeworkId: string, dto: UpdateHomew
   if (dto.attachmentUrls) data.attachmentUrls = normalizeUrls(dto.attachmentUrls);
 
   const updated = await prisma.lmsHomework.update({ where: { id: homeworkId }, data });
-  return { ...updated, batchId: (await batchLite(updated.batchId)) ?? updated.batchId };
+  return enrichHomework({ ...updated, batchId: (await batchLite(updated.batchId)) ?? updated.batchId });
 }
 
 // ═══════════════ DELETE HOMEWORK ═══════════════
 export async function remove(orgId: string, homeworkId: string): Promise<void> {
   const homework = await prisma.lmsHomework.findUnique({ where: { id: homeworkId } });
   if (!homework || homework.orgId !== orgId) throw NotFound('Homework not found');
+
+  /**
+   * REFUSE to delete homework that students have already submitted to.
+   *
+   * Mongo had no referential actions, so `findOneAndDelete`
+   * (`homework.service.ts:168-174`) removed only the homework document —
+   * submissions, scores, feedback and corrected files all survived. Under
+   * Postgres `LmsHomeworkSubmission.homework` is `onDelete: Cascade`
+   * (`schema.prisma:17399`), with rubric scores cascading off that, so the same
+   * call irreversibly wipes every student's submission, grade, feedback and
+   * rubric for that assignment — and this endpoint is open to any TEACHER.
+   *
+   * Same guard the batch delete already carries.
+   */
+  const submissions = await prisma.lmsHomeworkSubmission.count({ where: { homeworkId } });
+  if (submissions > 0) {
+    throw BadRequest(
+      `This homework cannot be deleted because it has ${submissions} student submission(s). ` +
+        'Deleting it would erase their work, grades and feedback. Close the homework instead.',
+    );
+  }
+
   await prisma.lmsHomework.delete({ where: { id: homeworkId } });
 }
 
@@ -206,7 +256,7 @@ export async function submitHomework(orgId: string, homeworkId: string, studentI
     },
     include: { rubricScores: true },
   });
-  return created;
+  return enrichSubmission(created);
 }
 
 // ═══════════════ GET SUBMISSIONS FOR HOMEWORK ═══════════════
@@ -224,7 +274,7 @@ export async function getSubmissions(orgId: string, homeworkId: string) {
       })
     : [];
   const studentMap = new Map(students.map((s) => [s.id, s]));
-  return subs.map((s) => ({ ...s, studentId: studentMap.get(s.studentId) ?? s.studentId }));
+  return Promise.all(subs.map((s) => enrichSubmission({ ...s, studentId: studentMap.get(s.studentId) ?? s.studentId })));
 }
 
 // ═══════════════ GRADE SUBMISSION ═══════════════
@@ -272,7 +322,7 @@ export async function gradeSubmission(orgId: string, submissionId: string, grade
     where: { id: updated.studentId },
     select: { id: true, firstName: true, lastName: true },
   });
-  return { ...updated, studentId: student ?? updated.studentId };
+  return enrichSubmission({ ...updated, studentId: student ?? updated.studentId });
 }
 
 // ═══════════════ GET HOMEWORK STATS ═══════════════
@@ -349,11 +399,19 @@ export async function getStudentSubmissions(orgId: string, studentId: string, fi
       })
     : [];
 
-  const enrichedSubmissions = submissions.map((s) => ({
-    ...s,
-    homeworkId: homeworkMap.get(s.homeworkId) ?? s.homeworkId,
-    gradedBy: s.gradedBy ? graderMap.get(s.gradedBy) ?? s.gradedBy : s.gradedBy,
-  }));
+  const enrichedSubmissions = await Promise.all(
+    submissions.map(async (s) => {
+      // The nested homework carries its own attachmentUrls (the assignment
+      // files); presign those too, not just the submission's.
+      const hw = homeworkMap.get(s.homeworkId);
+      const homeworkId = hw ? await enrichHomework({ ...(hw as Record<string, unknown>) }) : s.homeworkId;
+      return enrichSubmission({
+        ...s,
+        homeworkId,
+        gradedBy: s.gradedBy ? graderMap.get(s.gradedBy) ?? s.gradedBy : s.gradedBy,
+      });
+    }),
+  );
 
   const teacherIds = Array.from(new Set(pendingHomeworkRaw.map((h) => h.teacherId)));
   const teachers = teacherIds.length
@@ -364,11 +422,15 @@ export async function getStudentSubmissions(orgId: string, studentId: string, fi
   for (const bId of Array.from(new Set(pendingHomeworkRaw.map((h) => h.batchId)))) {
     pendingBatchMap.set(bId, await batchLite(bId));
   }
-  const enrichedPending = pendingHomeworkRaw.map((hw) => ({
-    ...hw,
-    batchId: pendingBatchMap.get(hw.batchId) ?? hw.batchId,
-    teacherId: teacherMap.get(hw.teacherId) ?? hw.teacherId,
-  }));
+  const enrichedPending = await Promise.all(
+    pendingHomeworkRaw.map((hw) =>
+      enrichHomework({
+        ...hw,
+        batchId: pendingBatchMap.get(hw.batchId) ?? hw.batchId,
+        teacherId: teacherMap.get(hw.teacherId) ?? hw.teacherId,
+      }),
+    ),
+  );
 
   return { submissions: enrichedSubmissions, pending: enrichedPending };
 }

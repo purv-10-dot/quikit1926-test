@@ -12,11 +12,12 @@
  * Mongo populate() of scheduledClass / host / createdBy / attendee user is
  * reproduced with manual lookups (actor refs are scalar Strings).
  */
-import { randomUUID } from 'crypto';
-import { createHmac } from 'crypto';
+import { randomUUID, createHmac, timingSafeEqual } from 'crypto';
 import type { Prisma, LmsMeetingProvider as MeetingProvider, LmsMeetingStatus as MeetingStatus, LmsMeetingAttendanceRole as MeetingAttendanceRole, LmsDeviceType as DeviceType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { NotFound, BadRequest } from '@/lib/http';
+import { resolveZoomProvider } from '@/lib/integrations/zoom-provider';
+import { resolveGoogleMeetProvider } from '@/lib/integrations/google-meet-provider';
 
 export interface CreateMeetingDto {
   scheduledClassId?: string;
@@ -76,12 +77,24 @@ export async function createMeeting(orgId: string, dto: CreateMeetingDto, create
   const baseTitle = dto.title || 'Quick Skill Class';
   const title = baseTitle;
 
-  // Tenant video config for auto-record
+  // Zoom shows the room title, so the legacy prefixed the teacher's name:
+  // "Teacher Name — Class". Only Zoom gets this; `title` stays clean everywhere
+  // else (`meetings.service.ts:70-75`).
+  const zoomTopic = teacherName ? `${teacherName} — ${baseTitle}` : baseTitle;
+
+  const duration = Math.ceil(
+    (new Date(dto.scheduledEndTime).getTime() - new Date(dto.scheduledStartTime).getTime()) / 60000,
+  );
+
+  // Tenant video config: auto-record AND tenant-level Zoom credentials.
   let autoRecord = false;
+  let tenantZoom: { accountId?: string; clientId?: string; clientSecret?: string } | null = null;
   try {
     const tenant = await prisma.lmsTenant.findUnique({ where: { id: orgId } });
     const vc = (tenant as Record<string, any> | null)?.videoConfig;
+    // The frontend saves under meetingSettings, not settings — both are read.
     if (vc?.meetingSettings?.autoRecord || vc?.settings?.autoRecord) autoRecord = true;
+    tenantZoom = vc?.zoom ?? null;
   } catch {
     /* ignore */
   }
@@ -94,10 +107,34 @@ export async function createMeeting(orgId: string, dto: CreateMeetingDto, create
   } else if (provider === 'jitsi') {
     meetingData = createJitsiMeeting(title);
   } else if (provider === 'zoom') {
-    // External Zoom API + credentials are owned by the worker (Phase 4).
-    throw BadRequest('Zoom is not configured. Please add Zoom credentials in Video Settings.');
+    // Tenant Video Settings credentials take priority over the global env —
+    // legacy precedence (`meetings.service.ts:93-105`).
+    const zoom = resolveZoomProvider(tenantZoom);
+    if (!zoom) throw BadRequest('Zoom is not configured. Please add Zoom credentials in Video Settings.');
+    try {
+      meetingData = await zoom.createMeeting({
+        topic: zoomTopic,
+        startTime: new Date(dto.scheduledStartTime),
+        duration: duration || 60,
+        settings: autoRecord ? { auto_recording: 'cloud' } : undefined,
+      });
+    } catch (err) {
+      // A provider outage is a 400 with Zoom's own reason attached, as in the
+      // legacy — not an opaque 500.
+      throw BadRequest(`Zoom error: ${err instanceof Error ? err.message : String(err)}`);
+    }
   } else if (provider === 'google_meet') {
-    throw BadRequest('Google Meet is not configured. Please add Google credentials.');
+    const meet = resolveGoogleMeetProvider();
+    if (!meet) throw BadRequest('Google Meet is not configured. Please add Google credentials.');
+    try {
+      meetingData = await meet.createMeeting({
+        topic: title,
+        startTime: new Date(dto.scheduledStartTime),
+        duration: duration || 60,
+      });
+    } catch (err) {
+      throw BadRequest(`Google Meet error: ${err instanceof Error ? err.message : String(err)}`);
+    }
   } else {
     throw BadRequest(`Unknown provider "${provider}". Supported: jitsi, zoom, google_meet, manual.`);
   }
@@ -265,6 +302,22 @@ export async function getAllRecordings(orgId: string, filters?: { status?: strin
 }
 
 // ═══════════════ JOIN MEETING (LOG ATTENDANCE) ═══════════════
+/**
+ * Coerce a client-supplied deviceType to the `LmsDeviceType` enum.
+ *
+ * Mongo stored whatever string arrived; Postgres has an enum, so the port's bare
+ * `deviceType as DeviceType` cast made any unrecognised value — an old client, a
+ * typo, "iPhone" — **500 the join** (GAP_REPORT §3.2 meetings). Losing the
+ * analytics label for one attendee must never cost them the class, so an unknown
+ * value degrades to 'unknown' instead.
+ */
+function normalizeDeviceType(value?: string): DeviceType {
+  const v = (value || '').trim().toLowerCase();
+  return (['desktop', 'mobile', 'tablet', 'unknown'] as const).includes(v as DeviceType)
+    ? (v as DeviceType)
+    : 'unknown';
+}
+
 export async function joinMeeting(orgId: string, meetingId: string, userId: string, role: string, deviceType?: string) {
   const meeting = await prisma.lmsMeeting.findFirst({ where: { id: meetingId, orgId } });
   if (!meeting) throw NotFound('Meeting not found');
@@ -281,7 +334,7 @@ export async function joinMeeting(orgId: string, meetingId: string, userId: stri
       userId,
       role: (isStaff(role) ? 'teacher' : 'student') as MeetingAttendanceRole,
       joinedAt: now,
-      deviceType: (deviceType as DeviceType) || 'unknown',
+      deviceType: normalizeDeviceType(deviceType),
       joinLeaveHistory: [{ action: 'join', timestamp: now.toISOString() }],
     },
   });
@@ -296,8 +349,20 @@ export async function joinMeeting(orgId: string, meetingId: string, userId: stri
 }
 
 // ═══════════════ LEAVE MEETING ═══════════════
-export async function leaveMeeting(meetingId: string, userId: string) {
+/**
+ * Record a participant leaving.
+ *
+ * `orgId` is REQUIRED and enforced (the legacy scoped nothing here, and the port
+ * reproduced that). Without it, `participantCount` on any tenant's meeting could
+ * be decremented by id alone. Pass null only from the internal webhook path,
+ * where the meeting has already been resolved and the org is implicit.
+ */
+export async function leaveMeeting(meetingId: string, userId: string, orgId?: string | null) {
   const now = new Date();
+  if (orgId) {
+    const meeting = await prisma.lmsMeeting.findFirst({ where: { id: meetingId, orgId }, select: { id: true } });
+    if (!meeting) throw NotFound('Meeting not found');
+  }
   const attendance = await prisma.lmsMeetingAttendance.findFirst({ where: { meetingId, userId, leftAt: null } });
   if (!attendance) return null;
 
@@ -341,6 +406,50 @@ export function verifyZoomUrlValidation(plainToken: string) {
     .update(plainToken || '')
     .digest('hex');
   return { plainToken, encryptedToken: hashForValidate };
+}
+
+/** Reject replayed events older than this (Zoom's own guidance). */
+const ZOOM_WEBHOOK_MAX_SKEW_MS = 5 * 60_000;
+
+/**
+ * Verify a Zoom webhook's `x-zm-signature` — BUILT, not ported. The NestJS
+ * original never verified anything: it took an `authHeader` param it did not
+ * check, so the endpoint accepted any POST from anyone (GAP_REPORT §3.2 meetings).
+ *
+ * That is not a theoretical hole. `handleZoomWebhook` looks meetings up by
+ * `externalMeetingId` with **no orgId**, so a forged `meeting.ended` or
+ * `recording.completed` could end — or attach arbitrary recording URLs to — ANY
+ * tenant's meeting. The migration was the moment to fix it.
+ *
+ * Zoom's documented scheme: `HMAC-SHA256(secret, "v0:{timestamp}:{rawBody}")`,
+ * compared against the `x-zm-signature` header as `v0={hash}`.
+ *
+ * FAILS CLOSED. With no `ZOOM_WEBHOOK_SECRET_TOKEN` configured, every event is
+ * rejected rather than waved through — an unverifiable webhook that mutates
+ * meetings across tenants is worse than one that is switched off.
+ */
+export function verifyZoomWebhookSignature(
+  rawBody: string,
+  signature: string | null,
+  timestamp: string | null,
+  now: number = Date.now(),
+): boolean {
+  const secret = process.env.ZOOM_WEBHOOK_SECRET_TOKEN;
+  if (!secret || !signature || !timestamp) return false;
+
+  // Replay window.
+  const ts = Number(timestamp);
+  if (!Number.isFinite(ts)) return false;
+  // Zoom sends epoch milliseconds.
+  if (Math.abs(now - ts) > ZOOM_WEBHOOK_MAX_SKEW_MS) return false;
+
+  const expected = `v0=${createHmac('sha256', secret).update(`v0:${timestamp}:${rawBody}`).digest('hex')}`;
+
+  // Constant-time compare — a length-sensitive `===` leaks the signature byte by byte.
+  const a = Buffer.from(expected);
+  const b = Buffer.from(signature);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
 }
 
 export async function handleZoomWebhook(event: string, payload: Record<string, any>) {
@@ -395,7 +504,10 @@ async function handleWebhookParticipantJoin(externalMeetingId: string, email: st
   try {
     const meeting = await prisma.lmsMeeting.findFirst({ where: { externalMeetingId } });
     if (!meeting) return;
-    const user = await prisma.lmsUser.findFirst({ where: { email } });
+    // Scoped to the MEETING's org. A bare `{ email }` lookup is global, so the
+    // same address existing in two tenants would attach this attendance to
+    // whichever row Postgres returned first — the wrong tenant's user.
+    const user = await prisma.lmsUser.findFirst({ where: { email, orgId: meeting.orgId } });
     if (!user) return;
 
     const existing = await prisma.lmsMeetingAttendance.findFirst({ where: { meetingId: meeting.id, userId: user.id, leftAt: null } });
@@ -421,7 +533,10 @@ async function handleWebhookParticipantLeave(externalMeetingId: string, email: s
   try {
     const meeting = await prisma.lmsMeeting.findFirst({ where: { externalMeetingId } });
     if (!meeting) return;
-    const user = await prisma.lmsUser.findFirst({ where: { email } });
+    // Scoped to the MEETING's org. A bare `{ email }` lookup is global, so the
+    // same address existing in two tenants would attach this attendance to
+    // whichever row Postgres returned first — the wrong tenant's user.
+    const user = await prisma.lmsUser.findFirst({ where: { email, orgId: meeting.orgId } });
     if (!user) return;
     await leaveMeeting(meeting.id, user.id);
   } catch {

@@ -64,10 +64,21 @@ export const POST = route(async (req) => {
         data: {
           id: identity.userId,
           reused: identity.reused,
-          // Plaintext temp password for the admin to relay (present only when a
-          // fresh platform password was seeded). The user changes it on first
-          // login via central sign-in (mustChangePassword).
-          tempPassword: identity.tempPassword ?? undefined,
+          /**
+           * The plaintext temp password is NOT returned.
+           *
+           * `createCentralIdentity` already mails it to the new user in the
+           * invitation — that is the designed delivery channel. Echoing a live
+           * credential in an API response body additionally lands it in server
+           * logs, browser devtools/history, and any proxy or monitoring in
+           * between, for no gain: nothing in this app reads it (the admin UI
+           * generates and sends its own password, and the email template gets
+           * the value directly from the identity service).
+           *
+           * `credentialsEmailed` tells the caller a fresh password was seeded,
+           * so the UI can say "check your email" without holding the secret.
+           */
+          credentialsEmailed: identity.tempPassword != null,
         },
       },
       201,

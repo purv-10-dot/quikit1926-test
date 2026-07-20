@@ -47,15 +47,24 @@ export async function updateAvailableSlots(
   const teacher = await prisma.lmsUser.findFirst({ where: { id: teacherId, orgId, role: 'TEACHER' } });
   if (!teacher) throw NotFound('Teacher not found');
 
-  await prisma.lmsUserAvailabilitySlot.deleteMany({ where: { userId: teacherId } });
-  if (slots?.length) {
-    await prisma.lmsUserAvailabilitySlot.createMany({
-      data: slots.map((s) => ({ userId: teacherId, dayOfWeek: s.dayOfWeek, startTime: s.startTime, endTime: s.endTime })),
-    });
-  }
-  if (maxSlotsPerWeek !== undefined) {
-    await prisma.lmsUser.update({ where: { id: teacherId }, data: { maxSlotsPerWeek } });
-  }
+  // ATOMIC. The legacy replaced the embedded array in one `teacher.save()`
+  // (`teacher-availability.service.ts:31-33`), so the schedule was never
+  // partially written. The first port ran deleteMany + createMany + update as
+  // three separate statements: a failure after the delete wiped the teacher's
+  // entire availability with no replacement (next read: `availabilityConfigured:
+  // false`, `availableSlots: []`), and a concurrent read landing mid-operation
+  // saw an empty schedule. One transaction restores all-or-nothing.
+  await prisma.$transaction(async (tx) => {
+    await tx.lmsUserAvailabilitySlot.deleteMany({ where: { userId: teacherId } });
+    if (slots?.length) {
+      await tx.lmsUserAvailabilitySlot.createMany({
+        data: slots.map((s) => ({ userId: teacherId, dayOfWeek: s.dayOfWeek, startTime: s.startTime, endTime: s.endTime })),
+      });
+    }
+    if (maxSlotsPerWeek !== undefined) {
+      await tx.lmsUser.update({ where: { id: teacherId }, data: { maxSlotsPerWeek } });
+    }
+  });
 
   return prisma.lmsUser.findUnique({ where: { id: teacherId }, include: { availableSlots: true } });
 }

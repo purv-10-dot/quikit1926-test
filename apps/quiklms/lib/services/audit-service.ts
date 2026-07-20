@@ -5,6 +5,7 @@
  * modules[].subModules[].resources[].fileSize) — computed in JS after fetching the
  * blobs, since the legacy Mongo $unwind aggregation has no direct Prisma equivalent.
  */
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { sendEmail } from '@/lib/email';
 
@@ -232,7 +233,32 @@ export async function sendUpgradeInvoice(orgId: string) {
   const html = generateUpgradeInvoiceHtml(tenant, tenantStorage);
 
   try {
-    await sendEmail({ to: billingEmail, subject, html });
+    const result = await sendEmail({ to: billingEmail, subject, html });
+
+    // `null` = no mail transport configured, so nothing was sent. The legacy
+    // branched on exactly this (`audit.service.ts:396-422`) and recorded a
+    // FAILURE. Without this branch the super admin is told the invoice went out,
+    // and the activity log asserts `sent` forever, while the tenant received
+    // nothing — unrecoverable after the fact.
+    if (!result) {
+      const message = 'Email service not configured (SMTP credentials missing)';
+      await prisma.lmsActivityLog.create({
+        data: {
+          type: 'user_action',
+          message: `Failed to send upgrade invoice email to ${tenant.orgName} (${billingEmail})`,
+          orgId,
+          metadata: {
+            email: billingEmail,
+            storagePercentage: tenantStorage.percentage,
+            emailStatus: 'failed',
+            error: message,
+            failedAt: new Date().toISOString(),
+          },
+          timestamp: new Date(),
+        },
+      });
+      return { success: false, error: message, email: billingEmail, tenantName: tenant.orgName };
+    }
 
     await prisma.lmsActivityLog.create({
       data: {
@@ -243,13 +269,16 @@ export async function sendUpgradeInvoice(orgId: string) {
           email: billingEmail,
           storagePercentage: tenantStorage.percentage,
           emailStatus: 'sent',
+          // Captured so support can correlate a complaint with the provider's
+          // send record — `getEmailDeliveryStatus` reads it back.
+          messageId: result.messageId,
           sentAt: new Date().toISOString(),
         },
         timestamp: new Date(),
       },
     });
 
-    return { success: true, email: billingEmail, tenantName: tenant.orgName };
+    return { success: true, email: billingEmail, tenantName: tenant.orgName, messageId: result.messageId };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await prisma.lmsActivityLog.create({
@@ -273,15 +302,23 @@ export async function sendUpgradeInvoice(orgId: string) {
 }
 
 export async function getEmailDeliveryStatus(orgId: string) {
-  // Legacy filter: most recent user_action log with metadata.emailStatus present.
-  const candidates = await prisma.lmsActivityLog.findMany({
-    where: { orgId, type: 'user_action' },
+  // Most recent user_action log that actually carries metadata.emailStatus.
+  //
+  // The legacy pushed this predicate into the DB (`'metadata.emailStatus': { $exists: true }`,
+  // `audit.service.ts:485-492`), so it always found the newest matching log. The
+  // port fetched the latest 50 and filtered in JS, so once a tenant accumulated
+  // 50 newer user_action logs without an emailStatus key, the status silently
+  // degraded to 'unknown' and the last-sent date vanished — even though the
+  // record was right there. Filtering on the JSON path restores the legacy's
+  // semantics and does not depend on log volume.
+  const recentEmail = await prisma.lmsActivityLog.findFirst({
+    where: {
+      orgId,
+      type: 'user_action',
+      NOT: { metadata: { path: ['emailStatus'], equals: Prisma.DbNull } },
+    },
     orderBy: { timestamp: 'desc' },
-    take: 50,
   });
-  const recentEmail = candidates.find(
-    (c) => c.metadata && typeof c.metadata === 'object' && 'emailStatus' in (c.metadata as object),
-  );
 
   if (!recentEmail || !recentEmail.metadata) {
     return { deliveryStatus: 'unknown' as const };

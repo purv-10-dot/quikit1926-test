@@ -393,14 +393,33 @@ export async function syncProgress(data: {
     completionPercentageOut = Math.min(100, Math.max(0, completionPercentage));
   }
 
-  // Status: derived from overall completion (PlayerService semantics)
-  let newStatus: ProgressStatus;
-  if (completionPercentageOut >= 100) newStatus = 'Completed';
-  else if (completionPercentageOut > 0) newStatus = 'InProgress';
-  else {
-    const ns = normalizeStatus(status);
-    newStatus = ns === 'InProgress' || existing?.status === 'InProgress' ? 'InProgress' : 'NotStarted';
-  }
+  /**
+   * Status: the SHARED lifecycle derivation, which honours the due date.
+   *
+   * This previously inlined a three-way derivation copied from
+   * `PlayerService.syncProgress` (`player.service.ts:407-424`) — which was DEAD
+   * CODE in the original: `PlayerController` routed `PATCH /player/sync` to
+   * `ProgressService.syncProgress` (`player.controller.ts:54`), which calls the
+   * lifecycle helpers (`progress.service.ts:1035-1041`). The port merged the two
+   * files and kept the dead one's logic.
+   *
+   * Two consequences, both live:
+   *  1. **Status flap** — every write path wrote `InProgress` for a past-due
+   *     learner, then `getProgress` recomputed `Overdue` and persisted it, so the
+   *     badge flipped on every interaction and two endpoints disagreed about the
+   *     same record.
+   *  2. **Silent downgrade** — the inline branch only tested `'InProgress'`, so
+   *     an existing `Overdue` row at 0% was written back as `NotStarted`,
+   *     erasing the flag and under-counting overdue learners in compliance and
+   *     manager reports.
+   */
+  const dueDate = await getUserCourseDueDate(orgId, learnerId, courseId);
+  const newStatus: ProgressStatus = deriveLifecycleStatus(
+    completionPercentageOut,
+    dueDate,
+    normalizeStatus(status),
+    existing?.status,
+  );
 
   if (!startedAt && (completionPercentageOut > 0 || newStatus === 'InProgress')) startedAt = new Date();
   if (newStatus === 'Completed' && !completedAt) completedAt = new Date();

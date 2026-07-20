@@ -11,9 +11,9 @@ vi.mock('@/lib/auth/context', () => ({
   requireAuth: h.requireAuth,
   requireRoles: h.requireRoles,
 }));
-vi.mock('@/lib/env', () => ({ optionalEnv: (k: string) => (k === 'AWS_REGION' ? 'ap-south-1' : '') }));
+vi.mock('@/lib/env', () => ({ optionalEnv: () => '' }));
 vi.mock('@/lib/s3', () => ({
-  s3: { send: vi.fn() },
+  putObject: vi.fn().mockResolvedValue(undefined),
   S3_BUCKET: 'test-bucket',
   presignFromUrlOrKey: h.presignFromUrlOrKey,
 }));
@@ -174,7 +174,7 @@ describe('POST /api/upload/scorm', () => {
     expect(body.data.indexHtmlUrl).toBe('https://signed.example/index.html?sig=1');
     expect(body.data.url).toBe('https://signed.example/index.html?sig=1');
     // fileUrl keeps the permanent (unsigned) url — legacy shape.
-    expect(body.data.fileUrl).toContain('.s3.ap-south-1.amazonaws.com/');
+    expect(body.data.fileUrl).toContain('https://storage.googleapis.com/test-bucket/');
     expect(body.data.type).toBe('scorm_12');
     expect(body.data.title).toBe('Fire Safety 101');
     expect(body.data.entryPoint).toBe('index.html');

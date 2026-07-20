@@ -1,19 +1,36 @@
 import { route, json, BadRequest } from '@/lib/http';
-import { requireAuth, requireRoles } from '@/lib/auth/context';
-import { getAssignedCourses } from '@/lib/services/course-assignments-service';
+import { requireAuth, requireRoles, userHasRole } from '@/lib/auth/context';
+import { getAssignedCourses, enrichAssignmentsWithPresignedUrls } from '@/lib/services/course-assignments-service';
 
-// GET /api/course-assignments/courses?orgId= — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
+/**
+ * GET /api/course-assignments/courses?tenantId= — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
+ *
+ * The override param is `tenantId`: that is the legacy wire name
+ * (`@Query('tenantId')`, `course-assignments.controller.ts:63`) and the org-wide
+ * rename never reached the client. The port read `orgId` only, so a SUPER_ADMIN
+ * passing `?tenantId=X` was SILENTLY IGNORED and fell back to their own org —
+ * cross-tenant inspection broke with no error. Both names are accepted now:
+ * `tenantId` for legacy parity, `orgId` for anything written against the new name.
+ */
 export const GET = route(async (req) => {
   const user = await requireAuth(req);
   requireRoles(user, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
 
-  const queryTenantId = new URL(req.url).searchParams.get('orgId') || undefined;
-  let orgId: string | null | undefined = user.orgId;
-  if (user.role === 'SUPER_ADMIN') {
-    if (queryTenantId) orgId = queryTenantId;
-    else if (!orgId) orgId = null;
-  }
-  if ((user.role === 'TENANT_ADMIN' || user.role === 'SUB_ADMIN') && !orgId) throw BadRequest('Tenant ID is required');
+  const params = new URL(req.url).searchParams;
+  const queryTenantId = params.get('tenantId') || params.get('orgId') || undefined;
 
-  return json({ success: true, data: await getAssignedCourses(orgId) });
+  let orgId: string | null | undefined = user.orgId;
+  if (userHasRole(user, 'SUPER_ADMIN')) {
+    if (queryTenantId) orgId = queryTenantId;
+    else if (!orgId) orgId = null; // null = span every tenant
+  }
+
+  // `userHasRole`, not `user.role` — the legacy used `isTenantOrSubAdminActor`,
+  // which honours a delegated secondaryRole (`controller.ts:75`).
+  if ((userHasRole(user, 'TENANT_ADMIN') || userHasRole(user, 'SUB_ADMIN')) && !orgId) {
+    throw BadRequest('Tenant ID is required');
+  }
+
+  const courses = await getAssignedCourses(orgId);
+  return json({ success: true, data: await enrichAssignmentsWithPresignedUrls(courses as never) });
 });

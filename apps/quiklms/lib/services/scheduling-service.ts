@@ -36,7 +36,13 @@ async function userMap(ids: string[], select: Prisma.LmsUserSelect = USER_NAME_S
   const unique = Array.from(new Set(ids.filter(Boolean)));
   if (!unique.length) return new Map<string, Record<string, unknown>>();
   const users = await prisma.lmsUser.findMany({ where: { id: { in: unique } }, select });
-  return new Map(users.map((u) => [u.id, u as Record<string, unknown>]));
+  // Expose `_id` alongside `id`. Mongoose's `.populate()` produced `_id`, the
+  // batch shape emits `_id`, and this service's own getSessionJoinTimestamps
+  // builds `{_id: ...}` — so a consumer reading `teacherId._id` would otherwise
+  // get undefined only for the teacher/substitute. Keep the convention uniform.
+  return new Map<string, Record<string, unknown>>(
+    users.map((u) => [u.id, { _id: u.id, ...(u as Record<string, unknown>) }]),
+  );
 }
 
 /** Shape a ScheduledClass + batch/teacher into the legacy populated form. */
@@ -300,7 +306,29 @@ export async function startClass(orgId: string, classId: string) {
 
   const updated = await prisma.lmsScheduledClass.update({ where: { id: classId }, data: { status: 'in_progress' } });
 
-  // Punctuality scoring (preserved); join-link emails + escalation resolution → worker.
+  /**
+   * Resolve any open escalation for this class — port of
+   * `escalationService.resolveEscalation` (`scheduling.service.ts:445`).
+   *
+   * This was deferred to "the worker", but nothing there resolves escalations:
+   * a repo-wide search for `teacherJoinedAt` / `resolutionTime` /
+   * `status: 'resolved'` found no code that writes them. So every escalation row
+   * stayed `pending`/`escalating` forever even after the teacher joined, admins
+   * could not tell a resolved incident from an active one, and any
+   * time-to-resolution reporting was dead. It needs no worker — the teacher
+   * starting the class IS the resolution event, and we are already in that
+   * request.
+   */
+  try {
+    await prisma.lmsCallEscalation.updateMany({
+      where: { orgId, scheduledClassId: classId, status: { in: ['pending', 'escalating'] } },
+      data: { status: 'resolved', resolutionTime: new Date(), teacherJoinedAt: new Date() },
+    });
+  } catch {
+    /* non-blocking — never fail starting a class over escalation bookkeeping */
+  }
+
+  // Punctuality scoring (preserved); join-link emails remain worker-owned.
   try {
     const classStart = new Date(updated.startTime);
     const delayMinutes = (Date.now() - classStart.getTime()) / 60000;

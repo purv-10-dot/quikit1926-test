@@ -14,10 +14,10 @@ export async function runDeadlineReminders(): Promise<void> {
   const soon = new Date(now.getTime() + 3 * DAY);
   const assignments = await prisma.lmsCourseAssignment.findMany({
     where: { targetType: 'USER', dueDate: { gte: now, lte: soon } },
-    select: { courseId: true, targetId: true, tenantId: true, dueDate: true },
+    select: { courseId: true, targetId: true, orgId: true, dueDate: true },
   });
   for (const a of assignments) {
-    const p = await prisma.lmsProgress.findFirst({ where: { tenantId: a.tenantId, learnerId: a.targetId, courseId: a.courseId }, select: { status: true } });
+    const p = await prisma.lmsProgress.findFirst({ where: { orgId: a.orgId, learnerId: a.targetId, courseId: a.courseId }, select: { status: true } });
     if (p?.status === 'Completed') continue;
     const learner = await prisma.lmsUser.findUnique({ where: { id: a.targetId }, select: { email: true, firstName: true } });
     const course = await prisma.lmsCourse.findUnique({ where: { id: a.courseId }, select: { title: true } });
@@ -33,10 +33,10 @@ export async function runOverdueReminders(): Promise<void> {
   const now = new Date();
   const assignments = await prisma.lmsCourseAssignment.findMany({
     where: { targetType: 'USER', dueDate: { lt: now } },
-    select: { courseId: true, targetId: true, tenantId: true, dueDate: true },
+    select: { courseId: true, targetId: true, orgId: true, dueDate: true },
   });
   for (const a of assignments) {
-    const p = await prisma.lmsProgress.findFirst({ where: { tenantId: a.tenantId, learnerId: a.targetId, courseId: a.courseId } });
+    const p = await prisma.lmsProgress.findFirst({ where: { orgId: a.orgId, learnerId: a.targetId, courseId: a.courseId } });
     if (p?.status === 'Completed') continue;
     if (p && p.status !== 'Overdue') {
       await prisma.lmsProgress.update({ where: { id: p.id }, data: { status: 'Overdue' } }).catch(() => {});
@@ -56,16 +56,16 @@ export async function runTeacherLatenessScan(): Promise<void> {
   const end = new Date(start.getTime() + DAY);
   const escalations = await prisma.lmsCallEscalation.findMany({
     where: { createdAt: { gte: start, lt: end } },
-    select: { tenantId: true, teacherId: true },
+    select: { orgId: true, teacherId: true },
   });
   // Group by tenant → notify each tenant admin
   const byTenant = new Map<string, Set<string>>();
   for (const e of escalations) {
-    if (!byTenant.has(e.tenantId)) byTenant.set(e.tenantId, new Set());
-    byTenant.get(e.tenantId)!.add(e.teacherId);
+    if (!byTenant.has(e.orgId)) byTenant.set(e.orgId, new Set());
+    byTenant.get(e.orgId)!.add(e.teacherId);
   }
-  for (const [tenantId, teachers] of byTenant) {
-    const admins = await prisma.lmsUser.findMany({ where: { tenantId, role: 'TENANT_ADMIN' }, select: { email: true } });
+  for (const [orgId, teachers] of byTenant) {
+    const admins = await prisma.lmsUser.findMany({ where: { orgId, role: 'TENANT_ADMIN' }, select: { email: true } });
     for (const admin of admins) {
       if (admin.email) {
         await sendEmail(admin.email, 'Daily teacher lateness summary',

@@ -10,7 +10,7 @@ export const POST = route(async (req) => {
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN', 'TEACHER']);
   const body = await parseBody(req, z.object({}).passthrough());
   const exam = await createExam(actor, actor.id, body as Record<string, unknown>);
-  return json({ success: true, data: exam });
+  return json({ success: true, data: exam }, 201);
 });
 
 // GET /api/exams?batchId=&status=&subject= — TENANT_ADMIN | SUB_ADMIN | TEACHER
