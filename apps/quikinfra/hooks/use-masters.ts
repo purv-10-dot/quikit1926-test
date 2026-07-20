@@ -26,6 +26,9 @@ import type { MachineryRecord } from "@/lib/masters/machinery-repository";
 import type { CompanyRecord } from "@/lib/masters/companies-repository";
 import type { TermsConditionRecord } from "@/lib/masters/terms-repository";
 import type { AssetRecord } from "@/lib/masters/assets-repository";
+import type { LabourCategoryRecord } from "@/lib/masters/labour-categories-repository";
+import type { LabourRateRecord } from "@/lib/masters/labour-rates-repository";
+import type { WorkmanRecord } from "@/lib/masters/workmen-repository";
 
 const fetchApi = fetchJson;
 const mutateApi = mutateJson;
@@ -545,3 +548,115 @@ export const useDeleteCompany = makeDeleteHook("/api/masters/companies", "compan
 // Terms & Conditions
 export const useUpdateTermsCondition = makeUpdateHook("/api/masters/terms", "terms-conditions", "Terms & conditions");
 export const useDeleteTermsCondition = makeDeleteHook("/api/masters/terms", "terms-conditions", "Terms & conditions");
+
+
+// ─── Labour Masters (Category / Rate / Workman) ─────────────────────
+
+export function useLabourCategories(params?: { search?: string; status?: string }) {
+  const qs = new URLSearchParams();
+  if (params?.search) qs.set("search", params.search);
+  if (params?.status) qs.set("status", params.status);
+  const query = qs.toString();
+  return useQuery({
+    queryKey: ["labour-categories", query],
+    queryFn: () =>
+      fetchApi<{ data: LabourCategoryRecord[]; total: number }>(
+        `/api/masters/labour-categories${query ? `?${query}` : ""}`,
+      ),
+  });
+}
+
+export function useCreateLabourCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: unknown) => mutateApi("/api/masters/labour-categories", "POST", data),
+    onSuccess: async () => { await refreshListQueries(qc, "labour-categories"); },
+    meta: entityMeta("create", "Labour category"),
+  });
+}
+export const useUpdateLabourCategory = makeUpdateHook("/api/masters/labour-categories", "labour-categories", "Labour category");
+export const useDeleteLabourCategory = makeDeleteHook("/api/masters/labour-categories", "labour-categories", "Labour category");
+
+export function useLabourRates(params?: {
+  labourCategoryId?: string;
+  projectId?: string;
+  approvalStatus?: string;
+  status?: string;
+}) {
+  const qs = new URLSearchParams();
+  if (params?.labourCategoryId) qs.set("labourCategoryId", params.labourCategoryId);
+  if (params?.projectId) qs.set("projectId", params.projectId);
+  if (params?.approvalStatus) qs.set("approvalStatus", params.approvalStatus);
+  if (params?.status) qs.set("status", params.status);
+  const query = qs.toString();
+  return useQuery({
+    queryKey: ["labour-rates", query],
+    queryFn: () =>
+      fetchApi<{ data: LabourRateRecord[]; total: number }>(
+        `/api/masters/labour-rates${query ? `?${query}` : ""}`,
+      ),
+  });
+}
+
+export function useCreateLabourRate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: unknown) => mutateApi("/api/masters/labour-rates", "POST", data),
+    onSuccess: async () => { await refreshListQueries(qc, "labour-rates"); },
+    meta: entityMeta("create", "Labour rate"),
+  });
+}
+export const useUpdateLabourRate = makeUpdateHook("/api/masters/labour-rates", "labour-rates", "Labour rate");
+export const useDeleteLabourRate = makeDeleteHook("/api/masters/labour-rates", "labour-rates", "Labour rate");
+
+export function useSubmitLabourRate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => mutateApi(`/api/masters/labour-rates/${id}/submit`, "POST"),
+    onSuccess: async (data, id) => { await refreshListQueries(qc, "labour-rates", { updatedRow: data, id }); },
+    meta: entityMeta("update", "Labour rate"),
+  });
+}
+
+export function useApproveLabourRate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => mutateApi(`/api/masters/labour-rates/${id}/approve`, "POST"),
+    onSuccess: async (data, id) => { await refreshListQueries(qc, "labour-rates", { updatedRow: data, id }); },
+    meta: entityMeta("update", "Labour rate"),
+  });
+}
+
+export function useWorkmen(params?: {
+  search?: string;
+  labourCategoryId?: string;
+  contractorId?: string;
+  engagementType?: string;
+  status?: string;
+}) {
+  const qs = new URLSearchParams();
+  if (params?.search) qs.set("search", params.search);
+  if (params?.labourCategoryId) qs.set("labourCategoryId", params.labourCategoryId);
+  if (params?.contractorId) qs.set("contractorId", params.contractorId);
+  if (params?.engagementType) qs.set("engagementType", params.engagementType);
+  if (params?.status) qs.set("status", params.status);
+  const query = qs.toString();
+  return useQuery({
+    queryKey: ["workmen", query],
+    queryFn: () =>
+      fetchApi<{ data: WorkmanRecord[]; total: number }>(
+        `/api/masters/workmen${query ? `?${query}` : ""}`,
+      ),
+  });
+}
+
+export function useCreateWorkman() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: unknown) => mutateApi("/api/masters/workmen", "POST", data),
+    onSuccess: async () => { await refreshListQueries(qc, "workmen"); },
+    meta: entityMeta("create", "Workman"),
+  });
+}
+export const useUpdateWorkman = makeUpdateHook("/api/masters/workmen", "workmen", "Workman");
+export const useDeleteWorkman = makeDeleteHook("/api/masters/workmen", "workmen", "Workman");

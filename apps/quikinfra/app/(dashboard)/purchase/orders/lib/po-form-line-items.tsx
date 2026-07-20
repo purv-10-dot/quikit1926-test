@@ -83,7 +83,7 @@ export function buildLineItems(deps: PoFormConfigDeps): QuickCreateConfig["lineI
                       update(patch);
                     }}
                     items={[]}
-                    groups={itemGroups.map((g) => ({ id: g.id, name: g.name, status: g.status }))}
+                    groups={itemGroups.map((g) => ({ id: g.id, name: g.name, status: g.status, itemCount: g.itemCount }))}
                     placeholder="Select material…"
                     size="md"
                   />

@@ -557,6 +557,7 @@ export default function StockTransferPage() {
                 id: g.id,
                 name: g.name,
                 status: g.status,
+                itemCount: g.itemCount,
               }))}
               placeholder={
                 items.length === 0 ? "No items in master" : "Select material..."

@@ -31,6 +31,7 @@ const PREFIXES: Record<string, { model: string; field: string; prefix: string }>
   wo: { model: "cnWorkOrder", field: "woNumber", prefix: "WO" },
   dpr: { model: "cnDailyProgressReport", field: "dprNumber", prefix: "DPR" },
   rab: { model: "cnRunningAccountBill", field: "rabNumber", prefix: "RAB" },
+  muster: { model: "cnMusterRoll", field: "musterNo", prefix: "MUS" },
 };
 
 export async function generateDocNumber(

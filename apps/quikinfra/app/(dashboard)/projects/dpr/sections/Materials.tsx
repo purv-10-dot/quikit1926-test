@@ -26,7 +26,7 @@ export function Materials({
   consumptionLocationId: string;
   onConsumptionLocationChange: (v: string) => void;
   locations: Array<{ id: string; name?: string; status?: string }>;
-  itemGroups: Array<{ id: string; name?: string; status?: string }>;
+  itemGroups: Array<{ id: string; name?: string; status?: string; itemCount?: number }>;
   stockByItem: Record<string, number>;
 }) {
   return (
@@ -119,6 +119,7 @@ export function Materials({
                           id: g.id,
                           name: g.name ?? "",
                           status: g.status,
+                          itemCount: g.itemCount,
                         }))}
                         placeholder="Material"
                         size="sm"

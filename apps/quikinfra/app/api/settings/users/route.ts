@@ -24,9 +24,10 @@ import {
 } from "@/lib/rbac/applyProjectAccess";
 import { sendMail } from "@/lib/email/mailer";
 import { logger } from "@/lib/observability/logger";
-import { listUsersCentral } from "@/lib/users/central-repository";
+import { listUsersCentral, countUsersCentral } from "@/lib/users/central-repository";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { getTenantContext } from "@/lib/auth/context";
+import { parsePagination, parseSort } from "@/lib/http/pagination";
 
 const auth = withOrgAuthForResource("construction.users");
 
@@ -72,11 +73,36 @@ function normalizeRoleName(input: unknown): string {
 export const GET = auth.manage(async (authCtx, req: NextRequest) => {
   const { searchParams } = new URL(req.url);
   const search = searchParams.get("search") ?? "";
+  const statusParam = (searchParams.get("status") ?? "").toLowerCase();
+  const status: "active" | "inactive" | "all" | undefined =
+    statusParam === "active" ? "active"
+    : statusParam === "inactive" ? "inactive"
+    : statusParam === "all" ? "all"
+    : undefined;
+  const paging = parsePagination(req);
+  const { sortBy, sortOrder } = parseSort(
+    searchParams,
+    ["fullName", "email", "status", "createdAt"],
+    { field: "createdAt", order: "asc" },
+  );
 
   // Step E: source the list entirely from central tables (auth.User +
   // OrgMember + User_profiles + UserAppRole). The legacy `listUsers` from
-  // cn_users is no longer called.
-  const data = await listUsersCentral(authCtx.orgId, search);
+  // cn_users is no longer called. Search / status / sort / pagination are
+  // all pushed down to Postgres; the enrichment below runs only on the
+  // page's userIds.
+  const [data, total] = await Promise.all([
+    listUsersCentral(authCtx.orgId, {
+      search,
+      status,
+      sortBy,
+      sortOrder,
+      ...(paging.paginated ? { take: paging.take, skip: paging.skip } : {}),
+    }),
+    paging.paginated
+      ? countUsersCentral(authCtx.orgId, { search, status })
+      : Promise.resolve(0),
+  ]);
 
   // Enrich the base records with the two fields that live in the
   // app_quikinfra v2 tables and are NOT returned by listUsersCentral:
@@ -170,7 +196,17 @@ export const GET = auth.manage(async (authCtx, req: NextRequest) => {
     projectsAssigned: projectsByUserId.get(rest.id) ?? rest.projectsAssigned,
     hasSettingsAccess: settingsUserIds.has(rest.id),
   }));
-  return NextResponse.json({ data: sanitized, total: sanitized.length });
+  if (!paging.paginated) {
+    // Legacy shape for callers that didn't ask for pagination.
+    return NextResponse.json({ data: sanitized, total: sanitized.length });
+  }
+  return NextResponse.json({
+    data: sanitized,
+    total,
+    page: paging.page,
+    pageSize: paging.pageSize,
+    hasMore: paging.skip + sanitized.length < total,
+  });
 });
 
 export const POST = auth.manage(async (authCtx, req: NextRequest) => {

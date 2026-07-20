@@ -51,7 +51,7 @@ export function useDprForm(
     id: string; name?: string; code?: string; projectCode?: string;
     location?: string; city?: string; state?: string;
   }>;
-  const itemGroups = (itemGroupsResult?.data ?? []) as Array<{ id: string; name?: string; status?: string }>;
+  const itemGroups = (itemGroupsResult?.data ?? []) as Array<{ id: string; name?: string; status?: string; itemCount?: number }>;
   const uoms = (uomsResult?.data ?? []) as Array<{ id: string; code?: string }>;
   const contractors = (contractorsResult?.data ?? []) as Array<{ id: string; name: string; status?: string }>;
   const locations = (locationsResult?.data ?? []) as Array<{ id: string; name?: string; status?: string }>;

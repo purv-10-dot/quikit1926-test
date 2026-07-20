@@ -88,6 +88,10 @@ export interface ItemGroupOption {
   id: string;
   name: string;
   status?: string;
+  /** Real active-item count from the server. When provided, the picker shows
+   *  it as the group's "N materials" badge — needed in lazy mode where the
+   *  items aren't loaded, so the bucket's own `items.length` would read 0. */
+  itemCount?: number;
 }
 
 interface Props {
@@ -137,6 +141,8 @@ export type MaterialGroupBucket = {
   id: string;
   name: string;
   items: GroupedMaterialSelectItem[];
+  /** Server-provided active-item count (see {@link ItemGroupOption.itemCount}). */
+  itemCount?: number;
 };
 
 export function buildMaterialGroupBuckets(
@@ -165,7 +171,7 @@ export function buildMaterialGroupBuckets(
           String(item.groupName ?? "").trim() ||
           "Unknown group";
       }
-      bucket = { id: bid, name, items: [] };
+      bucket = { id: bid, name, items: [], itemCount: groupMetaById.get(bid)?.itemCount };
       map.set(bid, bucket);
     }
     bucket.items.push(item);
@@ -176,7 +182,7 @@ export function buildMaterialGroupBuckets(
   for (const g of groups) {
     if (!g?.id || map.has(g.id)) continue;
     if (g.status === "inactive" || g.status === "deleted") continue;
-    map.set(g.id, { id: g.id, name: g.name?.trim() || "Unknown group", items: [] });
+    map.set(g.id, { id: g.id, name: g.name?.trim() || "Unknown group", items: [], itemCount: g.itemCount });
   }
 
   const groupRows = Array.from(map.values()).filter((b) => {
@@ -539,7 +545,11 @@ export function GroupedMaterialSelect({
                   >
                     <div className="flex-1 min-w-0">
                       <div className={`${ui.optionTitle} text-gray-900 truncate`}>{g.name}</div>
-                      <div className="text-[10px] text-gray-500">{g.items.length} material{g.items.length === 1 ? "" : "s"}</div>
+                      {g.itemCount != null ? (
+                        <div className="text-[10px] text-gray-500">{g.itemCount} material{g.itemCount === 1 ? "" : "s"}</div>
+                      ) : !lazy ? (
+                        <div className="text-[10px] text-gray-500">{g.items.length} material{g.items.length === 1 ? "" : "s"}</div>
+                      ) : null}
                     </div>
                     <ChevronRight className="w-3.5 h-3.5 text-gray-400 shrink-0" />
                   </button>
@@ -929,9 +939,15 @@ export function GroupedMaterialMultiSelect({
                   >
                     <div className="flex-1 min-w-0">
                       <div className="text-sm text-gray-900 truncate">{g.name}</div>
-                      <div className="text-[10px] text-gray-500">
-                        {g.items.length} material{g.items.length === 1 ? "" : "s"}
-                      </div>
+                      {g.itemCount != null ? (
+                        <div className="text-[10px] text-gray-500">
+                          {g.itemCount} material{g.itemCount === 1 ? "" : "s"}
+                        </div>
+                      ) : !lazy ? (
+                        <div className="text-[10px] text-gray-500">
+                          {g.items.length} material{g.items.length === 1 ? "" : "s"}
+                        </div>
+                      ) : null}
                     </div>
                     <ChevronRight className="w-3.5 h-3.5 text-gray-400 shrink-0" />
                   </button>

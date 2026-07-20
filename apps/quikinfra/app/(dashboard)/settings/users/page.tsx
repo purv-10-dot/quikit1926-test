@@ -18,7 +18,7 @@ import { useRouter } from "next/navigation";
 import { UserCog } from "lucide-react";
 import { MasterListPage, type MasterColumnDef } from "@/components/MasterListPage";
 import {
-  useUsers, useCreateUser, useUpdateUser, useRoles,
+  useCreateUser, useUpdateUser, useRoles,
 } from "@/hooks/use-users";
 import { useProjects, useDepartments } from "@/hooks/use-masters";
 import {
@@ -35,7 +35,6 @@ import { buildUserColumns } from "./components/columns";
 import { UserFormDrawer, type UserFormDrawerProps } from "./components/UserFormDrawer";
 
 export default function UsersPage() {
-  const { data: result, isLoading } = useUsers();
   const { data: projectsResult } = useProjects();
   const { data: deptsResult } = useDepartments();
   const createMutation = useCreateUser();
@@ -429,9 +428,13 @@ export default function UsersPage() {
         title="User Management"
         entityName="User"
         columns={columns}
-        data={(result?.data ?? []) as UserRow[]}
-        total={result?.total ?? 0}
-        isLoading={isLoading}
+        infinite={{
+          queryKey: "settings-users",
+          endpoint: "/api/settings/users",
+          pageSize: 25,
+          defaultSortBy: "createdAt",
+          defaultSortOrder: "asc",
+        }}
         showStatusTabs
         breadcrumbs={[{ label: "Settings", href: "/settings" }, { label: "Users" }]}
         onAdd={() => {

@@ -273,7 +273,7 @@ export default function IndentsPage() {
                 update(patch);
               }}
               items={[]}
-              groups={itemGroups.map((g) => ({ id: g.id, name: g.name, status: g.status }))}
+              groups={itemGroups.map((g) => ({ id: g.id, name: g.name, status: g.status, itemCount: g.itemCount }))}
               initialGroupId={line.prefillGroupId ?? null}
               placeholder="Select material…"
               size="sm"

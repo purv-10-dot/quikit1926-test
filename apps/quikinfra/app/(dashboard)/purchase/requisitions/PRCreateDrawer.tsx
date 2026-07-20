@@ -813,7 +813,7 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
                                 updateLine(i, "availableStock", it.currentStock ?? "0");
                               }}
                               items={[]}
-                              groups={itemGroups.map((g) => ({ id: g.id, name: g.name, status: g.status }))}
+                              groups={itemGroups.map((g) => ({ id: g.id, name: g.name, status: g.status, itemCount: g.itemCount }))}
                               placeholder="Pick group → material…"
                             />
                           </div>

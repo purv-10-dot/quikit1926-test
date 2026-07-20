@@ -52,6 +52,7 @@ import {
   type MenuItem,
 } from "@/lib/rbac/menu-catalog";
 import { getUserTypeDescriptor } from "@/lib/rbac/user-types";
+import { siblingMenuKeys } from "@/lib/rbac/matrixV2Bridge";
 
 /**
  * Icon + color mapping for the four action columns. Picked so a green
@@ -160,17 +161,27 @@ export default function UserPermissionMatrixPage() {
     },
   });
 
+  // Pages that share one v2 resource (e.g. every MASTERS page →
+  // construction.masters) cannot be granted/revoked independently — the
+  // permission store is resource-level. So a toggle fans out to ALL pages
+  // sharing the resource. Without this, unchecking a single page wrote no
+  // revoke (matrixToRevokes only revokes a shared resource when EVERY page
+  // on it is denied) and the cell reverted to checked on reload.
   const toggleCell = (menuKey: string, action: MatrixAction) => {
     if (locked) return; // central admin matrix is read-only
     const item = MENU_CATALOG.find((m) => m.key === menuKey);
     if (!item || !item.supports[action]) return; // unsupported cell stays off
-    setMatrix((prev) => ({
-      ...prev,
-      [menuKey]: {
-        ...prev[menuKey],
-        [action]: !prev[menuKey]?.[action],
-      },
-    }));
+    const nextValue = !matrix[menuKey]?.[action];
+    const keys = siblingMenuKeys(menuKey);
+    setMatrix((prev) => {
+      const next = { ...prev };
+      for (const k of keys) {
+        const sib = MENU_CATALOG.find((m) => m.key === k);
+        if (!sib || !sib.supports[action]) continue; // skip pages lacking it
+        next[k] = { ...next[k], [action]: nextValue };
+      }
+      return next;
+    });
     setDirty(true);
   };
 
@@ -178,15 +189,21 @@ export default function UserPermissionMatrixPage() {
     if (locked) return; // central admin matrix is read-only
     const item = MENU_CATALOG.find((m) => m.key === menuKey);
     if (!item) return;
-    setMatrix((prev) => ({
-      ...prev,
-      [menuKey]: {
-        add: item.supports.add && value,
-        edit: item.supports.edit && value,
-        delete: item.supports.delete && value,
-        view: item.supports.view && value,
-      },
-    }));
+    const keys = siblingMenuKeys(menuKey);
+    setMatrix((prev) => {
+      const next = { ...prev };
+      for (const k of keys) {
+        const sib = MENU_CATALOG.find((m) => m.key === k);
+        if (!sib) continue;
+        next[k] = {
+          add: sib.supports.add && value,
+          edit: sib.supports.edit && value,
+          delete: sib.supports.delete && value,
+          view: sib.supports.view && value,
+        };
+      }
+      return next;
+    });
     setDirty(true);
   };
 
@@ -194,6 +211,28 @@ export default function UserPermissionMatrixPage() {
 
   const grouped = useMemo(() => groupByModule(), []);
   const descriptor = user ? getUserTypeDescriptor(user.userType) : null;
+
+  // Pages that share one backend permission are controlled together (see
+  // toggleCell/toggleRow). Surface those groups so admins understand why
+  // ticking one row also ticks its neighbours — the permission store is
+  // resource-level, not page-level, so independent control isn't possible
+  // for these.
+  const sharedGroups = useMemo(() => {
+    const seen = new Set<string>();
+    const groups: string[] = [];
+    for (const item of MENU_CATALOG) {
+      const keys = siblingMenuKeys(item.key);
+      if (keys.length <= 1) continue;
+      const id = [...keys].sort().join(",");
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const labels = keys
+        .map((k) => MENU_CATALOG.find((m) => m.key === k)?.label)
+        .filter((l): l is string => !!l);
+      groups.push(labels.join(", "));
+    }
+    return groups;
+  }, []);
 
   // Overall grant summary — "12 of 36 pages" — shown in the sticky footer
   // and as a micro-stat next to the user name. Recomputes on every matrix
@@ -413,6 +452,29 @@ export default function UserPermissionMatrixPage() {
               — full access to every page by design. Permissions are locked
               for this account and can&apos;t be edited. (Admins you invite
               through the app remain editable here.)
+            </span>
+          </div>
+        )}
+
+        {/* Grouped-permission notice — some pages share one backend
+            permission and are toggled together. Shown only when there are
+            such groups and the matrix isn't locked. */}
+        {!locked && sharedGroups.length > 0 && (
+          <div className="mb-3 shrink-0 flex items-start gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] text-sky-800 leading-snug">
+            <Layers className="w-3.5 h-3.5 mt-0.5 shrink-0 text-sky-600" />
+            <span>
+              <strong className="font-semibold">
+                Some pages share a single access permission
+              </strong>{" "}
+              and are controlled together — changing one updates its whole
+              group. Grouped pages:{" "}
+              {sharedGroups.map((g, i) => (
+                <span key={g}>
+                  {i > 0 && "; "}
+                  <span className="font-medium">{g}</span>
+                </span>
+              ))}
+              .
             </span>
           </div>
         )}

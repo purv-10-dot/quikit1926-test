@@ -38,7 +38,7 @@ export interface PoFormConfigDeps {
   termsOptions: Opt[];
   sourceRfqOptions: Opt[];
   sourceIndentOptions: Opt[];
-  itemGroups: Array<{ id: string; name: string; status?: string }>;
+  itemGroups: Array<{ id: string; name: string; status?: string; itemCount?: number }>;
   readyRfqs: OrderRfqNode[];
   vendorById: Map<string, VendorLike>;
   termsById: Map<string, { title: string; body: string }>;

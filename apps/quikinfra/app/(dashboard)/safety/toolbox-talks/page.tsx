@@ -6,8 +6,7 @@ import { PageHeader, PageContainer } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { QuickCreateDrawer } from "@/components/QuickCreateDrawer";
 import { useMenuActions } from "@/hooks/use-permissions";
-
-const PROJECT_OPTIONS: { value: string; label: string }[] = [];
+import { useProjects } from "@/hooks/use-masters";
 
 interface ToolboxTalkRow {
   id?: string; photoAttached?: boolean;
@@ -18,6 +17,8 @@ export default function ToolboxTalksPage() {
   const qc = useQueryClient();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { canAdd } = useMenuActions("/safety/toolbox-talks");
+  const { data: projectsResult } = useProjects();
+  const projectOptions = (projectsResult?.data ?? []).map((p) => ({ value: p.id, label: p.name }));
 
   const { data: result, isLoading } = useQuery({
     queryKey: ["safety-toolbox-talks"],
@@ -33,7 +34,7 @@ export default function ToolboxTalksPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["safety-toolbox-talks"] }),
     fields: [
       { key: "date", label: "Date", type: "date" as const, required: true },
-      { key: "projectId", label: "Project", type: "select" as const, required: true, options: PROJECT_OPTIONS, placeholder: "Select project" },
+      { key: "projectId", label: "Project", type: "select" as const, required: true, options: projectOptions, placeholder: "Select project" },
       { key: "topic", label: "Topic", type: "text" as const, required: true, placeholder: "e.g. Working at Height — Harness Usage", span: 2 as const },
       { key: "conductedBy", label: "Conducted By", type: "text" as const, required: true, placeholder: "Safety officer name" },
       { key: "attendeesCount", label: "Attendees Count", type: "number" as const, required: true, placeholder: "Number of attendees" },

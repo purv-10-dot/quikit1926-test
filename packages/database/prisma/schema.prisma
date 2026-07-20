@@ -152,6 +152,10 @@ model Org {
   cnHindrances             CnHindrance[]
   cnItems                  CnItem[]
   cnItemGroups             CnItemGroup[]
+  cnLabourCategories       CnLabourCategory[]
+  cnLabourRates            CnLabourRate[]
+  cnWorkmen                CnWorkman[]
+  cnMusterRolls            CnMusterRoll[]
   cnLocations              CnLocation[]
   cnMachinery              CnMachinery[]
   cnEquipmentLogs          CnEquipmentLog[]
@@ -2505,6 +2509,159 @@ model CnUOM {
   @@schema("app_quikinfra")
 }
 
+// ============================================================================
+// LABOUR MASTERS (Section 1)
+// Category + Rate are separate tables (one category has many dated rates).
+// Workman references category/contractor by plain FK id (repository-scoped).
+// ============================================================================
+
+model CnLabourCategory {
+  id           String   @id @default(cuid())
+  orgId        String
+  code         String // e.g. MASON-SK — immutable after create (enforced in repo)
+  name         String
+  skillLevel   String // UNSKILLED | SEMI_SKILLED | SKILLED | HIGHLY_SKILLED
+  trade        String? // free-text family: Masonry, Shuttering, Rebar
+  defaultUomId String? // FK CnUOM (usually DAY)
+  description  String?
+  status       String   @default("active")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  createdBy    String
+  updatedBy    String
+
+  // --- grafted: cross-schema relations (Org/User) ---
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, code])
+  @@index([orgId])
+  @@map("Labour_categories")
+  @@schema("app_quikinfra")
+}
+
+model CnLabourRate {
+  id               String    @id @default(cuid())
+  orgId            String
+  labourCategoryId String // FK CnLabourCategory
+  projectId        String? // FK CnProject; null = tenant-wide default
+  rateType         String // DAILY_WAGE | HOURLY_WAGE
+  rate             Decimal   @db.Decimal(18, 2)
+  effectiveFrom    DateTime  @db.Date
+  effectiveTo      DateTime? @db.Date // null = open-ended
+  approvalStatus   String    @default("DRAFT") // DRAFT | PENDING | APPROVED | REJECTED
+  approvalId       String? // in-flight CnApprovalInstance
+  status           String    @default("active")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  createdBy        String
+  updatedBy        String
+
+  // --- grafted: cross-schema relations (Org/User) ---
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([orgId, labourCategoryId, projectId, effectiveFrom])
+  @@map("Labour_rates")
+  @@schema("app_quikinfra")
+}
+
+model CnWorkman {
+  id                  String    @id @default(cuid())
+  orgId               String
+  workmanCode         String // auto WM-<seq>, tenant-unique
+  fullName            String
+  fatherOrSpouse      String?
+  gender              String? // M | F | O
+  dateOfBirth         DateTime? @db.Date
+  phone               String?
+  photoFileId         String? // CnFileObject (entityType = "workman")
+  idProofType         String? // AADHAAR | VOTER_ID | DL | OTHER
+  idProofLast4        String? // store ONLY last 4 chars; never the full number
+  labourCategoryId    String // FK CnLabourCategory
+  engagementType      String // CONTRACTOR | DEPARTMENTAL
+  contractorId        String? // required when engagementType = CONTRACTOR
+  dailyWage           Decimal?  @db.Decimal(18, 2) // override; else resolve CnLabourRate
+  bankAccountLast4    String?
+  ifsc                String?
+  joiningDate         DateTime? @db.Date
+  exitDate            DateTime? @db.Date
+  projectIds          String[] // projects the workman is inducted to
+  safetyInductionDone Boolean   @default(false)
+  status              String    @default("active")
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  createdBy           String
+  updatedBy           String
+
+  // --- grafted: cross-schema relations (Org/User) ---
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, workmanCode])
+  @@index([orgId])
+  @@index([orgId, labourCategoryId])
+  @@index([orgId, contractorId])
+  @@map("Workmen")
+  @@schema("app_quikinfra")
+}
+
+// ============================================================================
+// MUSTER ROLL (Section 2) — daily attendance sheet + lines.
+// Lean model: attendance/cost is derived from APPROVED musters (no separate
+// attendance ledger). Reversal = docStatus REVERSED (excluded from the
+// one-per-key rule, which is enforced in the repository, not a DB unique,
+// so a corrected sheet can reuse the same key).
+// ============================================================================
+
+model CnMusterRoll {
+  id             String   @id @default(cuid())
+  orgId          String
+  musterNo       String
+  projectId      String
+  musterDate     DateTime @db.Date
+  engagementType String // CONTRACTOR | DEPARTMENTAL
+  contractorId   String? // required for CONTRACTOR
+  workOrderId    String? // labour WO this gang works under
+  shift          String   @default("DAY") // DAY | NIGHT
+  docStatus      String   @default("DRAFT") // DRAFT | SUBMITTED | APPROVED | REJECTED | REVERSED
+  remarks        String?
+  approvalId     String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  createdBy      String
+  updatedBy      String
+
+  lines CnMusterRollLine[]
+
+  // --- grafted: cross-schema relations (Org/User) ---
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([orgId, projectId, musterDate])
+  @@index([orgId, contractorId, musterDate])
+  @@map("Muster_rolls")
+  @@schema("app_quikinfra")
+}
+
+model CnMusterRollLine {
+  id               String   @id @default(cuid())
+  musterRollId     String
+  workmanId        String
+  labourCategoryId String // snapshot from workman at entry time
+  attendance       Decimal  @db.Decimal(18, 4) // 0, 0.25, 0.5, 0.75, 1.0
+  otHours          Decimal? @db.Decimal(18, 4)
+  wageRateApplied  Decimal? @db.Decimal(18, 2) // departmental snapshot; null for contractor gangs
+  boqItemId        String?
+  remarks          String?
+
+  musterRoll CnMusterRoll @relation(fields: [musterRollId], references: [id], onDelete: Cascade)
+
+  @@unique([musterRollId, workmanId])
+  @@index([musterRollId])
+  @@index([workmanId])
+  @@map("Muster_roll_lines")
+  @@schema("app_quikinfra")
+}
+
 model CnItemGroup {
   id             String   @id @default(cuid())
   orgId          String
@@ -4090,9 +4247,10 @@ model CnWorkOrderLine {
   amount         Decimal @db.Decimal(18, 2)
 
   // Labour-only work order fields (null for "boq" lines)
-  lineDate       DateTime?
-  activityName   String?
-  workCategoryId String?
+  lineDate         DateTime?
+  activityName     String?
+  workCategoryId   String?
+  labourCategoryId String? // FK CnLabourCategory — LABOUR_CATEGORY day-rate lines
 
   // Labour-only manpower counts — array of { type, count }, one per selected
   // trade. JSON so new trades never require a schema change.
@@ -5050,6 +5208,7 @@ model CnBOQProgressLedger {
   qty            Decimal  @db.Decimal(18, 4)
   direction      Int // +1 for apply, -1 for reverse
   workType       String // "sub_contractor" | "self"
+  workOrderId    String? // labour WO this progress was executed under (labour RAB link)
   dprId          String?
   dprLineId      String?
   overrideFlag   Boolean  @default(false)
@@ -5061,6 +5220,7 @@ model CnBOQProgressLedger {
   @@index([projectId, boqNo])
   @@index([boqItemId])
   @@index([dprId])
+  @@index([workOrderId])
   @@index([createdAt])
   @@map("Boq_progress_ledger")
   @@schema("app_quikinfra")

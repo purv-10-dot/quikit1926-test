@@ -517,6 +517,7 @@ export default function MaterialIssuePage() {
                     id: g.id,
                     name: g.name,
                     status: g.status,
+                    itemCount: g.itemCount,
                   }))}
                   placeholder="Select material…"
                   size="md"
