@@ -19,7 +19,6 @@ import "lenis/dist/lenis.css";
  * subtree pick up Inter even though <body> keeps the dashboard's Jakarta.
  */
 
-
 const inter = Inter({
   subsets: ["latin"],
   weight: ["300", "400", "500", "600", "700"],

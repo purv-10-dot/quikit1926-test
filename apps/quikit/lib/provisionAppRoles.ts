@@ -36,6 +36,7 @@ const APP_URL_OVERRIDE: Record<string, string> = {
   quikcrm: "QUIKCRM_URL",
   quikasset: "QUIKASSET_URL",
   quiksupport: "QUIKSUPPORT_URL",
+  quikchat: "QUIKCHAT_URL",
 };
 
 /**

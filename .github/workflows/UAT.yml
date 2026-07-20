@@ -58,13 +58,17 @@ jobs:
               - 'apps/quiksupport/**'
             quikasset:
               - 'apps/quikasset/**'
+            quikchat:
+              - 'apps/quikchat/**'
+            realtime:
+              - 'services/realtime/**'
 
       - name: Generate matrix
         id: set-matrix
         shell: bash
         run: |
           APPS=()
-          ALL=(quikit auth admin quikscale quiktrack quikhrms quikinfra quikcrm quiksupport quikasset)
+          ALL=(quikit auth admin quikscale quiktrack quikhrms quikinfra quikcrm quiksupport quikasset quikchat realtime)
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ steps.filter.outputs.shared }}" = "true" ]; then
             APPS=("${ALL[@]}")
@@ -79,6 +83,8 @@ jobs:
             [ "${{ steps.filter.outputs.quikcrm }}" = "true" ] && APPS+=("quikcrm")
             [ "${{ steps.filter.outputs.quiksupport }}" = "true" ] && APPS+=("quiksupport")
             [ "${{ steps.filter.outputs.quikasset }}" = "true" ] && APPS+=("quikasset")
+            [ "${{ steps.filter.outputs.quikchat }}" = "true" ] && APPS+=("quikchat")
+            [ "${{ steps.filter.outputs.realtime }}" = "true" ] && APPS+=("realtime")
           fi
 
           echo "Selected apps: ${APPS[@]}"
@@ -120,6 +126,18 @@ jobs:
         run: |
           echo "value=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve Dockerfile path
+        id: dockerfile
+        shell: bash
+        run: |
+          # The realtime gateway is a service (not an app) — its Dockerfile
+          # lives under services/, not apps/. Everything else follows apps/<app>/.
+          if [ "${{ matrix.app }}" = "realtime" ]; then
+            echo "path=services/realtime/Dockerfile" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=apps/${{ matrix.app }}/Dockerfile" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Compute image metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -133,7 +151,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: apps/${{ matrix.app }}/Dockerfile
+          file: ${{ steps.dockerfile.outputs.path }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -154,6 +172,8 @@ jobs:
             NEXT_PUBLIC_APP_URL=https://uatsupport.quikit.ai
             NEXTAUTH_URL=https://uatauthn.quikit.ai
             NEXT_PUBLIC_QUIKASSET_URL=https://uatasset.quikit.ai
+            NEXT_PUBLIC_QUIKCHAT_URL=https://uatchat.quikit.ai
+            NEXT_PUBLIC_REALTIME_WS_URL=ws://uatsockets.quikit.ai
 
   update-gitops:
     name: Update GitOps Repository
@@ -222,6 +242,14 @@ jobs:
               quikasset)
                 FILE="asset-deployment.yaml"
                 IMAGE="ghcr.io/akhileshgandhi/quikasset-runtime:${TAG}"
+                ;;
+              quikchat)
+                FILE="chat-deployment.yaml"
+                IMAGE="ghcr.io/akhileshgandhi/quikchat-runtime:${TAG}"
+                ;;
+              realtime)
+                FILE="socket-deployment.yaml"
+                IMAGE="ghcr.io/akhileshgandhi/realtime-runtime:${TAG}"
                 ;;
               *)
                 echo "Unknown app: $APP"

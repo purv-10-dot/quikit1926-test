@@ -1,16 +1,24 @@
 import type { Config } from "tailwindcss";
+import path from "path";
 import baseConfig from "@quikit/ui/tailwind-config";
 
 // House Tailwind v3 setup (matches quikscale/quiktrack/quikinfra): extend the
 // shared @quikit/ui base config. HRMS keeps its own design tokens (HiBob-style
 // palette in app/globals.css) layered on top so the existing UX is unchanged.
+
+// Content globs are anchored to THIS config's directory via __dirname. Tailwind
+// resolves relative content paths against process.cwd(), not the config file —
+// so plain "./app/**" globs silently match nothing when the build runs from a
+// different CWD (e.g. the pruned Docker/turbo build), purging every utility
+// class and shipping a base-only stylesheet (the app renders fully unstyled).
+// Absolute, __dirname-anchored globs make the build CWD-independent.
 const config = {
   ...baseConfig,
   content: [
-    "./app/**/*.{js,ts,jsx,tsx,mdx}",
-    "./components/**/*.{js,ts,jsx,tsx,mdx}",
-    "./lib/**/*.{js,ts,jsx,tsx,mdx}",
-    "../../packages/ui/**/*.{js,ts,jsx,tsx,mdx}",
+    path.join(__dirname, "app/**/*.{js,ts,jsx,tsx,mdx}"),
+    path.join(__dirname, "components/**/*.{js,ts,jsx,tsx,mdx}"),
+    path.join(__dirname, "lib/**/*.{js,ts,jsx,tsx,mdx}"),
+    path.join(__dirname, "../../packages/ui/**/*.{js,ts,jsx,tsx,mdx}"),
   ],
   // HRMS toggles `.dark` on <html> from /settings (see globals.css overrides).
   darkMode: ["class"],
