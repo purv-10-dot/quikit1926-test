@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import { useRevalidateOnFocus } from "@/lib/hooks/useRevalidateOnFocus"
 import { Plus, Search, Pencil, Trash2, Loader2, Wrench, CheckCircle2, RotateCcw, XCircle, ArrowLeftRight, StopCircle, SlidersHorizontal, ChevronUp, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { apiErrorMessage } from "@/lib/apiError"
@@ -87,6 +88,7 @@ export default function RepairPage() {
   }
 
   useEffect(() => { load() }, [])
+  useRevalidateOnFocus(load)
 
   // Display/filter label: linked vendor name, falling back to legacy free text.
   const vendorLabel = (r: Repair) => r.vendorRef?.name ?? r.vendor ?? ""

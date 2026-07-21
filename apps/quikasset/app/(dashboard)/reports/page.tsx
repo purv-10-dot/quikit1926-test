@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import { useRevalidateOnFocus } from "@/lib/hooks/useRevalidateOnFocus"
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
   PieChart, Pie,
@@ -197,6 +198,7 @@ function OverviewTab() {
   }, [])
 
   useEffect(() => { load() }, [load])
+  useRevalidateOnFocus(load)
 
   function handleDownload() {
     if (!data) return
@@ -350,6 +352,7 @@ function AssetValueTab() {
   }, [])
 
   useEffect(() => { load() }, [load])
+  useRevalidateOnFocus(load)
 
   const categories  = Array.from(new Set(rows.map((r) => r.category))).filter(Boolean)
   const statuses    = Array.from(new Set(rows.map((r) => r.assetStatus))).filter(Boolean)
@@ -508,6 +511,7 @@ function RepairCostsTab() {
   }, [from, to])
 
   useEffect(() => { load() }, [load])
+  useRevalidateOnFocus(load)
 
   const categories = data ? Array.from(new Set(data.repairs.map((r) => r.category))) : []
   const statuses   = data ? Array.from(new Set(data.repairs.map((r) => r.status))) : []
@@ -687,6 +691,7 @@ function DepartmentsTab() {
   }, [])
 
   useEffect(() => { load() }, [load])
+  useRevalidateOnFocus(load)
 
   const totals = {
     employeeCount:   rows.reduce((s, r) => s + r.employeeCount, 0),
@@ -820,6 +825,7 @@ function BudgetsTab() {
   }, [])
 
   useEffect(() => { load() }, [load])
+  useRevalidateOnFocus(load)
 
   async function handleSave(data: FiscalBudgetFormData) {
     const url = editBudget ? `/api/fiscal-budgets/${editBudget.id}` : "/api/fiscal-budgets"
@@ -1058,6 +1064,7 @@ function UtilizationTab() {
   }, [])
 
   useEffect(() => { load() }, [load])
+  useRevalidateOnFocus(load)
 
   const filteredIdle = (data?.idleAssets ?? []).filter((a) => a.daysIdle >= idleDays)
 

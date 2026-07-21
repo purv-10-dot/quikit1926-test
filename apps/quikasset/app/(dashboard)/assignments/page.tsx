@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import { useRevalidateOnFocus } from "@/lib/hooks/useRevalidateOnFocus"
 import { Plus, Search, Undo2, Trash2, Loader2, ArrowLeftRight, Pencil, SlidersHorizontal, ChevronUp, X, Layers } from "lucide-react"
 import Pagination from "@/components/ui/Pagination"
 import { cn } from "@/lib/utils"
@@ -65,6 +66,7 @@ export default function AssignmentsPage() {
   }
 
   useEffect(() => { load() }, [])
+  useRevalidateOnFocus(load)
 
   const departments = [...new Set(assignments.map((a) => a.user?.department).filter(Boolean))].sort() as string[]
 
