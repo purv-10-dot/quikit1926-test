@@ -10798,6 +10798,10 @@ model AttendanceRecord {
 
   regularizationStatus RegularizationStatus @default(None)
   regularizationReason String?
+  // Requested check-in/out for a PENDING regularization — held here (not applied
+  // to the live checkIn/checkOut) until an approver approves. Cleared on decide.
+  regularizedCheckIn   DateTime?
+  regularizedCheckOut  DateTime?
 
   remarks         String?
   isLateCheckIn   Boolean @default(false)
@@ -11126,6 +11130,10 @@ model LeaveGroupItem {
   leaveGroupId  String
   leaveTypeId   String
   overrideQuota Decimal? @db.Decimal(5, 2)
+  // Per-group rule set for this leave type (entitlement, accrual, applying,
+  // restrictions) — the leave-rules wizard's output. Lets the same leave type
+  // carry different rules in different groups.
+  rules         Json?
 
   createdAt DateTime @default(now())
 
@@ -11235,6 +11243,9 @@ model LeaveBalance {
   carriedForward Decimal @default(0) @db.Decimal(5, 2)
   encashed       Decimal @default(0) @db.Decimal(5, 2)
   lapsed         Decimal @default(0) @db.Decimal(5, 2)
+  // Accrual/carry-forward engine bookkeeping (idempotency guards).
+  lastAccrualYm  Int?     // YYYYMM of the last monthly accrual applied to this row
+  carryProcessed Boolean  @default(false) // year-end rollover already run for this row
 
   createdBy String?
   updatedBy String?
@@ -11847,6 +11858,8 @@ enum CandidateSource {
   CandCampus
   CandDirect
   CandInbound
+  CandNaukri
+  CandIndeed
 
   @@schema("app_quikhrms")
 }
@@ -12126,6 +12139,9 @@ model JobApplication {
 
   rejectionReason String?
   rejectionStage  String?
+  // Stable timestamp of when the application was rejected — the re-apply
+  // cooling window counts from this, not from `updatedAt` (which later edits move).
+  rejectedAt      DateTime?
   // A "penalty-free" rejection (e.g. closed because the requisition was
   // cancelled / not selected after a hold-resume review). Excluded from the
   // re-apply cooling-period block so the candidate can still apply elsewhere.

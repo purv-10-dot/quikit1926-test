@@ -209,11 +209,13 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
           // hold-resume) don't lock the candidate out of other roles.
           rejectionExempt: false,
         },
-        orderBy: { updatedAt: "desc" },
-        select: { updatedAt: true, requisition: { select: { title: true } } },
+        orderBy: [{ rejectedAt: "desc" }, { updatedAt: "desc" }],
+        select: { rejectedAt: true, updatedAt: true, requisition: { select: { title: true } } },
       });
       if (lastRejected) {
-        const eligibleAt = new Date(lastRejected.updatedAt);
+        // Count from the stable rejection time; fall back to updatedAt for rows
+        // rejected before rejectedAt existed.
+        const eligibleAt = new Date(lastRejected.rejectedAt ?? lastRejected.updatedAt);
         eligibleAt.setMonth(eligibleAt.getMonth() + coolMonths);
         if (Date.now() < eligibleAt.getTime()) {
           const when = eligibleAt.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
@@ -224,9 +226,12 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     }
 
     const existing = await prisma.jobApplication.findFirst({
-      where: { orgId, candidateId, requisitionId, deletedAt: null },
+      // Include soft-deleted: the (orgId, candidateId, requisitionId) unique
+      // constraint spans deleted rows too, so we must find a deleted match and
+      // REVIVE it — otherwise create() hits a DB unique error → generic 500.
+      where: { orgId, candidateId, requisitionId },
     });
-    if (existing) return conflict("Application already exists for this candidate-requisition pair");
+    if (existing && !existing.deletedAt) return conflict("Application already exists for this candidate-requisition pair");
 
     // Pick pipeline from requisition; fallback to default pipeline.
     const req_ = await prisma.jobRequisition.findFirst({
@@ -247,18 +252,37 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     const firstStage = stages[0] ?? "Screening";
     const initialStage = currentStage ?? firstStage;
 
-    const app = await prisma.jobApplication.create({
-      data: {
-        orgId, candidateId, requisitionId,
-        currentStage: initialStage,
-        stageHistory: JSON.parse(JSON.stringify([{ stage: initialStage, date: new Date().toISOString(), movedBy: userId }])),
-        createdBy: userId, updatedBy: userId,
-      },
-      include: {
-        candidate: { select: { id: true, firstName: true, lastName: true, email: true } },
-        requisition: { select: { id: true, title: true } },
-      },
-    });
+    const freshHistory = JSON.parse(JSON.stringify([{ stage: initialStage, date: new Date().toISOString(), movedBy: userId }]));
+    const app = existing
+      ? // Revive the previously-deleted application as a fresh one.
+        await prisma.jobApplication.update({
+          where: { id: existing.id },
+          data: {
+            deletedAt: null,
+            status: "AppActive",
+            currentStage: initialStage,
+            appliedDate: new Date(),
+            rejectionReason: null, rejectionStage: null, rejectionExempt: false,
+            stageHistory: freshHistory,
+            updatedBy: userId,
+          },
+          include: {
+            candidate: { select: { id: true, firstName: true, lastName: true, email: true } },
+            requisition: { select: { id: true, title: true } },
+          },
+        })
+      : await prisma.jobApplication.create({
+          data: {
+            orgId, candidateId, requisitionId,
+            currentStage: initialStage,
+            stageHistory: freshHistory,
+            createdBy: userId, updatedBy: userId,
+          },
+          include: {
+            candidate: { select: { id: true, firstName: true, lastName: true, email: true } },
+            requisition: { select: { id: true, title: true } },
+          },
+        });
 
     // Update candidate status
     await prisma.candidate.update({ where: { id: candidateId }, data: { status: "InPipeline" } });

@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
-import { LeaveRulesWizard } from "../_components/leave-rules-wizard";
+import { LeaveRulesWizard, type LeaveTypeRules } from "../_components/leave-rules-wizard";
 import { CrudTable, type Column } from "@/components/hrms/crud-table";
 import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/ui/select";
@@ -14,7 +14,7 @@ import { EmptyState } from "@/components/hrms/empty-state";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 import {
   Layers, Plus, Trash2, Users, Shield, Tag, UserCircle, Pencil, Check, X, Search,
-  Info, CalendarDays, Hash, SlidersHorizontal, Settings2, ArrowLeft,
+  Info, CalendarDays, Hash, SlidersHorizontal, Settings2,
 } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -111,6 +111,8 @@ interface LeaveTypeItem {
   applyCutoffDay?: number | null;
   minGapDays?: number | null;
   blockedDuringNotice?: boolean | null;
+  createdByName?: string | null;
+  updatedByName?: string | null;
 }
 
 const EMPLOYMENT_TYPES = ["FullTime", "PartTime", "Contract", "Intern"];
@@ -128,6 +130,7 @@ interface LeaveGroupItem {
   id: string;
   leaveTypeId: string;
   overrideQuota: string | null;
+  rules?: Record<string, unknown> | null;
   leaveType: { id: string; name: string; code: string; color: string | null };
 }
 
@@ -158,7 +161,6 @@ interface Role {
 
 export default function LeavePoliciesPage() {
   const [tab, setTab] = useState<"types" | "groups">("types");
-  const [rulesOpen, setRulesOpen] = useState(false);
   const { hasPermission, isLoading: permsLoading } = useDashboardConfig();
   // Managing leave types & groups requires hrms.leave.manage (also enforced by
   // the API). Employees / self-service roles get a read-blocked state instead
@@ -177,13 +179,11 @@ export default function LeavePoliciesPage() {
 
   return (
     <div className="space-y-4">
-      {!rulesOpen && (
-        <div className="surface-card p-1 inline-flex items-center gap-1">
-          <TabButton active={tab === "types"} onClick={() => setTab("types")} icon={<Tag size={14} />} label="Leave Types" />
-          <TabButton active={tab === "groups"} onClick={() => setTab("groups")} icon={<Layers size={14} />} label="Leave Groups" />
-        </div>
-      )}
-      {tab === "types" ? <LeaveTypesTab onRulesOpenChange={setRulesOpen} /> : <LeaveGroupsTab />}
+      <div className="surface-card p-1 inline-flex items-center gap-1">
+        <TabButton active={tab === "types"} onClick={() => setTab("types")} icon={<Tag size={14} />} label="Leave Types" />
+        <TabButton active={tab === "groups"} onClick={() => setTab("groups")} icon={<Layers size={14} />} label="Leave Groups" />
+      </div>
+      {tab === "types" ? <LeaveTypesTab /> : <LeaveGroupsTab />}
     </div>
   );
 }
@@ -204,17 +204,12 @@ function TabButton({ active, onClick, icon, label }: { active: boolean; onClick:
 
 // ─── LEAVE TYPES TAB ─────────────────────────────────────
 
-function LeaveTypesTab({ onRulesOpenChange }: { onRulesOpenChange?: (open: boolean) => void }) {
+function LeaveTypesTab() {
   const api = useApiClient();
   const qc = useQueryClient();
   const toast = useToast();
   const [search, setSearch] = useState("");
   const [modal, setModal] = useState<{ open: boolean; item: LeaveTypeItem | null }>({ open: false, item: null });
-  // Per-leave-type rules configuration (quota, accrual, carry-forward, etc.).
-  const [rulesTarget, setRulesTarget] = useState<LeaveTypeItem | null>(null);
-  // Tell the parent to hide the page tabs while the full-width Rules view is open.
-  useEffect(() => { onRulesOpenChange?.(!!rulesTarget); }, [rulesTarget, onRulesOpenChange]);
-  useEffect(() => () => onRulesOpenChange?.(false), [onRulesOpenChange]);
   const emptyForm = {
     preset: "",
     name: "",
@@ -261,11 +256,12 @@ function LeaveTypesTab({ onRulesOpenChange }: { onRulesOpenChange?: (open: boole
   });
 
   const columns: Column<LeaveTypeItem>[] = [
-    { key: "name", label: "Name", render: (t) => <span>{t.name}</span> },
-    { key: "code", label: "Code" },
-    { key: "isPaid", label: "Paid", render: (t) => t.isPaid ? "Yes" : "No" },
-    { key: "maxBalance", label: "Leave Count", render: (t) => `${t.maxBalance}` },
-    { key: "isCarryForward", label: "Carry Fwd", render: (t) => t.isCarryForward ? "Yes" : "No" },
+    { key: "sno", label: "S. No.", render: (_t, i) => <span className="text-gray-500">{i + 1}</span> },
+    { key: "name", label: "Leave Name", render: (t) => <span className="font-medium text-gray-900">{t.name}</span> },
+    { key: "code", label: "Short Code" },
+    { key: "description", label: "Description", render: (t) => <span className="text-gray-600">{t.description || "—"}</span> },
+    { key: "createdByName", label: "Created By", render: (t) => t.createdByName || "—" },
+    { key: "updatedByName", label: "Last Updated By", render: (t) => t.updatedByName || "—" },
   ];
 
   const openAdd = () => {
@@ -293,41 +289,6 @@ function LeaveTypesTab({ onRulesOpenChange }: { onRulesOpenChange?: (open: boole
     !search || t.name.toLowerCase().includes(search.toLowerCase()) || t.code.toLowerCase().includes(search.toLowerCase())
   );
 
-  // Rules open as a full-width section (not a modal) — like a dedicated settings
-  // page, with a back arrow to return to the leave-types list.
-  if (rulesTarget) {
-    return (
-      <div className="w-full">
-        <div className="flex items-center gap-3 mb-3">
-          <button
-            type="button"
-            onClick={() => setRulesTarget(null)}
-            title="Back to leave types"
-            className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 shrink-0"
-          >
-            <ArrowLeft size={16} />
-          </button>
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-lg bg-green-50 text-green-600 flex items-center justify-center shrink-0">
-              <SlidersHorizontal size={18} />
-            </div>
-            <div>
-              <h1 className="text-page-title text-gray-900 leading-tight">{rulesTarget.name} · Rules</h1>
-              <p className="text-xs text-gray-500">Configure entitlement, applying rules and restrictions</p>
-            </div>
-          </div>
-        </div>
-        <div className="surface-card p-4 w-full">
-          <LeaveRulesWizard
-            leaveType={rulesTarget}
-            allTypes={data?.data ?? []}
-            onClose={() => setRulesTarget(null)}
-          />
-        </div>
-      </div>
-    );
-  }
-
   return (
     <>
       <CrudTable
@@ -341,16 +302,6 @@ function LeaveTypesTab({ onRulesOpenChange }: { onRulesOpenChange?: (open: boole
         search={search}
         onSearchChange={setSearch}
         searchPlaceholder="Search leave types..."
-        extraActions={(item) => (
-          <button
-            type="button"
-            onClick={() => setRulesTarget(item)}
-            title="Set rules"
-            className="w-8 h-8 inline-flex items-center justify-center text-gray-400 hover:text-[#22c55e] rounded-lg hover:bg-green-50"
-          >
-            <SlidersHorizontal size={13} />
-          </button>
-        )}
       />
 
       <Modal
@@ -567,7 +518,6 @@ function GroupCard({ group, onEdit, onAssign, onDelete }: {
   group: LeaveGroup; onEdit: () => void; onAssign: () => void; onDelete: () => void;
 }) {
   const empCount = group.assignments.filter((a) => a.assigneeType === "Employee").length;
-  const roleCount = group.assignments.filter((a) => a.assigneeType === "Role").length;
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white hover:shadow-md transition p-4">
@@ -601,15 +551,14 @@ function GroupCard({ group, onEdit, onAssign, onDelete }: {
 
       <div className="flex items-center gap-3 text-xs text-gray-600 border-t border-gray-100 pt-2.5">
         <div className="inline-flex items-center gap-1"><Users size={12} /> {empCount} employee{empCount === 1 ? "" : "s"}</div>
-        <div className="inline-flex items-center gap-1"><Shield size={12} /> {roleCount} role{roleCount === 1 ? "" : "s"}</div>
       </div>
 
       <div className="flex items-center gap-1 mt-3">
         <button onClick={onAssign} className="flex-1 inline-flex items-center justify-center gap-1 px-2.5 py-1 bg-[#f0fdf4] hover:bg-[#dcfce7] text-[#16a34a] rounded text-xs font-normal">
           <Users size={12} /> Assign
         </button>
-        <button onClick={onEdit} className="inline-flex items-center gap-1 px-2.5 py-1 border border-gray-200 hover:bg-gray-50 text-gray-700 rounded text-xs font-normal">
-          <Pencil size={12} /> Edit
+        <button onClick={onEdit} className="flex-1 inline-flex items-center justify-center gap-1 px-2.5 py-1 border border-gray-200 hover:bg-gray-50 text-gray-700 rounded text-xs font-normal">
+          <Pencil size={12} /> Configuration
         </button>
         <button onClick={onDelete} className="inline-flex items-center gap-1 px-2.5 py-1 border border-red-200 hover:bg-red-50 text-red-600 rounded text-xs font-normal">
           <Trash2 size={12} />
@@ -638,8 +587,11 @@ function LeaveGroupEditor({ group, onClose }: { group: LeaveGroup | null; onClos
     items: (group?.items ?? []).map((i) => ({
       leaveTypeId: i.leaveTypeId,
       overrideQuota: i.overrideQuota ? Number(i.overrideQuota) : null as number | null,
+      rules: (i.rules ?? null) as Record<string, unknown> | null,
     })),
   });
+  // The leave type whose per-group rules are being edited (opens the wizard).
+  const [rulesFor, setRulesFor] = useState<string | null>(null);
 
   const createMut = useMutation({
     mutationFn: (body: typeof form) => api.post("/api/v1/hrms/leaves/groups", body),
@@ -664,43 +616,35 @@ function LeaveGroupEditor({ group, onClose }: { group: LeaveGroup | null; onClos
   const toggleType = (id: string) => {
     setForm((p) => selectedIds.has(id)
       ? { ...p, items: p.items.filter((i) => i.leaveTypeId !== id) }
-      : { ...p, items: [...p.items, { leaveTypeId: id, overrideQuota: null }] }
+      : { ...p, items: [...p.items, { leaveTypeId: id, overrideQuota: null, rules: null }] }
     );
   };
 
-  const updateQuota = (id: string, q: number | null) => {
-    setForm((p) => ({
-      ...p,
-      items: p.items.map((i) => i.leaveTypeId === id ? { ...i, overrideQuota: q } : i),
-    }));
+  const saveItemRules = async (leaveTypeId: string, payload: Record<string, unknown>) => {
+    const nextItems = form.items.map((i) => i.leaveTypeId === leaveTypeId ? { ...i, rules: payload } : i);
+    setForm((p) => ({ ...p, items: nextItems }));
+    // If the group already exists, persist the rules to the DB immediately so the
+    // user doesn't have to remember to click "Save Changes" afterwards.
+    if (group) {
+      await api.patch(`/api/v1/hrms/leaves/groups/${group.id}`, { ...form, items: nextItems });
+      qc.invalidateQueries({ queryKey: ["leave-groups"] });
+    }
+    setRulesFor(null);
   };
 
   return (
     <Modal open onClose={onClose} title={group ? "Edit Leave Group" : "New Leave Group"} size="xl">
       <form onSubmit={submit} className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Group Name *</label>
-            <input
-              type="text"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              required
-              placeholder="e.g., Full-Time Standard, Intern Plan"
-              className="w-full border border-[var(--border)] rounded-md px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
-            <Select
-              value={form.isActive ? "active" : "inactive"}
-              onChange={(v) => setForm({ ...form, isActive: v === "active" })}
-              options={[
-                { value: "active", label: "Active" },
-                { value: "inactive", label: "Inactive" },
-              ]}
-            />
-          </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Group Name *</label>
+          <input
+            type="text"
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            required
+            placeholder="e.g., Full-Time Standard, Intern Plan"
+            className="w-full border border-[var(--border)] rounded-md px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]"
+          />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
@@ -748,24 +692,40 @@ function LeaveGroupEditor({ group, onClose }: { group: LeaveGroup | null; onClos
                     <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 ring-1 ring-inset ring-black/10" style={{ backgroundColor: t.color || "#cbd5e1" }} />
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-semibold text-gray-900 truncate">{t.name}</div>
-                      <div className="text-[10px] text-gray-500">{t.code} · {t.maxBalance} days/yr</div>
+                      <div className="text-[10px] text-gray-500">
+                        {t.code} · {(() => {
+                          const r = item?.rules as { isUnlimited?: boolean; maxBalance?: number } | undefined;
+                          if (r?.isUnlimited) return "Unlimited";
+                          if (r && typeof r.maxBalance === "number") return `${r.maxBalance} days/yr`;
+                          return `${t.maxBalance} days/yr`;
+                        })()}
+                      </div>
                     </div>
-                    {selected && (
-                      <NumberInput
-                        step={0.5}
-                        placeholder="Quota"
-                        value={item?.overrideQuota ?? null}
-                        onChange={(v) => updateQuota(t.id, v)}
-                        style={{ width: "70px" }}
-                        className="shrink-0 border border-[var(--border)] rounded px-1.5 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-[#166534]"
-                      />
+                    {/* Rules are configured only when editing an existing group
+                        (the "configure after" step). Creating = pick types only. */}
+                    {selected && group && (
+                      <button
+                        type="button"
+                        onClick={() => setRulesFor(t.id)}
+                        title="Configure this leave's rules for this group"
+                        className={clsx(
+                          "shrink-0 w-7 h-7 inline-flex items-center justify-center rounded-md border transition",
+                          item?.rules ? "border-green-300 bg-green-50 text-green-700" : "border-gray-200 text-gray-500 hover:bg-gray-50",
+                        )}
+                      >
+                        <SlidersHorizontal size={13} />
+                      </button>
                     )}
                   </div>
                 );
               })}
             </div>
           )}
-          <p className="text-[11px] text-gray-500 mt-1">Quota field overrides type default for members of this group. Leave empty to inherit.</p>
+          <p className="text-[11px] text-gray-500 mt-1">
+            {group
+              ? "Configure each type's rules (⚙) for this group."
+              : "Pick the leave types for this group. You'll set each one's rules after creating it."}
+          </p>
         </div>
 
         <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
@@ -779,6 +739,25 @@ function LeaveGroupEditor({ group, onClose }: { group: LeaveGroup | null; onClos
           </button>
         </div>
       </form>
+
+      {rulesFor && (() => {
+        const rt = allTypes.find((t) => t.id === rulesFor);
+        const it = form.items.find((i) => i.leaveTypeId === rulesFor);
+        if (!rt) return null;
+        const stored = (it?.rules ?? {}) as Record<string, unknown>;
+        return (
+          <Modal open onClose={() => setRulesFor(null)} title={`${rt.name} · Rules (this group)`}
+            subtitle="These rules apply to this leave type within this group only." headerIcon={<SlidersHorizontal size={18} />}
+            size="3xl" bodyClassName="p-6 overflow-y-auto">
+            <LeaveRulesWizard
+              leaveType={{ id: rt.id, name: rt.name, code: rt.code, maxBalance: Number(stored.maxBalance ?? rt.maxBalance ?? 0), ...stored } as LeaveTypeRules}
+              allTypes={allTypes.map((t) => ({ id: t.id, name: t.name, code: t.code }))}
+              onClose={() => setRulesFor(null)}
+              onSave={(payload) => saveItemRules(rulesFor, payload)}
+            />
+          </Modal>
+        );
+      })()}
     </Modal>
   );
 }

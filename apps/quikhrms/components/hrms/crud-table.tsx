@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/hrms/skeleton";
 export interface Column<T> {
   key: string;
   label: string;
-  render?: (item: T) => React.ReactNode;
+  render?: (item: T, index: number) => React.ReactNode;
 }
 
 interface CrudTableProps<T extends { id: string }> {
@@ -122,7 +122,7 @@ export function CrudTable<T extends { id: string }>({
                   {columns.map((col) => (
                     <td key={col.key}>
                       {col.render
-                        ? col.render(item)
+                        ? col.render(item, i)
                         : String((item as Record<string, unknown>)[col.key] ?? "—")}
                     </td>
                   ))}

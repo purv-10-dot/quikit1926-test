@@ -173,23 +173,6 @@ export default function MyLeavesPage() {
   });
   const dryRun = dryRunResp?.data ?? null;
 
-  /** Format the rule card as plain-English bullet points. */
-  function rulesBullets(r: DryRunResult["rules"]): string[] {
-    if (!r) return [];
-    const out: string[] = [];
-    if (r.maxConsecutiveDays != null) out.push(`Max ${r.maxConsecutiveDays} day${r.maxConsecutiveDays === 1 ? "" : "s"} at a time`);
-    if (r.minConsecutiveDays != null) out.push(`Must be taken in blocks of ${r.minConsecutiveDays}+ days`);
-    if (r.maxPerMonth != null) out.push(`Up to ${r.maxPerMonth} day${r.maxPerMonth === 1 ? "" : "s"} per month`);
-    if (r.maxPerYear != null) out.push(`Up to ${r.maxPerYear} day${r.maxPerYear === 1 ? "" : "s"} per year`);
-    if (r.advanceNoticeDays != null) out.push(`Apply ${r.advanceNoticeDays} day${r.advanceNoticeDays === 1 ? "" : "s"} in advance`);
-    if (r.applicableAfterDays != null) out.push(`Available ${r.applicableAfterDays} days after joining`);
-    if (r.probationBlocked) out.push("Not available during probation");
-    if (r.applicableGender) out.push(`Available for ${r.applicableGender} employees only`);
-    if (r.sandwichRule) out.push("Weekends/holidays between leave days count as leave");
-    if (r.requiresDocumentation) out.push("Supporting document may be required");
-    return out;
-  }
-
   const liveBlockingViolations = useMemo(
     () => (dryRun?.violations ?? []).filter((v) => v.severity === "block"),
     [dryRun],
@@ -648,32 +631,6 @@ export default function MyLeavesPage() {
               <p className="mt-1 text-xs text-amber-600">No leave types are configured yet. Ask your HR/admin to set up leave policies before applying.</p>
             )}
           </div>
-
-          {/* Live policy rules — populated by the dry-run as soon as a type is picked. */}
-          {form.leaveTypeId && dryRun && (
-            (() => {
-              const bullets = rulesBullets(dryRun.rules);
-              return (
-                <div className="rounded-lg border border-green-100 bg-green-50/60 px-3 py-2.5">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-green-700">
-                    Policy rules · {dryRun.leaveType.name}
-                  </div>
-                  {bullets.length === 0 ? (
-                    <p className="mt-1 text-xs text-gray-500">No specific limits — only your balance applies.</p>
-                  ) : (
-                    <ul className="mt-1.5 space-y-0.5 text-xs text-gray-700">
-                      {bullets.map((b) => (
-                        <li key={b} className="flex items-start gap-1.5">
-                          <span className="mt-1.5 inline-block h-1 w-1 shrink-0 rounded-full bg-green-500" />
-                          <span>{b}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              );
-            })()
-          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div>

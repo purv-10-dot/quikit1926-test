@@ -21,7 +21,23 @@ export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
       prisma.leaveType.count({ where }),
     ]);
 
-    return successResponse(types, paginationMeta(page, limit, total));
+    // Resolve createdBy / updatedBy (Employee.id) to display names.
+    const actorIds = [...new Set(types.flatMap((t) => [t.createdBy, t.updatedBy]).filter(Boolean) as string[])];
+    const actors = actorIds.length
+      ? await prisma.employee.findMany({
+          where: { orgId, id: { in: actorIds } },
+          select: { id: true, firstName: true, lastName: true },
+        })
+      : [];
+    const nameById = new Map(actors.map((a) => [a.id, `${a.firstName} ${a.lastName ?? ""}`.trim()]));
+
+    const enriched = types.map((t) => ({
+      ...t,
+      createdByName: t.createdBy ? nameById.get(t.createdBy) ?? null : null,
+      updatedByName: t.updatedBy ? nameById.get(t.updatedBy) ?? null : null,
+    }));
+
+    return successResponse(enriched, paginationMeta(page, limit, total));
   } catch (error) {
     console.error("GET /leaves/types error:", error);
     return internalError();

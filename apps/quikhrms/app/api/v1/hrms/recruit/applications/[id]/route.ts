@@ -381,6 +381,9 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
       if (data.status === "AppRejected") {
         updateData.rejectionReason = data.rejectionReason;
         updateData.rejectionStage = existing.currentStage;
+        // Stamp a stable rejection time so the re-apply cooling window counts
+        // from the actual rejection (not from later edits to updatedAt).
+        if (existing.status !== "AppRejected") updateData.rejectedAt = new Date();
         // Reflect the rejection on the candidate so the Candidates list stops
         // showing them as "In Pipeline" and they can be filtered as Rejected.
         await prisma.candidate.update({
@@ -394,22 +397,18 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
         }).catch(() => null);
       }
       if (data.status === "AppHired") {
-        // Don't over-fill a requisition — surface a clear message instead of
-        // silently incrementing past the sanctioned headcount.
-        const req = await prisma.jobRequisition.findFirst({
-          where: { id: existing.requisitionId, orgId, deletedAt: null },
-          select: { positions: true, filledPositions: true },
-        });
-        if (req && req.filledPositions >= req.positions) {
+        // Atomic headcount claim: increment ONLY if a seat is still open, in a
+        // single conditional UPDATE. Prevents two simultaneous hires from both
+        // passing a separate "is it full?" check and overfilling the req.
+        const claimed = await prisma.$executeRaw`
+          UPDATE app_quikhrms."JobRequisition"
+          SET "filledPositions" = "filledPositions" + 1, "updatedBy" = ${userId}
+          WHERE id = ${existing.requisitionId} AND "orgId" = ${orgId}
+            AND "deletedAt" IS NULL AND "filledPositions" < "positions"`;
+        if (claimed === 0) {
           return conflict("All positions for this requisition are already filled.");
         }
-        await Promise.all([
-          prisma.candidate.update({ where: { id: existing.candidateId }, data: { status: "Hired" } }),
-          prisma.jobRequisition.update({
-            where: { id: existing.requisitionId },
-            data: { filledPositions: { increment: 1 } },
-          }),
-        ]);
+        await prisma.candidate.update({ where: { id: existing.candidateId }, data: { status: "Hired" } }).catch(() => null);
       }
     }
 

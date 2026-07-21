@@ -139,6 +139,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       data: {
         status: "AppRejected",
         rejectionReason: data.concerns || data.overallComments || "Rejected via interviewer feedback",
+        rejectedAt: new Date(),
       },
     }).catch(() => null);
 

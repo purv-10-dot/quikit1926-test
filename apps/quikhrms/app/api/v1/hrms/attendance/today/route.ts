@@ -3,11 +3,11 @@ import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, internalError } from "@/lib/api-response";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
+import { attendanceDayStart } from "@/lib/attendance/day";
 
 export const GET = withAuth(async (_req: NextRequest, { orgId, userId }) => {
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = attendanceDayStart();
 
     const employeeId = (await resolveEmployeeId(orgId, userId)) ?? userId;
 

@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, validationError, internalError } from "@/lib/api-response";
-import { createSocialPostSchema } from "@/lib/validations/engage";
+import { createSocialPostSchema, visibilityToDb } from "@/lib/validations/engage";
 import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { fireWorkflow } from "@/lib/workflows/executor";
@@ -56,7 +56,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         orgId, employeeId, type: data.type, content: data.content,
         attachments: data.attachments ? JSON.parse(JSON.stringify(data.attachments)) : undefined,
         pollData: data.pollData ? JSON.parse(JSON.stringify(data.pollData)) : undefined,
-        visibility: data.visibility,
+        visibility: visibilityToDb(data.visibility),
         scheduledAt: data.scheduledAt ? new Date(data.scheduledAt) : undefined,
         approvalStatus: needsApproval ? "Pending" : "Approved",
         approvedById: needsApproval ? null : userId,

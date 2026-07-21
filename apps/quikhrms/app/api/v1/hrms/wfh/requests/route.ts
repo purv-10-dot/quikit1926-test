@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, validationError, internalError, notFound } from "@/lib/api-response";
+import { successResponse, validationError, internalError, notFound, conflict } from "@/lib/api-response";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { createWfhSchema } from "@/lib/validations/wfh";
 import { resolveAndSend } from "@/lib/email/resolve";
@@ -87,6 +87,22 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     });
     if (!employee) return notFound("Employee record not found");
     const employeeRoleName = employee.appRoles[0]?.role.name ?? null;
+
+    // Overlap guard: reject if these dates clash with an existing Pending/Approved
+    // WFH request — prevents double-booking the same days and duplicate submits.
+    const wfhClash = await prisma.wfhRequest.findFirst({
+      where: {
+        orgId, employeeId, deletedAt: null,
+        status: { in: ["Pending", "Approved"] },
+        startDate: { lte: end },
+        endDate: { gte: start },
+      },
+      select: { startDate: true, endDate: true },
+    });
+    if (wfhClash) {
+      const fmt = (d: Date) => new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+      return conflict(`You already have a WFH request for ${fmt(wfhClash.startDate)} – ${fmt(wfhClash.endDate)} that overlaps these dates.`);
+    }
 
     // Yearly quota enforcement (effective group = explicit > department mapping)
     const effective = await resolveEffectiveWfhQuotaGroup(orgId, employeeId);

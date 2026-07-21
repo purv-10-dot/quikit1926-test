@@ -37,6 +37,13 @@ export const POST = withAuth(async (req: NextRequest, ctx, params) => {
     });
     if (!claim) return notFound("Claim not found");
 
+    // Segregation of duties: you can't approve/reject your OWN claim. Super-admin
+    // ("*") keeps an escape hatch so a solo admin isn't permanently locked out.
+    const callerEmpId = await getCallerEmployeeId(ctx);
+    if (!ctx.permissions.includes("*") && callerEmpId && claim.employeeId === callerEmpId) {
+      return forbidden("You can't approve or reject your own expense claim.");
+    }
+
     if (!["Submitted", "ManagerApproved", "FinanceApproved"].includes(claim.status)) {
       return conflict(`Cannot approve claim in ${claim.status} state`);
     }

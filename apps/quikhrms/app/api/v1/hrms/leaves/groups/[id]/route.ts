@@ -83,19 +83,26 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
       });
 
       if (data.items) {
-        const typeIds = data.items.map((i) => i.leaveTypeId);
-        const validTypes = await tx.leaveType.count({
-          where: { orgId, deletedAt: null, id: { in: typeIds } },
+        const uniqueItems = Array.from(new Map(data.items.map((i) => [i.leaveTypeId, i])).values());
+        // Keep only items whose leave type still exists (active). A leave type
+        // deleted after being added to the group leaves a dangling item; drop it
+        // (self-heal) instead of hard-blocking every future edit of this group.
+        const validRows = await tx.leaveType.findMany({
+          where: { orgId, deletedAt: null, id: { in: uniqueItems.map((i) => i.leaveTypeId) } },
+          select: { id: true },
         });
-        if (validTypes !== typeIds.length) throw new Error("INVALID_TYPES");
+        const validSet = new Set(validRows.map((r) => r.id));
+        const keptItems = uniqueItems.filter((i) => validSet.has(i.leaveTypeId));
+        if (keptItems.length === 0) throw new Error("INVALID_TYPES");
 
         await tx.leaveGroupItem.deleteMany({ where: { leaveGroupId: params.id } });
         await tx.leaveGroupItem.createMany({
-          data: data.items.map((i) => ({
+          data: keptItems.map((i) => ({
             orgId,
             leaveGroupId: params.id,
             leaveTypeId: i.leaveTypeId,
             overrideQuota: i.overrideQuota ?? null,
+            rules: i.rules ? JSON.parse(JSON.stringify(i.rules)) : undefined,
           })),
         });
       }

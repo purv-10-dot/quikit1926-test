@@ -6,6 +6,7 @@ import { updateEmployeeSchema } from "@/lib/validations/employee";
 import { fireWorkflow } from "@/lib/workflows/executor";
 import { invalidatePermissionCache } from "@/lib/with-auth";
 import { ensureSuperAdminRemains } from "@/lib/rbac/guards";
+import { mirrorHrmsRolesToCentral } from "@/lib/rbac/mirrorRole";
 import { scheduleOrgChartRebuild } from "@/lib/org-chart-rebuild";
 import { cascadeSoftDeleteEmployee, restoreEmployee } from "@/lib/services/employee-cascade";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
@@ -129,7 +130,9 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId, permissi
       "epfApplicable", "esiApplicable", "ptApplicable",
     ] as const;
     // roleId is handled separately via UserAppRole join — not an Employee column.
-    const incomingRoleId = "roleId" in data ? ((data as { roleId?: string | null }).roleId ?? null) : undefined;
+    // Role changes are admin-only; a self-service editor can never change roles.
+    const rawRoleId = "roleId" in data ? ((data as { roleId?: string | null }).roleId ?? null) : undefined;
+    const incomingRoleId = canManageEmployees ? rawRoleId : undefined;
 
     for (const field of directFields) {
       if (field in data) {
@@ -144,7 +147,24 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId, permissi
       }
     }
 
-    if (incomingRoleId !== undefined) {
+    // Privilege-escalation guard: a self-service editor (no employee.write) may
+    // only change their own PERSONAL / contact fields — never org, compensation,
+    // status, statutory, role, or identity-document data.
+    if (isSelf && !canManageEmployees) {
+      const SELF_EDITABLE = new Set([
+        "firstName", "middleName", "lastName", "displayName", "gender", "bloodGroup",
+        "maritalStatus", "nationality", "profilePhoto", "coverImage", "bio",
+        "personalEmail", "personalPhone", "workPhone", "linkedinUrl", "githubUrl",
+        "portfolioUrl", "currentAddress", "permanentAddress", "emergencyContacts",
+        "dateOfBirth", "languages",
+      ]);
+      for (const key of Object.keys(updateData)) {
+        if (key !== "updatedBy" && !SELF_EDITABLE.has(key)) delete updateData[key];
+      }
+    }
+
+    // Role changes are admin-only (never self-service).
+    if (incomingRoleId !== undefined && canManageEmployees) {
       try {
         await ensureSuperAdminRemains(orgId, [params.id], incomingRoleId);
       } catch (e) {
@@ -177,6 +197,39 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId, permissi
         return validationError(
           "EPF rate cannot revert from Actual to Restricted (per EPF Act). Raise an exception ticket if required.",
         );
+      }
+    }
+
+    // Reporting-manager loop guard: an employee can't report to themselves or to
+    // anyone in their own downline (would create a cycle in the org tree and can
+    // hang code that walks the manager chain). Enforced server-side (the drag UI
+    // guards it too, but the API must not depend on the client).
+    if ("reportingManagerId" in updateData && updateData.reportingManagerId) {
+      const newMgr = updateData.reportingManagerId as string;
+      if (newMgr === params.id) {
+        return validationError("An employee can't report to themselves.");
+      }
+      const everyone = await prisma.employee.findMany({
+        where: { orgId, deletedAt: null },
+        select: { id: true, reportingManagerId: true },
+      });
+      const childrenByMgr = new Map<string, string[]>();
+      for (const e of everyone) {
+        if (!e.reportingManagerId) continue;
+        const arr = childrenByMgr.get(e.reportingManagerId) ?? [];
+        arr.push(e.id);
+        childrenByMgr.set(e.reportingManagerId, arr);
+      }
+      const downline = new Set<string>();
+      const queue = [...(childrenByMgr.get(params.id) ?? [])];
+      while (queue.length) {
+        const id = queue.shift()!;
+        if (downline.has(id)) continue;
+        downline.add(id);
+        for (const k of childrenByMgr.get(id) ?? []) queue.push(k);
+      }
+      if (downline.has(newMgr)) {
+        return validationError("This would create a reporting loop — the chosen manager reports (directly or indirectly) to this employee.");
       }
     }
 

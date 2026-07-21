@@ -19,7 +19,7 @@ export const POST = withAuth(async (req: NextRequest, ctx, params) => {
 
     const roster = await prisma.roster.findFirst({
       where: { id: params.id, orgId, deletedAt: null },
-      select: { id: true, status: true },
+      select: { id: true, status: true, periodStart: true, periodEnd: true },
     });
     if (!roster) return notFound("Roster not found");
     if (roster.status !== "Draft") return validationError("Only a draft roster can be edited");
@@ -28,6 +28,12 @@ export const POST = withAuth(async (req: NextRequest, ctx, params) => {
     const parsed = rosterEntriesSchema.safeParse(body);
     if (!parsed.success) return validationError("Validation failed", parsed.error.flatten().fieldErrors);
     const { entries } = parsed.data;
+
+    // Every entry date must fall inside the roster's own period — otherwise we'd
+    // create orphan cells (invisible in the grid) that still drive attendance.
+    if (entries.some((e) => e.date < roster.periodStart || e.date > roster.periodEnd)) {
+      return validationError("One or more entries fall outside this roster's date range.");
+    }
 
     // Hierarchy guard: every target employee must be within reach.
     const hierarchy = await getHierarchyAccessibleEmployeeIds(ctx);

@@ -996,8 +996,13 @@ export default function InterviewsPage() {
                           <Tooltip content="Reschedule interview">
                             <button
                               onClick={() => {
+                                // datetime-local expects LOCAL wall-clock time.
+                                // toISOString() is UTC, so shift by the tz offset
+                                // to prefill the correct local (IST) time.
+                                const d = new Date(i.scheduledAt);
+                                const localVal = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
                                 setRescheduleForm({
-                                  scheduledAt: new Date(i.scheduledAt).toISOString().slice(0, 16),
+                                  scheduledAt: localVal,
                                   meetingLink: i.meetingLink ?? "",
                                   location: i.location ?? "",
                                 });

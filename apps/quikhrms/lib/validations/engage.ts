@@ -1,5 +1,18 @@
 import { z } from "zod";
 
+// The UI/API use the visibility value "Team", but the Prisma `PostVisibility`
+// enum stores it as "HrmsTeam" (renamed to avoid a cross-app clash). Translate
+// at the route boundary so "Team" never reaches Prisma (enum error → 500) and
+// DB reads surface "Team" back to the UI.
+type VisibilityApi = "Organization" | "Department" | "Team" | "Custom";
+type VisibilityDb = "Organization" | "Department" | "HrmsTeam" | "Custom";
+export function visibilityToDb(v: VisibilityApi): VisibilityDb {
+  return v === "Team" ? "HrmsTeam" : v;
+}
+export function visibilityFromDb(v: VisibilityDb): VisibilityApi {
+  return v === "HrmsTeam" ? "Team" : v;
+}
+
 // ─── Social Post ────────────────────────────────────────
 
 const mediaItemSchema = z.object({

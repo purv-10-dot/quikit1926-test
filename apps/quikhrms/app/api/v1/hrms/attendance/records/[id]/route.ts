@@ -54,11 +54,15 @@ export const PATCH = withAuth(async (req: NextRequest, ctx, params) => {
         return conflict("This day's attendance has already been regularized.");
       }
 
+      // Store the REQUESTED times separately — do NOT touch the live
+      // checkIn/checkOut until an approver approves. (Previously this overwrote
+      // the real times on submit, so employees could self-edit attendance and a
+      // rejection wouldn't undo it.)
       const record = await prisma.attendanceRecord.update({
         where: { id: params.id },
         data: {
-          checkIn: parsed.data.checkIn ? new Date(parsed.data.checkIn) : existing.checkIn,
-          checkOut: parsed.data.checkOut ? new Date(parsed.data.checkOut) : existing.checkOut,
+          regularizedCheckIn: parsed.data.checkIn ? new Date(parsed.data.checkIn) : existing.checkIn,
+          regularizedCheckOut: parsed.data.checkOut ? new Date(parsed.data.checkOut) : existing.checkOut,
           regularizationStatus: "Pending",
           regularizationReason: parsed.data.reason,
           updatedBy: userId,
@@ -123,12 +127,30 @@ export const PATCH = withAuth(async (req: NextRequest, ctx, params) => {
         return conflict("This regularization is no longer pending — it may already have been actioned.");
       }
 
+      // On APPROVE, apply the requested times to the live record + recompute
+      // hours. On REJECT, discard the request (live times stay untouched).
+      const applyData: Record<string, unknown> = {
+        regularizationStatus: parsed.data.status,
+        regularizedCheckIn: null,
+        regularizedCheckOut: null,
+        updatedBy: userId,
+      };
+      if (parsed.data.status === "Approved") {
+        const ci = existing.regularizedCheckIn ?? existing.checkIn;
+        const co = existing.regularizedCheckOut ?? existing.checkOut;
+        applyData.checkIn = ci;
+        applyData.checkOut = co;
+        if (ci) applyData.status = "Present";
+        if (ci && co) {
+          const gross = Math.max(0, (co.getTime() - ci.getTime()) / 3_600_000);
+          const brk = Number(existing.breakDuration ?? 0);
+          applyData.grossHours = Math.round(gross * 100) / 100;
+          applyData.effectiveHours = Math.round(Math.max(0, gross - brk) * 100) / 100;
+        }
+      }
       const record = await prisma.attendanceRecord.update({
         where: { id: params.id },
-        data: {
-          regularizationStatus: parsed.data.status,
-          updatedBy: userId,
-        },
+        data: applyData,
       });
       void fireWorkflow({
         orgId,

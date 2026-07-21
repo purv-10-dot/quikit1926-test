@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, notFound, validationError, internalError } from "@/lib/api-response";
-import { updateAnnouncementSchema } from "@/lib/validations/engage";
+import { updateAnnouncementSchema, visibilityToDb } from "@/lib/validations/engage";
 
 export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
   try {
@@ -22,7 +22,15 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
     const body = await req.json();
     const parsed = updateAnnouncementSchema.safeParse(body);
     if (!parsed.success) return validationError("Validation failed", parsed.error.flatten().fieldErrors);
-    const ann = await prisma.announcement.update({ where: { id: params.id }, data: { ...parsed.data, updatedBy: userId } });
+    const { visibility, ...rest } = parsed.data;
+    const ann = await prisma.announcement.update({
+      where: { id: params.id },
+      data: {
+        ...rest,
+        ...(visibility ? { visibility: visibilityToDb(visibility) } : {}),
+        updatedBy: userId,
+      },
+    });
     return successResponse(ann);
   } catch (error) { console.error("PATCH /engage/announcements/:id error:", error); return internalError(); }
 });

@@ -10,7 +10,7 @@ import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { clsx } from "clsx";
-import { User, Users, ArrowRight, UserPlus, CheckCircle, Check, Star, MessageSquare, X, Search, Mail, Clock, ThumbsUp, ThumbsDown, LayoutGrid, List, Download, CalendarPlus, MapPin, Link2, FileCheck2, FileText, Briefcase, Calendar, FileCheck, Copy, ExternalLink, SkipForward, Phone, Video, Award, Send, BellRing, Info, AlertTriangle, ChevronDown, Save, HelpCircle, ClipboardList } from "lucide-react";
+import { User, Users, ArrowRight, UserPlus, CheckCircle, Check, Star, MessageSquare, X, Search, Mail, Clock, ThumbsUp, ThumbsDown, LayoutGrid, List, Download, CalendarPlus, MapPin, Link2, FileCheck2, FileText, Briefcase, Calendar, FileCheck, Copy, ExternalLink, SkipForward, FastForward, Phone, Video, Award, Send, BellRing, Info, AlertTriangle, ChevronDown, Save, HelpCircle, ClipboardList } from "lucide-react";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { SendOfferWizard } from "./_components/send-offer-wizard";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
@@ -1258,8 +1258,8 @@ export default function PipelinePage() {
 
                     <div className="flex items-center gap-1.5">
                       <button onClick={() => setHistoryApp(app)} title="Feedback history"
-                        className="inline-flex items-center justify-center w-8 h-8 bg-white text-gray-500 ring-1 ring-gray-200 hover:bg-green-50 hover:text-green-600 hover:ring-green-200 rounded-lg transition">
-                        <Clock size={12} />
+                        className="inline-flex items-center justify-center w-8 h-8 bg-blue-50 text-blue-600 ring-1 ring-blue-200 hover:bg-blue-100 rounded-lg transition">
+                        <MessageSquare size={13} />
                       </button>
                       {showScreening(app) && (
                         <button onClick={() => setScreeningApp(app)} title="Screening questions"
@@ -1268,15 +1268,15 @@ export default function PipelinePage() {
                         </button>
                       )}
                       {stage !== "Hired" && isInterviewStage(app.currentStage ?? "") && canMoveForward(app.currentStage) && (
-                        <button onClick={() => { setFeedback({ ...BLANK_FEEDBACK }); setSkipTarget(getNextStage(app.currentStage) ?? ""); setSkipApp(app); prefillFeedback(app).then(setFeedback); }} title="Skip / move forward"
-                          className="inline-flex items-center justify-center w-8 h-8 bg-white text-gray-500 ring-1 ring-gray-200 hover:bg-green-50 hover:text-[#16a34a] hover:ring-[#bbf7d0] rounded-lg transition">
-                          <SkipForward size={12} />
+                        <button onClick={() => { setFeedback({ ...BLANK_FEEDBACK }); setSkipTarget(getNextStage(app.currentStage) ?? ""); setSkipApp(app); prefillFeedback(app).then(setFeedback); }} title="Skip & move forward"
+                          className="inline-flex items-center justify-center w-8 h-8 bg-amber-50 text-amber-600 ring-1 ring-amber-200 hover:bg-amber-100 rounded-lg transition">
+                          <FastForward size={13} />
                         </button>
                       )}
                       {app.docRequest?.status !== "Completed" && (
                         <button onClick={() => openDocRequest(app, /offer/i.test(stage) ? "PreOffer" : "PostOffer")} title="Request documents"
-                          className="inline-flex items-center justify-center w-8 h-8 bg-white text-gray-500 ring-1 ring-gray-200 hover:bg-violet-50 hover:text-violet-600 hover:ring-violet-200 rounded-lg transition">
-                          <FileText size={12} />
+                          className="inline-flex items-center justify-center w-8 h-8 bg-violet-50 text-violet-600 ring-1 ring-violet-200 hover:bg-violet-100 rounded-lg transition">
+                          <FileText size={13} />
                         </button>
                       )}
                       {/offer/i.test(stage) && app.docRequest?.status === "Pending" && (() => {
