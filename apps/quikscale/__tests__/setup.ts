@@ -156,6 +156,24 @@ vi.mock("next/navigation", () => ({
 }));
 
 // ---------------------------------------------------------------------------
+// jsdom polyfills
+// ---------------------------------------------------------------------------
+// jsdom has no ResizeObserver, but several components (HorizontalScroller,
+// used by every data grid) construct one in a mount effect. Historically only
+// a couple of test files stubbed it on `global`, and the rest passed only by
+// accident — the stub leaked across files sharing a worker. That made the
+// suite order-dependent (adding/reordering a test file could break KPIModal,
+// LogModal, StatsTab, etc. with "ResizeObserver is not defined"). Defining it
+// once here makes every test deterministic. Harmless in the node environment.
+if (typeof (globalThis as any).ResizeObserver === "undefined") {
+  (globalThis as any).ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Silence expected route-handler error logs
 // ---------------------------------------------------------------------------
 // Most API route handlers call console.error before returning a 4xx/5xx.
