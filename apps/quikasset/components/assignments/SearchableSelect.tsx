@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react"
 import { ChevronDown, Search, Check } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-type Option = { value: string; label: string; sublabel?: string }
+type Option = { value: string; label: string; sublabel?: string; extra?: string }
 
 interface Props {
   options: Option[]
@@ -14,7 +14,7 @@ interface Props {
   searchPlaceholder?: string
   error?: string
   disabled?: boolean
-  columnHeaders?: { label: string; sublabel: string }
+  columnHeaders?: { label: string; sublabel: string; extra?: string }
 }
 
 export default function SearchableSelect({
@@ -30,7 +30,8 @@ export default function SearchableSelect({
     ? options.filter(
         (o) =>
           o.label.toLowerCase().includes(query.toLowerCase()) ||
-          o.sublabel?.toLowerCase().includes(query.toLowerCase())
+          o.sublabel?.toLowerCase().includes(query.toLowerCase()) ||
+          o.extra?.toLowerCase().includes(query.toLowerCase())
       )
     : options
 
@@ -63,6 +64,7 @@ export default function SearchableSelect({
             <>
               <span>{selected.label}</span>
               {selected.sublabel && <span className="text-gray-400 ml-1">— {selected.sublabel}</span>}
+              {selected.extra && <span className="text-gray-400 ml-1">· {selected.extra}</span>}
             </>
           ) : placeholder}
         </span>
@@ -87,6 +89,7 @@ export default function SearchableSelect({
             <div className="flex items-center px-3 py-1.5 bg-gray-50 border-b border-gray-100">
               <h4 className="flex-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">{columnHeaders.label}</h4>
               <h4 className="flex-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">{columnHeaders.sublabel}</h4>
+              {columnHeaders.extra && <h4 className="flex-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">{columnHeaders.extra}</h4>}
               <span className="w-3" />
             </div>
           )}
@@ -107,6 +110,7 @@ export default function SearchableSelect({
                     <>
                       <span className="flex-1 text-left font-medium truncate">{o.label}</span>
                       <span className="flex-1 text-left text-gray-400 truncate">{o.sublabel ?? "—"}</span>
+                      {columnHeaders.extra && <span className="flex-1 text-left text-gray-400 truncate">{o.extra ?? "—"}</span>}
                     </>
                   ) : (
                     <span className="flex-1 text-left">

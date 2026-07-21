@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import Link from "next/link";
-import { User, Users as UsersIcon, Crown, Star, Filter as FilterIcon, Search, Building2, Shield, LayoutGrid, GitBranch, X, ZoomIn, ZoomOut, Maximize2, Minimize2, FileText, List, MapPin, Mail, Download, Plus, Grid3X3, Upload, ChevronUp, ChevronDown, UserPlus, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Trash2, Unlink } from "lucide-react";
+import { User, Users as UsersIcon, Crown, Star, Search, Building2, Shield, LayoutGrid, GitBranch, X, ZoomIn, ZoomOut, Maximize2, Minimize2, FileText, List, MapPin, Mail, Download, Plus, Grid3X3, Upload, ChevronUp, ChevronDown, UserPlus, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Trash2, Unlink } from "lucide-react";
 import { clsx } from "clsx";
 import { withBasePath } from "@/lib/utils/base-path";
 import { exportCsv as writeCsv } from "@/lib/utils/csv";
@@ -327,9 +327,11 @@ export default function OrgChartPage() {
         "/api/v1/hrms/org-chart",
       ),
   });
-  const all = allData?.data?.employees ?? [];
-  // People directory is locked to Active employees only.
-  const activeEmployees = useMemo(() => all.filter((e) => e.status === "Active"), [all]);
+  // Both the Org Chart and the Directory show Active employees only, so the
+  // "People" count matches across tabs. Non-active people (pre-boarding, on
+  // notice, suspended, etc.) are excluded from the tree.
+  const all = useMemo(() => (allData?.data?.employees ?? []).filter((e) => e.status === "Active"), [allData]);
+  const activeEmployees = all;
 
   const { data: deptData } = useQuery({
     queryKey: ["departments"],
@@ -627,7 +629,6 @@ export default function OrgChartPage() {
           <div className="flex items-center gap-3 text-xs">
             <span className="flex items-center gap-1 text-amber-600"><Crown size={12} /> Leader</span>
             <span className="flex items-center gap-1 text-[#22c55e]"><Star size={12} className="fill-[#22c55e]" /> You</span>
-            <span className="flex items-center gap-1 text-emerald-600"><Building2 size={12} /> HOD</span>
             <span className="flex items-center gap-1 text-gray-500"><UsersIcon size={12} /> Report</span>
           </div>
         )}
@@ -670,13 +671,9 @@ export default function OrgChartPage() {
         {/* View mode tabs — only for Org Chart */}
         {topTab === "orgchart" && (
         <div className="flex items-center gap-1 flex-wrap">
-          <div className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 uppercase tracking-wide px-2">
-            <FilterIcon size={11} /> View
-          </div>
           {[
             { value: "chain" as const, label: "My Chain", icon: <GitBranch size={12} /> },
             { value: "full" as const, label: "Full Org", icon: <LayoutGrid size={12} /> },
-            { value: "hods" as const, label: "HODs", icon: <Building2 size={12} /> },
           ].map((m) => {
             const active = viewMode === m.value;
             return (
@@ -719,19 +716,6 @@ export default function OrgChartPage() {
               options={[
                 { value: "", label: "All departments" },
                 ...departments.map((d) => ({ value: d.id, label: d.name })),
-              ]}
-            />
-          </div>
-
-          <div className="min-w-[160px]">
-            <Select
-              value={roleId}
-              onChange={setRoleId}
-              placeholder="All roles"
-              size="sm"
-              options={[
-                { value: "", label: "All roles" },
-                ...roles.map((r) => ({ value: r.id, label: r.name })),
               ]}
             />
           </div>
@@ -826,7 +810,8 @@ export default function OrgChartPage() {
         <div
           onMouseDown={editMode ? undefined : onPanStart}
           className={clsx(
-            "overflow-auto p-4 org-chart-scroll select-none",
+            // pt-16 clears the floating toolbar + total badge pinned at top-4.
+            "overflow-auto p-4 pt-16 org-chart-scroll select-none",
             editMode ? "cursor-default" : isPanning ? "cursor-grabbing" : "cursor-grab",
             isFullscreen ? "max-h-screen h-screen bg-white" : "min-h-[78vh] max-h-[85vh]",
           )}
@@ -1035,8 +1020,9 @@ function DirectoryView({ employees, hasActiveFilter, matchesFilters, roleById, v
   const qc = useQueryClient();
   const dialog = useDialog();
   const toast = useToast();
-  const { hasPermission } = useDashboardConfig();
-  const canDelete = hasPermission("hrms.employee.delete") || hasPermission("hrms.employee.write");
+  // Delete disabled for now (checkbox + per-row + bulk delete all hidden).
+  // Re-enable via permissions when needed.
+  const canDelete = false;
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -1116,14 +1102,6 @@ function DirectoryView({ employees, hasActiveFilter, matchesFilters, roleById, v
 
   const shown = hasActiveFilter ? employees.filter(matchesFilters) : employees;
   const byId = new Map(employees.map((e) => [e.id, e]));
-  const STATUS_PILL: Record<string, string> = {
-    Active:      "bg-emerald-50 text-emerald-700 ring-emerald-200",
-    PreBoarding: "bg-green-50 text-green-700 ring-green-200",
-    OnLeave:     "bg-amber-50 text-amber-700 ring-amber-200",
-    OnNotice:    "bg-orange-50 text-orange-700 ring-orange-200",
-    Suspended:   "bg-red-50 text-red-700 ring-red-200",
-    Relieved:    "bg-slate-100 text-slate-600 ring-slate-200",
-  };
 
   // ─── Pagination ────────────────────────────────────
   const [pageSize, setPageSize] = useState<number>(25);
@@ -1283,7 +1261,6 @@ function DirectoryView({ employees, hasActiveFilter, matchesFilters, roleById, v
                       <p className="text-[13px] font-semibold text-gray-900 truncate group-hover:text-[#22c55e]">{e.firstName} {e.lastName}</p>
                       <p className="text-[11px] text-gray-500 truncate">{e.employeeCode}</p>
                     </div>
-                    <span className={clsx("text-[11px] font-medium uppercase px-1.5 py-0.5 rounded-full ring-1 shrink-0", STATUS_PILL[e.status] ?? STATUS_PILL.Active)}>{e.status}</span>
                   </div>
                   <div className="mt-2 space-y-0.5 text-[11px] text-gray-600">
                     <p className="truncate">{e.designation?.title ?? e.jobTitle ?? "—"}</p>
@@ -1351,13 +1328,12 @@ function DirectoryView({ employees, hasActiveFilter, matchesFilters, roleById, v
                   />
                 </th>
               )}
-              <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Display Name</th>
+              <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Employee Name</th>
               <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Department</th>
               <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Job Title</th>
               <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Reports to</th>
               <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Employee Code</th>
               <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Role</th>
-              {canDelete && <th className="text-right px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em] w-20">Action</th>}
             </tr>
           </thead>
           <tbody>
@@ -1413,19 +1389,6 @@ function DirectoryView({ employees, hasActiveFilter, matchesFilters, roleById, v
                   </td>
                   <td className="px-4 py-2.5 text-xs font-mono text-slate-500">{e.employeeCode}</td>
                   <td className="px-4 py-2.5 text-xs text-slate-600">{roleLabel ?? "—"}</td>
-                  {canDelete && (
-                    <td className="px-4 py-2.5 text-right">
-                      <button
-                        type="button"
-                        disabled={deletingId === e.id}
-                        onClick={() => confirmDelete(e)}
-                        className="inline-flex items-center justify-center w-8 h-8 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-40"
-                        title="Delete employee"
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    </td>
-                  )}
                 </tr>
               );
             })}

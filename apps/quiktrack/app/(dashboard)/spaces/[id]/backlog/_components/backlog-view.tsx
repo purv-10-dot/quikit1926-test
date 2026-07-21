@@ -303,7 +303,7 @@ function InlineCreatorInner({
     );
   }
 
-  const meta = TYPE_META[type];
+  const meta = TYPE_META[type] ?? TYPE_META.TASK;
   const selectedMember = assigneeId ? members.find((m) => m.userId === assigneeId) : null;
 
   return (
@@ -1188,7 +1188,11 @@ function IssueRow({
   onToggleSelect: (next: boolean) => void;
   canDelete: boolean;
 }) {
-  const meta = TYPE_META[issue.type];
+  // Fall back to TASK for any unexpected/legacy type value — TYPE_META is typed
+  // as Record<IssueType,…> so TS assumes this is always defined, but a stray DB
+  // value (custom type, null, wrong case) would make `meta` undefined and
+  // `meta.Icon` below crashes the whole backlog into the error boundary.
+  const meta = TYPE_META[issue.type] ?? TYPE_META.TASK;
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState(issue.title);
   // Tooltip shown only when the title is actually clipped (scrollWidth >
@@ -2587,30 +2591,52 @@ export function BacklogView({ projectId }: { projectId: string }) {
       void refreshSection(key, detail.sprintId);
     }
     function onUpdated(e: Event) {
-      const detail = (e as CustomEvent<{ projectId: string; issueId?: string }>).detail;
+      const detail = (e as CustomEvent<{
+        projectId: string;
+        issueId?: string;
+        sprintId?: string | null;
+      }>).detail;
       if (!detail || detail.projectId !== projectId) return;
-      // Drop the patched row from every section's local cache immediately so
-      // a SUBTASK/EPIC type-change doesn't flash in the list while the refresh
-      // is in flight. The fetch below restores anything that legitimately
-      // belongs.
-      if (detail.issueId) {
+      // A single issue update only affects the section it currently lives in, so
+      // refresh JUST that section — not every loaded section (which fired one
+      // /api/issues request per sprint). Locate it in the loaded caches (source).
+      const affectedKeys = detail.issueId
+        ? Object.entries(sectionStates)
+            .filter(([, s]) => s.loaded && s.issues.some((x) => x.id === detail.issueId))
+            .map(([k]) => k)
+        : [];
+      // On a sprint move the destination section holds the row now but isn't in
+      // the source caches — refresh it too so it doesn't show a stale count with
+      // the row missing. Only if it's already loaded (don't force-load/expand a
+      // collapsed section; its count still updates via refreshSprintCounts).
+      if (detail.sprintId !== undefined) {
+        const destKey = detail.sprintId === null ? "backlog" : `sprint:${detail.sprintId}`;
+        if (!affectedKeys.includes(destKey) && sectionStates[destKey]?.loaded) {
+          affectedKeys.push(destKey);
+        }
+      }
+      // Drop the patched row from its section(s) immediately so a SUBTASK/EPIC
+      // type-change doesn't flash while the refresh is in flight. The fetch
+      // below restores it if it legitimately still belongs.
+      if (affectedKeys.length) {
         setSectionStates((all) => {
-          const next: Record<string, SectionState> = {};
-          for (const [k, s] of Object.entries(all)) {
-            const before = s.issues.length;
+          const next = { ...all };
+          for (const k of affectedKeys) {
+            const s = all[k];
+            if (!s) continue;
             const issues = s.issues.filter((x) => x.id !== detail.issueId);
-            next[k] = { ...s, issues, total: Math.max(0, s.total - (before - issues.length)) };
+            next[k] = { ...s, issues, total: Math.max(0, s.total - (s.issues.length - issues.length)) };
           }
           return next;
         });
       }
-      for (const [k, s] of Object.entries(sectionStates)) {
-        if (!s.loaded) continue;
+      // withCounts=false — refresh counts once below instead of per section.
+      for (const k of affectedKeys) {
         const sId = k === "backlog" ? null : k.replace("sprint:", "");
-        // withCounts=false — refresh counts once below instead of per section.
         void refreshSection(k, sId, false);
       }
-      // Single counts refresh for the whole batch (was firing once per section).
+      // Single counts refresh keeps every header honest (e.g. a sprint move
+      // changes the destination's count even though we don't reload its rows).
       void refreshSprintCounts();
     }
     function onOpenIssue(e: Event) {
@@ -3831,20 +3857,15 @@ export function BacklogView({ projectId }: { projectId: string }) {
         />
       )}
 
+      {/* No onSaved refresh here: every save in EditIssueModal also dispatches
+          `quiktrack:issue-updated`, which the listener above handles by
+          refreshing ONLY the affected section. Re-adding an onSaved loop over
+          all loaded sections fires one issues+sprints request per sprint. */}
       <EditIssueModal
         open={editingIssueId !== null}
         issueId={editingIssueId}
         projectId={projectId}
         onClose={() => setEditingIssueId(null)}
-        onSaved={() => {
-          // Refresh whichever section the edited issue lives in. Cheapest:
-          // refresh all loaded sections so sprint/backlog moves are reflected.
-          for (const [key, s] of Object.entries(sectionStates)) {
-            if (!s.loaded) continue;
-            const sprintId = key === "backlog" ? null : key.replace("sprint:", "");
-            void refreshSection(key, sprintId);
-          }
-        }}
       />
     </div>
   );

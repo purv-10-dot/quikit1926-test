@@ -4,6 +4,7 @@ node_modules
 dist
 .env
 .env*.local
+*.env.*.bak
 *.tsbuildinfo
 
 # Test output
@@ -47,5 +48,3 @@ graphify-out/
 
 # Markdown files — local-only docs, analyses, scratch notes; never committed.
 *.md
-vitest-run-1.txt
-apps/quikchat/devtunnel.exe

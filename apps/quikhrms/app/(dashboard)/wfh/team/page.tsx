@@ -9,6 +9,7 @@ import { Home, Calendar, CheckCircle2, X as XIcon, Inbox, User } from "lucide-re
 import { clsx } from "clsx";
 import { WfhTabs } from "../_components/wfh-tabs";
 import { PageHeader } from "@/components/hrms/ui/page-header";
+import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 
 interface Approver { id: string; firstName: string; lastName: string; employeeCode: string }
 interface ApprovalRow { id: string; level: number; role: string; status: string; comment: string | null; decidedAt: string | null }
@@ -45,6 +46,28 @@ export default function WfhTeamPage() {
   const [decision, setDecision] = useState<{ kind: "approve" | "reject"; item: PendingItem } | null>(null);
   const [comment, setComment] = useState("");
 
+  // ── Excel export (exports the currently rendered pending-approval list) ──
+  const exportColumns = [
+    { header: "Employee", key: "employee", width: 24 },
+    { header: "From", key: "from", width: 16 },
+    { header: "To", key: "to", width: 16 },
+    { header: "Days", key: "days", width: 10 },
+    { header: "Session", key: "session", width: 14 },
+    { header: "Reason", key: "reason", width: 30 },
+    { header: "Status", key: "status", width: 14 },
+  ];
+  const exportRows = items.map((i) => ({
+    employee: `${i.request.employee.firstName} ${i.request.employee.lastName}`,
+    from: new Date(i.request.startDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
+    to: new Date(i.request.endDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
+    days: i.request.days,
+    session: i.request.isHalfDay
+      ? (i.request.session === "SecondHalf" ? "Second Half" : "First Half")
+      : "Full Day",
+    reason: i.request.reason || "",
+    status: "Pending",
+  }));
+
   const decideMut = useMutation({
     mutationFn: ({ id, kind }: { id: string; kind: "approve" | "reject" }) =>
       api.post(`/api/v1/hrms/wfh/requests/${id}/${kind}`, { comment: comment || undefined }),
@@ -63,9 +86,12 @@ export default function WfhTeamPage() {
         title="WFH approvals"
         subtitle="WFH requests waiting for your approval."
         actions={
-          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200 text-xs font-bold">
-            <Inbox size={12} /> {items.length} pending
-          </span>
+          <>
+            <ExcelExportButton filename="team-wfh" sheetName="Team WFH" columns={exportColumns} rows={exportRows} label="Export to Excel" />
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200 text-xs font-bold">
+              <Inbox size={12} /> {items.length} pending
+            </span>
+          </>
         }
       />
       <div className="mb-5"><WfhTabs /></div>

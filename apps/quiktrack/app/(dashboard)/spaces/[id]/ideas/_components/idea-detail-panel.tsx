@@ -5,22 +5,27 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   X,
   Eye,
-  Share2,
-  Zap,
   MoreHorizontal,
   Maximize2,
+  Minimize2,
   Lightbulb,
-  Paperclip,
-  Link2,
-  FileText,
-  Settings,
+  Pin,
+  Trash2,
 } from "lucide-react";
 import { PINNED_FIELD_KEYS, IN_VIEW_FIELD_KEYS } from "@/lib/services/discoveryDefaults";
 import { K, type FieldDef, type IdeaRow, type IdeaStatus, type IdeaFieldValue } from "./ideas-types";
-import { Accordion, FieldRow, FieldEditor, FieldChip } from "./idea-panel-fields";
+import { Accordion, FieldRow } from "./idea-panel-fields";
+import { EditableCell } from "./editable-cell";
+import { iconForColumn, isFormulaColumn } from "./field-icons";
+import { RichTextEditor } from "@/components/rich-text-editor-lazy";
+import { uploadProjectImage } from "@/lib/upload-image";
+import { IdeaAttachmentsLinks } from "./idea-attachments-links";
 import { IdeaComments } from "./idea-comments";
 import { IdeaInsights } from "./idea-insights";
 import { IdeaDelivery } from "./idea-delivery";
+import { IdeaTemplatesPanel } from "./idea-templates-panel";
+import { TemplateBody, TemplateBodyStyles } from "./idea-template-body";
+import type { DescriptionTemplate } from "./idea-description-templates";
 
 /**
  * Idea detail side panel — matches the real-JPD layout: header (breadcrumb +
@@ -39,6 +44,9 @@ export function IdeaDetailPanel({
   idea,
   fields,
   statuses,
+  initialTab,
+  pinnedKeys,
+  onTogglePin,
   onClose,
 }: {
   projectId: string;
@@ -46,15 +54,24 @@ export function IdeaDetailPanel({
   idea: IdeaRow;
   fields: FieldDef[];
   statuses: IdeaStatus[];
+  initialTab?: Tab;
+  /** Field keys currently pinned (from the view config). */
+  pinnedKeys?: string[];
+  /** Toggle a field's pinned state (persisted upstream, admin-gated). */
+  onTogglePin?: (key: string) => void;
   onClose: () => void;
 }) {
   const qc = useQueryClient();
   const [values, setValues] = useState<Record<string, IdeaFieldValue>>(idea.values);
   const [description, setDescription] = useState(idea.description ?? "");
   const [editingDesc, setEditingDesc] = useState(false);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(idea.title);
   const [saving, setSaving] = useState(false);
-  const [tab, setTab] = useState<Tab>("Overview");
+  const [tab, setTab] = useState<Tab>(initialTab ?? "Overview");
   const [width, setWidth] = useState(560);
+  const [expanded, setExpanded] = useState(false);
   const [commentCount, setCommentCount] = useState<number | null>(null);
   const [insightCount, setInsightCount] = useState<number | null>(null);
   const [deliveryCount, setDeliveryCount] = useState<number | null>(null);
@@ -134,27 +151,165 @@ export function IdeaDetailPanel({
     await patch({ description: description || null });
   }
 
-  // Partition fields into the three JPD sections by key.
+  // Insert a blueprint into the description. If there's already content we append
+  // (JPD keeps what you typed); otherwise we start fresh. Opens the editor so the
+  // user can immediately fill in the placeholders, and saves right away.
+  function applyTemplate(tpl: DescriptionTemplate) {
+    const prev = descHasContent ? description : "";
+    const next = prev ? `${prev}${tpl.body}` : tpl.body;
+    setDescription(next);
+    setEditingDesc(true);
+    setTemplatesOpen(false);
+    void patch({ description: next });
+  }
+
+  async function saveTitle() {
+    setEditingTitle(false);
+    const t = titleDraft.trim();
+    if (!t || t === idea.title) { setTitleDraft(idea.title); return; }
+    await patch({ title: t });
+  }
+
+  async function deleteIdea() {
+    const res = await fetch(`/api/projects/${projectId}/ideas/${idea.id}`, { method: "DELETE" });
+    if (res.ok) {
+      await qc.invalidateQueries({ queryKey: ["quiktrack", "ideas", projectId] });
+      onClose();
+    }
+  }
+
+  // Partition fields into the JPD sections. Pinned = the view's pinned list (or
+  // the defaults). In-view = the rest of the default in-view set. Available = the
+  // remainder. Jira-only fields are dropped entirely.
+  const JIRA_ONLY = new Set(["atlassian_project", "atlassian_project_status", "team", "linked_items"]);
   const byKey = new Map(fields.map((f) => [f.key, f] as const));
-  const pinned = PINNED_FIELD_KEYS.map((k) => byKey.get(k)).filter((f): f is FieldDef => Boolean(f));
-  const inView = IN_VIEW_FIELD_KEYS.map((k) => byKey.get(k)).filter((f): f is FieldDef => Boolean(f));
-  const grouped = new Set([...PINNED_FIELD_KEYS, ...IN_VIEW_FIELD_KEYS]);
+  const pinKeys = pinnedKeys && pinnedKeys.length ? pinnedKeys : PINNED_FIELD_KEYS;
+  const pinnedSet = new Set(pinKeys);
+  const pinned = pinKeys.map((k) => byKey.get(k)).filter((f): f is FieldDef => !!f && !JIRA_ONLY.has(f.key));
+  const inView = IN_VIEW_FIELD_KEYS
+    .filter((k) => !pinnedSet.has(k))
+    .map((k) => byKey.get(k))
+    .filter((f): f is FieldDef => !!f && !JIRA_ONLY.has(f.key));
+  const grouped = new Set([...pinKeys, ...IN_VIEW_FIELD_KEYS]);
   const available = fields
-    .filter((f) => !grouped.has(f.key))
+    .filter((f) => !grouped.has(f.key) && !JIRA_ONLY.has(f.key))
     .sort((a, b) => a.name.localeCompare(b.name));
+
+  // Description has real (non-empty) content once HTML tags are stripped.
+  const descHasContent = description.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim().length > 0;
+
+  // Description + action buttons (top of the Overview left column).
+  const overviewContent = (
+    <>
+      <IdeaAttachmentsLinks projectId={projectId} ideaId={idea.id} />
+      {editingDesc ? (
+        <div>
+          <RichTextEditor
+            value={description}
+            onChange={setDescription}
+            placeholder="Add a description…"
+            uploadImage={(file) => uploadProjectImage(projectId, file)}
+          />
+          <div className="mt-2 flex items-center gap-2">
+            <button type="button" onClick={() => void saveDescription()} className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700">Save</button>
+            <button type="button" onClick={() => { setDescription(idea.description ?? ""); setEditingDesc(false); }} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
+          </div>
+        </div>
+      ) : descHasContent ? (
+        <div onClick={() => setEditingDesc(true)} className="cursor-text rounded p-1 hover:bg-gray-50">
+          <TemplateBody html={description} />
+        </div>
+      ) : (
+        <div className="text-sm text-gray-400">
+          <button type="button" onClick={() => setEditingDesc(true)} className="hover:text-gray-600">
+            Add a description…
+          </button>{" "}
+          <button type="button" onClick={() => setTemplatesOpen(true)} className="text-blue-600 hover:text-blue-700 hover:underline">
+            or start from a template
+          </button>
+        </div>
+      )}
+    </>
+  );
+
+  // One editable field row (JPD): [field icon] label [pin] .... value. Reuses the
+  // grid's EditableCell (borderless in read mode, all editors, auto-saves).
+  const fieldRow = (f: FieldDef) => {
+    const isPinned = pinnedSet.has(f.key);
+    const Icon = iconForColumn(f.key, f);
+    return (
+      <div key={f.id} className="group grid grid-cols-[150px_1fr] items-center gap-2 py-1.5">
+        <span className="flex items-center gap-1.5 text-xs text-gray-500">
+          {isFormulaColumn(f) ? (
+            <span className="w-3.5 text-center font-serif text-[12px] italic text-gray-400">fx</span>
+          ) : (
+            <Icon className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+          )}
+          <span className="truncate">{f.name}</span>
+          {onTogglePin && (
+            <button
+              type="button"
+              aria-label={isPinned ? "Unpin field" : "Pin field"}
+              title={isPinned ? "Unpin" : "Pin to top"}
+              onClick={() => onTogglePin(f.key)}
+              className={`shrink-0 rounded p-0.5 ${isPinned ? "text-amber-500" : "text-gray-300 opacity-0 group-hover:opacity-100 hover:text-gray-500"}`}
+            >
+              <Pin className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </span>
+        <div className="min-w-0 text-sm text-gray-800">
+          <EditableCell field={f} value={values[f.id] ?? null} onSave={save} />
+        </div>
+      </div>
+    );
+  };
+
+  const fieldAccordions = (
+    <>
+      <Accordion title="Pinned fields">
+        {pinned.map(fieldRow)}
+        {pinned.length === 0 && <p className="py-1 text-sm text-gray-400">No pinned fields yet.</p>}
+      </Accordion>
+
+      <Accordion title="Fields in this view">
+        <FieldRow label="Insights"><span className="font-medium text-gray-700">{insightCount ?? 0}</span></FieldRow>
+        {inView.map(fieldRow)}
+      </Accordion>
+
+      <Accordion title="Available fields">
+        {available.map(fieldRow)}
+        <SystemRow label="Created" value={new Date(idea.createdAt).toLocaleString()} />
+        <SystemRow label="Updated" value={new Date(idea.updatedAt).toLocaleString()} />
+        <FieldRow label="Status">
+          {status ? (
+            <span className="inline-flex items-center rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
+              {status.name.toUpperCase()}
+            </span>
+          ) : "—"}
+        </FieldRow>
+      </Accordion>
+    </>
+  );
 
   return (
     <aside
-      style={{ width }}
-      className="relative flex h-full flex-shrink-0 flex-col border-l border-gray-200 bg-white"
+      style={expanded ? undefined : { width }}
+      className={
+        expanded
+          ? "fixed inset-0 z-50 flex flex-col bg-white"
+          : "relative flex h-full flex-shrink-0 flex-col border-l border-gray-200 bg-white"
+      }
     >
-      {/* Left-edge resize handle — hover shows a blue grabber, drag to resize. */}
-      <div
-        onMouseDown={startResize}
-        className="group absolute left-0 top-0 z-10 h-full w-1.5 -translate-x-1/2 cursor-col-resize"
-      >
-        <div className="h-full w-0.5 bg-transparent group-hover:bg-blue-400" />
-      </div>
+      {/* Left-edge resize handle (drawer mode only). */}
+      {!expanded && (
+        <div
+          onMouseDown={startResize}
+          className="group absolute left-0 top-0 z-10 h-full w-1.5 -translate-x-1/2 cursor-col-resize"
+        >
+          <div className="h-full w-0.5 bg-transparent group-hover:bg-blue-400" />
+        </div>
+      )}
 
       {/* Header: breadcrumb + actions */}
       <div className="flex items-center justify-between px-4 pt-3">
@@ -165,29 +320,41 @@ export function IdeaDetailPanel({
           <span className="font-medium text-gray-700">{idea.key}</span>
         </div>
         <div className="flex items-center gap-1 text-gray-500">
-          <span className="inline-flex items-center gap-1 rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-xs font-medium text-blue-600">
-            <Eye className="h-3.5 w-3.5" /> 1
-          </span>
-          <IconBtn icon={Share2} label="Share" />
-          <IconBtn icon={Zap} label="Automation" />
-          <IconBtn icon={MoreHorizontal} label="More" />
-          <IconBtn icon={Maximize2} label="Expand" />
+          <MoreMenu onDelete={() => void deleteIdea()} />
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            aria-label={expanded ? "Collapse" : "Expand"}
+            title={expanded ? "Collapse" : "Expand"}
+            className="rounded p-1.5 hover:bg-gray-100"
+          >
+            {expanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+          </button>
           <button type="button" onClick={onClose} aria-label="Close" className="rounded p-1.5 hover:bg-gray-100">
             <X className="h-4 w-4" />
           </button>
         </div>
       </div>
 
-      {/* Title */}
+      {/* Title — click to edit (inline). No funnel-status pill here (JPD). */}
       <div className="px-4 pt-3">
-        <h2 className="text-xl font-semibold text-gray-900">{idea.title}</h2>
-        {status && (
-          <span
-            className="mt-1 inline-flex items-center rounded px-2 py-0.5 text-xs font-medium text-white"
-            style={{ backgroundColor: status.color }}
+        {editingTitle ? (
+          <input
+            autoFocus
+            value={titleDraft}
+            onChange={(e) => setTitleDraft(e.target.value)}
+            onBlur={saveTitle}
+            onKeyDown={(e) => { if (e.key === "Enter") saveTitle(); if (e.key === "Escape") { setTitleDraft(idea.title); setEditingTitle(false); } }}
+            className="w-full rounded border border-blue-400 px-2 py-1 text-xl font-semibold text-gray-900 outline-none"
+          />
+        ) : (
+          <h2
+            onClick={() => { setTitleDraft(idea.title); setEditingTitle(true); }}
+            title="Click to edit"
+            className="cursor-text rounded px-2 py-1 -mx-2 text-xl font-semibold text-gray-900 hover:bg-gray-50"
           >
-            {status.name}
-          </span>
+            {idea.title}
+          </h2>
         )}
       </div>
 
@@ -216,154 +383,47 @@ export function IdeaDetailPanel({
         ))}
       </div>
 
-      {/* Body — the panel scrolls as one column; each accordion also scrolls. */}
-      <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
+      {/* Body — one scroll column in drawer mode; in expanded mode the Overview
+          tab becomes two columns (content left, field accordions right). */}
+      <div className="flex-1 overflow-y-auto">
         {tab === "Overview" ? (
-          <>
-            {/* Action buttons (stubs) */}
-            <div className="flex flex-wrap gap-2">
-              <StubBtn icon={Paperclip} label="Add attachment" />
-              <StubBtn icon={Link2} label="Link work item" />
-              <StubBtn icon={FileText} label="Templates" />
-            </div>
-
-            {/* Editable description */}
-            {editingDesc ? (
-              <textarea
-                autoFocus
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                onBlur={saveDescription}
-                rows={8}
-                className="w-full rounded border border-blue-400 p-2 text-sm outline-none"
-                placeholder="Add a description…"
-              />
-            ) : description ? (
-              <div
-                onClick={() => setEditingDesc(true)}
-                className="cursor-text whitespace-pre-wrap rounded p-1 text-sm leading-relaxed text-gray-700 hover:bg-gray-50"
-              >
-                {description}
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setEditingDesc(true)}
-                className="text-sm text-gray-400 hover:text-gray-600"
-              >
-                Add a description… <span className="text-blue-600">or start from a template</span>
-              </button>
-            )}
-
-            <Accordion title="Pinned fields" right={<Settings className="h-3.5 w-3.5 text-gray-400" />}>
-              {pinned.map((f) => (
-                <FieldRow key={f.id} label={f.name}>
-                  <EditableOrChip field={f} value={values[f.id] ?? null} saving={saving} onSave={save} readOnly={f.key === K.score} />
-                </FieldRow>
-              ))}
-            </Accordion>
-
-            <Accordion title="Fields in this view">
-              <FieldRow label="Insights"><span className="font-medium text-gray-700">2</span></FieldRow>
-              {inView.map((f) => (
-                <FieldRow key={f.id} label={f.name}>
-                  <FieldEditor field={f} value={values[f.id] ?? null} disabled={saving} onSave={save} />
-                </FieldRow>
-              ))}
-              <FieldRow label="Delivery progress">
-                <div className="flex h-1.5 w-32 overflow-hidden rounded-full bg-gray-100">
-                  <div className="h-full bg-green-400" style={{ width: "32%" }} />
-                  <div className="h-full bg-blue-400" style={{ width: "24%" }} />
+          expanded ? (
+            <div className="mx-auto grid max-w-6xl grid-cols-[1fr_360px] gap-6 px-6 py-4">
+              <div className="min-w-0 space-y-3">
+                {overviewContent}
+                <div className="pt-4">
+                  <p className="mb-2 text-sm font-semibold text-gray-900">Comments</p>
+                  <IdeaComments projectId={projectId} ideaId={idea.id} onCountChange={setCommentCount} />
                 </div>
-              </FieldRow>
-            </Accordion>
-
-            <Accordion title="Available fields">
-              <SystemRow label="Assignee" value="Unassigned" />
-              {available.map((f) => (
-                <FieldRow key={f.id} label={f.name}>
-                  <EditableOrChip field={f} value={values[f.id] ?? null} saving={saving} onSave={save} readOnly={f.key === K.score} />
-                </FieldRow>
-              ))}
-              <SystemRow label="Created" value={new Date(idea.createdAt).toLocaleString()} />
-              <SystemRow label="Updated" value={new Date(idea.updatedAt).toLocaleString()} />
-              <SystemRow label="Linked items" value="0" />
-              <FieldRow label="Status">
-                {status ? (
-                  <span className="inline-flex items-center rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
-                    {status.name.toUpperCase()}
-                  </span>
-                ) : "—"}
-              </FieldRow>
-            </Accordion>
-
-            <Accordion title="Automation" scroll={false}>
-              <p className="text-sm font-medium text-gray-700">Recent rule runs</p>
-              <p className="text-sm text-gray-500">There are no recent rule runs for this issue.</p>
-            </Accordion>
-          </>
-        ) : tab === "Comments" ? (
-          <IdeaComments projectId={projectId} ideaId={idea.id} onCountChange={setCommentCount} />
-        ) : tab === "Insights" ? (
-          <IdeaInsights projectId={projectId} ideaId={idea.id} onCountChange={setInsightCount} />
+              </div>
+              <div className="space-y-3">{fieldAccordions}</div>
+            </div>
+          ) : (
+            <div className="space-y-3 px-4 py-3">
+              {overviewContent}
+              {fieldAccordions}
+            </div>
+          )
         ) : (
-          <IdeaDelivery projectId={projectId} ideaId={idea.id} ideaTitle={idea.title} onCountChange={setDeliveryCount} />
+          <div className="mx-auto max-w-4xl space-y-3 px-4 py-3">
+            {tab === "Comments" ? (
+              <IdeaComments projectId={projectId} ideaId={idea.id} onCountChange={setCommentCount} />
+            ) : tab === "Insights" ? (
+              <IdeaInsights projectId={projectId} ideaId={idea.id} onCountChange={setInsightCount} />
+            ) : (
+              <IdeaDelivery projectId={projectId} ideaId={idea.id} ideaTitle={idea.title} onCountChange={setDeliveryCount} />
+            )}
+          </div>
         )}
       </div>
+
+      {/* Description-templates drawer — anchored to this panel's right edge so it
+          opens beside the idea (works in both drawer and full-screen mode). */}
+      {templatesOpen && (
+        <IdeaTemplatesPanel onSelect={applyTemplate} onClose={() => setTemplatesOpen(false)} />
+      )}
+      <TemplateBodyStyles />
     </aside>
-  );
-}
-
-/** Renders a branded chip (Theme/Roadmap) in read state but stays editable via
- *  the underlying editor; Score is read-only. */
-function EditableOrChip({
-  field,
-  value,
-  saving,
-  readOnly,
-  onSave,
-}: {
-  field: FieldDef;
-  value: IdeaFieldValue;
-  saving: boolean;
-  readOnly?: boolean;
-  onSave: (fieldId: string, value: IdeaFieldValue) => void;
-}) {
-  if (readOnly) {
-    if (field.key === K.score && (value === null || value === undefined)) return <span className="text-gray-400">None</span>;
-    return (
-      <span className="inline-flex items-center rounded bg-green-50 px-2 py-0.5 text-sm font-medium text-green-700">
-        {String(value)}
-      </span>
-    );
-  }
-  const chip = <FieldChip field={field} value={value} />;
-  // Theme/Roadmap: show the chip; clicking reveals the select underneath.
-  if (chip && (field.key === K.theme || field.key === K.roadmap)) {
-    return <InlineChipEdit chip={chip} field={field} value={value} saving={saving} onSave={onSave} />;
-  }
-  return <FieldEditor field={field} value={value} disabled={saving} onSave={onSave} />;
-}
-
-function InlineChipEdit({
-  chip,
-  field,
-  value,
-  saving,
-  onSave,
-}: {
-  chip: React.ReactNode;
-  field: FieldDef;
-  value: IdeaFieldValue;
-  saving: boolean;
-  onSave: (fieldId: string, value: IdeaFieldValue) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  if (editing) return <FieldEditor field={field} value={value} disabled={saving} onSave={(id, v) => { onSave(id, v); setEditing(false); }} />;
-  return (
-    <button type="button" onClick={() => setEditing(true)} className="rounded hover:bg-gray-50">
-      {chip}
-    </button>
   );
 }
 
@@ -383,10 +443,29 @@ function IconBtn({ icon: Icon, label }: { icon: typeof Eye; label: string }) {
   );
 }
 
-function StubBtn({ icon: Icon, label }: { icon: typeof Eye; label: string }) {
+/** The ⋯ header menu — only Delete for now. */
+function MoreMenu({ onDelete }: { onDelete: () => void }) {
+  const [open, setOpen] = useState(false);
   return (
-    <button type="button" className="inline-flex items-center gap-1.5 rounded border border-gray-200 px-2.5 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
-      <Icon className="h-3.5 w-3.5 text-gray-500" /> {label}
-    </button>
+    <div className="relative">
+      <button type="button" aria-label="More" onClick={() => setOpen((v) => !v)} className={`rounded p-1.5 hover:bg-gray-100 ${open ? "bg-gray-100 text-gray-700" : ""}`}>
+        <MoreHorizontal className="h-4 w-4" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full z-40 mt-1 w-36 rounded-lg border border-gray-200 bg-white py-1 shadow-xl">
+            <button
+              type="button"
+              onClick={() => { setOpen(false); onDelete(); }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-red-600 hover:bg-red-50"
+            >
+              <Trash2 className="h-4 w-4" /> Delete
+            </button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
+

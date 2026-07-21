@@ -5,12 +5,14 @@ import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { withBasePath } from "@/lib/utils/base-path";
 import { clsx } from "clsx";
-import { Clock, ChevronRight, CheckSquare, Receipt, Palmtree } from "lucide-react";
+import { Clock, ChevronRight, CheckSquare, Receipt, Palmtree, Briefcase } from "lucide-react";
 
 interface Person { id: string; firstName: string; lastName: string; profilePhoto: string | null }
 interface Task { id: string; title: string; status: string }
 interface LeaveRequest { id: string; status: string; endDate: string; employee: Person | null }
 interface ExpenseClaim { id: string; status: string; requester: Person | null }
+interface ReqApprovalRaiser { id: string; firstName: string; lastName: string }
+interface ReqApprovalsQueue { mine: { requisition: { raiser: ReqApprovalRaiser | null } }[] }
 
 /**
  * A still-Pending leave whose dates have already passed can't be actioned in
@@ -97,6 +99,11 @@ export function RecentlyAssigned() {
     queryFn: () => api.get<ExpenseClaim[]>("/api/v1/hrms/expenses/claims/pending-approvals").catch(() => ({ data: [] })),
     staleTime: 60_000,
   });
+  const { data: reqApprovals } = useQuery({
+    queryKey: ["home", "requisition-approvals"],
+    queryFn: () => api.get<ReqApprovalsQueue>("/api/v1/hrms/recruit/requisitions/approvals-queue").catch(() => ({ data: { mine: [] } as ReqApprovalsQueue })),
+    staleTime: 60_000,
+  });
 
   const taskCount = Array.isArray(tasks?.data) ? tasks.data.length : 0;
   // Requesters behind the items awaiting my approval — deduped so the stack
@@ -109,8 +116,12 @@ export function RecentlyAssigned() {
   const expensePeople = distinctPeople(
     (Array.isArray(expenses?.data) ? expenses.data : []).map((e) => e.requester),
   );
+  const reqPeople = distinctPeople(
+    (Array.isArray(reqApprovals?.data?.mine) ? reqApprovals.data.mine : [])
+      .map((m) => (m.requisition.raiser ? { ...m.requisition.raiser, profilePhoto: null } : null)),
+  );
 
-  const total = taskCount + leavePeople.length + expensePeople.length;
+  const total = taskCount + leavePeople.length + expensePeople.length + reqPeople.length;
 
   // `people` rows render an avatar stack; count-only rows (tasks are yours, no
   // requester) keep the number badge.
@@ -118,11 +129,12 @@ export function RecentlyAssigned() {
     { label: "Open tasks", count: taskCount, people: null as Person[] | null, href: "/tasks?status=Open,InProgress", icon: <CheckSquare size={14} /> },
     { label: "Leave approvals", count: leavePeople.length, people: leavePeople, href: "/leaves/team-leaves", icon: <Palmtree size={14} /> },
     { label: "Expense approvals", count: expensePeople.length, people: expensePeople, href: "/expenses?tab=approvals", icon: <Receipt size={14} /> },
+    { label: "Requisition approvals", count: reqPeople.length, people: reqPeople, href: "/recruit/approvals", icon: <Briefcase size={14} /> },
   ].filter((i) => i.count > 0);
 
   return (
     <div className="surface-card px-6 py-5">
-      <h3 className="text-[13px] font-semibold text-gray-900 mb-2">Recently assigned</h3>
+      <h3 className="text-[13px] font-semibold text-gray-900 mb-2">Action Required</h3>
       {total === 0 ? (
         <div className="flex items-center gap-3 py-3 text-xs text-gray-500">
           <Clock size={16} className="text-gray-400" />

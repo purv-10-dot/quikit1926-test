@@ -60,7 +60,7 @@ RUN addgroup --system --gid 1001 nodejs \
  && adduser  --system --uid 1001 gateway
 
 ENV NODE_ENV=production
-ENV PORT=3012
+ENV PORT=9100
 
 # node_modules carries the externalized runtime deps (socket.io, ioredis, pino,
 # prom-client, jsonwebtoken) + the generated Prisma client (@prisma / .prisma).
@@ -69,7 +69,7 @@ COPY --from=installer --chown=gateway:nodejs /app/services/realtime/dist ./servi
 
 USER gateway
 WORKDIR /app/services/realtime
-EXPOSE 3012
+EXPOSE 9100
 HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=3 \
-  CMD wget -qO- "http://localhost:${PORT:-3012}/health" || exit 1
+  CMD wget -qO- "http://localhost:${PORT:-9100}/health" || exit 1
 CMD ["node", "dist/index.js"]

@@ -5,6 +5,7 @@ import { verifyFeedbackToken } from "@/lib/services/feedback-token";
 import { resolveAndSend } from "@/lib/email/resolve";
 import { stageNames } from "@/lib/services/pipeline-stages";
 import { whereEmployeeHasAnyRole, sortByMaxRolePriorityDesc, appRolesNameSelect } from "@/lib/rbac/queries";
+import { sendRejectionEmail } from "@/lib/recruit/rejection-mail";
 
 const ok = <T>(data: T, status = 200) => NextResponse.json({ success: true, data }, { status });
 const err = (code: string, message: string, status: number) =>
@@ -140,6 +141,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
         rejectionReason: data.concerns || data.overallComments || "Rejected via interviewer feedback",
       },
     }).catch(() => null);
+
+    // Notify the candidate (with the re-apply cooling note). Background.
+    if (iv.application?.candidate?.email) {
+      void sendRejectionEmail(iv.orgId, {
+        to: iv.application.candidate.email,
+        candidateName: `${iv.application.candidate.firstName} ${iv.application.candidate.lastName}`.trim(),
+        jobTitle: iv.application.requisition?.title ?? "the role",
+      });
+    }
   }
 
   // Notify HR

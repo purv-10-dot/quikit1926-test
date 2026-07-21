@@ -16,7 +16,12 @@ export type HrmsSetupItemKey =
   | "departments"
   | "locations"
   | "approvalChains"
-  | "payroll";
+  | "payroll"
+  | "roles"
+  | "leaveTypes"
+  | "holidays"
+  | "onboardingTemplate"
+  | "coreApprovalChains";
 
 export interface HrmsSetupItem {
   key: HrmsSetupItemKey;
@@ -27,10 +32,17 @@ export interface HrmsSetupItem {
   /** Route the "Set up" button navigates to. */
   href: string;
   completed: boolean;
+  /** Blocking (Required) items hard-lock the app until done; others are Recommended. */
+  blocking: boolean;
+  /** Optional sub-step progress for multi-part items (e.g. Payroll 3/6). */
+  progress?: { done: number; total: number };
 }
 
 export interface HrmsSetupProgress {
+  /** Every item (blocking + recommended) done. */
   setupCompleted: boolean;
+  /** Only the blocking/core items done — controls the app lock overlay. */
+  coreCompleted: boolean;
   completedCount: number;
   totalCount: number;
   items: HrmsSetupItem[];
@@ -38,29 +50,65 @@ export interface HrmsSetupProgress {
 
 const ITEM_META: Record<
   HrmsSetupItemKey,
-  Pick<HrmsSetupItem, "title" | "description" | "href">
+  Pick<HrmsSetupItem, "title" | "description" | "href" | "blocking">
 > = {
   departments: {
     title: "Create departments",
     description: "Add at least one department to organise your people.",
     href: "/settings/departments",
+    blocking: true,
   },
   locations: {
     title: "Add office locations",
     description: "Add at least one office location or branch.",
     href: "/settings/locations",
+    blocking: true,
   },
   approvalChains: {
     title: "Configure an approval chain",
     description: "Set up at least one active approval chain with an approver.",
     href: "/settings/approval-chains",
+    blocking: true,
   },
   payroll: {
     title: "Complete payroll setup",
     description: "Finish the payroll setup so you can run payroll.",
     href: "/payroll/setup",
+    blocking: true,
+  },
+  roles: {
+    title: "Set up roles & permissions",
+    description: "Define who can do what across the app.",
+    href: "/settings/roles",
+    blocking: false,
+  },
+  leaveTypes: {
+    title: "Add leave types & policies",
+    description: "Create the leave types your org offers.",
+    href: "/leaves/policies",
+    blocking: false,
+  },
+  holidays: {
+    title: "Set up the holiday calendar",
+    description: "Add this year's company holidays.",
+    href: "/settings/holiday-calendar",
+    blocking: false,
+  },
+  onboardingTemplate: {
+    title: "Create an onboarding template",
+    description: "Standardise tasks for every new joiner.",
+    href: "/onboarding",
+    blocking: false,
+  },
+  coreApprovalChains: {
+    title: "Approval chains: Leave, Expense & Requisition",
+    description: "Activate an approval chain for each of these modules.",
+    href: "/settings/approval-chains",
+    blocking: false,
   },
 };
+
+const BLOCKING_KEYS = (Object.keys(ITEM_META) as HrmsSetupItemKey[]).filter((k) => ITEM_META[k].blocking);
 
 /**
  * Compute setup progress for an org and latch the completion flag when every
@@ -76,60 +124,68 @@ export async function computeHrmsSetupProgress(
     select: { hrmsSetupCompleted: true },
   });
 
-  const buildItems = (states: Record<HrmsSetupItemKey, boolean>): HrmsSetupItem[] =>
+  const buildItems = (
+    states: Record<HrmsSetupItemKey, boolean>,
+    progressMap: Partial<Record<HrmsSetupItemKey, { done: number; total: number }>> = {},
+  ): HrmsSetupItem[] =>
     (Object.keys(ITEM_META) as HrmsSetupItemKey[]).map((key) => ({
       key,
       ...ITEM_META[key],
       completed: states[key],
+      ...(progressMap[key] ? { progress: progressMap[key] } : {}),
     }));
 
   if (settings?.hrmsSetupCompleted) {
-    const items = buildItems({
-      departments: true,
-      locations: true,
-      approvalChains: true,
-      payroll: true,
-    });
-    return {
-      setupCompleted: true,
-      completedCount: items.length,
-      totalCount: items.length,
-      items,
-    };
+    const states = Object.fromEntries(
+      (Object.keys(ITEM_META) as HrmsSetupItemKey[]).map((k) => [k, true]),
+    ) as Record<HrmsSetupItemKey, boolean>;
+    const items = buildItems(states);
+    return { setupCompleted: true, coreCompleted: true, completedCount: items.length, totalCount: items.length, items };
   }
 
-  const [departmentCount, locationCount, activeChains, payrollProgress] = await Promise.all([
+  const [departmentCount, locationCount, activeChains, payrollProgress, roleCount, leaveTypeCount, holidayCount, onboardingTemplateCount] = await Promise.all([
     prisma.department.count({ where: { orgId, deletedAt: null } }),
     prisma.officeLocation.count({ where: { orgId, deletedAt: null } }),
     prisma.approvalChain.findMany({
       where: { orgId, deletedAt: null, isActive: true },
-      select: { levels: true },
+      select: { module: true, levels: true },
     }),
-    // Use the same data-derived completion the payroll Setup page shows — NOT
-    // the raw `setupCompleted` flag. That flag only latches once every per-step
-    // flag is set, which misses steps satisfied by data created outside the
-    // wizard (company profile, employees), leaving this popup stuck below 4/4.
     computeSetupProgress(orgId),
+    prisma.hrmsAppRole.count({ where: { orgId } }),
+    prisma.leaveType.count({ where: { orgId, deletedAt: null } }),
+    prisma.companyHoliday.count({ where: { orgId, deletedAt: null } }),
+    prisma.onboardingTemplate.count({ where: { orgId, deletedAt: null } }),
   ]);
 
-  // A "complete" approval chain is an active chain that actually has at least
-  // one level (approver). `levels` is JSON, so validate its shape in JS.
-  const hasCompleteChain = activeChains.some(
-    (c) => Array.isArray(c.levels) && c.levels.length > 0,
-  );
+  // A "complete" chain is an active chain that has at least one level (approver).
+  const chainHasLevels = (m: string) =>
+    activeChains.some((c) => String(c.module) === m && Array.isArray(c.levels) && c.levels.length > 0);
+  const hasCompleteChain = activeChains.some((c) => Array.isArray(c.levels) && c.levels.length > 0);
 
   const states: Record<HrmsSetupItemKey, boolean> = {
     departments: departmentCount > 0,
     locations: locationCount > 0,
     approvalChains: hasCompleteChain,
     payroll: payrollProgress.setupCompleted,
+    roles: roleCount > 0,
+    leaveTypes: leaveTypeCount > 0,
+    holidays: holidayCount > 0,
+    onboardingTemplate: onboardingTemplateCount > 0,
+    coreApprovalChains: chainHasLevels("Leave") && chainHasLevels("Expense") && chainHasLevels("Requisition"),
   };
 
-  const items = buildItems(states);
+  const chainModulesDone = ["Leave", "Expense", "Requisition"].filter((m) => chainHasLevels(m)).length;
+  const items = buildItems(states, {
+    payroll: { done: payrollProgress.completedSteps, total: payrollProgress.totalSteps },
+    coreApprovalChains: { done: chainModulesDone, total: 3 },
+  });
   const completedCount = items.filter((i) => i.completed).length;
   const allDone = completedCount === items.length;
+  const coreCompleted = BLOCKING_KEYS.every((k) => states[k]);
 
-  // Latch the flag the first time everything passes.
+  // Latch only when EVERYTHING (blocking + recommended) passes — the app is
+  // already usable once the core items are done (coreCompleted), so latching on
+  // full completion just retires the checklist nudge without re-locking anyone.
   if (allDone) {
     await getOrCreateCompanySettings(orgId, userId ?? "system");
     await prisma.companySettings.update({
@@ -144,6 +200,7 @@ export async function computeHrmsSetupProgress(
 
   return {
     setupCompleted: allDone,
+    coreCompleted,
     completedCount,
     totalCount: items.length,
     items,

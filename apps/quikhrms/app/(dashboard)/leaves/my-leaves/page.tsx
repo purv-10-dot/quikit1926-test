@@ -3,11 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient, ApiError } from "@/lib/hooks/use-api";
-import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 import { Modal } from "@/components/hrms/modal";
 import { clsx } from "clsx";
-import { Plus, AlertTriangle, Eye, Trash2, FileText, X } from "lucide-react";
+import { Plus, AlertTriangle, Eye, Trash2, X } from "lucide-react";
 import { EmptyState } from "@/components/hrms/empty-state";
+import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import { Select } from "@/components/hrms/ui/select";
 import { FilterBar, FilterDivider, FilterSearch } from "@/components/hrms/ui/filter-bar";
 import { NumberInput } from "@/components/hrms/ui/number-input";
@@ -105,10 +105,6 @@ export default function MyLeavesPage() {
   const api = useApiClient();
   const qc = useQueryClient();
   const mounted = useMounted();
-  // The Leave Policy Documents page requires hrms.leave_policy.read (which the
-  // employee role lacks) — hide the link from users who can't actually open it.
-  const { hasPermission } = useDashboardConfig();
-  const canViewPolicyDocs = hasPermission("hrms.leave_policy.read");
   const [showApply, setShowApply] = useState(false);
   const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null);
   const [viewLeave, setViewLeave] = useState<LeaveRequest | null>(null);
@@ -299,6 +295,11 @@ export default function MyLeavesPage() {
   };
 
   const applyMut = useMutation({
+    // Handled inline (amber banner + "Notify admin" for the missing-chain case),
+    // so suppress the global modal — it would stack on top and, for the
+    // APPROVAL_CHAIN_NOT_CONFIGURED 422, hide the actionable banner behind a
+    // generic "Please check the details" dump.
+    meta: { suppressGlobalError: true },
     mutationFn: (body: typeof form) => api.post("/api/v1/hrms/leaves/requests", body),
     onSuccess: () => { invalidateLeaves(); setShowApply(false); setApplyError(null); setChainMissing(false); },
     onError: (e) => {
@@ -411,6 +412,30 @@ export default function MyLeavesPage() {
     return [cur - 1, cur, cur + 1].map((y) => ({ value: String(y), label: `Jan ${y}–Dec ${y}` }));
   }, []);
 
+  // ── Excel export (exports exactly the currently filtered history rows) ──
+  const exportColumns = [
+    { header: "Leave Type", key: "leaveType", width: 22 },
+    { header: "From", key: "from", width: 16 },
+    { header: "To", key: "to", width: 16 },
+    { header: "Days", key: "days", width: 10 },
+    { header: "Status", key: "status", width: 14 },
+    { header: "Applied On", key: "appliedOn", width: 16 },
+    { header: "Reason", key: "reason", width: 30 },
+  ];
+  const exportRows = useMemo(
+    () =>
+      filteredRequests.map((r) => ({
+        leaveType: r.leaveType.name,
+        from: formatDate(r.startDate),
+        to: formatDate(r.endDate),
+        days: Number(r.duration),
+        status: isExpiredPending(r.status, r.endDate) ? "Expired" : r.status,
+        appliedOn: formatDate(r.appliedOn),
+        reason: r.reason || "",
+      })),
+    [filteredRequests],
+  );
+
   return (
     <div className="w-full">
       {/* Header */}
@@ -420,13 +445,9 @@ export default function MyLeavesPage() {
           <div className="min-w-[180px]">
             <Select value={String(year)} onChange={(v) => setYear(Number(v))} options={yearOptions} />
           </div>
+          <ExcelExportButton filename="my-leaves" sheetName="My Leaves" columns={exportColumns} rows={exportRows} label="Export to Excel" />
           <button onClick={() => { setForm({ leaveTypeId: "", startDate: "", endDate: "", duration: 1, reason: "", isPlanned: true }); setShowApply(true); }}
             className="btn btn-primary"><Plus size={13} /> Apply Leave</button>
-          {canViewPolicyDocs && (
-            <a href="/leaves/policy-documents" className="text-sm text-[#16a34a] hover:underline inline-flex items-center gap-1">
-              <FileText size={14} /> Leave Policy Document
-            </a>
-          )}
         </div>
       </div>
 

@@ -415,7 +415,7 @@ export function Hero() {
                     </div>
                     <div className="panel dh-cal-panel">
                       <div className="dh-cal-head">
-                        <h5>Upcoming Holiday / Events</h5>
+                        <h5>Upcoming Events</h5>
                         <span>View all ›</span>
                       </div>
                       <div className="dh-cal-row">

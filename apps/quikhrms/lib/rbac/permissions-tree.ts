@@ -39,19 +39,10 @@ const NO: PermCell = { code: null };
 const c = (code: string): PermCell => ({ code });
 
 export const PERMISSION_TREE: PermModule[] = [
-  {
-    key: "Dashboard",
-    label: "Dashboard",
-    leaves: [
-      { resource: "Dashboard", label: "Dashboard", actions: { view: c("hrms.dashboard.employee"), create: NO, update: NO, delete: NO } },
-      { resource: "Dashboard.Admin",   label: "Admin Dashboard",     actions: { view: c("hrms.dashboard.admin"),     create: NO, update: NO, delete: NO } },
-      { resource: "Dashboard.HR",      label: "HR Dashboard",        actions: { view: c("hrms.dashboard.hr"),        create: NO, update: NO, delete: NO } },
-      { resource: "Dashboard.Manager", label: "Manager Dashboard",   actions: { view: c("hrms.dashboard.manager"),   create: NO, update: NO, delete: NO } },
-      { resource: "Dashboard.Recruit", label: "Recruiter Dashboard", actions: { view: c("hrms.dashboard.recruiter"), create: NO, update: NO, delete: NO } },
-      { resource: "Dashboard.Finance", label: "Finance Dashboard",   actions: { view: c("hrms.dashboard.finance"),   create: NO, update: NO, delete: NO } },
-      { resource: "Dashboard.Audit",   label: "Audit Dashboard",     actions: { view: c("hrms.dashboard.audit"),     create: NO, update: NO, delete: NO } },
-    ],
-  },
+  // NOTE: Dashboards are intentionally NOT permission-gated here. Which dashboard
+  // a user lands on is derived from their role name (see widgetsForRole), so
+  // exposing per-dashboard view tickboxes was confusing and did nothing. This
+  // grid is only for real data entities with meaningful create/update/delete.
   {
     key: "Employee",
     label: "Employee",
@@ -253,7 +244,6 @@ export const NAV_TREE: NavGroup[] = [
       { key: "time.regularizations", label: "Regularization Approvals" },
       { key: "time.roster", label: "Duty Roster" },
       { key: "time.shifts", label: "Shifts" },
-      { key: "time.records", label: "Time Records" },
     ],
   },
   {
@@ -263,8 +253,7 @@ export const NAV_TREE: NavGroup[] = [
       { key: "leave.my", label: "My Leaves" },
       { key: "leave.team", label: "Team Leaves" },
       { key: "leave.calendar", label: "Leave & Holiday Calendar" },
-      { key: "leave.policies", label: "Policies" },
-      { key: "leave.policy-documents", label: "Policy Documents" },
+      { key: "leave.policies", label: "Leave Types" },
     ],
   },
   {

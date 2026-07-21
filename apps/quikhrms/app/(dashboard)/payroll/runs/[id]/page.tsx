@@ -174,6 +174,8 @@ export default function PayRunDetailPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["payroll", "runs", id] }),
   });
   const releaseMut = useMutation({
+    // Surfaced via the toast.promise below — suppress the global modal.
+    meta: { suppressGlobalError: true },
     mutationFn: () => api.post(`/api/v1/hrms/payroll/runs/${id}/release`, {}),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["payroll", "runs", id] }),
   });
@@ -537,7 +539,7 @@ export default function PayRunDetailPage() {
             else toast.promise(releaseMut.mutateAsync(), {
               loading: "Releasing & emailing payslips…",
               success: "Payslips released & emailed",
-              error: "Couldn't release the payslips",
+              error: (e) => (e instanceof Error && e.message ? e.message : "Couldn't release the payslips"),
             });
             setConfirmAction(null);
           }}

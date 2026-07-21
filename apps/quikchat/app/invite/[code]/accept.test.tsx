@@ -54,6 +54,6 @@ describe("InvitePage accept (Bug 6)", () => {
     );
     renderPage();
     fireEvent.click(await screen.findByText("Accept & open"));
-    await waitFor(() => expect(push).toHaveBeenCalledWith("/?channel=chan-1"));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/dashboard?channel=chan-1"));
   });
 });

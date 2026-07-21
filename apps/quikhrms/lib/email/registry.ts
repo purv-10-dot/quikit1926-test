@@ -204,6 +204,7 @@ const EVENTS: EmailEvent[] = [
       v("roundName", "Interview round", "Technical"),
       v("resumeUrl", "Candidate resume link", "https://…"),
       v("feedbackUrl", "Feedback form link", "https://…"),
+      v("jobDescription", "Job description (technical rounds only; empty otherwise)", "We are looking for…"),
     ],
   },
   {
@@ -299,6 +300,22 @@ const EVENTS: EmailEvent[] = [
   },
   {
     key: "recruit.rejection", label: "Application Rejected → Candidate", group: "Recruitment",
+    variables: [
+      CANDIDATE, JOB_TITLE,
+      v("coolingMonths", "Re-apply cooling period in months (blank if none)", "6"),
+      v("coolingUntil", "Date they can re-apply (blank if none)", "18 Jan 2027"),
+    ],
+  },
+  {
+    key: "recruit.interview-passed", label: "Interview Cleared → Candidate", group: "Recruitment",
+    variables: [CANDIDATE, JOB_TITLE, v("roundName", "Interview round cleared", "Round 2")],
+  },
+  {
+    key: "recruit.on-hold", label: "Application On Hold → Candidate", group: "Recruitment",
+    variables: [CANDIDATE, JOB_TITLE],
+  },
+  {
+    key: "recruit.reconfirm", label: "Still Interested? (restored from hold) → Candidate", group: "Recruitment",
     variables: [CANDIDATE, JOB_TITLE],
   },
 

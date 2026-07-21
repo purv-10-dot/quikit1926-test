@@ -22,6 +22,8 @@ interface CrudTableProps<T extends { id: string }> {
   searchPlaceholder?: string;
   search: string;
   onSearchChange: (v: string) => void;
+  /** Optional extra action buttons rendered before Edit in each row's action cell. */
+  extraActions?: (item: T) => React.ReactNode;
 }
 
 export function CrudTable<T extends { id: string }>({
@@ -35,6 +37,7 @@ export function CrudTable<T extends { id: string }>({
   searchPlaceholder = "Search...",
   search,
   onSearchChange,
+  extraActions,
 }: CrudTableProps<T>) {
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
@@ -125,6 +128,7 @@ export function CrudTable<T extends { id: string }>({
                   ))}
                   <td className="text-right">
                     <div className="flex items-center justify-end gap-1">
+                      {extraActions?.(item)}
                       <button
                         onClick={() => onEdit(item)}
                         className="w-8 h-8 inline-flex items-center justify-center text-gray-400 hover:text-[#22c55e] rounded-lg hover:bg-green-50"

@@ -101,7 +101,7 @@ const employeeBaseSchema = z.object({
   lastName: z.string().min(1, "Last name required"),
   displayName: z.string().optional(),
   gender: z.enum(["Male", "Female", "Transgender", "NonBinary", "PreferNotToSay"]).optional(),
-  dateOfBirth: z.string().optional(),
+  dateOfBirth: z.string().min(1, "Date of birth is required"),
   bloodGroup: z.enum([
     "APositive", "ANegative", "BPositive", "BNegative",
     "ABPositive", "ABNegative", "OPositive", "ONegative",
@@ -144,7 +144,7 @@ const employeeBaseSchema = z.object({
   gradeId: z.string().optional(),
   reportingManagerId: z.string().min(1, "Reporting manager required"),
   dottedLineManagerId: z.string().optional(),
-  employmentType: z.enum(["FullTime", "PartTime", "Contract", "Intern", "Freelancer", "Consultant"]).default("FullTime"),
+  employmentType: z.enum(["FullTime", "PartTime", "Contract", "Intern"]).default("FullTime"),
   workerType: z.enum(["Permanent", "Temporary", "Probation", "Notice"]).default("Permanent"),
   workLocation: z.enum(["Office", "Remote", "Hybrid"]).default("Office"),
   officeLocationId: z.string().optional(),

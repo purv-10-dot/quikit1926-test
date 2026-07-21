@@ -21,7 +21,7 @@ export function HeroBanner() {
   const firstName = me ? (me.displayName ?? `${me.firstName} ${me.lastName}`) : "there";
 
   return (
-    <div className="w-full px-6 lg:px-12 pt-5 pb-3">
+    <div className="w-full pt-5 pb-4">
       <h1 className="font-serif-display text-[#0A1733] text-[36px] lg:text-[48px] leading-[1.05] font-bold tracking-tight">
         Hi {firstName},
       </h1>

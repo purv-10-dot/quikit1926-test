@@ -4,6 +4,7 @@ import { withAuth } from "@/lib/with-auth";
 import { successResponse, notFound, internalError } from "@/lib/api-response";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { openHeadcountForDept } from "@/lib/services/requisition-approval-service";
+import { getActiveChainLevels, getCallerRoleIds, getDelegatedApprovers, resolveLevelActor } from "@/lib/services/approval-chain";
 
 /**
  * GET — returns the caller's approval inbox plus (for admins) an org-wide view.
@@ -20,32 +21,44 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId, roles, pe
     const employeeId = await resolveEmployeeId(orgId, userId);
     if (!employeeId) return notFound("Employee record not found");
 
-    const pendings = await prisma.requisitionApproval.findMany({
-      where: { orgId, approverId: employeeId, status: "Pending" },
+    // Inbox = every PendingApproval requisition whose CURRENT level the caller can
+    // action — either they're the assigned representative approver, or they hold
+    // the level's role (role levels are actionable by any holder of that role).
+    const chainLevels = await getActiveChainLevels(orgId, "Requisition");
+    const roleIds = await getCallerRoleIds(orgId, employeeId);
+    // Delegators who handed this user Recruitment authority — their pending
+    // approvals should also surface in this inbox (tagged on-behalf).
+    const delegated = await getDelegatedApprovers(orgId, employeeId, "hrms.recruit.write");
+
+    const pendingReqs = await prisma.jobRequisition.findMany({
+      where: { orgId, deletedAt: null, status: "PendingApproval" },
       include: {
-        requisition: {
-          include: {
-            department: { select: { id: true, name: true } },
-            raiser: { select: { id: true, firstName: true, lastName: true, workEmail: true, jobTitle: true } },
-            approvals: { orderBy: { level: "asc" } },
-          },
-        },
+        department: { select: { id: true, name: true } },
+        raiser: { select: { id: true, firstName: true, lastName: true, workEmail: true, jobTitle: true } },
+        approvals: { orderBy: { level: "asc" } },
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: { raisedAt: "desc" },
     });
 
-    const mine = await Promise.all(
-      pendings
-        .filter((a) => a.requisition.status === "PendingApproval")
-        .filter((a) => a.requisition.approvals.find((x) => x.status === "Pending")?.id === a.id)
-        .map(async (a) => ({
-          approvalId: a.id,
-          level: a.level,
-          role: a.role,
-          openDeptHeadcount: await openHeadcountForDept(orgId, a.requisition.departmentId),
-          requisition: a.requisition,
-        })),
-    );
+    const mine = (await Promise.all(
+      pendingReqs.map(async (r) => {
+        const current = r.approvals.find((x) => x.status === "Pending");
+        if (!current) return null;
+        const levelCfg = chainLevels?.find((l) => l.level === current.level);
+        const actor = resolveLevelActor(levelCfg, { employeeId, roleIds }, delegated, current.approverId);
+        if (!actor.canAction) return null;
+        return {
+          approvalId: current.id,
+          level: current.level,
+          role: current.role,
+          // Set when this item is in the inbox only because of a delegation — the
+          // delegator's id, so the UI can badge it "on behalf of …".
+          onBehalfOf: actor.onBehalfOf,
+          openDeptHeadcount: await openHeadcountForDept(orgId, r.departmentId),
+          requisition: r,
+        };
+      }),
+    )).filter((x): x is NonNullable<typeof x> => x !== null);
 
     // Org-wide visibility (admins only). Non-admins get [] — their inbox is `mine`.
     const isAdmin = permissions.includes("*") || roles.includes("admin");

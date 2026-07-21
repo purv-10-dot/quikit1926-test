@@ -20,13 +20,14 @@ export interface CustomFieldDTO {
   key: string;
   type: FieldType;
   description: string | null;
+  icon?: string | null;
   status: "active" | "archived";
   isRequired: boolean;
   defaultValue: unknown;
   placeholder: string | null;
   helpText: string | null;
   position: number;
-  options: { id: string; label: string; value: string; position: number; isActive: boolean }[];
+  options: { id: string; label: string; value: string; position: number; isActive: boolean; weight?: number | null; color?: string | null; icon?: string | null; highlight?: boolean }[];
   createdAt: string;
   updatedAt: string;
 }
@@ -40,6 +41,7 @@ interface FieldRow {
   key: string;
   type: string;
   description: string | null;
+  icon?: string | null;
   status: string;
   isRequired: boolean;
   defaultValue: unknown;
@@ -48,7 +50,7 @@ interface FieldRow {
   position: number;
   createdAt: Date;
   updatedAt: Date;
-  options?: { id: string; label: string; value: string; position: number; isActive: boolean }[];
+  options?: { id: string; label: string; value: string; position: number; isActive: boolean; weight?: number | null; color?: string | null; icon?: string | null; highlight?: boolean }[];
 }
 
 export function serializeField(row: FieldRow): CustomFieldDTO {
@@ -61,6 +63,7 @@ export function serializeField(row: FieldRow): CustomFieldDTO {
     key: row.key,
     type: row.type as FieldType,
     description: row.description,
+    icon: row.icon ?? null,
     status: row.status as "active" | "archived",
     isRequired: row.isRequired,
     defaultValue: row.defaultValue ?? null,
@@ -70,7 +73,7 @@ export function serializeField(row: FieldRow): CustomFieldDTO {
     options: (row.options ?? [])
       .slice()
       .sort((a, b) => a.position - b.position)
-      .map((o) => ({ id: o.id, label: o.label, value: o.value, position: o.position, isActive: o.isActive })),
+      .map((o) => ({ id: o.id, label: o.label, value: o.value, position: o.position, isActive: o.isActive, weight: o.weight ?? null, color: o.color ?? null, icon: o.icon ?? null, highlight: o.highlight ?? false })),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -245,6 +248,7 @@ export async function updateField(opts: {
       data: {
         name: input.name ?? undefined,
         description: input.description === undefined ? undefined : input.description,
+        icon: input.icon === undefined ? undefined : input.icon,
         isRequired: input.isRequired ?? undefined,
         defaultValue: input.defaultValue === undefined ? undefined : ((input.defaultValue ?? null) as never),
         placeholder: input.placeholder === undefined ? undefined : input.placeholder,
@@ -263,7 +267,17 @@ export async function updateField(opts: {
         if (opt.id && existingById.has(opt.id)) {
           await tx.qtCustomFieldOption.update({
             where: { id: opt.id },
-            data: { label: opt.label, isActive: opt.isActive ?? true, position: pos },
+            data: {
+              label: opt.label,
+              isActive: opt.isActive ?? true,
+              position: pos,
+              // Only touch a styling field when the client sent it (undefined =
+              // leave as-is). Discovery per-option weight/color/icon/highlight.
+              ...(opt.weight !== undefined ? { weight: opt.weight } : {}),
+              ...(opt.color !== undefined ? { color: opt.color } : {}),
+              ...(opt.icon !== undefined ? { icon: opt.icon } : {}),
+              ...(opt.highlight !== undefined ? { highlight: opt.highlight } : {}),
+            },
           });
           existingById.delete(opt.id);
         } else {
@@ -274,6 +288,10 @@ export async function updateField(opts: {
               value: generateFieldKey(opt.label) || `option_${pos + 1}`,
               position: pos,
               isActive: opt.isActive ?? true,
+              weight: opt.weight ?? null,
+              color: opt.color ?? null,
+              icon: opt.icon ?? null,
+              highlight: opt.highlight ?? false,
             },
           });
         }

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/api/requireAdmin";
 import { getQuikTrackAppId } from "@/lib/api/permissions";
+import { SPACE_CREATOR_ROLE_NAME } from "@/lib/api/permissionsRegistry";
 
 const patchRoleSchema = z.object({
   name: z.string().trim().min(1).max(64).optional(),
@@ -123,14 +124,23 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     const appId = await getQuikTrackAppId();
     const role = await db.qtAppRole.findFirst({
       where: { id: params.id, orgId, ...(appId ? { appId } : {}) },
-      select: { id: true, isSystem: true, _count: { select: { members: true } } },
+      select: {
+        id: true,
+        name: true,
+        isSystem: true,
+        isDefault: true,
+        _count: { select: { members: true } },
+      },
     });
     if (!role) {
       return NextResponse.json({ success: false, error: "Role not found" }, { status: 404 });
     }
-    if (role.isSystem) {
+    // Protected org roles — Admin (isSystem), the default (Member), and Space
+    // Creator — can NEVER be deleted. Every other role (Project Manager, custom)
+    // remains deletable.
+    if (role.isSystem || role.isDefault || role.name === SPACE_CREATOR_ROLE_NAME) {
       return NextResponse.json(
-        { success: false, error: "System roles cannot be deleted" },
+        { success: false, error: `The "${role.name}" role can't be deleted.` },
         { status: 400 },
       );
     }

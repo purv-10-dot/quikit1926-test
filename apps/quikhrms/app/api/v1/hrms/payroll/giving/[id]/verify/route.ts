@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, validationError, internalError, notFound } from "@/lib/api-response";
+import { successResponse, validationError, conflict, internalError, notFound } from "@/lib/api-response";
 import { verifyDonationSchema } from "@/lib/validations/payroll";
 import { createAuditLog } from "@/lib/utils/audit";
 
@@ -12,6 +12,9 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, { id })
     if (!parsed.success) return validationError("Validation failed", parsed.error.flatten().fieldErrors);
     const existing = await prisma.donation.findFirst({ where: { id, orgId, deletedAt: null } });
     if (!existing) return notFound();
+    if (existing.status !== "Submitted") {
+      return conflict(`This donation has already been ${existing.status.toLowerCase()}.`);
+    }
 
     const record = await prisma.donation.update({
       where: { id },

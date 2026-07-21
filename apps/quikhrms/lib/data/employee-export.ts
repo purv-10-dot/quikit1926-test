@@ -94,6 +94,13 @@ function loose(v: unknown): string {
   return String(v);
 }
 
+// Force Excel to keep long digit strings as text — otherwise it shows
+// "9988776655" as scientific notation (9.9E+09) and drops leading zeros.
+const asText = (v?: string | null): string => {
+  const s = (v ?? "").toString().trim();
+  return s ? `="${s.replace(/"/g, "")}"` : "";
+};
+
 export const EMPLOYEE_EXPORT_COLUMNS: CsvColumn<EmployeeExportRow>[] = [
   { header: "Employee Code", value: (e) => e.employeeCode },
   { header: "First Name", value: (e) => e.firstName },
@@ -109,8 +116,8 @@ export const EMPLOYEE_EXPORT_COLUMNS: CsvColumn<EmployeeExportRow>[] = [
   { header: "Senior Citizen", value: (e) => e.isSeniorCitizen },
   { header: "Work Email", value: (e) => e.workEmail },
   { header: "Personal Email", value: (e) => e.personalEmail },
-  { header: "Personal Phone", value: (e) => e.personalPhone },
-  { header: "Work Phone", value: (e) => e.workPhone },
+  { header: "Personal Phone", value: (e) => asText(e.personalPhone) },
+  { header: "Work Phone", value: (e) => asText(e.workPhone) },
   { header: "LinkedIn", value: (e) => e.linkedinUrl },
   { header: "GitHub", value: (e) => e.githubUrl },
   { header: "Portfolio", value: (e) => e.portfolioUrl },
@@ -149,11 +156,11 @@ export const EMPLOYEE_EXPORT_COLUMNS: CsvColumn<EmployeeExportRow>[] = [
   { header: "Past Experience", value: (e) => formatGroup(e.pastExperiences, (x) => `${x.occupation ?? ""}${x.company ? ` @ ${x.company}` : ""}${x.duration ? ` (${x.duration})` : ""}${x.currentlyWorkHere ? " [current]" : ""}`) },
   { header: "Certifications", value: (e) => formatGroup(e.certifications, (x) => `${x.name ?? ""}${x.issuingAuthority ? ` — ${x.issuingAuthority}` : ""}${x.year ? ` (${x.year})` : ""}`) },
   { header: "PAN", value: (e) => e.panNumber },
-  { header: "Aadhaar", value: (e) => e.aadhaarNumber },
+  { header: "Aadhaar", value: (e) => asText(e.aadhaarNumber) },
   { header: "Tax ID (TIN)", value: (e) => e.taxIdentificationNumber },
-  { header: "UAN", value: (e) => e.uanNumber },
-  { header: "PF Account No", value: (e) => e.pfAccountNumber },
-  { header: "ESI No", value: (e) => e.esiNumber },
+  { header: "UAN", value: (e) => asText(e.uanNumber) },
+  { header: "PF Account No", value: (e) => asText(e.pfAccountNumber) },
+  { header: "ESI No", value: (e) => asText(e.esiNumber) },
   { header: "EPF Applicable", value: (e) => e.epfApplicable },
   { header: "ESI Applicable", value: (e) => e.esiApplicable },
   { header: "PT Applicable", value: (e) => e.ptApplicable },

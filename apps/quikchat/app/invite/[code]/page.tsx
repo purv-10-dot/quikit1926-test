@@ -45,7 +45,7 @@ export default function InvitePage({ params }: { params: { code: string } }) {
       return;
     }
     const channel = (await res.json()) as { channelId: string };
-    router.push(`/?channel=${channel.channelId}`);
+    router.push(`/dashboard?channel=${channel.channelId}`);
   }
 
   return (
@@ -58,7 +58,7 @@ export default function InvitePage({ params }: { params: { code: string } }) {
           <p style={{ color: "var(--qc-text-3)" }}>
             {state.message} It may have expired, been revoked, or reached its limit.
           </p>
-          <Button variant="ghost" onClick={() => router.push("/")}>
+          <Button variant="ghost" onClick={() => router.push("/dashboard")}>
             Go to QuikChat
           </Button>
         </>

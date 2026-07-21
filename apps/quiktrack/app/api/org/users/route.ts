@@ -245,6 +245,58 @@ export const POST = withOrgAuth(async ({ orgId, userId: actorId }, req) => {
   const generatedTempPassword = usedDefaultPassword ? generateTempPassword() : null;
   const effectivePassword = generatedTempPassword ?? password;
 
+  // Invitation token stamped on the new OrgMember (Paths B/C). Generated up
+  // front so we can SEND THE ONBOARDING EMAIL BEFORE any DB write — the email
+  // carries the invitee's only way in (temp password / SSO link), so if it
+  // can't be delivered we must not leave a half-created user behind.
+  const invitationToken = crypto.randomUUID();
+
+  // ─── Pre-flight the onboarding email (Paths B/C only) ───
+  // If sending fails, bail out with an error and write NOTHING.
+  if (!linkExistingUserId) {
+    const [org, inviter] = await Promise.all([
+      db.org.findUnique({ where: { id: orgId }, select: { name: true, brandColor: true } }),
+      db.user.findUnique({ where: { id: actorId }, select: { firstName: true, lastName: true } }),
+    ]);
+    const appBaseUrl =
+      process.env.NEXT_PUBLIC_QUIKIT_URL ??
+      process.env.QUIKIT_URL ??
+      "http://localhost:3001";
+    const { subject, html } = renderInvitationEmail({
+      to: normalisedEmail,
+      firstName: firstName.trim(),
+      orgName: org?.name ?? "your organisation",
+      orgLogoUrl: null,
+      orgBrandColor: org?.brandColor ?? null,
+      inviterName: inviter
+        ? `${inviter.firstName} ${inviter.lastName}`.trim() || "QuikTrack Admin"
+        : "QuikTrack Admin",
+      role: "Member",
+      appNames: ["QuikTrack"],
+      token: invitationToken,
+      appBaseUrl,
+      inviteMethod: invitationMethod as InviteMethod,
+      ssoProvider,
+      tempPassword: generatedTempPassword ?? "",
+    });
+    // sendEmail never throws — it returns a structured result. Treat a real
+    // send failure (SMTP configured but delivery failed, e.g. timeout) as fatal
+    // and abort before writing anything. `skipped` = no SMTP configured at all
+    // (local dev) — allow the invite through so dev isn't blocked.
+    const result = await sendEmail({ to: normalisedEmail, subject, html });
+    if (!result.ok && !result.skipped) {
+      console.error("[org/users] onboarding email failed — invite aborted:", result.error);
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Couldn't send the invitation email, so the user was not added. Please check the mail settings and try again.",
+        },
+        { status: 502 },
+      );
+    }
+  }
+
   // ─── Resolve newUserId across the three paths ───
   let newUserId: string;
   /** True when path C ran (brand-new auth.User row created). False for
@@ -292,7 +344,7 @@ export const POST = withOrgAuth(async ({ orgId, userId: actorId }, req) => {
           createdBy: actorId,
           inviteMethod: invitationMethod,
           inviteProvider: ssoProvider,
-          invitationToken: crypto.randomUUID(),
+          invitationToken,
           invitedAt: new Date(),
         },
       });
@@ -327,7 +379,7 @@ export const POST = withOrgAuth(async ({ orgId, userId: actorId }, req) => {
           createdBy: actorId,
           inviteMethod: invitationMethod,
           inviteProvider: ssoProvider,
-          invitationToken: crypto.randomUUID(),
+          invitationToken,
           invitedAt: new Date(),
         },
       });
@@ -483,60 +535,8 @@ export const POST = withOrgAuth(async ({ orgId, userId: actorId }, req) => {
     },
   });
 
-  // ─── Onboarding email ───
-  // Native: "Here's your temporary password" + link to /login
-  // SSO:    "Sign in with Google/Microsoft" — never includes a password,
-  //         link to /login; the auth signIn callback auto-accepts the
-  //         pending invite on first OAuth round-trip.
-  if (!linkExistingUserId && membership?.invitationToken) {
-    try {
-      const [org, inviter] = await Promise.all([
-        db.org.findUnique({
-          where: { id: orgId },
-          select: { name: true, brandColor: true },
-        }),
-        db.user.findUnique({
-          where: { id: actorId },
-          select: { firstName: true, lastName: true },
-        }),
-      ]);
-
-      // Invitation links land users on the QuikIT launcher (:3001 in dev),
-      // whose marketing landing auto-opens a LoginModal whenever the URL
-      // has /invitations/accept + ?token=…. Matches the quikscale flow.
-      // Do NOT use NEXT_PUBLIC_AUTH_URL or NEXTAUTH_URL — the former points
-      // at the credentials host (:3000) and the latter at this app, neither
-      // of which renders the Set-Up-My-Account experience.
-      const appBaseUrl =
-        process.env.NEXT_PUBLIC_QUIKIT_URL ??
-        process.env.QUIKIT_URL ??
-        "http://localhost:3001";
-
-      const { subject, html } = renderInvitationEmail({
-        to: normalisedEmail,
-        firstName: firstName.trim(),
-        orgName: org?.name ?? "your organisation",
-        orgLogoUrl: null,
-        orgBrandColor: org?.brandColor ?? null,
-        inviterName:
-          inviter
-            ? `${inviter.firstName} ${inviter.lastName}`.trim() || "QuikTrack Admin"
-            : "QuikTrack Admin",
-        role: appRole?.name ?? "Member",
-        appNames: ["QuikTrack"],
-        token: membership.invitationToken,
-        appBaseUrl,
-        inviteMethod: invitationMethod as InviteMethod,
-        ssoProvider,
-        tempPassword: generatedTempPassword ?? "",
-      });
-
-      await sendEmail({ to: normalisedEmail, subject, html });
-    } catch (err) {
-      // Email failures must not roll back user creation.
-      console.error("[org/users] onboarding email failed:", err);
-    }
-  }
+  // Onboarding email was already sent up-front (before any DB write) so a mail
+  // failure aborts the invite instead of leaving a user who can never sign in.
 
   return NextResponse.json(
     {

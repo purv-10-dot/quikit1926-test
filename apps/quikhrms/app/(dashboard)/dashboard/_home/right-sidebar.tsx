@@ -13,6 +13,7 @@ import {
   Wallet, UserCircle, Network, ShieldCheck,
   ClipboardList, Lock, ChevronRight, CheckCircle2,
   Megaphone, Users as UsersIcon, Sparkles, PartyPopper, Cake, Award,
+  Home, Palmtree, Receipt,
 } from "lucide-react";
 
 interface Me {
@@ -73,7 +74,7 @@ export function ProfileCardWidget() {
         </div>
       </div>
       <Link href="/leaves/my-leaves" className="w-full mt-4 inline-flex items-center justify-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-2xl text-xs font-medium transition">
-        Request time off
+        Apply for Leave
       </Link>
     </div>
   );
@@ -142,40 +143,29 @@ export function AttendanceWidget() {
 }
 
 export function EssentialsWidget() {
-  const api = useApiClient();
-  // Resolve the real employee id so "My Profile" opens `/employees/<uuid>`,
-  // where `isSelf` matches and the Edit button works. The literal `/employees/me`
-  // route can't self-match (id "me" !== uuid) so it opens view-only + can't edit.
-  const { data: meData } = useQuery({
-    queryKey: ["me", "right-profile"],
-    queryFn: () => api.get<Me>("/api/v1/hrms/employees/me"),
-    staleTime: 5 * 60_000,
-  });
-  const profileHref = meData?.data?.id ? `/employees/${meData.data.id}` : "/employees/me";
-
   const items = [
-    { label: "Payslip", icon: <Wallet size={18} className="text-gray-700" />, href: "/payroll/my-payslips" },
-    { label: "My Profile", icon: <UserCircle size={18} className="text-gray-700" />, href: profileHref },
-    { label: "Calendar", icon: <CalendarIcon size={18} className="text-gray-700" />, href: "/holidays" },
-    { label: "Documents", icon: <FileIcon size={18} className="text-gray-700" />, href: "/documents/my-vault" },
-    { label: "Org Chart", icon: <Network size={18} className="text-gray-700" />, href: "/org-chart?tab=orgchart" },
-    { label: "Policies", icon: <ShieldCheck size={18} className="text-gray-700" />, href: "/documents" },
+    { label: "Mark attendance", icon: <Clock size={18} />, href: "/attendance", bg: "bg-amber-50", color: "text-amber-600" },
+    { label: "Apply leave", icon: <Palmtree size={18} />, href: "/leaves", bg: "bg-green-50", color: "text-green-600" },
+    { label: "Apply WFH", icon: <Home size={18} />, href: "/wfh/my-requests", bg: "bg-violet-50", color: "text-violet-600" },
+    { label: "View payslip", icon: <FileIcon size={18} />, href: "/payroll/my-payslips", bg: "bg-sky-50", color: "text-sky-600" },
+    { label: "Expense claim", icon: <Receipt size={18} />, href: "/expenses", bg: "bg-teal-50", color: "text-teal-600" },
+    { label: "Company directory", icon: <UsersIcon size={18} />, href: "/org-chart", bg: "bg-indigo-50", color: "text-indigo-600" },
   ];
 
   return (
     <div className="surface-card p-4">
-      <h3 className="text-[13px] font-semibold text-gray-900 mb-4">Essentials</h3>
-      <div className="grid grid-cols-4 gap-y-4 gap-x-2">
+      <h3 className="text-[13px] font-semibold text-gray-900 mb-4">Quick actions</h3>
+      <div className="grid grid-cols-3 gap-3">
         {items.map((it) => (
           <Link
             key={it.label}
             href={it.href}
-            className="flex flex-col items-center gap-1.5 group"
+            className="flex flex-col items-center justify-center gap-2 rounded-xl border border-gray-100 bg-white hover:border-green-200 hover:bg-green-50/40 px-2 py-3.5 text-center transition group"
           >
-            <span className="w-12 h-12 rounded-full bg-gray-100 group-hover:bg-green-50 flex items-center justify-center transition">
+            <span className={clsx("w-10 h-10 rounded-full flex items-center justify-center transition", it.bg, it.color)}>
               {it.icon}
             </span>
-            <span className="text-[11px] font-medium text-gray-700 group-hover:text-green-600 transition">
+            <span className="text-[11px] font-medium text-gray-700 group-hover:text-green-700 leading-tight">
               {it.label}
             </span>
           </Link>
@@ -206,9 +196,9 @@ export function AnnouncementsWidget() {
   const api = useApiClient();
   const { data } = useQuery({
     queryKey: ["home", "announcements-sidebar"],
-    // Top 3 latest announcements (most recent first), regardless of the
-    // active/expiry window — mirrors what the "View all" list shows.
-    queryFn: () => api.get<AnnouncementItem[]>("/api/v1/hrms/engage/announcements?limit=3"),
+    // Latest announcements (most recent first), regardless of the active/expiry
+    // window — mirrors what the "View all" list shows. Scrolls within the card.
+    queryFn: () => api.get<AnnouncementItem[]>("/api/v1/hrms/engage/announcements?limit=10"),
     staleTime: 60_000,
   });
   const { data: unreadData } = useQuery({
@@ -239,7 +229,7 @@ export function AnnouncementsWidget() {
       {items.length === 0 ? (
         <div className="py-6 text-center text-xs text-gray-500">No announcements</div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-4 max-h-[520px] overflow-y-auto pr-1 -mr-1">
           {items.map((a) => {
             const tile = pickAnnouncementTile(a.title);
             return (

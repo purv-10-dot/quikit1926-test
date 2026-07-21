@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Package, CalendarDays, ShieldCheck } from "lucide-react";
+import { Loader2, Package, CalendarDays, ShieldCheck, Wrench } from "lucide-react";
 import { RequirePerm } from "@/components/require-perm";
 import { cn } from "@/lib/utils";
+import RequestRepairDialog, { type RequestRepairPayload } from "@/components/repair-requests/RequestRepairDialog";
 
 interface MyAsset {
   id: string;
@@ -39,9 +40,18 @@ function fmtDate(iso: string | null) {
     : "—";
 }
 
+type Toast = { title: string; message: string; type?: "success" | "error" };
+
 function MyAssets() {
   const [assets, setAssets] = useState<MyAsset[]>([]);
   const [loading, setLoading] = useState(true);
+  const [repairFor, setRepairFor] = useState<MyAsset | null>(null);
+  const [toast, setToast] = useState<Toast | null>(null);
+
+  function showToast(title: string, message: string, type: "success" | "error" = "success") {
+    setToast({ title, message, type });
+    setTimeout(() => setToast(null), 3000);
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -59,6 +69,21 @@ function MyAssets() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function handleRequestRepair(payload: RequestRepairPayload) {
+    const res = await fetch("/api/repair-requests", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      showToast("Error", j.error ?? "Failed to submit repair request", "error");
+      return;
+    }
+    setRepairFor(null);
+    showToast("Repair request submitted", "IT will review it shortly. Track it under My Repair Requests.");
+  }
 
   return (
     <div className="p-4 sm:p-6">
@@ -128,8 +153,43 @@ function MyAssets() {
                   <ShieldCheck className="h-3.5 w-3.5" /> {a.assignment.condition}
                 </span>
               </div>
+
+              {/* Employee repair entry point — hidden once the asset is already
+                  in repair (a second request would just be rejected downstream). */}
+              <div className="mt-3">
+                {a.assetStatus === "InRepair" ? (
+                  <p className="inline-flex items-center gap-1 text-[11px] font-medium text-orange-600">
+                    <Wrench className="h-3.5 w-3.5" /> In repair
+                  </p>
+                ) : a.assetStatus === "Retired" ? null : (
+                  <button
+                    onClick={() => setRepairFor(a)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-[11px] font-medium text-gray-600 transition-colors hover:border-accent-300 hover:bg-accent-50 hover:text-accent-700"
+                  >
+                    <Wrench className="h-3.5 w-3.5" /> Request Repair
+                  </button>
+                )}
+              </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {repairFor && (
+        <RequestRepairDialog
+          asset={{ id: repairFor.id, itemName: repairFor.itemName, itemCode: repairFor.itemCode }}
+          onClose={() => setRepairFor(null)}
+          onSubmit={handleRequestRepair}
+        />
+      )}
+
+      {toast && (
+        <div className={cn(
+          "fixed bottom-5 right-5 z-[60] max-w-xs rounded-xl border px-4 py-3 shadow-lg",
+          toast.type === "error" ? "bg-red-50 border-red-200" : "bg-white border-gray-200",
+        )}>
+          <p className={cn("text-xs font-semibold", toast.type === "error" ? "text-red-700" : "text-gray-800")}>{toast.title}</p>
+          <p className="mt-0.5 text-[11px] text-gray-500">{toast.message}</p>
         </div>
       )}
     </div>
