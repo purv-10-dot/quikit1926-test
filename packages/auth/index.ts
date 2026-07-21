@@ -533,7 +533,7 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
           "https://support.quikit.ai",
           "https://asset.quikit.ai",
           // UAT custom domains (uat<app>.quikit.ai) — added alongside prod.
-          "https://uatapps.quikit.ai",
+          "https://uat.quikit.ai",
           "https://uatscale.quikit.ai",
           "https://uatorgadmin.quikit.ai",
           "https://uattrack.quikit.ai",
