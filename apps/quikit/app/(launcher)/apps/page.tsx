@@ -257,11 +257,21 @@ export default function AppLauncherPage() {
     const launcherUrl =
       process.env.NEXT_PUBLIC_QUIKIT_URL?.replace(/\/+$/, "") ??
       (typeof window !== "undefined" ? window.location.origin : "");
+    // After logout, land on the public marketing site instead of the launcher
+    // root — but only on the UAT launcher (uatapps.quikit.ai → uat.quikit.ai).
+    // Every other environment (incl. prod apps.quikit.ai) keeps landing on the
+    // launcher root. Decided at runtime from the browser host so no build-arg /
+    // Dockerfile wiring is needed. NOTE: the target origin must be in the
+    // launcher's /api/auth/signout-global allow-list or that hop rejects it.
+    const host =
+      typeof window !== "undefined" ? window.location.hostname : "";
+    const postLogoutRedirect =
+      host === "uatapps.quikit.ai" ? "https://uat.quikit.ai" : `${launcherUrl}/`;
     await globalSignOut({
       authUrl: process.env.NEXT_PUBLIC_AUTH_URL,
       quikitUrl: launcherUrl,
       localSignOut: () => signOut({ redirect: false }),
-      postLogoutRedirect: `${launcherUrl}/`,
+      postLogoutRedirect,
     });
   }
 
