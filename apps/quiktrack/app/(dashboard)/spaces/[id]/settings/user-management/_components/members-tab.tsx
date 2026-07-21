@@ -40,10 +40,15 @@ export function MembersTab({ projectId }: { projectId: string }) {
   // Contributor can read the member list — but mutations get disabled
   // unless they hold the matching perm.
   const canAdd = perms.loading || perms.has("ProjectMember", "create");
-  // Only app-wide admins (tenant admin / super admin) can change a member's
-  // project role. Project-level "ProjectMember:update" no longer unlocks the
-  // role picker — matches the role-catalogue editor gate.
-  const canUpdateRoles = perms.loading || perms.isAdmin;
+  // Assigning a member's project role is the "ProjectMember:update" action —
+  // the SAME gate the backend enforces (see PATCH .../members/[userId]/role and
+  // userCanInProject). Tenant/super admins bypass; a Space Admin's effective set
+  // already includes ProjectMember:update (full-access role), so has(...) is true
+  // for them too. This is deliberately looser than the role-CATALOGUE editor
+  // (role-management-tab), which stays tenant-admin-only — editing the catalogue
+  // and assigning an existing role are different privileges.
+  const canUpdateRoles =
+    perms.loading || perms.isAdmin || perms.has("ProjectMember", "update");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
@@ -55,7 +60,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
     queryFn: async () => {
       const r = await fetch(`/api/projects/${projectId}/members`);
       const j = await r.json();
-      return ((j.data?.members ?? j.data ?? []) as Member[]) ?? [];
+      return (j.data?.members ?? j.data ?? []) as Member[];
     },
   });
 
@@ -106,8 +111,9 @@ export function MembersTab({ projectId }: { projectId: string }) {
           <Lock className="h-3.5 w-3.5 shrink-0" />
           <span>
             <span className="font-semibold">Read-only</span> — you can see the member list,
-            but only <span className="font-medium">app admins</span> can change a member&apos;s
-            project role here. Ask a tenant admin if you need changes.
+            but changing a member&apos;s project role needs the{" "}
+            <span className="font-medium">Manage members</span> permission
+            (ProjectMember:update). Ask a Space Admin or app admin if you need changes.
           </span>
         </div>
       )}
