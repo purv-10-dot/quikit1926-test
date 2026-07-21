@@ -26,6 +26,23 @@ export type SalespersonKpis = {
   overdueTasksCount: number;
 };
 
+/**
+ * Activity-target attainment for this salesperson, computed from the SAME
+ * services the admin tracker uses (activity-target-config + activity-target-count
+ * + activity-target-status). Always reflects TODAY + THIS WEEK in the client tz,
+ * independent of the detail page's selected date range — so a given user's
+ * numbers match the tracker exactly. Optional: null when unavailable.
+ */
+export type SalespersonActivityTarget = {
+  dailyTarget: number;
+  todayActivities: number;
+  remaining: number;
+  completionPct: number;
+  weeklyTarget: number;
+  weeklyActivities: number;
+  status: "green" | "yellow" | "red";
+};
+
 export type SalespersonPrevKpis = {
   leadsCreated: number;
   leadsConverted: number;
@@ -187,6 +204,7 @@ export type SalespersonDetailDto = {
   lastActivityIso: string | null;
   kpis: SalespersonKpis;
   prevKpis: SalespersonPrevKpis;
+  activityTarget: SalespersonActivityTarget | null;
   activityTrend: SalespersonDayBucket[];
   sparklines: SalespersonSparklines;
   heatmap: SalespersonHeatmapDay[];

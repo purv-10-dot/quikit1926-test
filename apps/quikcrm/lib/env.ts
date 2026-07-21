@@ -43,6 +43,35 @@ const envSchema = z.object({
   WEBHOOK_REQUIRE_SECRET: z.string().default("false"),
 
   NEXT_PUBLIC_APP_URL: z.string().default("http://localhost:3000"),
+
+  // ── Email integration (per-user mailbox OAuth) ──────────────────────────────
+  // All optional: when a provider's client creds or the encryption key are
+  // unset, that provider's Connect button is hidden and the sync cron no-ops.
+  // Same graceful-degradation contract as the RP_DIGITAL telephony vars above.
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  MICROSOFT_CLIENT_ID: z.string().optional(),
+  MICROSOFT_CLIENT_SECRET: z.string().optional(),
+  /** Entra tenant; "common" allows any work/school + personal Microsoft account. */
+  MICROSOFT_TENANT_ID: z.string().default("common"),
+  /**
+   * Base64-encoded 32-byte key for AES-256-GCM encryption of stored OAuth
+   * tokens (see lib/crypto/token-cipher.ts). Required to connect a mailbox;
+   * when absent the connect flow returns a clear 503.
+   */
+  MAILBOX_TOKEN_ENCRYPTION_KEY: z.string().optional(),
+  /**
+   * Absolute base URL the OAuth provider redirects back to (the callback route
+   * is appended). Defaults to NEXT_PUBLIC_APP_URL — set explicitly in prod so
+   * it matches the redirect URI registered with Google/Microsoft.
+   */
+  MAILBOX_OAUTH_REDIRECT_BASE: z.string().optional(),
+  /**
+   * One-time historical backfill window (days) run when a mailbox first
+   * connects — Inbox + Sent since now-N-days are imported and matched to CRM
+   * records, then incremental sync takes over. Default 90.
+   */
+  MAILBOX_BACKFILL_DAYS: z.coerce.number().int().positive().default(90),
 });
 
 export type Env = z.infer<typeof envSchema>;

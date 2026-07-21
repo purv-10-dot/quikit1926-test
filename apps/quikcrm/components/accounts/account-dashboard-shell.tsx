@@ -9,7 +9,6 @@ import {
   useCommandPaletteShortcut,
 } from "@/components/leads/dashboard/command-palette";
 import { buildAccountCommandActions } from "@/lib/accounts/build-account-command-actions";
-import { requestDocumentUpload } from "@/lib/documents/upload-request-event";
 import type { AccountScoreHistoryBundle } from "@/lib/services/accounts/account-score-history";
 import type { AccountNoteRow } from "@/components/accounts/account-notes-tab";
 import { AccountDashboardHeader } from "@/components/accounts/account-dashboard-header";
@@ -23,7 +22,6 @@ import {
 } from "@/components/accounts/account-form-panel";
 import { LeadFormDrawer } from "@/components/leads/lead-form-drawer";
 import { TaskEditModal, type TaskFormSeed } from "@/components/tasks/task-edit-modal";
-import { LogActivityModal } from "@/components/activities/log-activity-modal";
 import { OpportunityFormDrawer } from "@/components/opportunities/opportunity-form-drawer";
 import { ContactModal, type ContactRow } from "@/components/contacts/contact-modal";
 import type { ContactFormValue } from "@/components/contacts/contact-form";
@@ -148,8 +146,18 @@ export function AccountDashboardShell(props: AccountDashboardShellProps) {
     setCreateLeadOpen(true);
   }
 
+  // Log activity is now a dedicated page (/activities/log). Navigate there with
+  // the account pre-linked instead of opening a modal.
+  const goLogActivity = useCallback(() => {
+    const qs = new URLSearchParams({
+      relatedKind: "Account",
+      relatedObjectId: account.id,
+      label: account.name,
+    });
+    router.push(`/activities/log?${qs.toString()}`);
+  }, [router, account.id, account.name]);
+
   const [taskOpen, setTaskOpen] = useState(false);
-  const [logActivityOpen, setLogActivityOpen] = useState(false);
   const [oppOpen, setOppOpen] = useState(false);
   const [contactOpen, setContactOpen] = useState(false);
   const [contactSaving, setContactSaving] = useState(false);
@@ -222,7 +230,7 @@ export function AccountDashboardShell(props: AccountDashboardShellProps) {
         onNewOpportunity: () => setOppOpen(true),
         onAssignLeads: () => setActiveTab("leads"),
         onTask: () => setTaskOpen(true),
-        onLogActivity: () => setLogActivityOpen(true),
+        onLogActivity: goLogActivity,
         onSalesActivity: () => openTouch(true),
         onAddNote: () => {
           setActiveTab("notes");
@@ -252,6 +260,7 @@ export function AccountDashboardShell(props: AccountDashboardShellProps) {
       }),
     [
       accountRow.website,
+      goLogActivity,
       initialLeads.length,
       isDeleted,
       loadPickers,
@@ -380,7 +389,7 @@ export function AccountDashboardShell(props: AccountDashboardShellProps) {
         onNewOpportunity={() => setOppOpen(true)}
         onAssignLeads={() => setActiveTab("leads")}
         onTask={() => setTaskOpen(true)}
-        onLogActivity={() => setLogActivityOpen(true)}
+        onLogActivity={goLogActivity}
         onSalesActivity={() => openTouch(true)}
         canEdit={permissions.accountsEdit}
         canAddContact={permissions.contactsCreate}
@@ -428,7 +437,7 @@ export function AccountDashboardShell(props: AccountDashboardShellProps) {
         }}
         activeTab={activeTab}
         onTabChange={setActiveTab}
-        onLogActivity={() => setLogActivityOpen(true)}
+        onLogActivity={goLogActivity}
         onRefresh={() => router.refresh()}
         initialNotes={initialNotes}
         scoreHistory={scoreHistory}
@@ -472,21 +481,6 @@ export function AccountDashboardShell(props: AccountDashboardShellProps) {
         }}
         seed={taskSeed}
         locked={{ relatedKind: true }}
-      />
-
-      <LogActivityModal
-        open={logActivityOpen}
-        onClose={() => setLogActivityOpen(false)}
-        onSuccess={() => {
-          setLogActivityOpen(false);
-          router.refresh();
-        }}
-        canViewLeads={permissions.leadsCreate || permissions.leadsEdit}
-        initialRelated={{
-          kind: "Account",
-          id: account.id,
-          label: account.name,
-        }}
       />
 
       <OpportunityFormDrawer

@@ -327,6 +327,22 @@ function StatPill({ value }: { value: number | string }) {
   );
 }
 
+// Today's activity-target status dot. Semantic colors (data state) — hardcoded
+// per CLAUDE.md, not accent-*. Renders neutral/empty when status is unavailable.
+const TARGET_DOT: Record<"green" | "yellow" | "red", { cls: string; title: string }> = {
+  green: { cls: "bg-green-500", title: "On target (≥100%)" },
+  yellow: { cls: "bg-yellow-500", title: "At risk (80–99%)" },
+  red: { cls: "bg-red-500", title: "Below target (<80%)" },
+};
+
+function TargetStatusDot({ status }: { status?: "green" | "yellow" | "red" | null }) {
+  if (!status) {
+    return <span className="inline-block h-2.5 w-2.5 rounded-full bg-slate-200" title="No target data" />;
+  }
+  const m = TARGET_DOT[status];
+  return <span className={`inline-block h-2.5 w-2.5 rounded-full ${m.cls}`} title={m.title} />;
+}
+
 function OverviewLeaderboard({ data }: { data: ExecutiveOverviewDto }) {
   const maxScore = Math.max(...data.leaderboard.map((r) => r.activityScore), 1);
 
@@ -339,7 +355,7 @@ function OverviewLeaderboard({ data }: { data: ExecutiveOverviewDto }) {
             <p className="mt-0.5 text-xs text-crm-muted">Ranked by activity score for the selected period</p>
           </div>
           <div className="flex items-center gap-5 pr-1">
-            {["Leads", "Calls", "Emails", "Meetings", "Won", "Revenue", "Score"].map((col) => (
+            {["Leads", "Calls", "Emails", "Meetings", "Won", "Revenue", "Score", "Target"].map((col) => (
               <span key={col} className="w-12 text-center text-[10px] font-semibold uppercase tracking-wide text-crm-muted">
                 {col}
               </span>
@@ -400,6 +416,11 @@ function OverviewLeaderboard({ data }: { data: ExecutiveOverviewDto }) {
                       style={{ width: `${Math.round((row.activityScore / maxScore) * 100)}%` }}
                     />
                   </div>
+                </div>
+
+                {/* Today's activity-target status */}
+                <div className="flex w-12 shrink-0 justify-center">
+                  <TargetStatusDot status={row.targetStatus} />
                 </div>
               </div>
             </Link>

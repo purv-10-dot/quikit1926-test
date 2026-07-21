@@ -24,6 +24,9 @@ import {
 } from "./period";
 import { formatCompactCurrency, formatINRLong } from "./currency";
 import { resolveOwnerScope, spreadOwnerFilter } from "./owner-scope";
+import { activityWindow, countActivitiesForUsers } from "./activity-target-count";
+import { computeAttainment } from "./activity-target-status";
+import { getActivityTargetConfig, isTargetAssigned, resolveDailyTarget } from "@/lib/services/workspace/activity-target-config";
 
 const MS_DAY = 86_400_000;
 
@@ -648,6 +651,33 @@ export async function buildExecutiveOverview(
     })
     .sort((a, b) => b.activityScore - a.activityScore)
     .map((row, i) => ({ ...row, rank: i + 1, isTop: i === 0 }));
+
+  // Attach today's activity-target status per row, reusing the SAME shared
+  // services as the tracker + detail page (config + 3-source count + thresholds)
+  // so the indicator matches those surfaces. Resilient: on failure, leave rows
+  // untouched (targetStatus stays undefined) rather than break the overview.
+  try {
+    const targetConfig = await getActivityTargetConfig(orgId);
+    // Opt-in: only ASSIGNED users get a status. Unassigned users keep
+    // targetStatus null (rendered as a neutral "no target data" dot).
+    const assignedIds = leaderboard.map((r) => r.userId).filter((id) => isTargetAssigned(targetConfig, id));
+    if (assignedIds.length > 0) {
+      const todayCounts = await countActivitiesForUsers(orgId, assignedIds, activityWindow(range.tz));
+      const assignedSet = new Set(assignedIds);
+      for (const row of leaderboard) {
+        if (!assignedSet.has(row.userId)) {
+          (row as { targetStatus?: "green" | "yellow" | "red" | null }).targetStatus = null;
+          continue;
+        }
+        const dailyTarget = resolveDailyTarget(targetConfig, row.userId);
+        const counts = todayCounts.get(row.userId) ?? { today: 0, week: 0 };
+        (row as { targetStatus?: "green" | "yellow" | "red" | null }).targetStatus =
+          computeAttainment(dailyTarget, counts.today).status;
+      }
+    }
+  } catch {
+    // leave targetStatus undefined
+  }
 
   const maxScore = leaderboard[0]?.activityScore ?? 1;
   const teamProductivityScore = Math.min(

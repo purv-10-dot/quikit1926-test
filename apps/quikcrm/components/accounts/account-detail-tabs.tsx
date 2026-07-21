@@ -28,12 +28,14 @@ import {
   type UnifiedTimelineSeed,
 } from "@/components/leads/dashboard/unified-timeline";
 import { LeadDashboardErrorBoundary } from "@/components/leads/dashboard/error-boundary";
+import { EmailThreadPanel } from "@/components/email/email-thread-panel";
 import type { AccountDashboardSnapshot } from "@/lib/services/accounts/dashboard-snapshot";
 import type { AccountRow } from "@/lib/services/accounts";
 
 export const ACCOUNT_TABS = [
   { key: "overview", label: "Overview" },
   { key: "timeline", label: "Timeline" },
+  { key: "emails", label: "Emails" },
   { key: "notes", label: "Notes" },
   { key: "trends", label: "Score trends" },
   { key: "contacts", label: "Contacts" },
@@ -153,6 +155,10 @@ export function AccountDetailTabs({
               emptyTitle="No activity yet"
               emptyDescription="Account, lead, and contact touchpoints roll up here as your team engages this company."
             />
+          ) : null}
+
+          {mountedTabs.has("emails") && active === "emails" ? (
+            <EmailThreadPanel relatedKind="Account" relatedObjectId={account.id} />
           ) : null}
 
           {mountedTabs.has("notes") && active === "notes" ? (

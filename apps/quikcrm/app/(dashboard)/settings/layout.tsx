@@ -33,13 +33,16 @@ const TAB_GROUPS = [
     ],
   },
   {
-    tabs: [{ href: "/settings/activity-types", label: "Activity Types" }],
+    tabs: [
+      { href: "/settings/activity-types", label: "Activity Types" },
+      { href: "/settings/activity-targets", label: "Activity Targets" },
+    ],
   },
   {
     tabs: [
-      { href: "/settings/integrations", label: "Integrations" },
-      { href: "/settings/api-keys", label: "API Keys" },
-      { href: "/settings/audit", label: "Audit Log" },
+      { href: "/settings/email", label: "Email Accounts" },
+      // { href: "/settings/api-keys", label: "API Keys" },
+      // { href: "/settings/audit", label: "Audit Log" },
       { href: "/settings/notifications", label: "Notifications" },
     ],
   },
@@ -61,7 +64,8 @@ const ALL_NAV_ITEMS = [
   { href: "/settings/product-fields", label: "Product Fields" },
   { href: "/settings/quote-templates", label: "Quote Templates" },
   { href: "/settings/activity-types", label: "Activity Types" },
-  { href: "/settings/integrations", label: "Integrations" },
+  { href: "/settings/activity-targets", label: "Activity Targets" },
+  { href: "/settings/email", label: "Email Accounts" },
   { href: "/settings/api-keys", label: "API Keys" },
   { href: "/settings/audit", label: "Audit Log" },
   { href: "/settings/notifications", label: "Notifications" },
