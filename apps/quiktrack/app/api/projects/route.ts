@@ -101,6 +101,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
       icon: true,
       color: true,
       projectType: true,
+      templateKey: true,
       status: true,
       leadUserId: true,
       updatedAt: true,
