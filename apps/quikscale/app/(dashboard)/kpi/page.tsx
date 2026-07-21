@@ -220,6 +220,9 @@ export default function IndividualKPIPage() {
     ...weeksArray(weekCount).map((w) => ({ key: `week${w}`, label: `Week ${w}` })),
   ];
   const visibleColKeys = moduleColumns.filter((c) => !hiddenCols.has(c.key)).map((c) => c.key);
+  // Global Export defaults to EVERY column (not just grid-visible ones) so no
+  // field is silently dropped from the sheet; the user can still uncheck any.
+  const allColKeys = moduleColumns.map((c) => c.key);
 
   // Export handler — pulls rows per scope, formats via runExport
   const handleExport = useCallback(async (sel: ExportSelection) => {
@@ -542,7 +545,7 @@ export default function IndividualKPIPage() {
         onClose={() => setGlobalExportOpen(false)}
         title="Export Individual KPI"
         columns={moduleColumns}
-        defaultCheckedKeys={visibleColKeys}
+        defaultCheckedKeys={allColKeys}
         rangeMode="quarter"
         quarterCtx={{ years: availableYears, defaultYear: currentYear, defaultQuarter: currentQuarter, formatYear: fiscalYearLabel }}
         onExport={handleGlobalExport}

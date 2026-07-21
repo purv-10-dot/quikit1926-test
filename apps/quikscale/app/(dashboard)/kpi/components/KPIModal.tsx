@@ -13,6 +13,7 @@ import type { User } from "@/lib/types/kpi";
 import { fiscalYearLabel, MEASUREMENT_UNITS, KPI_TYPES, ALL_QUARTERS, weeksArray, weekDateLabel } from "@/lib/utils/fiscal";
 import { CURRENCIES, getScales, getMultiplier, formatActual, shortScaleLabel, scaleDownForDisplay, scaleUpFromInput } from "@/lib/utils/currency";
 import { UnitSelect } from "./UnitSelect";
+import { QuarterField } from "./QuarterField";
 import { UserPicker, UserMultiPicker, RightPanel, RightPanelFooter, DropdownPicker } from "@quikit/ui";
 import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
@@ -419,7 +420,12 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
   // data flag is enabled (the flag controls *editability* of past cells, not
   // default distribution). Standalone mode ignores this — every week gets the
   // full target.
-  const firstEditableWeek = (currentWeek !== null && currentWeek > 1) ? currentWeek : 1;
+  // Exception: in past-week mode, a fully-PAST selected quarter has every week
+  // open for retroactive planning, so distribute across all weeks (week 1)
+  // instead of dumping the whole target on the clamped last week.
+  const firstEditableWeek = (pastWeekAllowed && createQuarterPos === "past")
+    ? 1
+    : ((currentWeek !== null && currentWeek > 1) ? currentWeek : 1);
 
   // When firstEditableWeek resolves (async from API), recalculate the breakdown.
   //  - Create mode: always re-derive so blocked weeks get 0 and editable weeks share the target.
@@ -472,6 +478,29 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weekCount]);
 
+  // Quarter change (past-week mode only). Rebuilding the weekly breakdown for
+  // the NEW quarter can't happen synchronously here — the derived
+  // `firstEditableWeek` + `weekCount` for the new quarter resolve async from the
+  // quarter-settings cache — so we flag the switch and let the effect below
+  // rebuild once they settle. See the effect keyed on [form.quarter, …].
+  const quarterTouchedRef = useRef(false);
+  useEffect(() => {
+    if (!quarterTouchedRef.current) return;
+    setForm(f => {
+      const tNum = f.measurementUnit === "Currency"
+        ? (parseFloat(f.target) || 0) * getMultiplier(f.currency, f.targetScale)
+        : parseFloat(f.target) || 0;
+      if (tNum <= 0) return f;
+      const next = {
+        ...f,
+        weeklyBreakdown: buildBreakdown(f.divisionType, tNum, f.measurementUnit, firstEditableWeek, weekCount),
+      };
+      if (isTeamScope) next.weeklyOwnerBreakdown = computeAllOwnerBreakdowns(next);
+      return next;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.quarter, firstEditableWeek, weekCount]);
+
   const createKPI = useCreateKPI();
   const updateKPI = useUpdateKPI(kpi?.id ?? "");
 
@@ -480,6 +509,13 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
   function set(key: string, val: string) {
     setForm(f => ({ ...f, [key]: val }));
     setErrors(e => { const n = { ...e }; delete n[key]; return n; });
+  }
+
+  /** Change the KPI's quarter (only reachable when "Add Past Week Data" is on). */
+  function setQuarter(q: string) {
+    quarterTouchedRef.current = true;
+    setForm(f => ({ ...f, quarter: q }));
+    setErrors(e => { const n = { ...e }; delete n.quarter; return n; });
   }
 
   function setMeasurementUnit(val: string) {
@@ -685,9 +721,12 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
       if (mode === "create") {
         await createKPI.mutateAsync(payload);
       } else {
-        // Strip immutable fields on edit — quarter, owner, measurementUnit, currency cannot change
-        // ownerIds + ownerContributions remain editable for team KPIs
-        const { quarter: _q, measurementUnit: _mu, currency: _c, owner: _o, ...editPayload } = payload;
+        // Strip immutable fields on edit — owner, measurementUnit, currency cannot change.
+        // ownerIds + ownerContributions remain editable for team KPIs. Quarter (and its
+        // year) are immutable UNLESS "Add Past Week Data" is on, in which case the user
+        // could pick a different quarter via the dropdown, so we send them through.
+        const { quarter, year, measurementUnit: _mu, currency: _c, owner: _o, ...rest } = payload;
+        const editPayload = pastWeekAllowed ? { ...rest, quarter, year } : rest;
         await updateKPI.mutateAsync(editPayload);
       }
       notify.saved(isTeamScope ? "Team KPI" : "Individual KPI", mode === "create" ? "created" : "updated", { tint });
@@ -950,16 +989,17 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
             </div>
           )}
 
-          {/* Quarter (read-only) + Frequency */}
+          {/* Quarter (editable dropdown when "Add Past Week Data" is on) + Frequency */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                Quarter <span className="text-red-500">*</span>
-              </label>
-              <div className="px-3 py-2 text-xs border border-gray-100 rounded-lg bg-gray-50 text-gray-600">
-                {fiscalYearLabel(parseInt(form.year))} · {form.quarter}
-              </div>
-              {errors.quarter && <p className="text-[10px] text-red-500 mt-0.5">{errors.quarter}</p>}
+              <QuarterField
+                year={parseInt(form.year)}
+                quarter={form.quarter}
+                editable={pastWeekAllowed}
+                onChange={setQuarter}
+                error={errors.quarter}
+                required
+              />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">

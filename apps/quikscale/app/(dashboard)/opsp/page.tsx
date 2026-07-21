@@ -34,6 +34,7 @@ import { validateOPSP, backfillPeriods, categoryRowMissingProjected, type Valida
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 import { EditNoteCard } from "./components/EditNoteCard";
 import { OPSPHistoryDrawer } from "./components/OPSPHistoryDrawer";
+import { SyncConfirmationModal } from "./components/SyncConfirmationModal";
 import { PostFinalizeChangesBanner } from "./components/PostFinalizeChangesBanner";
 import { describeSetChange, describeArrChange, getFieldValue, applyFieldPath, isRowDeletionField, type PendingEdit } from "./lib/editLog";
 import { isYearSelectable, isQuarterSelectable, firstSelectableQuarter } from "./lib/periodGating";
@@ -75,6 +76,7 @@ export default function OPSPPage() {
     deleteGoalRow,
     save,
     setAutosaveEnabled,
+    categorySync,
   } = useOPSPForm({ urlYear, urlQuarter });
 
   // UI-only state (modal opens, year picker, finalize confirm) stays on the page.
@@ -1244,6 +1246,14 @@ export default function OPSPPage() {
             ? { acknowledged: !unacknowledged, onAcknowledge: acknowledge, actorName: latestChange?.actorName }
             : undefined
         }
+      />
+      {/* Category synchronization confirmation (Targets→Goals→Actions rename
+          gating). Both the "Replace" and "Add to empty rows" flows render through
+          this one modal — see useCategorySync / SyncConfirmationModal. */}
+      <SyncConfirmationModal
+        {...categorySync.modal}
+        onConfirm={categorySync.confirm}
+        onCancel={categorySync.cancel}
       />
     </div>
     </OPSPOwnerNamesProvider>

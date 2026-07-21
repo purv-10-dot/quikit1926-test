@@ -112,17 +112,18 @@ export async function GET(_req: NextRequest) {
           })
         : null;
 
-    if (!opsp) {
-      return NextResponse.json({ success: true, finalize: null, review: null });
-    }
-
     const flags = new Map(flagRows.map((f) => [f.key, f]));
     const finalizeDays = parseExplicitThresholdDays(flags.get("opsp_threshold_days") ?? null);
     const reviewDays = parseExplicitThresholdDays(flags.get("opsp_review_threshold_days") ?? null);
 
-    const period = resolvePeriodLabel(opsp.year, opsp.quarter);
+    // NOTE: we no longer early-return when the current-quarter OPSP is missing.
+    // The Finalize banner tracks the current quarter, but the Review reminder
+    // tracks a (possibly PAST) finalized-but-unreviewed quarter — so even with no
+    // current-quarter OPSP, a pending review must still surface.
 
-    /* ──────────────────── Finalize banner ──────────────────── */
+    const period = opsp ? resolvePeriodLabel(opsp.year, opsp.quarter) : "current OPSP";
+
+    /* ──────────────────── Finalize banner (current quarter) ──────────────────── */
     let finalize:
       | { mode: "A" | "B"; show: true; daysLeft: number; message: string; period: string;
           createdAt?: string; autoFinalizeDate?: string; thresholdDays?: number; opspStatus?: string }
@@ -130,7 +131,7 @@ export async function GET(_req: NextRequest) {
 
     // Mode A is preferred. Eligible when (i) the OPSP is in draft, (ii) createdAt
     // is present, and (iii) the finalize threshold is explicitly configured.
-    if (opsp.status !== "finalized" && opsp.status !== "reviewed") {
+    if (opsp && opsp.status !== "finalized" && opsp.status !== "reviewed") {
       if (finalizeDays !== null && opsp.createdAt) {
         // ── Mode A ──
         const createdAt = startOfDayUTC(new Date(opsp.createdAt));
@@ -196,40 +197,69 @@ export async function GET(_req: NextRequest) {
       // else: no Mode A inputs AND no quarter row → finalize stays null.
     }
 
-    /* ──────────────────── Review banner ──────────────────── */
+    /* ──────────────────── Review banner / modal ──────────────────── */
+    // The review reminder is NOT tied to the current quarter. You review a
+    // quarter's OPSP *after* it's finalized, and that usually happens once you've
+    // already moved into the NEXT quarter (the period gate only needs the prior
+    // quarter finalized to unlock the next one). So the review target is the
+    // OLDEST finalized-but-unreviewed OPSP — the most overdue pending review —
+    // independent of whichever quarter is current.
+    //
+    //   • Still within `reviewDays` of that quarter's end → countdown banner.
+    //   • Quarter already ended (overdue) → the client escalates to a blocking
+    //     modal. Reminder persists until the review is submitted (status
+    //     transitions off "finalized" to "reviewed").
     let review:
       | { show: true; daysUntilQuarterEnd: number; isOverdue: boolean; message: string; period: string }
       | null = null;
 
-    if (opsp.status !== "reviewed" && reviewDays !== null) {
-      // Resolve quarter end via the lenient ladder:
-      //   1. Strict (org, fiscalYear, fiscalQuarter) — already loaded
-      //   2. Fiscal-year flex (org, opsp.year, opsp.quarter)
-      //   3. Synthetic calendar quarter end on opsp.year
-      let quarterEnd: Date | null = strictQuarterSetting
-        ? endOfDayUTC(strictQuarterSetting.endDate)
-        : null;
+    if (reviewDays !== null) {
+      const reviewOpsp = await db.oPSPData.findFirst({
+        where: { orgId, userId: ownerId, status: "finalized" },
+        select: { year: true, quarter: true },
+        orderBy: [{ year: "asc" }, { quarter: "asc" }],
+      });
 
-      if (!quarterEnd && (opsp.year !== fiscalYear || opsp.quarter !== fiscalQuarter)) {
-        const flex = await db.quarterSetting.findUnique({
-          where: { orgId_fiscalYear_quarter: { orgId, fiscalYear: opsp.year, quarter: opsp.quarter } },
-          select: { endDate: true },
-        });
-        if (flex) quarterEnd = endOfDayUTC(flex.endDate);
-      }
-      if (!quarterEnd) {
-        quarterEnd = getSyntheticCalendarQuarterEnd(opsp.year, opsp.quarter);
-      }
+      if (reviewOpsp) {
+        // Resolve the review quarter's end via the lenient ladder:
+        //   1. Reuse the current-quarter row when the review target IS current.
+        //   2. Strict (org, reviewOpsp.year, reviewOpsp.quarter) lookup.
+        //   3. Synthetic calendar quarter end as last resort.
+        let quarterEnd: Date | null =
+          strictQuarterSetting &&
+          reviewOpsp.year === fiscalYear &&
+          reviewOpsp.quarter === fiscalQuarter
+            ? endOfDayUTC(strictQuarterSetting.endDate)
+            : null;
 
-      const result = buildOpspReviewReminderMessage({ now, quarterEnd, reviewDays, period });
-      if (result) {
-        review = {
-          show: true,
-          daysUntilQuarterEnd: result.daysUntilQuarterEnd,
-          isOverdue: result.isOverdue,
-          message: result.message,
-          period,
-        };
+        if (!quarterEnd) {
+          const qs = await db.quarterSetting.findUnique({
+            where: {
+              orgId_fiscalYear_quarter: {
+                orgId,
+                fiscalYear: reviewOpsp.year,
+                quarter: reviewOpsp.quarter,
+              },
+            },
+            select: { endDate: true },
+          });
+          if (qs) quarterEnd = endOfDayUTC(qs.endDate);
+        }
+        if (!quarterEnd) {
+          quarterEnd = getSyntheticCalendarQuarterEnd(reviewOpsp.year, reviewOpsp.quarter);
+        }
+
+        const reviewPeriod = resolvePeriodLabel(reviewOpsp.year, reviewOpsp.quarter);
+        const result = buildOpspReviewReminderMessage({ now, quarterEnd, reviewDays, period: reviewPeriod });
+        if (result) {
+          review = {
+            show: true,
+            daysUntilQuarterEnd: result.daysUntilQuarterEnd,
+            isOverdue: result.isOverdue,
+            message: result.message,
+            period: reviewPeriod,
+          };
+        }
       }
     }
 

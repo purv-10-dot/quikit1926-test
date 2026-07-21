@@ -488,6 +488,24 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
     }
   }
 
+  // ── Cascade a Team KPI's quarter/year change to its child Individual KPIs ──
+  // Quarter/year are editable only with "Add Past Week Data" on. When a Team KPI
+  // moves quarters, its auto-created children must move too, otherwise they stay
+  // filed under the old quarter and vanish from the team's quarter view.
+  if (effectiveLevel === "team") {
+    const quarterChanged = validated.quarter !== undefined && validated.quarter !== existingKPI.quarter;
+    const yearChanged = validated.year !== undefined && validated.year !== existingKPI.year;
+    if (quarterChanged || yearChanged) {
+      await db.kPI.updateMany({
+        where: { parentKPIId: params.id, deletedAt: null },
+        data: {
+          ...(quarterChanged && { quarter: validated.quarter }),
+          ...(yearChanged && { year: validated.year }),
+        },
+      });
+    }
+  }
+
   // ── Per-owner child rename ──
   // When the Team KPI form sends `ownerKpiNames`, rename each child Individual
   // KPI to match. Empty / missing entries are ignored (child keeps its name).

@@ -174,6 +174,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
       await updatePriority.mutateAsync({
         name: form.name.trim(),
         description: form.description || undefined,
+        owner: form.owner,
         startWeek: parseInt(form.startWeek),
         endWeek: parseInt(form.endWeek),
         notes: tab === "notes" ? notes : undefined,
@@ -332,7 +333,10 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
                   <label className="block text-xs font-medium text-gray-600 mb-1">
                     Owner <span className="text-red-500">*</span>
                   </label>
-                  <UserPicker value={form.owner} onChange={() => {}} users={users} error={false} disabled />
+                  {/* Single-owner reassignment. Edit never fans out — changing the
+                      owner just moves this one priority to a new person. */}
+                  <UserPicker value={form.owner} onChange={v => setField("owner", v)} users={users} error={!!errors.owner} />
+                  {errors.owner && <p className="text-[10px] text-red-500 mt-0.5">{errors.owner}</p>}
                 </div>
               </div>
 

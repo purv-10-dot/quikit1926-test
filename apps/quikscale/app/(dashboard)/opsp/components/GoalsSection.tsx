@@ -15,7 +15,7 @@ import { CritBlock } from "./CritBlock";
 import { CategorySelect, ProjectedInput } from "./category";
 import { breakdownProjected } from "./modals";
 import { WithTooltip } from "./pickers";
-import type { FormData } from "../hooks/useOPSPForm";
+import { MIN_GOAL_ROWS, MAX_GOAL_ROWS, type FormData } from "../hooks/useOPSPForm";
 import { describeRowDeletion, type PendingEdit } from "../lib/editLog";
 
 interface Props {
@@ -29,8 +29,6 @@ interface Props {
   onExpandKeyInitiatives: () => void;
 }
 
-const MAX_GOAL_ROWS = 10;
-const MIN_GOAL_ROWS = 6;
 const emptyGoalRow = () => ({
   category: "",
   projected: "",

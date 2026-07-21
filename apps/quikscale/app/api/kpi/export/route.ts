@@ -24,6 +24,7 @@ import { buildKpiScopeWhere } from "@/lib/api/kpiListQuery";
 import { exportBaseSchema, quarterRangeSchema, searchParamsToObject } from "@/lib/exports/exportParams";
 import { getQuarterWeekCounts, getQuarterWeekTiming, weekNumbers } from "@/lib/exports/quarterWeeks";
 import { kpiExportColumns, type KpiExportRow } from "@/lib/exports/columns/kpiExportColumns";
+import { getLatestWeeklyNote } from "@/lib/utils/kpiHelpers";
 import { computeExportStats } from "@/app/(dashboard)/kpi/components/kpiStats";
 import type { KPIRow } from "@/lib/types/kpi";
 import { buildWorkbookSheets, type WorkbookSheet } from "@/lib/exports/buildWorkbook";
@@ -67,7 +68,7 @@ const KPI_SELECT = {
   updatedBy: true,
   owner_user: { select: { firstName: true, lastName: true } },
   team: { select: { name: true, headId: true } },
-  weeklyValues: { select: { weekNumber: true, value: true } },
+  weeklyValues: { select: { weekNumber: true, value: true, notes: true } },
 } as const;
 
 export const GET = auth.view(async ({ orgId, userId }, req) => {
@@ -130,11 +131,23 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
 
   const toRow = (k: any, quarter: string, currentWeek: number, qtdWeek: number, weekCount: number): KpiExportRow => {
     const weekMap: Record<number, number | null> = {};
+    const weekNoteMap: Record<number, string> = {};
     for (const wv of k.weeklyValues ?? []) {
       const prev = weekMap[wv.weekNumber];
       const val = wv.value ?? null;
       weekMap[wv.weekNumber] = val == null ? (prev ?? null) : (prev ?? 0) + val;
+      const note = typeof wv.notes === "string" ? wv.notes.trim() : "";
+      if (note) weekNoteMap[wv.weekNumber] = note;
     }
+    // Last Notes mirrors the KPI grid: latest per-week note wins, falling back to
+    // the denormalized `lastNotes` field. Per-week notes live on KPIWeeklyValue,
+    // NOT on `lastNotes`, so reading that field alone missed them (the bug).
+    const latestNote = getLatestWeeklyNote(k as KPIRow);
+    const lastNotes = latestNote
+      ? latestNote.weekNumber != null
+        ? `W${latestNote.weekNumber}: ${latestNote.note}`
+        : latestNote.note
+      : "";
     const ownerName = k.owner_user
       ? fullName(k.owner_user)
       : ((k.ownerIds as string[] | null) ?? []).map((id: string) => fullName(userMap.get(id))).filter(Boolean).join(", ");
@@ -169,7 +182,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       weeklyGoal: stats.weeklyGoal,
       progressPercent: stats.progressPercent,
       description: k.description,
-      lastNotes: k.lastNotes,
+      lastNotes,
       importedFromOpsp: k.importedFromOpsp ?? false,
       createdByName: k.createdBy ? fullName(userMap.get(k.createdBy)) : "",
       updatedByName: k.updatedBy ? fullName(userMap.get(k.updatedBy)) : "",
@@ -177,6 +190,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       updatedAt: k.updatedAt ?? null,
       weekMap,
       weekTargetMap,
+      weekNoteMap,
       reverseColor: k.reverseColor ?? false,
     };
   };
@@ -200,6 +214,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       headers: columns.map((c) => c.label),
       rows: rowObjs.map((r) => columns.map((c) => c.value(r))),
       fills: rowObjs.map((r) => columns.map((c) => c.fill?.(r))),
+      notes: rowObjs.map((r) => columns.map((c) => c.note?.(r))),
     });
   } else {
     // ── Multiple quarters (Full Year / multi-select) → ONE combined sheet with
@@ -228,6 +243,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       headers: ["Quarter", ...dataColumns.map((c) => c.label)],
       rows: rowObjs.map((r) => [r.quarter ?? "", ...dataColumns.map((c) => c.value(r))]),
       fills: rowObjs.map((r) => [undefined, ...dataColumns.map((c) => c.fill?.(r))]),
+      notes: rowObjs.map((r) => [undefined, ...dataColumns.map((c) => c.note?.(r))]),
     });
   }
 

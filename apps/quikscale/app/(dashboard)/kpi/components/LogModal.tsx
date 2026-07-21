@@ -31,6 +31,7 @@ import {
 } from "./kpiModalHelpers";
 import { WeekRow } from "./WeekRow";
 import { StatsTab } from "./StatsTab";
+import { QuarterField } from "./QuarterField";
 import { User as UserIcon, Calendar, CalendarDays } from "lucide-react";
 
 interface Props {
@@ -112,7 +113,12 @@ function EditTab({
   const currentWeek = useCurrentWeek(parseInt(form.year) || null, form.quarter);
   const editTabWeekLabels = useWeekLabels(parseInt(form.year) || null, form.quarter);
   const weekCount = useQuarterWeekCount(parseInt(form.year) || null, form.quarter);
-  const firstEditableWeek = (currentWeek !== null && currentWeek > 1) ? currentWeek : 1;
+  // In past-week mode a fully-PAST selected quarter has every week open for
+  // retroactive planning, so distribute from week 1 rather than the clamped
+  // last week. Current/future quarters keep the existing behaviour.
+  const firstEditableWeek = (pastWeekAllowed && editQuarterPos === "past")
+    ? 1
+    : ((currentWeek !== null && currentWeek > 1) ? currentWeek : 1);
   // Buffers the in-progress keystrokes of a scaled breakdown cell so decimals
   // (e.g. "2.5") aren't mangled by the raw↔unit round-trip mid-type.
   const [editingCell, setEditingCell] = useState<{ key: string; raw: string } | null>(null);
@@ -120,6 +126,34 @@ function EditTab({
   function set(key: string, val: string) {
     setForm(f => ({ ...f, [key]: val }));
   }
+
+  /** Change the KPI's quarter (only reachable when "Add Past Week Data" is on). */
+  function setQuarter(q: string) {
+    quarterTouchedRef.current = true;
+    setForm(f => ({ ...f, quarter: q }));
+  }
+
+  // Rebuild the weekly breakdown for the NEW quarter once its async-resolved
+  // `firstEditableWeek` + `weekCount` settle. Only fires after a user-initiated
+  // quarter switch (mirrors KPIModal). Standalone/Cumulative both re-derive from
+  // formula since the saved breakdown belonged to the previous quarter.
+  const quarterTouchedRef = useRef(false);
+  useEffect(() => {
+    if (!quarterTouchedRef.current) return;
+    setForm(f => {
+      const tNum = f.measurementUnit === "Currency"
+        ? (parseFloat(f.target) || 0) * getMultiplier(f.currency, f.targetScale)
+        : parseFloat(f.target) || 0;
+      if (tNum <= 0) return f;
+      const next = {
+        ...f,
+        weeklyBreakdown: buildBreakdown(f.divisionType, tNum, f.measurementUnit, firstEditableWeek, weekCount),
+      };
+      if (isTeamKPI) next.weeklyOwnerBreakdown = computeAllOwnerBreakdowns(next);
+      return next;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.quarter, firstEditableWeek, weekCount]);
 
   /** Compute the actual (scaled) target from display value + scale */
   function actualNum(f: EditFormState): number {
@@ -350,12 +384,14 @@ function EditTab({
         </div>
       </div>
 
-      {/* Quarter (read-only) */}
+      {/* Quarter (editable dropdown when "Add Past Week Data" is on) */}
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Quarter</label>
-        <div className="px-3 py-2 text-xs border border-gray-100 rounded-lg bg-gray-50 text-gray-600">
-          {fiscalYearLabel(parseInt(form.year))} · {form.quarter}
-        </div>
+        <QuarterField
+          year={parseInt(form.year)}
+          quarter={form.quarter}
+          editable={pastWeekAllowed}
+          onChange={setQuarter}
+        />
       </div>
 
       {/* Measurement Unit + Currency (read-only) */}
@@ -1095,7 +1131,10 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
   // any row with weekNumber < currentWeek. The save handler uses this to
   // skip past weeks instead of sending them and getting a confusing
   // "N of 13 weeks failed" partial-success error back.
-  const { canEditPastWeek: canEditPastWeekAtSave } = usePastWeekFlags();
+  const { canEditPastWeek: canEditPastWeekAtSave, canAddPastWeek: canAddPastWeekAtSave, loaded: flagsLoadedAtSave } = usePastWeekFlags();
+  // Quarter is editable only when "Add Past Week Data" is on; mirrors the
+  // gate the Edit tab uses to render the Quarter dropdown.
+  const pastWeekAllowedAtSave = flagsLoadedAtSave && canAddPastWeekAtSave;
 
   const isTeamKPI = kpi.kpiLevel === "team";
   const currentUserId = session?.user?.id ?? "";
@@ -1327,6 +1366,14 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
         reverseColor: editForm.reverseColor,
         weeklyTargets: weeklyTargetsPayload,
       };
+
+      // Quarter/year are immutable UNLESS "Add Past Week Data" is on, in which
+      // case the Edit tab exposes the Quarter dropdown and the user may have
+      // re-pointed the KPI at a different quarter.
+      if (pastWeekAllowedAtSave) {
+        kpiPayload.quarter = editForm.quarter;
+        kpiPayload.year = parseInt(editForm.year);
+      }
 
       if (isTeamKPI && editForm.ownerIds.length > 0) {
         kpiPayload.ownerContributions = Object.fromEntries(

@@ -516,6 +516,8 @@ function TeamKPIMoreActions({
   const visibleColKeys = moduleColumns
     .filter((c) => !tablePrefs.hiddenCols.includes(c.key))
     .map((c) => c.key);
+  // Global Export defaults to EVERY column (not just grid-visible ones).
+  const allColKeys = moduleColumns.map((c) => c.key);
 
   const handleExport = async (sel: ExportSelection) => {
     const columns = moduleColumns
@@ -595,7 +597,7 @@ function TeamKPIMoreActions({
         onClose={() => setGlobalExportOpen(false)}
         title="Export Team KPI"
         columns={moduleColumns}
-        defaultCheckedKeys={visibleColKeys}
+        defaultCheckedKeys={allColKeys}
         rangeMode="quarter"
         quarterCtx={{ years: availableExportYears, defaultYear: year, defaultQuarter: quarter, formatYear: fiscalYearLabel }}
         onExport={handleGlobalExport}

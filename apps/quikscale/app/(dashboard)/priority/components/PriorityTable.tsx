@@ -9,7 +9,8 @@ import { PriorityModal } from "./PriorityModal";
 import { PriorityLogModal } from "./PriorityLogModal";
 import { PriorityChangeHistoryPanel } from "./PriorityChangeHistoryPanel";
 import { usePastWeekFlags, useCustomQuarterSettings, useWeeklyMeetingDay } from "@/lib/hooks/useFeatureFlags";
-import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useWeekLabels, useQuarterPosition } from "@/lib/hooks/useCurrentWeek";
+import { weekEditState } from "@/lib/utils/weekLock";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { useTableSort } from "@/lib/store";
 import { ColMenu } from "@/components/table/ColMenu";
@@ -243,8 +244,17 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
   const [optimisticNotes, setOptimisticNotes] = useState<Record<string, Record<number, string>>>({});
 
   // Past-week feature flags
-  const { canEditPastWeek } = usePastWeekFlags();
+  const { canEditPastWeek, loaded: flagsLoaded } = usePastWeekFlags();
   const currentWeek = useCurrentWeek(year, quarter);
+  // Quarter-aware week-edit gate. `useCurrentWeek` clamps a past quarter to its
+  // last week and a future quarter to week 1, so a bare `w < currentWeek` check
+  // mis-classifies a past quarter's FINAL week as "current" (rendering it
+  // full-strength/unlocked while weeks 1..n-1 are faded). Feeding
+  // quarterPosition into the shared `weekEditState` fixes that — matching the
+  // Priority edit drawer, the KPI grid, and the server route. Gate stays locked
+  // until BOTH the flag and the position resolve (`gateLoaded`).
+  const quarterPos = useQuarterPosition(year, quarter);
+  const gateLoaded = flagsLoaded && quarterPos !== null;
   const weekLabels = useWeekLabels(year, quarter);
   const { getStartDate: getQuarterStartDate, getEndDate: getQuarterEndDate, getWeekCount } = useQuarterStartDates();
   const qStart = getQuarterStartDate(year, quarter);
@@ -962,7 +972,18 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                       );
                     }
 
-                    const isPastLocked = !canEditPastWeek && currentWeek !== null && w < currentWeek;
+                    // Quarter-aware lock (see `quarterPos`/`gateLoaded` above):
+                    // a past quarter locks every week uniformly, a future
+                    // quarter locks all weeks, and the current quarter applies
+                    // the per-week window. `isPastLocked` now covers past AND
+                    // future locks; `isFuture` only refines the tooltip copy.
+                    const { isFuture, locked: isPastLocked } = weekEditState({
+                      quarterPosition: quarterPos ?? "current",
+                      week: w,
+                      currentWeek,
+                      canEditPastWeek,
+                      flagsLoaded: gateLoaded,
+                    });
                     return (
                       <td key={w} className="relative border-r border-gray-100 px-0 py-0" style={{ width: 76, minWidth: 76, height: 34 }}>
                         <WeekTooltip weekNumber={w} status={status} note={note}>
@@ -972,7 +993,13 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                               setOpenPicker(isOpen ? null : { priorityId: priority.id, weekNumber: w });
                             }}
                             disabled={isPastLocked || readOnly}
-                            title={isPastLocked ? "Past week editing is disabled. Enable in Settings > Configurations." : undefined}
+                            title={
+                              isFuture
+                                ? "This week is in the future and can't be updated yet."
+                                : isPastLocked
+                                  ? "Past week editing is disabled. Enable in Settings > Configurations."
+                                  : undefined
+                            }
                             className={`w-full h-full flex items-center justify-center transition-opacity ${statusDotColor(status)} ${(isPastLocked || readOnly) ? "cursor-default" : "hover:opacity-80"} ${isPastLocked ? "opacity-50" : ""}`}
                             style={{ minHeight: 34 }}>
                             {isPastLocked && (
