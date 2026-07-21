@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo, useCallback, type UIEvent } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import { ROLES, ROLE_HIERARCHY } from "@quikit/shared";
 import type { WWWItem } from "@/lib/types/www";
+import { invalidateEntity } from "@/lib/hooks/dashboardInvalidation";
 import { WWWPanel } from "./WWWPanel";
 import { WWWChangeHistoryPanel } from "./WWWChangeHistoryPanel";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
@@ -325,6 +327,11 @@ const WWW_FREEZABLE = new Set(["who", "when"]);
 
 export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideColumns, readOnly, maxRows, page, pageSize, total, onPageChange, onPageSizeChange, canDelete = true, canUpdate = true, sortBy: sortByProp, sortOrder: sortOrderProp, onSort: onSortProp, maxBodyHeight, hasMore, isFetchingMore, onLoadMore }: Props) {
   const items = maxRows != null ? itemsAll.slice(0, maxRows) : itemsAll;
+  // Cross-surface cache invalidation. This table is shared by the WWW module
+  // page AND the Dashboard; its inline writes below (raw fetch) must bust the
+  // Dashboard's `["www-infinite"]` + `["dashboard"]` caches too, not just the
+  // parent's `onRefresh()` (which only refetches the current surface's list).
+  const queryClient = useQueryClient();
   // Infinite-scroll mode: bounded-height body whose vertical scroll loads more.
   const infiniteMode = maxBodyHeight != null;
   const handleBodyScroll = (e: UIEvent<HTMLDivElement>) => {
@@ -472,13 +479,14 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
           body: JSON.stringify({ id: fromId, beforeId: n.beforeId, afterId: n.afterId }),
         });
         if (!res.ok) throw new Error("reorder failed");
+        invalidateEntity(queryClient, "www");
         onRefresh();
       } catch {
         notify.error("Failed to reorder row");
         onRefresh();
       }
     },
-    [orderedRowIds, onRefresh],
+    [orderedRowIds, onRefresh, queryClient],
   );
   const rowDnd = useRowDnD({
     getRowsContainer: () => tbodyRef.current,
@@ -522,6 +530,9 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       });
+      // Bust cross-surface caches (Dashboard summary + www-infinite table) so
+      // the edit reflects everywhere, not just the current surface's onRefresh.
+      invalidateEntity(queryClient, "www", { id });
       onRefresh();
     } catch {
       // ignore
@@ -535,6 +546,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ revisedDates: allDates }),
       });
+      invalidateEntity(queryClient, "www", { id });
       onRefresh();
     } catch {
       // ignore
@@ -556,6 +568,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
         return;
       }
       setOpenNotesPicker(null);
+      invalidateEntity(queryClient, "www", { id });
       onRefresh();
     } catch {
       notify.error("Failed to update notes");

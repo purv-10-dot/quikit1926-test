@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback, type UIEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { PriorityRow } from "@/lib/types/priority";
+import { invalidateEntity } from "@/lib/hooks/dashboardInvalidation";
 import { weeksArray, weekDateLabel, getWeekDateRange } from "@/lib/utils/fiscal";
 import { useQuarterStartDates } from "@/lib/hooks/useQuarterStartDates";
 import { PriorityModal } from "./PriorityModal";
@@ -358,10 +359,12 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
           : []),
       ]);
       // Invalidate cross-surface caches so the Dashboard (and any other
-      // React Query consumer of `priority` lists) refetches on next render.
-      // Mirrors `useUpdateWeeklyStatus`'s onSuccess — same keys, same effect.
-      queryClient.invalidateQueries({ queryKey: ["priority"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      // React Query consumer of `priority` lists) refetches. Routed through the
+      // shared helper so the Dashboard's `["priority-infinite"]` table key is
+      // busted too — the old hand-written `["priority"]` + `["dashboard"]` pair
+      // missed it, leaving the Dashboard's Priority table stale after an inline
+      // weekly-status edit. Mirrors `useUpdateWeeklyStatus`'s onSuccess.
+      invalidateEntity(queryClient, "priority", { id: priorityId });
       onRefresh();
     } catch {
       // revert all writes
@@ -535,13 +538,14 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
           body: JSON.stringify({ id: fromId, beforeId: n.beforeId, afterId: n.afterId }),
         });
         if (!res.ok) throw new Error("reorder failed");
+        invalidateEntity(queryClient, "priority");
         onRefresh();
       } catch {
         notify.error("Failed to reorder row");
         onRefresh();
       }
     },
-    [orderedRowIds, onRefresh],
+    [orderedRowIds, onRefresh, queryClient],
   );
   const rowDnd = useRowDnD({
     getRowsContainer: () => tbodyRef.current,

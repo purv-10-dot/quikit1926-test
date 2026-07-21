@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo, useCallback, type UIEvent } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { KPIRow, WeeklyValue } from "@/lib/types/kpi";
+import { invalidateEntity } from "@/lib/hooks/dashboardInvalidation";
 import { weeksArray, weekDateLabel } from "@/lib/utils/fiscal";
 import { progressColor, weekCellColors, fmt, formatScaledKpiValue, getProgressBadgeColors, getLatestWeeklyNote, type NumberFormat } from "@/lib/utils/kpiHelpers";
 import { getColorByPercentage } from "@/lib/utils/colorLogic";
@@ -104,6 +106,10 @@ interface Props {
 
 export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, onPageChange, onPageSizeChange, onSort, onClearSort, onRefresh, onSelectionChange, clearSelectionTrigger, onHiddenColsChange, showColTrigger, hideColumns, maxRows, readOnly, fillWidth, canDelete = true, canUpdate = true, sortBy, sortOrder, maxBodyHeight, hasMore, isFetchingMore, onLoadMore, numberFormat = "standard" }: Props) {
   const kpis = maxRows != null ? kpisAll.slice(0, maxRows) : kpisAll;
+  // Shared by the Individual/Team KPI pages AND the Dashboard, so this table's
+  // own direct write (row reorder) must bust the Dashboard's `["kpi-infinite"]`
+  // + `["dashboard"]` caches, not just the parent surface's onRefresh().
+  const queryClient = useQueryClient();
   // Goal/value formatter. For a Currency KPI with a chosen scale it renders the
   // currency + scaled unit (₹4 Cr / $9 M); otherwise it's the plain compact
   // number honoring the caller's format (Indian on dashboard, standard else).
@@ -207,13 +213,14 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
           body: JSON.stringify({ id: fromId, beforeId: n.beforeId, afterId: n.afterId }),
         });
         if (!res.ok) throw new Error("reorder failed");
+        invalidateEntity(queryClient, "kpi");
         onRefresh();
       } catch {
         notify.error("Failed to reorder row");
         onRefresh();
       }
     },
-    [orderedRowIds, onRefresh],
+    [orderedRowIds, onRefresh, queryClient],
   );
   const rowDnd = useRowDnD({
     getRowsContainer: () => tbodyRef.current,
