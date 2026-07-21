@@ -57,7 +57,8 @@ const DEFAULT_ALLOWED_ORIGINS = [
   "https://support.quikit.ai",
   "https://asset.quikit.ai",
   // UAT custom domains (uat<app>.quikit.ai) — added alongside prod.
-  // Post-logout landing host (NEXT_PUBLIC_POST_LOGOUT_URL) — not an app origin.
+  // Launcher /apps post-logout landing (NEXT_PUBLIC_LAUNCHER_LOGOUT_URL) — the
+  // public marketing site, not an app origin.
   "https://uat.quikit.ai",
   "https://uatapps.quikit.ai",
   "https://uatscale.quikit.ai",

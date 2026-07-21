@@ -257,11 +257,18 @@ export default function AppLauncherPage() {
     const launcherUrl =
       process.env.NEXT_PUBLIC_QUIKIT_URL?.replace(/\/+$/, "") ??
       (typeof window !== "undefined" ? window.location.origin : "");
+    // Post-logout landing for THIS launcher /apps page only. In UAT the image is
+    // built with NEXT_PUBLIC_LAUNCHER_LOGOUT_URL=https://uat.quikit.ai (the public
+    // marketing site); it's unset in prod, so prod falls back to the launcher
+    // root. The target origin must be in the launcher's /api/auth/signout-global
+    // allow-list, or that hop rejects it and falls back to `/`.
+    const postLogout =
+      process.env.NEXT_PUBLIC_LAUNCHER_LOGOUT_URL?.trim() || `${launcherUrl}/`;
     await globalSignOut({
       authUrl: process.env.NEXT_PUBLIC_AUTH_URL,
       quikitUrl: launcherUrl,
       localSignOut: () => signOut({ redirect: false }),
-      postLogoutRedirect: `${launcherUrl}/`,
+      postLogoutRedirect: postLogout,
     });
   }
 
