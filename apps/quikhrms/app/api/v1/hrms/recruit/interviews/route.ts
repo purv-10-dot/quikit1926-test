@@ -8,8 +8,10 @@ import { stageNames } from "@/lib/services/pipeline-stages";
 import { resolveAndSend } from "@/lib/email/resolve";
 import { buildInterviewInviteEmail } from "@/lib/email-templates/interview-invite";
 import { buildInterviewerNotificationEmail } from "@/lib/email-templates/interview-notification";
+import { notifyInterviewScheduled } from "@/lib/services/interview-notifications";
 import { generateMeetingLink } from "@/lib/meetings";
 import { generateFeedbackToken } from "@/lib/services/feedback-token";
+import type { Prisma } from "@quikit/database";
 
 // Interview types that warrant an auto-generated video meeting link.
 // Easy to extend (e.g. add "GroupDiscussion") if those go virtual.
@@ -22,11 +24,31 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     const applicationId = searchParams.get("applicationId");
     const interviewerId = searchParams.get("interviewerId");
 
-    const where = {
+    const where: Prisma.InterviewWhereInput = {
       orgId, deletedAt: null,
+      // Match the active pipeline exactly: only candidates still in play
+      // (active / offered / on-hold) and not hired, rejected, blacklisted or
+      // archived. Keeps the Interviews tab in sync with the pipeline board.
+      application: {
+        status: { in: ["AppActive", "AppOffered", "AppOnHold"] },
+        candidate: { isBlacklisted: false, isArchived: false },
+      },
       ...(applicationId && { applicationId }),
       ...(interviewerId && { interviewerId }),
     };
+
+    // Keep the schedule in sync with the pipeline: cancel any still-"Scheduled"
+    // interviews whose candidate is no longer active (rejected/withdrawn/declined).
+    const stale = await prisma.interview.findMany({
+      where: { orgId, deletedAt: null, status: "IntScheduled", application: { status: { in: ["AppRejected", "AppWithdrawn", "AppDeclined"] } } },
+      select: { id: true },
+    });
+    if (stale.length) {
+      await prisma.interview.updateMany({
+        where: { id: { in: stale.map((s) => s.id) } },
+        data: { status: "IntCancelled" },
+      });
+    }
 
     const [interviews, total] = await Promise.all([
       prisma.interview.findMany({
@@ -81,6 +103,28 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     });
     if (existing) return conflict("Interview already scheduled for this round + time");
 
+    // Validate the FKs up front (they're only looked up for virtual types below,
+    // so an invalid id on an in-person interview would 500 on create).
+    const [appExists, interviewerExists] = await Promise.all([
+      prisma.jobApplication.findFirst({ where: { id: data.applicationId, orgId, deletedAt: null }, select: { id: true } }),
+      prisma.employee.findFirst({ where: { id: data.interviewerId, orgId, deletedAt: null }, select: { id: true } }),
+    ]);
+    if (!appExists) return validationError("Application not found");
+    if (!interviewerExists) return validationError("Interviewer not found");
+
+    // Additional panel interviewers: dedupe, drop the primary, validate they all
+    // belong to the org. They get the same invite email + calendar attendance.
+    const additionalIds = [...new Set((data.additionalInterviewerIds ?? []).filter((id) => id && id !== data.interviewerId))];
+    const additionalInterviewers = additionalIds.length
+      ? await prisma.employee.findMany({
+          where: { id: { in: additionalIds }, orgId, deletedAt: null },
+          select: { id: true, firstName: true, lastName: true, workEmail: true },
+        })
+      : [];
+    if (additionalInterviewers.length !== additionalIds.length) {
+      return validationError("One or more additional interviewers not found");
+    }
+
     // Auto-generate a video meeting link for virtual interviews when the
     // recruiter didn't paste one. Provider-agnostic (Teams today, Google Meet
     // later); failures fall back to null so scheduling never breaks.
@@ -100,15 +144,18 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       const subjectParts = ["Interview"];
       if (appInfo?.requisition?.title) subjectParts.push(appInfo.requisition.title);
       if (appInfo?.candidate) subjectParts.push(`${appInfo.candidate.firstName} ${appInfo.candidate.lastName}`.trim());
-      // Invite both candidate and interviewer so the event lands on their
-      // calendars (interviewer gets a Teams calendar invite; candidate too).
+      // Only the (internal) interviewer is added as a Graph attendee so the event
+      // lands on their calendar. The candidate is intentionally NOT invited here —
+      // Microsoft would auto-send them its raw, unbranded calendar invite. The
+      // candidate instead gets our own clean interview-invite email (below), which
+      // already carries the join link.
       const attendees = [
-        appInfo?.candidate?.email
-          ? { email: appInfo.candidate.email, name: `${appInfo.candidate.firstName} ${appInfo.candidate.lastName}`.trim() }
-          : null,
         interviewer?.workEmail
           ? { email: interviewer.workEmail, name: `${interviewer.firstName} ${interviewer.lastName}`.trim() }
           : null,
+        ...additionalInterviewers.map((a) =>
+          a.workEmail ? { email: a.workEmail, name: `${a.firstName} ${a.lastName}`.trim() } : null,
+        ),
       ].filter((a): a is { email: string; name: string } => a !== null);
       const meeting = await generateMeetingLink({
         subject: `${subjectParts.join(" – ")} (Round ${data.round})`,
@@ -123,6 +170,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       data: {
         orgId, applicationId: data.applicationId,
         round: data.round, type: data.type, interviewerId: data.interviewerId,
+        additionalInterviewerIds: additionalIds,
         scheduledAt, duration: data.duration,
         location: data.location, meetingLink,
         createdBy: userId, updatedBy: userId,
@@ -132,11 +180,34 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         application: {
           include: {
             candidate: { select: { firstName: true, lastName: true, email: true, phone: true, resumeUrl: true } },
-            requisition: { select: { title: true } },
+            requisition: { select: { title: true, jobDescription: true, pipelineId: true } },
           },
         },
       },
     });
+
+    // Scheduling a fresh interview for this round supersedes any prior
+    // non-completed attempt (e.g. a No-show or an earlier Scheduled slot) so the
+    // new one becomes the round's current record everywhere (pipeline + list).
+    await prisma.interview.updateMany({
+      where: {
+        orgId, applicationId: data.applicationId, round: data.round,
+        id: { not: interview.id }, deletedAt: null,
+        status: { in: ["IntScheduled", "IntNoShow", "IntCancelled", "IntRescheduled"] },
+      },
+      data: { deletedAt: new Date(), updatedBy: userId },
+    }).catch(() => null);
+
+    // Resolve this round's pipeline stage once — reused for the "technical round"
+    // JD decision below and the currentStage auto-advance further down.
+    const pipeline = interview.application?.requisition?.pipelineId
+      ? await prisma.hiringPipeline.findUnique({ where: { id: interview.application.requisition.pipelineId } })
+      : await prisma.hiringPipeline.findFirst({ where: { orgId, deletedAt: null, isDefault: true } });
+    const pipelineStageNames = stageNames(pipeline?.stages);
+    const roundStage = pipelineStageNames[data.round - 1] ?? "";
+    // JD is shared with interviewers only on technical rounds so they can prep.
+    const isTechnicalRound = /technical/i.test(roundStage);
+    const roundJobDescription = isTechnicalRound ? (interview.application?.requisition?.jobDescription ?? null) : null;
 
     // Auto-send invite emails to BOTH candidate and interviewer (regardless of interview type).
     let mailStatus: { candidate: { sent: boolean; to: string | null; error?: string }; interviewer: { sent: boolean; to: string | null; error?: string } } = {
@@ -146,8 +217,10 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       const company = await prisma.companySettings.findUnique({ where: { orgId }, select: { companyName: true } });
       const companyName = company?.companyName ?? "Our Company";
       const dt = new Date(interview.scheduledAt);
-      const dateStr = dt.toLocaleDateString("en-IN", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
-      const timeStr = dt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+      // Format in IST — without an explicit timeZone the server (UTC) renders the
+      // wrong time in the candidate/interviewer emails.
+      const dateStr = dt.toLocaleDateString("en-IN", { weekday: "long", day: "2-digit", month: "long", year: "numeric", timeZone: "Asia/Kolkata" });
+      const timeStr = dt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" });
       const candidate = interview.application?.candidate;
       const interviewerName = `${interview.interviewer.firstName} ${interview.interviewer.lastName}`.trim();
       const candidateName = candidate ? `${candidate.firstName} ${candidate.lastName}`.trim() : "Candidate";
@@ -164,12 +237,14 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
           location: interview.location,
           companyName,
         };
-        await resolveAndSend(orgId, {
+        // Background send so slow SMTP can't trip the client's 20s timeout and
+        // leave the Schedule dialog stuck open — the interview is already saved.
+        void resolveAndSend(orgId, {
           key: "interview.candidate-invite",
           to: candidate.email,
           vars: { ...inviteData, meetingLink: inviteData.meetingLink ?? "", location: inviteData.location ?? "" },
           fallback: () => buildInterviewInviteEmail(inviteData),
-        });
+        }).catch((e) => console.error("[interview] candidate invite mail failed:", e));
         mailStatus.candidate = { sent: true, to: candidate.email };
       } else {
         mailStatus.candidate = { sent: false, to: null, error: "Candidate email missing" };
@@ -196,8 +271,9 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
           roundName: `Round ${interview.round}`,
           resumeUrl: candidate.resumeUrl,
           feedbackUrl: base ? `${base}/interview-feedback/${fbToken}` : null,
+          jobDescription: roundJobDescription,
         };
-        await resolveAndSend(orgId, {
+        void resolveAndSend(orgId, {
           key: "interview.interviewer-notify",
           to: interview.interviewer.workEmail,
           vars: {
@@ -207,35 +283,78 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
             location: notifyData.location ?? "",
             resumeUrl: notifyData.resumeUrl ?? "",
             feedbackUrl: notifyData.feedbackUrl ?? "",
+            jobDescription: notifyData.jobDescription ?? "",
           },
           fallback: () => buildInterviewerNotificationEmail(notifyData),
-        });
+        }).catch((e) => console.error("[interview] interviewer notify mail failed:", e));
         await prisma.interview.update({
           where: { id: interview.id },
           data: { feedbackToken: fbToken, feedbackTokenExpiresAt: fbExpiresAt },
         });
+        // In-app notification for the interviewer (alongside the email).
+        void notifyInterviewScheduled(orgId, {
+          interviewId: interview.id, interviewerId: interview.interviewer.id,
+          candidateName, jobTitle, whenLabel: `${dateStr}, ${timeStr}`,
+        });
         mailStatus.interviewer = { sent: true, to: interview.interviewer.workEmail };
       } else {
         mailStatus.interviewer = { sent: false, to: null, error: "Interviewer workEmail missing" };
+      }
+
+      // Additional panel interviewers get the same notification (details +
+      // in-app alert). The feedback link is intentionally omitted — the
+      // scorecard is owned by the primary interviewer.
+      if (candidate && additionalInterviewers.length) {
+        for (const extra of additionalInterviewers) {
+          const extraName = `${extra.firstName} ${extra.lastName}`.trim();
+          if (extra.workEmail) {
+            const notifyData = {
+              interviewerName: extraName,
+              candidateName,
+              candidateEmail: candidate.email,
+              candidatePhone: candidate.phone,
+              jobTitle,
+              interviewDate: dateStr,
+              interviewTime: timeStr,
+              duration: String(interview.duration),
+              type: interview.type,
+              meetingLink: interview.meetingLink,
+              location: interview.location,
+              companyName,
+              roundName: `Round ${interview.round}`,
+              resumeUrl: candidate.resumeUrl,
+              feedbackUrl: null as string | null,
+              jobDescription: roundJobDescription,
+            };
+            void resolveAndSend(orgId, {
+              key: "interview.interviewer-notify",
+              to: extra.workEmail,
+              vars: {
+                ...notifyData,
+                candidatePhone: notifyData.candidatePhone ?? "",
+                meetingLink: notifyData.meetingLink ?? "",
+                location: notifyData.location ?? "",
+                resumeUrl: notifyData.resumeUrl ?? "",
+                feedbackUrl: "",
+                jobDescription: notifyData.jobDescription ?? "",
+              },
+              fallback: () => buildInterviewerNotificationEmail(notifyData),
+            }).catch((e) => console.error("[interview] panel interviewer notify mail failed:", e));
+          }
+          void notifyInterviewScheduled(orgId, {
+            interviewId: interview.id, interviewerId: extra.id,
+            candidateName, jobTitle, whenLabel: `${dateStr}, ${timeStr}`,
+          });
+        }
       }
     } catch (e) {
       console.error("Interview auto-mail failed:", e);
     }
 
     // Auto-advance application.currentStage to the interview's pipeline stage.
-    // Use the candidate's OWN pipeline so multi-pipeline orgs stay consistent
-    // with the Schedule modal (which already picks stages from that pipeline).
-    const appForPipeline = await prisma.jobApplication.findUnique({
-      where: { id: data.applicationId },
-      select: { requisition: { select: { pipelineId: true } } },
-    });
-    const pipeline = appForPipeline?.requisition.pipelineId
-      ? await prisma.hiringPipeline.findUnique({ where: { id: appForPipeline.requisition.pipelineId } })
-      : await prisma.hiringPipeline.findFirst({ where: { orgId, deletedAt: null, isDefault: true } });
-    const stages = stageNames(pipeline?.stages);
-    // Stage is derived from the round index (each interview round maps to a
-    // stage in the candidate's pipeline).
-    const newStage = stages[data.round - 1];
+    // Reuses the pipeline stage already resolved above (candidate's OWN pipeline),
+    // where each interview round maps to a stage.
+    const newStage = roundStage || undefined;
     if (newStage) {
       const app = await prisma.jobApplication.findFirst({
         where: { id: data.applicationId, orgId, deletedAt: null },

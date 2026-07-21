@@ -637,3 +637,21 @@ select:not([multiple]) {
   width: 0;
   height: 0;
 }
+
+/* Show ONLY a horizontal scrollbar (bottom); hide the vertical one but keep it
+   wheel-scrollable. Used on the Duty Roster grid so users can scroll across the
+   whole month while vertical scrolling stays chromeless. */
+.scrollbar-x-only::-webkit-scrollbar {
+  height: 10px;
+}
+.scrollbar-x-only::-webkit-scrollbar:vertical {
+  width: 0;
+  display: none;
+}
+.scrollbar-x-only::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.4);
+  border-radius: 9999px;
+}
+.scrollbar-x-only::-webkit-scrollbar-track {
+  background: transparent;
+}

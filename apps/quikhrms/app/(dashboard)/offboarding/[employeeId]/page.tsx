@@ -5,11 +5,12 @@ import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Modal } from "@/components/hrms/modal";
-import { NumberInput } from "@/components/hrms/ui/number-input";
-import { ArrowLeft, CheckCircle, Clock, PauseCircle, SkipForward, MessageSquare } from "lucide-react";
+import { ArrowLeft, CheckCircle, Clock, PauseCircle, SkipForward, MessageSquare, Send } from "lucide-react";
 import { clsx } from "clsx";
 import { Tooltip } from "@/components/hrms/tooltip";
 import { SkeletonLine } from "@/components/hrms/skeleton";
+import { useToast } from "@/components/hrms/toast";
+import { EXIT_INTERVIEW_QUESTIONS } from "@/lib/data/exit-interview";
 
 type TaskStatus = "TaskPending" | "TaskInProgress" | "TaskCompleted" | "TaskSkipped" | "TaskBlocked";
 
@@ -26,8 +27,10 @@ export default function OffboardingDetailPage({ params }: { params: { employeeId
   const { employeeId } = params;
   const api = useApiClient();
   const qc = useQueryClient();
+  const toast = useToast();
   const [showInterview, setShowInterview] = useState(false);
-  const [interview, setInterview] = useState<{ notes: string; rating: number | null; reasonForLeaving: string; wouldRejoin: boolean }>({ notes: "", rating: null, reasonForLeaving: "", wouldRejoin: true });
+  const [interview, setInterview] = useState<Record<string, string>>({});
+  const [signatureName, setSignatureName] = useState("");
 
   const { data } = useQuery({
     queryKey: ["offboarding", employeeId],
@@ -46,8 +49,22 @@ export default function OffboardingDetailPage({ params }: { params: { employeeId
   });
 
   const interviewMut = useMutation({
-    mutationFn: (body: typeof interview) => api.post(`/api/v1/hrms/offboarding/${employeeId}/exit-interview`, body),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["offboarding", employeeId] }); setShowInterview(false); },
+    mutationFn: (body: Record<string, string>) => api.post(`/api/v1/hrms/offboarding/${employeeId}/exit-interview`, body),
+    meta: { suppressGlobalError: true },
+    onError: (e: Error) => toast.error("Couldn't submit", e.message),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["offboarding", employeeId] });
+      setShowInterview(false);
+      setInterview({});
+      setSignatureName("");
+    },
+  });
+
+  const sendExitMut = useMutation({
+    mutationFn: () => api.post<{ to?: string }>(`/api/v1/hrms/offboarding/${employeeId}/exit-interview/send`, {}),
+    onSuccess: (res) => toast.success("Exit interview emailed", res.data?.to ? `Sent to ${res.data.to}` : undefined),
+    meta: { suppressGlobalError: true },
+    onError: (e: Error) => toast.error("Couldn't send", e.message),
   });
 
   const inst = data?.data;
@@ -85,12 +102,6 @@ export default function OffboardingDetailPage({ params }: { params: { employeeId
           </span>
         </div>
 
-        <div className="flex items-center gap-2 mb-4">
-          <button onClick={() => setShowInterview(true)} className="flex items-center gap-1 border border-[var(--border)] px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-50">
-            <MessageSquare size={14} /> {inst.exitInterviewDone ? "Edit Exit Interview" : "Exit Interview"}
-          </button>
-        </div>
-
         <div>
           <div className="flex items-center justify-between text-xs mb-1">
             <span className="text-gray-600">Overall Progress</span>
@@ -101,6 +112,56 @@ export default function OffboardingDetailPage({ params }: { params: { employeeId
           </div>
         </div>
       </div>
+
+      {(() => {
+        let exitResp: Record<string, unknown> | null = null;
+        try { exitResp = inst.exitInterviewNotes ? JSON.parse(inst.exitInterviewNotes) as Record<string, unknown> : null; } catch { exitResp = null; }
+        const s = (v: unknown) => (v == null || v === "" ? "" : String(v));
+        return (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-[13px] font-semibold text-gray-900">Exit Interview</h2>
+              {inst.exitInterviewDone ? (
+                <span className="px-2 py-0.5 rounded-full bg-green-50 text-green-700 text-[11px] font-medium">
+                  Submitted{inst.exitInterviewAt ? ` · ${new Date(inst.exitInterviewAt).toLocaleDateString("en-IN")}` : ""}
+                </span>
+              ) : (
+                <div className="flex gap-2">
+                  <button onClick={() => sendExitMut.mutate()} disabled={sendExitMut.isPending}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-50">
+                    <Send size={12} /> {sendExitMut.isPending ? "Sending…" : "Email to employee"}
+                  </button>
+                  <button onClick={() => setShowInterview(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50">
+                    <MessageSquare size={12} /> Fill manually
+                  </button>
+                </div>
+              )}
+            </div>
+            {inst.exitInterviewDone && exitResp ? (
+              <div className="space-y-3">
+                {EXIT_INTERVIEW_QUESTIONS.map((q) => {
+                  const val = s(exitResp![q.key]);
+                  const explain = q.explainKey ? s(exitResp![q.explainKey]) : "";
+                  if (!val && !explain) return null;
+                  return (
+                    <div key={q.key}>
+                      <p className="text-[11px] font-semibold text-gray-500">{q.label}</p>
+                      <p className="text-sm text-gray-800 whitespace-pre-wrap">{val || "—"}{explain ? ` — ${explain}` : ""}</p>
+                    </div>
+                  );
+                })}
+                {s(exitResp.rating) && <div><p className="text-[11px] font-semibold text-gray-500">Overall experience</p><p className="text-sm text-gray-800">{s(exitResp.rating)}/5</p></div>}
+                {s(exitResp.notes) && <div><p className="text-[11px] font-semibold text-gray-500">Notes</p><p className="text-sm text-gray-800 whitespace-pre-wrap">{s(exitResp.notes)}</p></div>}
+                {typeof exitResp.wouldRejoin === "boolean" && <div><p className="text-[11px] font-semibold text-gray-500">Would rejoin</p><p className="text-sm text-gray-800">{exitResp.wouldRejoin ? "Yes" : "No"}</p></div>}
+                {s(exitResp.signatureName) && <div><p className="text-[11px] font-semibold text-gray-500">Signed by</p><p className="text-sm text-gray-800">{s(exitResp.signatureName)}</p></div>}
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500">Not submitted yet. Email the form to the employee, or fill it on their behalf.</p>
+            )}
+          </div>
+        );
+      })()}
 
       {cl && cl.groups.length > 0 && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
@@ -148,22 +209,52 @@ export default function OffboardingDetailPage({ params }: { params: { employeeId
       </div>
 
       <Modal open={showInterview} onClose={() => setShowInterview(false)} title="Exit Interview">
-        <form onSubmit={(e) => { e.preventDefault(); interviewMut.mutate(interview); }} className="space-y-4">
-          <div><label className="block text-xs font-medium text-gray-700 mb-1">Overall Experience (1-5)</label>
-            <NumberInput allowDecimal={false} min={1} max={5} value={interview.rating} onChange={(v) => setInterview({ ...interview, rating: v })}
-              className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" /></div>
-          <div><label className="block text-xs font-medium text-gray-700 mb-1">Reason for Leaving</label>
-            <input value={interview.reasonForLeaving} onChange={(e) => setInterview({ ...interview, reasonForLeaving: e.target.value })}
-              className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" /></div>
-          <div><label className="block text-xs font-medium text-gray-700 mb-1">Notes</label>
-            <textarea required value={interview.notes} onChange={(e) => setInterview({ ...interview, notes: e.target.value })}
-              className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" rows={4} /></div>
-          <label className="flex items-center gap-2 text-xs">
-            <input type="checkbox" checked={interview.wouldRejoin} onChange={(e) => setInterview({ ...interview, wouldRejoin: e.target.checked })} /> Would rejoin
-          </label>
-          <div className="flex justify-end gap-2 pt-2">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!interview.reasonForLeaving?.trim()) { toast.error("Please answer why the employee is leaving."); return; }
+            interviewMut.mutate({ ...interview, signatureName });
+          }}
+          className="space-y-5 max-h-[70vh] overflow-y-auto pr-1"
+        >
+          {EXIT_INTERVIEW_QUESTIONS.map((q) => (
+            <div key={q.key}>
+              <label className="block text-xs font-medium text-gray-800 mb-1.5">{q.label}</label>
+              {q.type === "yesno" ? (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-4">
+                    {["Yes", "No"].map((opt) => (
+                      <label key={opt} className="inline-flex items-center gap-1.5 text-xs text-gray-700">
+                        <input type="radio" name={q.key} checked={interview[q.key] === opt}
+                          onChange={() => setInterview((f) => ({ ...f, [q.key]: opt }))} className="accent-green-600" />
+                        {opt}
+                      </label>
+                    ))}
+                  </div>
+                  {q.explainKey && (
+                    <textarea rows={2} placeholder="If not, please explain…"
+                      value={interview[q.explainKey] ?? ""} onChange={(e) => setInterview((f) => ({ ...f, [q.explainKey!]: e.target.value }))}
+                      className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-xs resize-y focus:outline-none focus:ring-1 focus:ring-green-500" />
+                  )}
+                </div>
+              ) : (
+                <textarea rows={3} value={interview[q.key] ?? ""} onChange={(e) => setInterview((f) => ({ ...f, [q.key]: e.target.value }))}
+                  className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-xs resize-y focus:outline-none focus:ring-1 focus:ring-green-500" />
+              )}
+            </div>
+          ))}
+
+          <div>
+            <label className="block text-xs font-medium text-gray-800 mb-1.5">Signature (type full name)</label>
+            <input value={signatureName} onChange={(e) => setSignatureName(e.target.value)} placeholder="Full name"
+              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-green-500" />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
             <button type="button" onClick={() => setShowInterview(false)} className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium">Cancel</button>
-            <button type="submit" className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700">Submit</button>
+            <button type="submit" disabled={interviewMut.isPending} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-50">
+              {interviewMut.isPending ? "Submitting…" : "Submit"}
+            </button>
           </div>
         </form>
       </Modal>

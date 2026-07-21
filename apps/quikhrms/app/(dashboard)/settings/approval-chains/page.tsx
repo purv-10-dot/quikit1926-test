@@ -48,7 +48,7 @@ interface EmployeeRef {
 }
 
 const MODULES: ApprovalModule[] = [
-  "Leave", "Expense", "Asset", "Onboarding", "Offboarding",
+  "Leave", "Expense", "Onboarding", "Offboarding",
   "Attendance", "Document", "Engagement", "Feedback",
   "Reimbursement", "ProofOfInvestment", "SalaryRevision", "OneTimeEarning", "Requisition",
 ];

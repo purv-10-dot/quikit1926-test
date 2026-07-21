@@ -1,10 +1,11 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { Plus, Search, Undo2, Trash2, Loader2, ArrowLeftRight, Pencil, SlidersHorizontal, ChevronUp, X } from "lucide-react"
+import { Plus, Search, Undo2, Trash2, Loader2, ArrowLeftRight, Pencil, SlidersHorizontal, ChevronUp, X, Layers } from "lucide-react"
 import Pagination from "@/components/ui/Pagination"
 import { cn } from "@/lib/utils"
 import AssignAssetModal from "@/components/assignments/AssignAssetModal"
+import BulkAssignModal from "@/components/assignments/BulkAssignModal"
 import EditAssignmentModal from "@/components/assignments/EditAssignmentModal"
 import type { Assignment } from "@/types/assignment"
 import type { Replacement } from "@/types/replacement"
@@ -32,6 +33,7 @@ export default function AssignmentsPage() {
   const [activeTab, setActiveTab] = useState<"Assignments" | "Replacements">("Assignments")
   const [search, setSearch] = useState("")
   const [showAdd, setShowAdd] = useState(false)
+  const [showBulk, setShowBulk] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [filters, setFilters] = useState({ asset: "", employee: "", department: "", status: "" })
   const [editAssignment, setEditAssignment] = useState<Assignment | null>(null)
@@ -106,7 +108,7 @@ export default function AssignmentsPage() {
   function clearFilters() { setFilters({ asset: "", employee: "", department: "", status: "" }) }
 
   async function handleAssign(form: {
-    assetId: string; userId: string; condition: string; expectedReturn: string; notes: string
+    assetId: string; userId: string; assignedDate: string; expectedReturn: string; notes: string
   }) {
     try {
       const res = await fetch("/api/assignments", {
@@ -125,14 +127,31 @@ export default function AssignmentsPage() {
     }
   }
 
-  async function handleEdit(data: { condition: string; expectedReturn: string; notes: string }) {
+  async function handleBulkAssign(form: { userId: string; assetIds: string[]; assignedDate: string; expectedReturn: string; notes: string }) {
+    try {
+      const res = await fetch("/api/assignments/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || "")
+      const created: Assignment[] = json.data ?? []
+      setAssignments((prev) => [...created, ...prev])
+      setShowBulk(false)
+      showToast("Assets Assigned", `${created.length} asset${created.length === 1 ? "" : "s"} assigned to ${created[0]?.user?.name ?? "employee"}`)
+    } catch (err) {
+      showToast("Error", err instanceof Error && err.message ? err.message : "Failed to bulk assign", "error")
+    }
+  }
+
+  async function handleEdit(data: { expectedReturn: string; notes: string }) {
     if (!editAssignment) return
     try {
       const res = await fetch(`/api/assignments/${editAssignment.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          condition: data.condition,
           expectedReturn: data.expectedReturn || null,
           notes: data.notes || null,
         }),
@@ -234,6 +253,12 @@ export default function AssignmentsPage() {
                   className="pl-8 pr-3 py-2 text-xs border border-gray-200 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-accent-400 focus:bg-white w-52"
                 />
               </div>
+              <button
+                onClick={() => setShowBulk(true)}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium border border-accent-200 text-accent-700 bg-accent-50 rounded-lg hover:bg-accent-100 transition-colors"
+              >
+                <Layers className="w-3.5 h-3.5" /> Bulk Assign
+              </button>
               <button
                 onClick={() => setShowAdd(true)}
                 className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium bg-accent-600 text-white rounded-lg hover:bg-accent-700 transition-colors"
@@ -512,6 +537,9 @@ export default function AssignmentsPage() {
 
       {/* Assign Modal */}
       {showAdd && <AssignAssetModal onClose={() => setShowAdd(false)} onSave={handleAssign} />}
+
+      {/* Bulk Assign Modal */}
+      {showBulk && <BulkAssignModal onClose={() => setShowBulk(false)} onSave={handleBulkAssign} />}
 
       {/* Edit Modal */}
       {editAssignment && (

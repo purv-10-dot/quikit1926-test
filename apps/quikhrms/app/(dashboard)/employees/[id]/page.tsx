@@ -345,12 +345,11 @@ function EmployeeProfilePageInner() {
       <button
         type="button"
         onClick={() => {
-          // Prefer real "go back" to the previous page. Fall back to the
-          // computed href only when there's no in-app history to return to
-          // (e.g. the profile was opened via a direct link).
-          if (returnTo) router.push(returnTo);
-          else if (window.history.length > 1) router.back();
-          else router.push(backNav.href);
+          // Go to a stable destination (explicit returnTo, else Directory /
+          // Dashboard). We intentionally do NOT use router.back(): after saving
+          // an edit the previous history entry is the edit form, so "back" would
+          // bounce the user right back into the form.
+          router.push(returnTo ?? backNav.href);
         }}
         className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-900 mb-4"
       >
@@ -533,7 +532,7 @@ function EmployeeProfilePageInner() {
           {/* Icon tab rail (HiBob-style) */}
           <div className="flex items-center gap-5 mt-5 pt-4 border-t border-gray-100">
             {[
-              { label: "Time off", icon: Palmtree, href: `/leaves/my-leaves?employeeId=${emp.id}` },
+              { label: "Apply Leave", icon: Palmtree, href: `/leaves/my-leaves?employeeId=${emp.id}` },
               { label: "Attendance", icon: Clock, href: `/attendance?employeeId=${emp.id}` },
               { label: "Tasks", icon: CheckSquare, href: "/tasks" },
               { label: "Docs", icon: FileText, href: "/documents/my-vault" },

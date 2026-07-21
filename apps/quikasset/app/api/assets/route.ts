@@ -11,14 +11,16 @@ const auth = withOrgAuthForResource("Asset");
 
 const createSchema = z.object({
   warehouse: z.string().nullable().optional(),
-  assetType: z.string(),
+  // The form no longer collects Fixed/Consumable (that dropdown was merged into the
+  // base-category "Asset Type" field); defaulted below so the column stays populated.
+  assetType: z.string().optional(),
   baseCategoryId: z.string(),
   categoryId: z.string(),
   itemName: z.string(),
-  itemCode: z.string(),
-  serialNumber: z.string(),
+  itemCode: z.string().trim().min(1, "Item Code is required"),
+  serialNumber: z.string().trim().min(1, "Serial Number is required"),
   invoiceNumber: z.string(),
-  price: z.coerce.number().nullable().optional(),
+  price: z.number({ required_error: "Price is required", invalid_type_error: "Price is required" }).nonnegative("Price must be 0 or more"),
   purchaseDate: z.string(),
   location: z.string(),
   condition: z.string(),
@@ -69,6 +71,8 @@ export const POST = auth.create(async ({ orgId, userId, userEmail }, req) => {
   }
   const data: Prisma.AstAssetUncheckedCreateInput = {
     ...parsed.data,
+    // Vestigial classification — no longer set from the form; keep a sane default.
+    assetType: parsed.data.assetType?.trim() || "Fixed",
     description: parsed.data.description ?? "",
     assetStatus: parsed.data.assetStatus as Prisma.AstAssetUncheckedCreateInput["assetStatus"],
     orgId,

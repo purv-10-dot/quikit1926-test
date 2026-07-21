@@ -1,18 +1,23 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { X, Upload, FileText, ImageIcon, Trash2, ChevronDown } from "lucide-react"
+import { X, Upload, FileText, ImageIcon, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import SearchableSelect from "./SearchableSelect"
+import AssetPickerTable from "./AssetPickerTable"
 import type { Asset } from "@/types/asset"
-import type { User } from "@/types/user"
 
-const CONDITIONS = ["Excellent", "Good", "Fair", "Poor", "Damaged"]
+// Assignees come from the merged User Management list (/api/org/users) — real
+// org members, not the legacy AstEmployee directory. `value` is the platform
+// User.id; the assign API resolves it to a (possibly auto-created) employee
+// record server-side.
+type OrgUser = { userId: string; firstName: string; lastName: string; email: string; employeeId: string | null; status: string; department: string | null }
+const orgUserName = (u: OrgUser) => `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email
 
 type FormData = {
   assetId: string
   userId: string
-  condition: string
+  assignedDate: string
   expectedReturn: string
   notes: string
 }
@@ -43,14 +48,12 @@ export default function AssignAssetModal({ onClose, onSave }: Props) {
   const today = new Date().toISOString().split("T")[0]
 
   const [form, setForm] = useState<FormData>({
-    assetId: "", userId: "", condition: "", expectedReturn: "", notes: "",
+    assetId: "", userId: "", assignedDate: today, expectedReturn: "", notes: "",
   })
-  const [assignedDate, setAssignedDate] = useState(today)
-  const [conditionAutoFilled, setConditionAutoFilled] = useState(false)
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({})
   const [saving, setSaving] = useState(false)
   const [assets, setAssets] = useState<Asset[]>([])
-  const [users, setUsers] = useState<User[]>([])
+  const [users, setUsers] = useState<OrgUser[]>([])
   const [files, setFiles] = useState<AttachedFile[]>([])
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -59,38 +62,23 @@ export default function AssignAssetModal({ onClose, onSave }: Props) {
       const data: Asset[] = j.data ?? []
       setAssets(data.filter((a) => a.assetStatus === "Available"))
     })
-    fetch("/api/users").then((r) => r.json()).then((j) => setUsers(j.data ?? []))
+    // Only active org members are assignable. /api/org/users is the merged User
+    // Management list (membership status is lowercase "active" / "inactive").
+    fetch("/api/org/users").then((r) => r.json()).then((j) => setUsers((j.data ?? []).filter((u: OrgUser) => u.status === "active")))
   }, [])
-
-  // Auto-fill condition and expectedReturn when asset changes
-  useEffect(() => {
-    if (!form.assetId) {
-      setConditionAutoFilled(false)
-      return
-    }
-    const asset = assets.find((a) => a.id === form.assetId)
-    if (!asset) return
-
-    if (asset.condition) {
-      setForm((f) => ({ ...f, condition: asset.condition }))
-      setConditionAutoFilled(true)
-      setErrors((e) => ({ ...e, condition: "" }))
-    }
-  }, [form.assetId, assets])
 
   const selectedAsset = assets.find((a) => a.id === form.assetId)
 
   function set(field: keyof FormData, value: string) {
     setForm((f) => ({ ...f, [field]: value }))
     setErrors((e) => ({ ...e, [field]: "" }))
-    if (field === "condition") setConditionAutoFilled(false)
   }
 
   function validate() {
     const e: typeof errors = {}
-    if (!form.assetId)   e.assetId   = "Required"
-    if (!form.userId)    e.userId    = "Required"
-    if (!form.condition) e.condition = "Required"
+    if (!form.assetId)      e.assetId      = "Required"
+    if (!form.userId)       e.userId       = "Required"
+    if (!form.assignedDate) e.assignedDate = "Required"
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -117,8 +105,7 @@ export default function AssignAssetModal({ onClose, onSave }: Props) {
     return `${(b / (1024 * 1024)).toFixed(1)} MB`
   }
 
-  const assetOptions = assets.map((a) => ({ value: a.id, label: a.itemName, sublabel: a.itemCode }))
-  const userOptions  = users.map((u) => ({ value: u.id, label: u.name, sublabel: u.email }))
+  const userOptions  = users.map((u) => ({ value: u.userId, label: orgUserName(u), sublabel: u.email, extra: u.employeeId ?? "—" }))
 
   const inputCls = (err?: string) => cn(
     "w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent-400 bg-white",
@@ -138,24 +125,25 @@ export default function AssignAssetModal({ onClose, onSave }: Props) {
 
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
 
-          {/* Asset + Employee */}
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Asset" required error={errors.assetId}>
-              <SearchableSelect
-                options={assetOptions} value={form.assetId}
-                onChange={(v) => set("assetId", v)}
-                placeholder="Select Asset" searchPlaceholder="Search asset…" error={errors.assetId}
-              />
-            </Field>
-            <Field label="Employee" required error={errors.userId}>
-              <SearchableSelect
-                options={userOptions} value={form.userId}
-                onChange={(v) => set("userId", v)}
-                placeholder="Select Employee" searchPlaceholder="Search employee…" error={errors.userId}
-                columnHeaders={{ label: "Name", sublabel: "Email" }}
-              />
-            </Field>
-          </div>
+          {/* Employee */}
+          <Field label="Employee" required error={errors.userId}>
+            <SearchableSelect
+              options={userOptions} value={form.userId}
+              onChange={(v) => set("userId", v)}
+              placeholder="Select Employee" searchPlaceholder="Search employee…" error={errors.userId}
+              columnHeaders={{ label: "Name", sublabel: "Email", extra: "Emp Code" }}
+            />
+          </Field>
+
+          {/* Asset — detailed, searchable table (single-select) */}
+          <Field label="Asset" required error={errors.assetId}>
+            <AssetPickerTable
+              assets={assets}
+              selectedIds={form.assetId ? [form.assetId] : []}
+              onSelect={(id) => set("assetId", id)}
+              error={errors.assetId}
+            />
+          </Field>
 
           {/* Auto-populated category */}
           {selectedAsset && (
@@ -175,47 +163,25 @@ export default function AssignAssetModal({ onClose, onSave }: Props) {
             </div>
           )}
 
-          {/* Condition + Assigned Date */}
+          {/* Assigned Date + Expected Return */}
           <div className="grid grid-cols-2 gap-4">
-            <Field
-              label="Condition" required error={errors.condition}
-              hint={conditionAutoFilled ? "auto-filled" : undefined}
-            >
-              <div className="relative">
-                <select
-                  value={form.condition}
-                  onChange={(e) => set("condition", e.target.value)}
-                  className={cn(
-                    "w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent-400 bg-white appearance-none",
-                    errors.condition ? "border-red-300" : conditionAutoFilled ? "border-accent-200 bg-accent-50/30" : "border-gray-200",
-                    !form.condition ? "text-gray-400" : "text-gray-800"
-                  )}
-                >
-                  <option value="">Select Condition</option>
-                  {CONDITIONS.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
-                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
-              </div>
-            </Field>
-            <Field label="Assigned Date">
+            <Field label="Assigned Date" required error={errors.assignedDate}>
               <input
                 type="date"
-                value={assignedDate}
-                onChange={(e) => setAssignedDate(e.target.value)}
+                value={form.assignedDate}
+                onChange={(e) => set("assignedDate", e.target.value)}
+                className={inputCls(errors.assignedDate)}
+              />
+            </Field>
+            <Field label="Expected Return">
+              <input
+                type="date"
+                value={form.expectedReturn}
+                onChange={(e) => set("expectedReturn", e.target.value)}
                 className={inputCls()}
               />
             </Field>
           </div>
-
-          {/* Expected Return */}
-          <Field label="Expected Return">
-            <input
-              type="date"
-              value={form.expectedReturn}
-              onChange={(e) => set("expectedReturn", e.target.value)}
-              className={inputCls()}
-            />
-          </Field>
 
           {/* Notes */}
           <Field label="Notes">

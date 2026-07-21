@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, notFound, validationError, internalError, forbidden } from "@/lib/api-response";
+import { successResponse, notFound, validationError, internalError, forbidden, conflict } from "@/lib/api-response";
 import { regularizationSchema, regularizationActionSchema } from "@/lib/validations/attendance";
 import { getCallerEmployeeId, getCallerReporteeIds } from "@/lib/rbac/scope";
 import { fireWorkflow } from "@/lib/workflows/executor";
@@ -38,6 +38,21 @@ export const PATCH = withAuth(async (req: NextRequest, ctx, params) => {
     if (body.regularizationReason) {
       const parsed = regularizationSchema.safeParse(body);
       if (!parsed.success) return validationError("Validation failed", parsed.error.flatten().fieldErrors);
+
+      // Can't regularize a day that hasn't happened yet.
+      const recordDay = new Date(existing.date); recordDay.setHours(0, 0, 0, 0);
+      const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+      if (recordDay > todayStart) {
+        return validationError("You can't regularize a future date.");
+      }
+      // One open request at a time — don't silently overwrite an in-flight or
+      // already-decided regularization. (Rejected days can be re-submitted.)
+      if (existing.regularizationStatus === "Pending") {
+        return conflict("A regularization for this day is already pending approval.");
+      }
+      if (existing.regularizationStatus === "Approved") {
+        return conflict("This day's attendance has already been regularized.");
+      }
 
       const record = await prisma.attendanceRecord.update({
         where: { id: params.id },
@@ -101,6 +116,12 @@ export const PATCH = withAuth(async (req: NextRequest, ctx, params) => {
         allowed = !!callerEmpId && reportees.includes(existing.employeeId);
       }
       if (!allowed) return forbidden("Not authorised to approve this regularization");
+
+      // Don't re-decide a record that's already been actioned (stale list row /
+      // double-click) — otherwise it silently flips an approved/rejected record.
+      if (existing.regularizationStatus !== "Pending") {
+        return conflict("This regularization is no longer pending — it may already have been actioned.");
+      }
 
       const record = await prisma.attendanceRecord.update({
         where: { id: params.id },

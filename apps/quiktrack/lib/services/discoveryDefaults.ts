@@ -70,8 +70,8 @@ interface SeedField {
 export const DISCOVERY_FIELDS: SeedField[] = [
   {
     name: "Theme",
-    type: "DROPDOWN_SINGLE",
-    helpText: "The strategic theme this idea supports.",
+    type: "DROPDOWN_MULTI",
+    helpText: "The strategic theme(s) this idea supports.",
     options: [
       "Increase revenue",
       "Win enterprise customers",
@@ -124,6 +124,8 @@ export const DISCOVERY_FIELDS: SeedField[] = [
   },
   { name: "Spec ready", type: "CHECKBOX", helpText: "Spec is ready." },
   { name: "Designs ready", type: "CHECKBOX", helpText: "Designs are ready." },
+  { name: "Documents", type: "URL", helpText: "Link to a supporting document." },
+  { name: "Labels", type: "LABELS", helpText: "Free-form labels for grouping." },
   { name: "Idea short description", type: "SHORT_TEXT", helpText: "A one-line summary." },
   {
     name: "Delivery status",
@@ -320,7 +322,7 @@ export async function seedDiscoveryDefaults(
       const bool = (key: string, v?: boolean) => { const f = id(key); if (f && v !== undefined) rows.push({ ...base, fieldId: f, valueBoolean: v }); };
       const json = (key: string, v?: string[]) => { const f = id(key); if (f && v && v.length) rows.push({ ...base, fieldId: f, valueJson: v }); };
 
-      text(K.theme, s.theme);
+      json(K.theme, [s.theme]); // Theme is DROPDOWN_MULTI → array value
       text(K.roadmap, s.roadmap);
       num(K.impact, s.impact);
       num(K.effort, s.effort);

@@ -12,7 +12,10 @@ export type Repair = {
   assetId: string;
   issueTitle: string;
   issueDescription: string;
+  /** Legacy free-text vendor (old repairs); superseded by vendorId/vendorRef. */
   vendor?: string | null;
+  vendorId?: string | null;
+  vendorRef?: { id: string; name: string } | null;
   estimatedCost?: number | null;
   actualCost?: number | null;
   sentDate?: string | null;

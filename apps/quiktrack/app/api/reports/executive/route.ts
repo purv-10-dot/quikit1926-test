@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
+import { hasAdminAccess, spaceAdminProjectIds } from "@/lib/api/permissions";
 import {
   buildWeekBucketsBetween,
   bumpForDate,
@@ -62,19 +63,15 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const teamFilter = parseCsv(url.searchParams.get("teamIds"));
   const sprintFilter = parseCsv(url.searchParams.get("sprintIds"));
 
-  const member = await db.orgMember.findFirst({
-    where: { userId, orgId, status: "active" },
-    select: { role: true },
-  });
-  const isAdmin = member?.role === "admin" || member?.role === "owner";
+  // Access model: org admins (all projects) OR Space Admins (only projects they
+  // administer). Uses hasAdminAccess for consistency with the other report
+  // routes (the old raw `member.role === "admin"` check missed app-admins and
+  // the v4 tier role names). Regular members get an empty report.
+  const isAdmin = await hasAdminAccess(userId, orgId);
 
   let visibleProjectIds: string[] | null = null;
   if (!isAdmin) {
-    const memberships = await db.qtProjectMember.findMany({
-      where: { userId, isDeleted: false },
-      select: { projectId: true },
-    });
-    visibleProjectIds = memberships.map((m) => m.projectId);
+    visibleProjectIds = await spaceAdminProjectIds(userId, orgId);
     if (visibleProjectIds.length === 0) {
       return NextResponse.json({ success: true, data: emptyResponse(range) });
     }

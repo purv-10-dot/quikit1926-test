@@ -148,6 +148,9 @@ export default function NewCandidatePage() {
   const { data: templates } = useQuery({ queryKey: ["onboarding-templates"], queryFn: () => api.get<{ id: string; name: string; tasks: unknown[] }[]>("/api/v1/hrms/onboarding/templates?isActive=true&limit=50") });
 
   const submitMut = useMutation({
+    // The submit handler catches and shows an ApiError-aware toast (with details),
+    // so suppress the global modal to avoid a double popup.
+    meta: { suppressGlobalError: true },
     mutationFn: (body: Record<string, unknown>) => api.post("/api/v1/hrms/onboarding/candidates", body),
   });
 

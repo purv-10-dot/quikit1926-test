@@ -22,6 +22,13 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
     });
     if (!request) return notFound("Leave request not found");
 
+    // You can never approve/reject your own request, even if you happen to hold
+    // the current level's role — the chain routes around the applicant on apply,
+    // so this closes the gap where a role-holder actions their own leave.
+    if (request.employeeId === userId) {
+      return forbidden("You can't approve or reject your own leave request.");
+    }
+
     if (request.status !== "Pending") {
       return validationError("Leave request is not pending approval");
     }

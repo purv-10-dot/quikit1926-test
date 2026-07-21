@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, notFound, validationError, internalError } from "@/lib/api-response";
 import { updateRequisitionSchema } from "@/lib/validations/recruit";
+import { holdApplicationsForRequisition } from "@/lib/recruit/requisition-hold";
 
 export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
   try {
@@ -31,7 +32,7 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
     if (!parsed.success) return validationError("Validation failed", parsed.error.flatten().fieldErrors);
 
     const {
-      responsibilities, requirements, niceToHave, skills, skillWeights, benefits,
+      responsibilities, requirements, niceToHave, skills, skillWeights, benefits, technicalQuestions,
       interviewPanelIds, targetJoiningDate, closedDate,
       ...rest
     } = parsed.data;
@@ -45,6 +46,7 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
         ...(skills && { skills: JSON.parse(JSON.stringify(skills)) }),
         ...(skillWeights && { skillWeights: JSON.parse(JSON.stringify(skillWeights)) }),
         ...(benefits && { benefits: JSON.parse(JSON.stringify(benefits)) }),
+        ...(technicalQuestions && { technicalQuestions: JSON.parse(JSON.stringify(technicalQuestions)) }),
         ...(interviewPanelIds && { interviewPanel: JSON.parse(JSON.stringify(interviewPanelIds)) }),
         ...(targetJoiningDate !== undefined && { targetJoiningDate: targetJoiningDate ? new Date(targetJoiningDate) : null }),
         ...(closedDate !== undefined && { closedDate: closedDate ? new Date(closedDate) : null }),
@@ -52,6 +54,18 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
         updatedBy: userId,
       },
     });
+
+    // Cascade to candidates when the requisition is put On Hold or Cancelled:
+    // park + archive every active application and email the candidates. Held
+    // candidates are reviewed/restored later via the Resume flow. Fire-and-forget
+    // so the status change returns immediately.
+    const enteringHold = r.status === "ReqOnHold" && existing.status !== "ReqOnHold";
+    const enteringCancel = r.status === "ReqCancelled" && existing.status !== "ReqCancelled";
+    if (enteringHold || enteringCancel) {
+      void holdApplicationsForRequisition(orgId, params.id, userId, enteringCancel ? "cancel" : "hold")
+        .catch((e) => console.error("[requisition] hold cascade failed:", e));
+    }
+
     return successResponse(r);
   } catch (error) { console.error("PATCH /recruit/requisitions/:id error:", error); return internalError(); }
 }, { requiredPermissions: ["hrms.recruit.write"] });

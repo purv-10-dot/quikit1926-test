@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
-import { getQuikTrackAppId, hasAdminAccess } from "@/lib/api/permissions";
+import { getQuikTrackAppId, hasAdminAccess, spaceAdminProjectIds } from "@/lib/api/permissions";
 
 /**
  * Resource utilisation report — used by /reports/resource.
@@ -57,9 +57,16 @@ function workingDaysBetween(from: Date, to: Date): number {
 
 export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   try {
-    // Admin-tier gate: tenant admin (org owner/admin) OR QuikTrack app-admin.
-    if (!(await hasAdminAccess(userId, orgId))) {
-      return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
+    // Access gate: org admins (all data) OR Space Admins (their own projects).
+    // `saProjects` is null for admins (no project scope) or the Space Admin's
+    // project ids; a non-admin with none is denied.
+    const isAdmin = await hasAdminAccess(userId, orgId);
+    let saProjects: string[] | null = null;
+    if (!isAdmin) {
+      saProjects = await spaceAdminProjectIds(userId, orgId);
+      if (saProjects.length === 0) {
+        return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
+      }
     }
 
     const url = new URL(req.url);
@@ -106,11 +113,22 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
         },
       });
     }
-    const access = await db.userAppAccess.findMany({
-      where: { orgId, appId },
-      select: { userId: true },
-    });
-    let userIds = access.map((a) => a.userId);
+    // Admins: every QuikTrack-enabled user. Space Admins: only members of the
+    // projects they administer.
+    let userIds: string[];
+    if (saProjects) {
+      const pm = await db.qtProjectMember.findMany({
+        where: { projectId: { in: saProjects }, isDeleted: false },
+        select: { userId: true },
+      });
+      userIds = Array.from(new Set(pm.map((m) => m.userId)));
+    } else {
+      const access = await db.userAppAccess.findMany({
+        where: { orgId, appId },
+        select: { userId: true },
+      });
+      userIds = access.map((a) => a.userId);
+    }
     if (filterUserIds.length > 0) {
       const set = new Set(filterUserIds);
       userIds = userIds.filter((id) => set.has(id));
@@ -137,6 +155,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
             userId: { in: userIds },
             isDeleted: false,
             entryDate: { gte: from, lte: to },
+            ...(saProjects ? { projectId: { in: saProjects } } : {}),
           },
           _sum: { hours: true },
         })
@@ -150,7 +169,12 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     const estRows = userIds.length
       ? await db.qtIssue.groupBy({
           by: ["assigneeId"],
-          where: { orgId, assigneeId: { in: userIds }, isDeleted: false },
+          where: {
+            orgId,
+            assigneeId: { in: userIds },
+            isDeleted: false,
+            ...(saProjects ? { projectId: { in: saProjects } } : {}),
+          },
           _sum: { eta: true },
         })
       : [];

@@ -45,6 +45,8 @@ import { AlertCircle } from "lucide-react";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import { formatHoursAsClock } from "@/lib/utils/timesheetPeriod";
 import { showToast } from "@/lib/ui/toast";
+import { confirmDialog } from "@/lib/ui/confirm";
+import { Tooltip } from "@quikit/ui";
 
 type IssueType = "TASK" | "BUG" | "STORY" | "EPIC" | "SUBTASK";
 type Priority = "HIGHEST" | "HIGH" | "MEDIUM" | "LOW" | "LOWEST";
@@ -380,6 +382,9 @@ export function EditIssueModal({
   const [subtaskInputOpen, setSubtaskInputOpen] = useState(false);
   const subtaskInputRef = useRef<HTMLInputElement>(null);
   const subtaskSentinelRef = useRef<HTMLDivElement>(null);
+  // Multi-select for bulk subtask deletion.
+  const [selectedSubtaskIds, setSelectedSubtaskIds] = useState<Set<string>>(new Set());
+  const [subtaskDeleting, setSubtaskDeleting] = useState(false);
 
   const SUBTASK_PAGE = 20;
   async function loadSubtasks(initial: boolean) {
@@ -412,6 +417,64 @@ export function EditIssueModal({
       setSubtaskLoading(false);
     }
   }
+
+  function toggleSubtaskSelected(id: string, next: boolean) {
+    setSelectedSubtaskIds((prev) => {
+      const s = new Set(prev);
+      if (next) s.add(id);
+      else s.delete(id);
+      return s;
+    });
+  }
+
+  async function deleteSelectedSubtasks() {
+    if (selectedSubtaskIds.size === 0 || subtaskDeleting) return;
+    const ids = Array.from(selectedSubtaskIds);
+    const n = ids.length;
+    const ok = await confirmDialog({
+      title: "Delete subtasks",
+      message: `Delete ${n} subtask${n === 1 ? "" : "s"}? This can't be undone.`,
+      confirmText: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
+    setSubtaskDeleting(true);
+    try {
+      const res = await fetch("/api/issues/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, ids }),
+      }).then(
+        (r) =>
+          r.json() as Promise<{ success: boolean; error?: string; deleted?: number; skipped?: number }>,
+      );
+      if (!res.success) {
+        showToast(res.error ?? "Delete failed", "error");
+        return;
+      }
+      const skipped = res.skipped ?? 0;
+      if (skipped > 0) {
+        showToast(
+          `Deleted ${res.deleted ?? 0} — skipped ${skipped} owned by others.`,
+          "error",
+        );
+      }
+      setSelectedSubtaskIds(new Set());
+      // Re-sync from the server so skipped (undeletable) rows stay, and the
+      // parent re-computes its ETA / date roll-ups.
+      void loadSubtasks(true);
+      if (currentIssueId) {
+        window.dispatchEvent(
+          new CustomEvent("quiktrack:issue-updated", {
+            detail: { projectId, issueId: currentIssueId },
+          }),
+        );
+      }
+    } finally {
+      setSubtaskDeleting(false);
+    }
+  }
+
   // Refresh whenever the modal opens with a different issue.
   useEffect(() => {
     if (!open || !currentIssueId) return;
@@ -420,6 +483,7 @@ export function EditIssueModal({
     setSubtaskHasMore(false);
     setSubtaskInputOpen(false);
     setSubtaskTitle("");
+    setSelectedSubtaskIds(new Set());
     void loadSubtasks(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, currentIssueId]);
@@ -592,9 +656,15 @@ export function EditIssueModal({
       }).then((r) => r.json());
       if (res?.success) {
         setIssue((cur) => (cur ? { ...cur, ...body } : cur));
+        // Carry the issue's resulting sprint so listeners (the backlog) can also
+        // refresh the DESTINATION section on a sprint move — not just the source
+        // the issue was found in. Falls back to the current sprint for non-move
+        // edits (harmless: source === destination, deduped by the listener).
+        const nextSprintId =
+          "sprintId" in body ? (body.sprintId as string | null) : issue.sprintId ?? null;
         window.dispatchEvent(
           new CustomEvent("quiktrack:issue-updated", {
-            detail: { projectId, issueId: issue.id },
+            detail: { projectId, issueId: issue.id, sprintId: nextSprintId },
           }),
         );
         onSaved?.();
@@ -1143,9 +1213,55 @@ export function EditIssueModal({
                               </span>
                             </div>
 
+                            {/* Bulk-select action bar — shown when ≥1 subtask picked. */}
+                            {selectedSubtaskIds.size > 0 && (
+                              <div className="mb-2 flex items-center gap-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm">
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedSubtaskIds(new Set())}
+                                  className="rounded p-0.5 text-gray-600 hover:bg-white"
+                                  title="Clear selection"
+                                  disabled={subtaskDeleting}
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                                <span className="font-medium text-gray-900">
+                                  {selectedSubtaskIds.size} selected
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={deleteSelectedSubtasks}
+                                  disabled={subtaskDeleting}
+                                  className="ml-auto inline-flex items-center gap-1.5 rounded border border-red-200 bg-white px-2.5 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-60"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                  {subtaskDeleting ? "Deleting…" : "Delete"}
+                                </button>
+                              </div>
+                            )}
+
                             {/* Subtask grid (paginated by scroll) */}
                             <div className="border border-gray-200 rounded-md overflow-x-auto">
-                              <div className="grid grid-cols-[minmax(180px,1.6fr)_minmax(110px,1fr)_minmax(140px,1.2fr)_minmax(120px,1fr)_minmax(90px,0.8fr)_minmax(80px,0.7fr)] bg-gray-50 border-b border-gray-200 text-[11px] font-medium text-gray-600 uppercase tracking-wide">
+                              <div className="grid grid-cols-[minmax(32px,auto)_minmax(180px,1.6fr)_minmax(110px,1fr)_minmax(140px,1.2fr)_minmax(120px,1fr)_minmax(90px,0.8fr)_minmax(80px,0.7fr)] bg-gray-50 border-b border-gray-200 text-[11px] font-medium text-gray-600 uppercase tracking-wide">
+                                <div className="px-3 py-2 flex items-center">
+                                  <input
+                                    type="checkbox"
+                                    aria-label="Select all subtasks"
+                                    className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-400"
+                                    checked={subtasks.length > 0 && subtasks.every((s) => selectedSubtaskIds.has(s.id))}
+                                    ref={(el) => {
+                                      if (el)
+                                        el.indeterminate =
+                                          selectedSubtaskIds.size > 0 &&
+                                          !subtasks.every((s) => selectedSubtaskIds.has(s.id));
+                                    }}
+                                    onChange={(e) =>
+                                      setSelectedSubtaskIds(
+                                        e.target.checked ? new Set(subtasks.map((s) => s.id)) : new Set(),
+                                      )
+                                    }
+                                  />
+                                </div>
                                 <div className="px-3 py-2">Work</div>
                                 <div className="px-3 py-2">Priority</div>
                                 <div className="px-3 py-2">Assignee</div>
@@ -1160,6 +1276,8 @@ export function EditIssueModal({
                                     subtask={s}
                                     statuses={statuses}
                                     members={members}
+                                    selected={selectedSubtaskIds.has(s.id)}
+                                    onToggleSelect={(next) => toggleSubtaskSelected(s.id, next)}
                                     onOpen={() => setCurrentIssueId(s.id)}
                                     onPatched={(patch) =>
                                       setSubtasks((prev) =>
@@ -1662,12 +1780,16 @@ function SubtaskGridRow({
   subtask,
   statuses,
   members,
+  selected,
+  onToggleSelect,
   onOpen,
   onPatched,
 }: {
   subtask: InlineSubtask;
   statuses: Status[];
   members: Member[];
+  selected: boolean;
+  onToggleSelect: (next: boolean) => void;
   onOpen: () => void;
   onPatched: (patch: Partial<InlineSubtask>) => void;
 }) {
@@ -1735,7 +1857,21 @@ function SubtaskGridRow({
   }
 
   return (
-    <div className="grid grid-cols-[minmax(180px,1.6fr)_minmax(110px,1fr)_minmax(140px,1.2fr)_minmax(120px,1fr)_minmax(90px,0.8fr)_minmax(80px,0.7fr)] items-center border-b border-gray-100 last:border-b-0 text-sm hover:bg-gray-50">
+    <div
+      className={`grid grid-cols-[minmax(32px,auto)_minmax(180px,1.6fr)_minmax(110px,1fr)_minmax(140px,1.2fr)_minmax(120px,1fr)_minmax(90px,0.8fr)_minmax(80px,0.7fr)] items-center border-b border-gray-100 last:border-b-0 text-sm hover:bg-gray-50 ${
+        selected ? "bg-blue-50/60" : ""
+      }`}
+    >
+      {/* Select checkbox */}
+      <div className="px-3 py-2 flex items-center">
+        <input
+          type="checkbox"
+          aria-label={`Select ${subtask.key}`}
+          className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-400"
+          checked={selected}
+          onChange={(e) => onToggleSelect(e.target.checked)}
+        />
+      </div>
       {/* Work — key opens drawer; title is click-to-edit */}
       <div className="px-3 py-2 inline-flex items-center gap-1.5 min-w-0">
         <Link2 className="h-3 w-3 text-blue-500 shrink-0" />
@@ -1762,16 +1898,23 @@ function SubtaskGridRow({
             className="flex-1 min-w-0 h-6 px-1 text-sm border border-blue-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         ) : (
-          <button
-            type="button"
-            onClick={() => {
-              setTitleDraft(subtask.title);
-              setTitleEditing(true);
-            }}
-            className="text-gray-800 truncate text-left hover:bg-gray-100 rounded px-1 -mx-1 min-w-0 flex-1"
+          <Tooltip
+            content={subtask.title}
+            widthClass="max-w-xs"
+            triggerClassName="min-w-0 flex-1"
+            contentClassName="px-2.5 py-1.5 break-words"
           >
-            {subtask.title}
-          </button>
+            <button
+              type="button"
+              onClick={() => {
+                setTitleDraft(subtask.title);
+                setTitleEditing(true);
+              }}
+              className="block w-full text-gray-800 truncate text-left hover:bg-gray-100 rounded px-1 -mx-1"
+            >
+              {subtask.title}
+            </button>
+          </Tooltip>
         )}
       </div>
 

@@ -1,10 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Check, X, Clock, FileText, Loader2 } from "lucide-react";
 import { clsx } from "clsx";
+import { ExcelExportButton } from "@/components/hrms/excel-export-button";
+
+const REG_EXPORT_COLUMNS = [
+  { header: "Date", key: "date", width: 16 },
+  { header: "Employee", key: "employee", width: 26 },
+  { header: "Attendance", key: "attendance", width: 22 },
+  { header: "Regularization Status", key: "status", width: 20 },
+  { header: "Reason", key: "reason", width: 32 },
+];
 
 interface RegRecord {
   id: string;
@@ -37,6 +46,22 @@ export default function RegularizationApprovalsPage() {
 
   const records = data?.data ?? [];
 
+  const exportRows = useMemo(
+    () =>
+      records.map((r) => {
+        const ci = r.checkIn ? new Date(r.checkIn).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—";
+        const co = r.checkOut ? new Date(r.checkOut).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—";
+        return {
+          date: new Date(r.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
+          employee: `${r.employee.firstName} ${r.employee.lastName}`.trim() + (r.employee.employeeCode ? ` (${r.employee.employeeCode})` : ""),
+          attendance: `${ci} – ${co}`,
+          status: r.regularizationStatus,
+          reason: r.regularizationReason ?? "",
+        };
+      }),
+    [records],
+  );
+
   const actionMut = useMutation({
     mutationFn: ({ id, status }: { id: string; status: "Approved" | "Rejected" }) =>
       api.patch(`/api/v1/hrms/attendance/records/${id}`, { status }),
@@ -65,6 +90,9 @@ export default function RegularizationApprovalsPage() {
               {t}
             </button>
           ))}
+          <div className="ml-auto pb-2">
+            <ExcelExportButton filename="regularizations" sheetName="Regularizations" columns={REG_EXPORT_COLUMNS} rows={exportRows} label="Excel" />
+          </div>
         </div>
       </div>
 

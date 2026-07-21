@@ -34,7 +34,7 @@ export function FilterSearch({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full ds-control pl-9"
+        className="w-full ds-control !pl-9"
       />
     </div>
   );

@@ -32,13 +32,24 @@ export const PUT = withAuth(async (req: NextRequest, { orgId, userId }, params) 
 
     const { levels, ...rest } = parsed.data;
 
-    const chain = await prisma.approvalChain.update({
-      where: { id },
-      data: {
-        ...rest,
-        ...(levels && { levels: JSON.parse(JSON.stringify(levels)) }),
-        updatedBy: userId,
-      },
+    // Only one active chain per module. Activating this chain deactivates any
+    // other active chain for the same module.
+    const chain = await prisma.$transaction(async (tx) => {
+      const updated = await tx.approvalChain.update({
+        where: { id },
+        data: {
+          ...rest,
+          ...(levels && { levels: JSON.parse(JSON.stringify(levels)) }),
+          updatedBy: userId,
+        },
+      });
+      if (updated.isActive) {
+        await tx.approvalChain.updateMany({
+          where: { orgId, module: updated.module, isActive: true, deletedAt: null, id: { not: id } },
+          data: { isActive: false, updatedBy: userId },
+        });
+      }
+      return updated;
     });
 
     await createAuditLog({

@@ -17,8 +17,6 @@ import {
   WORK_COL_WIDTH,
   intervalToBar,
   totalGridWidth,
-  initials,
-  avatarColor,
   fullName,
 } from "./timeline-meta";
 import {
@@ -31,6 +29,7 @@ import {
   type TimelineStatus,
   type TimelineViewSettings,
 } from "./timeline-view-settings";
+import { StatusEditor, AssigneeEditor } from "./timeline-inline-edit";
 
 const PAGE_SIZE = 25;
 
@@ -170,15 +169,45 @@ export function TimelineRow(props: RowProps) {
     return () => obs.disconnect();
   }, [expanded, hasMore, loading, loadChildren]);
 
+  // Local optimistic copies of the two inline-editable fields — reset whenever
+  // the underlying issue changes (e.g. a parent refetch).
+  const [localStatusId, setLocalStatusId] = useState(issue.statusId);
+  const [localAssigneeId, setLocalAssigneeId] = useState<string | null>(issue.assigneeId ?? null);
+  useEffect(() => setLocalStatusId(issue.statusId), [issue.statusId]);
+  useEffect(() => setLocalAssigneeId(issue.assigneeId ?? null), [issue.assigneeId]);
+
+  // Inline edit → optimistic update, PATCH, revert on failure, broadcast so
+  // other views (board/backlog/etc.) re-sync.
+  async function patchField(body: { statusId?: string; assigneeId?: string | null }) {
+    const prevStatus = localStatusId;
+    const prevAssignee = localAssigneeId;
+    if (body.statusId !== undefined) setLocalStatusId(body.statusId);
+    if (body.assigneeId !== undefined) setLocalAssigneeId(body.assigneeId);
+    try {
+      const res = await fetch(`/api/issues/${issue.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => r.json());
+      if (!res?.success) throw new Error(res?.error ?? "Update failed");
+      window.dispatchEvent(
+        new CustomEvent("quiktrack:issue-updated", { detail: { projectId, issueId: issue.id } }),
+      );
+    } catch {
+      setLocalStatusId(prevStatus);
+      setLocalAssigneeId(prevAssignee);
+    }
+  }
+
   const T = TYPE_ICON(issue.type);
   const bar = intervalToBar(issue.startDate, issue.dueDate, columns);
   const stripWidth = totalGridWidth(columns);
 
-  const status = statusesById.get(issue.statusId);
+  const status = statusesById.get(localStatusId);
   const statusHex = status?.color || categoryColor(status?.category);
   const barHex = settings.barColor === "custom" ? settings.customColor : statusHex;
   const progress = progressForCategory(status?.category);
-  const assignee = issue.assigneeId ? membersById.get(issue.assigneeId) ?? null : null;
+  const assignee = localAssigneeId ? membersById.get(localAssigneeId) ?? null : null;
 
   const overdue = isOverdue(issue.dueDate, status?.category);
   const undated = !issue.startDate && !issue.dueDate;
@@ -239,40 +268,26 @@ export function TimelineRow(props: RowProps) {
           {settings.showStatus && (
             <div
               style={{ width: STATUS_COL_WIDTH }}
-              className="shrink-0 h-10 flex items-center px-3 border-l border-gray-100"
+              className="shrink-0 h-10 flex items-center px-2 border-l border-gray-100"
             >
-              {status ? (
-                <span
-                  className="inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] font-medium"
-                  style={{ backgroundColor: `${statusHex}1f`, color: statusHex }}
-                >
-                  <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: statusHex }} />
-                  <span className="truncate">{status.name}</span>
-                </span>
-              ) : (
-                <span className="text-[11px] text-gray-400">—</span>
-              )}
+              <StatusEditor
+                value={localStatusId}
+                statuses={Array.from(statusesById.values())}
+                onSelect={(id) => void patchField({ statusId: id })}
+              />
             </div>
           )}
 
           {settings.showAssignee && (
             <div
               style={{ width: ASSIGNEE_COL_WIDTH }}
-              className="shrink-0 h-10 flex items-center gap-2 px-3 border-l border-gray-100"
+              className="shrink-0 h-10 flex items-center gap-2 px-2 border-l border-gray-100"
             >
-              {assignee ? (
-                <>
-                  <span
-                    className="h-5 w-5 shrink-0 rounded-full text-white text-[9px] font-semibold flex items-center justify-center"
-                    style={{ background: avatarColor(assignee.userId) }}
-                  >
-                    {initials(assignee)}
-                  </span>
-                  <span className="truncate text-[11px] text-gray-700">{fullName(assignee)}</span>
-                </>
-              ) : (
-                <span className="text-[11px] text-gray-400">Unassigned</span>
-              )}
+              <AssigneeEditor
+                value={localAssigneeId}
+                members={Array.from(membersById.values())}
+                onSelect={(id) => void patchField({ assigneeId: id })}
+              />
             </div>
           )}
 

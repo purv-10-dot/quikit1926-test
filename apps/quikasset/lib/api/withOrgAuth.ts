@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { getOrgId } from "@/lib/api/getOrgId";
 import { toErrorMessage } from "@/lib/api/errors";
 import { userCan, forbidden } from "@/lib/api/permissions";
+import { isRemovedFromQuikAsset } from "@/lib/api/removal";
 import type { Resource, Action } from "@/lib/api/permissionsRegistry";
 
 /** Context passed to a handler after auth + tenant + (optional) permission gate. */
@@ -54,6 +55,13 @@ export function withOrgAuth<Params = Record<string, never>>(
       if (!orgId) {
         return NextResponse.json(
           { success: false, error: "No active membership / app access" },
+          { status: 403 },
+        );
+      }
+      // Soft-removed users are denied all QuikAsset access (data is retained).
+      if (await isRemovedFromQuikAsset(userId, orgId)) {
+        return NextResponse.json(
+          { success: false, error: "Your access to QuikAsset has been removed." },
           { status: 403 },
         );
       }

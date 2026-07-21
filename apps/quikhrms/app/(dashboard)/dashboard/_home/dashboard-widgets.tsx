@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useDashboardBatch } from "@/lib/hooks/use-dashboard-batch";
+import { Modal } from "@/components/hrms/modal";
 import {
   ChevronLeft, ChevronRight, ChevronDown, ChevronRight as ChevronRightIcon,
   Cake, PartyPopper, Plane, Home, Briefcase, Gift, MapPin, CalendarDays, Calendar,
@@ -25,6 +26,7 @@ interface MonthHoliday {
   id: string;
   name: string;
   date: string;
+  type: string;
 }
 
 interface HolidaysUpcomingResponse {
@@ -45,19 +47,93 @@ interface JobOpening {
 
 const FULL_WEEK = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+// Which stat card is currently selected — drives the right-hand panel content.
+export type StatKey = "leave" | "wfh" | "today" | "birthdays";
+const SELECTED_TITLES: Record<StatKey, string> = {
+  leave: "On Leave",
+  wfh: "Work From Home",
+  today: "Today's Events",
+  birthdays: "Upcoming Birthdays",
+};
+
+// Demo data — shown only when the dashboard URL has ?demo=1, so you can preview
+// the stat drill-downs without seeding the database. Real data is untouched.
+export interface DemoLists {
+  leave: { id: string; firstName: string; lastName: string; profilePhoto: string | null; meta: string }[];
+  wfh: { id: string; firstName: string; lastName: string; profilePhoto: string | null; meta: string }[];
+  birthdays: { id: string; firstName: string; lastName: string; profilePhoto: string | null; daysUntil: number }[];
+  todayEvents: UpcomingHoliday[];
+}
+function buildSampleDemo(): DemoLists {
+  const todayIso = new Date().toISOString();
+  return {
+    leave: [
+      { id: "demo-l1", firstName: "Rahul", lastName: "Sharma", profilePhoto: null, meta: "Sick leave" },
+      { id: "demo-l2", firstName: "Priya", lastName: "Nair", profilePhoto: null, meta: "On holiday" },
+      { id: "demo-l3", firstName: "Deepak", lastName: "Kumar", profilePhoto: null, meta: "Sick leave" },
+      { id: "demo-l4", firstName: "Neha", lastName: "Joshi", profilePhoto: null, meta: "On holiday" },
+      { id: "demo-l5", firstName: "Arjun", lastName: "Reddy", profilePhoto: null, meta: "Parental leave" },
+      { id: "demo-l6", firstName: "Meera", lastName: "Iyer", profilePhoto: null, meta: "On holiday" },
+    ],
+    wfh: [
+      { id: "demo-w1", firstName: "Aman", lastName: "Gupta", profilePhoto: null, meta: "Working from home" },
+      { id: "demo-w2", firstName: "Sneha", lastName: "Verma", profilePhoto: null, meta: "Working from home" },
+      { id: "demo-w3", firstName: "Karan", lastName: "Mehta", profilePhoto: null, meta: "Working from home" },
+      { id: "demo-w4", firstName: "Ritu", lastName: "Bansal", profilePhoto: null, meta: "Working from home" },
+      { id: "demo-w5", firstName: "Sameer", lastName: "Khan", profilePhoto: null, meta: "Working from home" },
+    ],
+    birthdays: [
+      { id: "demo-b1", firstName: "Anjali", lastName: "Mehta", profilePhoto: null, daysUntil: 0 },
+      { id: "demo-b2", firstName: "Vikram", lastName: "Singh", profilePhoto: null, daysUntil: 2 },
+      { id: "demo-b3", firstName: "Pooja", lastName: "Rao", profilePhoto: null, daysUntil: 5 },
+      { id: "demo-b4", firstName: "Rohan", lastName: "Das", profilePhoto: null, daysUntil: 9 },
+      { id: "demo-b5", firstName: "Kavya", lastName: "Menon", profilePhoto: null, daysUntil: 14 },
+      { id: "demo-b6", firstName: "Nikhil", lastName: "Jain", profilePhoto: null, daysUntil: 21 },
+      { id: "demo-b7", firstName: "Isha", lastName: "Kapoor", profilePhoto: null, daysUntil: 28 },
+    ],
+    todayEvents: [
+      { id: "demo-e1", name: "Town Hall Meeting", date: todayIso, type: "Company", isFloater: false, calendar: null },
+      { id: "demo-e2", name: "Quarterly Review", date: todayIso, type: "Company", isFloater: false, calendar: null },
+    ],
+  };
+}
+
+/* ─────────────────── SCHEDULE SECTION (calendar + stats + celebrations) ─────────────────── */
+
+export function ScheduleSection() {
+  const [selected, setSelected] = useState<StatKey | null>(null);
+  const [demo, setDemo] = useState<DemoLists | undefined>(undefined);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("demo") === "1") setDemo(buildSampleDemo());
+  }, []);
+  return (
+    <div className="surface-card p-4 md:p-5 space-y-4">
+      <HolidaysWidget bare selected={selected} onClearSelected={() => setSelected(null)} demo={demo} />
+      <div className="rounded-2xl ring-1 ring-gray-100">
+        <HomeStatRow bare selected={selected} onSelect={(k) => setSelected((s) => (s === k ? null : k))} demo={demo} />
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="rounded-2xl ring-1 ring-gray-100 p-4"><BirthdaysWidget bare /></div>
+        <div className="rounded-2xl ring-1 ring-gray-100 p-4"><AnniversariesWidget bare /></div>
+      </div>
+    </div>
+  );
+}
+
 /* ─────────────────── HOLIDAYS WIDGET ─────────────────── */
 
-export function HolidaysWidget() {
+export function HolidaysWidget({ bare = false, selected = null, onClearSelected, demo }: { bare?: boolean; selected?: StatKey | null; onClearSelected?: () => void; demo?: DemoLists }) {
   const api = useApiClient();
   const { data: batch, isLoading } = useDashboardBatch();
   const [cursor, setCursor] = useState(() => {
     const d = new Date();
     return new Date(d.getFullYear(), d.getMonth(), 1);
   });
-  // How many cards to render in the right-column list. User selectable via
-  // the "Next N Events" chip — fetches a fixed superset so toggling is free.
-  const [eventCount, setEventCount] = useState<2 | 4 | 6>(2);
-
+  // Upcoming-events pagination — 3 per page.
+  const [eventsPage, setEventsPage] = useState(0);
+  // Drill-down list pagination — resets whenever the selected stat changes.
+  const [listPage, setListPage] = useState(0);
+  useEffect(() => { setListPage(0); }, [selected]);
   // The current real-world month's calendar dots ship in the single batch call.
   // Only when the user navigates to a *different* month do we fetch on demand.
   const now = new Date();
@@ -78,95 +154,158 @@ export function HolidaysWidget() {
   // from the batch. Calendar dots follow the visible month.
   const data = batch;
   const upcoming = batch?.data?.holidays.upcoming ?? [];
+  const EVENTS_PER_PAGE = 3;
+  const eventPageCount = Math.max(1, Math.ceil(upcoming.length / EVENTS_PER_PAGE));
+  const safePage = Math.min(eventsPage, eventPageCount - 1);
+  const pagedUpcoming = upcoming.slice(safePage * EVENTS_PER_PAGE, safePage * EVENTS_PER_PAGE + EVENTS_PER_PAGE);
+
+  // Stat-card drill-down lists (from the same batch payload, or demo overrides).
+  const availability = batch?.data?.availability ?? [];
+  const leavePeople = demo ? demo.leave : availability.filter((r) => r.category !== "WFH").flatMap((r) => r.avatars.map((a) => ({ ...a, meta: r.label })));
+  const wfhPeople = demo ? demo.wfh : (availability.find((r) => r.category === "WFH")?.avatars ?? []).map((a) => ({ ...a, meta: "Working from home" }));
+  const birthdayPeople = demo ? demo.birthdays : (batch?.data?.birthdays ?? []);
+  const todayEvents = demo ? demo.todayEvents : upcoming.filter((h) => getHolidayCountdown(new Date(h.date)) === "Today");
+
+  // Pagination for the selected drill-down list (4 per page).
+  const LIST_PER_PAGE = 6;
+  const activeList: unknown[] =
+    selected === "leave" ? leavePeople :
+    selected === "wfh" ? wfhPeople :
+    selected === "birthdays" ? birthdayPeople :
+    selected === "today" ? todayEvents : [];
+  const listPageCount = Math.max(1, Math.ceil(activeList.length / LIST_PER_PAGE));
+  const safeListPage = Math.min(listPage, listPageCount - 1);
+  const pageOf = <T,>(arr: T[]): T[] => arr.slice(safeListPage * LIST_PER_PAGE, safeListPage * LIST_PER_PAGE + LIST_PER_PAGE);
   const monthHolidays = isCurrentMonthView
     ? (batch?.data?.holidays.monthHolidays ?? [])
     : (monthData?.data?.monthHolidays ?? []);
 
   const monthLabel = cursor.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 
-  const holidaySet = useMemo(() => {
-    const s = new Set<number>();
+  // Map each holiday day-of-month → whether it's a Company holiday, so the
+  // calendar can follow the standard colour code (green = holiday, purple = company).
+  const holidayMap = useMemo(() => {
+    const m = new Map<number, boolean>();
     for (const h of monthHolidays) {
       const d = new Date(h.date);
       if (d.getMonth() === cursor.getMonth() && d.getFullYear() === cursor.getFullYear()) {
-        s.add(d.getDate());
+        m.set(d.getDate(), h.type === "Company");
       }
     }
-    return s;
+    return m;
   }, [monthHolidays, cursor]);
 
-  return (
-    <div className="surface-card p-4">
+  const inner = (
+    <>
       <div className="flex items-center justify-between mb-5">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center">
-            <CalendarDays size={16} className="text-green-600" />
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center">
+            <CalendarDays size={18} className="text-green-600" />
           </div>
-          <h3 className="text-[13px] font-semibold text-gray-900">Upcoming Holiday / Events</h3>
+          <div>
+            <h3 className="text-[15px] font-bold text-gray-900">Upcoming Schedule</h3>
+            <p className="text-xs text-gray-500">Holidays, events and important dates</p>
+          </div>
         </div>
         <Link
           href="/holidays"
-          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg ring-1 ring-gray-200 hover:bg-gray-50 text-xs font-medium text-gray-700 transition"
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg ring-1 ring-gray-200 hover:bg-gray-50 text-xs font-medium text-gray-700 transition"
         >
-          View All <ChevronRightIcon size={13} />
+          <Calendar size={14} /> View Calendar <ChevronRightIcon size={13} />
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <MiniCalendar cursor={cursor} setCursor={setCursor} monthLabel={monthLabel} holidaySet={holidaySet} />
+      <div className="grid grid-cols-1 md:grid-cols-[1fr_1.1fr] gap-4">
+        <MiniCalendar cursor={cursor} setCursor={setCursor} monthLabel={monthLabel} holidayMap={holidayMap} />
 
-        <div className="flex flex-col">
-          {/* Section header — sits above the cards, separate from the widget title */}
-          <div className="flex items-center justify-between mb-3">
-            <h4 className="text-[13px] font-semibold text-gray-900">Upcoming</h4>
-            <EventCountChip value={eventCount} onChange={setEventCount} max={Math.min(upcoming.length, 6)} />
+        <div className="rounded-2xl ring-1 ring-gray-100 p-4 flex flex-col">
+          {/* Panel header — title + (pagination | back-to-upcoming) */}
+          <div className="flex items-center justify-between gap-2 mb-3">
+            {selected ? (
+              <>
+                <h4 className="text-[15px] font-bold text-gray-900 truncate">
+                  {SELECTED_TITLES[selected]} <span className="text-xs font-medium text-gray-400">({activeList.length})</span>
+                </h4>
+                <div className="flex items-center gap-2 shrink-0">
+                  {listPageCount > 1 && (
+                    <Pager
+                      page={safeListPage}
+                      pageCount={listPageCount}
+                      onPrev={() => setListPage((p) => Math.max(0, p - 1))}
+                      onNext={() => setListPage((p) => Math.min(listPageCount - 1, p + 1))}
+                    />
+                  )}
+                  <button
+                    type="button"
+                    onClick={onClearSelected}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-green-600 hover:text-green-700"
+                  >
+                    <ChevronLeft size={13} /> Clear
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h4 className="text-[15px] font-bold text-gray-900">
+                  Upcoming <span className="text-xs font-medium text-gray-400">({upcoming.length} Events)</span>
+                </h4>
+                {eventPageCount > 1 && (
+                  <Pager
+                    page={safePage}
+                    pageCount={eventPageCount}
+                    onPrev={() => setEventsPage((p) => Math.max(0, p - 1))}
+                    onNext={() => setEventsPage((p) => Math.min(eventPageCount - 1, p + 1))}
+                  />
+                )}
+              </>
+            )}
           </div>
 
           <div className="space-y-2.5 flex flex-col">
-            {(isLoading || !data) ? (
+            {(isLoading || !data) && !demo ? (
               <>
                 <div className="h-20 rounded-2xl bg-gray-100 animate-pulse" />
                 <div className="h-20 rounded-2xl bg-gray-100 animate-pulse" />
               </>
+            ) : selected === "leave" ? (
+              leavePeople.length ? pageOf(leavePeople).map((p, i) => <StatPersonRow key={`${p.id}-${i}`} person={p} meta={p.meta} />) : <PanelEmpty text="Nobody is on leave today." />
+            ) : selected === "wfh" ? (
+              wfhPeople.length ? pageOf(wfhPeople).map((p, i) => <StatPersonRow key={`${p.id}-${i}`} person={p} meta={p.meta} />) : <PanelEmpty text="Nobody is working from home today." />
+            ) : selected === "birthdays" ? (
+              birthdayPeople.length ? pageOf(birthdayPeople).map((p) => <StatPersonRow key={p.id} person={p} meta={p.daysUntil === 0 ? "Today 🎉" : p.daysUntil === 1 ? "Tomorrow" : `in ${p.daysUntil} days`} />) : <PanelEmpty text="No birthdays soon." />
+            ) : selected === "today" ? (
+              todayEvents.length ? pageOf(todayEvents).map((h, i) => <HolidayCard key={h.id} h={h} idx={i} />) : <PanelEmpty text="No events today." />
             ) : upcoming.length === 0 ? (
               <HolidaysEmpty />
             ) : (
-              upcoming.slice(0, eventCount).map((h, i) => <HolidayCard key={h.id} h={h} idx={i} />)
+              pagedUpcoming.map((h, i) => <HolidayCard key={h.id} h={h} idx={i} />)
             )}
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
+
+  return bare ? inner : <div className="surface-card p-4">{inner}</div>;
 }
 
-/**
- * Compact "Next N Events" toggle — cycles through 2 / 4 / 6 as the user clicks.
- * Stays inert when there are fewer holidays than the next step.
- */
-function EventCountChip({
-  value, onChange, max,
-}: {
-  value: 2 | 4 | 6;
-  onChange: (v: 2 | 4 | 6) => void;
-  max: number;
-}) {
-  const options: (2 | 4 | 6)[] = [2, 4, 6];
-  const visible = options.filter((o) => o <= max || o === 2);
-  const cycle = () => {
-    const i = visible.indexOf(value);
-    const next = visible[(i + 1) % visible.length] ?? 2;
-    onChange(next);
-  };
+function Pager({ page, pageCount, onPrev, onNext }: { page: number; pageCount: number; onPrev: () => void; onNext: () => void }) {
   return (
-    <button
-      type="button"
-      onClick={cycle}
-      disabled={visible.length <= 1}
-      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-gray-200 bg-white text-[11px] font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition"
-    >
-      Next {value} Events <ChevronDown size={12} />
-    </button>
+    <div className="flex items-center gap-1.5">
+      <button
+        type="button" onClick={onPrev} disabled={page === 0} aria-label="Previous"
+        className="w-7 h-7 rounded-lg ring-1 ring-gray-200 hover:bg-gray-50 flex items-center justify-center text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed transition"
+      >
+        <ChevronLeft size={13} />
+      </button>
+      <span className="text-[11px] font-semibold text-gray-500 tabular-nums">{page + 1}/{pageCount}</span>
+      <button
+        type="button" onClick={onNext} disabled={page >= pageCount - 1} aria-label="Next"
+        className="w-7 h-7 rounded-lg ring-1 ring-gray-200 hover:bg-gray-50 flex items-center justify-center text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed transition"
+      >
+        <ChevronRight size={13} />
+      </button>
+    </div>
   );
 }
 
@@ -193,12 +332,12 @@ function HolidaysEmpty() {
 }
 
 function MiniCalendar({
-  cursor, setCursor, monthLabel, holidaySet,
+  cursor, setCursor, monthLabel, holidayMap,
 }: {
   cursor: Date;
   setCursor: (d: Date) => void;
   monthLabel: string;
-  holidaySet: Set<number>;
+  holidayMap: Map<number, boolean>;
 }) {
   // "Today" is computed only after mount: new Date() resolves to the server's
   // timezone during SSR but the user's local timezone on the client, so a
@@ -230,7 +369,7 @@ function MiniCalendar({
             onClick={openPicker}
             className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-gray-900 hover:text-green-600 transition"
           >
-            {monthLabel} <ChevronDown size={16} className={clsx("text-gray-500 transition-transform", pickerOpen && "rotate-180")} />
+            <Calendar size={14} className="text-gray-400" /> {monthLabel} <ChevronDown size={16} className={clsx("text-gray-500 transition-transform", pickerOpen && "rotate-180")} />
           </button>
           {pickerOpen && (
             <>
@@ -297,7 +436,7 @@ function MiniCalendar({
             key={i}
             className={clsx(
               i === 0 && "text-rose-500",
-              i === 6 && "text-green-500",
+              i === 6 && "text-rose-500",
               i !== 0 && i !== 6 && "text-gray-500",
             )}
           >
@@ -310,10 +449,14 @@ function MiniCalendar({
         {cells.map((d, i) => {
           if (d === null) return <div key={i} />;
           const isToday = isCurrentMonth && d === today?.getDate();
-          const isHoliday = holidaySet.has(d);
           const dow = (firstDay + d - 1) % 7;
           const isSunday = dow === 0;
           const isSaturday = dow === 6;
+          const isWeekend = isSunday || isSaturday;
+          // Weekends are already marked (rose) as non-working days — don't
+          // double-mark them as holidays even if one falls on a Sat/Sun.
+          const isHoliday = holidayMap.has(d) && !isWeekend;
+          const isCompany = holidayMap.get(d) === true;
           return (
             <div key={i} className="flex items-center justify-center">
               <div className="relative">
@@ -321,21 +464,29 @@ function MiniCalendar({
                   className={clsx(
                     "inline-flex items-center justify-center w-9 h-9 rounded-full text-sm transition cursor-default",
                     isToday && "bg-green-600 text-white font-bold shadow-sm",
-                    !isToday && isHoliday && "text-rose-600 font-bold bg-rose-50",
-                    !isToday && !isHoliday && isSunday && "text-rose-500 font-medium",
-                    !isToday && !isHoliday && isSaturday && "text-green-500 font-medium",
-                    !isToday && !isHoliday && !isSunday && !isSaturday && "text-gray-700 hover:bg-gray-50",
+                    // Colour code matches the legend: amber = holiday, purple = company holiday.
+                    // No background highlight — the colour + dot already convey it.
+                    !isToday && isHoliday && (isCompany ? "text-purple-600 font-bold" : "text-amber-600 font-bold"),
+                    !isToday && !isHoliday && isWeekend && "text-rose-500 font-medium",
+                    !isToday && !isHoliday && !isWeekend && "text-gray-700 hover:bg-gray-50",
                   )}
                 >
                   {d}
                 </span>
                 {isHoliday && !isToday && (
-                  <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-rose-500" />
+                  <span className={clsx("absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full", isCompany ? "bg-purple-500" : "bg-amber-500")} />
                 )}
               </div>
             </div>
           );
         })}
+      </div>
+
+      {/* Legend */}
+      <div className="mt-4 pt-3 border-t border-gray-100 flex items-center gap-5 text-[11px] font-medium text-gray-500">
+        <span className="inline-flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-500" /> Holiday</span>
+        <span className="inline-flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-sky-500" /> Event</span>
+        <span className="inline-flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500" /> Today</span>
       </div>
     </div>
   );
@@ -512,14 +663,14 @@ function HolidayCard({ h, idx }: { h: UpcomingHoliday; idx: number }) {
 
 /* ─────────────────── BIRTHDAYS WIDGET ─────────────────── */
 
-export function BirthdaysWidget() {
+export function BirthdaysWidget({ bare = false }: { bare?: boolean }) {
   const { data, isLoading } = useDashboardBatch();
   const all = data?.data?.birthdays ?? [];
   const todays = all.filter((b) => b.daysUntil === 0);
   const next = all.find((b) => b.daysUntil > 0) ?? null;
 
-  return (
-    <div className="surface-card p-4">
+  const inner = (
+    <>
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-pink-50 flex items-center justify-center">
@@ -527,35 +678,36 @@ export function BirthdaysWidget() {
           </div>
           <h3 className="text-[13px] font-semibold text-gray-900">Upcoming Birthdays</h3>
         </div>
-        <Link href="/celebrations?tab=birthdays" className="text-xs font-medium text-green-600 hover:underline">
+        <Link href="/holidays" className="text-xs font-medium text-green-600 hover:underline">
           View All
         </Link>
       </div>
       {(isLoading || !data) ? (
-        <div className="h-10 rounded-lg bg-gray-100 animate-pulse" />
+        <div className="h-16 rounded-2xl bg-gray-100 animate-pulse" />
       ) : todays.length > 0 ? (
-        <PersonRow people={todays} suffix="Today" />
+        <div className="rounded-2xl bg-pink-50/60 p-4"><PersonRow people={todays} suffix="Today" /></div>
       ) : next ? (
-        <PersonRow
-          people={[next]}
-          suffix={next.daysUntil === 1 ? "Tomorrow" : `in ${next.daysUntil}d`}
-        />
+        <div className="rounded-2xl bg-gray-50 p-4">
+          <PersonRow people={[next]} suffix={next.daysUntil === 1 ? "Tomorrow" : `in ${next.daysUntil}d`} />
+        </div>
       ) : (
-        <EmptyMini icon={<Cake size={14} className="text-gray-400" />} text="No birthdays soon" />
+        <CelebrationEmpty emoji="🎂" title="No birthdays in the next 30 days" subtitle="We'll notify you when someone has a birthday." bg="bg-pink-50/60" />
       )}
-    </div>
+    </>
   );
+
+  return bare ? inner : <div className="surface-card p-4">{inner}</div>;
 }
 
 /* ─────────────────── ANNIVERSARIES WIDGET ─────────────────── */
 
-export function AnniversariesWidget() {
+export function AnniversariesWidget({ bare = false }: { bare?: boolean }) {
   const { data, isLoading } = useDashboardBatch();
   const items = data?.data?.anniversaries ?? [];
   const next = items[0] ?? null;
 
-  return (
-    <div className="surface-card p-4">
+  const inner = (
+    <>
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center">
@@ -563,20 +715,39 @@ export function AnniversariesWidget() {
           </div>
           <h3 className="text-[13px] font-semibold text-gray-900">Upcoming Work Anniversaries</h3>
         </div>
-        <Link href="/celebrations?tab=anniversaries" className="text-xs font-medium text-green-600 hover:underline">
+        <Link href="/holidays" className="text-xs font-medium text-green-600 hover:underline">
           View All
         </Link>
       </div>
       {(isLoading || !data) ? (
-        <div className="h-10 rounded-lg bg-gray-100 animate-pulse" />
+        <div className="h-16 rounded-2xl bg-gray-100 animate-pulse" />
       ) : next ? (
-        <PersonRow
-          people={[next]}
-          suffix={next.daysUntil === 0 ? `Today · ${next.years}y` : next.daysUntil === 1 ? `Tomorrow · ${next.years}y` : `in ${next.daysUntil}d · ${next.years}y`}
-        />
+        <div className="rounded-2xl bg-gray-50 p-4">
+          <PersonRow
+            people={[next]}
+            suffix={(() => {
+              const yr = `${next.years} ${next.years === 1 ? "Year" : "Years"}`;
+              return next.daysUntil === 0 ? `Today • ${yr}` : next.daysUntil === 1 ? `Tomorrow • ${yr}` : `in ${next.daysUntil}d • ${yr}`;
+            })()}
+          />
+        </div>
       ) : (
-        <EmptyMini icon={<Gift size={14} className="text-gray-400" />} text="No anniversaries soon" />
+        <CelebrationEmpty emoji="🎁" title="No anniversaries in the next 30 days" subtitle="We'll celebrate when the time comes." bg="bg-gray-50" />
       )}
+    </>
+  );
+
+  return bare ? inner : <div className="surface-card p-4">{inner}</div>;
+}
+
+function CelebrationEmpty({ emoji, title, subtitle, bg }: { emoji: string; title: string; subtitle: string; bg: string }) {
+  return (
+    <div className={clsx("flex items-center gap-4 rounded-2xl p-4", bg)}>
+      <span className="text-3xl select-none" aria-hidden>{emoji}</span>
+      <div>
+        <p className="text-[13px] font-semibold text-gray-900">{title}</p>
+        <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>
+      </div>
     </div>
   );
 }
@@ -603,15 +774,6 @@ function PersonRow({
   );
 }
 
-function EmptyMini({ icon, text }: { icon: React.ReactNode; text: string }) {
-  return (
-    <div className="flex items-center gap-2.5 text-gray-500">
-      <div className="w-9 h-9 rounded-full bg-gray-50 flex items-center justify-center">{icon}</div>
-      <p className="text-xs">{text}</p>
-    </div>
-  );
-}
-
 function Avatar({ p }: { p: { firstName: string; lastName: string; profilePhoto: string | null } }) {
   const initials = `${(p.firstName?.[0] ?? "").toUpperCase()}${(p.lastName?.[0] ?? "").toUpperCase()}`;
   return (
@@ -628,72 +790,114 @@ function Avatar({ p }: { p: { firstName: string; lastName: string; profilePhoto:
 
 /* ─────────────────── STAT CARDS (Leave / WFH / Events / Birthdays) ─────────────────── */
 
-export function HomeStatRow() {
+function StatPersonRow({ person, meta }: { person: { firstName: string; lastName: string; profilePhoto: string | null }; meta: string }) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl bg-gray-50 px-3 py-2.5">
+      <Avatar p={person} />
+      <div className="min-w-0">
+        <p className="text-[13px] font-semibold text-gray-900 truncate">{person.firstName} {person.lastName}</p>
+        <p className="text-xs text-gray-500 truncate">{meta}</p>
+      </div>
+    </div>
+  );
+}
+
+function PanelEmpty({ text }: { text: string }) {
+  return <div className="flex items-center justify-center py-10 text-center"><p className="text-xs text-gray-400">{text}</p></div>;
+}
+
+export function HomeStatRow({ bare = false, selected = null, onSelect, demo }: { bare?: boolean; selected?: StatKey | null; onSelect?: (k: StatKey) => void; demo?: DemoLists }) {
   const { data } = useDashboardBatch();
 
   const rows = data?.data?.availability ?? [];
-  const onLeave = rows.filter((r) => r.category !== "WFH").reduce((s, r) => s + r.count, 0);
-  const wfh = rows.find((r) => r.category === "WFH")?.count ?? 0;
+  const onLeave = demo ? demo.leave.length : rows.filter((r) => r.category !== "WFH").reduce((s, r) => s + r.count, 0);
+  const wfh = demo ? demo.wfh.length : rows.find((r) => r.category === "WFH")?.count ?? 0;
 
-  const eventsToday = data?.data?.eventsToday ?? 0;
+  const eventsToday = demo ? demo.todayEvents.length : data?.data?.eventsToday ?? 0;
 
   const todaysBirthdays = data?.data?.birthdayCounts.today ?? 0;
   const upcomingBirthdays = data?.data?.birthdayCounts.month ?? 0;
-  const birthdayValue = todaysBirthdays > 0 ? todaysBirthdays : upcomingBirthdays;
-  const birthdayCaption = todaysBirthdays > 0 ? "Birthdays today" : upcomingBirthdays > 0 ? "Upcoming this month" : "No birthdays soon";
+  const birthdayValue = demo ? demo.birthdays.length : todaysBirthdays > 0 ? todaysBirthdays : upcomingBirthdays;
+  const birthdayCaption = demo ? "Upcoming this month" : todaysBirthdays > 0 ? "Birthdays today" : upcomingBirthdays > 0 ? "Upcoming this month" : "No birthdays soon";
+
+  const stats = [
+    { statKey: "leave" as StatKey, iconBg: "bg-sky-50", iconColor: "text-sky-500", Icon: Plane, label: "On Leave", value: onLeave, caption: onLeave === 1 ? "Person on leave" : "People on leave" },
+    { statKey: "wfh" as StatKey, iconBg: "bg-emerald-50", iconColor: "text-emerald-500", Icon: Home, label: "Work From Home", value: wfh, caption: "Working from home today" },
+    { statKey: "today" as StatKey, iconBg: "bg-amber-50", iconColor: "text-amber-600", Icon: Briefcase, label: "Today's Events", value: eventsToday, caption: eventsToday === 0 ? "No events today" : "Events scheduled" },
+    { statKey: "birthdays" as StatKey, iconBg: "bg-pink-50", iconColor: "text-pink-500", Icon: Cake, label: "Birthdays", value: birthdayValue, caption: birthdayCaption },
+  ];
+
+  // Bare mode: a single strip of tiles with breathing room between them
+  // (lives inside a shared card).
+  if (bare) {
+    return (
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {stats.map((s, i) => (
+          <StatCard key={s.statKey} {...s} bare first={i === 0} selected={selected === s.statKey} onSelect={onSelect} />
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      <StatCard
-        iconBg="bg-sky-50" iconColor="text-sky-500" Icon={Plane}
-        label="Leave" value={onLeave} caption={onLeave === 0 ? "People on leave" : onLeave === 1 ? "Person on leave" : "People on leave"}
-        href="/leaves/team-leaves"
-      />
-      <StatCard
-        iconBg="bg-emerald-50" iconColor="text-emerald-500" Icon={Home}
-        label="Work From Home" value={wfh} caption="Working from home today"
-        href="/wfh/team"
-      />
-      <StatCard
-        iconBg="bg-amber-50" iconColor="text-amber-600" Icon={Briefcase}
-        label="Today's Events" value={eventsToday} caption={eventsToday === 0 ? "No events today" : "Events scheduled"}
-        href="/holidays" linkLabel="View Calendar"
-      />
-      <StatCard
-        iconBg="bg-pink-50" iconColor="text-pink-500" Icon={Cake}
-        label="Birthdays" value={birthdayValue} caption={birthdayCaption}
-        href="/celebrations?tab=birthdays"
-      />
+      {stats.map((s) => <StatCard key={s.statKey} {...s} />)}
     </div>
   );
 }
 
 function StatCard({
-  iconBg, iconColor, Icon, label, value, caption, href, linkLabel = "View All",
+  statKey, iconBg, iconColor, Icon, label, value, caption, bare = false, first = false, selected = false, onSelect,
 }: {
+  statKey: StatKey;
   iconBg: string;
   iconColor: string;
   Icon: LucideIcon;
   label: string;
   value: number;
   caption: string;
-  href?: string;
-  linkLabel?: string;
+  bare?: boolean;
+  first?: boolean;
+  selected?: boolean;
+  onSelect?: (k: StatKey) => void;
 }) {
-  return (
-    <div className="surface-card p-4 flex flex-col">
-      <div className="flex items-start gap-3">
-        <div className={clsx("w-12 h-12 rounded-xl flex items-center justify-center shrink-0", iconBg)}>
-          <Icon size={20} className={iconColor} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-semibold text-gray-900 truncate">{label}</p>
-          <p className="font-serif-display text-xl font-bold text-gray-900 leading-tight mt-0.5">{value}</p>
-          <p className="text-[11px] text-gray-500 truncate">{caption}</p>
-        </div>
+  const body = (
+    <div className="flex items-start gap-3">
+      <div className={clsx("w-12 h-12 rounded-2xl flex items-center justify-center shrink-0", iconBg)}>
+        <Icon size={20} className={iconColor} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] font-semibold text-gray-900 truncate">{label}</p>
+        <p className="font-serif-display text-xl font-bold text-gray-900 leading-tight mt-0.5">{value}</p>
+        <p className="text-[11px] text-gray-500 truncate">{caption}</p>
       </div>
     </div>
   );
+
+  if (bare) {
+    if (onSelect) {
+      return (
+        <button
+          type="button"
+          onClick={() => onSelect(statKey)}
+          aria-pressed={selected}
+          className={clsx(
+            "text-left w-full h-full rounded-xl px-4 lg:px-5 py-4 transition",
+            selected ? "bg-green-50 ring-1 ring-green-200" : "ring-1 ring-gray-100 hover:bg-gray-50",
+          )}
+        >
+          {body}
+        </button>
+      );
+    }
+    return (
+      <div className="rounded-xl ring-1 ring-gray-100 px-4 lg:px-5 py-4">
+        {body}
+      </div>
+    );
+  }
+
+  return <div className="surface-card p-4 flex flex-col">{body}</div>;
 }
 
 /* ─────────────────── JOB OPENINGS ─────────────────── */
@@ -723,6 +927,7 @@ const WORK_LOCATION_LABELS: Record<string, string> = {
 
 export function JobOpeningsWidget() {
   const [page, setPage] = useState(0);
+  const [detailId, setDetailId] = useState<string | null>(null);
   const PAGE_SIZE = 3;
 
   const { data, isLoading } = useDashboardBatch();
@@ -747,12 +952,6 @@ export function JobOpeningsWidget() {
             </span>
           )}
         </div>
-        <Link
-          href="/recruit/requisitions"
-          className="inline-flex items-center gap-1 text-xs font-medium text-green-600 hover:text-green-700"
-        >
-          View All <ChevronRightIcon size={12} />
-        </Link>
       </div>
 
       {(isLoading || !data) ? (
@@ -781,7 +980,7 @@ export function JobOpeningsWidget() {
           )}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 flex-1">
             {visible.map((o, i) => (
-              <JobCard key={o.id} job={o} colorIdx={pageStart + i} />
+              <JobCard key={o.id} job={o} colorIdx={pageStart + i} onOpen={() => setDetailId(o.id)} />
             ))}
           </div>
           {hasNext && (
@@ -795,20 +994,124 @@ export function JobOpeningsWidget() {
           )}
         </div>
       )}
+
+      {detailId && <JobOpeningDetailModal id={detailId} onClose={() => setDetailId(null)} />}
     </div>
   );
 }
 
-function JobCard({ job, colorIdx }: { job: JobOpening; colorIdx: number }) {
+interface RequisitionDetail {
+  id: string;
+  title: string;
+  requisitionNumber: string;
+  employmentType: string | null;
+  workLocation: string | null;
+  jobLocation: string | null;
+  jobDuration: string | null;
+  workTimings: string | null;
+  positions: number;
+  filledPositions: number;
+  experienceMin: number | null;
+  experienceMax: number | null;
+  targetJoiningDate: string | null;
+  jobDescription: string | null;
+  requirements: string[] | null;
+  responsibilities: string[] | null;
+  niceToHave: string[] | null;
+  benefits: string[] | null;
+  skills: string[] | null;
+  department: { name: string } | null;
+}
+
+// Dashboard job-opening details — GENERAL info only. Deliberately excludes
+// confidential fields (salary, budget, recruiter / hiring-manager, cost centre).
+function JobOpeningDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
+  const api = useApiClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ["job-opening-detail", id],
+    queryFn: () => api.get<RequisitionDetail>(`/api/v1/hrms/recruit/requisitions/${id}`),
+    staleTime: 60_000,
+  });
+  const r = data?.data;
+
+  const rng = (a: number | null, b: number | null, suffix: string) =>
+    a != null || b != null ? `${a ?? "?"} – ${b ?? "?"} ${suffix}` : "—";
+  const fmtDate = (d?: string | null) =>
+    d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+
+  const fields: Array<[string, string]> = r ? [
+    ["Department", r.department?.name ?? "—"],
+    ["Employment Type", r.employmentType ?? "—"],
+    ["Work Location", r.workLocation ?? "—"],
+    ["Job Location", r.jobLocation ?? "—"],
+    ["Work Timings / Shift", r.workTimings ?? "—"],
+    ["Job Duration", r.jobDuration ?? "—"],
+    ["Positions", `${r.filledPositions}/${r.positions}`],
+    ["Experience", rng(r.experienceMin, r.experienceMax, "yrs")],
+    ["Target Joining", fmtDate(r.targetJoiningDate)],
+  ] : [];
+  const lists: Array<[string, string[] | null]> = r ? [
+    ["Requirements", r.requirements],
+    ["Responsibilities", r.responsibilities],
+    ["Nice to Have", r.niceToHave],
+    ["Benefits", r.benefits],
+    ["Skills", r.skills],
+  ] : [];
+
+  return (
+    <Modal open onClose={onClose} size="2xl"
+      title={r?.title ?? "Job Opening"}
+      subtitle={r ? `${r.requisitionNumber}${r.employmentType ? ` · ${r.employmentType}` : ""}` : undefined}>
+      <div className="p-4 space-y-4 max-h-[75vh] overflow-y-auto text-xs">
+        {isLoading || !r ? (
+          <div className="space-y-2">
+            <div className="h-4 w-1/2 rounded bg-gray-100 animate-pulse" />
+            <div className="h-20 rounded bg-gray-100 animate-pulse" />
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3">
+              {fields.map(([label, value]) => (
+                <div key={label}>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">{label}</p>
+                  <p className="text-gray-800 mt-0.5">{value}</p>
+                </div>
+              ))}
+            </div>
+            {r.jobDescription && (
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1">Job Description</p>
+                <p className="text-gray-700 whitespace-pre-line leading-relaxed">{r.jobDescription}</p>
+              </div>
+            )}
+            {lists.map(([label, items]) =>
+              items && items.length > 0 ? (
+                <div key={label}>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1">{label}</p>
+                  <ul className="list-disc pl-5 space-y-0.5 text-gray-700">
+                    {items.map((it, i) => <li key={i}>{it}</li>)}
+                  </ul>
+                </div>
+              ) : null,
+            )}
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function JobCard({ job, colorIdx, onOpen }: { job: JobOpening; colorIdx: number; onOpen: () => void }) {
   const titleColor = JOB_TITLE_COLORS[colorIdx % JOB_TITLE_COLORS.length];
   const empType = EMPLOYMENT_LABELS[job.employmentType] ?? { label: job.employmentType, cls: "bg-gray-100 text-gray-700 ring-gray-200" };
   const locLabel = WORK_LOCATION_LABELS[job.workLocation] ?? job.workLocation;
   const locText = job.department?.name ? `${locLabel} · ${job.department.name}` : locLabel;
 
   return (
-    <Link
-      href="/recruit/requisitions"
-      className="rounded-xl ring-1 ring-gray-200 p-3.5 hover:shadow-sm hover:border-gray-300 transition flex items-start justify-between gap-3 bg-white"
+    <button
+      type="button"
+      onClick={onOpen}
+      className="text-left rounded-xl ring-1 ring-gray-200 p-3.5 hover:shadow-sm hover:ring-gray-300 transition flex items-start justify-between gap-3 bg-white"
     >
       <div className="min-w-0">
         <p className={clsx("text-[13px] font-semibold truncate", titleColor)}>{job.title}</p>
@@ -819,6 +1122,6 @@ function JobCard({ job, colorIdx }: { job: JobOpening; colorIdx: number }) {
       <span className={clsx("px-2.5 py-1 rounded-md text-[10px] font-medium ring-1 shrink-0", empType.cls)}>
         {empType.label}
       </span>
-    </Link>
+    </button>
   );
 }
