@@ -19,6 +19,9 @@ const patchSchema = z.object({
   department: z.string().trim().max(128).nullable().optional(),
   designation: z.string().trim().max(128).nullable().optional(),
   joiningDate: z.string().trim().max(32).nullable().optional(),
+  // Employee ID — editable, but must stay unique within the org (enforced below,
+  // backed by the DB's @@unique([orgId, employeeId])). Not nullable: can't be blanked.
+  employeeId: z.string().trim().min(1, "Employee ID cannot be empty").max(64).optional(),
 });
 
 // GET /api/org/users/[id] — admin fetches a single member's editable state:
@@ -81,7 +84,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         { status: 400 },
       );
     }
-    const { firstName, lastName, password, status, contact, department, designation, joiningDate } =
+    const { firstName, lastName, password, status, contact, department, designation, joiningDate, employeeId } =
       parsed.data;
 
     // Tenant isolation: confirm the target is an org member here.
@@ -116,11 +119,30 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (department !== undefined) empPatch.department = department;
     if (designation !== undefined) empPatch.designation = designation;
     if (joiningDate !== undefined) empPatch.joiningDate = joiningDate;
-    if (Object.keys(empPatch).length > 0) {
+    if (Object.keys(empPatch).length > 0 || employeeId !== undefined) {
       const emp = await db.astEmployee.findFirst({
         where: { orgId, userId: params.id },
-        select: { id: true },
+        select: { id: true, employeeId: true },
       });
+
+      // Employee ID is editable but must stay unique within the org. Validate
+      // before writing (excluding the user's OWN employee row), so a clash is a
+      // clean 409 rather than a raw @@unique violation surfacing as a 500. Only
+      // checks when the value actually changes.
+      if (employeeId !== undefined && employeeId !== emp?.employeeId) {
+        const clash = await db.astEmployee.findFirst({
+          where: { orgId, employeeId, ...(emp ? { NOT: { id: emp.id } } : {}) },
+          select: { id: true },
+        });
+        if (clash) {
+          return NextResponse.json(
+            { success: false, error: `Employee ID '${employeeId}' is already in use.` },
+            { status: 409 },
+          );
+        }
+      }
+      if (employeeId !== undefined) empPatch.employeeId = employeeId;
+
       if (emp) {
         await db.astEmployee.update({ where: { id: emp.id }, data: empPatch });
       } else {
@@ -135,6 +157,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
             userId: params.id,
             email: u.email,
             name: `${u.firstName} ${u.lastName}`.trim(),
+            employeeId: employeeId ?? undefined,
             contact: contact ?? undefined,
             department: department ?? undefined,
             designation: designation ?? undefined,
