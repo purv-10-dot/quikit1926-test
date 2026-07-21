@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react"
 import { Plus, Search, Undo2, Trash2, Loader2, ArrowLeftRight, Pencil, SlidersHorizontal, ChevronUp, X, Layers } from "lucide-react"
 import Pagination from "@/components/ui/Pagination"
 import { cn } from "@/lib/utils"
+import { apiErrorMessage } from "@/lib/apiError"
 import AssignAssetModal from "@/components/assignments/AssignAssetModal"
 import BulkAssignModal from "@/components/assignments/BulkAssignModal"
 import EditAssignmentModal from "@/components/assignments/EditAssignmentModal"
@@ -116,8 +117,11 @@ export default function AssignmentsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       })
-      if (!res.ok) throw new Error()
-      const json = await res.json()
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || json?.success === false) {
+        showToast("Error", apiErrorMessage(json, "Failed to assign asset"), "error")
+        return
+      }
       const created: Assignment = json.data
       setAssignments((prev) => [created, ...prev])
       setShowAdd(false)
@@ -156,8 +160,11 @@ export default function AssignmentsPage() {
           notes: data.notes || null,
         }),
       })
-      if (!res.ok) throw new Error()
-      const json = await res.json()
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || json?.success === false) {
+        showToast("Error", apiErrorMessage(json, "Failed to update assignment"), "error")
+        return
+      }
       const updated: Assignment = json.data
       setAssignments((prev) => prev.map((a) => (a.id === updated.id ? updated : a)))
       setEditAssignment(null)
@@ -171,8 +178,11 @@ export default function AssignmentsPage() {
     if (!confirmReturn) return
     try {
       const res = await fetch(`/api/assignments/${confirmReturn.id}`, { method: "PATCH" })
-      if (!res.ok) throw new Error()
-      const json = await res.json()
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || json?.success === false) {
+        showToast("Error", apiErrorMessage(json, "Failed to mark as returned"), "error")
+        return
+      }
       const updated: Assignment = json.data
       setAssignments((prev) =>
         prev.map((a) => (a.id === updated.id ? { ...a, status: "Returned", returnedAt: updated.returnedAt } : a))

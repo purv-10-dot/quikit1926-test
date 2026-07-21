@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { Plus, Search, Pencil, Trash2, Loader2, Wrench, CheckCircle2, RotateCcw, XCircle, ArrowLeftRight, StopCircle, SlidersHorizontal, ChevronUp, X } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { apiErrorMessage } from "@/lib/apiError"
 import SendToRepairModal from "@/components/repairs/SendToRepairModal"
 import UpdateRepairModal from "@/components/repairs/UpdateRepairModal"
 import AssignReplacementModal from "@/components/repairs/AssignReplacementModal"
@@ -117,8 +118,11 @@ export default function RepairPage() {
       const res = await fetch("/api/repairs", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form),
       })
-      if (!res.ok) throw new Error()
-      const json = await res.json()
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || json?.success === false) {
+        showToast("Error", apiErrorMessage(json, "Failed to log repair"), "error")
+        return
+      }
       const created: Repair = json.data
       setRepairs((p) => [created, ...p])
       setShowAdd(false)
@@ -138,8 +142,11 @@ export default function RepairPage() {
       const res = await fetch(`/api/repairs/${editRepair.id}`, {
         method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form),
       })
-      if (!res.ok) throw new Error()
-      const json = await res.json()
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || json?.success === false) {
+        showToast("Error", apiErrorMessage(json, "Failed to update"), "error")
+        return
+      }
       const updated: Repair = json.data
       setRepairs((p) => p.map((r) => (r.id === updated.id ? updated : r)))
       setEditRepair(null)
@@ -159,8 +166,11 @@ export default function RepairPage() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...form, repairId: replacementRepair.id }),
       })
-      if (!res.ok) throw new Error()
-      const json = await res.json()
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || json?.success === false) {
+        showToast("Error", apiErrorMessage(json, "Failed to assign replacement"), "error")
+        return
+      }
       const created: Replacement = json.data
       setReplacements((p) => ({ ...p, [replacementRepair.id]: created }))
       setReplacementRepair(null)
@@ -177,7 +187,11 @@ export default function RepairPage() {
     if (confirm.type === "endReplacement" && confirm.replacement) {
       try {
         const res = await fetch(`/api/replacements/${confirm.replacement.id}`, { method: "PATCH" })
-        if (!res.ok) throw new Error()
+        if (!res.ok) {
+          const json = await res.json().catch(() => ({}))
+          showToast("Error", apiErrorMessage(json, "Failed to end replacement"), "error")
+          return
+        }
         setReplacements((p) => {
           const next = { ...p }
           delete next[confirm.replacement!.repairId]
@@ -212,8 +226,11 @@ export default function RepairPage() {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: type }),
       })
-      if (!res.ok) throw new Error()
-      const json = await res.json()
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || json?.success === false) {
+        showToast("Error", apiErrorMessage(json, "Action failed"), "error")
+        return
+      }
       const updated: Repair = json.data
       setRepairs((p) => p.map((r) => (r.id === updated.id ? updated : r)))
 
@@ -249,8 +266,11 @@ export default function RepairPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "markRecovered", replacementId: replacement.id, replacementAction: action }),
       })
-      if (!res.ok) throw new Error()
-      const json = await res.json()
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || json?.success === false) {
+        showToast("Error", apiErrorMessage(json, "Recovery failed"), "error")
+        return
+      }
       const updated: Repair = json.data
       setRepairs((p) => p.map((r) => (r.id === updated.id ? updated : r)))
       setReplacements((p) => { const n = { ...p }; delete n[repair.id]; return n })
