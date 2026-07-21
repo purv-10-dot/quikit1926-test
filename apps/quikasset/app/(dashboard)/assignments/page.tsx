@@ -374,7 +374,12 @@ export default function AssignmentsPage() {
 
                     <td className="px-4 py-3 text-gray-600">{a.condition}</td>
 
-                    <td className="px-4 py-3 text-gray-600">{fmt(a.assignedAt)}</td>
+                    <td className="px-4 py-3 text-gray-600">
+                      <p>{fmt(a.assignedAt)}</p>
+                      {a.assignedByName && (
+                        <p className="text-gray-400 text-[10px] mt-0.5">by {a.assignedByName}</p>
+                      )}
+                    </td>
 
                     <td className="px-4 py-3 text-gray-600">
                       {a.status === "Returned" && a.returnedAt

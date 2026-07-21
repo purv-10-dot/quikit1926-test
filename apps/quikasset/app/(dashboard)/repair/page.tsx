@@ -422,7 +422,12 @@ export default function RepairPage() {
 
                       <td className="px-4 py-3 text-gray-600">{vendorLabel(r) || "—"}</td>
 
-                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{fmt(r.sentDate)}</td>
+                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
+                        <p>{fmt(r.sentDate)}</p>
+                        {r.sentByName && (
+                          <p className="text-gray-400 text-[10px] mt-0.5">by {r.sentByName}</p>
+                        )}
+                      </td>
 
                       <td className="px-4 py-3">
                         <p className="text-gray-700">{r.estimatedCost != null ? `₹${r.estimatedCost.toLocaleString()}` : "—"}</p>

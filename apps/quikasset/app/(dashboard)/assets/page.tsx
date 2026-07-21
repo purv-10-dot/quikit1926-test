@@ -627,6 +627,9 @@ function AssetInventory() {
                           <div className="min-w-0">
                             <p className="font-semibold text-gray-800 truncate">{asset.itemName}</p>
                             <p className="text-gray-400 text-[10px] font-mono">{asset.itemCode}</p>
+                            {asset.addedByName && (
+                              <p className="text-gray-400 text-[10px] truncate">Added by {asset.addedByName}</p>
+                            )}
                           </div>
                         </div>
                       </td>
