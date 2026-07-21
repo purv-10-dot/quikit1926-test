@@ -18,6 +18,11 @@ export const TABLE_PREFERENCE_KEYS = [
   // Master-data grids migrated onto the shared <FeatureGrid> stack.
   "categories",
   "units",
+  // OPSP Review tables (DataTable + useDataTableGrid column features).
+  "opspReviewPrimary",
+  "opspReviewSecondary",
+  // OPSP Critical # Review cards — column show/hide only (card layout).
+  "opspReviewCritical",
 ] as const;
 export type TablePreferenceKey = (typeof TABLE_PREFERENCE_KEYS)[number];
 

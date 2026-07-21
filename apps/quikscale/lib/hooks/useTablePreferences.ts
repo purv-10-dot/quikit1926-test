@@ -12,7 +12,12 @@ export type TableName =
   | "weeklyMeeting"
   // Master-data grids migrated onto the shared <FeatureGrid> stack.
   | "categories"
-  | "units";
+  | "units"
+  // OPSP Review tables (DataTable + useDataTableGrid column features).
+  | "opspReviewPrimary"
+  | "opspReviewSecondary"
+  // OPSP Critical # Review cards — column show/hide only (card layout).
+  | "opspReviewCritical";
 
 export interface TablePref {
   frozenCol: string | null;
@@ -36,6 +41,9 @@ const EMPTY_ALL: AllPrefs = {
   weeklyMeeting: EMPTY_PREF,
   categories: EMPTY_PREF,
   units: EMPTY_PREF,
+  opspReviewPrimary: EMPTY_PREF,
+  opspReviewSecondary: EMPTY_PREF,
+  opspReviewCritical: EMPTY_PREF,
 };
 
 let cache: AllPrefs | null = null;
@@ -55,6 +63,9 @@ const TABLE_KEYS: TableName[] = [
   "weeklyMeeting",
   "categories",
   "units",
+  "opspReviewPrimary",
+  "opspReviewSecondary",
+  "opspReviewCritical",
 ];
 
 async function fetchPreferences() {
