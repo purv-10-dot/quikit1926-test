@@ -73,7 +73,7 @@ export default function RegularizationApprovalsPage() {
 
   return (
     <div>
-      <h1 className="text-base font-semibold text-gray-900 mb-1">Regularization Approvals</h1>
+      <h1 className="text-base font-semibold text-gray-900 mb-1">Approve Regularizations</h1>
       <p className="text-xs text-gray-500 mb-5">Review attendance regularization requests from your team.</p>
 
       <div className="border-b border-[var(--border)] mb-4">

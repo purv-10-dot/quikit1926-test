@@ -115,7 +115,7 @@ function PriorPayrollPageInner() {
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
         <div className="flex items-center gap-2 px-4 py-4 border-b border-gray-100">
           <History size={18} className="text-[#22c55e]" />
-          <h1 className="text-base font-semibold text-gray-900">Mid-year Joiners</h1>
+          <h1 className="text-base font-semibold text-gray-900">Prior Payroll</h1>
         </div>
 
         {!paySchedulePresent ? (

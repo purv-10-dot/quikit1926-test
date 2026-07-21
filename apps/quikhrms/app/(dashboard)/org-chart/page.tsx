@@ -598,7 +598,7 @@ export default function OrgChartPage() {
     <div>
       <div className="flex items-start justify-between mb-3 gap-3 flex-wrap">
         <div className="flex items-center gap-3">
-          <h1 className="text-base font-semibold text-gray-900">People</h1>
+          <h1 className="text-base font-semibold text-gray-900">Directory</h1>
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#dcfce7] text-[#16a34a] ring-1 ring-[#bbf7d0] text-[11px] font-semibold">
             <UsersIcon size={12} /> {all.length}
           </span>

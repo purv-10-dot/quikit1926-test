@@ -5,6 +5,8 @@ import { successResponse, notFound, validationError, internalError, forbidden, c
 import { regularizationSchema, regularizationActionSchema } from "@/lib/validations/attendance";
 import { getCallerEmployeeId, getCallerReporteeIds } from "@/lib/rbac/scope";
 import { fireWorkflow } from "@/lib/workflows/executor";
+import { attendanceDayStart } from "@/lib/attendance/day";
+import { regularizationBlockReason } from "@/lib/attendance/regularization-guards";
 
 /** GET /api/v1/hrms/attendance/records/:id */
 export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
@@ -39,11 +41,28 @@ export const PATCH = withAuth(async (req: NextRequest, ctx, params) => {
       const parsed = regularizationSchema.safeParse(body);
       if (!parsed.success) return validationError("Validation failed", parsed.error.flatten().fieldErrors);
 
-      // Can't regularize a day that hasn't happened yet.
-      const recordDay = new Date(existing.date); recordDay.setHours(0, 0, 0, 0);
-      const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-      if (recordDay > todayStart) {
-        return validationError("You can't regularize a future date.");
+      // Can't regularize today (day not over yet) or a future date. Compare by
+      // IST calendar date to match how attendance days are bucketed.
+      const recordDay = attendanceDayStart(existing.date);
+      const todayStart = attendanceDayStart();
+      if (recordDay >= todayStart) {
+        return validationError("You can't regularize today or a future date — wait until the day is over.");
+      }
+      // Backdate window + finalized-payroll lock.
+      const blockReason = await regularizationBlockReason(orgId, recordDay);
+      if (blockReason) return conflict(blockReason);
+      // Leave clash — a day covered by an approved/pending leave can't also be
+      // regularized as attendance (one day can't be both worked and on leave).
+      const leaveClash = await prisma.leaveRequest.findFirst({
+        where: {
+          orgId, employeeId: existing.employeeId, deletedAt: null,
+          status: { in: ["Approved", "Pending"] },
+          startDate: { lte: existing.date }, endDate: { gte: existing.date },
+        },
+        select: { leaveType: { select: { name: true } } },
+      });
+      if (leaveClash) {
+        return conflict(`This day is on ${leaveClash.leaveType?.name ?? "leave"} — you can't regularize attendance for a leave day.`);
       }
       // One open request at a time — don't silently overwrite an in-flight or
       // already-decided regularization. (Rejected days can be re-submitted.)
@@ -140,6 +159,7 @@ export const PATCH = withAuth(async (req: NextRequest, ctx, params) => {
         const co = existing.regularizedCheckOut ?? existing.checkOut;
         applyData.checkIn = ci;
         applyData.checkOut = co;
+        if (co) applyData.missedCheckout = false; // day now has a checkout
         if (ci) applyData.status = "Present";
         if (ci && co) {
           const gross = Math.max(0, (co.getTime() - ci.getTime()) / 3_600_000);

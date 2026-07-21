@@ -239,7 +239,7 @@ export default function HRCalendarPage() {
           <CalendarDays size={18} />
         </div>
         <div>
-          <h1 className="text-page-title text-gray-900 leading-tight">HR Calendar</h1>
+          <h1 className="text-page-title text-gray-900 leading-tight">Leave Calendar</h1>
           <p className="text-xs text-gray-500">Holidays, leaves, birthdays and anniversaries — all in one place.</p>
         </div>
       </div>

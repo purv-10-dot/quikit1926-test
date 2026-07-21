@@ -99,7 +99,7 @@ export default function MyPayrollPage() {
       <div className="flex items-center gap-3">
         <Wallet className="text-[#22c55e]" />
         <div>
-          <h1 className="text-page-title text-gray-900">My Payroll</h1>
+          <h1 className="text-page-title text-gray-900">My Payslips</h1>
           <p className="text-xs text-gray-500">Your payslips, current salary structure, and revision history.</p>
         </div>
       </div>

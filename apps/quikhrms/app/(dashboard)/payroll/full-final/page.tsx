@@ -78,7 +78,7 @@ export default function FNFListPage() {
         <div className="flex items-center gap-3">
           <DoorOpen className="text-[#22c55e]" />
           <div>
-            <h1 className="text-page-title text-gray-900">Full &amp; final settlement</h1>
+            <h1 className="text-page-title text-gray-900">Final Settlement</h1>
             <p className="text-xs text-gray-500">Compute pending salary, leave encashment, gratuity, bonus, and recoveries on exit.</p>
           </div>
         </div>

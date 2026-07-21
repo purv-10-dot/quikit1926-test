@@ -159,7 +159,7 @@ export default function OneTimeEarningsPage() {
         <div className="flex items-center gap-3">
           <Gift className="text-[#22c55e]" />
           <div>
-            <h1 className="text-page-title text-gray-900">One-time pay & deductions</h1>
+            <h1 className="text-page-title text-gray-900">One-Time Pay</h1>
             <p className="text-xs text-gray-500">
               Bonus, arrears, incentives, advance recovery & other ad-hoc adjustments. Approved entries auto-apply to the next pay run for the chosen period.
             </p>
@@ -422,8 +422,8 @@ function CreateForm({
         <div>
           <label className="block text-xs font-semibold text-gray-700 mb-1">Amount *</label>
           <NumberInput
-            min="1"
-            step="0.01"
+            min={1}
+            step={0.01}
             value={amount}
             onChange={(v) => setAmount(v)}
             className={inputCls}

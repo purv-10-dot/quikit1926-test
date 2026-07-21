@@ -83,7 +83,7 @@ export default function ReviewsPage() {
   return (
     <div className="w-full px-5 py-4">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-        <h1 className="text-page-title text-gray-900">Performance reviews</h1>
+        <h1 className="text-page-title text-gray-900">Appraisals</h1>
         <button onClick={() => { setForm({ name: "", type: "Annual", startDate: "", endDate: "" }); setShowCreate(true); }}
           className="btn btn-primary">
           <Plus size={13} /> New cycle

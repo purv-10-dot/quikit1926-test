@@ -177,7 +177,7 @@ export default function AdminAttendancePage() {
   const [customTo, setCustomTo] = useState(todayISO());
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 50;
+  const PAGE_SIZE = 10;
 
   const { dateFrom, dateTo } = useMemo(() => {
     if (period === "week") {
@@ -241,29 +241,57 @@ export default function AdminAttendancePage() {
     return { ...k, total: records.length, presentPct: pct(k.present), latePct: pct(k.late), absentPct: pct(k.absent), leavePct: pct(k.leave), wfhPct: pct(k.wfh) };
   }, [records]);
 
-  const exportRows = useMemo(
-    () =>
-      records.map((r) => {
-        const workedMin = r.effectiveHours != null ? Math.round(Number(r.effectiveHours) * 60) : null;
-        const worked = workedMin != null ? `${Math.floor(workedMin / 60)}h ${String(workedMin % 60).padStart(2, "0")}m` : "";
-        const otMin = workedMin != null ? Math.max(0, workedMin - 480) : 0;
-        const isLate = r.status === "Present" && r.lateByMinutes > 0;
-        return {
-          date: fmtDate(r.date),
-          employee: `${r.employee.firstName} ${r.employee.lastName}`.trim(),
-          code: r.employee.employeeCode ?? "",
-          department: r.employee.department?.name ?? "",
-          shift: r.shiftCode || r.shiftName || "",
-          status: isLate ? `Late (${r.lateByMinutes}m)` : r.status,
-          checkIn: r.checkIn ? fmtTime(r.checkIn) : "",
-          checkOut: r.checkOut ? fmtTime(r.checkOut) : "",
-          worked,
-          late: isLate ? `${r.lateByMinutes}m` : "",
-          ot: otMin > 0 ? `${otMin}m` : "",
-        };
-      }),
-    [records],
-  );
+  const toExcelRow = (r: AttendanceRecord) => {
+    const workedMin = r.effectiveHours != null ? Math.round(Number(r.effectiveHours) * 60) : null;
+    const worked = workedMin != null ? `${Math.floor(workedMin / 60)}h ${String(workedMin % 60).padStart(2, "0")}m` : "";
+    const otMin = workedMin != null ? Math.max(0, workedMin - 480) : 0;
+    const isLate = r.status === "Present" && r.lateByMinutes > 0;
+    return {
+      date: fmtDate(r.date),
+      employee: `${r.employee.firstName} ${r.employee.lastName}`.trim(),
+      code: r.employee.employeeCode ?? "",
+      department: r.employee.department?.name ?? "",
+      shift: r.shiftCode || r.shiftName || "",
+      status: isLate ? `Late (${r.lateByMinutes}m)` : r.status,
+      checkIn: r.checkIn ? fmtTime(r.checkIn) : "",
+      checkOut: r.checkOut ? fmtTime(r.checkOut) : "",
+      worked,
+      late: isLate ? `${r.lateByMinutes}m` : "",
+      ot: otMin > 0 ? `${otMin}m` : "",
+    };
+  };
+
+  const exportRows = useMemo(() => records.map(toExcelRow), [records]);
+
+  /**
+   * Fetch EVERY record matching the current filters (all pages) — used by the
+   * export buttons so "export" means the full result set, not just this page.
+   * The API caps limit at 100, so we page through until we've collected `total`.
+   */
+  const fetchAllRecords = async (): Promise<AttendanceRecord[]> => {
+    const base = new URLSearchParams();
+    if (employeeId) base.set("employeeId", employeeId);
+    if (departmentId) base.set("departmentId", departmentId);
+    if (status) base.set("status", status);
+    if (dateFrom) base.set("dateFrom", dateFrom);
+    if (dateTo) base.set("dateTo", dateTo);
+    if (search) base.set("search", search);
+    const LIMIT = 100;
+    const all: AttendanceRecord[] = [];
+    let p = 1;
+    for (;;) {
+      const qp = new URLSearchParams(base);
+      qp.set("limit", String(LIMIT));
+      qp.set("page", String(p));
+      const res = await api.get<AttendanceRecord[]>(`/api/v1/hrms/attendance/records?${qp.toString()}`);
+      const chunk = res.data ?? [];
+      all.push(...chunk);
+      const totalCount = res.meta?.total ?? all.length;
+      if (chunk.length < LIMIT || all.length >= totalCount) break;
+      p++;
+    }
+    return all;
+  };
 
   const clearFilters = () => {
     setEmployeeId(""); setDepartmentId(""); setStatus("");
@@ -271,15 +299,25 @@ export default function AdminAttendancePage() {
     setCustomFrom(startOfMonthISO()); setCustomTo(todayISO()); setSearch(""); setPage(1);
   };
 
-  const exportCsv = () => {
-    if (records.length === 0) return;
+  const [csvBusy, setCsvBusy] = useState(false);
+
+  const exportCsv = async () => {
+    if (total === 0 || csvBusy) return;
+    setCsvBusy(true);
+    let allRecords: AttendanceRecord[];
+    try {
+      allRecords = await fetchAllRecords();
+    } finally {
+      setCsvBusy(false);
+    }
+    if (allRecords.length === 0) return;
     const headers = [
       "Date", "Employee Code", "Name", "Department", "Status",
       "Check In", "Check Out", "Effective Hrs", "Gross Hrs", "Break Hrs",
       "Late (min)", "Early Out (min)", "Late Check-In", "Early Check-Out",
       "Source", "Regularization", "Punches",
     ];
-    const rows = records.map((r) => [
+    const rows = allRecords.map((r) => [
       r.date.slice(0, 10),
       r.employee.employeeCode ?? "",
       `${r.employee.firstName} ${r.employee.lastName}`.trim(),
@@ -316,18 +354,25 @@ export default function AdminAttendancePage() {
     <div className="w-full px-5 py-4">
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
         <div>
-          <h1 className="text-base font-semibold text-gray-900">Admin Attendance</h1>
+          <h1 className="text-base font-semibold text-gray-900">Team Attendance</h1>
           <p className="text-xs text-gray-500 mt-1">View all employees check-in/out, hours, and status.</p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={exportCsv}
-            disabled={records.length === 0}
+            disabled={total === 0 || csvBusy}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-sm disabled:opacity-40"
           >
-            <Download size={13} /> Export CSV ({records.length})
+            <Download size={13} /> {csvBusy ? "Exporting…" : `Export CSV (${total})`}
           </button>
-          <ExcelExportButton filename="attendance-admin" sheetName="Attendance" columns={ADMIN_EXPORT_COLUMNS} rows={exportRows} label={`Excel (${records.length})`} />
+          <ExcelExportButton
+            filename="attendance-admin"
+            sheetName="Attendance"
+            columns={ADMIN_EXPORT_COLUMNS}
+            rows={exportRows}
+            getRows={async () => (await fetchAllRecords()).map(toExcelRow)}
+            label={`Excel (${total})`}
+          />
         </div>
       </div>
 
@@ -625,27 +670,30 @@ export default function AdminAttendancePage() {
           </table>
         )}
 
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 text-xs">
-            <span className="text-gray-500">Page {page} of {totalPages}</span>
-            <div className="flex gap-2">
-              <button
-                disabled={page <= 1}
-                onClick={() => setPage((p) => p - 1)}
-                className="px-3 py-1.5 border border-gray-200 rounded text-xs font-medium disabled:opacity-40"
-              >
-                Previous
-              </button>
-              <button
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => p + 1)}
-                className="px-3 py-1.5 border border-gray-200 rounded text-xs font-medium disabled:opacity-40"
-              >
-                Next
-              </button>
-            </div>
+        <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 text-xs">
+          <span className="text-gray-500">
+            {total === 0
+              ? "No records"
+              : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, total)} of ${total}`}
+          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-gray-400">Page {page} of {totalPages}</span>
+            <button
+              disabled={page <= 1}
+              onClick={() => setPage((p) => p - 1)}
+              className="px-3 py-1.5 border border-gray-200 rounded text-xs font-medium disabled:opacity-40"
+            >
+              Previous
+            </button>
+            <button
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => p + 1)}
+              className="px-3 py-1.5 border border-gray-200 rounded text-xs font-medium disabled:opacity-40"
+            >
+              Next
+            </button>
           </div>
-        )}
+        </div>
       </div>
 
     </div>

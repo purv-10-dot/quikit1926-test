@@ -55,7 +55,7 @@ export default function RaiseRequisitionPage() {
       <div className="flex items-center gap-2.5 mb-3">
         <Briefcase size={20} className="text-green-600 shrink-0" />
         <div>
-          <h1 className="text-page-title text-gray-900 leading-tight">Raise a requisition</h1>
+          <h1 className="text-page-title text-gray-900 leading-tight">New Requisition</h1>
           <p className="text-xs text-gray-500">Submit a hiring request. Approval follows your configured Requisition chain (Settings &rarr; Approval Chains).</p>
         </div>
       </div>

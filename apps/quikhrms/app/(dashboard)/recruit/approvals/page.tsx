@@ -202,7 +202,7 @@ export default function RequisitionApprovalsPage() {
         <div className="flex items-start gap-3">
           <Inbox size={28} className="text-[#22c55e] mt-1.5" />
           <div>
-            <h1 className="text-page-title text-gray-900 leading-tight">Requisition approvals</h1>
+            <h1 className="text-page-title text-gray-900 leading-tight">Approve Requisitions</h1>
             <p className="text-xs text-gray-500 mt-1">Job requisitions raised by managers, awaiting your approval.</p>
           </div>
         </div>

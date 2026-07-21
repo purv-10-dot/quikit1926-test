@@ -351,7 +351,7 @@ export default function RequisitionsPage() {
   return (
     <div className="w-full px-5 py-4">
       <div className="flex items-center justify-between gap-3 mb-5">
-        <h1 className="text-page-title text-gray-900">Job requisitions</h1>
+        <h1 className="text-page-title text-gray-900">Job Openings</h1>
         <ExcelExportButton filename="requisitions" sheetName="Requisitions" columns={REQ_EXPORT_COLUMNS} rows={reqExportRows} />
       </div>
 

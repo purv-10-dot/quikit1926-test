@@ -44,7 +44,7 @@ export default function PayrollApprovalsPage() {
       <div className="flex items-start gap-3">
         <CheckSquare size={28} className="text-[#22c55e] mt-1.5" />
         <div>
-          <h1 className="text-page-title text-gray-900 leading-tight">Approvals</h1>
+          <h1 className="text-page-title text-gray-900 leading-tight">Payroll Approvals</h1>
           <p className="text-xs text-gray-500 mt-1">Review and action employee submissions.</p>
         </div>
       </div>

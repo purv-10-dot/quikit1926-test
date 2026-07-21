@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRoles } from "@/lib/hooks/use-roles";
-import { Home, Users2, Layers } from "lucide-react";
+import { Home, Users2, Layers, Users } from "lucide-react";
 import { clsx } from "clsx";
 
 interface Tab {
@@ -23,6 +23,7 @@ export function WfhTabs() {
     { href: "/wfh/my-requests", label: "My WFH", icon: <Home size={13} />, show: true },
     { href: "/wfh/team", label: "Team Approvals", icon: <Users2 size={13} />, show: true },
     { href: "/settings/wfh-quota", label: "Quota Groups", icon: <Layers size={13} />, show: canManageQuota },
+    { href: "/wfh/groups", label: "Employees In Group", icon: <Users size={13} />, show: canManageQuota },
   ];
 
   return (

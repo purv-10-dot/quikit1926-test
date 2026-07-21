@@ -75,7 +75,7 @@ export default function CandidateDocumentsSettings() {
       <div className="flex items-start justify-between mb-5 gap-3 flex-wrap">
         <div>
           <h1 className="text-base font-semibold text-slate-900 flex items-center gap-2">
-            <FileCheck2 size={22} className="text-[#22c55e]" /> Candidate Document Master
+            <FileCheck2 size={22} className="text-[#22c55e]" /> Document Types
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">Define which documents candidates must upload before &amp; after offer.</p>
         </div>

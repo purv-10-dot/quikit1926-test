@@ -89,7 +89,7 @@ export default function KraTemplatesPage() {
         <div className="flex items-center gap-3">
           <Target size={28} className="text-[#22c55e]" />
           <div>
-            <h1 className="text-page-title text-gray-900">KRA / KPI Templates</h1>
+            <h1 className="text-page-title text-gray-900">Scorecard Templates</h1>
             <p className="text-xs text-gray-500">
               Designation-wise scorecards. Weights validated. Assign to employees to start tracking.
             </p>

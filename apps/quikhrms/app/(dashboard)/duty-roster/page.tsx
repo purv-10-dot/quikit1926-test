@@ -180,7 +180,7 @@ export default function DutyRosterPage() {
     <div className="w-full h-full flex flex-col px-5 py-4 overflow-hidden">
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3 shrink-0">
         <div>
-          <h1 className="text-base font-semibold text-gray-900">Duty Roster</h1>
+          <h1 className="text-base font-semibold text-gray-900">Shift Roster</h1>
           <p className="text-xs text-gray-500 mt-1">Who works which shift on which day — with week-offs, leaves and holidays.</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">

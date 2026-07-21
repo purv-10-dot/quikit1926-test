@@ -10808,6 +10808,9 @@ model AttendanceRecord {
   isEarlyCheckOut Boolean @default(false)
   lateByMinutes   Int     @default(0)
   earlyByMinutes  Int     @default(0)
+  // Checked in on a past day but never checked out — flagged by the daily
+  // missed-checkout cron so the employee can regularize it.
+  missedCheckout  Boolean @default(false)
 
   createdBy String?
   updatedBy String?
@@ -15377,6 +15380,15 @@ model WfhQuotaGroup {
   yearlyQuota Int
   mode        WfhGroupMode @default(Department)
   isActive    Boolean      @default(true)
+
+  // ── WFH rules (per group) ────────────────────────────────────────────────
+  maxPerWeek          Int?     // max WFH days in a calendar week
+  maxPerMonth         Int?     // max WFH days in a calendar month
+  maxConsecutiveDays  Int?     // max WFH days in a single request (in a row)
+  advanceNoticeDays   Int?     // must apply at least N days before the start
+  applicableAfterDays Int?     // eligible only N days after joining
+  requiresApproval    Boolean  @default(true)  // false = auto-approved on apply
+  blockedDuringNotice Boolean  @default(false) // notice-period employees can't WFH
 
   createdBy String?
   updatedBy String?

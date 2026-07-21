@@ -105,7 +105,7 @@ export default function PIPPage() {
   return (
     <div className="w-full px-5 py-4">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-        <h1 className="text-page-title text-gray-900">Performance improvement plans</h1>
+        <h1 className="text-page-title text-gray-900">Improvement Plans</h1>
         <button onClick={() => { setForm({ employeeId: "", reason: "", startDate: "", endDate: "" }); setShowCreate(true); }}
           className="btn btn-danger">
           <Plus size={13} /> Initiate PIP

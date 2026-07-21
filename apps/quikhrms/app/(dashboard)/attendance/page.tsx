@@ -7,7 +7,7 @@ import { Modal } from "@/components/hrms/modal";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import {
   Calendar, ChevronLeft, ChevronRight, Play, Pause, List, LayoutGrid,
-  Filter, MoreHorizontal, CalendarDays, Upload, Download, Printer, FileDown,
+  Filter, CalendarDays,
   Clock4, LogIn, LogOut, Eye, X,
 } from "lucide-react";
 import { clsx } from "clsx";
@@ -15,7 +15,7 @@ import { Tooltip } from "@/components/hrms/tooltip";
 import { Select } from "@/components/hrms/ui/select";
 import { REGULARIZATION_REASONS, OTHER_REASON } from "@/lib/constants/attendance-reasons";
 
-type DayStatus = "Present" | "Absent" | "HalfDay" | "Weekend" | "Holiday" | "OnLeave" | "OnDuty" | "CompOff" | "WFH" | "NotMarked";
+type DayStatus = "Present" | "Absent" | "HalfDay" | "Weekend" | "Holiday" | "OnLeave" | "OnDuty" | "CompOff" | "WFH" | "NotMarked" | "Missing";
 
 interface DayCell {
   recordId: string | null;
@@ -52,6 +52,7 @@ const STATUS_COLORS: Record<DayStatus, string> = {
   OnLeave: "bg-sky-500", Holiday: "bg-purple-500",
   Weekend: "bg-yellow-400", Absent: "bg-red-500",
   HalfDay: "bg-orange-500", CompOff: "bg-green-500", NotMarked: "bg-gray-300",
+  Missing: "bg-rose-500",
 };
 
 const STATUS_CHIP: Record<DayStatus, string> = {
@@ -65,12 +66,14 @@ const STATUS_CHIP: Record<DayStatus, string> = {
   HalfDay: "bg-orange-50 text-orange-700 ring-orange-200",
   CompOff: "bg-green-50 text-green-700 ring-green-200",
   NotMarked: "bg-gray-50 text-gray-500 ring-gray-200",
+  Missing: "bg-rose-50 text-rose-700 ring-rose-200",
 };
 
 const STATUS_LABELS: Record<DayStatus, string> = {
   Present: "Present", WFH: "WFH", OnDuty: "On Duty",
   OnLeave: "On Leave", Holiday: "Holiday", Weekend: "Weekend",
   Absent: "Absent", HalfDay: "Half Day", CompOff: "Comp Off", NotMarked: "Not marked",
+  Missing: "Missing",
 };
 
 const REG_EXPORT_LABEL: Record<DayCell["regularizationStatus"], string> = {
@@ -94,7 +97,7 @@ const ATTENDANCE_EXPORT_COLUMNS = [
 export default function AttendancePage() {
   return (
     <div className="w-full px-5 py-4">
-      <h1 className="text-base font-semibold text-gray-900 mb-5">Attendance</h1>
+      <h1 className="text-base font-semibold text-gray-900 mb-5">My Attendance</h1>
       <AttendanceSummary />
     </div>
   );
@@ -230,7 +233,6 @@ function AttendanceSummary() {
           </div>
           <button className="p-2 surface-card hover:bg-gray-50"><Filter size={12} className="text-gray-600" /></button>
           <ExcelExportButton filename="attendance" sheetName="Attendance" columns={ATTENDANCE_EXPORT_COLUMNS} rows={exportRows} label="Excel" />
-          <MoreMenu days={summary?.days ?? []} weekStart={cursor} weekEnd={weekEnd} />
         </div>
       </div>
 
@@ -324,9 +326,21 @@ function AttendanceTable({ days, liveSeconds, liveBreakSec, isCheckedIn, hasToda
             {days.map((day, idx) => {
               const d = new Date(day.date);
               const isToday = d.toDateString() === todayStr;
+              // Future / today guard for regularization (can't regularize a day
+              // that hasn't happened, or today which isn't over yet).
+              const dMid = new Date(day.date); dMid.setHours(0, 0, 0, 0);
+              const todayMid = new Date(); todayMid.setHours(0, 0, 0, 0);
+              const isFuture = dMid > todayMid;
               const isOff = day.status === "Weekend";
               const isLeave = day.status === "OnLeave";
               const isHoliday = day.status === "Holiday";
+              // Regularization allowed only for a past working day: not a
+              // week-off / holiday / approved-leave / not-marked day, not today
+              // (day not over), and not a future date.
+              const blockedForReg =
+                day.status === "Weekend" || day.status === "Holiday" ||
+                day.status === "OnLeave" || day.status === "NotMarked";
+              const canRegularize = !blockedForReg && !isToday && !isFuture;
               const offLabel = isOff ? "Week-Off" : isHoliday ? (day.holidayName ?? "Holiday") : isLeave ? (day.leaveTypeName ?? "On Leave") : null;
               const isLiveToday = isToday && hasTodayPunches;
               const breakSec = isLiveToday ? liveBreakSec : Math.max(0, (day.grossHours - day.effectiveHours)) * 3600;
@@ -387,7 +401,7 @@ function AttendanceTable({ days, liveSeconds, liveBreakSec, isCheckedIn, hasToda
                     <span className={clsx("text-xs font-medium", REG_STATUS[day.regularizationStatus])}>{REG_LABEL[day.regularizationStatus]}</span>
                   </td>
                   <td className="px-4 text-right">
-                    {!offLabel && (
+                    {canRegularize && (
                       <button
                         onClick={() => setRegDay(day)}
                         className="inline-flex items-center px-2.5 py-1 rounded-md bg-[#16a34a] hover:bg-[#15803d] text-white text-xs font-normal shadow-sm transition">
@@ -432,16 +446,25 @@ function RegularizationModal({ day, onClose }: { day: DayCell; onClose: () => vo
 
   const mut = useMutation({
     mutationFn: () => {
-      if (!day.recordId) throw new Error("No attendance record exists for this date");
       if (!finalReason) throw new Error("Reason is required");
       if (!checkInTime && !checkOutTime) throw new Error("Enter a corrected check-in and/or check-out time");
       // "HH:MM" strings on the same day compare correctly lexicographically.
       if (checkInTime && checkOutTime && checkInTime >= checkOutTime) throw new Error("Check-out time must be after check-in time");
       const checkInISO = checkInTime ? new Date(`${isoDate}T${checkInTime}:00`).toISOString() : undefined;
       const checkOutISO = checkOutTime ? new Date(`${isoDate}T${checkOutTime}:00`).toISOString() : undefined;
-      return api.patch(`/api/v1/hrms/attendance/records/${day.recordId}`, {
+      // With an existing record → regularize it (PATCH). A fully-absent day has
+      // no record → create-and-regularize (POST).
+      if (day.recordId) {
+        return api.patch(`/api/v1/hrms/attendance/records/${day.recordId}`, {
+          date: isoDate,
+          regularizationReason: finalReason,
+          reason: finalReason,
+          checkIn: checkInISO,
+          checkOut: checkOutISO,
+        });
+      }
+      return api.post(`/api/v1/hrms/attendance/regularizations`, {
         date: isoDate,
-        regularizationReason: finalReason,
         reason: finalReason,
         checkIn: checkInISO,
         checkOut: checkOutISO,
@@ -719,98 +742,6 @@ function WeekCalendar({ days }: { days: DayCell[] }) {
         })}
       </div>
     </div>
-  );
-}
-
-function MoreMenu({ days, weekStart, weekEnd }: { days: DayCell[]; weekStart: Date; weekEnd: Date }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    if (open) document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [open]);
-
-  const rangeLabel = `${fmtDate(weekStart)}_to_${fmtDate(weekEnd)}`;
-
-  const exportCSV = () => {
-    if (!days.length) { alert("No data to export"); return; }
-    const headers = ["Date", "Day", "Status", "Clock-In", "Clock-Out", "Working Hours", "Break Hours", "Late (mins)", "Shift", "Regularization", "Remarks"];
-    const rows = days.map((d) => {
-      const dt = new Date(d.date);
-      const breakH = Math.max(0, d.grossHours - d.effectiveHours);
-      return [
-        dt.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
-        dt.toLocaleDateString("en-IN", { weekday: "short" }),
-        STATUS_LABELS[d.status],
-        d.checkIn ? new Date(d.checkIn).toLocaleTimeString("en-IN", { hour12: false }) : "",
-        d.checkOut ? new Date(d.checkOut).toLocaleTimeString("en-IN", { hour12: false }) : "",
-        d.effectiveHours.toFixed(2),
-        breakH.toFixed(2),
-        d.lateByMinutes || 0,
-        d.shift?.name ?? "",
-        d.regularizationStatus,
-        (d.remarks ?? "").replace(/"/g, '""'),
-      ];
-    });
-    const csv = [headers, ...rows].map((r) => r.map((c) => `"${String(c)}"`).join(",")).join("\r\n");
-    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `attendance_${rangeLabel}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = String(reader.result ?? "");
-      const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-      alert(`Parsed ${Math.max(0, lines.length - 1)} row(s) from "${f.name}". Backend bulk-import endpoint pending.`);
-    };
-    reader.readAsText(f);
-    e.target.value = "";
-  };
-
-  const closeAnd = (fn: () => void) => () => { setOpen(false); fn(); };
-
-  return (
-    <div className="relative" ref={ref}>
-      <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleImport} />
-      <Tooltip content="More actions">
-        <button onClick={() => setOpen(!open)}
-          className={clsx("p-2 border rounded-lg", open ? "bg-green-600 text-white border-[#166534]" : "border-[var(--border)] bg-white text-gray-600 hover:bg-gray-50")}>
-          <MoreHorizontal size={12} />
-        </button>
-      </Tooltip>
-      {open && (
-        <div className="absolute right-0 top-full mt-1 surface-card py-1 w-52 z-50">
-          <MenuItem icon={<Upload size={14} />} label="Import" onClick={closeAnd(() => fileRef.current?.click())} />
-          <MenuItem icon={<Download size={14} />} label="Export" onClick={closeAnd(exportCSV)} />
-          <MenuItem icon={<FileDown size={14} />} label="Download as PDF" onClick={closeAnd(() => window.print())} />
-          <MenuItem icon={<Printer size={14} />} label="Print" onClick={closeAnd(() => window.print())} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function MenuItem({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick?: () => void }) {
-  return (
-    <button type="button" onClick={onClick} className="w-full flex items-center gap-3 px-4 py-2 text-xs text-gray-700 hover:bg-gray-50">
-      <span className="text-gray-500">{icon}</span>
-      {label}
-    </button>
   );
 }
 

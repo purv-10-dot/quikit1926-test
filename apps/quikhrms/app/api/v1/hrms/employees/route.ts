@@ -119,6 +119,7 @@ export const GET = withServiceAuth(async (req: NextRequest, ctx) => {
         dateOfJoining: true,
         gender: true,
         reportingManagerId: true,
+        wfhQuotaGroupId: true,
         department: { select: { id: true, name: true } },
         designation: { select: { id: true, title: true } },
         officeLocation: { select: { id: true, name: true, city: true } },

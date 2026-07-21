@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, validationError, notFound, internalError, forbidden } from "@/lib/api-response";
+import { successResponse, validationError, notFound, internalError, forbidden, conflict } from "@/lib/api-response";
 
 function canManage(roleCode: string | null, permissions: string[]): boolean {
   return permissions.includes("*") || roleCode === "admin";
@@ -14,6 +14,23 @@ const updateSchema = z.object({
   yearlyQuota: z.number().int().min(0).max(366).optional(),
   mode: z.enum(["Department", "Employee"]).optional(),
   isActive: z.boolean().optional(),
+  // WFH rules
+  maxPerWeek: z.number().int().min(0).max(7).nullable().optional(),
+  maxPerMonth: z.number().int().min(0).max(31).nullable().optional(),
+  maxConsecutiveDays: z.number().int().min(0).max(366).nullable().optional(),
+  advanceNoticeDays: z.number().int().min(0).max(60).nullable().optional(),
+  applicableAfterDays: z.number().int().min(0).max(365).nullable().optional(),
+  requiresApproval: z.boolean().optional(),
+  blockedDuringNotice: z.boolean().optional(),
+}).superRefine((d, ctx) => {
+  if (d.maxPerMonth != null) {
+    if (d.maxPerMonth > 31) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["maxPerMonth"], message: "A month has at most 31 days" });
+    if (d.yearlyQuota != null && d.maxPerMonth > d.yearlyQuota) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["maxPerMonth"], message: `Can't exceed the yearly quota (${d.yearlyQuota})` });
+  }
+  if (d.maxConsecutiveDays != null) {
+    const cap = d.maxPerMonth ?? (d.yearlyQuota != null ? Math.min(31, d.yearlyQuota) : 31);
+    if (d.maxConsecutiveDays > cap) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["maxConsecutiveDays"], message: `Can't exceed ${cap}` });
+  }
 });
 
 export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
@@ -67,7 +84,7 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId, roleCode
   }
 }, { requiredPermissions: ["hrms.employee.write"] });
 
-export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId, roleCode, permissions }, params) => {
+export const DELETE = withAuth(async (req: NextRequest, { orgId, userId, roleCode, permissions }, params) => {
   try {
     if (!canManage(roleCode, permissions)) return forbidden("Only Super Admin or HR Admin can delete quota groups");
     const existing = await prisma.wfhQuotaGroup.findFirst({
@@ -75,16 +92,41 @@ export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId, roleCo
     });
     if (!existing) return notFound("Group not found");
 
-    await prisma.$transaction([
-      prisma.employee.updateMany({
-        where: { orgId, wfhQuotaGroupId: params.id },
-        data: { wfhQuotaGroupId: null },
-      }),
-      prisma.wfhQuotaGroup.update({
-        where: { id: params.id },
-        data: { deletedAt: new Date(), updatedBy: userId },
-      }),
-    ]);
+    const memberCount = await prisma.employee.count({
+      where: { orgId, wfhQuotaGroupId: params.id, deletedAt: null },
+    });
+    const moveToGroupId = new URL(req.url).searchParams.get("moveToGroupId");
+
+    // A group with employees can't be deleted outright — the employees must be
+    // moved to another group first (or the caller passes the target explicitly).
+    if (memberCount > 0) {
+      if (!moveToGroupId) {
+        return conflict(`Cannot delete — ${memberCount} employee${memberCount === 1 ? "" : "s"} assigned. Move them to another group first.`);
+      }
+      if (moveToGroupId === params.id) return validationError("Choose a different group to move employees to");
+      const target = await prisma.wfhQuotaGroup.findFirst({
+        where: { id: moveToGroupId, orgId, deletedAt: null },
+      });
+      if (!target) return notFound("Target group not found");
+      if (target.mode !== "Employee") return validationError("Employees can only be moved to an employee-wise group");
+
+      await prisma.$transaction([
+        prisma.employee.updateMany({
+          where: { orgId, wfhQuotaGroupId: params.id },
+          data: { wfhQuotaGroupId: moveToGroupId },
+        }),
+        prisma.wfhQuotaGroup.update({
+          where: { id: params.id },
+          data: { deletedAt: new Date(), updatedBy: userId },
+        }),
+      ]);
+      return successResponse({ deleted: true, moved: memberCount });
+    }
+
+    await prisma.wfhQuotaGroup.update({
+      where: { id: params.id },
+      data: { deletedAt: new Date(), updatedBy: userId },
+    });
     return successResponse({ deleted: true });
   } catch (e) {
     console.error("DELETE /wfh/quota-groups/:id", e);

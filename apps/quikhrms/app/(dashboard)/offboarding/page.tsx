@@ -10,6 +10,8 @@ import { Select } from "@/components/hrms/ui/select";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import { UserMinus, Plus, LogOut } from "lucide-react";
 import { clsx } from "clsx";
+import { ExitedEmployeesTab } from "./_components/exited-employees-tab";
+import { AttritionTab } from "./_components/attrition-tab";
 
 interface Instance {
   id: string; employeeId: string; resignationDate: string; lastWorkingDate: string;
@@ -42,6 +44,7 @@ export default function OffboardingDashboardPage() {
   const api = useApiClient();
   const qc = useQueryClient();
   const [showInit, setShowInit] = useState(false);
+  const [tab, setTab] = useState<"active" | "exited" | "attrition">("active");
   const [form, setForm] = useState({ employeeId: "", resignationDate: "", lastWorkingDate: "", reason: "Resignation" as typeof REASONS[number], notes: "" });
 
   const { data } = useQuery({
@@ -86,14 +89,42 @@ export default function OffboardingDashboardPage() {
           <UserMinus size={28} className="text-[#22c55e] mt-1.5" />
           <h1 className="text-base font-semibold text-gray-900">Offboarding</h1>
         </div>
-        <div className="flex items-center gap-2">
-          <ExcelExportButton filename="offboarding" sheetName="Offboardings" columns={excelColumns} rows={excelRows} label="Excel" />
-          <button onClick={() => setShowInit(true)} className="btn btn-primary">
-            <Plus size={13} /> Initiate offboarding
-          </button>
-        </div>
+        {tab === "active" && (
+          <div className="flex items-center gap-2">
+            <ExcelExportButton filename="offboarding" sheetName="Offboardings" columns={excelColumns} rows={excelRows} label="Excel" />
+            <button onClick={() => setShowInit(true)} className="btn btn-primary">
+              <Plus size={13} /> Initiate offboarding
+            </button>
+          </div>
+        )}
       </div>
 
+      <div className="surface-card p-1 inline-flex items-center gap-1 mb-4">
+        <button
+          onClick={() => setTab("active")}
+          className={clsx("px-4 py-1.5 rounded-md text-[13px] font-semibold transition", tab === "active" ? "bg-green-600 text-white shadow-sm" : "text-gray-600 hover:bg-gray-50")}
+        >
+          Offboarding
+        </button>
+        <button
+          onClick={() => setTab("exited")}
+          className={clsx("px-4 py-1.5 rounded-md text-[13px] font-semibold transition", tab === "exited" ? "bg-green-600 text-white shadow-sm" : "text-gray-600 hover:bg-gray-50")}
+        >
+          Exited Employees
+        </button>
+        <button
+          onClick={() => setTab("attrition")}
+          className={clsx("px-4 py-1.5 rounded-md text-[13px] font-semibold transition", tab === "attrition" ? "bg-green-600 text-white shadow-sm" : "text-gray-600 hover:bg-gray-50")}
+        >
+          Attrition
+        </button>
+      </div>
+
+      {tab === "exited" && <ExitedEmployeesTab />}
+      {tab === "attrition" && <AttritionTab />}
+
+      {tab === "active" && (
+      <>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
         {["Initiated", "OffboardInProgress", "ClearancePending", "OffboardCompleted"].map((s) => (
           <div key={s} className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
@@ -153,6 +184,8 @@ export default function OffboardingDashboardPage() {
           </table>
         )}
       </div>
+      </>
+      )}
 
       <Modal open={showInit} onClose={() => setShowInit(false)} title="Initiate Offboarding">
         <form

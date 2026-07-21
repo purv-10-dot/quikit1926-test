@@ -47,11 +47,12 @@ interface EmployeeRef {
   workEmail: string;
 }
 
-const MODULES: ApprovalModule[] = [
-  "Leave", "Expense", "Onboarding", "Offboarding",
-  "Attendance", "Document", "Engagement", "Feedback",
-  "Reimbursement", "ProofOfInvestment", "SalaryRevision", "OneTimeEarning", "Requisition",
-];
+// Only modules whose approval is actually enforced by an approval chain are
+// offered. Leave + Requisition use the strict chain engine; Engagement +
+// Feedback use content-moderation. (Expense approval is configured on the
+// Expense Policy, not here; the rest have no consumer — omitted to avoid
+// configuring chains that never run.)
+const MODULES: ApprovalModule[] = ["Leave", "Requisition", "Engagement", "Feedback"];
 
 const MODULE_ICON: Record<ApprovalModule, string> = {
   Leave: "🌴", Expense: "💰", Asset: "💻", Onboarding: "👋", Offboarding: "👋",

@@ -89,7 +89,7 @@ export default function KraAssignmentsPage() {
         <div className="flex items-center gap-3">
           <Users size={28} className="text-[#22c55e]" />
           <div>
-            <h1 className="text-page-title text-gray-900">KRA Assignments</h1>
+            <h1 className="text-page-title text-gray-900">Assign KRAs</h1>
             <p className="text-xs text-gray-500">
               Scorecards assigned to employees. Each row carries a frozen copy of its template.
             </p>

@@ -68,7 +68,7 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
       ...(finalIds && { id: { in: finalIds } }),
     };
 
-    const [employees, shifts, holidays] = await Promise.all([
+    const [employees, shifts, holidays, company] = await Promise.all([
       prisma.employee.findMany({
         where: empWhere,
         select: {
@@ -87,7 +87,21 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
         where: { orgId, deletedAt: null, date: { gte: from, lte: rangeEnd } },
         select: { name: true, date: true },
       }),
+      prisma.companySettings.findUnique({ where: { orgId }, select: { workWeek: true } }),
     ]);
+
+    // Company profile week-offs (days NOT in the working `workWeek`) — the org
+    // default used when an employee has no personal weekly-off pattern set.
+    const companyOff = ((): number[] => {
+      const ww = company?.workWeek;
+      if (!Array.isArray(ww) || ww.length === 0) return [];
+      const working = new Set(
+        (ww as unknown[])
+          .map((d) => (typeof d === "string" ? DOW_NAME_TO_NUM[d] : undefined))
+          .filter((n): n is number => n !== undefined),
+      );
+      return working.size ? [0, 1, 2, 3, 4, 5, 6].filter((n) => !working.has(n)) : [];
+    })();
 
     const employeeIds = employees.map((e) => e.id);
 
@@ -144,11 +158,13 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
     }));
 
     const rows = employees.map((emp) => {
-      const offNums = Array.isArray(emp.weeklyOffDays)
+      const ownOff = Array.isArray(emp.weeklyOffDays)
         ? (emp.weeklyOffDays as unknown[])
             .map((n) => (typeof n === "string" ? DOW_NAME_TO_NUM[n] : typeof n === "number" ? n : undefined))
             .filter((n): n is number => n !== undefined)
         : [];
+      // Employee's own weekly-offs win; otherwise fall back to the company profile.
+      const offNums = ownOff.length ? ownOff : companyOff;
       const cells: Record<string, unknown> = {};
       for (const d of days) {
         const entry = entryByKey.get(`${emp.id}|${d.date}`);

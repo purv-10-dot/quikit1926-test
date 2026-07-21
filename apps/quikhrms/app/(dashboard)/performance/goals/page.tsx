@@ -570,8 +570,8 @@ export default function GoalsPage() {
                 <NumberInput
                   value={checkInValue}
                   onChange={(v) => setCheckInValue(v)}
-                  min="0"
-                  step="0.01"
+                  min={0}
+                  step={0.01}
                   required
                   className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#166534]/20 focus:border-[#166534]"
                 />

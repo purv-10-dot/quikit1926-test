@@ -12,6 +12,9 @@ import {
   ResponsiveContainer,
   Cell,
   LabelList,
+  Legend,
+  PieChart,
+  Pie,
 } from "recharts";
 
 const PALETTE = ["#22c55e", "#22c55e", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16", "#f97316"];
@@ -114,6 +117,44 @@ export function LineChartView({
         <Tooltip contentStyle={{ fontSize: 12, borderRadius: 6 }} />
         <Line type="monotone" dataKey="value" stroke={color} strokeWidth={2} dot={{ r: 3, fill: color }} activeDot={{ r: 5 }} />
       </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+// Multi-series trend line — Requested / Approved / Rejected over a period.
+interface TrendDatum { name: string; requested: number; approved: number; rejected: number }
+
+export function TrendLineChart({ data, height = 260 }: { data: TrendDatum[]; height?: number }) {
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <LineChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+        <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#64748b" }} />
+        <YAxis tick={{ fontSize: 11, fill: "#64748b" }} allowDecimals={false} />
+        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 6 }} />
+        <Legend wrapperStyle={{ fontSize: 11 }} iconSize={10} />
+        <Line type="monotone" dataKey="requested" name="Requested" stroke="#ec4899" strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 5 }} />
+        <Line type="monotone" dataKey="approved" name="Approved" stroke="#3b82f6" strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 5 }} />
+        <Line type="monotone" dataKey="rejected" name="Rejected" stroke="#f59e0b" strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 5 }} />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+// Donut chart (top-N distribution).
+export function DonutView({ data, height = 260 }: { data: BarDatum[]; height?: number }) {
+  if (data.length === 0) {
+    return <div className="flex items-center justify-center text-xs text-gray-400" style={{ height }}>No data</div>;
+  }
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <PieChart>
+        <Pie data={data} dataKey="value" nameKey="name" innerRadius="55%" outerRadius="85%" paddingAngle={2}>
+          {data.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
+        </Pie>
+        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 6 }} />
+        <Legend wrapperStyle={{ fontSize: 11 }} iconSize={10} layout="vertical" align="right" verticalAlign="middle" />
+      </PieChart>
     </ResponsiveContainer>
   );
 }

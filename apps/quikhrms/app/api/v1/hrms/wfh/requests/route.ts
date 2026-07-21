@@ -80,7 +80,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       where: { id: employeeId, orgId, deletedAt: null },
       select: {
         id: true, firstName: true, lastName: true, employeeCode: true, jobTitle: true,
-        reportingManagerId: true,
+        reportingManagerId: true, dateOfJoining: true, status: true,
         department: { select: { name: true } },
         appRoles: { select: { role: { select: { name: true } } } },
       },
@@ -123,6 +123,64 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
           `WFH quota exceeded. Group "${effective.group.name}" allows ${effective.group.yearlyQuota} days/year. Already used: ${used}, remaining: ${Math.max(0, effective.group.yearlyQuota - used)}.`,
         );
       }
+
+      // ── Per-group WFH rules ────────────────────────────────────────────
+      const g = effective.group;
+
+      if (g.advanceNoticeDays && g.advanceNoticeDays > 0) {
+        const minStart = new Date(today);
+        minStart.setDate(minStart.getDate() + g.advanceNoticeDays);
+        if (start.getTime() < minStart.getTime()) {
+          return validationError(`WFH must be requested at least ${g.advanceNoticeDays} day(s) in advance.`);
+        }
+      }
+
+      if (g.applicableAfterDays && g.applicableAfterDays > 0 && employee.dateOfJoining) {
+        const eligibleFrom = new Date(employee.dateOfJoining);
+        eligibleFrom.setDate(eligibleFrom.getDate() + g.applicableAfterDays);
+        if (today.getTime() < eligibleFrom.getTime()) {
+          return validationError(`You're eligible for WFH ${g.applicableAfterDays} day(s) after your joining date.`);
+        }
+      }
+
+      if (g.blockedDuringNotice && employee.status === "OnNotice") {
+        return validationError("Employees on notice period can't avail WFH.");
+      }
+
+      if (g.maxConsecutiveDays && g.maxConsecutiveDays > 0 && days > g.maxConsecutiveDays) {
+        return validationError(`WFH can be at most ${g.maxConsecutiveDays} consecutive day(s) per request.`);
+      }
+
+      // Count existing Pending/Approved WFH days by the window the request starts in.
+      const countUsed = async (from: Date, to: Date) => {
+        const rows = await prisma.wfhRequest.findMany({
+          where: { orgId, employeeId, deletedAt: null, status: { in: ["Pending", "Approved"] }, startDate: { gte: from, lte: to } },
+          select: { days: true },
+        });
+        return rows.reduce((s, r) => s + Number(r.days), 0);
+      };
+
+      if (g.maxPerWeek && g.maxPerWeek > 0) {
+        const ws = new Date(start);
+        ws.setDate(start.getDate() - ((start.getDay() + 6) % 7)); // Monday
+        ws.setHours(0, 0, 0, 0);
+        const we = new Date(ws);
+        we.setDate(ws.getDate() + 6);
+        we.setHours(23, 59, 59, 999);
+        const usedWeek = await countUsed(ws, we);
+        if (usedWeek + days > g.maxPerWeek) {
+          return validationError(`WFH limit is ${g.maxPerWeek} day(s) per week (already used ${usedWeek} that week).`);
+        }
+      }
+
+      if (g.maxPerMonth && g.maxPerMonth > 0) {
+        const ms = new Date(start.getFullYear(), start.getMonth(), 1);
+        const me = new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59, 999);
+        const usedMonth = await countUsed(ms, me);
+        if (usedMonth + days > g.maxPerMonth) {
+          return validationError(`WFH limit is ${g.maxPerMonth} day(s) per month (already used ${usedMonth} that month).`);
+        }
+      }
     }
 
     // Resolve HR + SuperAdmin reference roles via UserAppRole join.
@@ -160,19 +218,19 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     });
     const superAdminApprover = superAdminLink?.employee ?? null;
 
-    // Decide approval flow
-    //  - Employee is super_admin → auto-approve (no approver above)
+    // Decide approval flow — admins follow the chain too (no auto-approve).
     //  - Employee above HR Admin priority → SuperAdmin only
     //  - No reporting manager → HR only
     //  - Else → Manager → HR
     const empPriority = rolePriority(employeeRoleName);
     const isSuperAdminEmployee = employeeRoleName === "admin";
     const isAboveHr = !isSuperAdminEmployee && empPriority > hrAdminPriority;
+    const autoApprove = false;
 
     type FlowRow = { approverId: string; role: "Manager" | "HR" | "SuperAdmin"; approverName: string; approverEmail: string | null };
     const flow: FlowRow[] = [];
 
-    if (isSuperAdminEmployee) {
+    if (autoApprove) {
       // Auto-approve path; no approvals required
     } else if (isAboveHr) {
       if (!superAdminApprover) return validationError("No Super Admin approver configured");
@@ -213,7 +271,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         days, isHalfDay: data.isHalfDay, session: data.session,
         reason: data.reason,
         attachments: data.attachments ? JSON.parse(JSON.stringify(data.attachments)) : null,
-        status: isSuperAdminEmployee ? "Approved" : "Pending",
+        status: autoApprove ? "Approved" : "Pending",
         createdBy: userId, updatedBy: userId,
       },
     });

@@ -79,7 +79,7 @@ export default function EmploymentHistoryPage() {
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <History className="text-[#22c55e]" />
-          <h1 className="text-base font-semibold text-gray-900">Employment History</h1>
+          <h1 className="text-base font-semibold text-gray-900">Employment Logs</h1>
         </div>
       </div>
 

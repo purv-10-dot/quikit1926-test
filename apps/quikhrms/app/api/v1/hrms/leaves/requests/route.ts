@@ -14,6 +14,7 @@ import { getHierarchyAccessibleEmployeeIds, intersectEmployeeIds } from "@/lib/r
 import { forbidden } from "@/lib/api-response";
 import { resolveActivePolicyRules, evaluateLeavePolicy, evaluateLeaveTypeColumns } from "@/lib/services/leave-policy-engine";
 import { getEmployeeLeaveRules } from "@/lib/services/employee-leave-rules";
+import { attendanceDayStart } from "@/lib/attendance/day";
 import type { Prisma } from "@quikit/database";
 
 /** GET /api/v1/hrms/leaves/requests */
@@ -234,6 +235,27 @@ export const POST = withServiceAuth(async (req: NextRequest, ctx) => {
       const fmt = (d: Date) => new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
       return conflict(
         `You already have a ${clash.leaveType?.name ?? "leave"} request for ${fmt(clash.startDate)} – ${fmt(clash.endDate)} that overlaps these dates.`,
+      );
+    }
+
+    // Attendance clash — can't take leave on a day the employee already worked
+    // (has a check-in) or that has a pending/approved attendance regularization.
+    // One day can't be both worked and on leave.
+    const attClash = await prisma.attendanceRecord.findFirst({
+      where: {
+        orgId, employeeId, deletedAt: null,
+        date: { gte: attendanceDayStart(start), lte: attendanceDayStart(end) },
+        OR: [
+          { checkIn: { not: null } },
+          { regularizationStatus: { in: ["Pending", "Approved"] } },
+        ],
+      },
+      select: { date: true },
+    });
+    if (attClash) {
+      const fmt = (d: Date) => new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+      return conflict(
+        `You have attendance recorded on ${fmt(attClash.date)} within these dates. Cancel or adjust it before applying leave.`,
       );
     }
 
