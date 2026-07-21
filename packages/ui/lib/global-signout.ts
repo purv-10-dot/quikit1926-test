@@ -95,8 +95,17 @@ export async function globalSignOut(options: GlobalSignOutOptions): Promise<void
 
   const idp = (quikitUrl && quikitUrl.trim()) || window.location.origin;
   const idpClean = idp.replace(/\/+$/, "");
+  // Environment-level override: when NEXT_PUBLIC_POST_LOGOUT_URL is set at build
+  // time (e.g. https://uat.quikit.ai in the UAT images) every app's logout lands
+  // there, regardless of the per-call `postLogoutRedirect`. Left unset in prod so
+  // prod keeps landing on each app's own landing page. NOTE: the target origin
+  // must also be in the launcher's /api/auth/signout-global allow-list, else that
+  // hop rejects it and falls back to the launcher root.
+  const forcedRedirect = process.env.NEXT_PUBLIC_POST_LOGOUT_URL?.trim();
   const finalRedirect =
-    (postLogoutRedirect && postLogoutRedirect.trim()) || `${idpClean}/`;
+    forcedRedirect ||
+    (postLogoutRedirect && postLogoutRedirect.trim()) ||
+    `${idpClean}/`;
 
   // Launcher SLO hop — clears launcher cookie, then forwards to final.
   const launcherSlo = `${idpClean}/api/auth/signout-global?callbackUrl=${encodeURIComponent(finalRedirect)}`;
