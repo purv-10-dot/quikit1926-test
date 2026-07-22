@@ -38,6 +38,21 @@ export const COL_LABELS: Record<string, string> = {
   createdAt: "Created Date", updatedAt: "Updated Date",
 };
 
+// Columns hidden by DEFAULT on each KPI page. These only set the initial
+// visible set — they are NOT persisted, so users can re-show any of them via
+// Manage Columns. All KPITable instances share the "kpi" preference key, so
+// once a user hides/shows a column it persists across both pages.
+//
+// Individual KPI shows the four goal columns (Quarterly Goal / QTD Goal /
+// QTD Achieved / Weekly Goal) by default so it mirrors the Dashboard + Team
+// KPI layout — QTD Achieved keeps its traffic-light coloring via KPITable's
+// shared cell renderer. teamHead / kpiOwner stay hidden: individual KPIs are
+// not team-scoped and use the single `owner` column instead.
+export const INDIVIDUAL_HIDDEN_COLS = ["teamHead", "kpiOwner"];
+// Team KPI uses the multi-owner `kpiOwner` column, so it hides the single
+// `owner` column. Everything else (incl. all four goal columns) shows.
+export const TEAM_HIDDEN_COLS = ["owner"];
+
 export const SORT_KEYS: Record<string, string> = {
   progress: "progressPercent", owner: "owner", kpiName: "name",
   // teamHead and kpiOwner are not server-sortable — no entry = no sort menu option

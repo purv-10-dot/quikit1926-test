@@ -510,10 +510,13 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
     // Gated (synced rename) + duplicate rows are NOT auto-propagated: renames go
     // to the Replace confirmation; duplicates are blocked with a warning.
     const skip = new Set<number>([...renames.map(r => r.index), ...duplicates.map(d => d.index)]);
-    // Advance the change-tracking baseline, but HOLD the old value for gated
-    // rows so a deferred reflect isn't lost if its modal is dismissed/superseded
-    // — it re-surfaces on the next run instead of latching silent. See ProdBug-OPSP.
-    prevTargetCatsRef.current = advanceBaseline(prevCats, curCats, skip);
+    // Advance the change-tracking baseline, but HOLD the old value for pending
+    // RENAMES only, so a deferred reflect isn't lost if its modal is
+    // dismissed/superseded — it re-surfaces on the next run instead of latching
+    // silent. DUPLICATES are terminal (warned once, never applied): they advance
+    // like any resolved row so they don't re-warn on every later unrelated change.
+    // `skip` (renames + duplicates) still gates auto-propagation below. See ProdBug-OPSP.
+    prevTargetCatsRef.current = advanceBaseline(prevCats, curCats, new Set(renames.map(r => r.index)));
     if (renames.length > 0) {
       requestCategorySync({
         tier: "goals",
@@ -540,7 +543,13 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
         // or CLEAR one that mirrored the old Target value. Overwriting an
         // OCCUPIED Goal with a different category is gated (in `skip`) and applied
         // only on confirmation, so it's never silently clobbered here.
-        const isFirstFill = goalCat === "" && cat !== "";
+        // First-fill is DUPLICATE-SAFE: never fill a value that already exists at
+        // another Goal row (this is idempotent every run, so an unchanged Target
+        // whose value collides downstream can't be "resurrected" into a new dup on
+        // a later unrelated cascade — the change-driven warn already fired once).
+        const dupElsewhere =
+          cat !== "" && next.some((r, j) => j !== i && (r.category ?? "").trim() === cat);
+        const isFirstFill = goalCat === "" && cat !== "" && !dupElsewhere;
         const isSyncedClear = cat === "" && goalCat !== "" && goalCat === wasCat;
         if (isFirstFill || isSyncedClear) {
           next[i] = {
@@ -580,9 +589,10 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
     const actionCats = formRef.current.actionsQtr.map(r => r.category);
     const { renames, duplicates } = classifyCascade(prevCats, curCats, actionCats);
     const skip = new Set<number>([...renames.map(r => r.index), ...duplicates.map(d => d.index)]);
-    // Advance the baseline but HOLD gated rows (see Targets→Goals above): a
-    // deferred Actions reflect must re-surface on the next change, not latch.
-    prevGoalCatsRef.current = advanceBaseline(prevCats, curCats, skip);
+    // Advance the baseline, HOLDING only pending RENAMES (see Targets→Goals
+    // above): a deferred Actions reflect re-surfaces on the next change, while a
+    // terminal duplicate advances so it never re-warns on unrelated edits.
+    prevGoalCatsRef.current = advanceBaseline(prevCats, curCats, new Set(renames.map(r => r.index)));
     if (renames.length > 0) {
       requestCategorySync({
         tier: "actions",

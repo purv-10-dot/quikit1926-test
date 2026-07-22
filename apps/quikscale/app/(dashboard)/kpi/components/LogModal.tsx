@@ -1410,7 +1410,11 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
         teamId: editForm.teamId || undefined,
         parentKPIId: editForm.parentKPIId || undefined,
         target: newTarget,
-        quarterlyGoal: editForm.quarterlyGoal ? parseFloat(editForm.quarterlyGoal) : undefined,
+        // quarterlyGoal + qtdGoal both track the edited Target Value. `editForm.quarterlyGoal`
+        // is seeded from the OLD saved value on open and is never touched by setTarget, so
+        // sending it as-is persisted a stale Quarter Goal (dashboard's "Quarter Goal" column
+        // reads kpi.quarterlyGoal and stayed wrong even after reload). Mirror the qtdGoal logic.
+        quarterlyGoal: newTarget !== undefined ? newTarget : (editForm.quarterlyGoal ? parseFloat(editForm.quarterlyGoal) : undefined),
         qtdGoal: newTarget !== undefined ? newTarget : (editForm.qtdGoal ? parseFloat(editForm.qtdGoal) : undefined),
         status: editForm.status as "active" | "paused" | "completed",
         divisionType: editForm.divisionType,

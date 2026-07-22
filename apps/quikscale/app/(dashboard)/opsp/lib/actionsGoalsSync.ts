@@ -74,7 +74,12 @@ export function reconcileActionsWithGoals(
     const actCat = trim(next[i].category);
     const wasGoalCat = trim(prevGoalCats[i]);
     if (goalCat === actCat) continue; // already reflected
-    const isFirstFill = actCat === "" && goalCat !== "";
+    // First-fill is DUPLICATE-SAFE: never fill a value already present at another
+    // Action row (idempotent every run, so an unchanged Goal whose value collides
+    // downstream can't be resurrected into a new duplicate on a later cascade).
+    const dupElsewhere =
+      goalCat !== "" && next.some((r, j) => j !== i && trim(r.category) === goalCat);
+    const isFirstFill = actCat === "" && goalCat !== "" && !dupElsewhere;
     const isSyncedClear = goalCat === "" && actCat !== "" && actCat === wasGoalCat;
     if (isFirstFill || isSyncedClear) {
       if (next === actionsQtr) next = [...next]; // clone-on-first-write

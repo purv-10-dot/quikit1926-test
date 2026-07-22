@@ -16,7 +16,7 @@ import { useCurrentWeek, useCurrentQuarter, useWeekDateRange, useQuarterWeekCoun
 import { useNumberFormat } from "@/lib/hooks/useFeatureFlags";
 import { KPITable } from "./components/KPITable";
 import { KPIModal } from "./components/KPIModal";
-import { ALL_STATIC_COLS, COL_LABELS } from "./hooks/useTableColumns";
+import { ALL_STATIC_COLS, COL_LABELS, INDIVIDUAL_HIDDEN_COLS } from "./hooks/useTableColumns";
 import { weeksArray } from "@/lib/utils/fiscal";
 import { FilterPicker, userToFilterOption, EmptyState, FiscalPeriodPicker, type FiscalQuarter, type ExportSelection } from "@quikit/ui";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
@@ -519,7 +519,7 @@ export default function IndividualKPIPage() {
             clearSelectionTrigger={clearSelectionTrigger}
             onHiddenColsChange={handleHiddenColsChange}
             showColTrigger={showColTrigger}
-            hideColumns={["quarterlyGoal", "qtdGoal", "qtdAchieved", "weeklyGoal", "teamHead", "kpiOwner"]}
+            hideColumns={INDIVIDUAL_HIDDEN_COLS}
             canDelete={canDelete}
             canUpdate={canUpdate}
             numberFormat={numberFormat}
