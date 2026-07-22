@@ -13,7 +13,7 @@ import {
   X, Pencil, ShieldAlert,
   User, Phone, Briefcase, ShieldCheck, ClipboardCheck,
   Mail, Calendar, MapPin, Building2, IdCard, Save, Check, Banknote,
-  ArrowLeft, ArrowRight,
+  ArrowLeft, ArrowRight, Lock,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { Select } from "@/components/hrms/ui/select";
@@ -21,7 +21,7 @@ import { NumberInput } from "@/components/hrms/ui/number-input";
 import { SkeletonLine } from "@/components/hrms/skeleton";
 import { BankDetailsFields } from "@/components/hrms/bank-details-fields";
 
-type EmploymentType = "FullTime" | "PartTime" | "Contract" | "Intern" | "Freelancer" | "Consultant";
+type EmploymentType = "FullTime" | "PartTime" | "Contract" | "Intern";
 type WorkLocation = "Office" | "Remote" | "Hybrid";
 type EmployeeStatus = "Active" | "PreBoarding" | "OnLeave" | "OnNotice" | "Suspended" | "Relieved";
 type Gender = "Male" | "Female" | "Transgender" | "NonBinary" | "PreferNotToSay";
@@ -36,8 +36,11 @@ interface BankAccount {
   accountNumber?: string;
   ifscCode?: string;
   branchName?: string;
+  accountType?: string | null;
   isPrimary?: boolean;
 }
+
+type BankAccountType = "Savings" | "Current" | "Salary" | "NRE" | "NRO";
 
 interface EmployeeData {
   id: string; firstName: string; lastName: string; middleName: string | null;
@@ -60,9 +63,10 @@ interface EmployeeData {
   bankAccountNumber?: string;
   bankIfsc?: string;
   bankBranch?: string;
+  bankAccountType?: BankAccountType | "";
 }
 
-const EMP_TYPES: EmploymentType[] = ["FullTime", "PartTime", "Contract", "Intern", "Freelancer", "Consultant"];
+const EMP_TYPES: EmploymentType[] = ["FullTime", "PartTime", "Contract", "Intern"];
 const WORK_LOCS: WorkLocation[] = ["Office", "Remote", "Hybrid"];
 
 const STEPS = [
@@ -127,6 +131,7 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
         bankAccountNumber: primaryBank?.accountNumber ?? "",
         bankIfsc: primaryBank?.ifscCode ?? "",
         bankBranch: primaryBank?.branchName ?? "",
+        bankAccountType: (primaryBank?.accountType as BankAccountType | undefined) ?? "",
       });
     }
   }, [empRes]);
@@ -211,10 +216,9 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
   // run native validation on a hidden required field — it throws "not focusable"
   // and silently blocks submit. So every save (from any step) routes through here.
   const doSave = async () => {
-    // Only firstName/lastName/gender/dateOfJoining are truly required (server +
-    // payroll need them). PAN/Aadhaar/Bank are recommended but NOT blocking on
-    // edit — many employees were imported without them and the API treats them
-    // as optional. Jump to the offending step so the empty field is visible.
+    // Mandatory fields (marked with a red * in the form). PAN/Aadhaar/Bank stay
+    // recommended-but-optional on edit — many legacy imports lack them and the
+    // API treats them as optional. Jump to the offending step so it's visible.
     if (!form.firstName?.trim() || !form.lastName?.trim()) {
       goToStep("personal");
       toast.error("Name required", "First and last name are required.");
@@ -225,9 +229,67 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
       toast.error("Gender required", "Select gender in Personal Details.");
       return;
     }
+    if (!form.dateOfBirth) {
+      goToStep("personal");
+      toast.error("Date of birth required", "Select date of birth in Personal Details.");
+      return;
+    }
+    if (!form.workEmail?.trim()) {
+      goToStep("contact");
+      toast.error("Work email required", "This employee has no work email set.");
+      return;
+    }
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailPattern.test(form.workEmail.trim())) {
+      goToStep("contact");
+      toast.error("Invalid work email", "Enter a valid work email address.");
+      return;
+    }
+    if (form.personalEmail?.trim() && !emailPattern.test(form.personalEmail.trim())) {
+      goToStep("contact");
+      toast.error("Invalid personal email", "Enter a valid personal email address.");
+      return;
+    }
+    // Contact-step phone checks run before Employment so the error jumps to the
+    // step in wizard order (Personal → Contact → Employment).
+    if (!form.personalPhone?.trim()) {
+      goToStep("contact");
+      toast.error("Personal phone required", "Enter the personal phone number in Contact.");
+      return;
+    }
+    if (form.personalPhone.replace(/\D/g, "").length !== 10) {
+      goToStep("contact");
+      toast.error("Invalid phone", "Personal phone must be exactly 10 digits.");
+      return;
+    }
+    if (form.workPhone?.trim() && form.workPhone.replace(/\D/g, "").length !== 10) {
+      goToStep("contact");
+      toast.error("Invalid work phone", "Work phone must be exactly 10 digits.");
+      return;
+    }
+    if (!form.jobTitle?.trim() || !form.designationId || !form.departmentId || !form.officeLocationId) {
+      goToStep("employment");
+      toast.error("Employment details required", "Job title, designation, department and office location are mandatory.");
+      return;
+    }
+    if (!form.reportingManagerId) {
+      goToStep("employment");
+      toast.error("Reporting Manager required", "Pick a reporting manager in Employment.");
+      return;
+    }
     if (!form.dateOfJoining) {
       goToStep("employment");
       toast.error("Date of Joining required", "Set the joining date in Employment.");
+      return;
+    }
+    if (!form.panNumber?.trim() || !form.aadhaarNumber?.trim()) {
+      goToStep("identity");
+      toast.error("Identity required", "PAN and Aadhaar are mandatory.");
+      return;
+    }
+    if (!form.bankName?.trim() || !form.bankAccountNumber?.trim() || !form.bankIfsc?.trim()) {
+      goToStep("bank");
+      toast.error("Bank details required", "Bank name, account number and IFSC are mandatory.");
       return;
     }
     // Clear confirmation popup so the user knows the save is happening (avoids
@@ -272,6 +334,7 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
             accountNumber: form.bankAccountNumber.trim(),
             ifscCode: form.bankIfsc?.trim() || undefined,
             branchName: form.bankBranch?.trim() || undefined,
+            accountType: form.bankAccountType || undefined,
             isPrimary: true,
           }]
         : undefined,
@@ -384,7 +447,7 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
                     ]}
                   />
                 </Field>
-                <Field label="Date of Birth">
+                <Field label="Date of Birth" required>
                   <input type="date" max={(() => { const d = new Date(); d.setFullYear(d.getFullYear() - 14); return d.toISOString().slice(0, 10); })()} value={form.dateOfBirth ?? ""} onChange={(e) => update({ dateOfBirth: e.target.value })} className={inputCls} />
                 </Field>
                 <div />
@@ -444,9 +507,14 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
               active={activeStep === "contact"}
             >
               <div className="grid grid-cols-2 gap-x-5 gap-y-4">
-                <Field label="Work Email (locked)">
-                  <IconInput icon={<Mail size={14} />}>
-                    <input value={form.workEmail} disabled className={`${inputCls} bg-gray-100`} />
+                <Field label="Work Email" required>
+                  <IconInput icon={<Lock size={14} />}>
+                    <input
+                      value={form.workEmail}
+                      disabled
+                      title="Work email is locked and can't be edited here"
+                      className={`${inputCls} bg-gray-100 text-gray-500 cursor-not-allowed`}
+                    />
                   </IconInput>
                 </Field>
                 <Field label="Personal Email">
@@ -454,7 +522,7 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
                     <input type="email" placeholder="personal.email@example.com" value={form.personalEmail ?? ""} onChange={(e) => update({ personalEmail: e.target.value })} className={inputCls} />
                   </IconInput>
                 </Field>
-                <Field label="Personal Phone">
+                <Field label="Personal Phone" required>
                   <IconInput icon={<Phone size={14} />}>
                     <input inputMode="tel" maxLength={15} placeholder="Enter personal phone number" value={form.personalPhone ?? ""} onChange={(e) => update({ personalPhone: sanitizePhone(e.target.value) })} className={inputCls} />
                   </IconInput>
@@ -476,12 +544,12 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
               active={activeStep === "employment"}
             >
               <div className="grid grid-cols-2 gap-x-5 gap-y-4">
-                <Field label="Job Title">
+                <Field label="Job Title" required>
                   <IconInput icon={<Briefcase size={14} />}>
                     <input placeholder="Enter job title" value={form.jobTitle ?? ""} onChange={(e) => update({ jobTitle: e.target.value })} className={inputCls} />
                   </IconInput>
                 </Field>
-                <Field label="Designation">
+                <Field label="Designation" required>
                   <Select
                     value={form.designationId ?? ""}
                     onChange={(v) => update({ designationId: v || null })}
@@ -490,7 +558,7 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
                     options={(desigs?.data ?? []).map((d) => ({ value: d.id, label: d.title }))}
                   />
                 </Field>
-                <Field label="Department">
+                <Field label="Department" required>
                   <Select
                     value={form.departmentId ?? ""}
                     onChange={(v) => update({ departmentId: v || null })}
@@ -499,7 +567,7 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
                     options={(depts?.data ?? []).map((d) => ({ value: d.id, label: d.name }))}
                   />
                 </Field>
-                <Field label="Office Location">
+                <Field label="Office Location" required>
                   <Select
                     value={form.officeLocationId ?? ""}
                     onChange={(v) => update({ officeLocationId: v || null })}
@@ -508,7 +576,7 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
                     options={(locs?.data ?? []).map((l) => ({ value: l.id, label: l.name }))}
                   />
                 </Field>
-                <Field label="Reporting Manager">
+                <Field label="Reporting Manager" required>
                   <Select
                     value={form.reportingManagerId ?? ""}
                     onChange={(v) => update({ reportingManagerId: v || null })}
@@ -539,20 +607,6 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
                 </Field>
                 <Field label="Previous Experience (months)">
                   <NumberInput allowDecimal={false} value={form.previousExperience} onChange={(v) => update({ previousExperience: v })} className={inputCls} />
-                </Field>
-                <Field label="Status">
-                  <Select
-                    value={form.status}
-                    onChange={(v) => update({ status: v as EmployeeStatus })}
-                    options={[
-                      { value: "Active", label: "Active" },
-                      { value: "PreBoarding", label: "Pre-Boarding" },
-                      { value: "OnLeave", label: "On Leave" },
-                      { value: "OnNotice", label: "On Notice" },
-                      { value: "Suspended", label: "Suspended" },
-                      { value: "Relieved", label: "Relieved" },
-                    ]}
-                  />
                 </Field>
               </div>
             </Section>
@@ -588,11 +642,13 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
               active={activeStep === "bank"}
             >
               <BankDetailsFields
+                markRequired
                 value={{
                   bankName: form.bankName ?? "",
                   bankAccountNumber: form.bankAccountNumber ?? "",
                   bankIfsc: form.bankIfsc ?? "",
                   bankBranch: form.bankBranch ?? "",
+                  bankAccountType: form.bankAccountType ?? "",
                 }}
                 onChange={(patch) => update(patch)}
                 inputCls={inputCls}

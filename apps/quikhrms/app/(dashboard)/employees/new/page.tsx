@@ -24,7 +24,7 @@ import { BankDetailsFields } from "@/components/hrms/bank-details-fields";
 import { SalaryBreakdown } from "@/components/hrms/salary-breakdown";
 import { INDIA_STATE_OPTS as STATE_OPTS } from "@/lib/data/india-states";
 
-type EmploymentType = "FullTime" | "PartTime" | "Contract" | "Intern" | "Freelancer" | "Consultant";
+type EmploymentType = "FullTime" | "PartTime" | "Contract" | "Intern";
 type WorkLocation = "Office" | "Remote" | "Hybrid";
 type EmployeeStatus = "Active" | "PreBoarding" | "OnLeave" | "OnNotice" | "Suspended";
 type Gender = "Male" | "Female" | "Transgender" | "NonBinary" | "PreferNotToSay";
@@ -36,7 +36,7 @@ interface Employee { id: string; firstName: string; lastName: string; }
 interface Role { id: string; code: string; name: string; }
 interface SalaryTemplate { id: string; name: string; code: string; }
 
-const EMP_TYPES: EmploymentType[] = ["FullTime", "PartTime", "Contract", "Intern", "Freelancer", "Consultant"];
+const EMP_TYPES: EmploymentType[] = ["FullTime", "PartTime", "Contract", "Intern"];
 const WORK_LOCS: WorkLocation[] = ["Office", "Remote", "Hybrid"];
 
 const STEPS = [
@@ -255,6 +255,33 @@ function NewEmployeePageInner() {
     }
     if (!form.workEmail.trim()) {
       toast.error("Work email required", "Enter work email in Contact step.");
+      scrollToStep("contact");
+      return;
+    }
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailPattern.test(form.workEmail.trim())) {
+      toast.error("Invalid work email", "Enter a valid work email address (e.g. name@company.com).");
+      scrollToStep("contact");
+      return;
+    }
+    if (form.personalEmail.trim() && !emailPattern.test(form.personalEmail.trim())) {
+      toast.error("Invalid personal email", "Enter a valid personal email address.");
+      scrollToStep("contact");
+      return;
+    }
+    const phoneDigits = (v: string) => v.replace(/\D/g, "");
+    if (!form.personalPhone.trim()) {
+      toast.error("Personal phone required", "Enter a personal phone number in Contact step.");
+      scrollToStep("contact");
+      return;
+    }
+    if (phoneDigits(form.personalPhone).length !== 10) {
+      toast.error("Invalid phone number", "Personal phone must be exactly 10 digits.");
+      scrollToStep("contact");
+      return;
+    }
+    if (form.workPhone.trim() && phoneDigits(form.workPhone).length !== 10) {
+      toast.error("Invalid work phone", "Work phone must be exactly 10 digits.");
       scrollToStep("contact");
       return;
     }
@@ -677,7 +704,7 @@ function NewEmployeePageInner() {
                     <input type="email" placeholder="personal.email@example.com" value={form.personalEmail} onChange={(e) => setForm({ ...form, personalEmail: e.target.value })} className={inputCls} />
                   </IconInput>
                 </Field>
-                <Field label="Personal Phone">
+                <Field label="Personal Phone" required>
                   <IconInput icon={<Phone size={14} />}>
                     <input inputMode="tel" maxLength={15} placeholder="Enter personal phone number" value={form.personalPhone} onChange={(e) => setForm({ ...form, personalPhone: sanitizePhone(e.target.value) })} className={inputCls} />
                   </IconInput>
@@ -756,7 +783,7 @@ function NewEmployeePageInner() {
               <div className="space-y-4">
                 <div>
                   <p className="text-[13px] font-semibold text-gray-800 mb-2">Present address</p>
-                  <AddressBlock value={form.currentAddress} onChange={(key, v) => updateAddress("currentAddress", key, v)} />
+                  <AddressBlock required value={form.currentAddress} onChange={(key, v) => updateAddress("currentAddress", key, v)} />
                 </div>
                 <div className="border-t border-gray-100 pt-4">
                   <div className="flex items-center justify-between mb-2">
@@ -924,8 +951,8 @@ function NewEmployeePageInner() {
                 <table className="w-full text-xs">
                   <thead className="bg-gray-50/60 text-table-head uppercase tracking-wide text-gray-500">
                     <tr>
-                      <th className="text-left px-2 py-2 text-[11px] font-semibold">Institution</th>
-                      <th className="text-left px-2 py-2 text-[11px] font-semibold">Degree</th>
+                      <th className="text-left px-2 py-2 text-[11px] font-semibold">Institution <span className="text-red-500">*</span></th>
+                      <th className="text-left px-2 py-2 text-[11px] font-semibold">Degree <span className="text-red-500">*</span></th>
                       <th className="text-left px-2 py-2 text-[11px] font-semibold">Field of Study</th>
                       <th className="text-left px-2 py-2 text-[11px] font-semibold">Start Year</th>
                       <th className="text-left px-2 py-2 text-[11px] font-semibold">End Year</th>
@@ -1129,6 +1156,7 @@ function NewEmployeePageInner() {
               sectionRef={(el) => { sectionRefs.current.bank = el; }}
             >
               <BankDetailsFields
+                markRequired
                 value={{
                   bankName: form.bankName,
                   bankAccountNumber: form.bankAccountNumber,
@@ -1253,7 +1281,9 @@ function Section({
           {icon}
         </div>
         <div className="flex-1">
-          <h2 className="text-[13px] font-semibold text-gray-900 leading-tight">{title}</h2>
+          <h2 className="text-[13px] font-semibold text-gray-900 leading-tight">
+            {title.endsWith(" *") ? (<>{title.slice(0, -2)} <span className="text-red-500">*</span></>) : title}
+          </h2>
           <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>
         </div>
         {action && <div className="shrink-0">{action}</div>}
@@ -1264,29 +1294,44 @@ function Section({
 }
 
 function AddressBlock({
-  value, onChange,
+  value, onChange, required = false,
 }: {
   value: Address;
   onChange: (key: keyof Address, v: string) => void;
+  required?: boolean;
 }) {
+  // When `required`, show labels with a red asterisk on the mandatory fields.
+  const Lbl = ({ text, star }: { text: string; star?: boolean }) =>
+    required ? (
+      <label className="block text-xs font-medium text-gray-800 mb-1.5">
+        {text} {star && <span className="text-red-500">*</span>}
+      </label>
+    ) : null;
+
   return (
     <div className="grid grid-cols-6 gap-3">
       <div className="col-span-3">
+        <Lbl text="Address Line 1" star />
         <FormInput placeholder="Address line 1" value={value.line1} onChange={(e) => onChange("line1", e.target.value)} />
       </div>
       <div className="col-span-3">
+        <Lbl text="Address Line 2" />
         <FormInput placeholder="Address line 2" value={value.line2} onChange={(e) => onChange("line2", e.target.value)} />
       </div>
       <div className="col-span-2">
+        <Lbl text="City" star />
         <FormInput placeholder="City" value={value.city} onChange={(e) => onChange("city", e.target.value)} />
       </div>
       <div className="col-span-2">
+        <Lbl text="Country" star />
         <Select value={value.country} onChange={(v) => onChange("country", v)} placeholder="Country" options={COUNTRY_OPTS} />
       </div>
       <div className="col-span-2">
+        <Lbl text="State" star />
         <Select value={value.state} onChange={(v) => onChange("state", v)} placeholder="State" searchable options={STATE_OPTS} />
       </div>
       <div className="col-span-2">
+        <Lbl text="Postal Code" star />
         <FormInput placeholder="Postal Code" value={value.postalCode} onChange={(e) => onChange("postalCode", e.target.value)} />
       </div>
     </div>

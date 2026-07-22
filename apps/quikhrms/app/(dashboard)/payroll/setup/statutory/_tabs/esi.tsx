@@ -53,6 +53,8 @@ export function ESITab({ onSaved }: { onSaved?: () => void } = {}) {
   }, [data]);
 
   const saveMut = useMutation({
+    // Shown via the inline error banner below — suppress the global modal.
+    meta: { suppressGlobalError: true },
     mutationFn: (body: ESICfg) => api.put("/api/v1/hrms/payroll/statutory/esi", body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["payroll"] });

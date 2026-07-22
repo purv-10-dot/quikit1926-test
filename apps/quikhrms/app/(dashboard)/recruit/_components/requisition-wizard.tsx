@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
 import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { clsx } from "clsx";
-import { Plus, X, Check, ChevronDown, Sparkles, Trash2, Target, ArrowLeft, ArrowRight, Search as SearchIcon } from "lucide-react";
+import { Plus, X, Check, ChevronDown, Sparkles, Trash2, ArrowLeft, ArrowRight, Search as SearchIcon } from "lucide-react";
+import { INDIAN_CITIES } from "@/lib/data/indian-cities";
 
 export interface DeptOption { id: string; name: string; code?: string | null; }
 export interface PipelineOption { id: string; name: string; isDefault: boolean; stages: { name: string }[]; }
@@ -21,6 +23,7 @@ export interface EmpOption {
   jobTitle?: string | null;
   designation?: { title: string } | null;
 }
+
 
 export interface ReqFormShape {
   title: string;
@@ -55,11 +58,12 @@ export interface ReqFormShape {
   niceToHave: string[];
   benefits: string[];
   education: string;
+  passingYear: number | null;
+  technicalQuestions: string[];
   referralBonusAmount: number | null;
   careerPageVisible: boolean;
   internalPostingOnly: boolean;
   postToJobPortal: boolean;
-  rolePurpose: string;
   responsibilities: string[];
   skillWeights: SkillWeightItem[];
   justification: string;
@@ -75,8 +79,8 @@ export const emptyReqForm: ReqFormShape = {
   targetJoiningDate: "", closedDate: "", etaToFillDays: null, jobGrade: "", costCenter: "",
   jobLocation: "", jobDuration: "", workTimings: "", interviewMode: "",
   jobDescription: "", requirements: [], niceToHave: [], benefits: [],
-  education: "", referralBonusAmount: null, careerPageVisible: true, internalPostingOnly: false, postToJobPortal: false,
-  rolePurpose: "", responsibilities: [], skillWeights: [], justification: "",
+  education: "", passingYear: null, technicalQuestions: [], referralBonusAmount: null, careerPageVisible: true, internalPostingOnly: false, postToJobPortal: false,
+  responsibilities: [], skillWeights: [], justification: "",
 };
 
 export function toReqPayload(f: ReqFormShape) {
@@ -116,11 +120,12 @@ export function toReqPayload(f: ReqFormShape) {
     niceToHave: arr(f.niceToHave),
     benefits: arr(f.benefits),
     education: s(f.education),
+    passingYear: n(f.passingYear),
+    technicalQuestions: arr(f.technicalQuestions),
     referralBonusAmount: n(f.referralBonusAmount),
     careerPageVisible: f.careerPageVisible,
     internalPostingOnly: f.internalPostingOnly,
     postToJobPortal: f.postToJobPortal,
-    rolePurpose: s(f.rolePurpose),
     responsibilities: arr(f.responsibilities),
     skillWeights: f.skillWeights.length ? f.skillWeights : undefined,
     justification: s(f.justification),
@@ -137,12 +142,37 @@ function MultiSelect({
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const ref = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Dropdown is portaled to <body> so the modal's `overflow-y-auto` can't clip
+  // it; we position it manually under the trigger and keep it in sync on
+  // scroll/resize.
+  const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null);
+
+  const reposition = () => {
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setRect({ top: r.bottom + 4, left: r.left, width: r.width });
+  };
 
   useEffect(() => {
     if (!open) { setQ(""); return; }
-    const onClick = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    reposition();
+    const onClick = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (ref.current?.contains(t) || panelRef.current?.contains(t)) return;
+      setOpen(false);
+    };
+    const onScrollResize = () => reposition();
     document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
+    window.addEventListener("resize", onScrollResize);
+    // capture=true so scrolling inside the modal body also repositions the panel
+    window.addEventListener("scroll", onScrollResize, true);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      window.removeEventListener("resize", onScrollResize);
+      window.removeEventListener("scroll", onScrollResize, true);
+    };
   }, [open]);
 
   const filtered = q.trim()
@@ -181,8 +211,12 @@ function MultiSelect({
         </div>
       )}
 
-      {open && (
-        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden">
+      {open && rect && createPortal(
+        <div
+          ref={panelRef}
+          style={{ position: "fixed", top: rect.top, left: rect.left, width: rect.width, zIndex: 9999 }}
+          className="bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden"
+        >
           <div className="p-2 border-b border-gray-100 bg-gray-50">
             <div className="relative">
               <SearchIcon size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -212,7 +246,8 @@ function MultiSelect({
               );
             })}
           </ul>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
@@ -278,14 +313,18 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
 
   const justificationLen = form.justification.trim().length;
   const justificationOk = !showJustification || justificationLen >= JUSTIFICATION_MIN;
-  const canStep1 = form.title.trim().length > 0 && !!form.departmentId && justificationOk;
-  const canStep2 = !!form.pipelineId;
+  // Office / Hybrid roles must have a job location (Remote doesn't).
+  const jobLocationOk = form.workLocation === "Remote" || form.jobLocation.trim().length > 0;
+  const canStep1 = form.title.trim().length > 0 && !!form.departmentId && justificationOk && jobLocationOk;
+  const canStep2 = !!form.pipelineId && !!form.hiringManagerId && !!form.recruiterId;
 
   // Step 3 (Compensation & Planning) cross-field logic checks.
   const todayStr = new Date().toISOString().slice(0, 10);
   const compErrors = {
-    exp: form.experienceMin != null && form.experienceMax != null && form.experienceMin > form.experienceMax
-      ? "Min experience can’t be greater than max." : "",
+    exp: (form.experienceMin ?? 0) > 50 || (form.experienceMax ?? 0) > 50
+      ? "Experience can’t exceed 50 years."
+      : form.experienceMin != null && form.experienceMax != null && form.experienceMin > form.experienceMax
+        ? "Min experience can’t be greater than max." : "",
     salary: form.salaryMin != null && form.salaryMax != null && form.salaryMin > form.salaryMax
       ? "Min salary can’t be greater than max." : "",
     budget: form.budget != null && form.salaryMax != null && form.budget < form.salaryMax
@@ -297,12 +336,25 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
     closedDate: form.closedDate && form.closedDate < todayStr
       ? "Timeline to close can’t be in the past." : "",
   };
-  const step3Valid = !compErrors.exp && !compErrors.salary && !compErrors.budget && !compErrors.targetJoiningDate && !compErrors.closedDate;
-  const canCreate = canStep1 && canStep2 && step3Valid;
+  const compRequiredFilled = form.experienceMin != null && form.experienceMax != null && form.salaryMin != null && form.salaryMax != null;
+  const step3Valid = compRequiredFilled && !compErrors.exp && !compErrors.salary && !compErrors.budget && !compErrors.targetJoiningDate && !compErrors.closedDate;
+  // At least one technical question is required for NEW requisitions. Edits of
+  // older requisitions (created before this field existed) aren't forced.
+  const questionsOk = isEdit || form.technicalQuestions.length > 0;
+  const canCreate = canStep1 && canStep2 && step3Valid && questionsOk;
 
   const next = () => setStep((s) => Math.min(s + 1, REQ_STEPS.length - 1));
   const back = () => setStep((s) => Math.max(s - 1, 0));
   const canAdvance = step === 0 ? canStep1 : step === 1 ? canStep2 : step === 2 ? step3Valid : true;
+
+  // Per-step validity + "can I jump to step i?" — a forward jump is only allowed
+  // when EVERY prior step is complete, so users can't skip mandatory steps 1–3
+  // by clicking a later step dot.
+  const stepValid = (idx: number) => (idx === 0 ? canStep1 : idx === 1 ? canStep2 : idx === 2 ? step3Valid : true);
+  const canReachStep = (i: number) => {
+    for (let j = 0; j < i; j++) if (!stepValid(j)) return false;
+    return true;
+  };
 
   const generate = async () => {
     if (!form.title.trim()) { toast.error("Add a role title first"); return; }
@@ -340,14 +392,16 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
   return (
     <div className="w-full">
       {/* Stepper */}
-      <div className="flex items-center gap-1 mb-4 overflow-x-auto pb-1">
+      <div className="flex items-center gap-1 mb-3 overflow-x-auto pb-1">
         {REQ_STEPS.map((s, i) => {
           const done = i < step;
           const active = i === step;
+          const reachable = i <= step || canReachStep(i);
           return (
             <div key={s.id} className="flex items-center gap-1 shrink-0">
-              <button type="button" onClick={() => (i < step || canAdvance || i === step) && setStep(i)}
-                className="flex items-center gap-2 group">
+              <button type="button" disabled={!reachable} onClick={() => reachable && setStep(i)}
+                title={reachable ? undefined : "Complete the earlier steps first"}
+                className={clsx("flex items-center gap-2 group", !reachable && "cursor-not-allowed opacity-60")}>
                 <span className={clsx("w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold transition shrink-0",
                   done ? "bg-green-600 text-white" : active ? "bg-green-600 text-white ring-4 ring-green-100" : "bg-gray-200 text-gray-500")}>
                   {done ? <Check size={13} /> : i + 1}
@@ -362,10 +416,10 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
         })}
       </div>
 
-      <div className="min-h-[300px]">
+      <div className="min-h-[240px]">
         {/* Step 1 — Basics */}
         {step === 0 && (
-          <div className="space-y-4">
+          <div className="space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className={reqLabel}>Role Title <span className="text-red-500">*</span></label>
@@ -379,15 +433,36 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                   options={departments.map((d) => ({ value: d.id, label: d.name, description: d.code ?? undefined }))} />
               </div>
             </div>
-            <div>
-              <label className={reqLabel}>Job Opening Name <span className="text-gray-400 font-normal">(optional)</span></label>
-              <input type="text" value={form.jobOpeningName} onChange={(e) => setForm({ ...form, jobOpeningName: e.target.value })}
-                placeholder="A friendly name for this opening" className={reqInput} />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className={reqLabel}>Job Opening Name <span className="text-gray-400 font-normal">(optional)</span></label>
+                <input type="text" value={form.jobOpeningName} onChange={(e) => setForm({ ...form, jobOpeningName: e.target.value })}
+                  placeholder="A friendly name for this opening" className={reqInput} />
+              </div>
+              {(form.workLocation === "Office" || form.workLocation === "Hybrid") && (
+              <div>
+                <label className={reqLabel}>Job Location <span className="text-red-500">*</span></label>
+                <Select
+                  value={form.jobLocation}
+                  onChange={(v) => setForm({ ...form, jobLocation: v })}
+                  searchable
+                  placeholder="Search city…"
+                  options={INDIAN_CITIES.map((c) => ({ value: c, label: c }))}
+                />
+                {!form.jobLocation.trim() && <p className="mt-1 text-[11px] text-red-500">Required for Office / Hybrid roles.</p>}
+              </div>
+              )}
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div>
                 <label className={reqLabel}>Positions</label>
-                <NumberInput allowDecimal={false} min={1} value={form.positions} onChange={(v) => setForm({ ...form, positions: v ?? 1 })} className={reqInput} />
+                <NumberInput allowDecimal={false} min={1} max={500} value={form.positions}
+                  onChange={(v) => setForm({ ...form, positions: v ?? 1 })}
+                  onBlur={() => { if (!form.positions || form.positions < 1) setForm((p) => ({ ...p, positions: 1 })); else if (form.positions > 500) setForm((p) => ({ ...p, positions: 500 })); }}
+                  className={clsx(reqInput, form.positions > 500 && "!border-red-400 !ring-red-300")} />
+                {form.positions > 500
+                  ? <p className="text-[11px] text-red-500 mt-1">Maximum 500 positions.</p>
+                  : <p className="text-[11px] text-gray-400 mt-1">Max 500</p>}
               </div>
               <div>
                 <label className={reqLabel}>Requisition Type</label>
@@ -397,29 +472,12 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
               <div>
                 <label className={reqLabel}>Employment</label>
                 <Select value={form.employmentType} onChange={(v) => setForm({ ...form, employmentType: v })}
-                  options={["FullTime", "PartTime", "Contract", "Intern", "Freelancer", "Consultant"].map((t) => ({ value: t, label: t }))} />
+                  options={["FullTime", "PartTime", "Contract", "Intern", "Freelance"].map((t) => ({ value: t, label: t }))} />
               </div>
               <div>
                 <label className={reqLabel}>Location</label>
-                <Select value={form.workLocation} onChange={(v) => setForm({ ...form, workLocation: v })}
+                <Select value={form.workLocation} onChange={(v) => setForm({ ...form, workLocation: v, ...(v === "Remote" ? { jobLocation: "" } : {}) })}
                   options={["Office", "Remote", "Hybrid"].map((t) => ({ value: t, label: t }))} />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className={reqLabel}>Job Location</label>
-                <input value={form.jobLocation} onChange={(e) => setForm({ ...form, jobLocation: e.target.value })}
-                  placeholder="e.g. Indore, MP" className={reqInput} />
-              </div>
-              <div>
-                <label className={reqLabel}>Job Duration</label>
-                <input value={form.jobDuration} onChange={(e) => setForm({ ...form, jobDuration: e.target.value })}
-                  placeholder="e.g. Permanent / 6 months" className={reqInput} />
-              </div>
-              <div>
-                <label className={reqLabel}>Work Timings / Shift</label>
-                <input value={form.workTimings} onChange={(e) => setForm({ ...form, workTimings: e.target.value })}
-                  placeholder="e.g. 9 AM–6 PM / Night shift" className={reqInput} />
               </div>
             </div>
             <div>
@@ -437,7 +495,7 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
             {showJustification && (
               <div>
                 <label className={reqLabel}>Business Justification <span className="text-red-500">*</span></label>
-                <textarea rows={3} value={form.justification}
+                <textarea rows={1} value={form.justification}
                   onChange={(e) => setForm({ ...form, justification: e.target.value })}
                   placeholder={`Why is this hire needed? (min ${JUSTIFICATION_MIN} characters) — reviewed by the approver.`}
                   className={clsx(reqInput, "resize-y", justificationLen > 0 && !justificationOk && errRing)} />
@@ -457,7 +515,7 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
 
         {/* Step 2 — Team & Pipeline */}
         {step === 1 && (
-          <div className="space-y-4">
+          <div className="space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className={reqLabel}>Hiring Pipeline <span className="text-red-500">*</span></label>
@@ -474,17 +532,6 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                 <p className="mt-1 text-[11px] text-gray-400">Only these employees can be picked as interviewers for this role.</p>
               </div>
             </div>
-            <div>
-              <label className={reqLabel}>In-person / Video interviews required?</label>
-              <Select value={form.interviewMode} onChange={(v) => setForm({ ...form, interviewMode: v })}
-                placeholder="— Select —"
-                options={[
-                  { value: "Video", label: "Yes — Video" },
-                  { value: "InPerson", label: "Yes — In-person" },
-                  { value: "Either", label: "Either" },
-                  { value: "NotRequired", label: "Not required" },
-                ]} />
-            </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className={reqLabel}>Reports To</label>
@@ -492,12 +539,12 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                   placeholder="— Select —" options={empOpts} />
               </div>
               <div>
-                <label className={reqLabel}>Hiring Manager</label>
+                <label className={reqLabel}>Hiring Manager <span className="text-red-500">*</span></label>
                 <Select value={form.hiringManagerId} onChange={(v) => setForm({ ...form, hiringManagerId: v })} searchable
                   placeholder="— Select —" options={empOpts} />
               </div>
               <div>
-                <label className={reqLabel}>Recruiter</label>
+                <label className={reqLabel}>Recruiter <span className="text-red-500">*</span></label>
                 <Select value={form.recruiterId} onChange={(v) => setForm({ ...form, recruiterId: v })} searchable
                   placeholder="— Select —" options={empOpts} />
               </div>
@@ -507,29 +554,39 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
 
         {/* Step 3 — Compensation & Planning */}
         {step === 2 && (
-          <div className="space-y-4">
+          <div className="space-y-3">
             <div>
               <p className={clsx(reqSection, "mb-2")}>Experience & Compensation</p>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                 <div>
-                  <label className={reqLabel}>Exp Min (yrs)</label>
-                  <NumberInput allowDecimal={false} min={0} value={form.experienceMin} onChange={(v) => setForm({ ...form, experienceMin: v })} className={clsx(reqInput, compErrors.exp && errRing)} />
+                  <label className={reqLabel}>Exp Min (yrs) <span className="text-red-500">*</span></label>
+                  <NumberInput min={0} max={50} value={form.experienceMin}
+                    onChange={(v) => setForm({ ...form, experienceMin: v })}
+                    onBlur={() => { if (form.experienceMin != null && form.experienceMin > 50) setForm((p) => ({ ...p, experienceMin: 50 })); }}
+                    className={clsx(reqInput, compErrors.exp && errRing)} />
                 </div>
                 <div>
-                  <label className={reqLabel}>Exp Max (yrs)</label>
-                  <NumberInput allowDecimal={false} min={0} value={form.experienceMax} onChange={(v) => setForm({ ...form, experienceMax: v })} className={clsx(reqInput, compErrors.exp && errRing)} />
+                  <label className={reqLabel}>Exp Max (yrs) <span className="text-red-500">*</span></label>
+                  <NumberInput min={0} max={50} value={form.experienceMax}
+                    onChange={(v) => setForm({ ...form, experienceMax: v })}
+                    onBlur={() => { if (form.experienceMax != null && form.experienceMax > 50) setForm((p) => ({ ...p, experienceMax: 50 })); }}
+                    className={clsx(reqInput, compErrors.exp && errRing)} />
                 </div>
                 <div>
-                  <label className={reqLabel}>Salary Min (LPA)</label>
-                  <NumberInput min={0} value={form.salaryMin} onChange={(v) => setForm({ ...form, salaryMin: v })} className={clsx(reqInput, compErrors.salary && errRing)} />
+                  <label className={reqLabel}>Salary Min (LPA) <span className="text-red-500">*</span></label>
+                  <NumberInput clamp min={0} max={999} value={form.salaryMin}
+                    onChange={(v) => setForm({ ...form, salaryMin: v })}
+                    className={clsx(reqInput, compErrors.salary && errRing)} />
                 </div>
                 <div>
-                  <label className={reqLabel}>Salary Max (LPA)</label>
-                  <NumberInput min={0} value={form.salaryMax} onChange={(v) => setForm({ ...form, salaryMax: v })} className={clsx(reqInput, (compErrors.salary || compErrors.budget) && errRing)} />
+                  <label className={reqLabel}>Salary Max (LPA) <span className="text-red-500">*</span></label>
+                  <NumberInput clamp min={0} max={999} value={form.salaryMax}
+                    onChange={(v) => setForm({ ...form, salaryMax: v })}
+                    className={clsx(reqInput, (compErrors.salary || compErrors.budget) && errRing)} />
                 </div>
                 <div>
-                  <label className={reqLabel}>Budget (₹)</label>
-                  <NumberInput min={0} value={form.budget} onChange={(v) => setForm({ ...form, budget: v })} className={clsx(reqInput, compErrors.budget && errRing)} />
+                  <label className={reqLabel}>Budget (LPA)</label>
+                  <NumberInput clamp min={0} max={999} value={form.budget} onChange={(v) => setForm({ ...form, budget: v })} className={clsx(reqInput, compErrors.budget && errRing)} />
                 </div>
               </div>
               {(compErrors.exp || compErrors.salary || compErrors.budget) && (
@@ -544,11 +601,6 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
               <p className={clsx(reqSection, "mb-2")}>Planning & Budget</p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
-                  <label className={reqLabel}>Target Joining Date</label>
-                  <input type="date" min={todayStr} value={form.targetJoiningDate} onChange={(e) => setForm({ ...form, targetJoiningDate: e.target.value })} className={clsx(reqInput, compErrors.targetJoiningDate && errRing)} />
-                  {compErrors.targetJoiningDate && <p className={errText}>{compErrors.targetJoiningDate}</p>}
-                </div>
-                <div>
                   <label className={reqLabel}>Timeline to Close</label>
                   <input type="date" min={todayStr} value={form.closedDate}
                     onChange={(e) => {
@@ -560,6 +612,11 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                     }}
                     className={clsx(reqInput, compErrors.closedDate && errRing)} />
                   {compErrors.closedDate && <p className={errText}>{compErrors.closedDate}</p>}
+                </div>
+                <div>
+                  <label className={reqLabel}>Target Joining Date</label>
+                  <input type="date" min={todayStr} value={form.targetJoiningDate} onChange={(e) => setForm({ ...form, targetJoiningDate: e.target.value })} className={clsx(reqInput, compErrors.targetJoiningDate && errRing)} />
+                  {compErrors.targetJoiningDate && <p className={errText}>{compErrors.targetJoiningDate}</p>}
                 </div>
                 <div>
                   <label className={reqLabel}>ETA to Fill (days)</label>
@@ -574,7 +631,7 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
 
         {/* Step 4 — Role Details */}
         {step === 3 && (
-          <div className="space-y-4">
+          <div className="space-y-3">
             <div className="flex items-center justify-between gap-3 rounded-lg border border-[#bbf7d0] bg-gradient-to-r from-[#f0fdf4] to-white px-3 py-2.5">
               <div>
                 <div className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-[#15803d]"><Sparkles size={14} /> Auto-write with AI</div>
@@ -592,37 +649,49 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
             </div>
             <div className="border-t border-gray-100 pt-3">
               <p className={clsx(reqSection, "mb-2")}>Requirements &amp; Posting</p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <BulletListField label="Requirements (must-have)" placeholder="e.g. 5+ yrs building distributed systems"
                   items={form.requirements} onChange={(v) => setForm({ ...form, requirements: v })} />
                 <BulletListField label="Nice to have" placeholder="e.g. Open-source contributions"
                   items={form.niceToHave} onChange={(v) => setForm({ ...form, niceToHave: v })} />
-              </div>
-              <div className="mt-3">
                 <BulletListField label="Benefits &amp; Perks" placeholder="e.g. Health insurance, ESOPs, flexible hours"
                   items={form.benefits} onChange={(v) => setForm({ ...form, benefits: v })} />
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
+                <BulletListField label="Key responsibilities" placeholder="e.g. Run discovery workshops and consulting discussions"
+                  items={form.responsibilities} onChange={(v) => setForm({ ...form, responsibilities: v })} />
                 <div>
-                  <label className={reqLabel}>Education</label>
-                  <input type="text" value={form.education} onChange={(e) => setForm({ ...form, education: e.target.value })} placeholder="e.g. B.Tech / B.E. in CS or equivalent" className={reqInput} />
+                  <label className={reqLabel}>Education qualification required</label>
+                  <Select
+                    value={form.education}
+                    onChange={(v) => setForm({ ...form, education: v })}
+                    placeholder="Select minimum qualification"
+                    options={[
+                      "Class 10 (Secondary)",
+                      "Class 12 (Intermediate)",
+                      "Diploma",
+                      "Graduation/Diploma",
+                      "Post Graduation",
+                      "Doctorate/PhD",
+                    ].map((q) => ({ value: q, label: q }))}
+                  />
                 </div>
                 <div>
-                  <label className={reqLabel}>Referral Bonus (₹)</label>
-                  <NumberInput min={0} value={form.referralBonusAmount} onChange={(v) => setForm({ ...form, referralBonusAmount: v })} className={reqInput} />
+                  <label className={reqLabel}>Year of passing <span className="text-gray-400 font-normal">(optional)</span></label>
+                  <NumberInput allowDecimal={false} clamp min={1950} max={2100} maxLength={4} value={form.passingYear}
+                    onChange={(v) => setForm({ ...form, passingYear: v })}
+                    placeholder="e.g. 2020" className={reqInput} />
                 </div>
-              </div>
-              <div className="flex items-center gap-4 mt-4">
-                <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                  <input type="checkbox" checked={form.careerPageVisible} onChange={(e) => setForm({ ...form, careerPageVisible: e.target.checked })}
-                    className="w-4 h-4 rounded border-gray-300 text-green-600 focus:ring-green-500" />
-                  Show on careers page
-                </label>
-                <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                  <input type="checkbox" checked={form.internalPostingOnly} onChange={(e) => setForm({ ...form, internalPostingOnly: e.target.checked })}
-                    className="w-4 h-4 rounded border-gray-300 text-green-600 focus:ring-green-500" />
-                  Internal posting only
-                </label>
+                <div>
+                  <label className={reqLabel}>Referral Bonus (₹) <span className="text-gray-400 font-normal">(optional)</span></label>
+                  <NumberInput min={0} max={1000000} value={form.referralBonusAmount}
+                    onChange={(v) => setForm({ ...form, referralBonusAmount: v })}
+                    onBlur={() => { if (form.referralBonusAmount != null && form.referralBonusAmount > 1000000) setForm((p) => ({ ...p, referralBonusAmount: 1000000 })); }}
+                    className={clsx(reqInput, (form.referralBonusAmount ?? 0) > 1000000 && errRing)} />
+                  {(form.referralBonusAmount ?? 0) > 1000000
+                    ? <p className={errText}>Maximum ₹10,00,000.</p>
+                    : <p className="mt-1 text-[11px] text-gray-400">Max ₹10,00,000</p>}
+                </div>
               </div>
             </div>
           </div>
@@ -630,9 +699,7 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
 
         {/* Step 5 — Scorecard & Skills */}
         {step === 4 && (
-          <div className="space-y-4">
-            <RoleScorecardSection form={form} setForm={setForm} />
-
+          <div className="space-y-3">
             <div className="rounded-lg border border-green-200 bg-gradient-to-br from-green-50/60 to-white p-3">
               <div className="flex items-start justify-between gap-2 mb-2">
                 <div>
@@ -699,12 +766,27 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                   className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-green-600 hover:bg-green-700 text-white text-xs font-medium"><Plus size={13} /> Add</button>
               </div>
             </div>
+
+            {/* Technical Questions — merged into Scorecard & Skills */}
+            <div className="pt-3 border-t border-gray-100">
+              <p className={clsx(reqSection, "mb-1")}>Technical Questions <span className="text-red-500">*</span></p>
+              <p className="text-[11px] text-gray-500 mb-2">
+                Add role-specific questions the interview panel should ask candidates for this job. At least one is required.
+              </p>
+              <BulletListField
+                label="Questions"
+                placeholder="e.g. Explain the difference between useMemo and useCallback"
+                items={form.technicalQuestions}
+                onChange={(v) => setForm({ ...form, technicalQuestions: v })}
+              />
+              {!questionsOk && <p className={errText}>Add at least one technical question.</p>}
+            </div>
           </div>
         )}
       </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-between gap-2 pt-4 mt-4 border-t border-gray-100">
+      <div className="flex items-center justify-between gap-2 pt-3 mt-3 border-t border-gray-100">
         <button type="button" onClick={onCancel}
           className="inline-flex items-center px-3 py-1.5 rounded-full border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
         <div className="flex items-center gap-2">
@@ -731,77 +813,6 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
   );
 }
 
-interface ScorecardForm {
-  rolePurpose: string;
-  responsibilities: string[];
-}
-
-function RoleScorecardSection<T extends ScorecardForm>({
-  form, setForm,
-}: {
-  form: T;
-  setForm: React.Dispatch<React.SetStateAction<T>>;
-}) {
-  const [open, setOpen] = useState(false);
-
-  const filled =
-    (form.rolePurpose.trim() ? 1 : 0)
-    + form.responsibilities.length;
-
-  return (
-    <div className="rounded-lg border border-gray-200 bg-white">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-gray-50 transition rounded-lg"
-      >
-        <div className="flex items-center gap-2">
-          <Target size={14} className="text-green-700" />
-          <span className="text-[13px] font-semibold text-gray-800">Role Scorecard</span>
-          <span className="text-[11px] text-gray-500 font-normal">(optional)</span>
-          {filled > 0 && (
-            <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100 text-[10px] font-bold tabular-nums">
-              {filled} field{filled === 1 ? "" : "s"}
-            </span>
-          )}
-        </div>
-        <ChevronDown
-          size={14}
-          className={`text-gray-500 transition-transform ${open ? "rotate-180" : ""}`}
-        />
-      </button>
-
-      {open && (
-        <div className="px-4 pb-4 pt-1 space-y-4 border-t border-gray-100">
-          <p className="text-[11px] text-gray-500">
-            Captures the success criteria of the role — shared with candidates and used during onboarding & reviews.
-          </p>
-
-          <div>
-            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1">
-              Role purpose
-            </label>
-            <textarea
-              rows={2}
-              value={form.rolePurpose}
-              onChange={(e) => setForm((p) => ({ ...p, rolePurpose: e.target.value }))}
-              placeholder="e.g. Own enterprise growth by building a predictable sales pipeline and driving strategic account expansion."
-              className="w-full px-3 py-2 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 resize-none"
-            />
-            <p className="mt-1 text-[10px] text-gray-400">{form.rolePurpose.length} / 500 characters · 1–2 sentences</p>
-          </div>
-
-          <BulletListField
-            label="Key responsibilities"
-            placeholder="e.g. Run discovery workshops and consulting discussions"
-            items={form.responsibilities}
-            onChange={(next) => setForm((p) => ({ ...p, responsibilities: next }))}
-          />
-        </div>
-      )}
-    </div>
-  );
-}
 
 function BulletListField({
   label, placeholder, items, onChange,

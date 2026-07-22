@@ -648,34 +648,37 @@ export function TimesheetView({
 
   async function downloadPdf() {
     const rows = await buildExportRows();
-    if (!rows) return;
-    const win = window.open("", "_blank");
-    if (!win) return;
-    const html = `<!doctype html><html><head><title>Timesheet</title><style>
-      body { font-family: -apple-system, sans-serif; padding: 16px; font-size: 12px; }
-      h1 { font-size: 16px; margin: 0 0 12px; }
-      table { border-collapse: collapse; width: 100%; }
-      th, td { border: 1px solid #d1d5db; padding: 4px 6px; text-align: left; }
-      th { background: #f3f4f6; }
-      tr:last-child td { font-weight: 600; background: #f9fafb; }
-    </style></head><body>
-      <h1>Timesheet — ${escapeHtml(exportFrom)} to ${escapeHtml(exportTo)}</h1>
-      <table>${rows
-        .map(
-          (r, i) =>
-            `<tr>${r
-              .map((c) =>
-                i === 0
-                  ? `<th>${escapeHtml(c)}</th>`
-                  : `<td>${escapeHtml(c)}</td>`,
-              )
-              .join("")}</tr>`,
-        )
-        .join("")}</table>
-      <script>window.onload = () => window.print();</script>
-    </body></html>`;
-    win.document.write(html);
-    win.document.close();
+    if (!rows || rows.length === 0) return;
+    // Lazy-load jsPDF so it stays out of the main bundle (only pulled on export).
+    const [{ jsPDF }, autoTableMod] = await Promise.all([
+      import("jspdf"),
+      import("jspdf-autotable"),
+    ]);
+    const autoTable = autoTableMod.default;
+
+    const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+    doc.setFontSize(14);
+    doc.text(`Timesheet — ${exportFrom} to ${exportTo}`, 40, 36);
+
+    const [head, ...body] = rows;
+    autoTable(doc, {
+      head: [head],
+      body,
+      startY: 52,
+      theme: "grid",
+      styles: { fontSize: 7, cellPadding: 3, overflow: "linebreak" },
+      headStyles: { fillColor: [243, 244, 246], textColor: [17, 24, 39], fontStyle: "bold" },
+      // Bold the trailing "Total" row (last body row) to match the on-screen grid.
+      didParseCell: (data) => {
+        if (data.section === "body" && data.row.index === body.length - 1) {
+          data.cell.styles.fontStyle = "bold";
+          data.cell.styles.fillColor = [249, 250, 251];
+        }
+      },
+    });
+
+    // Saves straight to the browser's download folder — no tab, no dialog.
+    doc.save(`Timesheet ${exportFrom} to ${exportTo}.pdf`);
   }
 
   // ============================== Render ==============================

@@ -14,6 +14,13 @@ export interface OrgUser {
   joinedAt: string;
   appRoleId: string | null;
   appRoleName: string | null;
+  // Linked employee (identity bridge); null when the user has no employee record.
+  employeeId: string | null;
+  contact: string | null;
+  department: string | null;
+  designation: string | null;
+  joiningDate: string | null;
+  employeeStatus: string | null;
   /** Present ONCE in the POST response when the server generated a temp password. */
   tempPassword?: string;
 }

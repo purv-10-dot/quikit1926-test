@@ -4,8 +4,8 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
+import { useDialog } from "@/components/hrms/dialog";
 import { Modal } from "@/components/hrms/modal";
-import { NumberInput } from "@/components/hrms/ui/number-input";
 import { Select } from "@/components/hrms/select";
 import { FileCheck2, Plus, Pencil, Trash2, Power, PowerOff, Sparkles } from "lucide-react";
 import { clsx } from "clsx";
@@ -23,6 +23,7 @@ export default function CandidateDocumentsSettings() {
   const api = useApiClient();
   const qc = useQueryClient();
   const toast = useToast();
+  const dialog = useDialog();
 
   const { data, isLoading } = useQuery({
     queryKey: ["candidate-doc-types", "all"],
@@ -70,7 +71,7 @@ export default function CandidateDocumentsSettings() {
   const list = bundleTab === "PreOffer" ? preOffer : postOffer;
 
   return (
-    <div className="bg-slate-50 min-h-screen -m-6 p-6">
+    <div className="bg-slate-50 -m-6 p-6">
       <div className="flex items-start justify-between mb-5 gap-3 flex-wrap">
         <div>
           <h1 className="text-base font-semibold text-slate-900 flex items-center gap-2">
@@ -158,15 +159,21 @@ export default function CandidateDocumentsSettings() {
                       >
                         <Pencil size={12} /> Edit
                       </button>
-                      {!d.isDefault && (
-                        <button
-                          onClick={() => { if (confirm(`Delete "${d.name}"?`)) deleteMut.mutate(d.id); }}
-                          disabled={deleteMut.isPending}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-normal bg-red-50 text-red-700 ring-1 ring-red-200 hover:bg-red-100 disabled:opacity-50"
-                        >
-                          <Trash2 size={12} /> Delete
-                        </button>
-                      )}
+                      <button
+                        onClick={async () => {
+                          const ok = await dialog.confirm({
+                            title: "Delete document type?",
+                            description: `Delete "${d.name}"? Existing uploads that reference it will keep it disabled instead.`,
+                            confirmLabel: "Delete",
+                            variant: "danger",
+                          });
+                          if (ok) deleteMut.mutate(d.id);
+                        }}
+                        disabled={deleteMut.isPending}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-normal bg-red-50 text-red-700 ring-1 ring-red-200 hover:bg-red-100 disabled:opacity-50"
+                      >
+                        <Trash2 size={12} /> Delete
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -243,17 +250,17 @@ function FormFields({ form, onChange, lockBundle }: {
 }) {
   return (
     <>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Document Name *</label>
-        <input
-          required
-          value={form.name}
-          onChange={(e) => onChange({ ...form, name: e.target.value })}
-          placeholder="e.g. Passport, Voter ID, Reference Letter"
-          className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]"
-        />
-      </div>
       <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Document Name *</label>
+          <input
+            required
+            value={form.name}
+            onChange={(e) => onChange({ ...form, name: e.target.value })}
+            placeholder="e.g. Passport, Voter ID"
+            className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]"
+          />
+        </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Bundle *</label>
           <Select
@@ -265,16 +272,6 @@ function FormFields({ form, onChange, lockBundle }: {
               { value: "PreOffer", label: "Before Offer" },
               { value: "PostOffer", label: "After Offer" },
             ]}
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Sort Order</label>
-          <NumberInput
-            allowDecimal={false}
-            min={0}
-            value={form.sortOrder}
-            onChange={(v) => onChange({ ...form, sortOrder: v ?? 0 })}
-            className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]"
           />
         </div>
       </div>

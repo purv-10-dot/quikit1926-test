@@ -10,7 +10,6 @@ import { requireUser } from "@/lib/auth/require";
 import { getEffectiveMatrix } from "@/lib/auth/permissions";
 import { AccountsExplorer } from "@/components/accounts/accounts-explorer";
 
-
 const ADMIN_ROLE = "Administrator";
 
 export default async function AccountsPage() {

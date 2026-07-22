@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -73,9 +74,12 @@ export function Modal({ open, onClose, title, subtitle, headerIcon, children, si
   }, [render, onClose]);
 
   if (!render) return null;
+  // Portal to <body> so the overlay escapes any parent stacking context
+  // (e.g. a `relative z-10` page wrapper) and always covers the sticky top bar.
+  if (typeof document === "undefined") return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+  return createPortal(
+    <div className="fixed inset-0 z-[60] flex items-center justify-center">
       <div
         className={clsx(
           "fixed inset-0 bg-black/50",
@@ -109,6 +113,7 @@ export function Modal({ open, onClose, title, subtitle, headerIcon, children, si
         </div>
         <div className={`flex-1 min-h-0 ${bodyClassName}`}>{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

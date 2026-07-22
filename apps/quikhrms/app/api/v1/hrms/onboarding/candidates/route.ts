@@ -225,6 +225,20 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     });
     if (duplicate) return conflict("Work email already exists");
 
+    // Validate required FKs up front so a stale/cross-org id returns a clear
+    // message instead of a Prisma FK error surfacing as "Something went wrong".
+    const manager = await prisma.employee.findFirst({
+      where: { id: d.reportingManagerId, orgId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!manager) return validationError("Selected reporting manager not found.");
+
+    const role = await prisma.hrmsAppRole.findFirst({
+      where: { id: d.roleId, orgId },
+      select: { id: true },
+    });
+    if (!role) return validationError("Selected role not found.");
+
     const employeeCode = await generateEmployeeCode(orgId);
     const joining = d.dateOfJoining || d.tentativeJoiningDate || new Date().toISOString();
     const startDate = new Date(joining);
@@ -306,11 +320,15 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
 
     if (!d.saveDraft) {
       let tasks: TaskTpl[] = [];
+      let resolvedTemplateId: string | null = null;
       if (d.templateId) {
         const template = await prisma.onboardingTemplate.findFirst({
           where: { id: d.templateId, orgId, deletedAt: null },
         });
-        if (template) tasks = template.tasks as unknown as TaskTpl[];
+        if (template) {
+          tasks = template.tasks as unknown as TaskTpl[];
+          resolvedTemplateId = template.id;
+        }
       }
 
       if (tasks.length === 0) {
@@ -327,7 +345,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         data: {
           orgId,
           employeeId: employee.id,
-          templateId: d.templateId ?? null,
+          templateId: resolvedTemplateId,
           startDate,
           status: "InProgress",
           createdBy: userId,

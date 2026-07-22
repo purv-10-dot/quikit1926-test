@@ -33,6 +33,7 @@ export { Tabs, type TabsProps } from "./components/tabs";
 export { DataTable, TH_BASE, TD_BASE, type DataTableColumn, type DataTableProps } from "./components/data-table";
 export { default as ParticlesBg } from "./components/particles-bg";
 export { SignInComponent } from "./components/sign-in";
+export { authThemeCss } from "./lib/auth-theme-css";
 export { ToggleSwitch, type ToggleSwitchProps } from "./components/toggle-switch";
 export { ModuleTree, type ModuleTreeProps } from "./components/module-tree";
 export { TenantPicker, type TenantPickerProps, type TenantOption } from "./components/tenant-picker";

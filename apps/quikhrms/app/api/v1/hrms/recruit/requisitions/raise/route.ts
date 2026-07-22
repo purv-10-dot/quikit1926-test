@@ -15,14 +15,14 @@ const schema = z.object({
   jobOpeningName: z.string().optional(),
   positions: z.number().int().min(1).max(999).default(1),
   type: z.enum(["NewPosition", "Replacement", "Expansion"]).default("NewPosition"),
-  employmentType: z.enum(["FullTime", "PartTime", "Contract", "Intern", "Freelancer", "Consultant"]).default("FullTime"),
+  employmentType: z.enum(["FullTime", "PartTime", "Contract", "Intern"]).default("FullTime"),
   workLocation: z.enum(["Office", "Remote", "Hybrid"]).default("Office"),
   reportingToId: z.string().optional(),
   hiringManagerId: z.string().optional(),
   recruiterId: z.string().optional(),
   interviewPanelIds: z.array(z.string()).optional(),
-  experienceMin: z.number().int().optional(),
-  experienceMax: z.number().int().optional(),
+  experienceMin: z.number().optional(),
+  experienceMax: z.number().optional(),
   salaryMin: z.number().optional(),
   salaryMax: z.number().optional(),
   salaryCurrency: z.string().default("INR"),
@@ -39,6 +39,8 @@ const schema = z.object({
   skills: z.array(z.string()).optional(),
   skillWeights: z.array(z.object({ skill: z.string().min(1), weight: z.number().int().min(1).max(10) })).optional(),
   education: z.string().optional(),
+  passingYear: z.number().int().min(1950).max(2100).nullable().optional(),
+  technicalQuestions: z.array(z.string().max(500)).min(1, "Add at least one technical question").max(50),
   referralBonusAmount: z.number().optional(),
   careerPageVisible: z.boolean().optional(),
   internalPostingOnly: z.boolean().optional(),
@@ -74,7 +76,9 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     // Approval is driven by the org's configurable Requisition approval chain
     // (Settings → Approval Chains). No chain → block (mirrors Leave); the UI
     // prompts the admin to configure one.
-    const chain = await resolveApprovalChainLevels(orgId, "Requisition", raiserId);
+    // allowSelf: a requisition raiser who holds the approver role can approve
+    // their own requisition (small teams where admin raises + approves).
+    const chain = await resolveApprovalChainLevels(orgId, "Requisition", raiserId, true);
     if (!chain.ok) {
       return errorResponse(ErrorCode.APPROVAL_CHAIN_NOT_CONFIGURED, chain.message, 422, {
         module: "Requisition", reason: chain.reason,
@@ -115,6 +119,8 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         skills: data.skills ? JSON.parse(JSON.stringify(data.skills)) : undefined,
         skillWeights: data.skillWeights ? JSON.parse(JSON.stringify(data.skillWeights)) : undefined,
         education: data.education,
+        passingYear: data.passingYear,
+        technicalQuestions: data.technicalQuestions ? JSON.parse(JSON.stringify(data.technicalQuestions)) : undefined,
         referralBonusAmount: data.referralBonusAmount,
         careerPageVisible: data.careerPageVisible,
         internalPostingOnly: data.internalPostingOnly,

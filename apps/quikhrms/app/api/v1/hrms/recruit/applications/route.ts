@@ -24,6 +24,9 @@ export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
 
     const where = {
       orgId, deletedAt: null,
+      // Blacklisted / archived candidates drop off the active pipeline (reversible
+      // — un-archiving or lifting the blacklist brings their applications back).
+      candidate: { isBlacklisted: false, isArchived: false },
       ...(requisitionId && { requisitionId }),
       ...(statuses.length === 1
         ? { status: statuses[0] }
@@ -38,7 +41,7 @@ export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
         where, orderBy: { appliedDate: "desc" }, skip: (page - 1) * limit, take: limit,
         include: {
           candidate: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, location: true, source: true, currentCompany: true, currentDesignation: true, totalExperience: true, noticePeriod: true, currentCTC: true, expectedCTC: true, skills: true, linkedinUrl: true, portfolioUrl: true, resumeUrl: true } },
-          requisition: { select: { id: true, title: true, requisitionNumber: true, pipelineId: true, interviewPanel: true } },
+          requisition: { select: { id: true, title: true, requisitionNumber: true, pipelineId: true, interviewPanel: true, technicalQuestions: true } },
           _count: { select: { interviews: true } },
         },
       }),
@@ -47,6 +50,7 @@ export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
 
     const latestMap = new Map<string, { round: number; recommendation: string; submittedAt: Date }>();
     const scorecardCount = new Map<string, number>();
+    const ratingSum = new Map<string, number>();
     const latestInterviewMap = new Map<string, {
       id: string; round: number; type: string; status: string;
       scheduledAt: Date; duration: number;
@@ -71,7 +75,7 @@ export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
         prisma.interview.findMany({
           where: { orgId, deletedAt: null, applicationId: { in: appIds }, overallRating: { not: null } },
           orderBy: { scorecardSubmittedAt: "desc" },
-          select: { applicationId: true, recommendation: true, scorecardSubmittedAt: true, round: true },
+          select: { applicationId: true, recommendation: true, scorecardSubmittedAt: true, round: true, overallRating: true },
         }),
         prisma.interview.findMany({
           where: { orgId, deletedAt: null, applicationId: { in: appIds } },
@@ -103,6 +107,7 @@ export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
 
       for (const sc of scorecards) {
         scorecardCount.set(sc.applicationId, (scorecardCount.get(sc.applicationId) ?? 0) + 1);
+        if (sc.overallRating != null) ratingSum.set(sc.applicationId, (ratingSum.get(sc.applicationId) ?? 0) + sc.overallRating);
         if (!latestMap.has(sc.applicationId) && sc.scorecardSubmittedAt) {
           latestMap.set(sc.applicationId, { round: sc.round, recommendation: sc.recommendation ?? "", submittedAt: sc.scorecardSubmittedAt });
         }
@@ -142,6 +147,9 @@ export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
     const enriched = apps.map((a) => ({
       ...a,
       _count: { ...a._count, scorecards: scorecardCount.get(a.id) ?? 0 },
+      avgRating: (scorecardCount.get(a.id) ?? 0) > 0
+        ? Math.round((ratingSum.get(a.id) ?? 0) / (scorecardCount.get(a.id) ?? 1) * 10) / 10
+        : null,
       latestScorecard: latestMap.get(a.id) ?? null,
       latestInterview: latestInterviewMap.get(a.id) ?? null,
       latestOffer: a.offerStatus != null
@@ -185,6 +193,36 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       return conflict(`${candidateCheck.firstName} ${candidateCheck.lastName} is archived. Restore from archive before creating an application.`);
     }
 
+    // Re-apply cooling period (Company Settings). Applies to ANY role — once a
+    // candidate is rejected, they can't be applied to any requisition until the
+    // cooling window passes (measured from their most recent rejection).
+    const company = await prisma.companySettings.findUnique({
+      where: { orgId }, select: { candidateCoolingMonths: true },
+    });
+    const coolMonths = company?.candidateCoolingMonths ?? 0;
+    if (coolMonths > 0) {
+      const lastRejected = await prisma.jobApplication.findFirst({
+        where: {
+          orgId, candidateId, deletedAt: null,
+          status: { in: ["AppRejected", "AppDeclined"] },
+          // Penalty-free rejections (requisition cancelled / not selected after a
+          // hold-resume) don't lock the candidate out of other roles.
+          rejectionExempt: false,
+        },
+        orderBy: { updatedAt: "desc" },
+        select: { updatedAt: true, requisition: { select: { title: true } } },
+      });
+      if (lastRejected) {
+        const eligibleAt = new Date(lastRejected.updatedAt);
+        eligibleAt.setMonth(eligibleAt.getMonth() + coolMonths);
+        if (Date.now() < eligibleAt.getTime()) {
+          const when = eligibleAt.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+          const forRole = lastRejected.requisition?.title ? ` for "${lastRejected.requisition.title}"` : "";
+          return conflict(`${candidateCheck.firstName} ${candidateCheck.lastName} was rejected${forRole} and is in a cooling period. They cannot apply to any role until ${when} (cooling period: ${coolMonths} month${coolMonths > 1 ? "s" : ""}).`);
+        }
+      }
+    }
+
     const existing = await prisma.jobApplication.findFirst({
       where: { orgId, candidateId, requisitionId, deletedAt: null },
     });
@@ -195,6 +233,9 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       where: { id: requisitionId, orgId, deletedAt: null },
       select: { pipelineId: true },
     });
+    // Guard the FK: an invalid/cross-org requisition would otherwise throw a
+    // Prisma FK error on create → generic "Something went wrong".
+    if (!req_) return validationError("Requisition not found");
     const pipeline = await prisma.hiringPipeline.findFirst({
       where: {
         orgId, deletedAt: null,
@@ -279,8 +320,8 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         const result = await scoreResumeAgainstJD({
           jobTitle: reqFull.title,
           jobDescription: reqFull.jobDescription ?? null,
-          experienceMin: reqFull.experienceMin ?? null,
-          experienceMax: reqFull.experienceMax ?? null,
+          experienceMin: reqFull.experienceMin != null ? Number(reqFull.experienceMin) : null,
+          experienceMax: reqFull.experienceMax != null ? Number(reqFull.experienceMax) : null,
           skillWeights: weights,
           resumeText,
           candidateSummary: typeof parsed?.summary === "string" ? parsed.summary : null,
@@ -300,6 +341,30 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       }
     })();
 
-    return successResponse(app, undefined, 201);
+    // Soft warning (non-blocking): candidate was recently rejected for a
+    // DIFFERENT role. Surfaced to the recruiter so they're aware, but the
+    // application still goes through.
+    let warning: string | undefined;
+    try {
+      const lookback = new Date();
+      lookback.setMonth(lookback.getMonth() - 6);
+      const priorReject = await prisma.jobApplication.findFirst({
+        where: {
+          orgId, candidateId, deletedAt: null, id: { not: app.id },
+          status: { in: ["AppRejected", "AppDeclined"] },
+          rejectionExempt: false,
+          updatedAt: { gte: lookback },
+          requisition: { is: { title: { not: app.requisition?.title ?? "" } } },
+        },
+        orderBy: { updatedAt: "desc" },
+        select: { updatedAt: true, requisition: { select: { title: true } } },
+      });
+      if (priorReject) {
+        const when = priorReject.updatedAt.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+        warning = `Heads up: this candidate was rejected for "${priorReject.requisition?.title ?? "another role"}" on ${when}.`;
+      }
+    } catch { /* warning is best-effort */ }
+
+    return successResponse({ ...app, warning }, undefined, 201);
   } catch (error) { console.error("POST /recruit/applications error:", error); return internalError(); }
 });

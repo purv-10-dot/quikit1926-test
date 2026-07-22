@@ -87,17 +87,19 @@ export default function RepairPage() {
 
   useEffect(() => { load() }, [])
 
-  const vendors = [...new Set(repairs.map((r) => r.vendor).filter(Boolean))].sort() as string[]
+  // Display/filter label: linked vendor name, falling back to legacy free text.
+  const vendorLabel = (r: Repair) => r.vendorRef?.name ?? r.vendor ?? ""
+  const vendors = [...new Set(repairs.map(vendorLabel).filter(Boolean))].sort() as string[]
 
   const filtered = repairs.filter((r) => {
     if (search) {
       const q = search.toLowerCase()
-      const matchSearch = [r.asset?.itemName, r.asset?.itemCode, r.issueTitle, r.vendor, r.asset?.category?.name].some((v) => v?.toLowerCase().includes(q))
+      const matchSearch = [r.asset?.itemName, r.asset?.itemCode, r.issueTitle, vendorLabel(r), r.asset?.category?.name].some((v) => v?.toLowerCase().includes(q))
       if (!matchSearch) return false
     }
     if (statusFilter && r.status !== statusFilter) return false
     if (filters.asset && !r.asset?.itemName?.toLowerCase().includes(filters.asset.toLowerCase()) && !r.asset?.itemCode?.toLowerCase().includes(filters.asset.toLowerCase())) return false
-    if (filters.vendor && r.vendor !== filters.vendor) return false
+    if (filters.vendor && vendorLabel(r) !== filters.vendor) return false
     if (filters.status && r.status !== filters.status) return false
     return true
   })
@@ -109,7 +111,7 @@ export default function RepairPage() {
 
   async function handleCreate(form: {
     assetId: string; issueTitle: string; issueDescription: string
-    vendor: string; estimatedCost: string; sentDate: string; expectedReturn: string; notes: string
+    vendorId: string; estimatedCost: string; sentDate: string; expectedReturn: string; notes: string
   }) {
     try {
       const res = await fetch("/api/repairs", {
@@ -128,7 +130,7 @@ export default function RepairPage() {
 
   async function handleUpdate(form: {
     issueTitle: string; issueDescription: string; sentDate: string
-    vendor: string; estimatedCost: string; actualCost: string
+    vendorId: string; estimatedCost: string; actualCost: string
     expectedReturn: string; returnedDate: string; notes: string
   }) {
     if (!editRepair) return
@@ -418,7 +420,7 @@ export default function RepairPage() {
                         <p className="text-gray-400 text-[10px] mt-0.5 truncate">{r.issueDescription}</p>
                       </td>
 
-                      <td className="px-4 py-3 text-gray-600">{r.vendor ?? "—"}</td>
+                      <td className="px-4 py-3 text-gray-600">{vendorLabel(r) || "—"}</td>
 
                       <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{fmt(r.sentDate)}</td>
 

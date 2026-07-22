@@ -5,7 +5,7 @@ import { successResponse, notFound, validationError, internalError, conflict } f
 import { updateApplicationSchema } from "@/lib/validations/recruit";
 import { fireWorkflow } from "@/lib/workflows/executor";
 import { resolveAndSend } from "@/lib/email/resolve";
-import { buildRejectionEmail } from "@/lib/email-templates/application-rejected";
+import { sendRejectionEmail } from "@/lib/recruit/rejection-mail";
 import { buildInterviewInviteEmail } from "@/lib/email-templates/interview-invite";
 import { buildOfferEmail } from "@/lib/email-templates/offer";
 import { triggerCandidateDocBundle } from "@/lib/services/candidate-doc-service";
@@ -362,16 +362,47 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
     if (data.currentStage) {
       updateData.currentStage = data.currentStage;
       const history = (existing.stageHistory as Array<unknown>) ?? [];
-      history.push({ stage: data.currentStage, date: new Date().toISOString(), movedBy: userId });
+      history.push({ stage: data.currentStage, date: new Date().toISOString(), movedBy: userId, ...(data.moveReason ? { reason: data.moveReason } : {}) });
       updateData.stageHistory = JSON.parse(JSON.stringify(history));
+      // Advancing an On-Hold candidate clears the hold (unless this same
+      // request explicitly sets another status like Rejected/Hired).
+      if (existing.status === "AppOnHold" && !data.status) {
+        updateData.status = "AppActive";
+      }
+      // Moving through stages means the candidate is actively in the pipeline
+      // (a terminal status set below in this same request will override this).
+      await prisma.candidate.update({
+        where: { id: existing.candidateId },
+        data: { status: "InPipeline" },
+      }).catch(() => null);
     }
     if (data.status) {
       updateData.status = data.status;
       if (data.status === "AppRejected") {
         updateData.rejectionReason = data.rejectionReason;
         updateData.rejectionStage = existing.currentStage;
+        // Reflect the rejection on the candidate so the Candidates list stops
+        // showing them as "In Pipeline" and they can be filtered as Rejected.
+        await prisma.candidate.update({
+          where: { id: existing.candidateId },
+          data: { status: "CandRejected" },
+        }).catch(() => null);
+        // Cancel any upcoming interviews — a rejected candidate has none pending.
+        await prisma.interview.updateMany({
+          where: { orgId, applicationId: existing.id, status: "IntScheduled", deletedAt: null },
+          data: { status: "IntCancelled" },
+        }).catch(() => null);
       }
       if (data.status === "AppHired") {
+        // Don't over-fill a requisition — surface a clear message instead of
+        // silently incrementing past the sanctioned headcount.
+        const req = await prisma.jobRequisition.findFirst({
+          where: { id: existing.requisitionId, orgId, deletedAt: null },
+          select: { positions: true, filledPositions: true },
+        });
+        if (req && req.filledPositions >= req.positions) {
+          return conflict("All positions for this requisition are already filled.");
+        }
         await Promise.all([
           prisma.candidate.update({ where: { id: existing.candidateId }, data: { status: "Hired" } }),
           prisma.jobRequisition.update({
@@ -489,12 +520,14 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
 
     let mailFired: MailFiredResult = null;
     if (stageChanged && data.currentStage) {
-      try {
-        mailFired = await fireStageMail(orgId, userId, app.id, data.currentStage);
-      } catch (err) {
+      // Send the stage-change email in the BACKGROUND so a slow SMTP server can't
+      // make this request hit the client's 20s timeout ("Request timed out after
+      // 20000ms") — the move itself already succeeded.
+      const stageForMail = data.currentStage;
+      void fireStageMail(orgId, userId, app.id, stageForMail).catch((err) => {
         console.error("[mail] stage-change mail failed:", err);
-        mailFired = { template: "unknown", skipped: err instanceof Error ? err.message : "error" };
-      }
+      });
+      mailFired = { template: "queued" };
 
       // Auto-trigger candidate document bundles on stage transitions
       // Pre-offer: fired when stage name matches /offer/i (e.g. "Offer") BUT not final-offer-stage
@@ -524,33 +557,22 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
 
     if (data.status === "AppRejected" && existing.status !== "AppRejected") {
       void (async () => {
-        try {
-          const [candidate, company, requisition] = await Promise.all([
-            prisma.candidate.findUnique({
-              where: { id: existing.candidateId },
-              select: { firstName: true, lastName: true, email: true },
-            }),
-            prisma.companySettings.findUnique({ where: { orgId }, select: { companyName: true } }),
-            prisma.jobRequisition.findUnique({
-              where: { id: existing.requisitionId },
-              select: { title: true },
-            }),
-          ]);
-          if (!candidate?.email) return;
-          const rejectionData = {
-            candidateName: `${candidate.firstName} ${candidate.lastName}`.trim(),
-            jobTitle: requisition?.title ?? "the role",
-            companyName: company?.companyName ?? "QuikIT HRMS",
-          };
-          await resolveAndSend(orgId, {
-            key: "recruit.rejection",
-            to: candidate.email,
-            vars: { ...rejectionData },
-            fallback: () => buildRejectionEmail(rejectionData),
-          });
-        } catch (err) {
-          console.error("[mail] rejection email failed:", err);
-        }
+        const [candidate, requisition] = await Promise.all([
+          prisma.candidate.findUnique({
+            where: { id: existing.candidateId },
+            select: { firstName: true, lastName: true, email: true },
+          }),
+          prisma.jobRequisition.findUnique({
+            where: { id: existing.requisitionId },
+            select: { title: true },
+          }),
+        ]);
+        if (!candidate?.email) return;
+        await sendRejectionEmail(orgId, {
+          to: candidate.email,
+          candidateName: `${candidate.firstName} ${candidate.lastName}`.trim(),
+          jobTitle: requisition?.title ?? "the role",
+        });
       })();
     }
 

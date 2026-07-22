@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import type { AuthContext } from "@/lib/types/api";
 import { getCached, invalidateKeys, cacheKeys } from "@/lib/services/cache";
 import { APP_ID, joinCode } from "@/lib/rbac/registry";
+import { expandDelegatedPermissions } from "@/lib/rbac/delegatable";
 import { provisionEmployee, provisionFromInvitation } from "@/lib/rbac/provisioning";
 import { verifyJWT } from "@quikit/auth/jwt";
 
@@ -382,6 +383,57 @@ async function resolveDevImpersonation(orgId: string, roleName: string): Promise
   };
 }
 
+/**
+ * Extra permissions lent to `delegateeId` by ACTIVE delegations pointed at them.
+ *
+ * A delegation only ever grants what the DELEGATOR still holds — we intersect the
+ * requested codes with the delegator's live permissions — so the delegatee can
+ * never exceed the delegator, and the grant evaporates the instant the delegator
+ * loses the right, the window closes, or the delegation is switched off.
+ *
+ * Uncached on purpose: delegations are rare and setup/expiry must take effect
+ * immediately (the delegator-side perm lookup it calls IS cached). Returns both
+ * the flat union and the per-delegator breakdown (for on-behalf audit + routing).
+ */
+async function resolveDelegatedPermissions(
+  orgId: string,
+  delegateeId: string,
+): Promise<{ permissions: string[]; sources: { delegatorId: string; permissions: string[] }[] }> {
+  const now = new Date();
+  const dels = await prisma.delegation.findMany({
+    where: {
+      orgId,
+      delegateeId,
+      deletedAt: null,
+      isActive: true,
+      fromDate: { lte: now },
+      OR: [{ toDate: null }, { toDate: { gte: now } }],
+    },
+    select: { delegatorId: true, modules: true },
+  });
+  if (dels.length === 0) return { permissions: [], sources: [] };
+
+  const union = new Set<string>();
+  const sources: { delegatorId: string; permissions: string[] }[] = [];
+  const delegatorPerms = new Map<string, Set<string>>();
+
+  for (const d of dels) {
+    let held = delegatorPerms.get(d.delegatorId);
+    if (!held) {
+      const rp = await resolvePermissions(orgId, d.delegatorId);
+      held = new Set(rp.permissions);
+      delegatorPerms.set(d.delegatorId, held);
+    }
+    const isSuperDelegator = held.has("*");
+    const requested = expandDelegatedPermissions(d.modules);
+    const granted = requested.filter((code) => isSuperDelegator || held!.has(code));
+    if (granted.length === 0) continue;
+    for (const code of granted) union.add(code);
+    sources.push({ delegatorId: d.delegatorId, permissions: granted });
+  }
+  return { permissions: [...union], sources };
+}
+
 export async function invalidatePermissionCache(orgId: string, userId?: string) {
   if (userId) {
     await invalidateKeys(cacheKeys.permissions(orgId, userId));
@@ -522,6 +574,20 @@ export function withAuth(handler: RouteHandler, options?: WithAuthOptions) {
         }
       }
 
+      // Delegation: fold in any permissions lent to this user by active
+      // delegations pointed at them (never exceeding the delegator, auto-
+      // expiring). Skipped for locked-out states — super-admin already has "*",
+      // and a PreBoarding / temp-password user must stay narrowed regardless of
+      // what someone delegated to them.
+      let delegatedFrom: { delegatorId: string; permissions: string[] }[] | undefined;
+      if (!permissions.includes("*") && !preBoarding && !mustChangePassword) {
+        const delegated = await resolveDelegatedPermissions(orgId, userId);
+        if (delegated.permissions.length) {
+          permissions = [...new Set([...permissions, ...delegated.permissions])];
+          delegatedFrom = delegated.sources;
+        }
+      }
+
       const effectiveRoles = roleCode ? [roleCode, ...headerRoles] : headerRoles;
       const isSuperAdmin = permissions.includes("*") || effectiveRoles.includes("admin");
 
@@ -547,6 +613,7 @@ export function withAuth(handler: RouteHandler, options?: WithAuthOptions) {
         mustChangePassword,
         actorType: service ? "ai_agent" : "user",
         ...(service && { actingAgentId: service.actingAgentId }),
+        ...(delegatedFrom && { delegatedFrom }),
       };
       return await handler(req, authCtx, params);
     } catch (error) {

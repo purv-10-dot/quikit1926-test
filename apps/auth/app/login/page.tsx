@@ -5,6 +5,7 @@
 // (next-auth/react, etc.) blows up in our shared @quikit/ui package.
 export const dynamic = "force-dynamic";
 
+
 import { useSearchParams } from "next/navigation";
 import { SignInComponent } from "@quikit/ui";
 import { requireProdEnv } from "@quikit/shared";

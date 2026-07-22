@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { buildWeekBucketsBetween, emptyCounts, indexByWeek, weekKeyOf } from "./weekly";
 import { resolveRange, type RangePreset, type ResolveOptions } from "./ranges";
 import { calculateProductivity } from "./productivity";
+import { hasAdminAccess, spaceAdminProjectIds } from "@/lib/api/permissions";
 
 /**
  * Full per-employee productivity list for the Executive Report, sorted by
@@ -54,19 +55,13 @@ export async function loadExecutiveEmployees(args: {
   const teamFilter = parseCsv(sp.get("teamIds"));
   const sprintFilter = parseCsv(sp.get("sprintIds"));
 
-  const member = await db.orgMember.findFirst({
-    where: { userId, orgId, status: "active" },
-    select: { role: true },
-  });
-  const isAdmin = member?.role === "admin" || member?.role === "owner";
+  // Org admins see all projects; Space Admins only the projects they administer.
+  // Matches the executive route's access model (hasAdminAccess + Space Admin).
+  const isAdmin = await hasAdminAccess(userId, orgId);
 
   let visibleProjectIds: string[] | null = null;
   if (!isAdmin) {
-    const memberships = await db.qtProjectMember.findMany({
-      where: { userId, isDeleted: false },
-      select: { projectId: true },
-    });
-    visibleProjectIds = memberships.map((m) => m.projectId);
+    visibleProjectIds = await spaceAdminProjectIds(userId, orgId);
     if (visibleProjectIds.length === 0) return [];
   }
 

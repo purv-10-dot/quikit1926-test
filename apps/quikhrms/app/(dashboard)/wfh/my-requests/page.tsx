@@ -10,6 +10,7 @@ import { Plus, Home, Calendar, Clock, CheckCircle2, XCircle, MessageSquare, X, T
 import { clsx } from "clsx";
 import { WfhTabs } from "../_components/wfh-tabs";
 import { PageHeader } from "@/components/hrms/ui/page-header";
+import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 
 interface Approver { id: string; firstName: string; lastName: string; employeeCode: string }
 interface ApprovalRow { id: string; level: number; role: string; status: string; comment: string | null; decidedAt: string | null; approver: Approver }
@@ -87,6 +88,24 @@ export default function MyWfhPage() {
     total: items.length,
   };
 
+  // ── Excel export (exports the currently rendered request list) ──
+  const exportColumns = [
+    { header: "From", key: "from", width: 16 },
+    { header: "To", key: "to", width: 16 },
+    { header: "Days", key: "days", width: 10 },
+    { header: "Session", key: "session", width: 14 },
+    { header: "Reason", key: "reason", width: 30 },
+    { header: "Status", key: "status", width: 14 },
+  ];
+  const exportRows = items.map((i) => ({
+    from: new Date(i.startDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
+    to: new Date(i.endDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
+    days: i.days,
+    session: i.session === "FirstHalf" ? "First Half" : i.session === "SecondHalf" ? "Second Half" : "Full Day",
+    reason: i.reason || "",
+    status: i.status,
+  }));
+
   return (
     <div className="w-full px-5 py-4">
       <PageHeader
@@ -94,9 +113,12 @@ export default function MyWfhPage() {
         title="Work from home"
         subtitle="Apply for and track your remote work requests."
         actions={
-          <button onClick={() => setShowCreate(true)} className="btn btn-primary">
-            <Plus size={13} /> Apply for WFH
-          </button>
+          <>
+            <ExcelExportButton filename="my-wfh-requests" sheetName="My WFH Requests" columns={exportColumns} rows={exportRows} label="Export to Excel" />
+            <button onClick={() => setShowCreate(true)} className="btn btn-primary">
+              <Plus size={13} /> Apply for WFH
+            </button>
+          </>
         }
       />
       <div className="mb-5"><WfhTabs /></div>

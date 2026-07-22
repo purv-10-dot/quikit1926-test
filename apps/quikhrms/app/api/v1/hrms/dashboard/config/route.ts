@@ -14,8 +14,16 @@ import { isValidNavKey } from "@/lib/rbac/permissions-tree";
  * permission set; widgets array is empty until a per-role widget map is
  * re-introduced via RoleNavigation or a new sidecar table.
  */
-export const GET = withAuth(async (_req: NextRequest, { orgId, userId, roleCode, permissions }) => {
+export const GET = withAuth(async (_req: NextRequest, { orgId, userId, roleCode, permissions, delegatedFrom }) => {
   try {
+    // When the user is standing in for someone via delegation, resolve the
+    // delegators' names so the dashboard can show an "acting on behalf of" banner.
+    const actingFor = delegatedFrom?.length
+      ? (await prisma.employee.findMany({
+          where: { orgId, id: { in: delegatedFrom.map((d) => d.delegatorId) }, deletedAt: null },
+          select: { id: true, firstName: true, lastName: true },
+        })).map((e) => ({ delegatorId: e.id, name: `${e.firstName} ${e.lastName}`.trim() || "a colleague" }))
+      : [];
     const cached = await (async () => {
         const emp = await prisma.employee.findFirst({
           where: { orgId, deletedAt: null, OR: [{ id: userId }, { employeeCode: "QK-EMP-0001" }] },
@@ -79,6 +87,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId, roleCode,
       permissions,
       navKeys: cached.navKeys,
       employee: cached.employee,
+      actingFor,
     });
   } catch (error) {
     console.error("GET /dashboard/config error:", error);
