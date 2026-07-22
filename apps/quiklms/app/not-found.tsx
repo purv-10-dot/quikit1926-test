@@ -1,27 +1,20 @@
-'use client';
+﻿'use client';
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Home, ArrowLeft, Compass } from 'lucide-react';
-import { useCurrentUser } from './providers';
+import { useCurrentUser, useFeatures } from './providers';
+import { landingPathFor } from '@/lib/auth/landing';
 
-// Role → landing route (mirrors the LANDING map in app/(marketing)/page.tsx).
-const ROLE_LANDING: Record<string, string> = {
-  SUPER_ADMIN: '/dashboard',
-  TENANT_ADMIN: '/tenant-dashboard',
-  SUB_ADMIN: '/sub-admin-dashboard',
-  MANAGER: '/manager-dashboard',
-  TEACHER: '/teacher-dashboard',
-  PARENT: '/parent-dashboard',
-  LEARNER: '/learner/dashboard',
-};
 
 export default function NotFound() {
   const router = useRouter();
   const { user } = useCurrentUser();
 
-  const dashboard =
-    (user?.role && ROLE_LANDING[user.role]) || '/login';
+  // Routed through the shared resolver so a SCHOOL tenant admin is sent to
+  // /school-dashboard rather than the corporate one.
+  const { tenantType } = useFeatures();
+  const dashboard = user?.role ? landingPathFor(user.role, tenantType) : '/login';
 
   return (
     <div className="min-h-screen bg-canvas flex items-center justify-center p-6">

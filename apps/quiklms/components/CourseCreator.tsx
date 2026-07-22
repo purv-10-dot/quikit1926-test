@@ -670,7 +670,18 @@ const CourseCreator: React.FC<CourseCreatorProps> = ({ onClose, onSuccess, cours
                   };
                 } else {
                   // Regular file upload (PDF, PPT, etc.) — also presigned-PUT now.
-                  const fileUrl = await uploadViaPresign(file, '/upload/course-resource');
+                  // A failure here aborts the whole submit (Promise.all), which
+                  // is correct — a course must not save with a dangling
+                  // resource — but Promise.all loses all context about WHICH of
+                  // the sub-modules failed. Name it, so a 12-module course does
+                  // not report one anonymous error.
+                  let fileUrl: string;
+                  try {
+                    fileUrl = await uploadViaPresign(file, '/upload/course-resource');
+                  } catch (uploadErr: unknown) {
+                    const detail = asApiError(uploadErr).message || 'upload failed';
+                    throw new Error(`"${subModule.title || 'Untitled sub-module'}" — ${detail}`);
+                  }
                   resourceData = {
                     fileUrl,
                   };

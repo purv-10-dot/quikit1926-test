@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Sun, Moon, Bell, ChevronDown, Check, UserCog, LogOut, Grid3x3, ExternalLink, Loader2 } from 'lucide-react';
@@ -8,6 +8,7 @@ import { useTranslation, LOCALES, type Locale } from '@/lib/i18n';
 import { globalSignOut } from '@/lib/global-signout';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { landingPathFor } from '@/lib/auth/landing';
 
 interface SwitchableApp {
   id: string;
@@ -40,15 +41,6 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 // Where each role lands when activated.
-const ROLE_LANDING: Record<string, string> = {
-  SUPER_ADMIN:  '/dashboard',
-  TENANT_ADMIN: '/tenant-dashboard',
-  SUB_ADMIN:    '/sub-admin-dashboard',
-  MANAGER:      '/manager-dashboard',
-  TEACHER:      '/teacher-dashboard',
-  PARENT:       '/parent-dashboard',
-  LEARNER:      '/learner/dashboard',
-};
 
 const COLLAPSE_KEY = 'qs_sidebar_collapsed';
 
@@ -58,7 +50,7 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
   const { user } = useCurrentUser();
   const { t, locale, setLocale } = useTranslation();
 
-  // ── Sidebar collapse (persisted) ──────────────────────────────────────────
+  // â”€â”€ Sidebar collapse (persisted) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [collapsed, setCollapsed] = useState(false);
   useEffect(() => {
     setCollapsed(localStorage.getItem(COLLAPSE_KEY) === '1');
@@ -73,8 +65,8 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
 
   const roleLabel = ROLE_LABELS[role] ?? role.replace(/_/g, ' ');
 
-  // ── Role switcher (users with a secondary role) ───────────────────────────
-  // The user's own roles — primary + secondary (de-duped). Multi-role users get
+  // â”€â”€ Role switcher (users with a secondary role) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // The user's own roles â€” primary + secondary (de-duped). Multi-role users get
   // an in-place switcher; single-role users get the dev account picker.
   // We persist the role set (qs_roles) so the switcher round-trips: the dev auth
   // resolves each role-cookie to a different seed identity, which would
@@ -107,10 +99,10 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
     return () => document.removeEventListener('mousedown', onClick);
   }, [menuOpen]);
 
-  // ── App switcher ──────────────────────────────────────────────────────────
+  // â”€â”€ App switcher â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Grants come from the platform's UserAppAccess table, so the menu only ever
   // lists apps this user actually has in this org. Fetched lazily on first open
-  // — most sessions never touch it, and it must not cost every page load.
+  // â€” most sessions never touch it, and it must not cost every page load.
   const [apps, setApps] = useState<SwitchableApp[] | null>(null);
   const [appsLoading, setAppsLoading] = useState(false);
   const [appsOpen, setAppsOpen] = useState(false);
@@ -150,7 +142,7 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
     return () => document.removeEventListener('mousedown', onClick);
   }, [appsOpen]);
 
-  // ── Sign out ──────────────────────────────────────────────────────────────
+  // â”€â”€ Sign out â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [signingOut, setSigningOut] = useState(false);
   async function handleSignOut() {
     setSigningOut(true);
@@ -160,7 +152,7 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
     } catch {
       // globalSignOut navigates on success; landing here means it could not,
       // so fall back to the public landing page rather than stranding the user.
-      // NOT `/login` — that re-initiates SSO and would undo the sign-out.
+      // NOT `/login` â€” that re-initiates SSO and would undo the sign-out.
       setSigningOut(false);
       window.location.href = '/';
     }
@@ -172,17 +164,20 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
     document.cookie = `qs_role=${r}; path=/; max-age=${maxAge}; SameSite=Lax`;
     localStorage.setItem('qs_role', r);
     // Full navigation so providers re-fetch /api/me and the shell rebuilds.
-    window.location.href = ROLE_LANDING[r] ?? '/';
+    // School tenant admins belong on /school-dashboard, not the corporate one.
+    // tenantType is already in hand from useFeatures(), so the role switcher
+    // routes correctly too. See lib/auth/landing.ts.
+    window.location.href = landingPathFor(r, tenantType);
   }
 
   return (
     <div className="flex h-screen overflow-hidden bg-canvas text-fg">
-      {/* Sidebar — fixed full height; only its nav scrolls internally */}
+      {/* Sidebar â€” fixed full height; only its nav scrolls internally */}
       <Sidebar role={role} collapsed={collapsed} onToggle={toggleCollapsed} />
 
       {/* Main column */}
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* ── Topbar (sticky; never scrolls with content) ─────────────────── */}
+        {/* â”€â”€ Topbar (sticky; never scrolls with content) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <header className="z-20 flex h-16 shrink-0 items-center justify-end gap-2 border-b border-line bg-surface/80 px-5 backdrop-blur">
           {/* Role badge */}
           <span
@@ -197,7 +192,7 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
           >
             <span className={cn('size-1.5 rounded-full', loaded ? (tenantType === 'school' ? 'bg-emerald-500' : 'bg-blue-500') : 'bg-fg-subtle')} />
             {roleLabel}
-            {loaded && tenantType && <span className="opacity-60">· {tenantType === 'school' ? 'School' : 'Corporate'}</span>}
+            {loaded && tenantType && <span className="opacity-60">Â· {tenantType === 'school' ? 'School' : 'Corporate'}</span>}
           </span>
 
           {/* Language */}
@@ -229,7 +224,7 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
             <Bell className="size-4" />
           </button>
 
-          {/* App switcher — only the apps this user is granted in this org */}
+          {/* App switcher â€” only the apps this user is granted in this org */}
           <div className="relative" ref={appsRef}>
             <button
               onClick={() => setAppsOpen((o) => !o)}
@@ -247,7 +242,7 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
 
                 {appsLoading && (
                   <div className="flex items-center gap-2 px-3 py-3 text-sm text-fg-muted">
-                    <Loader2 className="size-4 animate-spin" /> Loading…
+                    <Loader2 className="size-4 animate-spin" /> Loadingâ€¦
                   </div>
                 )}
 
@@ -258,7 +253,7 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
                 {!appsLoading &&
                   apps?.map((a) =>
                     a.current ? (
-                      // Current app is shown, not hidden — so the menu says where you are.
+                      // Current app is shown, not hidden â€” so the menu says where you are.
                       <div
                         key={a.id}
                         className="flex items-center justify-between px-3 py-2 text-sm text-fg"
@@ -292,7 +287,7 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
             )}
           </div>
 
-          {/* Account menu — ALWAYS rendered.
+          {/* Account menu â€” ALWAYS rendered.
               This used to be `isMultiRole ? <switcher/> : null`, so a
               single-role user (most users) had no menu at all and therefore no
               way to sign out. Role switching is now a section INSIDE the
@@ -313,7 +308,7 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
 
             {menuOpen && (
               <div className="absolute right-0 top-11 z-30 w-60 overflow-hidden rounded-xl border border-line bg-surface shadow-xl">
-                {/* Who you are — the menu is now the account menu, so say so. */}
+                {/* Who you are â€” the menu is now the account menu, so say so. */}
                 <div className="border-b border-line px-3 py-2.5">
                   <p className="truncate text-sm font-semibold text-fg">
                     {[user?.firstName, user?.lastName].filter(Boolean).join(' ') || roleLabel}
@@ -358,7 +353,7 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
                     className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 transition-colors hover:bg-red-50 disabled:opacity-60 dark:text-red-400 dark:hover:bg-red-950/30"
                   >
                     {signingOut ? <Loader2 className="size-4 animate-spin" /> : <LogOut className="size-4" />}
-                    {signingOut ? 'Signing out…' : 'Sign out'}
+                    {signingOut ? 'Signing outâ€¦' : 'Sign out'}
                   </button>
                 </div>
               </div>
@@ -366,7 +361,7 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
           </div>
         </header>
 
-        {/* ── Scrollable page content with a consistent max-width ──────────── */}
+        {/* â”€â”€ Scrollable page content with a consistent max-width â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <main className="flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-[1400px] p-6">{children}</div>
         </main>

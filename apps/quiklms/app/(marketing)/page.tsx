@@ -1,7 +1,8 @@
-import { redirect } from 'next/navigation';
+﻿import { redirect } from 'next/navigation';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { resolveLmsRole } from '@/lib/auth/resolve-role';
+import { landingPathFor, resolveTenantType } from '@/lib/auth/landing';
 import { FAQS } from './layout';
 import Nav from './_components/Nav';
 import Hero from './_components/Hero';
@@ -14,8 +15,8 @@ import FooterCTA from './_components/FooterCTA';
 /**
  * Public landing page at `/`.
  *
- *   - Unauthenticated → render the landing page (200 OK)
- *   - Authenticated   → redirect to that role's dashboard
+ *   - Unauthenticated â†’ render the landing page (200 OK)
+ *   - Authenticated   â†’ redirect to that role's dashboard
  *
  * This REPLACES the old `app/page.tsx`, which assumed middleware had already
  * guaranteed a session and so redirected everyone to `/login`. `/` is now in
@@ -28,17 +29,9 @@ import FooterCTA from './_components/FooterCTA';
  * dashboard.
  *
  * A route group adds no path segment, so this file and `app/page.tsx` would
- * both resolve to `/` — the old one was deleted rather than left to collide.
+ * both resolve to `/` â€” the old one was deleted rather than left to collide.
  */
-const LANDING: Record<string, string> = {
-  SUPER_ADMIN: '/dashboard',
-  TENANT_ADMIN: '/tenant-dashboard',
-  SUB_ADMIN: '/sub-admin-dashboard',
-  MANAGER: '/manager-dashboard',
-  TEACHER: '/teacher-dashboard',
-  PARENT: '/parent-dashboard',
-  LEARNER: '/learner/dashboard',
-};
+
 
 export default async function LandingPage({
   searchParams,
@@ -51,13 +44,16 @@ export default async function LandingPage({
   const reason = Array.isArray(rawReason) ? rawReason[0] : rawReason;
   // Bounced here by the central entitlement gate (lib/auth/page-guard). This
   // visitor IS authenticated, so the redirect below would send them straight
-  // back to the dashboard that just refused them — an infinite loop. Render the
+  // back to the dashboard that just refused them â€” an infinite loop. Render the
   // landing page with an explanation instead.
   const deniedAppAccess = reason === 'no_app_access';
 
   if (session?.user?.id && !deniedAppAccess) {
     const role = await resolveLmsRole(session.user);
-    redirect(LANDING[role] ?? '/learner/dashboard');
+    // A school tenant's admin belongs on /school-dashboard, not the corporate
+    // one — see lib/auth/landing.ts.
+    const tenantType = await resolveTenantType(session.user.orgId);
+    redirect(landingPathFor(role, tenantType));
   }
 
   return (

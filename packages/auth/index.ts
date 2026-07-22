@@ -402,17 +402,27 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
             }
           }
 
-          // Auto-select first active org on initial sign-in so the user is
+          // Auto-select an active org on initial sign-in so the user is
           // dropped straight onto the launcher (/apps) with an org already
           // resolved. Multi-org users switch orgs from the launcher's
           // /apps org dropdown on demand.
+          //
+          // MOST RECENT, not oldest. This used to order `createdAt: "asc"`,
+          // which silently defeated every new invitation for anyone who already
+          // belonged to an org: invite an existing user to a new SCHOOL tenant,
+          // they accept, sign in — and the session resolved their oldest
+          // membership instead, dropping them in a CORPORATE org from months
+          // earlier, with that org's dashboard and modules. 24 users in
+          // production hold multiple active memberships, so this was not an
+          // edge case. The org someone was just invited to is the one they are
+          // trying to reach; the launcher dropdown still switches away from it.
           const firstMembership = await db.orgMember.findFirst({
             // Skip suspended orgs so a user is never auto-dropped into one on
             // sign-in. If all their orgs are suspended they land org-less and
             // the middleware bounces them to the launcher (where the org is
             // also hidden). Mirrors org.status === "active" gating below.
             where: { userId: user.id, status: "active", org: { status: "active" } },
-            orderBy: { createdAt: "asc" },
+            orderBy: { createdAt: "desc" },
             select: { orgId: true, role: true },
           });
           if (firstMembership) {
