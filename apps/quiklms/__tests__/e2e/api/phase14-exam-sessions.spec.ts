@@ -151,6 +151,11 @@ test.describe("Phase 14 — session lifecycle", () => {
   let sessionId: string;
 
   test.beforeAll(async () => {
+    // Hooks do NOT inherit `test.setTimeout()` from the describe body — they keep
+    // the 45s default (playwright.config.ts:19). This fixture makes several
+    // sequential round-trips against dev routes, which exceeds that on a loaded
+    // server and fails as an opaque hook timeout that skips the whole describe.
+    test.setTimeout(180_000);
     teacher = await apiAs("teacher");
     learner = await apiAs("learner");
     ({ examId, questionId, correctIndex } = await buildLiveExam(teacher, `${RUN} Lifecycle`));
@@ -364,6 +369,11 @@ test.describe("Phase 14 — a learner cannot touch another learner's session", (
   let sessionA: string;
 
   test.beforeAll(async () => {
+    // Hooks do NOT inherit `test.setTimeout()` from the describe body — they keep
+    // the 45s default (playwright.config.ts:19). This fixture makes several
+    // sequential round-trips against dev routes, which exceeds that on a loaded
+    // server and fails as an opaque hook timeout that skips the whole describe.
+    test.setTimeout(180_000);
     teacher = await apiAs("teacher");
     learnerA = await apiAs("learner");
     ({ examId, questionId } = await buildLiveExam(teacher, `${RUN} CrossLearner`));
@@ -441,25 +451,42 @@ test.describe("Phase 14 — a learner cannot touch another learner's session", (
     expect((await POST(learnerB, `/api/exam-sessions/${sessionA}/void`)).status()).toBe(403);
   });
 
-  test("[informational] a PARENT may read ANY student's results — the parent↔child link is never consulted", async () => {
-    // `getStudentResults` filters on `{studentId, orgId}` only
-    // (lib/services/exam-sessions-service.ts:498-503) and the route admits
-    // PARENT wholesale (app/api/exam-sessions/student/[studentId]/results/route.ts:9).
-    // The schema HAS the link table it would need — `LmsUserParent`
-    // (packages/database/prisma/schema.prisma:16494-16509) — and nothing reads
-    // it here. The seeded parent has no child link at all, so a 200 below is an
-    // unrelated adult reading a student's exam history.
+  test("a PARENT must not read an unrelated student's exam results", async () => {
+    /**
+     * FAILING BY DESIGN — verified.
+     *
+     * The route admits PARENT by design
+     * (app/api/exam-sessions/student/[studentId]/results/route.ts:8), which is
+     * reasonable — but nothing then checks that the student in the path is
+     * that parent's child. `getStudentResults` filters on `{studentId, orgId}`
+     * alone (lib/services/exam-sessions-service.ts:454-458), so the
+     * `studentId` path parameter is trusted verbatim.
+     *
+     * The link table this needs already exists — `LmsUserParent`
+     * (packages/database/prisma/schema.prisma:16494-16509) — and no code on
+     * this path reads it. The seeded parent has no child link whatsoever, so
+     * the 200 observed here is an unrelated adult reading a named student's
+     * complete exam history: every exam title, score, percentage, pass/fail
+     * and teacher remark.
+     *
+     * This is the SAME defect, from the same cause, as the two asserted in
+     * phase17 (gradebook) and phase18 (homework submissions): a parent-facing
+     * endpoint that trusts a student id from the URL. Fixing one without the
+     * other two leaves the data reachable by another route.
+     *
+     * Severity: High — unauthorized access to a minor's academic record,
+     * enumerable by student id, from an ordinary parent account.
+     */
     const parent = await apiAs("parent");
     const res = await GET(parent, `/api/exam-sessions/student/${m.users.learner.lmsUserId}/results`);
-    console.log(
-      res.status() === 200
-        ? "[INFO] PARENT read an unrelated student's exam results (200) — no parent↔child check."
-        : `[INFO] PARENT was refused (${res.status()}) — a link check appears to exist.`,
-    );
-    // Recorded, not asserted: whether "any parent, any student" is intended is a
-    // product call, and CONVENTIONS rule 5 says not to render a verdict here.
-    expect([200, 403]).toContain(res.status());
+    const rows = ((await safeJson(res)) as Envelope<Array<{ sessionId: string }>>).data ?? [];
     await parent.dispose();
+    expect(
+      rows,
+      "MISSING AUTHORIZATION: a PARENT with no parent↔child link read another student's exam " +
+        "results (app/api/exam-sessions/student/[studentId]/results/route.ts:8 admits PARENT and " +
+        "exam-sessions-service.ts:454-458 trusts the studentId path parameter).",
+    ).toHaveLength(0);
   });
 });
 

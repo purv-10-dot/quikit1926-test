@@ -16,7 +16,64 @@ import { getSessionManifest } from '@/lib/services/quiz-proctoring-service';
 
 type AnyRec = Record<string, unknown>;
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Fields on an embedded question that reveal the answer. Kept in one place so
+ * the redaction below and any future question shape stay in step.
+ */
+const ANSWER_KEY_FIELDS = [
+  'correctAnswerIndex',
+  'correctAnswer',
+  'correctAnswers',
+  'explanation',
+] as const;
+
+/**
+ * Remove the answer key from an assessment before it reaches a learner.
+ *
+ * WHY: `GET /api/assessments/:id` is the endpoint the quiz UI calls immediately
+ * BEFORE an attempt, and it returned `correctAnswerIndex` on every question —
+ * the answers were sitting in the browser payload. The exam surface has always
+ * done this correctly (`exams-service.stripAnswerKey`); the assessment surface
+ * simply had no counterpart, which is why one leaked and the other did not.
+ *
+ * Option TEXT is preserved — the learner has to see the choices — and only the
+ * marker of which one is right is dropped. `options` may be plain strings or
+ * `{ text, isCorrect }` objects depending on how the quiz was authored, so both
+ * shapes are handled.
+ *
+ * Staff keep the full payload: authors and graders need the key to edit and
+ * mark. Callers decide via `shouldRedactAnswerKey(actor)`.
+ */
+export function redactAnswerKey(assessment: AnyRec): AnyRec {
+  const scrubQuestion = (q: unknown): unknown => {
+    if (!q || typeof q !== 'object') return q;
+    const row = { ...(q as AnyRec) };
+    for (const f of ANSWER_KEY_FIELDS) delete row[f];
+
+    if (Array.isArray(row.options)) {
+      row.options = row.options.map((o) => {
+        if (!o || typeof o !== 'object') return o; // plain string option
+        const { isCorrect: _ic, correct: _c, ...safe } = o as AnyRec;
+        return safe;
+      });
+    }
+    return row;
+  };
+
+  const out: AnyRec = { ...assessment };
+  if (Array.isArray(out.questions)) out.questions = out.questions.map(scrubQuestion);
+  if (Array.isArray(out.additionalQuestions)) {
+    out.additionalQuestions = out.additionalQuestions.map(scrubQuestion);
+  }
+  return out;
+}
+
+/** Staff author and grade, so they keep the key; everyone else must not see it. */
+export function shouldRedactAnswerKey(role: string, secondaryRole?: string | null): boolean {
+  const staff = ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN', 'TEACHER'];
+  return !staff.includes(role) && !(secondaryRole && staff.includes(secondaryRole));
+}
 
 export async function create(orgId: string, dto: AnyRec) {
   const normalisePoints = (q: AnyRec) => ({ ...q, points: q.points || 1 });
@@ -48,8 +105,15 @@ export async function findOne(id: string, orgId: string): Promise<AnyRec> {
   if (standalone) return standalone as unknown as AnyRec;
 
   // Search master-course embedded quizzes by quiz id.
-  const masterCourses = await prisma.lmsMasterCourse.findMany();
-  for (const course of masterCourses) {
+  //
+  // The legacy did `masterCourseModel.find({})` — every master course, with its
+  // entire nested `modules` tree — on EVERY quiz load and again on every
+  // proctoring session start. `modules` holds all sub-modules, resources and
+  // question banks, so that is the single heaviest read in the quiz path, and
+  // it grows with the whole catalogue rather than with the one quiz wanted.
+  // Narrow it to the owning course with a jsonb path probe first; the walk
+  // below then runs over one row instead of the table.
+  for (const course of await findCoursesContainingQuiz(id)) {
     const modules = (course.modules as unknown as AnyRec[]) || [];
     for (const module of modules) {
       for (const subModule of (module.subModules as AnyRec[]) || []) {
@@ -62,6 +126,32 @@ export async function findOne(id: string, orgId: string): Promise<AnyRec> {
   }
 
   throw NotFound(`Assessment with ID ${id} not found`);
+}
+
+/**
+ * Master courses whose `modules` tree embeds a quiz with this id — normally
+ * exactly one.
+ *
+ * Falls back to loading every course if the probe throws, so a jsonb/permission
+ * surprise degrades to the old (slow but correct) behaviour rather than making
+ * every quiz in the product unopenable.
+ */
+async function findCoursesContainingQuiz(quizId: string): Promise<{ modules: unknown }[]> {
+  try {
+    const rows = await prisma.$queryRaw<{ id: string }[]>`
+      SELECT id FROM app_quiklms.master_courses
+      WHERE jsonb_path_exists(modules, '$[*].subModules[*].quiz.id ? (@ == $q)', jsonb_build_object('q', ${quizId}::text))
+         OR jsonb_path_exists(modules, '$[*].moduleEndQuiz.id ? (@ == $q)', jsonb_build_object('q', ${quizId}::text))
+      LIMIT 1
+    `;
+    if (rows.length === 0) return [];
+    return prisma.lmsMasterCourse.findMany({
+      where: { id: rows[0].id },
+      select: { modules: true },
+    });
+  } catch {
+    return prisma.lmsMasterCourse.findMany({ select: { modules: true } });
+  }
 }
 
 function transformMasterQuiz(id: string, orgId: string, quiz: AnyRec, fallbackTitle: string): AnyRec {
@@ -116,7 +206,13 @@ async function countLearnerAttempts(orgId: string, learnerId: string, courseId: 
 
 export async function getQuizAttempts(orgId: string, learnerId: string, assessmentId: string) {
   if (!orgId || !learnerId || !assessmentId) return [];
-  if (UUID_RE.test(assessmentId)) return []; // master-course quizzes aren't stored by assessmentId
+  // NOTE: this used to bail on `UUID_RE.test(assessmentId)`, on the theory that
+  // a UUID meant a master-course quiz. That is backwards — `LmsAssessment.id`
+  // is `@default(uuid())`, so EVERY standalone assessment is a UUID and the
+  // guard discarded exactly the attempts it was meant to return. Attempt
+  // history was therefore always empty, which also made `retryLimit`
+  // unenforceable. Querying by (orgId, learnerId, assessmentId) is safe for
+  // master-quiz ids too: they simply match no rows.
   return prisma.lmsQuizAttempt.findMany({
     where: { orgId, learnerId, assessmentId },
     orderBy: { submittedAt: 'desc' },
@@ -170,7 +266,14 @@ export async function submitQuiz(orgId: string, learnerId: string, dto: SubmitQu
   let wrongCount = 0;
 
   questionsToScore.forEach((question, index) => {
-    const points = Number(question.points) || 0;
+    // Default 1, NOT 0 — must mirror `create()`'s `points: q.points || 1`.
+    // With `|| 0`, any question lacking an explicit `points` field (seeded,
+    // imported, or written by a path other than create()) contributed 0 to
+    // `totalPoints`; the whole assessment then totalled 0 and the percentage
+    // calculation below short-circuited to 0. A fully correct attempt was
+    // graded 0% and failed, which silently blocked course completion and every
+    // certificate gated on it.
+    const points = Number(question.points) || 1;
     totalPoints += points;
     const matched = dto.answers.filter(
       (a) => a.questionId === index.toString() || a.questionId === String(index) || parseInt(a.questionId, 10) === index,
@@ -249,8 +352,14 @@ export async function submitQuiz(orgId: string, learnerId: string, dto: SubmitQu
         },
       });
 
-  // Persist QuizAttempt only for non-UUID (standalone) assessments.
-  if (!UUID_RE.test(dto.assessmentId)) {
+  // Persist QuizAttempt for standalone Assessment rows only — master-course
+  // quizzes live inside MasterCourse.modules JSON and have no row to point at.
+  //
+  // The discriminator is `isMaster`, set by `transformMasterQuiz`, NOT the id
+  // format. The previous `!UUID_RE.test(id)` test was inverted against the real
+  // id space (`LmsAssessment.id` is `@default(uuid())`), so the branch never ran
+  // for a standalone assessment and no attempt was ever written.
+  if (!assessment.isMaster) {
     const answers = questionsToScore.map((question, index) => {
       const matched = dto.answers.filter(
         (a) => a.questionId === index.toString() || a.questionId === String(index) || parseInt(a.questionId, 10) === index,
@@ -304,6 +413,18 @@ export async function submitQuiz(orgId: string, learnerId: string, dto: SubmitQu
     wrongCount,
     totalQuestions,
     progress,
+    // Returned from HERE because this is where the cap is actually enforced
+    // (`priorAttempts >= retryLimit`, above). The submit route used to derive
+    // its own `Math.max(0, 1 - attempts.length)`, which contradicted the
+    // service: an author could set maxAttempts to 3, the service would happily
+    // allow all 3, and the learner would still be told 0 remained after the
+    // first — so the Retake button never appeared and the setting looked dead.
+    // `retryLimit <= 0` means unlimited (legacy semantics), reported as null.
+    attemptsRemaining: Number.isFinite(retryLimit)
+      ? Math.max(0, retryLimit - (priorAttempts + 1))
+      : null,
+    passingScore: Number(assessment.passingScore) || 0,
+    totalPoints,
   };
 }
 

@@ -21,11 +21,32 @@ function extractSubdomain(host: string): string | null {
 // Centralized-auth gate. Unauthenticated users are bounced to the central
 // login; no-org / revoked-membership users to the launcher /apps. Remote
 // session validation (Redis-backed) runs in production against the central
-// /api/verify-token. Per-route/role authorization lives in the API guards
-// (requireRoles) and route-group layouts — NOT here (platform convention).
+// /api/verify-token.
+//
+// AUTHENTICATION ONLY — this middleware answers "are you logged in?", never
+// "are you allowed?". Role authorization lives exclusively in the API guards
+// (`requireAuth` + `requireRoles` in `lib/auth/context.ts`).
+//
+// An earlier version of this comment claimed authorization also lived in "the
+// route-group layouts". It does not, and never did: all nine layouts
+// ((learner), (teacher), (tenant-admin), (sub-admin), (super-admin), (manager),
+// (parent), (shared), (fullscreen)) are ~4 lines that render `<AppShell
+// role="…">` chrome with no session read and no redirect. Any authenticated
+// user can therefore LOAD any dashboard; only the XHRs it fires are refused.
+//
+// That is survivable today because the API layer holds — every privileged
+// endpoint behind those pages 403s correctly (verified in TEST_REPORT.md
+// F-001). It stops being survivable the moment a page is built on one of the
+// ~90 routes that call `requireAuth` with no `requireRoles`. If you add page-
+// level gating later, put it in the layouts and update this comment; do not
+// let the comment describe a protection that isn't implemented.
 const factory = createMiddleware({
   loginRoute: '/login',
-  publicRoutes: ['/login', '/auth-handoff', '/verify-certificate', '/design'],
+  // `/` is the public marketing landing. It must be reachable signed-out —
+  // it is where global sign-out returns the user, and bouncing that redirect
+  // straight back into SSO would make logging out impossible. The page itself
+  // redirects an authenticated visitor on to their role dashboard.
+  publicRoutes: ['/', '/login', '/auth-handoff', '/verify-certificate', '/design'],
   centralLoginUrl: AUTH_URL ? `${AUTH_URL}/login` : undefined,
   centralSelectOrgUrl: QUIKIT_URL ? `${QUIKIT_URL}/apps` : undefined,
   enforceRemoteSessionValidation: process.env.NODE_ENV === 'production',
@@ -40,7 +61,14 @@ export async function middleware(request: NextRequest) {
   // endpoints (e.g. /api/tenants/branding/public) can resolve without a session.
   if (pathname.startsWith('/api')) {
     const headers = new Headers(request.headers);
+    // ALWAYS write this header — set it to the Host-derived value, or delete it
+    // when there is no subdomain. The previous `if (subdomain)` guard left an
+    // attacker-supplied `x-tenant-subdomain` intact on apex domains and
+    // localhost, where `extractSubdomain` returns null; a caller could then
+    // name any tenant and have the public branding endpoint resolve to it.
+    // The header is derived state, so it must never survive from the request.
     if (subdomain) headers.set('x-tenant-subdomain', subdomain);
+    else headers.delete('x-tenant-subdomain');
     return NextResponse.next({ request: { headers } });
   }
 

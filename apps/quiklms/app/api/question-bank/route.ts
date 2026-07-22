@@ -6,6 +6,44 @@ import { createQuestion, findAllQuestions } from '@/lib/services/question-bank-s
 
 const ROLES = ['TENANT_ADMIN', 'SUB_ADMIN', 'TEACHER'] as const;
 
+/**
+ * Real schema, replacing `z.object({}).passthrough()` (F-003).
+ *
+ * `createQuestion` strips five audit keys and spreads the REST into
+ * `prisma.lmsQuestion.create`, so `POST {}` reached Postgres missing three NOT
+ * NULL columns and any stray key arrived as an unknown Prisma argument.
+ * `subject`, `type` and `text` are the three columns with neither a default nor
+ * a nullable type — and they are exactly the three the UI itself checks in
+ * `validateQuestion()` before queueing a question, so requiring them cannot
+ * reject anything the app sends.
+ *
+ * `options` and `correctAnswer` stay opaque: their shape varies by question
+ * type (`[{text,isCorrect}]` for MCQ, a bare string for `one_word`, pairs for
+ * `match_column`) and both are `Json` columns. `options` is `.optional()` and
+ * not `.nullish()` on purpose — the column is `Json @default("[]")` and NOT
+ * NULL, so an explicit `null` is genuinely invalid and now 400s instead of
+ * dying in Postgres.
+ */
+const createQuestionSchema = z.object({
+  subject: z.string().min(1, 'subject is required'),
+  type: z.enum([
+    'mcq', 'multi_select', 'true_false', 'short_answer',
+    'long_answer', 'fill_blank', 'one_word', 'match_column',
+  ]),
+  text: z.string().min(1, 'text is required'),
+  topic: z.string().nullish(),
+  difficulty: z.enum(['easy', 'medium', 'hard']).optional(),
+  tags: z.array(z.string()).optional(),
+  imageUrl: z.string().nullish(),
+  audioUrl: z.string().nullish(),
+  options: z.array(z.unknown()).optional(),
+  correctAnswer: z.unknown().optional(),
+  points: z.number().int().optional(),
+  negativeMarks: z.number().int().optional(),
+  explanation: z.string().nullish(),
+  isActive: z.boolean().optional(),
+});
+
 // GET /api/question-bank?subject=&difficulty=&type=&tags=&topic=&search=&page=&limit=
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
@@ -40,7 +78,7 @@ export const POST = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, [...ROLES]);
   if (!actor.orgId) throw BadRequest('Tenant ID required');
-  const body = await parseBody(req, z.object({}).passthrough());
+  const body = await parseBody(req, createQuestionSchema);
   const question = await createQuestion(actor.orgId, actor.id, body as Record<string, unknown>);
   // 201 on creation — NestJS's @Post() default, and this repo's own standard
   // (CLAUDE.md: "POST returns 201 on creation").

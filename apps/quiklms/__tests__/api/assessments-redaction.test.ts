@@ -25,7 +25,13 @@ vi.mock('@/lib/auth/context', () => ({
   tenantWhere: (_u: unknown, extra: object) => extra,
   assertTenantMatch: vi.fn(),
 }));
-vi.mock('@/lib/services/assessments-service', () => ({ findOne: h.findOne, update: vi.fn() }));
+// `redactAnswerKey` / `shouldRedactAnswerKey` are deliberately NOT stubbed —
+// the real implementations run, so these tests exercise the actual redaction
+// rather than a mock of it. Only the DB-touching `findOne` is faked.
+vi.mock('@/lib/services/assessments-service', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/services/assessments-service')>();
+  return { ...actual, findOne: h.findOne, update: vi.fn() };
+});
 vi.mock('@/lib/prisma', () => ({
   prisma: { lmsQuizProctoringSession: { findUnique: h.sessionFindUnique } },
 }));
@@ -127,23 +133,55 @@ describe('GET /api/assessments/:id?sessionId=', () => {
     expect(first.data.questions).toEqual(second.data.questions);
   });
 
-  it('returns the full assessment with no sessionId — the legacy no-session branch', async () => {
+  /**
+   * CONTRACT CORRECTED (F-008).
+   *
+   * These three previously asserted that the no-manifest branches return "the
+   * full assessment", and passed — which is precisely why the answer-key leak
+   * survived a green test suite. Slicing and redaction are different concerns:
+   * the manifest decides WHICH questions a learner sees, redaction decides
+   * whether the answers travel with them. The old contract only pinned the
+   * first, so `correctAnswerIndex` shipped to the browser on every branch.
+   *
+   * The question COUNT expectations are kept (that part was always right); what
+   * changes is that a learner must never receive the key on any branch.
+   */
+  it('returns every question with no sessionId, but WITHOUT the answer key', async () => {
     const { data } = await (await GET(req(), ctx)).json();
     expect(data.questions).toHaveLength(4);
     expect(data.additionalQuestions).toHaveLength(2);
     expect(h.sessionFindUnique).not.toHaveBeenCalled();
+    expect(JSON.stringify(data)).not.toContain('correctAnswerIndex');
   });
 
-  it('returns the full assessment when the session has no manifest at all', async () => {
+  it('returns every question when the session has no manifest, still without the key', async () => {
     h.sessionFindUnique.mockResolvedValue({ questionManifest: null, selectedQuestionIndices: [] });
     const { data } = await (await GET(req('sess-1'), ctx)).json();
     expect(data.questions).toHaveLength(4);
+    expect(JSON.stringify(data)).not.toContain('correctAnswerIndex');
   });
 
-  it('returns the full assessment when the session id is unknown', async () => {
+  it('returns every question when the session id is unknown, still without the key', async () => {
     h.sessionFindUnique.mockResolvedValue(null);
     const { data } = await (await GET(req('bogus'), ctx)).json();
     expect(data.questions).toHaveLength(4);
+    expect(JSON.stringify(data)).not.toContain('correctAnswerIndex');
+  });
+
+  it('redacts the key on the sliced/proctored branch too', async () => {
+    h.sessionFindUnique.mockResolvedValue({
+      questionManifest: [{ pool: 'main', index: 2 }, { pool: 'additional', index: 1 }],
+      selectedQuestionIndices: [],
+    });
+    const { data } = await (await GET(req('sess-1'), ctx)).json();
+    expect(data.questions).toHaveLength(2);
+    expect(JSON.stringify(data)).not.toContain('correctAnswerIndex');
+  });
+
+  it('serves the answer key to staff, who author and grade', async () => {
+    h.requireAuth.mockResolvedValue({ ...learner, role: 'TEACHER' });
+    const { data } = await (await GET(req(), ctx)).json();
+    expect(JSON.stringify(data)).toContain('correctAnswerIndex');
   });
 
   it('does not mutate the cached assessment row across requests', async () => {

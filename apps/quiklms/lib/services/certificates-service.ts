@@ -249,6 +249,12 @@ const TEMPLATE_WRITABLE = [
   'name', 'backgroundImageUrl', 'logoImageUrl', 'signatureImageUrl', 'designation', 'signatoryName',
   'textPlacements', 'logoPlacement', 'signaturePlacement', 'isActive',
   'approvalStatus', 'submittedBy', 'submittedByTenantId', 'orgId',
+  // These three MUST be writable. `PUT /api/certificates/[id]` resets a
+  // re-submitted template to `pending_approval` and nulls the prior decision —
+  // but the nulls were silently dropped here, so `approvalStatus` reverted while
+  // `approvedBy`/`approvalDate` kept the OLD approver. The audit trail then
+  // claimed a pending template had already been approved, by a named person.
+  'approvedBy', 'approvalDate', 'rejectionReason',
 ] as const;
 
 function pickTemplateFields(data: Record<string, unknown>): Record<string, unknown> {
@@ -823,6 +829,14 @@ export async function findIssuedById(id: string) {
 }
 
 /**
+ * Look up by the PUBLIC certificate id (`CERT-…`), not the row id. Used by the
+ * unauthenticated verification routes, which only ever see the public id.
+ */
+export async function findIssuedByCertificateId(certificateId: string) {
+  return prisma.lmsCertificateIssued.findUnique({ where: { certificateId } });
+}
+
+/**
  * Public certificate verification.
  *
  * The legacy populated learner, course and template
@@ -865,6 +879,58 @@ export async function verifyCertificate(certificateId: string) {
       : cert.learnerId,
     courseId: course ?? (cert.courseId ? { _id: cert.courseId, title: cert.courseName || 'Course' } : null),
     certificateTemplateId: template ? { _id: template.id, ...template } : cert.certificateTemplateId,
+  };
+}
+
+/**
+ * Minimal, public-safe view of a verified certificate.
+ *
+ * `verifyCertificate` returns the whole issued row plus a hydrated learner —
+ * which is right for authenticated callers but far too much for
+ * `GET /api/verify-certificate/:id`, a route with NO auth at all. That endpoint
+ * was returning the holder's **email address**, their internal `learnerId`, the
+ * `orgId`, and their **exam score / passingScore**.
+ *
+ * Certificate ids are *designed* to be shared publicly — printed on the PDF,
+ * posted to LinkedIn — so the identifier is not a secret and anything returned
+ * with it is effectively public. A verification endpoint only has to answer
+ * "is this certificate genuine, and who/what is it for?": holder name, course
+ * title, template name, issue date, expiry. Grades and contact details are not
+ * part of that question.
+ *
+ * The public page (`app/verify-certificate/[certificateId]/page.tsx`) reads
+ * `learnerId.name`, `courseId.title`, `certificateTemplateId.name`,
+ * `certificateId` and `issuedAt` — all preserved below. It also fell back to
+ * `learnerId.email` when `name` was empty; `name` is always produced here, so
+ * that fallback is now dead rather than broken.
+ */
+export function toPublicVerification(cert: Record<string, unknown> | null) {
+  if (!cert) return cert;
+  const learner = cert.learnerId as Record<string, unknown> | string | null;
+  const course = cert.courseId as Record<string, unknown> | string | null;
+  const template = cert.certificateTemplateId as Record<string, unknown> | string | null;
+
+  const name =
+    learner && typeof learner === 'object'
+      ? String(learner.name ?? `${learner.firstName ?? ''} ${learner.lastName ?? ''}`.trim())
+      : '';
+
+  return {
+    certificateId: cert.certificateId,
+    issuedAt: cert.issuedAt,
+    expiresAt: cert.expiresAt ?? null,
+    // Name only — no email, no internal user id.
+    learnerId: name ? { name } : null,
+    courseId:
+      course && typeof course === 'object'
+        ? { title: course.title ?? cert.courseName ?? 'Course' }
+        : cert.courseName
+          ? { title: cert.courseName }
+          : null,
+    certificateTemplateId:
+      template && typeof template === 'object' ? { name: template.name ?? null } : null,
+    // Deliberately omitted: orgId, learnerId (uuid), score, passingScore,
+    // passed, isComplianceCertificate, pdfUrl, qrCodeUrl, createdAt, updatedAt.
   };
 }
 

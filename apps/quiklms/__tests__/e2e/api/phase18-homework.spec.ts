@@ -132,6 +132,11 @@ test.describe("Phase 18 — homework lifecycle", () => {
   let submissionId: string;
 
   test.beforeAll(async () => {
+    // Hooks do NOT inherit `test.setTimeout()` from the describe body — they keep
+    // the 45s default (playwright.config.ts:19). This fixture makes several
+    // sequential round-trips against dev routes, which exceeds that on a loaded
+    // server and fails as an opaque hook timeout that skips the whole describe.
+    test.setTimeout(180_000);
     teacher = await apiAs("teacher");
     learner = await apiAs("learner");
   });
@@ -369,6 +374,11 @@ test.describe("Phase 18 — late submission penalty", () => {
   let lateSubmissionId: string;
 
   test.beforeAll(async () => {
+    // Hooks do NOT inherit `test.setTimeout()` from the describe body — they keep
+    // the 45s default (playwright.config.ts:19). This fixture makes several
+    // sequential round-trips against dev routes, which exceeds that on a loaded
+    // server and fails as an opaque hook timeout that skips the whole describe.
+    test.setTimeout(180_000);
     teacher = await apiAs("teacher");
     learner = await apiAs("learner");
     const past = new Date(Date.now() - 864e5).toISOString();
@@ -546,10 +556,10 @@ test.describe("Phase 18 — guards", () => {
      * FAILING BY DESIGN — verified.
      *
      * `create` writes `dto.batchId` straight into the insert with no existence
-     * or ownership lookup (lib/services/homework-service.ts:114-135). An id
+     * or ownership lookup (lib/services/homework-service.ts:114-136). An id
      * that resolves to no batch therefore reaches Postgres and violates the
      * foreign key; Prisma raises P2003, which `toErrorResponse` does not map —
-     * it handles only P2002 and P2025 (lib/http.ts:96-113) — so the request
+     * it handles only P2002 and P2025 (lib/http.ts:99,107) — so the request
      * ends as an opaque `500 Internal server error`.
      *
      * Reproduced: POST /api/homework with `batchId` = an all-zeros uuid →
@@ -578,8 +588,8 @@ test.describe("Phase 18 — guards", () => {
     expect(
       status,
       "UNHANDLED DB ERROR: an unresolvable batchId reaches Postgres and the P2003 foreign-key " +
-        "violation is returned as a 500 (lib/services/homework-service.ts:114-135 does not " +
-        "validate the batch; lib/http.ts:96-113 maps only P2002/P2025).",
+        "violation is returned as a 500 (lib/services/homework-service.ts:114-136 does not " +
+        "validate the batch; lib/http.ts:99,107 maps only P2002/P2025).",
     ).toBeLessThan(500);
   });
 });
@@ -596,6 +606,11 @@ test.describe("Phase 18 — a learner cannot reach another student's work", () =
   let submissionA: string;
 
   test.beforeAll(async () => {
+    // Hooks do NOT inherit `test.setTimeout()` from the describe body — they keep
+    // the 45s default (playwright.config.ts:19). This fixture makes several
+    // sequential round-trips against dev routes, which exceeds that on a loaded
+    // server and fails as an opaque hook timeout that skips the whole describe.
+    test.setTimeout(180_000);
     teacher = await apiAs("teacher");
     learnerA = await apiAs("learner");
     ({ api: learnerB } = await provisionLearnerB());
@@ -625,7 +640,7 @@ test.describe("Phase 18 — a learner cannot reach another student's work", () =
 
   test("a LEARNER cannot override the studentId query parameter", async () => {
     // The route pins `studentId` to `actor.id` unless the caller is a PARENT
-    // (app/api/homework/student/submissions/route.ts:12).
+    // (app/api/homework/student/submissions/route.ts:11).
     const raw = await (
       await GET(
         learnerB,
@@ -657,10 +672,10 @@ test.describe("Phase 18 — a learner cannot reach another student's work", () =
     /**
      * FAILING BY DESIGN — verified.
      *
-     * app/api/homework/student/submissions/route.ts:12 reads:
+     * app/api/homework/student/submissions/route.ts:11 reads:
      *   const studentId = actor.role === 'PARENT' && studentIdParam ? studentIdParam : actor.id;
      * so a PARENT may name ANY student id in the org and the service fetches it
-     * unconditionally (lib/services/homework-service.ts:getStudentSubmissions,
+     * unconditionally (lib/services/homework-service.ts:350-352 getStudentSubmissions,
      * filtering on `{orgId, studentId}` only).
      *
      * The link table this would need exists — `LmsUserParent`
@@ -682,7 +697,7 @@ test.describe("Phase 18 — a learner cannot reach another student's work", () =
     expect(
       raw,
       "MISSING AUTHORIZATION: a PARENT with no parent↔child link read another student's " +
-        "homework submissions and feedback (app/api/homework/student/submissions/route.ts:12 " +
+        "homework submissions and feedback (app/api/homework/student/submissions/route.ts:11 " +
         "trusts ?studentId= for any PARENT).",
     ).not.toContain("A's private answer");
   });

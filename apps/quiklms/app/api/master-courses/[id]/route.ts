@@ -4,6 +4,42 @@ import { parseBody } from '@/lib/validation';
 import { requireAuth, requireRoles } from '@/lib/auth/context';
 import * as svc from '@/lib/services/master-course-service';
 
+/**
+ * Real schema, replacing `z.object({}).passthrough()` (F-003). Same columns as
+ * `POST /api/master-courses`, all optional — `svc.update` applies each field
+ * only `if (dto.x !== undefined)`, and `MasterCourseStudio` sends a different
+ * subset depending on which tab the author saved from.
+ *
+ * `title` is the field that mattered: the service does `String(dto.title)`, so
+ * `PUT {title: 7}` returned 200 and renamed the course to `"7"`.
+ *
+ * `modules` and `settings` stay opaque `Json` blobs — the 3-tier authoring
+ * format is defined by the studio, not by the database, and pinning it here
+ * would break the next authoring feature.
+ *
+ * `submittedBy`/`submittedByTenantId` are NOT declared: the handler below
+ * backfills them from the session, so a client value would only ever be
+ * overwritten or, worse, let a caller forge the submitter on a course that has
+ * none yet.
+ */
+const updateMasterCourseSchema = z.object({
+  title: z.string().optional(),
+  description: z.string().nullish(),
+  category: z.string().nullish(),
+  level: z.enum(['Beginner', 'Intermediate', 'Advanced', 'Expert']).optional(),
+  thumbnailUrl: z.string().nullish(),
+  aiGeneratedThumbnail: z.boolean().optional(),
+  tags: z.array(z.string()).optional(),
+  estimatedDuration: z.number().nullish(),
+  modules: z.array(z.unknown()).optional(),
+  settings: z.record(z.unknown()).nullish(),
+  status: z.enum([
+    'Draft', 'Published', 'Archived', 'PendingTenantApproval',
+    'RejectedByTenantAdmin', 'PendingApproval', 'Rejected', 'Resubmitted',
+  ]).optional(),
+  selectedTenants: z.array(z.string()).optional(),
+});
+
 // GET /api/master-courses/:id — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
 export const GET = route(async (req, { params }) => {
   const actor = await requireAuth(req);
@@ -26,7 +62,7 @@ export const GET = route(async (req, { params }) => {
 export const PUT = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
-  const dto = (await parseBody(req, z.object({}).passthrough())) as Record<string, unknown>;
+  const dto = (await parseBody(req, updateMasterCourseSchema)) as Record<string, unknown>;
   const id = params!.id;
   const orgId = actor.orgId ?? undefined;
 

@@ -33,6 +33,16 @@ const MODULE_IDS = m.modules.map((mod) => mod.id);
 const MODULE_0 = m.modules[0].id;
 const NONEXISTENT = "00000000-0000-4000-8000-000000000000";
 
+/**
+ * Default per-request timeout for every context in this file, overriding the
+ * config's 15s `actionTimeout`. `GET /api/courses` runs `findAllForTenant`
+ * across two models and then `enrichCoursesWithPresignedUrls` over every row, so
+ * its latency grows with the tenant's course count and exceeded the default once
+ * the suite had created a few dozen courses. A slow-but-correct list response
+ * should read as slow, not as a failure of the assertion under test.
+ */
+const REQ = { timeout: 45_000 } as const;
+
 interface Ok<T = unknown> {
   success?: boolean;
   data?: T;
@@ -41,7 +51,7 @@ interface Ok<T = unknown> {
 
 test.describe("Phase 06 — reads", () => {
   test("GET /api/courses returns the success envelope for an admin", async () => {
-    const api = await apiAs("tenantAdmin");
+    const api = await apiAs("tenantAdmin", REQ);
     const res = await api.get("/api/courses");
     expect(res.status()).toBe(200);
     const body = (await safeJson(res)) as Ok<Array<{ id: string; title: string }>>;
@@ -55,7 +65,7 @@ test.describe("Phase 06 — reads", () => {
   });
 
   test("GET /api/courses/[id] returns the seeded published course with its modules", async () => {
-    const api = await apiAs("teacher");
+    const api = await apiAs("teacher", REQ);
     const res = await api.get(`/api/courses/${PUBLISHED}`);
     expect(res.status()).toBe(200);
     const body = (await safeJson(res)) as Ok<{ id: string; title: string; modules: unknown[] }>;
@@ -66,7 +76,7 @@ test.describe("Phase 06 — reads", () => {
   });
 
   test("GET /api/courses/[id] with an unknown id is 404, not 500", async () => {
-    const api = await apiAs("tenantAdmin");
+    const api = await apiAs("tenantAdmin", REQ);
     const res = await api.get(`/api/courses/${NONEXISTENT}`);
     expect(res.status()).toBe(404);
     const body = (await safeJson(res)) as { statusCode?: number; error?: string };
@@ -76,7 +86,7 @@ test.describe("Phase 06 — reads", () => {
   });
 
   test("GET /api/courses/enrolled returns an envelope for a learner", async () => {
-    const api = await apiAs("learner");
+    const api = await apiAs("learner", REQ);
     const res = await api.get("/api/courses/enrolled");
     expect(res.status()).toBe(200);
     const body = (await safeJson(res)) as Ok<unknown[]>;
@@ -86,7 +96,7 @@ test.describe("Phase 06 — reads", () => {
   });
 
   test("GET /api/courses/[id]/player-data returns structured module/lesson data", async () => {
-    const api = await apiAs("learner");
+    const api = await apiAs("learner", REQ);
     const res = await api.get(`/api/courses/${PUBLISHED}/player-data`);
     expect(res.status()).toBe(200);
     const body = (await safeJson(res)) as Ok<{
@@ -129,7 +139,7 @@ test.describe("Phase 06 — role guards", () => {
 
   for (const g of GUARDED) {
     test(`LEARNER is refused by ${g.label}`, async () => {
-      const api = await apiAs("learner");
+      const api = await apiAs("learner", REQ);
       const res = await g.run(api);
       expect(res.status()).toBe(403);
       await api.dispose();
@@ -137,7 +147,7 @@ test.describe("Phase 06 — role guards", () => {
   }
 
   test("TEACHER is refused by POST /api/courses/modules (author roles only)", async () => {
-    const api = await apiAs("teacher");
+    const api = await apiAs("teacher", REQ);
     const res = await api.post("/api/courses/modules", { data: { courseId: PUBLISHED, title: "phase06 teacher" } });
     expect(res.status()).toBe(403);
     const body = (await safeJson(res)) as { message?: string };
@@ -148,7 +158,7 @@ test.describe("Phase 06 — role guards", () => {
 
 test.describe("Phase 06 — mutations persist", () => {
   test("POST /api/courses creates a course that can be read back", async () => {
-    const api = await apiAs("tenantAdmin");
+    const api = await apiAs("tenantAdmin", REQ);
     const title = `phase06 created ${Date.now()}`;
     const created = await api.post("/api/courses", {
       data: { title, description: "created by phase06", category: "E2E", status: "Draft" },
@@ -173,7 +183,7 @@ test.describe("Phase 06 — mutations persist", () => {
   });
 
   test("POST /api/courses/modules adds a module that appears on the course", async () => {
-    const api = await apiAs("tenantAdmin");
+    const api = await apiAs("tenantAdmin", REQ);
     const title = `phase06 module ${Date.now()}`;
     const res = await api.post("/api/courses/modules", { data: { courseId: DRAFT, title } });
     expect([200, 201]).toContain(res.status());
@@ -191,7 +201,7 @@ test.describe("Phase 06 — mutations persist", () => {
   });
 
   test("POST /api/courses/lessons adds a lesson that appears on the module", async () => {
-    const api = await apiAs("tenantAdmin");
+    const api = await apiAs("tenantAdmin", REQ);
     // Create a throwaway module so we never mutate the seeded lesson set that
     // the ordering tests below depend on.
     const modRes = await api.post("/api/courses/modules", {
@@ -216,7 +226,7 @@ test.describe("Phase 06 — mutations persist", () => {
   });
 
   test("POST /api/courses/lessons with an unknown moduleId is 404, not 500", async () => {
-    const api = await apiAs("tenantAdmin");
+    const api = await apiAs("tenantAdmin", REQ);
     const res = await api.post("/api/courses/lessons", {
       data: { moduleId: NONEXISTENT, title: "orphan", type: "Video" },
     });
@@ -225,7 +235,7 @@ test.describe("Phase 06 — mutations persist", () => {
   });
 
   test("POST /api/courses/modules rejects a body missing courseId with 400 + validationErrors", async () => {
-    const api = await apiAs("tenantAdmin");
+    const api = await apiAs("tenantAdmin", REQ);
     const res = await api.post("/api/courses/modules", { data: { title: "no course id" } });
     expect(res.status()).toBe(400);
     const body = (await safeJson(res)) as { message?: string; validationErrors?: Array<{ field: string }> };
@@ -235,7 +245,7 @@ test.describe("Phase 06 — mutations persist", () => {
   });
 
   test("PUT /api/courses/[id]/modules/order reorders and the new order persists", async () => {
-    const admin = await apiAs("tenantAdmin");
+    const admin = await apiAs("tenantAdmin", REQ);
     const reversed = [...MODULE_IDS].reverse();
     const res = await admin.put(`/api/courses/${PUBLISHED}/modules/order`, { data: { moduleIds: reversed } });
     expect(res.status()).toBe(200);
@@ -253,14 +263,14 @@ test.describe("Phase 06 — mutations persist", () => {
   });
 
   test("PUT /api/courses/[id]/modules/order with an unknown course id is 404", async () => {
-    const api = await apiAs("tenantAdmin");
+    const api = await apiAs("tenantAdmin", REQ);
     const res = await api.put(`/api/courses/${NONEXISTENT}/modules/order`, { data: { moduleIds: [] } });
     expect(res.status()).toBe(404);
     await api.dispose();
   });
 
   test("PUT /api/courses/modules/[moduleId]/lessons/order with an unknown module id is 404", async () => {
-    const api = await apiAs("tenantAdmin");
+    const api = await apiAs("tenantAdmin", REQ);
     const res = await api.put(`/api/courses/modules/${NONEXISTENT}/lessons/order`, { data: { lessonIndices: [] } });
     expect(res.status()).toBe(404);
     await api.dispose();
@@ -295,7 +305,7 @@ test.describe("Phase 06 — findings", () => {
    * must not touch (CONVENTIONS rule 7).
    */
   test("LEARNER's course list excludes Draft-status courses", async () => {
-    const api = await apiAs("learner");
+    const api = await apiAs("learner", REQ);
     const res = await api.get("/api/courses");
     expect(res.status()).toBe(200);
     const body = (await safeJson(res)) as Ok<Array<{ id: string; status: string }>>;
@@ -334,7 +344,7 @@ test.describe("Phase 06 — findings", () => {
    * Left FAILING intentionally.
    */
   test("player-data refuses a course belonging to another tenant", async () => {
-    const api = await apiAs("learner");
+    const api = await apiAs("learner", REQ);
     const res = await api.get(`/api/courses/${m.other.courseId}/player-data`);
     const body = (await safeJson(res)) as Ok<{ course: { id: string; title: string } | null }>;
     expect(
@@ -371,7 +381,7 @@ test.describe("Phase 06 — findings", () => {
    * Left FAILING intentionally (both).
    */
   test("LEARNER cannot reorder a course's modules", async () => {
-    const api = await apiAs("learner");
+    const api = await apiAs("learner", REQ);
     const res = await api.put(`/api/courses/${PUBLISHED}/modules/order`, {
       data: { moduleIds: [...MODULE_IDS].reverse() },
     });
@@ -383,13 +393,13 @@ test.describe("Phase 06 — findings", () => {
 
     // Whatever the verdict, put the seeded order back so this spec is
     // idempotent and phase07+ see a clean fixture.
-    const admin = await apiAs("tenantAdmin");
+    const admin = await apiAs("tenantAdmin", REQ);
     await admin.put(`/api/courses/${PUBLISHED}/modules/order`, { data: { moduleIds: MODULE_IDS } });
     await admin.dispose();
   });
 
   test("LEARNER cannot reorder a module's lessons", async () => {
-    const api = await apiAs("learner");
+    const api = await apiAs("learner", REQ);
     const res = await api.put(`/api/courses/modules/${MODULE_0}/lessons/order`, {
       data: { lessonIndices: [0, 1, 2] },
     });
@@ -429,7 +439,7 @@ test.describe("Phase 06 — findings", () => {
    * Left FAILING intentionally.
    */
   test("POST /api/courses/lessons rejects an invalid lesson type with 400, not 500", async () => {
-    const api = await apiAs("tenantAdmin");
+    const api = await apiAs("tenantAdmin", REQ);
     const res = await api.post("/api/courses/lessons", {
       data: { moduleId: MODULE_0, title: "phase06 bad type", type: "VIDEO" },
     });
@@ -451,7 +461,7 @@ test.describe("Phase 06 — findings", () => {
    * "the database is down". Recorded, asserted as documented behaviour.
    */
   test("[informational] player-data returns an empty success payload for an unknown id", async () => {
-    const api = await apiAs("tenantAdmin");
+    const api = await apiAs("tenantAdmin", REQ);
     const res = await api.get(`/api/courses/${NONEXISTENT}/player-data`);
     expect(res.status()).toBe(200);
     const body = (await safeJson(res)) as Ok<{ course: null; totalLessons: number }>;

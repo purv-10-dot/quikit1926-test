@@ -1,6 +1,7 @@
 'use client';
 
-import { signIn, signOut, useSession } from 'next-auth/react';
+import { signIn, useSession } from 'next-auth/react';
+import { globalSignOut } from '@/lib/global-signout';
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
@@ -56,38 +57,14 @@ function LoginInner() {
 
   async function handleSwitchAccount() {
     setSigningOut(true);
-
-    // 1) Clear this app's cookie first (next-auth also broadcasts to sibling
-    //    tabs), then wipe browser storage so no per-user UI state bleeds over.
-    try {
-      await signOut({ redirect: false });
-    } catch {
-      /* never let a local cookie-clear failure block the global sign-out */
-    }
-    try {
-      window.localStorage.clear();
-      window.sessionStorage.clear();
-    } catch {
-      /* storage may be blocked by strict cookie policies — ignore */
-    }
-
-    // 2) Single-logout chain: auth-host → launcher → back to this invite link
-    //    (now signed-out) so the effect above starts a fresh SSO login as the
-    //    invited user. Mirrors @quikit/ui's globalSignOut without pulling in the
-    //    package (quiklms doesn't depend on @quikit/ui).
-    const authUrl = (process.env.NEXT_PUBLIC_AUTH_URL ?? '').replace(/\/+$/, '');
-    const quikitUrl = (process.env.NEXT_PUBLIC_QUIKIT_URL ?? '').replace(/\/+$/, '');
-    const origin = window.location.origin;
-    const finalRedirect = `${origin}/login?email=${encodeURIComponent(invitedEmail)}`;
-
-    const launcherSlo = quikitUrl
-      ? `${quikitUrl}/api/auth/signout-global?callbackUrl=${encodeURIComponent(finalRedirect)}`
-      : finalRedirect;
-    const target = authUrl
-      ? `${authUrl}/api/auth/signout-global?callbackUrl=${encodeURIComponent(launcherSlo)}`
-      : launcherSlo;
-
-    window.location.href = target;
+    // Same single-logout chain the topbar's Sign out uses — this page used to
+    // carry its own inline copy of it. Returning to `/login?email=…` (rather
+    // than the landing page) is the one difference that matters here: the
+    // effect above sees the signed-out state and starts a fresh SSO login as
+    // the INVITED user, which is the whole point of "wrong account".
+    await globalSignOut(
+      `${window.location.origin}/login?email=${encodeURIComponent(invitedEmail)}`,
+    );
   }
 
   if (mismatch) {

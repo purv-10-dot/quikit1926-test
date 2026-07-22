@@ -110,8 +110,16 @@ async function getSelectedTenantIds(masterCourseId: string): Promise<string[]> {
 }
 
 /** Attach selectedTenants id list to a course object for the response shape. */
-async function withSelectedTenants<T extends MasterCourse>(course: T): Promise<T & { selectedTenants: string[] }> {
-  return { ...course, selectedTenants: await getSelectedTenantIds(course.id) };
+async function withSelectedTenants<T extends MasterCourse>(
+  course: T,
+): Promise<T & { _id: string; selectedTenants: string[] }> {
+  // `_id` is the Mongo-compat alias every course screen addresses a course by:
+  // approve / reject / preview / delete / duplicate / edit all build their URL
+  // from `course._id`. Spreading the bare Prisma row (which has `id`) sent all
+  // of them to `/master-courses/undefined/...`, so the ENTIRE tenant→super-admin
+  // approval workflow 404'd on everything after submission — submission itself
+  // works because a POST needs no id, which is why it looked partly alive.
+  return { _id: course.id, ...course, selectedTenants: await getSelectedTenantIds(course.id) };
 }
 
 // ── quiz sanitisation (port of sanitizeQuizQuestions) ────────────────────────

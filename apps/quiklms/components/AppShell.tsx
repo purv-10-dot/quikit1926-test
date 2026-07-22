@@ -1,11 +1,22 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Sun, Moon, RefreshCw, Bell, ChevronDown, Check, UserCog } from 'lucide-react';
+import { Sun, Moon, Bell, ChevronDown, Check, UserCog, LogOut, Grid3x3, ExternalLink, Loader2 } from 'lucide-react';
 import { Sidebar } from './Sidebar';
 import { useTheme, useFeatures, useCurrentUser } from '@/app/providers';
 import { useTranslation, LOCALES, type Locale } from '@/lib/i18n';
+import { globalSignOut } from '@/lib/global-signout';
+import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
+
+interface SwitchableApp {
+  id: string;
+  name: string;
+  slug: string;
+  url: string;
+  iconUrl: string | null;
+  current: boolean;
+}
 
 // Role display labels shown in the header badge / switcher.
 const ROLE_LABELS: Record<string, string> = {
@@ -86,6 +97,50 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
     return () => document.removeEventListener('mousedown', onClick);
   }, [menuOpen]);
 
+  // ── App switcher ──────────────────────────────────────────────────────────
+  // Grants come from the platform's UserAppAccess table, so the menu only ever
+  // lists apps this user actually has in this org. Fetched lazily on first open
+  // — most sessions never touch it, and it must not cost every page load.
+  const [apps, setApps] = useState<SwitchableApp[] | null>(null);
+  const [appsLoading, setAppsLoading] = useState(false);
+  const [appsOpen, setAppsOpen] = useState(false);
+  const appsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!appsOpen || apps !== null || appsLoading) return;
+    setAppsLoading(true);
+    api
+      .get<{ data: { apps: SwitchableApp[] } }>('/me/apps')
+      .then((r) => setApps(r?.data?.apps ?? []))
+      .catch(() => setApps([]))
+      .finally(() => setAppsLoading(false));
+  }, [appsOpen, apps, appsLoading]);
+
+  useEffect(() => {
+    if (!appsOpen) return;
+    const onClick = (e: MouseEvent) => {
+      if (appsRef.current && !appsRef.current.contains(e.target as Node)) setAppsOpen(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [appsOpen]);
+
+  // ── Sign out ──────────────────────────────────────────────────────────────
+  const [signingOut, setSigningOut] = useState(false);
+  async function handleSignOut() {
+    setSigningOut(true);
+    setMenuOpen(false);
+    try {
+      await globalSignOut();
+    } catch {
+      // globalSignOut navigates on success; landing here means it could not,
+      // so fall back to the public landing page rather than stranding the user.
+      // NOT `/login` — that re-initiates SSO and would undo the sign-out.
+      setSigningOut(false);
+      window.location.href = '/';
+    }
+  }
+
   function activateRole(r: string) {
     if (r === role) { setMenuOpen(false); return; }
     const maxAge = 60 * 60 * 24 * 365;
@@ -149,47 +204,141 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
             <Bell className="size-4" />
           </button>
 
-          {/* Role switcher — dropdown for multi-role users, dev picker otherwise */}
-          {isMultiRole ? (
-            <div className="relative" ref={menuRef}>
-              <button
-                onClick={() => setMenuOpen((o) => !o)}
-                className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-sm font-medium text-white transition-[filter] hover:brightness-110 active:scale-[0.98]"
-                style={{ backgroundColor: 'var(--brand-secondary)' }}
-              >
-                <UserCog className="size-3.5" />
-                <span>{ROLE_LABELS[role] ?? role}</span>
-                <ChevronDown className={cn('size-3.5 transition-transform', menuOpen && 'rotate-180')} />
-              </button>
-              {menuOpen && (
-                <div className="absolute right-0 top-11 z-30 w-52 overflow-hidden rounded-xl border border-line bg-surface shadow-xl">
-                  <p className="px-3 pb-1 pt-2.5 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">Switch role</p>
-                  {myRoles.map((r) => (
-                    <button
-                      key={r}
-                      onClick={() => activateRole(r)}
-                      className="flex w-full items-center justify-between px-3 py-2 text-sm text-fg transition-colors hover:bg-surface-muted"
-                    >
-                      <span className="flex items-center gap-2">
-                        <span className="grid size-6 place-items-center rounded-md bg-surface-muted text-[10px] font-bold text-fg-muted">
-                          {(ROLE_LABELS[r] ?? r)[0]}
-                        </span>
-                        {ROLE_LABELS[r] ?? r}
-                      </span>
-                      {r === role && <Check className="size-4 text-[var(--brand-primary)]" />}
-                    </button>
-                  ))}
-                  <div className="border-t border-line">
-                    <Link href="/role-select" className="block px-3 py-2 text-xs text-fg-muted transition-colors hover:bg-surface-muted">
-                      Switch account…
-                    </Link>
+          {/* App switcher — only the apps this user is granted in this org */}
+          <div className="relative" ref={appsRef}>
+            <button
+              onClick={() => setAppsOpen((o) => !o)}
+              aria-label="Switch app"
+              aria-expanded={appsOpen}
+              className="grid size-9 place-items-center rounded-md border border-line-strong text-fg-muted transition-colors hover:bg-surface-muted hover:text-fg"
+            >
+              <Grid3x3 className="size-4" />
+            </button>
+            {appsOpen && (
+              <div className="absolute right-0 top-11 z-30 w-64 overflow-hidden rounded-xl border border-line bg-surface shadow-xl">
+                <p className="px-3 pb-1 pt-2.5 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">
+                  Your apps
+                </p>
+
+                {appsLoading && (
+                  <div className="flex items-center gap-2 px-3 py-3 text-sm text-fg-muted">
+                    <Loader2 className="size-4 animate-spin" /> Loading…
                   </div>
+                )}
+
+                {!appsLoading && apps?.length === 0 && (
+                  <p className="px-3 py-3 text-sm text-fg-muted">No other apps available.</p>
+                )}
+
+                {!appsLoading &&
+                  apps?.map((a) =>
+                    a.current ? (
+                      // Current app is shown, not hidden — so the menu says where you are.
+                      <div
+                        key={a.id}
+                        className="flex items-center justify-between px-3 py-2 text-sm text-fg"
+                        aria-current="true"
+                      >
+                        <span className="flex items-center gap-2">
+                          <span className="grid size-6 place-items-center rounded-md bg-surface-muted text-[10px] font-bold text-fg-muted">
+                            {a.name[0]}
+                          </span>
+                          {a.name}
+                        </span>
+                        <Check className="size-4 text-[var(--brand-primary)]" />
+                      </div>
+                    ) : (
+                      <a
+                        key={a.id}
+                        href={a.url}
+                        className="flex items-center justify-between px-3 py-2 text-sm text-fg transition-colors hover:bg-surface-muted"
+                      >
+                        <span className="flex items-center gap-2">
+                          <span className="grid size-6 place-items-center rounded-md bg-surface-muted text-[10px] font-bold text-fg-muted">
+                            {a.name[0]}
+                          </span>
+                          {a.name}
+                        </span>
+                        <ExternalLink className="size-3.5 text-fg-subtle" />
+                      </a>
+                    ),
+                  )}
+              </div>
+            )}
+          </div>
+
+          {/* Account menu — ALWAYS rendered.
+              This used to be `isMultiRole ? <switcher/> : null`, so a
+              single-role user (most users) had no menu at all and therefore no
+              way to sign out. Role switching is now a section INSIDE the
+              account menu rather than the reason the menu exists. */}
+          <div className="relative" ref={menuRef}>
+            <button
+              onClick={() => setMenuOpen((o) => !o)}
+              aria-expanded={menuOpen}
+              className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-sm font-medium text-white transition-[filter] hover:brightness-110 active:scale-[0.98]"
+              style={{ backgroundColor: 'var(--brand-secondary)' }}
+            >
+              <UserCog className="size-3.5" />
+              <span className="max-w-[10rem] truncate">
+                {user?.firstName || ROLE_LABELS[role] || role}
+              </span>
+              <ChevronDown className={cn('size-3.5 transition-transform', menuOpen && 'rotate-180')} />
+            </button>
+
+            {menuOpen && (
+              <div className="absolute right-0 top-11 z-30 w-60 overflow-hidden rounded-xl border border-line bg-surface shadow-xl">
+                {/* Who you are — the menu is now the account menu, so say so. */}
+                <div className="border-b border-line px-3 py-2.5">
+                  <p className="truncate text-sm font-semibold text-fg">
+                    {[user?.firstName, user?.lastName].filter(Boolean).join(' ') || roleLabel}
+                  </p>
+                  {user?.email && <p className="truncate text-xs text-fg-muted">{user.email}</p>}
                 </div>
-              )}
-            </div>
-          ) : null /* Single-role users: role is fixed by their centralized
-             login (the retired qs_role dev-switch is gone). To act as another
-             role, log in as that user — or use impersonation (future). */}
+
+                {isMultiRole && (
+                  <>
+                    <p className="px-3 pb-1 pt-2.5 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">
+                      Switch role
+                    </p>
+                    {myRoles.map((r) => (
+                      <button
+                        key={r}
+                        onClick={() => activateRole(r)}
+                        className="flex w-full items-center justify-between px-3 py-2 text-sm text-fg transition-colors hover:bg-surface-muted"
+                      >
+                        <span className="flex items-center gap-2">
+                          <span className="grid size-6 place-items-center rounded-md bg-surface-muted text-[10px] font-bold text-fg-muted">
+                            {(ROLE_LABELS[r] ?? r)[0]}
+                          </span>
+                          {ROLE_LABELS[r] ?? r}
+                        </span>
+                        {r === role && <Check className="size-4 text-[var(--brand-primary)]" />}
+                      </button>
+                    ))}
+                  </>
+                )}
+
+                <div className="border-t border-line">
+                  <Link
+                    href="/profile"
+                    onClick={() => setMenuOpen(false)}
+                    className="block px-3 py-2 text-sm text-fg transition-colors hover:bg-surface-muted"
+                  >
+                    Profile settings
+                  </Link>
+                  <button
+                    onClick={handleSignOut}
+                    disabled={signingOut}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 transition-colors hover:bg-red-50 disabled:opacity-60 dark:text-red-400 dark:hover:bg-red-950/30"
+                  >
+                    {signingOut ? <Loader2 className="size-4 animate-spin" /> : <LogOut className="size-4" />}
+                    {signingOut ? 'Signing out…' : 'Sign out'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </header>
 
         {/* ── Scrollable page content with a consistent max-width ──────────── */}

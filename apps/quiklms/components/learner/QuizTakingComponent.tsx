@@ -67,7 +67,17 @@ export function QuizTakingComponent({ assessmentId, courseId, onComplete, onCanc
     let active = true;
     (async () => {
       try {
-        const res = await api.get<{ success: boolean; data: Assessment }>(`/assessments/${assessmentId}`);
+        // The proctoring session is what pins the randomized question subset.
+        // WITHOUT `sessionId` the server has no manifest to serve from, so it
+        // returns the FULL bank in author order — which broke three things at
+        // once: randomization looked dead, the answer key leaked (the redaction
+        // only runs on the sessionId branch), and scoring silently mismatched,
+        // because submit sends answers keyed by DISPLAYED index while the server
+        // scores against the manifest's shuffled, shorter list.
+        const url = sessionId
+          ? `/assessments/${assessmentId}?sessionId=${encodeURIComponent(sessionId)}`
+          : `/assessments/${assessmentId}`;
+        const res = await api.get<{ success: boolean; data: Assessment }>(url);
         if (!active) return;
         const data = res?.data;
         setAssessment(data);
@@ -81,7 +91,10 @@ export function QuizTakingComponent({ assessmentId, courseId, onComplete, onCanc
     return () => {
       active = false;
     };
-  }, [assessmentId]);
+    // `sessionId` arrives asynchronously from ProctoredQuizWrapper's start call,
+    // so it MUST be a dependency — otherwise the first render fetches without it
+    // and the unsliced bank sticks for the whole attempt.
+  }, [assessmentId, sessionId]);
 
   const buildSubmitAnswers = useCallback((): SubmitAnswer[] => {
     if (!assessment) return [];

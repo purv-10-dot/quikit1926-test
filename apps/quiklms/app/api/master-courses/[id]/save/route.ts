@@ -4,11 +4,42 @@ import { parseBody } from '@/lib/validation';
 import { requireAuth, requireRoles } from '@/lib/auth/context';
 import * as svc from '@/lib/services/master-course-service';
 
+/**
+ * Real schema, replacing `z.object({}).passthrough()` (F-003). Identical to the
+ * one on `PUT /api/master-courses/:id` — the two routes run the same approval
+ * branches over the same `MasterCourseStudio` payload (`buildApiPayload`), so
+ * they must accept the same body.
+ *
+ * All optional: `svc.update` patches only the keys present, and
+ * `createOrUpdateRevisionFromPublished` falls back to the parent course's value
+ * for every field the dto omits. `title` is typed because the service does
+ * `String(dto.title)` on it, which turned a numeric title into a stringified
+ * one instead of an error. `submittedBy`/`submittedByTenantId` are not
+ * declared — the handler backfills them from the session.
+ */
+const saveMasterCourseSchema = z.object({
+  title: z.string().optional(),
+  description: z.string().nullish(),
+  category: z.string().nullish(),
+  level: z.enum(['Beginner', 'Intermediate', 'Advanced', 'Expert']).optional(),
+  thumbnailUrl: z.string().nullish(),
+  aiGeneratedThumbnail: z.boolean().optional(),
+  tags: z.array(z.string()).optional(),
+  estimatedDuration: z.number().nullish(),
+  modules: z.array(z.unknown()).optional(),
+  settings: z.record(z.unknown()).nullish(),
+  status: z.enum([
+    'Draft', 'Published', 'Archived', 'PendingTenantApproval',
+    'RejectedByTenantAdmin', 'PendingApproval', 'Rejected', 'Resubmitted',
+  ]).optional(),
+  selectedTenants: z.array(z.string()).optional(),
+});
+
 // POST /api/master-courses/:id/save — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
 export const POST = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
-  const dto = (await parseBody(req, z.object({}).passthrough())) as Record<string, unknown>;
+  const dto = (await parseBody(req, saveMasterCourseSchema)) as Record<string, unknown>;
   const id = params!.id;
   const orgId = actor.orgId ?? undefined;
 

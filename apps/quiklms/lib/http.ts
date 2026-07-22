@@ -42,8 +42,47 @@ export const Conflict = (m = 'Conflict') => new ApiError(409, m, 'Conflict');
 export const PayloadTooLarge = (m = 'File too large') => new ApiError(413, m, 'Payload Too Large');
 export const Internal = (m = 'Internal server error') => new ApiError(500, m, 'Internal Server Error');
 
+/**
+ * Mongo-compat `_id` alias.
+ *
+ * The entire client was written against the Mongo backend, so it addresses every
+ * record by `_id` — `api.post(`/certificates/${cert._id}/approve`)`,
+ * `api.delete(`/master-courses/${courseToDelete._id}`)`, and ~40 more. Postgres
+ * rows carry `id`. Any service that returned a bare Prisma row therefore handed
+ * the UI `undefined`, and the request went to `/undefined` and 404'd.
+ *
+ * That shipped three separate times — the certificate approval queue, the
+ * tenant→super-admin course workflow, and batches — because the fix kept being
+ * applied per-service, one shaping helper at a time, while every new query
+ * reintroduced it. Aliasing here instead makes it structural: `json()` is the
+ * single response path every route uses.
+ *
+ * Purely additive: `_id` is only set when `id` exists and `_id` does not, so an
+ * explicit `_id` from a shaping helper always wins. Plain objects and arrays
+ * only — `Object.prototype` identity check skips Date, Decimal, Buffer and any
+ * class instance whose `toJSON` must run untouched. A WeakSet guards cycles.
+ */
+function aliasMongoIds(node: unknown, seen: WeakSet<object>): void {
+  if (node === null || typeof node !== 'object') return;
+  if (seen.has(node)) return;
+  seen.add(node);
+
+  if (Array.isArray(node)) {
+    for (const item of node) aliasMongoIds(item, seen);
+    return;
+  }
+
+  // Plain objects only. Anything with a custom prototype is left alone.
+  if (Object.getPrototypeOf(node) !== Object.prototype) return;
+
+  const rec = node as Record<string, unknown>;
+  if (typeof rec.id === 'string' && rec._id === undefined) rec._id = rec.id;
+  for (const key of Object.keys(rec)) aliasMongoIds(rec[key], seen);
+}
+
 /** JSON success response. */
 export function json(data: unknown, status = 200): NextResponse {
+  aliasMongoIds(data, new WeakSet());
   return NextResponse.json(data, { status });
 }
 
@@ -112,6 +151,53 @@ export function toErrorResponse(err: unknown, req: NextRequest, requestId: strin
       res.headers.set('X-Request-Id', requestId);
       return res;
     }
+    // P2003 — foreign key constraint. The caller referenced a row that does not
+    // exist (an unknown batchId, courseId, …). That is a CLIENT fault, but it
+    // was falling through to the 500 branch below and being logged as an
+    // unhandled server error, which both misreports the fault and buries real
+    // 500s in noise.
+    if (err.code === 'P2003') {
+      const res = NextResponse.json(
+        buildEnvelope(
+          req,
+          requestId,
+          400,
+          'A referenced record does not exist',
+          'Bad Request',
+        ),
+        { status: 400 },
+      );
+      res.headers.set('X-Request-Id', requestId);
+      return res;
+    }
+    // P2011 null constraint / P2012 missing required value — a required column
+    // was absent from the payload.
+    if (err.code === 'P2011' || err.code === 'P2012') {
+      const res = NextResponse.json(
+        buildEnvelope(req, requestId, 400, 'A required field is missing', 'Bad Request'),
+        { status: 400 },
+      );
+      res.headers.set('X-Request-Id', requestId);
+      return res;
+    }
+  }
+
+  // A malformed query — typically a required field missing from the request
+  // body reaching Prisma as `undefined`. This is the single biggest source of
+  // spurious 500s on routes whose zod schema does not constrain the body
+  // (see F-003): the client sent nothing, and the app blamed itself.
+  //
+  // The raw message is NOT forwarded — it embeds the generated Prisma query and
+  // model shape, which is schema disclosure on an unauthenticated-adjacent path.
+  if (err instanceof Prisma.PrismaClientValidationError) {
+    // eslint-disable-next-line no-console
+    console.warn(`[${requestId}] Prisma validation (client fault):`, err.message.split('\n')[0]);
+    const res = NextResponse.json(
+      buildEnvelope(req, requestId, 400, 'Invalid or incomplete request body', 'Bad Request'),
+      { status: 400 },
+    );
+    res.headers.set('X-Request-Id', requestId);
+    return res;
   }
 
   if (err instanceof ApiError) {

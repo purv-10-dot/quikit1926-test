@@ -135,6 +135,11 @@ test.describe("Phase 19 — template CRUD and approval", () => {
   let rejectedId: string;
 
   test.beforeAll(async () => {
+    // Hooks do NOT inherit `test.setTimeout()` from the describe body — they keep
+    // the 45s default (playwright.config.ts:19). This fixture makes several
+    // sequential round-trips against dev routes, which exceeds that on a loaded
+    // server and fails as an opaque hook timeout that skips the whole describe.
+    test.setTimeout(180_000);
     admin = await apiAs("tenantAdmin");
     superAdmin = await apiAs("superAdmin");
   });
@@ -254,6 +259,29 @@ test.describe("Phase 19 — template CRUD and approval", () => {
     expect(t.isActive).toBe(false);
   });
 
+  test("unknown fields in a template payload are dropped, not persisted", async () => {
+    // `pickTemplateFields` allow-lists the writable columns
+    // (certificates-service.ts:254-258); Prisma would otherwise 500 on an
+    // unknown argument, which is what the designer UI's stray state used to do.
+    const res = await PUT(admin, `/api/certificates/${approvedId}`, {
+      name: `${RUN} Approved EDITED`,
+      someUiState: { scrollTop: 42 },
+      createdAt: "1999-01-01T00:00:00.000Z",
+      id: MISSING,
+    });
+    expect(res.status(), "a stray field must not 500 the save").toBe(200);
+    const t = ((await safeJson(await GET(admin, `/api/certificates/${approvedId}`))) as Envelope<Template>)
+      .data!;
+    expect(t.id, "the id must not be rewritable").toBe(approvedId);
+  });
+
+  test("DELETE removes a template the tenant owns", async () => {
+    const res = await DELETE(admin, `/api/certificates/${rejectedId}`);
+    expect(res.status()).toBe(200);
+    expect(((await safeJson(res)) as Envelope<never>).message).toContain("deleted");
+    expect((await GET(admin, `/api/certificates/${rejectedId}`)).status()).toBe(404);
+  });
+
   test("re-submitting for approval clears the previous approval provenance", async () => {
     /**
      * FAILING BY DESIGN — verified.
@@ -295,29 +323,6 @@ test.describe("Phase 19 — template CRUD and approval", () => {
         "still names its previous approver.",
     ).toBeNull();
   });
-
-  test("unknown fields in a template payload are dropped, not persisted", async () => {
-    // `pickTemplateFields` allow-lists the writable columns
-    // (certificates-service.ts:254-258); Prisma would otherwise 500 on an
-    // unknown argument, which is what the designer UI's stray state used to do.
-    const res = await PUT(admin, `/api/certificates/${approvedId}`, {
-      name: `${RUN} Approved EDITED`,
-      someUiState: { scrollTop: 42 },
-      createdAt: "1999-01-01T00:00:00.000Z",
-      id: MISSING,
-    });
-    expect(res.status(), "a stray field must not 500 the save").toBe(200);
-    const t = ((await safeJson(await GET(admin, `/api/certificates/${approvedId}`))) as Envelope<Template>)
-      .data!;
-    expect(t.id, "the id must not be rewritable").toBe(approvedId);
-  });
-
-  test("DELETE removes a template the tenant owns", async () => {
-    const res = await DELETE(admin, `/api/certificates/${rejectedId}`);
-    expect(res.status()).toBe(200);
-    expect(((await safeJson(res)) as Envelope<never>).message).toContain("deleted");
-    expect((await GET(admin, `/api/certificates/${rejectedId}`)).status()).toBe(404);
-  });
 });
 
 // ── Issuance, delivery and public verification ───────────────────────────────
@@ -333,6 +338,11 @@ test.describe("Phase 19 — issuance and delivery", () => {
   let issued: Issued;
 
   test.beforeAll(async () => {
+    // Hooks do NOT inherit `test.setTimeout()` from the describe body — they keep
+    // the 45s default (playwright.config.ts:19). This fixture makes several
+    // sequential round-trips against dev routes, which exceeds that on a loaded
+    // server and fails as an opaque hook timeout that skips the whole describe.
+    test.setTimeout(180_000);
     admin = await apiAs("tenantAdmin");
     superAdmin = await apiAs("superAdmin");
     learner = await apiAs("learner");
@@ -505,6 +515,11 @@ test.describe("Phase 19 — a learner cannot download another learner's certific
   let issuedToA: Issued;
 
   test.beforeAll(async () => {
+    // Hooks do NOT inherit `test.setTimeout()` from the describe body — they keep
+    // the 45s default (playwright.config.ts:19). This fixture makes several
+    // sequential round-trips against dev routes, which exceeds that on a loaded
+    // server and fails as an opaque hook timeout that skips the whole describe.
+    test.setTimeout(180_000);
     admin = await apiAs("tenantAdmin");
     superAdmin = await apiAs("superAdmin");
     ({ id: learnerBId, api: learnerB } = await provisionLearnerB());
@@ -561,31 +576,29 @@ test.describe("Phase 19 — a learner cannot download another learner's certific
     expect(res.status(), "the tenant report names every learner in the org").toBe(403);
   });
 
-  test("[informational] the PUBLIC verification endpoint discloses the learner's email address", async () => {
+  test("the PUBLIC verification endpoint must not disclose the holder's email — regression for F-004", async () => {
     /**
+     * FAILING BY DESIGN — this is TEST_REPORT.md finding **F-004 (High)**,
+     * already raised by `__tests__/e2e/security/phase04-public-endpoints.spec.ts`.
+     * It is re-asserted here from the certificates domain so that whoever fixes
+     * the redaction has a test in this file too, rather than discovering the
+     * regression only from the security project.
+     *
      * `verifyCertificate` selects `email` alongside the name and returns it
-     * verbatim (lib/services/certificates-service.ts:826-831, 845-848), and the
-     * route is unauthenticated by design
-     * (app/api/verify-certificate/[certificateId]/route.ts:5-6).
-     *
-     * A verification page needs the holder's NAME to be useful; the email is
-     * not required for the trust decision, and the ids are semi-predictable
-     * (`CERT-<epoch-ms>-<9 chars>`), so the timestamp component narrows a
-     * guessing attack considerably.
-     *
-     * Recorded rather than asserted: whether the email belongs on a public
-     * verification response is a product decision (CONVENTIONS rule 5).
+     * verbatim (lib/services/certificates-service.ts:826-831, 845-848) on a
+     * route that is unauthenticated by design
+     * (app/api/verify-certificate/[certificateId]/route.ts:5). A verification
+     * page needs the holder's NAME to answer "is this genuine?"; the email
+     * address, internal ids and exam score are not part of that answer.
      */
     const anon = await apiAnon();
     const raw = await (await GET(anon, `/api/verify-certificate/${issuedToA.certificateId}`)).text();
     await anon.dispose();
-    const leaksEmail = raw.includes(m.users.learner.email.toLowerCase());
-    console.log(
-      leaksEmail
-        ? `[INFO] /api/verify-certificate returns the holder's email to an ANONYMOUS caller.`
-        : `[INFO] /api/verify-certificate does not expose the holder's email.`,
-    );
-    expect(typeof leaksEmail).toBe("boolean");
+    expect(
+      raw,
+      "F-004: the public certificate-verification response carries the holder's email " +
+        "address to an anonymous caller (certificates-service.ts:826-831).",
+    ).not.toContain(m.users.learner.email.toLowerCase());
   });
 });
 
@@ -722,10 +735,10 @@ test.describe("Phase 19 — guards", () => {
      *
      * `backgroundImageUrl` is a required, non-nullable column on
      * `LmsCertificate`, but the route validates the body with
-     * `z.object({}).passthrough()` (app/api/certificates/route.ts:24), so
+     * `z.object({}).passthrough()` (app/api/certificates/route.ts:22), so
      * nothing checks it. The insert reaches Prisma, which raises a validation
      * error that `toErrorResponse` does not recognise (it maps only ZodError,
-     * P2002 and P2025 — lib/http.ts:80-113), and the caller gets an opaque
+     * P2002 and P2025 — lib/http.ts:84,99,107), and the caller gets an opaque
      * `500 Internal server error` with no indication of the offending field.
      *
      * Reproduced: POST /api/certificates {"name":"…","designation":"…"} → 500.
@@ -745,8 +758,8 @@ test.describe("Phase 19 — guards", () => {
     expect(
       status,
       "UNVALIDATED INPUT: a missing required column surfaces as a 500 instead of a " +
-        "field-level 400 (app/api/certificates/route.ts:24 uses a passthrough schema; " +
-        "lib/http.ts:80-113 has no mapping for a Prisma validation error).",
+        "field-level 400 (app/api/certificates/route.ts:22 uses a passthrough schema; " +
+        "lib/http.ts:84,99,107 has no mapping for a Prisma validation error).",
     ).toBeLessThan(500);
   });
 
@@ -754,9 +767,9 @@ test.describe("Phase 19 — guards", () => {
     /**
      * FAILING BY DESIGN — verified.
      *
-     * app/api/verify-certificate/[certificateId]/route.ts:8-9 returns
+     * app/api/verify-certificate/[certificateId]/route.ts:8 returns
      * `json({success:false, message:'Certificate not found'})` with NO status
-     * argument, so `json()` defaults to 200 (lib/http.ts:57-59). A public
+     * argument, so `json()` defaults to 200 (lib/http.ts:56-58). A public
      * verification page — and any monitoring or integration in front of it —
      * sees HTTP 200 for a certificate that does not exist, and only a body
      * field distinguishes a forged id from a genuine one.
@@ -773,7 +786,7 @@ test.describe("Phase 19 — guards", () => {
     expect(
       status,
       "WRONG STATUS: an unknown certificate verifies with HTTP 200 and a {success:false} body " +
-        "(app/api/verify-certificate/[certificateId]/route.ts:8-9 omits the status argument to " +
+        "(app/api/verify-certificate/[certificateId]/route.ts:8 omits the status argument to " +
         "json(), which defaults to 200).",
     ).toBe(404);
   });

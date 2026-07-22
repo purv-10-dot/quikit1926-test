@@ -46,13 +46,38 @@ export const GET = route(async (req, { params }) => {
  * accepted and stored. The write is scoped to the `videoConfig` column, so this
  * is not a mass-assignment vector — unlike `PATCH /tenants/:id`.
  */
+
+/**
+ * F-003: this was `z.object({}).passthrough()`, which declared nothing.
+ *
+ * `.passthrough()` is KEPT — see the note above. The body is a provider-config
+ * blob written verbatim into one `Json` column and merged with what is already
+ * stored, so there is no fixed key set: new providers add new keys, and the
+ * legacy endpoint accepted `any`. Rejecting unknown keys here would break the
+ * next provider integration for no security benefit.
+ *
+ * What the empty schema could NOT do, and this one does: reject a body whose
+ * KNOWN keys have the wrong *shape* — `{provider: 42}` or `{zoom: "oops"}`
+ * would previously be merged into the column and then read back by the meetings
+ * integration as a malformed config. Nothing is required, because a partial
+ * PATCH of a single section is the normal case for this screen.
+ */
+const videoConfigSchema = z.object({
+  provider: z.string().optional(),
+  zoom: z.record(z.unknown()).optional(),
+  googleMeet: z.record(z.unknown()).optional(),
+  jitsi: z.record(z.unknown()).optional(),
+  meetingSettings: z.record(z.unknown()).optional(),
+  credentials: z.record(z.unknown()).optional(),
+}).passthrough();
+
 export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN', 'SUPER_ADMIN']);
   assertTenantMatch(actor, params!.id);
 
   const existingTenant = await findTenant(params!.id);
-  const dto = await parseBody(req, z.object({}).passthrough());
+  const dto = await parseBody(req, videoConfigSchema);
 
   const existing = (existingTenant.videoConfig ?? {}) as Record<string, unknown>;
   const updated = { ...existing, ...(dto as Record<string, unknown>) };

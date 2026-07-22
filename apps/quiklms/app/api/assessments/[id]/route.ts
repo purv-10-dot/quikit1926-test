@@ -1,8 +1,13 @@
 import { z } from 'zod';
 import { route, json, BadRequest } from '@/lib/http';
 import { parseBody } from '@/lib/validation';
-import { requireAuth } from '@/lib/auth/context';
-import { findOne, update } from '@/lib/services/assessments-service';
+import { requireAuth, requireRoles } from '@/lib/auth/context';
+import {
+  findOne,
+  update,
+  redactAnswerKey,
+  shouldRedactAnswerKey,
+} from '@/lib/services/assessments-service';
 import { getSessionManifest } from '@/lib/services/quiz-proctoring-service';
 
 /**
@@ -29,6 +34,12 @@ export const GET = route(async (req, { params }) => {
   if (!actor.orgId) throw BadRequest('Tenant ID required');
   const assessment = await findOne(params!.id, actor.orgId);
 
+  // ANSWER-KEY REDACTION. Applies on BOTH branches below. The slicing path
+  // narrows *which* questions are returned; it never removed the answers, so a
+  // proctored learner still received `correctAnswerIndex` for the questions they
+  // were about to be marked on. Staff keep the key — they author and grade.
+  const redact = shouldRedactAnswerKey(actor.role, actor.secondaryRole);
+
   const sessionId = new URL(req.url).searchParams.get('sessionId');
   if (sessionId) {
     const manifest = await getSessionManifest(sessionId);
@@ -48,18 +59,52 @@ export const GET = route(async (req, { params }) => {
       const data: Record<string, unknown> = { ...row, questions: subset };
       // Hide the raw additional pool — the learner sees only the combined list.
       delete data.additionalQuestions;
-      return json({ success: true, data });
+      return json({ success: true, data: redact ? redactAnswerKey(data) : data });
     }
   }
 
-  return json({ success: true, data: assessment });
+  return json({ success: true, data: redact ? redactAnswerKey(assessment) : assessment });
 });
 
-// PUT /api/assessments/:id — any authenticated user (TenantGuard)
+/**
+ * Real schema, replacing `z.object({}).passthrough()` (F-003).
+ *
+ * `update()` strips only `id`/`orgId`/`createdAt`/`updatedAt` and hands the rest
+ * to `prisma.lmsAssessment.update`, so any other stray key arrived as an unknown
+ * Prisma argument and a wrong-typed `passingScore` died in Postgres. The field
+ * list is `LmsAssessment`'s writable columns; unknown keys are stripped rather
+ * than rejected, which is more forgiving than the fault they cause today.
+ *
+ * Every field is optional — this is a partial edit, and `QuizCreator` omits
+ * `questionsToShow`/`additionalQuestionsToInclude` whenever randomisation is
+ * off. `questions` and `additionalQuestions` stay opaque arrays: they are
+ * embedded `Json` question documents whose per-type shape (MCQ vs True/False,
+ * with or without `correctAnswerIndex`) lives in the quiz UI, not the database.
+ */
+const updateAssessmentSchema = z.object({
+  title: z.string().optional(),
+  moduleId: z.string().optional(),
+  questions: z.array(z.unknown()).optional(),
+  passingScore: z.number().optional(),
+  retryLimit: z.number().int().optional(),
+  timeLimit: z.number().int().nullish(),
+  randomizeQuestions: z.boolean().optional(),
+  questionsToShow: z.number().int().nullish(),
+  additionalQuestions: z.array(z.unknown()).optional(),
+  additionalQuestionsToInclude: z.number().int().nullish(),
+  isMaster: z.boolean().optional(),
+});
+
+// PUT /api/assessments/:id — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN | TEACHER
+//
+// Authoring, not consumption. This was `requireAuth` only, so a LEARNER could
+// rewrite an assessment they were about to sit — including `correctAnswerIndex`
+// and `passingScore` — for every other learner on it.
 export const PUT = route(async (req, { params }) => {
   const actor = await requireAuth(req);
+  requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN', 'TEACHER']);
   if (!actor.orgId) throw BadRequest('Tenant ID required');
-  const updateData = await parseBody(req, z.object({}).passthrough());
+  const updateData = await parseBody(req, updateAssessmentSchema);
   const assessment = await update(params!.id, actor.orgId, updateData as Record<string, unknown>);
   return json({ success: true, data: assessment, message: 'Assessment updated successfully' });
 });

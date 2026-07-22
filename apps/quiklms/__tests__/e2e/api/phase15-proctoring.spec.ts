@@ -139,6 +139,11 @@ test.describe("Phase 15 — exam proctoring", () => {
   let sessionId: string;
 
   test.beforeAll(async () => {
+    // Hooks do NOT inherit `test.setTimeout()` from the describe body — they keep
+    // the 45s default (playwright.config.ts:19). This fixture makes several
+    // sequential round-trips against dev routes, which exceeds that on a loaded
+    // server and fails as an opaque hook timeout that skips the whole describe.
+    test.setTimeout(180_000);
     teacher = await apiAs("teacher");
     learner = await apiAs("learner");
     ({ examId, sessionId } = await startExamSession(teacher, learner, `${RUN} Proctor`));
@@ -276,6 +281,11 @@ test.describe("Phase 15 — exam proctoring: event injection", () => {
   let examId: string;
 
   test.beforeAll(async () => {
+    // Hooks do NOT inherit `test.setTimeout()` from the describe body — they keep
+    // the 45s default (playwright.config.ts:19). This fixture makes several
+    // sequential round-trips against dev routes, which exceeds that on a loaded
+    // server and fails as an opaque hook timeout that skips the whole describe.
+    test.setTimeout(180_000);
     teacher = await apiAs("teacher");
     learnerA = await apiAs("learner");
     ({ examId, sessionId: sessionA } = await startExamSession(teacher, learnerA, `${RUN} Inject`));
@@ -319,12 +329,17 @@ test.describe("Phase 15 — exam proctoring: event injection", () => {
     expect(res.status()).toBe(404);
   });
 
-  test("an exam with no flagged sessions returns an empty incident list", async () => {
-    const res = await GET(teacher, `/api/proctoring/exam/${MISSING}/incidents`);
+  test("no incident is fabricated for a session that was never flagged", async () => {
+    // Learner A sat this exam and logged nothing; learner B's injection was
+    // refused. `getExamIncidents` only picks up sessions with
+    // `proctoringFlags.totalFlags > 0` (proctoring-service.ts:101-103), so an
+    // incident here would mean the rejected injection left a mark after all.
+    const res = await GET(teacher, `/api/proctoring/exam/${examId}/incidents`);
     expect(res.status()).toBe(200);
-    expect(((await safeJson(res)) as Envelope<unknown[]>).data).toEqual([]);
-    // Referenced so the fixture exam id is not an unused binding.
-    expect(examId).toBeTruthy();
+    expect(
+      ((await safeJson(res)) as Envelope<unknown[]>).data,
+      "an incident report was raised against a learner with no flags",
+    ).toEqual([]);
   });
 });
 
@@ -380,6 +395,11 @@ test.describe("Phase 15 — quiz proctoring lifecycle", () => {
   let sessionId: string;
 
   test.beforeAll(async () => {
+    // Hooks do NOT inherit `test.setTimeout()` from the describe body — they keep
+    // the 45s default (playwright.config.ts:19). This fixture makes several
+    // sequential round-trips against dev routes, which exceeds that on a loaded
+    // server and fails as an opaque hook timeout that skips the whole describe.
+    test.setTimeout(180_000);
     admin = await apiAs("tenantAdmin");
     manager = await apiAs("manager");
     learner = await apiAs("learner");
@@ -661,10 +681,10 @@ test.describe("Phase 15 — quiz proctoring guards", () => {
  * `GET /api/assessments/:id` is the endpoint a learner calls to render a quiz.
  * Unlike the exam equivalent, it never strips the answer key:
  *
- *   - lib/services/assessments-service.ts:48-51 `findOne()` returns the raw
+ *   - lib/services/assessments-service.ts:46-51 `findOne()` returns the raw
  *     Prisma row, `correctAnswerIndex` and all. There is no counterpart to
  *     `exams-service.ts:196-233 stripAnswerKey()` on this path.
- *   - app/api/assessments/[id]/route.ts:26-56 — the `sessionId` branch SLICES
+ *   - app/api/assessments/[id]/route.ts:32-53 — the `sessionId` branch SLICES
  *     the question list to the proctoring manifest and deletes
  *     `additionalQuestions`, but never redacts the questions it does return.
  *     So even the proctored take-the-quiz request ships the key for every
@@ -701,6 +721,11 @@ test.describe("Phase 15 — assessment answer-key leakage (quiz take-path)", () 
   let quizSessionId: string;
 
   test.beforeAll(async () => {
+    // Hooks do NOT inherit `test.setTimeout()` from the describe body — they keep
+    // the 45s default (playwright.config.ts:19). This fixture makes several
+    // sequential round-trips against dev routes, which exceeds that on a loaded
+    // server and fails as an opaque hook timeout that skips the whole describe.
+    test.setTimeout(180_000);
     admin = await apiAs("tenantAdmin");
     learner = await apiAs("learner");
     plainAssessmentId = await createAssessment(admin, `${RUN} KeyPlain`);
@@ -725,7 +750,7 @@ test.describe("Phase 15 — assessment answer-key leakage (quiz take-path)", () 
     expect(
       raw,
       "ANSWER-KEY LEAK: GET /api/assessments/:id returns correctAnswerIndex to a LEARNER. " +
-        "Root cause: lib/services/assessments-service.ts:48-51 returns the raw row and " +
+        "Root cause: lib/services/assessments-service.ts:46-51 returns the raw row and " +
         "app/api/assessments/[id]/route.ts:55 ships it verbatim — there is no equivalent of " +
         "exams-service.ts:196-233 stripAnswerKey() on this path.",
     ).not.toContain("correctAnswerIndex");
@@ -748,14 +773,14 @@ test.describe("Phase 15 — assessment answer-key leakage (quiz take-path)", () 
     // …but the question it returns still names the right answer.
     expect(
       body.data!.questions[0],
-      "ANSWER-KEY LEAK: the manifest branch (app/api/assessments/[id]/route.ts:31-54) " +
+      "ANSWER-KEY LEAK: the manifest branch (app/api/assessments/[id]/route.ts:32-53) " +
         "slices the question list but never redacts it, so a proctored learner is handed " +
         "the answer to the very question they are being asked.",
     ).not.toHaveProperty("correctAnswerIndex");
   });
 
   test("a LEARNER must not be able to CREATE an assessment", async () => {
-    // app/api/assessments/route.ts:8-9 — `requireAuth` with NO `requireRoles`,
+    // app/api/assessments/route.ts:9 — `requireAuth` with NO `requireRoles`,
     // so any authenticated role reaches the quiz-authoring endpoint. Verified
     // live: a learner-minted session created assessment
     // 8c5b2b26-c42f-41bf-8d17-e98064e20f46 and got HTTP 200.
@@ -769,7 +794,7 @@ test.describe("Phase 15 — assessment answer-key leakage (quiz take-path)", () 
     expect(
       res.status(),
       "MISSING ROLE GUARD: POST /api/assessments admits every authenticated role " +
-        "(app/api/assessments/route.ts:8-9 calls requireAuth with no requireRoles).",
+        "(app/api/assessments/route.ts:9 calls requireAuth with no requireRoles).",
     ).toBe(403);
   });
 

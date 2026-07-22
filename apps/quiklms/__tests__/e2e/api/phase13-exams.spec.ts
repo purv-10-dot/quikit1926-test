@@ -168,6 +168,11 @@ test.describe("Phase 13 — exam lifecycle", () => {
   let examId: string;
 
   test.beforeAll(async () => {
+    // Hooks do NOT inherit `test.setTimeout()` from the describe body — they keep
+    // the 45s default (playwright.config.ts:19). This fixture makes several
+    // sequential round-trips against dev routes, which exceeds that on a loaded
+    // server and fails as an opaque hook timeout that skips the whole describe.
+    test.setTimeout(180_000);
     teacher = await apiAs("teacher");
     questionId = await createQuestion(teacher, `${RUN} lifecycle`);
   });
@@ -287,6 +292,11 @@ test.describe("Phase 13 — answer-key redaction over HTTP", () => {
   let examId: string;
 
   test.beforeAll(async () => {
+    // Hooks do NOT inherit `test.setTimeout()` from the describe body — they keep
+    // the 45s default (playwright.config.ts:19). This fixture makes several
+    // sequential round-trips against dev routes, which exceeds that on a loaded
+    // server and fails as an opaque hook timeout that skips the whole describe.
+    test.setTimeout(180_000);
     teacher = await apiAs("teacher");
     const qId = await createQuestion(teacher, `${RUN} key`);
     const exam = await createExam(teacher, `${RUN} Key Exam`, [qId]);

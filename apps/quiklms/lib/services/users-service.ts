@@ -153,6 +153,60 @@ export async function revokeSubAdmin(userId: string, orgId: string) {
   return prisma.lmsUser.update({ where: { id: userId }, data: { secondaryRole: null }, select: LIST_SELECT });
 }
 
+/**
+ * Parent ↔ student links.
+ *
+ * The port READ these links from day one — parent access to
+ * `/credits/my-transactions` and `/analytics/student/:id` is gated on
+ * `lmsUserParent` — but shipped no endpoint that could CREATE or REMOVE one, so
+ * the only way a link ever came into existence was bulk upload. A tenant admin
+ * had no way to link a parent to a child, and no way to correct a wrong link.
+ *
+ * Ports `AuthService.linkParentStudent` / `unlinkParentStudent`
+ * (`auth.service.ts:1196-1233`). Mongo stored this twice — `childrenIds` on the
+ * parent and `parentIds` on the student, kept in step with `$addToSet`/`$pull`.
+ * Postgres has one `LmsUserParent` row with `@@unique([parentId, childId])`, so
+ * the pair IS the relationship and the two writes collapse into one. That also
+ * removes the legacy's failure mode where one array could update and the other
+ * not, leaving a half-link.
+ *
+ * Both sides are verified to exist, to be in the CALLER'S org, and to hold the
+ * expected role — the legacy checked exactly this, and without it a tenant admin
+ * could link users from another tenant.
+ */
+async function assertInOrg(userId: string, orgId: string, role: 'PARENT' | 'LEARNER', label: string) {
+  const user = await prisma.lmsUser.findFirst({ where: { id: userId, orgId } });
+  if (!user) throw NotFound(`${label} not found in this tenant`);
+  // `secondaryRole` counts: the legacy's RolesGuard treated either as the role.
+  if (user.role !== role && user.secondaryRole !== role) {
+    throw BadRequest(`${label} does not have the ${role} role`);
+  }
+  return user;
+}
+
+export async function linkParentStudent(orgId: string, parentId: string, studentId: string) {
+  await assertInOrg(parentId, orgId, 'PARENT', 'Parent');
+  await assertInOrg(studentId, orgId, 'LEARNER', 'Student');
+
+  const existing = await prisma.lmsUserParent.findUnique({
+    where: { parentId_childId: { parentId, childId: studentId } },
+  });
+  // Legacy returned success without re-writing when already linked.
+  if (existing) return { success: true, message: 'Already linked' };
+
+  await prisma.lmsUserParent.create({ data: { parentId, childId: studentId } });
+  return { success: true, message: 'Parent-Student linked successfully' };
+}
+
+export async function unlinkParentStudent(orgId: string, parentId: string, studentId: string) {
+  // Scope the delete by org so an admin cannot sever a link in another tenant.
+  // `deleteMany` (not `delete`) because the legacy's `$pull` was a no-op when
+  // the link was already gone rather than an error.
+  await assertInOrg(parentId, orgId, 'PARENT', 'Parent');
+  await prisma.lmsUserParent.deleteMany({ where: { parentId, childId: studentId } });
+  return { success: true, message: 'Parent-Student unlinked successfully' };
+}
+
 export async function toggleActive(id: string, orgId: string | undefined, isActive: boolean) {
   const where: Prisma.LmsUserWhereInput = { id };
   if (orgId) where.orgId = orgId;

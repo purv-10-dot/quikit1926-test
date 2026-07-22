@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { route, json } from '@/lib/http';
 import { parseBody } from '@/lib/validation';
 import { requireAuth } from '@/lib/auth/context';
-import { submitQuiz, getQuizAttempts, type SubmitQuizDto } from '@/lib/services/assessments-service';
+import { submitQuiz, type SubmitQuizDto } from '@/lib/services/assessments-service';
 import { syncProgress } from '@/lib/services/progress-service';
 import {
   generateCertificateForCompletion,
@@ -76,14 +76,10 @@ export const POST = route(async (req) => {
     /* grading already succeeded — never fail the submission on a sync error */
   }
 
-  // Learner quizzes allow a single submission (see assessments-service.submitQuiz).
-  let attemptsRemaining = 0;
-  try {
-    const attempts = await getQuizAttempts(user.orgId, user.id, dto.assessmentId);
-    attemptsRemaining = Math.max(0, 1 - attempts.length);
-  } catch {
-    /* non-fatal */
-  }
+  // `attemptsRemaining` comes from submitQuiz, which is where the retryLimit
+  // cap is enforced. Re-deriving it here is what made the author's maxAttempts
+  // setting look broken — see the note on the service's return value.
+  const attemptsRemaining = result.attemptsRemaining;
 
   // Certificate: issued on COURSE COMPLETION, not on passing this quiz.
   let certificateUrl: string | null = null;
@@ -133,14 +129,13 @@ export const POST = route(async (req) => {
   return json({
     success: true,
     data: { ...result, attemptsRemaining, certificateUrl },
-    // Don't invite a retry the backend will reject: learner quizzes allow a
-    // single submission, and the legacy said so explicitly
-    // (`learner.controller.ts:185`). Telling a learner to "retry if needed"
-    // alongside `attemptsRemaining: 0` was a direct contradiction.
+    // Don't invite a retry the backend will reject, and don't deny one it would
+    // allow. `attemptsRemaining` now reflects the author's retryLimit:
+    //   null -> unlimited (retryLimit <= 0), >0 -> retries left, 0 -> exhausted.
     message: result.passed
       ? 'Congratulations! You passed the assessment.'
-      : attemptsRemaining > 0
+      : attemptsRemaining === null || attemptsRemaining > 0
         ? 'Assessment submitted. Please review and retry if needed.'
-        : 'Assessment submitted. This quiz can only be taken once.',
+        : 'Assessment submitted. You have used all attempts for this quiz.',
   });
 });

@@ -81,6 +81,11 @@ test.describe("Phase 16 — question CRUD", () => {
   let questionId: string;
 
   test.beforeAll(async () => {
+    // Hooks do NOT inherit `test.setTimeout()` from the describe body — they keep
+    // the 45s default (playwright.config.ts:19). This fixture makes several
+    // sequential round-trips against dev routes, which exceeds that on a loaded
+    // server and fails as an opaque hook timeout that skips the whole describe.
+    test.setTimeout(180_000);
     teacher = await apiAs("teacher");
   });
   test.afterAll(async () => {
@@ -252,6 +257,11 @@ test.describe("Phase 16 — facets", () => {
   let teacher: APIRequestContext;
 
   test.beforeAll(async () => {
+    // Hooks do NOT inherit `test.setTimeout()` from the describe body — they keep
+    // the 45s default (playwright.config.ts:19). This fixture makes several
+    // sequential round-trips against dev routes, which exceeds that on a loaded
+    // server and fails as an opaque hook timeout that skips the whole describe.
+    test.setTimeout(180_000);
     teacher = await apiAs("teacher");
     await POST(teacher, "/api/question-bank/bulk", {
       questions: [
