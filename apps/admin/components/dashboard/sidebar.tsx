@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useTheme } from "next-themes";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useDisabledModules } from "@/lib/hooks/useFeatureFlagsForApp";
 import { isModuleEnabled } from "@quikit/shared/moduleRegistry";
@@ -29,6 +31,17 @@ const navItems = [
 export default function Sidebar() {
   const pathname = usePathname();
   const disabled = useDisabledModules();
+  const { resolvedTheme } = useTheme();
+
+  // Theme-aware brand mark. next-themes returns `undefined` on the server /
+  // first client render, so we gate on `mounted` to avoid a hydration
+  // mismatch and default to the dark-badge monogram (the light-theme asset).
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const logoSrc =
+    mounted && resolvedTheme === "dark"
+      ? "/brand/admin-light.svg" // white badge — reads on the dark sidebar
+      : "/brand/admin.svg"; // dark badge — reads on the light sidebar
 
   const visibleItems = navItems.filter((item) => isModuleEnabled(item.key, disabled));
 
@@ -37,7 +50,7 @@ export default function Sidebar() {
       <div className="flex h-14 items-center gap-2.5 border-b border-[var(--color-border)] px-5">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src="/brand/admin.svg"
+          src={logoSrc}
           alt="Admin Portal"
           className="h-7 w-7 rounded-lg object-contain"
         />
