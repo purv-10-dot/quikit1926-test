@@ -41,6 +41,8 @@ interface FilterToolbarProps {
   onClear: () => void;
   state: ToolbarState;
   onChange: (next: ToolbarState) => void;
+  /** Opens the Save-filter modal (replaces the old "Copy filter" link). */
+  onSaveFilter: () => void;
 }
 
 const TYPE_OPTIONS = [
@@ -90,7 +92,7 @@ export function defaultToolbarStateFor(filterId: string): ToolbarState {
   }
 }
 
-export function FilterToolbar({ search, onSearchChange, onClear, state, onChange }: FilterToolbarProps) {
+export function FilterToolbar({ search, onSearchChange, onClear, state, onChange, onSaveFilter }: FilterToolbarProps) {
   // Active chips persist their own label on pick, so this fallback is only
   // hit for the "me"/"unassigned" pseudo-values.
   const userLabel = (id: string) => {
@@ -311,8 +313,8 @@ export function FilterToolbar({ search, onSearchChange, onClear, state, onChange
       <button type="button" onClick={onClear} className="text-sm text-blue-600 hover:underline px-1">
         Clear filters
       </button>
-      <button type="button" className="text-sm text-blue-600 hover:underline px-1">
-        Copy filter
+      <button type="button" onClick={onSaveFilter} className="text-sm text-blue-600 hover:underline px-1">
+        Save filter
       </button>
     </div>
   );

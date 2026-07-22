@@ -16,6 +16,7 @@ import { parseCustomFilters, customFiltersToWhere } from "@/lib/customFields/fil
  */
 
 export type FilterId =
+  | "search"
   | "my-open"
   | "reported-by-me"
   | "all"
@@ -27,6 +28,7 @@ export type FilterId =
   | "updated-recently";
 
 const FILTER_TITLES: Record<FilterId, string> = {
+  search: "All work",
   "my-open": "My open work items",
   "reported-by-me": "Reported by me",
   all: "All work items",

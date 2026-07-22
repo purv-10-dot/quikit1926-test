@@ -13,8 +13,10 @@ import {
   Lightbulb,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { FilterToolbar, type ToolbarState, defaultToolbarStateFor } from "./filter-toolbar";
 import { Pager, SkeletonRows } from "./filter-view-parts";
+import { SaveFilterModal } from "./save-filter-modal";
 import { useFilterPersistence } from "@/lib/hooks/usePersistentFilters";
 
 interface IssueRow {
@@ -80,12 +82,65 @@ export function FilterView({ filterId }: { filterId: string }) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [toolbar, setToolbar] = useState<ToolbarState>(() => defaultToolbarStateFor(filterId));
+  const [saveOpen, setSaveOpen] = useState(false);
+  const router = useRouter();
+
+  // A saved filter's id is prefixed `sf_`. It isn't a backend filter slug, so
+  // its results query runs against the "all" base with the saved criteria
+  // applied as toolbar params. `savedReady` gates the results fetch until the
+  // criteria have been loaded (so we don't fetch unfiltered first).
+  const isSaved = filterId.startsWith("sf_");
+  const resultSlug = isSaved ? "all" : filterId;
+  const [savedName, setSavedName] = useState<string | null>(null);
+  const [savedReady, setSavedReady] = useState(!isSaved);
 
   // Reseed the toolbar state whenever the user switches between Default
   // filters in the sidebar — each slug carries its own implicit chips.
   useEffect(() => {
-    setToolbar(defaultToolbarStateFor(filterId));
+    if (!filterId.startsWith("sf_")) setToolbar(defaultToolbarStateFor(filterId));
   }, [filterId]);
+
+  // Load a saved filter's criteria (name + toolbar + search) when viewing one.
+  useEffect(() => {
+    if (!isSaved) {
+      setSavedReady(true);
+      setSavedName(null);
+      return;
+    }
+    let alive = true;
+    setSavedReady(false);
+    fetch(`/api/saved-filters/${filterId}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (!alive) return;
+        if (!j?.success) {
+          setError(j?.error ?? "Filter not found");
+          setSavedReady(true);
+          return;
+        }
+        const criteria = (j.data?.criteria ?? {}) as ToolbarState & { search?: string };
+        const { search: savedSearch, ...rest } = criteria;
+        setSavedName(j.data?.name ?? "Saved filter");
+        setToolbar({
+          type: [],
+          statusCategory: [],
+          ...(rest as Partial<ToolbarState>),
+        } as ToolbarState);
+        const s = typeof savedSearch === "string" ? savedSearch : "";
+        setSearch(s);
+        setDebounced(s);
+        setSavedReady(true);
+      })
+      .catch(() => {
+        if (alive) {
+          setError("Filter not found");
+          setSavedReady(true);
+        }
+      });
+    return () => {
+      alive = false;
+    };
+  }, [filterId, isSaved]);
 
   const toolbarQs = useMemo(() => {
     const qs = new URLSearchParams();
@@ -118,6 +173,9 @@ export function FilterView({ filterId }: { filterId: string }) {
     viewKey: `global-${filterId}`,
     projectId: null,
     filters: persistedFilters,
+    // Saved filters carry their own criteria (loaded above), so don't hydrate
+    // from the per-slug view-pref — that would clobber the saved definition.
+    skipHydrate: isSaved,
     applySaved: (s) => {
       const { search: savedSearch, ...rest } = s;
       setToolbar((prev) => ({ ...prev, ...(rest as Partial<ToolbarState>) }));
@@ -134,6 +192,7 @@ export function FilterView({ filterId }: { filterId: string }) {
   }, [filterId, debounced, pageSize, toolbarQs]);
 
   useEffect(() => {
+    if (!savedReady) return; // wait for saved criteria before the first fetch
     let alive = true;
     setLoading(true);
     setError(null);
@@ -141,7 +200,7 @@ export function FilterView({ filterId }: { filterId: string }) {
     if (debounced) qs.set("search", debounced);
     qs.set("limit", String(pageSize));
     qs.set("offset", String((page - 1) * pageSize));
-    fetch(`/api/filters/${filterId}?${qs}`)
+    fetch(`/api/filters/${resultSlug}?${qs}`)
       .then((r) => r.json() as Promise<ApiResponse>)
       .then((j) => {
         if (!alive) return;
@@ -151,7 +210,7 @@ export function FilterView({ filterId }: { filterId: string }) {
         }
         setItems(j.data ?? []);
         setTotal(j.total ?? 0);
-        setTitle(j.meta?.title ?? "Work items");
+        setTitle(savedName ?? j.meta?.title ?? "Work items");
         setFallback(j.meta?.fallback);
       })
       .catch((e: unknown) => {
@@ -164,7 +223,7 @@ export function FilterView({ filterId }: { filterId: string }) {
     return () => {
       alive = false;
     };
-  }, [filterId, debounced, page, pageSize, toolbarQs]);
+  }, [resultSlug, savedReady, savedName, debounced, page, pageSize, toolbarQs]);
 
   return (
     <div className="px-6 py-4">
@@ -172,6 +231,17 @@ export function FilterView({ filterId }: { filterId: string }) {
         <h1 className="text-xl font-semibold text-gray-900">{title}</h1>
         <Star className="h-5 w-5 text-gray-300 hover:text-yellow-400 cursor-pointer" />
       </div>
+
+      {saveOpen && (
+        <SaveFilterModal
+          criteria={{ ...toolbar, search: debounced }}
+          onClose={() => setSaveOpen(false)}
+          onSaved={(saved) => {
+            setSaveOpen(false);
+            router.push(`/filters/${saved.id}`);
+          }}
+        />
+      )}
 
       {fallback && (
         <div className="mb-3 flex items-start gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -189,6 +259,7 @@ export function FilterView({ filterId }: { filterId: string }) {
         }}
         state={toolbar}
         onChange={setToolbar}
+        onSaveFilter={() => setSaveOpen(true)}
       />
 
       <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">

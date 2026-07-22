@@ -230,6 +230,7 @@ model Org {
   QtUserActivity           QtUserActivity[]
   QtUserViewPref           QtUserViewPref[]
   QtReportView             QtReportView[]
+  QtSavedFilter            QtSavedFilter[]
   UserAppRole              QtUserAppRole[]
   UserPermissionExtra      QtUserPermissionExtra[]
   qsAppRoles               QsAppRole[]
@@ -6868,6 +6869,34 @@ model QtReportView {
   Org         Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId, userId, kind])
+  @@schema("app_quiktrack")
+}
+
+/// A user-saved work-item filter for the global Filters surface (the Jira-style
+/// "Save filter" flow). `criteria` is the opaque toolbar state blob the UI
+/// persists (search + built-in filters + customFilters) — shape owned by the
+/// client. Reuses the app's existing saved-view conventions (owner userId,
+/// JSON blob, `visibility` "private"|"shared" like QtIdeaView, `starred` like
+/// QtDashboard) rather than a bespoke viewer/editor sharing matrix.
+model QtSavedFilter {
+  id          String   @id @default(cuid())
+  orgId       String
+  userId      String
+  name        String
+  description String?
+  criteria    Json
+  visibility  String   @default("private") // "private" | "org" | "space" | "user"
+  // For "space": project ids whose members may see it. For "user": user ids.
+  // Empty for "private"/"org".
+  viewerIds   String[] @default([])
+  starred     Boolean  @default(false)
+  isDeleted   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  Org         Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, userId])
+  @@index([orgId, visibility])
   @@schema("app_quiktrack")
 }
 
