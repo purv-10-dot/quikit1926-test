@@ -23,9 +23,29 @@ import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { useTableSort, useDebouncedTableSearch } from "@/lib/store";
 import { useColumnResize } from "@/lib/hooks/useColumnResize";
+import { useColumnOrder } from "@/lib/hooks/useColumnOrder";
+import { moveByKey, columnsUnfrozenBy, columnsFrozenBy } from "@/lib/utils/columnOrder";
+import { confirmFreezeChange } from "@/lib/utils/freezeConfirm";
+import { useColumnDnD } from "@/lib/hooks/useColumnDnD";
+import { useRowDnD } from "@/lib/hooks/useRowDnD";
+import { rowNeighbors } from "@/lib/utils/rowOrder";
 import { useStickyOffsets } from "@/lib/hooks/useStickyOffsets";
 import { HeaderCell } from "@/components/table/HeaderCell";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
+import { useConfirm } from "@quikit/ui";
+
+// Client Members column layout. Rail cols never reorder; the rest are
+// user-draggable + persisted per user via useColumnOrder("clientMembers").
+const MEMBER_RAIL_COLS = ["_checkbox", "_log", "_id"] as const;
+const MEMBER_DEFAULT_NON_RAIL = ["name", "email", "createdBy", "updatedBy", "createdAt", "updatedAt"];
+const MEMBER_HEADER_META: Record<string, { label: string; sortable?: boolean; sortKey?: string }> = {
+  name: { label: "Name", sortable: true },
+  email: { label: "Email", sortable: true },
+  createdBy: { label: "Created By" },
+  updatedBy: { label: "Updated By" },
+  createdAt: { label: "Created Date", sortable: true },
+  updatedAt: { label: "Updated Date", sortable: true },
+};
 
 // Defaults for the drag-to-resize widths. Users can drag any column to any
 // width ≥ 48px (the global MIN_COL_WIDTH in useColumnResize) and the value
@@ -103,13 +123,13 @@ export default function ClientMembersPage() {
   // Cascade-freeze infrastructure — mirrors KPI / Weekly Meeting / Daily
   // Huddle / Client Master. Freezing column C pins every column from the
   // always-frozen rail up to and including C as a sticky group.
+  const {
+    orderedCols: orderedNonRail,
+    applyOrder: applyColumnOrder,
+  } = useColumnOrder("clientMembers", MEMBER_DEFAULT_NON_RAIL, { alwaysFrozen: MEMBER_RAIL_COLS });
   const COL_ORDER = useMemo(
-    () => [
-      "_checkbox", "_log", "_id",
-      "name", "email",
-      "createdBy", "updatedBy", "createdAt", "updatedAt",
-    ],
-    [],
+    () => [...MEMBER_RAIL_COLS, ...orderedNonRail],
+    [orderedNonRail],
   );
   const hiddenSet = useMemo(() => new Set(hiddenCols), [hiddenCols]);
   const headerRowRef = useRef<HTMLTableRowElement>(null);
@@ -143,6 +163,36 @@ export default function ClientMembersPage() {
     (col: string) => setFrozenCol(frozenUpTo === col ? null : col),
     [frozenUpTo, setFrozenCol],
   );
+
+  // ── Drag-to-reorder columns ─────────────────────────────────────────────
+  const confirmDialog = useConfirm();
+  const handleColDrop = useCallback(
+    async (fromKey: string, toKey: string, side: "before" | "after") => {
+      const nextNonRail = moveByKey(orderedNonRail, fromKey, toKey, side);
+      const nextFull = [...MEMBER_RAIL_COLS, ...nextNonRail];
+      const curFull = [...MEMBER_RAIL_COLS, ...orderedNonRail];
+      const unfrozen = columnsUnfrozenBy(curFull, nextFull, frozenUpTo, MEMBER_RAIL_COLS);
+      const frozen = columnsFrozenBy(curFull, nextFull, frozenUpTo, MEMBER_RAIL_COLS);
+      if (!(await confirmFreezeChange(confirmDialog, unfrozen, frozen))) return;
+      applyColumnOrder(nextNonRail);
+    },
+    [orderedNonRail, frozenUpTo, applyColumnOrder, confirmDialog],
+  );
+  const dnd = useColumnDnD({
+    getHeaderRow: () => headerRowRef.current,
+    onDrop: handleColDrop,
+    canReorder: (col) => orderedNonRail.includes(col),
+  });
+  const dropIndicatorClass = useCallback(
+    (col: string) => {
+      if (dnd.overKey !== col || !dnd.dropSide) return "";
+      return dnd.dropSide === "before"
+        ? "shadow-[inset_2px_0_0_0_var(--tw-shadow-color)] shadow-blue-500"
+        : "shadow-[inset_-2px_0_0_0_var(--tw-shadow-color)] shadow-blue-500";
+    },
+    [dnd.overKey, dnd.dropSide],
+  );
+
   function tdFreezeClass(k: string): string {
     return isFrozen(k) ? "sticky z-[10] bg-white" : "";
   }
@@ -174,8 +224,70 @@ export default function ClientMembersPage() {
       frozenUpTo={frozenUpTo}
       onFreeze={handleFreeze}
       thClassName="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200"
+      onDragStart={(e) => dnd.startDrag(props.k, e)}
+      dropIndicatorClass={dropIndicatorClass(props.k)}
+      isDragging={dnd.draggingKey === props.k}
     />
   );
+
+  // Render one draggable member column body cell by key. Styling unchanged.
+  const renderMemberCell = (r: MemberRow, k: string) => {
+    if (isHidden(k)) return null;
+    switch (k) {
+      case "name":
+        return (
+          <td key={k} style={freezeStyle("name")} className={`px-3 py-3 text-gray-800 overflow-hidden text-ellipsis whitespace-nowrap ${tdFreezeClass("name")}`}>
+            {r.name}
+          </td>
+        );
+      case "email":
+        return (
+          <td key={k} style={freezeStyle("email")} className={`px-3 py-3 overflow-hidden ${tdFreezeClass("email")}`}>
+            <a href={`mailto:${r.email}`} className="text-xs text-gray-700 hover:text-blue-500 hover:underline whitespace-nowrap text-ellipsis overflow-hidden block">
+              {r.email}
+            </a>
+          </td>
+        );
+      case "createdBy":
+        return (
+          <td key={k} style={freezeStyle("createdBy")} className={`px-3 py-3 overflow-hidden ${tdFreezeClass("createdBy")}`}>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-900 text-white text-[10px] font-semibold flex-shrink-0">
+                {r.createdByInitials}
+              </span>
+              <span className="text-xs text-gray-700 whitespace-nowrap text-ellipsis overflow-hidden">{r.createdByName}</span>
+            </div>
+          </td>
+        );
+      case "updatedBy":
+        return (
+          <td key={k} style={freezeStyle("updatedBy")} className={`px-3 py-3 overflow-hidden ${tdFreezeClass("updatedBy")}`}>
+            {r.updatedByName ? (
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-900 text-white text-[10px] font-semibold flex-shrink-0">
+                  {r.updatedByInitials}
+                </span>
+                <span className="text-xs text-gray-700 whitespace-nowrap text-ellipsis overflow-hidden">{r.updatedByName}</span>
+              </div>
+            ) : <span className="text-gray-300">—</span>}
+          </td>
+        );
+      case "createdAt":
+        return (
+          <td key={k} style={freezeStyle("createdAt")} className={`px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden ${tdFreezeClass("createdAt")}`}>
+            <span className="inline-flex items-center gap-1.5"><Clock className="h-3 w-3 text-gray-400" /> {fmtDateShort(r.createdAt)}</span>
+          </td>
+        );
+      case "updatedAt":
+        return (
+          <td key={k} style={freezeStyle("updatedAt")} className={`px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden ${tdFreezeClass("updatedAt")}`}>
+            <span className="inline-flex items-center gap-1.5"><Clock className="h-3 w-3 text-gray-400" /> {fmtDateShort(r.updatedAt)}</span>
+          </td>
+        );
+      default:
+        return null;
+    }
+  };
 
   const [editing, setEditing] = useState<{ id: string | null; form: typeof emptyForm } | null>(null);
   const [saving, setSaving] = useState(false);
@@ -237,6 +349,44 @@ export default function ClientMembersPage() {
   useEffect(() => { setPage(1); }, [search, filterMemberId, viewTrash, pageSize]);
   const pagedMembers = rows;
   const totalMemberPages = Math.max(1, Math.ceil(total / pageSize));
+
+  // ── Drag-to-reorder ROWS (org-shared manual order) ───────────────────────
+  const tbodyRef = useRef<HTMLTableSectionElement>(null);
+  const rowReorderEnabled = !sortBy && !viewTrash;
+  const orderedRowIds = useMemo(() => pagedMembers.map((r) => r.id), [pagedMembers]);
+  const handleRowDrop = useCallback(
+    async (fromId: string, toId: string, side: "before" | "after") => {
+      const n = rowNeighbors(orderedRowIds, fromId, toId, side);
+      if (!n) return;
+      try {
+        const res = await fetch("/api/client-meetings/members/reorder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: fromId, beforeId: n.beforeId, afterId: n.afterId }),
+        });
+        if (!res.ok) throw new Error("reorder failed");
+        refresh();
+      } catch {
+        notify.error("Failed to reorder row");
+        refresh();
+      }
+    },
+    [orderedRowIds, refresh],
+  );
+  const rowDnd = useRowDnD({
+    getRowsContainer: () => tbodyRef.current,
+    onDrop: handleRowDrop,
+    canDrag: () => rowReorderEnabled,
+  });
+  const rowDropClass = useCallback(
+    (id: string) => {
+      if (rowDnd.overId !== id || !rowDnd.dropSide) return "";
+      return rowDnd.dropSide === "before"
+        ? "shadow-[inset_0_2px_0_0_var(--tw-shadow-color)] shadow-blue-500"
+        : "shadow-[inset_0_-2px_0_0_var(--tw-shadow-color)] shadow-blue-500";
+    },
+    [rowDnd.overId, rowDnd.dropSide],
+  );
 
   // Column metadata for Manage Columns + Export.
   const moduleColumns = [
@@ -508,18 +658,19 @@ export default function ClientMembersPage() {
                   <th data-col-key="_id"
                       className="sticky z-[35] text-left px-3 py-3 font-semibold text-gray-600 bg-accent-50 border-b border-r border-gray-200"
                       style={{ left: 96, width: 56, minWidth: 56, maxWidth: 56 }}>ID</th>
-                  <Header k="name" label="Name" sortable />
-                  <Header k="email" label="Email" sortable />
-                  <Header k="createdBy" label="Created By" />
-                  <Header k="updatedBy" label="Updated By" />
-                  <Header k="createdAt" label="Created Date" sortable />
-                  <Header k="updatedAt" label="Updated Date" sortable />
+                  {orderedNonRail.map((k) => {
+                    const meta = MEMBER_HEADER_META[k];
+                    if (!meta) return null;
+                    return <Header key={k} k={k} label={meta.label} sortable={meta.sortable} sortKey={meta.sortKey} />;
+                  })}
                   <th className="w-10 px-3 py-3 border-b border-gray-200" />
                 </tr>
               </thead>
-              <tbody>
+              <tbody ref={tbodyRef}>
                 {pagedMembers.map(r => (
-                  <tr key={r.id} className={`border-b border-gray-100 hover:bg-blue-50/30 ${selected.has(r.id) ? "bg-blue-50/60" : ""}`}>
+                  <tr key={r.id} data-row-id={r.id} data-row-label={r.name}
+                    onPointerDown={rowReorderEnabled ? (e) => rowDnd.startDrag(r.id, e) : undefined}
+                    className={`group border-b border-gray-100 hover:bg-blue-50/30 ${rowReorderEnabled ? "cursor-grab active:cursor-grabbing" : ""} ${selected.has(r.id) ? "bg-blue-50/60" : ""} ${rowDropClass(r.id)} ${rowDnd.draggingId === r.id ? "opacity-40" : ""}`}>
                     <td className="sticky z-[15] bg-white px-3 py-3 text-center border-b border-r border-gray-100"
                         style={{ left: 0, width: 40, minWidth: 40, maxWidth: 40 }}>
                       <label
@@ -541,57 +692,12 @@ export default function ClientMembersPage() {
                         <History className="h-3.5 w-3.5" />
                       </button>
                     </td>
-                    <td className="sticky z-[15] bg-white px-3 py-3 border-b border-r border-gray-100"
+                    <td data-no-drag className="sticky z-[15] bg-white px-3 py-3 border-b border-r border-gray-100"
                         style={{ left: 96, width: 56, minWidth: 56, maxWidth: 56 }}>
-                      <button onClick={() => openEdit(r)} className="text-blue-600 hover:underline font-medium">{r.displayId}</button>
+                      <button onClick={() => openEdit(r)} className="absolute inset-0 flex items-center justify-center text-blue-600 hover:underline font-medium">{r.displayId}</button>
                     </td>
-                    {/* Data cells — explicit width matches the <th> so column-resize sticks.
-                        `overflow-hidden` prevents wide content from blowing past the fixed
-                        column width set by table-layout: fixed. */}
-                    {!isHidden("name") && (
-                      <td style={freezeStyle("name")} className={`px-3 py-3 text-gray-800 overflow-hidden text-ellipsis whitespace-nowrap ${tdFreezeClass("name")}`}>
-                        {r.name}
-                      </td>
-                    )}
-                    {!isHidden("email") && (
-                      <td style={freezeStyle("email")} className={`px-3 py-3 overflow-hidden ${tdFreezeClass("email")}`}>
-                        <a href={`mailto:${r.email}`} className="text-xs text-gray-700 hover:text-blue-500 hover:underline whitespace-nowrap text-ellipsis overflow-hidden block">
-                          {r.email}
-                        </a>
-                      </td>
-                    )}
-                    {!isHidden("createdBy") && (
-                      <td style={freezeStyle("createdBy")} className={`px-3 py-3 overflow-hidden ${tdFreezeClass("createdBy")}`}>
-                        <div className="flex items-center gap-2">
-                          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-900 text-white text-[10px] font-semibold flex-shrink-0">
-                            {r.createdByInitials}
-                          </span>
-                          <span className="text-xs text-gray-700 whitespace-nowrap text-ellipsis overflow-hidden">{r.createdByName}</span>
-                        </div>
-                      </td>
-                    )}
-                    {!isHidden("updatedBy") && (
-                      <td style={freezeStyle("updatedBy")} className={`px-3 py-3 overflow-hidden ${tdFreezeClass("updatedBy")}`}>
-                        {r.updatedByName ? (
-                          <div className="flex items-center gap-2">
-                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-900 text-white text-[10px] font-semibold flex-shrink-0">
-                              {r.updatedByInitials}
-                            </span>
-                            <span className="text-xs text-gray-700 whitespace-nowrap text-ellipsis overflow-hidden">{r.updatedByName}</span>
-                          </div>
-                        ) : <span className="text-gray-300">—</span>}
-                      </td>
-                    )}
-                    {!isHidden("createdAt") && (
-                      <td style={freezeStyle("createdAt")} className={`px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden ${tdFreezeClass("createdAt")}`}>
-                        <span className="inline-flex items-center gap-1.5"><Clock className="h-3 w-3 text-gray-400" /> {fmtDateShort(r.createdAt)}</span>
-                      </td>
-                    )}
-                    {!isHidden("updatedAt") && (
-                      <td style={freezeStyle("updatedAt")} className={`px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden ${tdFreezeClass("updatedAt")}`}>
-                        <span className="inline-flex items-center gap-1.5"><Clock className="h-3 w-3 text-gray-400" /> {fmtDateShort(r.updatedAt)}</span>
-                      </td>
-                    )}
+                    {/* Data cells rendered in the user's drag order (renderMemberCell). */}
+                    {orderedNonRail.map((k) => renderMemberCell(r, k))}
                     <td className="px-3 py-3">
                       {viewTrash ? (
                         <button onClick={() => handleRestore(r.id)} className="p-1 rounded hover:bg-green-50 text-gray-300 hover:text-green-600" title="Restore">
@@ -608,6 +714,7 @@ export default function ClientMembersPage() {
               </tbody>
             </table>
             </HorizontalScroller>
+            {rowDnd.dragGhost}
             {total > 0 && (
               <Pagination
                 page={page}

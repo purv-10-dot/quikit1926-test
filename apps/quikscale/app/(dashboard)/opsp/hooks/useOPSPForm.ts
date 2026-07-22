@@ -35,6 +35,14 @@ import type {
   CritCard,
 } from "../types";
 import { reconcileActionsWithGoals } from "../lib/actionsGoalsSync";
+import {
+  classifyCascade,
+  advanceBaseline,
+  applyReflectAtIndices,
+  applyAppendOrGrow,
+  type CategoryRename,
+} from "../lib/categorySync";
+import { useCategorySync, type UseCategorySyncResult } from "./useCategorySync";
 
 /**
  * ACTIONS (QTR) row bounds. Actions can independently hold up to MAX rows via
@@ -44,6 +52,11 @@ import { reconcileActionsWithGoals } from "../lib/actionsGoalsSync";
  */
 export const MIN_ACTION_ROWS = 6;
 export const MAX_ACTION_ROWS = 10;
+
+/** GOALS (1 YR) row bounds — mirror Actions. Grows via "Add New" up to MAX; the
+ *  category-sync "add to empty / grow" flow also respects MAX_GOAL_ROWS. */
+export const MIN_GOAL_ROWS = 6;
+export const MAX_GOAL_ROWS = 10;
 
 /* ── Shared form shape ── */
 export interface FormData {
@@ -158,6 +171,12 @@ export interface OPSPFormHandle {
    * mode commits explicitly via {@link OPSPFormHandle.save}); `true` to resume.
    */
   setAutosaveEnabled: (enabled: boolean) => void;
+  /**
+   * Category-synchronization confirmation flow (Targets→Goals→Actions rename
+   * gating). Spread `.modal` into <SyncConfirmationModal> and wire `.confirm` /
+   * `.cancel`. See useCategorySync.
+   */
+  categorySync: UseCategorySyncResult;
 }
 
 export interface UseOPSPFormOptions {
@@ -237,6 +256,73 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
   const prevTargetCatsRef = useRef<string[]>([]);
   const prevGoalCatsRef = useRef<string[]>([]);
 
+  // Always-latest form snapshot — read by the category-sync `getDestCats`
+  // callback at confirm/cancel time (event handlers, where a captured `form`
+  // closure would be stale).
+  const formRef = useRef(form);
+  formRef.current = form;
+
+  /* ── Category synchronization (rename-gating) ──
+   * Appending new categories + first-filling empty rows stays automatic in the
+   * cascades below. A synchronized-category RENAME (non-empty → non-empty where
+   * the old name exists downstream) is instead gated behind a confirmation flow
+   * so the downstream value isn't silently overwritten. See categorySync.ts +
+   * useCategorySync.ts. */
+  // The no-empty-rows case is surfaced by the hook's own warning modal (not a
+  // toast), so no callback is needed here.
+  const categorySync = useCategorySync();
+  // Stable handles (useCallback-backed) so the cascade effects/callbacks below
+  // can depend on them without re-running on every render.
+  const {
+    request: requestCategorySync,
+    reset: resetCategorySync,
+    warnDuplicates: warnDuplicateCategories,
+  } = categorySync;
+
+  // Tier-specific "reset value cells on re-category" — clears the period cells so
+  // a stale distribution never strands against a new category (same rule the
+  // automatic cascade uses).
+  const resetGoalRow = (row: GoalRow, category: string): GoalRow => ({
+    ...row, category, projected: "", q1: "", q2: "", q3: "", q4: "",
+  });
+  const resetActionRow = (row: ActionRow, category: string): ActionRow => ({
+    ...row, category, projected: "", m1: "", m2: "", m3: "",
+  });
+  // Blank-row factories for the append-or-grow flow (new rows added at the end).
+  const makeGoalRow = (): GoalRow => ({ category: "", projected: "", q1: "", q2: "", q3: "", q4: "" });
+  const makeActionRow = (): ActionRow => ({ category: "", projected: "", m1: "", m2: "", m3: "" });
+
+  // Apply callbacks operate on the LIVE form via functional setForm.
+  const replaceGoalCategories = useCallback((renames: CategoryRename[]) => {
+    // Confirming a Goals reflect updates ONLY Goals. The resulting goalRows change
+    // then drives the Goals→Actions cascade, which raises a SEPARATE Actions modal
+    // when that row is synced — so a Targets edit prompts twice (Goals, then
+    // Actions) and a Goals edit prompts once (Actions). Each modal is confirmed
+    // independently.
+    setForm((prev) => {
+      const res = applyReflectAtIndices(prev.goalRows, renames, resetGoalRow);
+      return res.changed ? { ...prev, goalRows: res.rows } : prev;
+    });
+  }, []);
+  const appendGoalCategories = useCallback((newNames: string[]) => {
+    setForm((prev) => {
+      const res = applyAppendOrGrow(prev.goalRows, newNames, resetGoalRow, makeGoalRow, MAX_GOAL_ROWS);
+      return res.changed ? { ...prev, goalRows: res.rows } : prev;
+    });
+  }, []);
+  const replaceActionCategories = useCallback((renames: CategoryRename[]) => {
+    setForm((prev) => {
+      const res = applyReflectAtIndices(prev.actionsQtr, renames, resetActionRow);
+      return res.changed ? { ...prev, actionsQtr: res.rows } : prev;
+    });
+  }, []);
+  const appendActionCategories = useCallback((newNames: string[]) => {
+    setForm((prev) => {
+      const res = applyAppendOrGrow(prev.actionsQtr, newNames, resetActionRow, makeActionRow, MAX_ACTION_ROWS);
+      return res.changed ? { ...prev, actionsQtr: res.rows } : prev;
+    });
+  }, []);
+
   /* ── Reload when year/quarter changes ── */
   const loadForPeriod = useCallback(async (year: number, quarter: string) => {
     setLoading(true);
@@ -245,6 +331,8 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
     skipNextSave.current = true;
     skipNextTargetsCascade.current = true;
     skipNextGoalsCascade.current = true;
+    // Drop any pending category-sync confirmation — it belongs to the old period.
+    resetCategorySync();
     setForm({ ...defaultForm(), year, quarter });
 
     try {
@@ -273,7 +361,7 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
       }
     } catch {}
     setLoading(false);
-  }, []);
+  }, [resetCategorySync]);
 
   /* ── Load on mount: check OPSP config first, then delegate to loadForPeriod ── */
   useEffect(() => {
@@ -411,19 +499,62 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
     // This lets a Goal the user cleared downstream stay cleared even when the
     // Target array gets a new reference (e.g. backfillPeriods on Finalize).
     const prevCats = prevTargetCatsRef.current;
-    prevTargetCatsRef.current = curCats;
+
+    // Gate synchronized renames (non-empty → non-empty where the old name is
+    // already in Goals): these are NOT auto-applied — they're deferred to a
+    // confirmation flow. First-fill, clear, and unsynced renames still cascade
+    // automatically below. Dest cats read via `formRef` so this effect keeps its
+    // `[form.targetRows]`-only trigger (never re-runs when Goals change).
+    const goalCats = formRef.current.goalRows.map(r => r.category);
+    const { renames, duplicates } = classifyCascade(prevCats, curCats, goalCats);
+    // Gated (synced rename) + duplicate rows are NOT auto-propagated: renames go
+    // to the Replace confirmation; duplicates are blocked with a warning.
+    const skip = new Set<number>([...renames.map(r => r.index), ...duplicates.map(d => d.index)]);
+    // Advance the change-tracking baseline, but HOLD the old value for pending
+    // RENAMES only, so a deferred reflect isn't lost if its modal is
+    // dismissed/superseded — it re-surfaces on the next run instead of latching
+    // silent. DUPLICATES are terminal (warned once, never applied): they advance
+    // like any resolved row so they don't re-warn on every later unrelated change.
+    // `skip` (renames + duplicates) still gates auto-propagation below. See ProdBug-OPSP.
+    prevTargetCatsRef.current = advanceBaseline(prevCats, curCats, new Set(renames.map(r => r.index)));
+    if (renames.length > 0) {
+      requestCategorySync({
+        tier: "goals",
+        renames,
+        onReplace: replaceGoalCategories,
+        onAppendToEmpty: appendGoalCategories,
+        getDestCats: () => formRef.current.goalRows.map(r => r.category),
+        maxRows: MAX_GOAL_ROWS,
+      });
+    } else if (duplicates.length > 0) {
+      warnDuplicateCategories("goals", duplicates.map(d => d.name));
+    }
+
     setForm(prev => {
       const next = [...prev.goalRows];
       let changed = false;
       for (let i = 0; i < Math.min(prev.targetRows.length, next.length); i++) {
-        const cat = prev.targetRows[i].category;
-        const wasCat = prevCats[i] ?? "";
-        // Propagate only on an actual edit (cat changed vs last snapshot).
-        // A cleared Target (cat === "") propagates the clear downstream.
-        if (cat !== wasCat && next[i].category !== cat) {
+        if (skip.has(i)) continue; // gated reflect (occupied row) / blocked duplicate
+        const cat = (prev.targetRows[i].category ?? "").trim();
+        const goalCat = (next[i].category ?? "").trim();
+        const wasCat = (prevCats[i] ?? "").trim();
+        if (cat === goalCat) continue; // already reflected
+        // Index-aligned AUTO reflection: only first-fill an EMPTY aligned Goal,
+        // or CLEAR one that mirrored the old Target value. Overwriting an
+        // OCCUPIED Goal with a different category is gated (in `skip`) and applied
+        // only on confirmation, so it's never silently clobbered here.
+        // First-fill is DUPLICATE-SAFE: never fill a value that already exists at
+        // another Goal row (this is idempotent every run, so an unchanged Target
+        // whose value collides downstream can't be "resurrected" into a new dup on
+        // a later unrelated cascade — the change-driven warn already fired once).
+        const dupElsewhere =
+          cat !== "" && next.some((r, j) => j !== i && (r.category ?? "").trim() === cat);
+        const isFirstFill = goalCat === "" && cat !== "" && !dupElsewhere;
+        const isSyncedClear = cat === "" && goalCat !== "" && goalCat === wasCat;
+        if (isFirstFill || isSyncedClear) {
           next[i] = {
             ...next[i],
-            category: cat,
+            category: prev.targetRows[i].category,
             projected: "",
             q1: "",
             q2: "",
@@ -435,7 +566,7 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
       }
       return changed ? { ...prev, goalRows: next } : prev;
     });
-  }, [form.targetRows]);
+  }, [form.targetRows, requestCategorySync, warnDuplicateCategories, replaceGoalCategories, appendGoalCategories]);
 
   // Goals (1 YR) → Actions (QTR): grow Actions so every Goal has a matching
   // row (auto-filling its category from the Goal) but NEVER shrink — the user
@@ -452,15 +583,37 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
       return;
     }
     const prevCats = prevGoalCatsRef.current;
-    prevGoalCatsRef.current = curCats;
+
+    // Gate synchronized renames (old name already in Actions) — defer to the
+    // confirmation flow and skip their category auto-fill in the reconcile.
+    const actionCats = formRef.current.actionsQtr.map(r => r.category);
+    const { renames, duplicates } = classifyCascade(prevCats, curCats, actionCats);
+    const skip = new Set<number>([...renames.map(r => r.index), ...duplicates.map(d => d.index)]);
+    // Advance the baseline, HOLDING only pending RENAMES (see Targets→Goals
+    // above): a deferred Actions reflect re-surfaces on the next change, while a
+    // terminal duplicate advances so it never re-warns on unrelated edits.
+    prevGoalCatsRef.current = advanceBaseline(prevCats, curCats, new Set(renames.map(r => r.index)));
+    if (renames.length > 0) {
+      requestCategorySync({
+        tier: "actions",
+        renames,
+        onReplace: replaceActionCategories,
+        onAppendToEmpty: appendActionCategories,
+        getDestCats: () => formRef.current.actionsQtr.map(r => r.category),
+        maxRows: MAX_ACTION_ROWS,
+      });
+    } else if (duplicates.length > 0) {
+      warnDuplicateCategories("actions", duplicates.map(d => d.name));
+    }
+
     setForm(prev => {
-      // Grow-only length sync always applies; category auto-fill only for the
-      // Goal rows the user actually edited (change-driven), so an Action row
-      // the user cleared downstream is not re-seeded from an unchanged Goal.
-      const next = reconcileActionsWithGoals(prev.goalRows, prev.actionsQtr, MAX_ACTION_ROWS, prevCats);
+      // Grow-only length sync always applies; category auto-fill only for SYNCED
+      // Action rows (reconcile now leaves diverged rows alone). Gated renames +
+      // blocked duplicates are skipped — they await confirmation / were warned.
+      const next = reconcileActionsWithGoals(prev.goalRows, prev.actionsQtr, MAX_ACTION_ROWS, prevCats, skip);
       return next === prev.actionsQtr ? prev : { ...prev, actionsQtr: next };
     });
-  }, [form.goalRows]);
+  }, [form.goalRows, requestCategorySync, warnDuplicateCategories, replaceActionCategories, appendActionCategories]);
 
   /* ── Delete a Goals (1 YR) row + its bound Actions (QTR) counterpart ── */
   // Removing a Goal row must be a single atomic write, NOT two separate set()
@@ -478,6 +631,8 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
   // independent entry and deleting the Goal must NOT remove it.
   const deleteGoalRow = useCallback((index: number) => {
     skipNextGoalsCascade.current = true;
+    // A row splice re-indexes Goals — any pending Goals rename no longer aligns.
+    resetCategorySync();
     setForm(prev => {
       const removed = prev.goalRows[index];
       const goalRows = [...prev.goalRows];
@@ -490,7 +645,7 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
       }
       return { ...prev, goalRows, actionsQtr };
     });
-  }, []);
+  }, [resetCategorySync]);
 
   /* ── Switch which user's per-user sections are loaded (admin OPSP.EditUser) ── */
   const selectSectionUser = useCallback(async (userId: string | null) => {
@@ -554,5 +709,8 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
     save,
     /** Enable/disable the debounced autosave (off during edit-after-finalize). */
     setAutosaveEnabled: (enabled: boolean) => { autosaveEnabledRef.current = enabled; },
+    /** Category-sync confirmation flow (rename gating). Spread `.modal` into
+     *  <SyncConfirmationModal> and wire `.confirm` / `.cancel`. */
+    categorySync,
   };
 }

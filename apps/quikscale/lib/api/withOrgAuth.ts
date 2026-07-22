@@ -7,6 +7,7 @@ import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { logApiCall } from "@quikit/shared/apiLogging";
 import { userCan, forbidden } from "@/lib/api/permissions";
 import type { Resource, Action } from "@/lib/api/permissionsRegistry";
+import { rateLimitAsync, LIMITS } from "@quikit/shared/rateLimit";
 
 /**
  * Context passed to a route handler after the auth + tenant guard succeeds.
@@ -55,6 +56,64 @@ export interface WithTenantAuthOptions {
    * route with verb → action mapping.
    */
   permission?: { resource: Resource; action: Action };
+  /**
+   * Centralized rate limiting, applied by the wrapper AFTER the auth guard so
+   * the (orgId, userId) client key is known.
+   *
+   *   - undefined (default) — throttle MUTATIONS (POST/PUT/PATCH/DELETE) with
+   *     the shared `LIMITS.mutation` bucket; leave GET/HEAD untouched.
+   *   - false — disable the central limiter entirely (handler self-limits with
+   *     its own, usually tighter, bucket — e.g. the KPI write route).
+   *   - object — override the threshold and/or opt a read (GET) in via
+   *     `enabled: true`. `routeKey` defaults to `"${METHOD}:${pathname}"`.
+   *
+   * Uses the Redis-backed `rateLimitAsync` so limits hold across serverless
+   * instances (falls back to in-memory only when REDIS_URL is unset).
+   */
+  rateLimit?: RateLimitOption;
+}
+
+export type RateLimitOption =
+  | boolean
+  | {
+      /** Opt a read (GET/HEAD) into limiting. Mutations are limited regardless. */
+      enabled?: boolean;
+      limit?: number;
+      windowMs?: number;
+      routeKey?: string;
+    };
+
+const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+/**
+ * Run the centralized rate-limit gate. Returns a 429 `NextResponse` when the
+ * request should be blocked, or `null` when it may proceed.
+ */
+async function enforceRateLimit(
+  req: NextRequest,
+  orgId: string,
+  userId: string,
+  opt: RateLimitOption | undefined,
+): Promise<NextResponse | null> {
+  if (opt === false) return null;
+
+  const method = req.method.toUpperCase();
+  const cfg = typeof opt === "object" && opt !== null ? opt : undefined;
+  const shouldLimit = MUTATION_METHODS.has(method) || cfg?.enabled === true;
+  if (!shouldLimit) return null;
+
+  const rl = await rateLimitAsync({
+    routeKey: cfg?.routeKey ?? `${method}:${req.nextUrl.pathname}`,
+    clientKey: `${orgId}:${userId}`,
+    limit: cfg?.limit ?? LIMITS.mutation.limit,
+    windowMs: cfg?.windowMs ?? LIMITS.mutation.windowMs,
+  });
+
+  if (rl.ok) return null;
+  return NextResponse.json(
+    { success: false, error: "Too many requests. Please try again shortly." },
+    { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } },
+  );
 }
 
 export function withOrgAuth<Params = Record<string, never>>(
@@ -86,7 +145,10 @@ export function withOrgAuth<Params = Record<string, never>>(
         } else {
           orgIdForLog = orgId;
           let blocked: NextResponse | null = null;
-          if (options.moduleKey) {
+          // Centralized rate limiting — runs before the module/permission
+          // gates and the handler, so throttled requests never touch the DB.
+          blocked = await enforceRateLimit(req, orgId, session.user.id, options.rateLimit);
+          if (!blocked && options.moduleKey) {
             const ff = await gateModuleApi("quikscale", options.moduleKey, orgId);
             if (ff) blocked = ff as NextResponse;
           }

@@ -15,6 +15,14 @@ export const TABLE_PREFERENCE_KEYS = [
   "clientMembers",
   "dailyHuddle",
   "weeklyMeeting",
+  // Master-data grids migrated onto the shared <FeatureGrid> stack.
+  "categories",
+  "units",
+  // OPSP Review tables (DataTable + useDataTableGrid column features).
+  "opspReviewPrimary",
+  "opspReviewSecondary",
+  // OPSP Critical # Review cards — column show/hide only (card layout).
+  "opspReviewCritical",
 ] as const;
 export type TablePreferenceKey = (typeof TABLE_PREFERENCE_KEYS)[number];
 
@@ -24,4 +32,7 @@ export const updateTablePreferencesSchema = z.object({
   hiddenCols: z.array(z.string()).nullable().optional(),
   sort: z.string().nullable().optional(), // format: "colKey:asc" | "colKey:desc"
   colWidths: z.record(z.string(), z.number()).nullable().optional(),
+  // Drag-and-drop column order — array of column keys. Null clears back to
+  // the table's default order.
+  colOrder: z.array(z.string()).nullable().optional(),
 });
