@@ -6,6 +6,7 @@ import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { validationError } from "@/lib/api/validationError";
 import { createUnitSchema } from "@/lib/schemas/unitSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
+import { unitNameConflictMessage } from "@/lib/api/unitConflict";
 
 // Fixed org-level channel so all unit audit entries list together (mirrors
 // the category-mgmt pattern). Keep in sync with units/[id]/route.ts.
@@ -76,7 +77,7 @@ export const POST = auth.create(async ({ orgId, userId }, request) => {
   } catch (err: unknown) {
     if (isUniqueViolation(err)) {
       return NextResponse.json(
-        { success: false, error: "A unit with this name already exists." },
+        { success: false, error: await unitNameConflictMessage(orgId, trimmedName) },
         { status: 409 },
       );
     }

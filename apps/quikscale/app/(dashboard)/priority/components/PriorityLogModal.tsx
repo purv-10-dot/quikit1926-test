@@ -192,9 +192,12 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
   // the user clicks "Save Weekly changes". When the user marks a week as
   // "completed", cascade Completed forward to every subsequent week up to the
   // end of the quarter (week 13); existing notes on cascaded weeks are
-  // preserved. If the priority's endWeek is shorter, the grid auto-extends to
-  // 13 locally so the cascaded weeks are visible — the extend is committed to
-  // the priority on Save (handleSaveWeekly).
+  // preserved. This deliberately fills FUTURE weeks too — "Completed" is a
+  // terminal, forward-propagating state, so the server relaxes the future-week
+  // lock for a `completed` write (see `isWeeklyWriteAllowed`). If the
+  // priority's endWeek is shorter, the grid auto-extends to 13 locally so the
+  // cascaded weeks are visible — the extend is committed to the priority on
+  // Save (handleSaveWeekly).
   function handleWeeklyStatusChange(weekNumber: number, status: string) {
     const QUARTER_END = weekCount;
     const currentEnd = parseInt(form.endWeek) || QUARTER_END;

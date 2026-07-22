@@ -29,7 +29,7 @@ import {
   sumBreakdown,
   checkBreakdownBalance,
   isTargetValueLocked,
-  isStandaloneWeekDropdown,
+  isStandaloneCellEditable,
   TARGET_LOCK_TIP,
   type DivisionType,
 } from "./kpiModalHelpers";
@@ -1361,10 +1361,11 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                           );
                         }
 
-                        // Individual scope — Standalone division. When "Add Past Week Data"
-                        // is ON, EVERY week (past, current, future) is an editable <select>
-                        // 0/target; otherwise cells stay locked. See isStandaloneWeekDropdown.
-                        if (isStandaloneWeekDropdown(form.divisionType, pastWeekAllowed)) {
+                        // Individual scope — Standalone division. Current & future
+                        // weeks are ALWAYS an editable <select> 0/target; past weeks
+                        // become editable only when "Add Past Week Data" is ON (else
+                        // they stay locked). See isStandaloneCellEditable.
+                        if (isStandaloneCellEditable(form.divisionType, isWeekPast(w), pastWeekAllowed)) {
                           const isNumUnit = form.measurementUnit === "Number";
                           // Use properly-formatted strings that match what buildBreakdown stores
                           const zeroStr = isNumUnit ? "0" : "0.00";
@@ -1441,10 +1442,11 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                             const isPast = isWeekPast(w) && !pastWeekAllowed;
                             const isStandalone = form.divisionType === "Standalone";
                             const isLocked = isStandalone || isPast;
-                            // Standalone per-owner: when "Add Past Week Data" is ON every week
-                            // (past, current, future) is an editable 0/sub-target <select>;
-                            // otherwise cells stay locked at the owner sub-target (unchanged).
-                            if (isStandaloneWeekDropdown(form.divisionType, pastWeekAllowed)) {
+                            // Standalone per-owner: current & future weeks are ALWAYS an
+                            // editable 0/sub-target <select>; past weeks become editable
+                            // only when "Add Past Week Data" is ON (else locked at the
+                            // owner sub-target). See isStandaloneCellEditable.
+                            if (isStandaloneCellEditable(form.divisionType, isWeekPast(w), pastWeekAllowed)) {
                               const isNumUnit = form.measurementUnit === "Number";
                               const ownerTarget = (pct / 100) * scaledTarget;
                               const zeroStr = isNumUnit ? "0" : "0.00";

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { weeklyStatusSchema } from "@/lib/schemas/prioritySchema";
 import { getPastWeekFlags, getWeekGateFromDB } from "@/lib/utils/featureFlags";
-import { weekEditState, earliestEditableWeek } from "@/lib/utils/weekLock";
+import { weekEditState, isWeeklyWriteAllowed, earliestEditableWeek } from "@/lib/utils/weekLock";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { audit, requestContext } from "@/lib/audit";
 const withOrgAuth = withOrgAuthForModule("priority");
@@ -37,12 +37,14 @@ export const POST = withOrgAuth<{ id: string }>(
     // Future quarters/weeks are always rejected; a past quarter is rejected
     // unless edit-past is on; in the current quarter, weeks before the editable
     // window (current week minus grace) are rejected — the grace keeps the
-    // immediately-previous week editable.
+    // immediately-previous week editable. EXCEPTION: a future week in the
+    // current quarter may be set to "completed" (the inline Completed cascade
+    // POSTs each forward week here) — see `isWeeklyWriteAllowed`.
     const { canEditPastWeek } = await getPastWeekFlags(orgId);
     if (priority.quarter && priority.year) {
       const { currentWeek, quarterPosition } = await getWeekGateFromDB(orgId, priority.year, priority.quarter);
       const gate = weekEditState({ quarterPosition, week: weekNumber, currentWeek, canEditPastWeek, flagsLoaded: true });
-      if (gate.locked) {
+      if (!isWeeklyWriteAllowed({ quarterPosition, week: weekNumber, currentWeek, canEditPastWeek, flagsLoaded: true, status: String(status) })) {
         const error = gate.isFuture
           ? `Week ${weekNumber} is in the future and can't be updated yet.`
           : quarterPosition === "past"

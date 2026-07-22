@@ -149,3 +149,39 @@ export function weekEditState(opts: {
   // Current quarter → per-week window (future weeks locked, past beyond grace locked).
   return weeklyInputLockState({ week, currentWeek, canEditPastWeek, flagsLoaded });
 }
+
+/** The Priority weekly status that is allowed to propagate into future weeks. */
+export const COMPLETED_STATUS = "completed";
+
+/**
+ * May a weekly-status WRITE for `week` with `status` be persisted?
+ *
+ * Extends `weekEditState` with the Priority "Completed" cascade exception:
+ * marking a week Completed propagates "completed" forward to the later weeks of
+ * the SAME (current) quarter, INCLUDING future weeks. "Completed" is a terminal,
+ * forward-only state, so pre-filling it ahead of the current week is intentional
+ * — unlike every other status, which stays blocked on future weeks so users
+ * can't pre-declare progress they haven't made.
+ *
+ * Relaxed ONLY for: current quarter + future week + `status === "completed"`.
+ * NOT relaxed for past weeks, past quarters, or a wholly-future quarter (you
+ * can't complete a quarter that hasn't started — the cascade can't originate
+ * there because its trigger week would itself be locked).
+ *
+ * Single source of truth for the client cascade and BOTH server routes
+ * (`/weekly` and `/weekly/batch`).
+ */
+export function isWeeklyWriteAllowed(opts: {
+  quarterPosition: QuarterPosition;
+  week: number;
+  currentWeek: number | null;
+  canEditPastWeek: boolean;
+  flagsLoaded: boolean;
+  status: string;
+}): boolean {
+  const { quarterPosition, week, currentWeek, canEditPastWeek, flagsLoaded, status } = opts;
+  const gate = weekEditState({ quarterPosition, week, currentWeek, canEditPastWeek, flagsLoaded });
+  if (!gate.locked) return true;
+  // Completed-cascade exception — future week inside the current quarter only.
+  return quarterPosition === "current" && gate.isFuture && status === COMPLETED_STATUS;
+}

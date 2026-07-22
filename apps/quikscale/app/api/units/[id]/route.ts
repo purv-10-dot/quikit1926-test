@@ -5,6 +5,7 @@ const auth = withOrgAuthForResource("orgSetup.units", "Unit");
 import { validationError } from "@/lib/api/validationError";
 import { updateUnitSchema } from "@/lib/schemas/unitSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
+import { unitNameConflictMessage, UNIT_NAME_TAKEN } from "@/lib/api/unitConflict";
 
 type RouteParams = { id: string };
 
@@ -49,8 +50,14 @@ export const PUT = auth.update<RouteParams>(async ({ orgId, userId }, request, {
       "code" in err &&
       (err as { code?: string }).code === "P2002"
     ) {
+      // A rename can only collide with a *different* row; if that row is
+      // soft-deleted, guide the user to Trash. Fall back to the generic
+      // message when the new name is somehow absent.
+      const message = trimmedName
+        ? await unitNameConflictMessage(orgId, trimmedName)
+        : UNIT_NAME_TAKEN;
       return NextResponse.json(
-        { success: false, error: "A unit with this name already exists." },
+        { success: false, error: message },
         { status: 409 },
       );
     }

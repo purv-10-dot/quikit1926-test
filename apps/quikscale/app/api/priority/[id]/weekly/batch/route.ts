@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { weeklyStatusBatchSchema } from "@/lib/schemas/prioritySchema";
 import { getPastWeekFlags, getWeekGateFromDB } from "@/lib/utils/featureFlags";
-import { weekEditState, earliestEditableWeek } from "@/lib/utils/weekLock";
+import { weekEditState, isWeeklyWriteAllowed, earliestEditableWeek } from "@/lib/utils/weekLock";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { audit, requestContext } from "@/lib/audit";
 const withOrgAuth = withOrgAuthForModule("priority");
@@ -52,12 +52,14 @@ export const POST = withOrgAuth<{ id: string }>(
     // single-week route). Future quarters/weeks are always rejected; a past
     // quarter is rejected unless edit-past is on; in the current quarter, weeks
     // before the editable window (current week minus grace) are rejected — the
-    // grace keeps the immediately-previous week editable.
+    // grace keeps the immediately-previous week editable. EXCEPTION: a future
+    // week in the current quarter may be set to "completed" (the Completed
+    // cascade propagates a terminal state forward) — see `isWeeklyWriteAllowed`.
     const { canEditPastWeek } = await getPastWeekFlags(orgId);
     if (priority.quarter && priority.year) {
       const { currentWeek, quarterPosition } = await getWeekGateFromDB(orgId, priority.year, priority.quarter);
       const offending = inputs.find(
-        (i) => weekEditState({ quarterPosition, week: i.weekNumber, currentWeek, canEditPastWeek, flagsLoaded: true }).locked,
+        (i) => !isWeeklyWriteAllowed({ quarterPosition, week: i.weekNumber, currentWeek, canEditPastWeek, flagsLoaded: true, status: String(i.status) }),
       );
       if (offending) {
         const isFuture = weekEditState({ quarterPosition, week: offending.weekNumber, currentWeek, canEditPastWeek, flagsLoaded: true }).isFuture;
