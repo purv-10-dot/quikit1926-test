@@ -181,12 +181,6 @@ export function SummaryView({ projectId }: { projectId: string }) {
               dashboard tailored to your project.
             </p>
             <div className="mt-2 flex items-center gap-4 text-xs">
-              <Link
-                href={`/spaces/${projectId}/reports`}
-                className="text-blue-600 font-medium hover:underline"
-              >
-                Take me to Reports
-              </Link>
               <button
                 onClick={() => setBannerDismissed(true)}
                 className="text-gray-600 hover:underline"

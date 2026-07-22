@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, validationError, internalError } from "@/lib/api-response";
-import { createGoalSchema } from "@/lib/validations/performance";
+import { createGoalSchema, goalTypeToDb, goalTypeFromDb } from "@/lib/validations/performance";
 import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
 import { fireWorkflow } from "@/lib/workflows/executor";
 import { resolveScope, employeeScopeFilter } from "@/lib/rbac/scope";
@@ -26,12 +26,12 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
     const scopeFilter = await employeeScopeFilter(ctx, scope);
     if (!scopeFilter.allow) return forbidden("No performance read permission");
 
-    const where: Prisma.GoalWhereInput = {
+    const where: Prisma.HrmsGoalWhereInput = {
       orgId, deletedAt: null,
       ...(employeeId && { employeeId }),
       ...(scopeFilter.employeeIds && !employeeId && { employeeId: { in: scopeFilter.employeeIds } }),
-      ...(status && { status: status as Prisma.GoalWhereInput["status"] }),
-      ...(type && { type: type as Prisma.GoalWhereInput["type"] }),
+      ...(status && { status: status as Prisma.HrmsGoalWhereInput["status"] }),
+      ...(type && { type: goalTypeToDb(type) }),
     };
 
     const [goals, total] = await Promise.all([
@@ -45,6 +45,7 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
       }),
       prisma.hrmsGoal.count({ where }),
     ]);
+    goals.forEach(goalTypeFromDb);
     return successResponse(goals, paginationMeta(page, limit, total));
   } catch (error) { console.error("GET /performance/goals error:", error); return internalError(); }
 });
@@ -68,7 +69,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         orgId, employeeId: targetEmployeeId,
         parentGoalId: data.parentGoalId,
         title: data.title, description: data.description,
-        type: data.type, category: data.category,
+        type: goalTypeToDb(data.type), category: data.category,
         metric: data.metric, targetValue: data.targetValue, unit: data.unit, weight: data.weight,
         startDate: new Date(data.startDate), dueDate: new Date(data.dueDate),
         alignedTo: data.alignedTo, visibility: data.visibility,
@@ -83,6 +84,6 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       payload: { employeeId: goal.employeeId, goalId: goal.id, title: goal.title, dueDate: goal.dueDate },
     });
 
-    return successResponse(goal, undefined, 201);
+    return successResponse(goalTypeFromDb(goal), undefined, 201);
   } catch (error) { console.error("POST /performance/goals error:", error); return internalError(); }
 }, { requiredPermissions: ["hrms.performance.write"] });

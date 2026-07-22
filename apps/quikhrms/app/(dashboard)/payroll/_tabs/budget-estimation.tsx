@@ -34,7 +34,7 @@ export default function BudgetEstimationTab() {
     return { current, projected, delta: projected - current, perHead: rows.length ? (projected - current) / rows.length : 0 };
   }, [rows, globalHike, deptOverrides, topPerformerBonus, topPerformerPct]);
 
-  if (isLoading) return <div className="rounded-lg border border-gray-200 bg-white p-12 text-center text-gray-400 text-sm">Loading…</div>;
+  if (isLoading) return <div className="rounded-lg border border-gray-200 bg-white p-12 text-center text-gray-400 text-xs">Loading…</div>;
   if (rows.length === 0) return <Empty />;
 
   return (
@@ -47,7 +47,7 @@ export default function BudgetEstimationTab() {
       </div>
 
       <div className="rounded-lg border border-gray-200 bg-white p-4">
-        <h3 className="text-sm font-semibold text-gray-800 mb-3">Scenario controls</h3>
+        <h3 className="text-[13px] font-semibold text-gray-800 mb-3">Scenario controls</h3>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <Slider label="Company-wide hike %" value={globalHike} setValue={setGlobalHike} min={0} max={30} step={0.5} />
           <Slider label="Top performer bonus %" value={topPerformerBonus} setValue={setTopPerformerBonus} min={0} max={20} step={0.5} />
@@ -56,16 +56,16 @@ export default function BudgetEstimationTab() {
       </div>
 
       <div className="rounded-lg border border-gray-200 bg-white p-4">
-        <h3 className="text-sm font-semibold text-gray-800 mb-3">Department-level overrides</h3>
+        <h3 className="text-[13px] font-semibold text-gray-800 mb-3">Department-level overrides</h3>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50">
-                <th className="text-left py-2 px-3">Department</th>
-                <th className="text-right py-2 px-3">Headcount</th>
-                <th className="text-right py-2 px-3">Current Bill</th>
-                <th className="text-right py-2 px-3">Hike %</th>
-                <th className="text-right py-2 px-3">Projected Bill</th>
+              <tr className="text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em] border-b border-gray-200 bg-gray-50">
+                <th className="text-left px-4 py-2.5">Department</th>
+                <th className="text-right px-4 py-2.5">Headcount</th>
+                <th className="text-right px-4 py-2.5">Current Bill</th>
+                <th className="text-right px-4 py-2.5">Hike %</th>
+                <th className="text-right px-4 py-2.5">Projected Bill</th>
               </tr>
             </thead>
             <tbody>
@@ -76,10 +76,10 @@ export default function BudgetEstimationTab() {
                 const projected = current * (1 + hike / 100);
                 return (
                   <tr key={key} className="border-b border-gray-50 hover:bg-gray-50">
-                    <td className="py-2 px-3 font-medium text-gray-900">{deptName}</td>
-                    <td className="py-2 px-3 text-right tabular-nums text-gray-700">{group.length}</td>
-                    <td className="py-2 px-3 text-right tabular-nums">{INR_LAKH(current)}</td>
-                    <td className="py-2 px-3 text-right">
+                    <td className="px-4 py-2.5 text-[13px] font-medium text-gray-900">{deptName}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">{group.length}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{INR_LAKH(current)}</td>
+                    <td className="px-4 py-2.5 text-right">
                       <input
                         type="number"
                         value={deptOverrides[key] ?? ""}
@@ -91,7 +91,7 @@ export default function BudgetEstimationTab() {
                         step={0.5}
                       />
                     </td>
-                    <td className="py-2 px-3 text-right tabular-nums font-semibold text-gray-900">{INR_LAKH(projected)}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-gray-900">{INR_LAKH(projected)}</td>
                   </tr>
                 );
               })}
@@ -121,7 +121,7 @@ function Slider({ label, value, setValue, min, max, step, suffix }: {
         max={max}
         step={step}
         onChange={(e) => setValue(Number(e.target.value))}
-        className="w-full accent-[#16243A]"
+        className="w-full accent-[#166534]"
       />
     </div>
   );

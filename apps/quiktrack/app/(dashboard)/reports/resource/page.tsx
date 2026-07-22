@@ -3,7 +3,7 @@ import { RequirePerm } from "@/components/shell/require-perm";
 
 export default function ResourceReportPage() {
   return (
-    <RequirePerm adminOnly>
+    <RequirePerm adminOrSpaceAdmin>
       <ResourceReport />
     </RequirePerm>
   );

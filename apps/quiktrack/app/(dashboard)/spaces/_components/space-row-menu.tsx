@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { MoreHorizontal, Archive, ArchiveRestore, Trash2, RotateCcw } from "lucide-react";
+import { MoreHorizontal, Archive, ArchiveRestore, Trash2, RotateCcw, Settings } from "lucide-react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 
 export type ProjectView = "active" | "archived" | "trash";
@@ -136,8 +136,9 @@ export function SpaceRowMenu({
             <Link
               href={`/spaces/${spaceId}/settings`}
               onClick={() => setOpen(false)}
-              className="block px-3 py-2 text-sm text-gray-800 hover:bg-gray-50"
+              className="flex items-center gap-2 px-3 py-2 text-sm text-gray-800 hover:bg-gray-50"
             >
+              <Settings className="h-4 w-4" />
               Project settings
             </Link>
           )}

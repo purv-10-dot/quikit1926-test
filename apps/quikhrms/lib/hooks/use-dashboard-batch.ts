@@ -34,6 +34,7 @@ export interface DashboardMonthHoliday {
   id: string;
   name: string;
   date: string;
+  type: string;
 }
 
 export interface DashboardAvailabilityRow {

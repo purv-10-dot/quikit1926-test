@@ -17,7 +17,30 @@ export interface RefDepartment { id: string; name: string; code?: string | null 
 export interface RefDesignation { id: string; title: string }
 export interface RefLocation { id: string; name: string; city?: string | null; state?: string | null }
 export interface RefRole { id: string; code: string; name: string; description?: string | null }
-export interface RefSalaryTemplate { id: string; name: string; code: string }
+export type SalaryAmountType = "Fixed" | "PercentOfBasic" | "PercentOfCTC" | "PercentOfGross" | "Formula";
+export type SalaryComponentType = "Earning" | "Deduction" | "Reimbursement" | "Benefit" | "StatutoryContribution";
+
+export interface RefSalaryTemplateComponent {
+  componentId: string;
+  amountType: SalaryAmountType;
+  amountValue: string | number | null;
+  component: {
+    id: string;
+    name: string;
+    code: string;
+    type: SalaryComponentType;
+    category: string;
+  };
+}
+
+export interface RefSalaryTemplate {
+  id: string;
+  name: string;
+  code: string;
+  // The list endpoint returns each template's full component breakdown
+  // (ordered by sortOrder). Optional so lighter callers can ignore it.
+  components?: RefSalaryTemplateComponent[];
+}
 
 export function useDepartments() {
   const api = useApiClient();

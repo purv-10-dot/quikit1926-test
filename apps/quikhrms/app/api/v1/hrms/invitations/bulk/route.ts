@@ -3,18 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, validationError, internalError } from "@/lib/api-response";
 import { bulkInvitationSchema } from "@/lib/validations/invitation";
-import { generateInviteToken, inviteExpiry } from "@/lib/auth/invite-token";
-import { dispatchInvitationEmail, companyName } from "@/lib/services/invitation";
 import { createAuditLog } from "@/lib/utils/audit";
-import { provisionMemberRemote } from "@/lib/auth/provision-member-remote";
-import { deprovisionMemberRemote } from "@/lib/auth/deprovision-member-remote";
-
-/** App slug HRMS is registered under in the central QuikIT app registry. */
-const QUIKHRMS_APP_SLUG = "quikhrms";
-
-const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-/** Central QuikIT base — hosts the /invitations/accept set-password flow. */
-const QUIKIT_URL = process.env.QUIKIT_URL ?? process.env.NEXT_PUBLIC_QUIKIT_URL ?? "";
+import { provisionCentralInvite } from "@/lib/services/invitation";
 
 /**
  * Cap concurrent central provisioning calls. Each row hits the central
@@ -31,8 +21,6 @@ interface Candidate {
   firstName: string;
   lastName: string;
   roleIds: string[];
-  /** True when a Pending invite already exists — re-send the email, no new row. */
-  isResend: boolean;
 }
 
 type RowOutcome =
@@ -98,13 +86,6 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     const takenEmployee = new Set(existingEmployees.map((e) => e.workEmail?.toLowerCase()));
     const pendingInvite = new Set(existingInvites.map((i) => i.email.toLowerCase()));
 
-    const inviter = await prisma.employee.findFirst({
-      where: { id: userId, orgId },
-      select: { firstName: true, lastName: true },
-    });
-    const inviterName = inviter ? `${inviter.firstName} ${inviter.lastName}`.trim() : null;
-    const company = await companyName(orgId);
-    const loginUrl = `${req.nextUrl.origin}${BASE_PATH}/login`;
 
     const skipped: SkippedRow[] = [];
     const seen = new Set<string>();
@@ -118,10 +99,10 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       seen.add(email);
       if (takenEmployee.has(email)) { skipped.push({ email, reason: "Employee already exists" }); continue; }
 
-      // Already has a Pending invite → re-send the invite email instead of
-      // skipping (no new row is created). Roles are irrelevant for a re-send.
+      // Already has a Pending invite → skip; use the resend action to re-email
+      // (central owns invite mail, so bulk only provisions brand-new members).
       if (pendingInvite.has(email)) {
-        candidates.push({ email, firstName: row.firstName, lastName: row.lastName, roleIds: [], isResend: true });
+        skipped.push({ email, reason: "Pending invite exists" });
         continue;
       }
 
@@ -133,95 +114,31 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       const roleIds = namedIds.length > 0 ? namedIds : validDefaults;
       if (roleIds.length === 0) { skipped.push({ email, reason: "No valid roles" }); continue; }
 
-      candidates.push({ email, firstName: row.firstName, lastName: row.lastName, roleIds, isResend: false });
+      candidates.push({ email, firstName: row.firstName, lastName: row.lastName, roleIds });
     }
 
-    // ── Phase 2: per-row central provisioning → invitation row → queued email ──
-    // (bounded concurrency; mirrors the single-invite flow per row)
+    // ── Phase 2: per-row central provisioning (bounded concurrency) ──
+    // Each row is provisioned DIRECTLY against central (User + OrgMember +
+    // UserAppAccess) and gets the invite email — same as the single-invite flow.
+    // A row whose provisioning fails is skipped (never a local invite with no
+    // backing central account).
     const outcomes = await mapWithConcurrency<Candidate, RowOutcome>(
       candidates,
       PROVISION_CONCURRENCY,
       async (c) => {
-        const expiresAt = inviteExpiry();
-        let setupUrl: string | null = null;
-        let tempPassword: string | null = null;
-
-        // NEW invite → provision centrally (best-effort) + create the local row.
-        // RE-SEND (pending invite already exists) → skip both; just re-send the
-        // email below. Provisioning is optional: if the central endpoint isn't
-        // available the invite + email still go out (SSO login), mirroring the
-        // bulk employee-import flow.
-        if (!c.isResend) {
-          const provision = await provisionMemberRemote({
-            orgId: orgId,
-            email: c.email,
-            firstName: c.firstName,
-            lastName: c.lastName,
-            appSlug: QUIKHRMS_APP_SLUG,
-            invitationMethod,
-          });
-          if (!provision.ok) {
-            console.warn("[bulk-invite] central provisioning unavailable — sending SSO invite:", c.email, provision.error);
-          } else {
-            tempPassword = provision.tempPassword ?? null;
-            if (provision.invitationToken && QUIKIT_URL) {
-              setupUrl = `${QUIKIT_URL.replace(/\/$/, "")}/invitations/accept?token=${encodeURIComponent(provision.invitationToken)}`;
-            }
-          }
-
-          try {
-            const { hash } = generateInviteToken();
-            await prisma.invitation.create({
-              data: {
-                orgId,
-                email: c.email,
-                firstName: c.firstName,
-                lastName: c.lastName,
-                roleIds: c.roleIds,
-                token: hash,
-                centralInviteToken: provision.ok ? provision.invitationToken ?? null : null,
-                expiresAt,
-                status: "Pending",
-                invitedBy: userId,
-              },
-            });
-          } catch (rowErr) {
-            console.error("[bulk-invite] row failed:", c.email, rowErr);
-            // Dual-write compensation — undo a brand-new central provision so a
-            // retried upload re-provisions cleanly.
-            if (provision.isNewUser && provision.userId) {
-              const rollback = await deprovisionMemberRemote({
-                orgId: orgId,
-                userId: provision.userId,
-                appSlug: QUIKHRMS_APP_SLUG,
-              });
-              if (!rollback.ok) {
-                console.error("[bulk-invite] central rollback failed — manual cleanup may be needed:", c.email, rollback.error);
-              }
-            }
-            return { email: c.email, ok: false, reason: "Could not create invitation" };
-          }
+        const invite = await provisionCentralInvite({
+          orgId,
+          invitedBy: userId,
+          email: c.email,
+          firstName: c.firstName,
+          lastName: c.lastName,
+          roleIds: c.roleIds,
+          invitationMethod,
+        });
+        if (!invite.ok) {
+          return { email: c.email, ok: false, reason: invite.error ?? "Central provisioning failed" };
         }
-
-        // Send the invite email DIRECTLY via SMTP (no queue) — new + re-send.
-        let emailSent = false;
-        try {
-          const mail = await dispatchInvitationEmail({
-            orgId,
-            to: c.email,
-            inviteeName: `${c.firstName} ${c.lastName}`.trim(),
-            loginUrl,
-            setupUrl,
-            expiresAt,
-            inviterName,
-            company,
-            tempPassword,
-          });
-          emailSent = mail.sent;
-        } catch (mailErr) {
-          console.error("[bulk-invite] email send failed:", c.email, mailErr);
-        }
-        return { email: c.email, ok: true, emailSent };
+        return { email: c.email, ok: true, emailSent: true };
       },
     );
 

@@ -102,7 +102,6 @@ export default function EngagementApprovalsPage() {
       qc.invalidateQueries({ queryKey: ["engage-approvals"] });
       toast.success(vars.action === "approve" ? "Approved" : "Rejected");
     },
-    onError: (e: Error) => toast.error("Action failed", e.message),
   });
 
   const onApprove = (id: string) => actMut.mutate({ id, action: "approve" });
@@ -119,13 +118,13 @@ export default function EngagementApprovalsPage() {
   };
 
   return (
-    <div className="w-full px-6 py-6">
-      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+    <div className="w-full px-5 py-4">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div className="flex items-center gap-3">
-          <ShieldCheck className="text-[#3b82f6]" />
+          <ShieldCheck className="text-[#22c55e]" />
           <div>
-            <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">Engagement & Feedback Approvals</h1>
-            <p className="text-sm text-gray-500 mt-1">Moderate content before it goes live.</p>
+            <h1 className="text-page-title text-gray-900">Engagement & Feedback Approvals</h1>
+            <p className="text-xs text-gray-500 mt-1">Moderate content before it goes live.</p>
           </div>
         </div>
       </div>
@@ -138,9 +137,9 @@ export default function EngagementApprovalsPage() {
               key={t.value}
               onClick={() => switchTab(t.value)}
               className={clsx(
-                "inline-flex items-center gap-1.5 px-1 py-3 text-sm border-b-2 transition -mb-px whitespace-nowrap",
+                "inline-flex items-center gap-1.5 px-1 py-3 text-[13px] font-semibold border-b-2 transition -mb-px whitespace-nowrap",
                 tab === t.value
-                  ? "border-[#3b82f6] text-[#3b82f6] font-semibold"
+                  ? "border-[#22c55e] text-[#22c55e] font-semibold"
                   : "border-transparent text-gray-500 hover:text-gray-700",
               )}
             >
@@ -157,9 +156,9 @@ export default function EngagementApprovalsPage() {
             key={s}
             onClick={() => setStatusFilter(s)}
             className={clsx(
-              "px-3 py-1 text-xs rounded-full font-semibold border transition",
+              "px-3 py-1 text-[11px] rounded-full font-semibold border transition",
               statusFilter === s
-                ? "bg-[#16243A] text-white border-[#16243A]"
+                ? "bg-green-600 text-white border-[#166534]"
                 : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50",
             )}
           >
@@ -171,7 +170,7 @@ export default function EngagementApprovalsPage() {
 
       {/* List */}
       {isLoading ? (
-        <div className="py-12 text-center text-sm text-gray-500">Loading…</div>
+        <div className="py-12 text-center text-xs text-gray-500">Loading…</div>
       ) : items.length === 0 ? (
         <div className="p-1">
           <EmptyState
@@ -231,8 +230,8 @@ function ItemCard({
         <div className="flex-1 min-w-0">
           {type === "announcement" && (
             <>
-              <h3 className="text-base font-semibold text-gray-900 mb-1">{(item as AnnouncementItem).title}</h3>
-              <p className="text-sm text-gray-700 line-clamp-4 whitespace-pre-wrap">{(item as AnnouncementItem).content}</p>
+              <h3 className="text-[13px] font-semibold text-gray-900 mb-1">{(item as AnnouncementItem).title}</h3>
+              <p className="text-xs text-gray-700 line-clamp-4 whitespace-pre-wrap">{(item as AnnouncementItem).content}</p>
               <p className="text-xs text-gray-500 mt-2">
                 By {fullName((item as AnnouncementItem).author)} · {new Date(item.createdAt).toLocaleString("en-IN")}
               </p>
@@ -240,7 +239,7 @@ function ItemCard({
           )}
           {type === "post" && (
             <>
-              <p className="text-sm text-gray-700 line-clamp-4 whitespace-pre-wrap">{(item as PostItem).content}</p>
+              <p className="text-xs text-gray-700 line-clamp-4 whitespace-pre-wrap">{(item as PostItem).content}</p>
               <p className="text-xs text-gray-500 mt-2">
                 By {fullName((item as PostItem).employee)} · {(item as PostItem).type} · {new Date(item.createdAt).toLocaleString("en-IN")}
               </p>
@@ -248,12 +247,12 @@ function ItemCard({
           )}
           {type === "recognition" && (
             <>
-              <p className="text-sm">
+              <p className="text-[13px] font-semibold">
                 <span className="font-semibold text-gray-900">{fullName((item as RecognitionItem).fromEmployee)}</span>
                 <span className="text-gray-500"> → </span>
                 <span className="font-semibold text-gray-900">{fullName((item as RecognitionItem).toEmployee)}</span>
               </p>
-              <p className="text-sm text-gray-700 mt-1 line-clamp-3">{(item as RecognitionItem).message}</p>
+              <p className="text-xs text-gray-700 mt-1 line-clamp-3">{(item as RecognitionItem).message}</p>
               <p className="text-xs text-gray-500 mt-2">
                 {(item as RecognitionItem).type}
                 {(item as RecognitionItem).badge && ` · 🏅 ${(item as RecognitionItem).badge}`}
@@ -264,7 +263,7 @@ function ItemCard({
           )}
           {type === "feedback" && (
             <>
-              <p className="text-sm">
+              <p className="text-[13px] font-semibold">
                 <span className="font-semibold text-gray-900">{fullName((item as FeedbackItem).fromEmployee)}</span>
                 <span className="text-gray-500"> → </span>
                 <span className="font-semibold text-gray-900">{fullName((item as FeedbackItem).toEmployee)}</span>
@@ -272,10 +271,10 @@ function ItemCard({
                   {(item as FeedbackItem).type}
                 </span>
                 {(item as FeedbackItem).isPublic && (
-                  <span className="ml-1 inline-block px-1.5 py-0.5 text-[10px] rounded bg-blue-100 text-blue-700">Public</span>
+                  <span className="ml-1 inline-block px-1.5 py-0.5 text-[10px] rounded bg-green-100 text-green-700">Public</span>
                 )}
               </p>
-              <p className="text-sm text-gray-700 mt-1 line-clamp-4 whitespace-pre-wrap">{(item as FeedbackItem).message}</p>
+              <p className="text-xs text-gray-700 mt-1 line-clamp-4 whitespace-pre-wrap">{(item as FeedbackItem).message}</p>
               <p className="text-xs text-gray-500 mt-2">
                 {(item as FeedbackItem).category} · {new Date(item.createdAt).toLocaleString("en-IN")}
               </p>
@@ -292,14 +291,14 @@ function ItemCard({
             <button
               onClick={onApprove}
               disabled={disabled}
-              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded disabled:opacity-40"
+              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-normal bg-emerald-600 hover:bg-emerald-700 text-white rounded disabled:opacity-40"
             >
               <Check size={12} /> Approve
             </button>
             <button
               onClick={onReject}
               disabled={disabled}
-              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-red-600 hover:bg-red-700 text-white rounded disabled:opacity-40"
+              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-normal bg-red-600 hover:bg-red-700 text-white rounded disabled:opacity-40"
             >
               <X size={12} /> Reject
             </button>

@@ -366,10 +366,17 @@ export function TimelineView({ projectId }: { projectId: string }) {
           />
 
           {/* Epic rows (recursive children load on expand). Narrow to a single
-              epic when the epic filter is set, and drop done epics when hiding. */}
+              epic when the epic filter is set, drop done epics when hiding, and
+              narrow to the selected assignee(s) — matching how child tasks are
+              already filtered (without this the epic list ignored the filter). */}
           {(filterEpicId ? epics.filter((e) => e.id === filterEpicId) : epics)
             .filter(
               (e) => !(settings.hideDone && statusesById.get(e.statusId)?.category === "DONE"),
+            )
+            .filter(
+              (e) =>
+                filterAssigneeIds.length === 0 ||
+                (e.assigneeId ? filterAssigneeIds.includes(e.assigneeId) : false),
             )
             .map((e) => (
               <TimelineRow

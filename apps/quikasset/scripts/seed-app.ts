@@ -13,11 +13,12 @@ const db = new PrismaClient();
 
 // Keep in sync with lib/api/permissionsRegistry.ts + lib/api/seedAppRoles.ts.
 const RESOURCES = [
-  "Dashboard", "Asset", "Category", "Assignment", "Repair", "Replacement",
+  "Dashboard", "Asset", "AssetRequest", "Category", "Assignment", "Repair", "Replacement",
   "Budget", "Report", "AuditLog", "Notification", "Employee", "Settings",
 ] as const;
 const VIEW_ONLY = new Set(["Dashboard", "Report", "AuditLog", "Notification"]);
-const VIEW_ALL_RESOURCES = new Set(["Asset"]);
+const VIEW_ALL_RESOURCES = new Set(["Asset", "AssetRequest"]);
+const APPROVE_RESOURCES = new Set(["AssetRequest"]);
 const ACTIONS = ["view", "create", "update", "delete"] as const;
 
 function allPairs() {
@@ -28,16 +29,21 @@ function allPairs() {
     } else {
       for (const action of ACTIONS) out.push({ resource, action });
       if (VIEW_ALL_RESOURCES.has(resource)) out.push({ resource, action: "viewAll" });
+      if (APPROVE_RESOURCES.has(resource)) out.push({ resource, action: "approve" });
     }
   }
   return out;
 }
 
-// BRD Phase 0: Members may only view their assigned assets (row-scoped in the
-// route layer) + their own notifications. See seedAppRoles.ts for the rationale.
+// BRD Phase 0: Members may view their assigned assets (row-scoped in the route
+// layer) + their own notifications, and raise / see their own asset requests
+// (view, NOT viewAll). Keep in sync with MEMBER_DEFAULT_GRANTS in
+// lib/api/seedAppRoles.ts. See seedAppRoles.ts for the rationale.
 const MEMBER_GRANTS = [
   { resource: "Asset", action: "view" },
   { resource: "Notification", action: "view" },
+  { resource: "AssetRequest", action: "view" },
+  { resource: "AssetRequest", action: "create" },
 ];
 
 async function main() {

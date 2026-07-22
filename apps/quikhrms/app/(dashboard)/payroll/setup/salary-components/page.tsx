@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
-import { Coins, ChevronLeft, Plus, ChevronDown, MoreHorizontal, Info, Power, Trash2, ArrowRight } from "lucide-react";
+import { Coins, Plus, ChevronDown, MoreHorizontal, Info, Power, Trash2, ArrowRight } from "lucide-react";
 import { Modal } from "@/components/hrms/modal";
 import { clsx } from "clsx";
 import { NewEarningForm } from "./_forms/new-earning";
@@ -24,7 +24,7 @@ const TAB_LABEL: Record<CompType, string> = {
 
 export default function SalaryComponentsPage() {
   return (
-    <Suspense fallback={<div className="p-6 space-y-2"><SkeletonLine w="40%" h={16} /><SkeletonLine w="70%" h={12} /><SkeletonLine w="60%" h={12} /></div>}>
+    <Suspense fallback={<div className="p-4 space-y-2"><SkeletonLine w="40%" h={16} /><SkeletonLine w="70%" h={12} /><SkeletonLine w="60%" h={12} /></div>}>
       <SalaryComponentsPageInner />
     </Suspense>
   );
@@ -57,17 +57,13 @@ function SalaryComponentsPageInner() {
 
   return (
     <div className="max-w-6xl mx-auto pb-24">
-      <Link href="/payroll/setup" className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-[#3b82f6] mb-3">
-        <ChevronLeft size={14} /> Back to Payroll Setup
-      </Link>
-
       {/* Hero */}
-      <div className="rounded-2xl bg-gradient-to-r from-[#16243A] to-[#2563eb] text-white px-6 py-5 shadow-sm flex items-start gap-4 mb-5">
+      <div className="rounded-2xl bg-gradient-to-r from-[#166534] to-[#16a34a] text-white px-5 py-4 shadow-sm flex items-start gap-4 mb-5">
         <div className="w-11 h-11 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
           <Coins size={22} />
         </div>
         <div className="flex-1">
-          <h1 className="font-serif-display text-2xl font-bold leading-tight">Salary Components</h1>
+          <h1 className="font-serif-display text-base font-semibold leading-tight">Salary Components</h1>
           <p className="text-xs text-white/75 mt-1">
             Earnings, deductions, benefits and reimbursements — building blocks of payslips.
           </p>
@@ -75,9 +71,9 @@ function SalaryComponentsPageInner() {
         <div className="relative shrink-0">
           <button
             onClick={() => setDropdownOpen((v) => !v)}
-            className="inline-flex items-center gap-1.5 px-3 py-2 bg-white text-[#16243A] hover:bg-gray-100 rounded-lg text-sm font-semibold shadow-sm"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white text-[#166534] hover:bg-gray-100 rounded-lg text-xs font-medium shadow-sm"
           >
-            <Plus size={14} /> Add Component <ChevronDown size={12} />
+            <Plus size={13} /> Add Component <ChevronDown size={12} />
           </button>
           {dropdownOpen && (
             <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl py-1 w-40 z-50">
@@ -85,7 +81,7 @@ function SalaryComponentsPageInner() {
                 <button
                   key={t}
                   onClick={() => { setPreset(t); setTab(t); setAddOpen(true); setDropdownOpen(false); }}
-                  className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-[#dbeafe]"
+                  className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-[#dcfce7]"
                 >
                   {t}
                 </button>
@@ -102,8 +98,8 @@ function SalaryComponentsPageInner() {
             key={t}
             onClick={() => setTab(t)}
             className={clsx(
-              "px-4 py-1.5 text-xs font-semibold rounded-md transition",
-              tab === t ? "bg-white text-[#16243A] shadow-sm" : "text-gray-500 hover:text-gray-700",
+              "px-4 py-1.5 text-[13px] font-semibold rounded-md transition",
+              tab === t ? "bg-white text-[#166534] shadow-sm" : "text-gray-500 hover:text-gray-700",
             )}
           >
             {TAB_LABEL[t]}
@@ -113,7 +109,7 @@ function SalaryComponentsPageInner() {
 
       {/* Card */}
       <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
-        <div className="p-5">
+        <div className="p-4">
           {isLoading ? (
             <SkeletonTable rows={5} cols={4} />
           ) : list.length === 0 ? (
@@ -121,9 +117,9 @@ function SalaryComponentsPageInner() {
               <div className="w-12 h-12 mx-auto rounded-full bg-gray-100 flex items-center justify-center mb-3">
                 <Coins size={20} className="text-gray-400" />
               </div>
-              <p className="text-sm text-gray-500">No {TAB_LABEL[tab].toLowerCase()} yet.</p>
-              <button onClick={() => { setPreset(tab); setAddOpen(true); }} className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-[#3b82f6] hover:underline">
-                <Plus size={12} /> Add first {tab.toLowerCase()}
+              <p className="text-xs text-gray-500">No {TAB_LABEL[tab].toLowerCase()} yet.</p>
+              <button onClick={() => { setPreset(tab); setAddOpen(true); }} className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-[#22c55e] hover:underline">
+                <Plus size={13} /> Add first {tab.toLowerCase()}
               </button>
             </div>
           ) : (
@@ -141,23 +137,23 @@ function SalaryComponentsPageInner() {
           <button
             type="button"
             onClick={() => router.push(returnTo.startsWith("/") ? returnTo : "/payroll/setup")}
-            className="px-4 py-2 text-sm border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50"
+            className="px-3 py-1.5 text-xs font-medium border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50"
           >
             Done
           </button>
           {hasTemplate ? (
             <Link
               href="/payroll/employee-salaries"
-              className="inline-flex items-center gap-2 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] text-white rounded-lg text-sm font-semibold shadow-sm"
+              className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium shadow-sm"
             >
-              Continue to Employees <ArrowRight size={14} />
+              Continue to Employees <ArrowRight size={13} />
             </Link>
           ) : (
             <Link
               href="/payroll/setup/salary-templates"
-              className="inline-flex items-center gap-2 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] text-white rounded-lg text-sm font-semibold shadow-sm"
+              className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium shadow-sm"
             >
-              <Plus size={14} /> Add Template
+              <Plus size={13} /> Add Template
             </Link>
           )}
         </div>
@@ -205,20 +201,20 @@ function RowActions({ row }: { row: SalaryComponent }) {
   return (
     <div className="relative inline-block" ref={ref}>
       <button onClick={() => setOpen((v) => !v)} className="text-gray-400 hover:text-gray-600 p-1 rounded hover:bg-gray-100">
-        <MoreHorizontal size={16} />
+        <MoreHorizontal size={12} />
       </button>
       {open && !confirmDelete && (
         <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-md shadow-xl py-1 w-44 z-50">
           <button
             onClick={() => toggleMut.mutate()}
             disabled={toggleMut.isPending}
-            className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 disabled:opacity-50"
+            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2 disabled:opacity-50"
           >
             <Power size={13} /> {row.isActive ? "Deactivate" : "Activate"}
           </button>
           <button
             onClick={() => setConfirmDelete(true)}
-            className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+            className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2"
           >
             <Trash2 size={13} /> Delete
           </button>
@@ -243,54 +239,54 @@ function ComponentTable({ tab, rows }: { tab: CompType; rows: SalaryComponent[] 
   const headers = headerFor(tab);
   return (
     <div>
-      <table className="w-full text-sm">
+      <table className="w-full text-xs">
         <thead>
-          <tr className="text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">
-            {headers.map((h) => <th key={h} className="text-left py-2 px-3">{h}</th>)}
+          <tr className="text-table-head font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-200">
+            {headers.map((h) => <th key={h} className="text-left py-2.5 px-4">{h}</th>)}
             <th className="w-10" />
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.id} className="border-b border-gray-50 hover:bg-gray-50">
-              <td className="py-3 px-3">
+              <td className="py-2.5 px-4">
                 <div className="flex items-center gap-2">
-                  <span className="text-[#3b82f6] font-medium">{r.nameInPayslip || r.name}</span>
+                  <span className="text-[13px] text-[#22c55e] font-medium">{r.nameInPayslip || r.name}</span>
                   <span className="px-1.5 py-0.5 text-[10px] font-mono font-semibold text-gray-600 bg-gray-100 rounded">{r.code}</span>
                 </div>
               </td>
               {tab === "Earning" ? (
                 <>
-                  <td className="py-3 px-3 text-gray-700">{humanize(r.category)}</td>
-                  <td className="py-3 px-3 text-gray-700">{formatCalc(r)}</td>
-                  <td className="py-3 px-3 text-gray-700">
+                  <td className="py-2.5 px-4 text-gray-700">{humanize(r.category)}</td>
+                  <td className="py-2.5 px-4 text-gray-700">{formatCalc(r)}</td>
+                  <td className="py-2.5 px-4 text-gray-700">
                     {r.considerForEPF ? "Yes" : "No"}
                     {r.considerEPFIfPFWageLT15k && <span className="text-xs text-gray-500 ml-1">(If PF Wage &lt; 15k)</span>}
                   </td>
-                  <td className="py-3 px-3 text-gray-700">{r.considerForESI ? "Yes" : "No"}</td>
+                  <td className="py-2.5 px-4 text-gray-700">{r.considerForESI ? "Yes" : "No"}</td>
                 </>
               ) : tab === "Deduction" ? (
                 <>
-                  <td className="py-3 px-3 text-gray-700">{humanize(r.category)}</td>
-                  <td className="py-3 px-3 text-gray-700">{r.isRecurring ? "Recurring" : "One Time"}</td>
+                  <td className="py-2.5 px-4 text-gray-700">{humanize(r.category)}</td>
+                  <td className="py-2.5 px-4 text-gray-700">{r.isRecurring ? "Recurring" : "One Time"}</td>
                 </>
               ) : tab === "Benefit" ? (
                 <>
-                  <td className="py-3 px-3 text-gray-700">{humanize(r.category)}</td>
-                  <td className="py-3 px-3 text-gray-700">{r.isRecurring ? "Recurring" : "One Time"}</td>
+                  <td className="py-2.5 px-4 text-gray-700">{humanize(r.category)}</td>
+                  <td className="py-2.5 px-4 text-gray-700">{r.isRecurring ? "Recurring" : "One Time"}</td>
                 </>
               ) : (
                 <>
-                  <td className="py-3 px-3 text-gray-700">{humanize(r.category)}</td>
-                  <td className="py-3 px-3 text-gray-700">{r.maxAmount ? Number(r.maxAmount).toLocaleString("en-IN") : "0"}</td>
+                  <td className="py-2.5 px-4 text-gray-700">{humanize(r.category)}</td>
+                  <td className="py-2.5 px-4 text-gray-700">{r.maxAmount ? Number(r.maxAmount).toLocaleString("en-IN") : "0"}</td>
                 </>
               )}
-              <td className="py-3 px-3">
+              <td className="py-2.5 px-4">
                 <span className={r.isActive ? "text-emerald-600 font-semibold" : "text-gray-400 font-medium"}>
                   {r.isActive ? "Active" : "Inactive"}
                 </span>
               </td>
-              <td className="py-3 px-3 text-right">
+              <td className="py-2.5 px-4 text-right">
                 <RowActions row={r} />
               </td>
             </tr>

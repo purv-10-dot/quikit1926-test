@@ -1,13 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
 import { NumberInput } from "@/components/hrms/ui/number-input";
-import { ChevronLeft, RefreshCw, Save, Check, BadgeIndianRupee } from "lucide-react";
+import { RefreshCw, Save, Check, BadgeIndianRupee } from "lucide-react";
 import { clsx } from "clsx";
 
 interface FNF {
@@ -71,14 +70,13 @@ export default function FNFDetailPage() {
   const saveMut = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.patch(`/api/v1/hrms/payroll/full-final/${id}`, body),
     onSuccess: () => { toast.success("Saved"); qc.invalidateQueries({ queryKey: ["payroll", "full-final", id] }); },
-    onError: (e: Error) => toast.error("Save failed", e.message),
   });
 
-  if (isLoading || !fnf) return <div className="p-8 text-sm text-gray-500">Loading…</div>;
+  if (isLoading || !fnf) return <div className="p-8 text-xs text-gray-500">Loading…</div>;
 
   const setNum = (k: keyof FNF, v: number | null) => setForm((p) => ({ ...p, [k]: v == null ? "" : String(v) }));
 
-  const inputCls = "w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm text-right focus:outline-none focus:ring-1 focus:ring-[#16243A]";
+  const inputCls = "w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm text-right focus:outline-none focus:ring-1 focus:ring-[#166534]";
 
   const persistValues = () => {
     const numFields: (keyof FNF)[] = ["pendingSalary","leaveEncashment","gratuityAmount","bonusAmount","noticePayRecovery","loanRecovery","otherEarnings","otherDeductions","tdsDeducted"];
@@ -93,14 +91,10 @@ export default function FNFDetailPage() {
 
   return (
     <div className="space-y-4">
-      <Link href="/payroll/full-final" className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-[#3b82f6]">
-        <ChevronLeft size={14} /> Back to F&F List
-      </Link>
-
-      <div className="rounded-lg border border-gray-200 bg-white shadow-sm p-5">
+      <div className="rounded-lg border border-gray-200 bg-white shadow-sm p-4">
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-lg font-bold text-gray-900">
+            <h1 className="text-page-title text-gray-900">
               Full &amp; Final — {fnf.employee?.firstName} {fnf.employee?.lastName}
             </h1>
             <p className="text-xs text-gray-500 mt-1">
@@ -110,25 +104,25 @@ export default function FNFDetailPage() {
             {fnf.reason && <p className="text-xs text-gray-600 mt-1">Reason: {fnf.reason}</p>}
           </div>
           <div className="flex gap-2">
-            <span className={clsx("text-xs font-semibold px-2 py-1 rounded",
+            <span className={clsx("text-[11px] font-medium px-2 py-1 rounded",
               fnf.status === "Paid" ? "bg-emerald-100 text-emerald-700" :
-              fnf.status === "Approved" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"
+              fnf.status === "Approved" ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"
             )}>{fnf.status}</span>
             {fnf.status !== "Paid" && (
               <button
                 onClick={() => recomputeMut.mutate()}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-gray-50 text-gray-700 border border-[var(--border)] rounded-md text-sm font-semibold"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-gray-50 text-gray-700 border border-[var(--border)] rounded-md text-xs font-medium"
               >
-                <RefreshCw size={14} /> Recompute
+                <RefreshCw size={13} /> Recompute
               </button>
             )}
           </div>
         </div>
       </div>
 
-      <div className="rounded-lg border border-gray-200 bg-white shadow-sm p-5">
-        <h2 className="text-sm font-bold text-gray-900 mb-4">Settlement Components</h2>
-        <table className="w-full text-sm">
+      <div className="rounded-lg border border-gray-200 bg-white shadow-sm p-4">
+        <h2 className="text-[13px] font-semibold text-gray-900 mb-4">Settlement Components</h2>
+        <table className="w-full text-xs">
           <tbody>
             {[
               { k: "pendingSalary" as const, label: "Pending Salary (worked days)", earn: true },
@@ -159,7 +153,7 @@ export default function FNFDetailPage() {
             <tr className="bg-emerald-50">
               <td className="py-3 pr-3 font-bold text-gray-900">Net Settlement</td>
               <td className="py-3 pl-3" />
-              <td className="py-3 pl-3 text-right font-bold text-emerald-800">₹{INR.format(Number(fnf.netSettlement))}</td>
+              <td className="py-3 pl-3 text-right text-sm font-bold text-emerald-800">₹{INR.format(Number(fnf.netSettlement))}</td>
             </tr>
           </tbody>
         </table>
@@ -171,7 +165,7 @@ export default function FNFDetailPage() {
             value={form.notes ?? ""}
             onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))}
             disabled={fnf.status === "Paid"}
-            className="w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]"
+            className="w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]"
           />
         </div>
 
@@ -179,32 +173,32 @@ export default function FNFDetailPage() {
           <button
             onClick={persistValues}
             disabled={saveMut.isPending || fnf.status === "Paid"}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 text-white rounded-md text-sm font-semibold"
+            className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-md text-xs font-medium"
           >
-            <Save size={14} /> Save
+            <Save size={13} /> Save
           </button>
           {fnf.status === "Computed" && (
             <button
               onClick={() => saveMut.mutate({ status: "Approved" })}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-md text-sm font-semibold"
+              className="inline-flex items-center gap-2 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-md text-xs font-medium"
             >
-              <Check size={14} /> Approve
+              <Check size={13} /> Approve
             </button>
           )}
           {fnf.status === "Approved" && (
             <button
               onClick={() => saveMut.mutate({ status: "Paid" })}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-sm font-semibold"
+              className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-xs font-medium"
             >
-              <BadgeIndianRupee size={14} /> Mark Paid
+              <BadgeIndianRupee size={13} /> Mark Paid
             </button>
           )}
         </div>
       </div>
 
       {fnf.details && (
-        <div className="rounded-lg border border-gray-200 bg-white shadow-sm p-5">
-          <h3 className="text-sm font-bold text-gray-900 mb-2">Computation Details</h3>
+        <div className="rounded-lg border border-gray-200 bg-white shadow-sm p-4">
+          <h3 className="text-[13px] font-semibold text-gray-900 mb-2">Computation Details</h3>
           <pre className="text-xs text-gray-600 bg-gray-50 p-3 rounded overflow-auto">{JSON.stringify(fnf.details, null, 2)}</pre>
         </div>
       )}

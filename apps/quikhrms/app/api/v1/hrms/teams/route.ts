@@ -59,4 +59,4 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     console.error("POST /teams error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.org.write"] });

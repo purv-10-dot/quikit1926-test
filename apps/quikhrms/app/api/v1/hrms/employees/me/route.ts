@@ -1,12 +1,12 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { withAuth } from "@/lib/with-auth";
+import { withServiceAuth } from "@/lib/with-auth";
 import { successResponse, notFound, internalError } from "@/lib/api-response";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { getCached, cacheKeys } from "@/lib/services/cache";
 import { APP_ID, rolePriority } from "@/lib/rbac/registry";
 
-export const GET = withAuth(async (_req: NextRequest, { orgId, userId }) => {
+export const GET = withServiceAuth(async (_req: NextRequest, { orgId, userId }) => {
   try {
     const employee = await getCached(
       cacheKeys.employeeMe(orgId, userId),

@@ -68,7 +68,7 @@ const ENTITY_LABEL: Record<string, string> = {
 
 const ACTION_PILL: Record<string, string> = {
   Create: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  Update: "bg-blue-50 text-blue-700 border-blue-200",
+  Update: "bg-green-50 text-green-700 border-green-200",
   Delete: "bg-rose-50 text-rose-700 border-rose-200",
   Approve: "bg-emerald-50 text-emerald-700 border-emerald-200",
   Reject: "bg-rose-50 text-rose-700 border-rose-200",
@@ -110,10 +110,10 @@ const ACTION_VERB: Record<string, string> = {
 
 // Deterministic avatar colour from a name.
 const AVATAR_COLORS = [
-  "bg-blue-100 text-blue-700", "bg-emerald-100 text-emerald-700",
+  "bg-green-100 text-green-700", "bg-emerald-100 text-emerald-700",
   "bg-amber-100 text-amber-700", "bg-violet-100 text-violet-700",
   "bg-rose-100 text-rose-700", "bg-cyan-100 text-cyan-700",
-  "bg-indigo-100 text-indigo-700",
+  "bg-green-100 text-green-700",
 ];
 function initialsOf(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -169,16 +169,16 @@ export default function AuditLogPage() {
   ];
 
   return (
-    <div className="w-full space-y-5">
+    <div className="w-full space-y-4">
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3">
-          <div className="w-11 h-11 rounded-lg bg-blue-50 text-[#3b82f6] flex items-center justify-center shrink-0">
+          <div className="w-11 h-11 rounded-lg bg-green-50 text-[#22c55e] flex items-center justify-center shrink-0">
             <Shield size={22} />
           </div>
           <div>
-            <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900 leading-tight">Audit Trail</h1>
-            <p className="text-sm text-gray-500 mt-0.5">Track all actions, activities and changes.</p>
+            <h1 className="text-base font-semibold text-gray-900 leading-tight">Audit Trail</h1>
+            <p className="text-xs text-gray-500 mt-0.5">Track all actions, activities and changes.</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -190,8 +190,8 @@ export default function AuditLogPage() {
             type="button"
             onClick={() => setShowFilters((v) => !v)}
             className={clsx(
-              "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-semibold",
-              showFilters ? "border-[#16243A] bg-[#16243A] text-white" : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50",
+              "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-medium",
+              showFilters ? "border-[#166534] bg-green-600 text-white" : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50",
             )}
           >
             <Filter size={13} /> Filters
@@ -225,7 +225,7 @@ export default function AuditLogPage() {
           <div className="flex items-center gap-1.5">
             <label className="text-xs text-gray-500">Since</label>
             <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
-              className="border border-gray-200 rounded-md px-3 py-1.5 text-sm" />
+              className="border border-gray-200 rounded-md px-3 py-1.5 text-xs" />
           </div>
           {(entityType || action || dateFrom) && (
             <button
@@ -260,7 +260,7 @@ export default function AuditLogPage() {
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="bg-gray-50/60 border-b border-gray-200 text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                  <tr className="bg-gray-50/60 border-b border-gray-200 text-table-head font-bold text-gray-500 uppercase tracking-wider">
                     <th className="text-left px-4 py-3">Timestamp</th>
                     <th className="text-left px-4 py-3">Who</th>
                     <th className="text-left px-4 py-3">Action</th>
@@ -281,21 +281,21 @@ export default function AuditLogPage() {
                             <span className={clsx("w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0", avatarColor(log.userName))}>
                               {initialsOf(log.userName)}
                             </span>
-                            <span className="text-sm font-medium text-gray-900 whitespace-nowrap">{log.userName}</span>
+                            <span className="text-[13px] font-medium text-gray-900 whitespace-nowrap">{log.userName}</span>
                           </div>
                         ) : (
                           <span className="font-mono text-xs text-gray-500" title={log.userId}>{log.userId.slice(0, 12)}…</span>
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <span className={clsx("inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border", ACTION_PILL[log.action] ?? "bg-gray-100 text-gray-700 border-gray-200")}>
+                        <span className={clsx("inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border", ACTION_PILL[log.action] ?? "bg-gray-100 text-gray-700 border-gray-200")}>
                           {ACTION_VERB[log.action] ?? log.action}
                         </span>
                       </td>
                       <td className="px-4 py-3">
                         {log.subjectName ? (
                           <div>
-                            <p className="text-sm font-medium text-gray-900">{log.subjectName}</p>
+                            <p className="text-[13px] font-medium text-gray-900">{log.subjectName}</p>
                             <p className="text-[10px] text-gray-400">{ENTITY_LABEL[log.entityType] ?? log.entityType}</p>
                           </div>
                         ) : (
@@ -368,7 +368,7 @@ function KpiCard({
 }) {
   const ring =
     tone === "emerald" ? "text-emerald-600 ring-emerald-200" :
-    tone === "blue" ? "text-blue-600 ring-blue-200" :
+    tone === "blue" ? "text-green-600 ring-green-200" :
     tone === "teal" ? "text-teal-600 ring-teal-200" :
     tone === "rose" ? "text-rose-600 ring-rose-200" :
     tone === "gray" ? "text-gray-500 ring-gray-200" :
@@ -381,7 +381,7 @@ function KpiCard({
           <Icon size={14} />
         </div>
       </div>
-      <p className="mt-2 font-serif-display text-2xl font-bold text-gray-900 tabular-nums leading-none">{value}</p>
+      <p className="mt-2 font-serif-display text-xl font-bold text-gray-900 tabular-nums leading-none">{value}</p>
     </div>
   );
 }
@@ -401,7 +401,7 @@ function Pager({
     <div className="inline-flex items-center gap-0.5">
       <button type="button" onClick={() => onChange(page - 1)} disabled={page <= 1}
         className="w-7 h-7 rounded flex items-center justify-center text-gray-600 hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent">
-        <ChevronLeft size={14} />
+        <ChevronLeft size={12} />
       </button>
       {pages.map((p, i) =>
         p === "..." ? (
@@ -410,7 +410,7 @@ function Pager({
           <button key={p} type="button" onClick={() => onChange(p)}
             className={clsx(
               "w-7 h-7 rounded text-xs font-semibold flex items-center justify-center tabular-nums",
-              p === page ? "bg-[#16243A] text-white" : "text-gray-700 hover:bg-gray-100",
+              p === page ? "bg-green-600 text-white" : "text-gray-700 hover:bg-gray-100",
             )}>
             {p}
           </button>
@@ -418,7 +418,7 @@ function Pager({
       )}
       <button type="button" onClick={() => onChange(page + 1)} disabled={page >= totalPages}
         className="w-7 h-7 rounded flex items-center justify-center text-gray-600 hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent">
-        <ChevronRight size={14} />
+        <ChevronRight size={12} />
       </button>
     </div>
   );

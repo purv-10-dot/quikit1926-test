@@ -50,8 +50,10 @@ export const GET = withProjectAccess<{ id: string; ideaId: string }>(
             }
           : {}),
       },
-      orderBy: [{ updatedAt: "desc" }],
-      take: 25,
+      // Order by key when searching (so PM-4, PM-40, PM-41… group together);
+      // by recency otherwise.
+      orderBy: q ? [{ key: "asc" }] : [{ updatedAt: "desc" }],
+      take: 50,
       select: {
         id: true, key: true, title: true, type: true,
         status: { select: { name: true, category: true } },

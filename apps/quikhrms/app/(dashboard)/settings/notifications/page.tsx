@@ -17,7 +17,7 @@ interface NotificationItem {
 }
 
 const typeIcons: Record<string, React.ReactNode> = {
-  Info: <Info size={14} className="text-[#3b82f6]" />,
+  Info: <Info size={14} className="text-[#22c55e]" />,
   Warning: <AlertTriangle size={14} className="text-yellow-500" />,
   Success: <CheckCircle size={14} className="text-green-500" />,
   Error: <XCircle size={14} className="text-red-500" />,
@@ -43,15 +43,15 @@ export default function NotificationsPage() {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">Notifications</h1>
-          {unreadCount > 0 && <span className="bg-[#16243A] text-white text-xs px-2 py-0.5 rounded-full">{unreadCount}</span>}
+          <h1 className="text-base font-semibold text-gray-900">Notifications</h1>
+          {unreadCount > 0 && <span className="bg-green-600 text-white text-[11px] font-medium px-2 py-0.5 rounded-full">{unreadCount}</span>}
         </div>
         {unreadCount > 0 && (
           <button onClick={() => markAllMut.mutate()}
-            className="flex items-center gap-1 text-sm text-[#3b82f6] hover:underline">
-            <CheckCheck size={14} /> Mark all read
+            className="flex items-center gap-1 text-xs font-medium text-[#22c55e] hover:underline">
+            <CheckCheck size={13} /> Mark all read
           </button>
         )}
       </div>
@@ -63,16 +63,16 @@ export default function NotificationsPage() {
       ) : (
         <div className="space-y-2">
           {notifications.map((n) => (
-            <div key={n.id} className={clsx("bg-white rounded-lg border p-3 flex items-start gap-3", n.isRead ? "border-gray-200" : "border-[#bfdbfe] bg-[#dbeafe]/30")}>
+            <div key={n.id} className={clsx("bg-white rounded-lg border p-3 flex items-start gap-3", n.isRead ? "border-gray-200" : "border-[#bbf7d0] bg-[#dcfce7]/30")}>
               <div className="mt-0.5">{typeIcons[n.type] ?? typeIcons.Info}</div>
               <div className="flex-1">
-                <p className={clsx("text-sm", n.isRead ? "text-gray-700" : "text-gray-900 font-medium")}>{n.title}</p>
+                <p className={clsx("text-[13px]", n.isRead ? "text-gray-700" : "text-gray-900 font-medium")}>{n.title}</p>
                 <p className="text-xs text-gray-500 mt-0.5">{n.message}</p>
                 <p className="text-xs text-gray-400 mt-1">
                   {new Date(n.createdAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
                 </p>
               </div>
-              {!n.isRead && <div className="w-2 h-2 rounded-full bg-[#dbeafe]0 mt-2 flex-shrink-0" />}
+              {!n.isRead && <div className="w-2 h-2 rounded-full bg-[#dcfce7]0 mt-2 flex-shrink-0" />}
             </div>
           ))}
         </div>

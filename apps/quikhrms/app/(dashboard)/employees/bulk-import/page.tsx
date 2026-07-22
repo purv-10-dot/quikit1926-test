@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
 import { useMutation } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { MAX_BULK_UPLOAD_ROWS } from "@/lib/validations/gap-fill";
-import { read, utils, SSF, writeFile, type WorkSheet, type CellObject } from "xlsx";
+import { read, utils, SSF, type WorkSheet, type CellObject } from "xlsx";
 import {
   Upload,
   FileText,
@@ -14,6 +15,8 @@ import {
   Download,
   ArrowRight,
 } from "lucide-react";
+import { Select } from "@/components/hrms/select";
+import { useDialog } from "@/components/hrms/dialog";
 
 interface ImportResult {
   importId: string;
@@ -133,46 +136,46 @@ const CANONICAL_FIELDS: { key: CanonicalKey; label: string; required?: boolean }
   { key: "middleName", label: "Middle Name" },
   { key: "lastName", label: "Last Name", required: true },
   { key: "employeeCode", label: "Employee Code / EMP ID" },
-  { key: "workEmail", label: "Work Email" },
+  { key: "workEmail", label: "Work Email", required: true },
   { key: "personalEmail", label: "Personal Email" },
   { key: "workPhone", label: "Work Phone" },
-  { key: "personalPhone", label: "Personal Phone" },
-  { key: "dateOfBirth", label: "Date of Birth" },
-  { key: "gender", label: "Gender" },
+  { key: "personalPhone", label: "Personal Phone", required: true },
+  { key: "dateOfBirth", label: "Date of Birth", required: true },
+  { key: "gender", label: "Gender", required: true },
   { key: "maritalStatus", label: "Marital Status" },
   { key: "bloodGroup", label: "Blood Group" },
   { key: "nationality", label: "Nationality" },
-  { key: "departmentName", label: "Department (by name)" },
+  { key: "departmentName", label: "Department (by name)", required: true },
   { key: "departmentCode", label: "Department Code" },
-  { key: "designation", label: "Designation" },
+  { key: "designation", label: "Designation", required: true },
   { key: "team", label: "Team" },
   { key: "grade", label: "Grade" },
-  { key: "dateOfJoining", label: "Date of Joining" },
+  { key: "dateOfJoining", label: "Date of Joining", required: true },
   { key: "confirmationDate", label: "Confirmation Date" },
   { key: "probationEndDate", label: "Probation End Date" },
   { key: "employmentType", label: "Employment Type" },
   { key: "workerType", label: "Worker Type" },
   { key: "workLocation", label: "Work Location (Office/Remote/Hybrid)" },
-  { key: "officeLocation", label: "Office Location / Branch" },
-  { key: "jobTitle", label: "Job Title" },
+  { key: "officeLocation", label: "Office Location / Branch", required: true },
+  { key: "jobTitle", label: "Job Title", required: true },
   { key: "sourceOfHire", label: "Source of Hire" },
   { key: "noticePeriodDays", label: "Notice Period (Days)" },
   { key: "previousExperience", label: "Previous Experience (Months)" },
   { key: "lastWorkingDate", label: "Last Working Date" },
   { key: "tentativeJoiningDate", label: "Tentative Joining Date" },
-  { key: "panNumber", label: "PAN Number" },
-  { key: "aadhaarNumber", label: "Aadhaar Number" },
+  { key: "panNumber", label: "PAN Number", required: true },
+  { key: "aadhaarNumber", label: "Aadhaar Number", required: true },
   { key: "uanNumber", label: "UAN Number" },
   { key: "pfAccountNumber", label: "PF Account" },
   { key: "esiNumber", label: "ESI Number" },
   { key: "taxIdentificationNumber", label: "Tax ID (TIN)" },
   // Address (current)
-  { key: "currentAddressLine1", label: "Current Address Line 1" },
+  { key: "currentAddressLine1", label: "Current Address Line 1", required: true },
   { key: "currentAddressLine2", label: "Current Address Line 2" },
-  { key: "currentCity", label: "Current City" },
-  { key: "currentState", label: "Current State" },
-  { key: "currentZip", label: "Current ZIP / PIN" },
-  { key: "currentCountry", label: "Current Country" },
+  { key: "currentCity", label: "Current City", required: true },
+  { key: "currentState", label: "Current State", required: true },
+  { key: "currentZip", label: "Current ZIP / PIN", required: true },
+  { key: "currentCountry", label: "Current Country", required: true },
   // Address (permanent)
   { key: "permanentAddressLine1", label: "Permanent Address Line 1" },
   { key: "permanentAddressLine2", label: "Permanent Address Line 2" },
@@ -186,12 +189,12 @@ const CANONICAL_FIELDS: { key: CanonicalKey; label: string; required?: boolean }
   { key: "emergencyContactPhone", label: "Emergency Contact Phone" },
   { key: "emergencyContactEmail", label: "Emergency Contact Email" },
   // Bank
-  { key: "bankName", label: "Bank Name" },
-  { key: "bankAccountNumber", label: "Bank Account Number" },
-  { key: "bankIfsc", label: "Bank IFSC" },
+  { key: "bankName", label: "Bank Name", required: true },
+  { key: "bankAccountNumber", label: "Bank Account Number", required: true },
+  { key: "bankIfsc", label: "Bank IFSC", required: true },
   { key: "bankAccountHolder", label: "Bank Account Holder Name" },
   // Manager
-  { key: "reportingManagerCode", label: "Reporting Manager (EMP ID)" },
+  { key: "reportingManagerCode", label: "Reporting Manager (EMP ID)", required: true },
   { key: "dottedLineManagerCode", label: "Dotted-line Manager (EMP ID)" },
   // Education / Skills
   { key: "highestQualification", label: "Highest Qualification" },
@@ -294,10 +297,21 @@ function autoMap(headers: string[]): Record<string, CanonicalKey> {
   for (const h of headers) {
     const norm = normalizeHeader(h);
     let mapped: CanonicalKey = "skip";
+    // Pass 1: exact match. Prevents a loose substring alias (e.g. "country" on
+    // Nationality) from hijacking a more specific header ("currentcountry").
     for (const hint of AUTO_MAP_HINTS) {
-      if (hint.patterns.some((p) => norm === p || norm.includes(p))) {
+      if (hint.patterns.some((p) => norm === p)) {
         mapped = hint.key;
         break;
+      }
+    }
+    // Pass 2: substring match, only if no exact match was found.
+    if (mapped === "skip") {
+      for (const hint of AUTO_MAP_HINTS) {
+        if (hint.patterns.some((p) => norm.includes(p))) {
+          mapped = hint.key;
+          break;
+        }
       }
     }
     result[h] = mapped;
@@ -312,37 +326,117 @@ function splitName(full: string): { firstName: string; lastName: string } {
   return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
 }
 
+// Mirrors the Add Employee form (apps/quikhrms/app/(dashboard)/employees/new),
+// ordered by its wizard steps. Every column auto-maps to a CANONICAL_FIELD and is
+// accepted by bulkEmployeeRowSchema, so a downloaded template covers the same
+// fields a manually-added employee would.
+// Downloaded import template exposes the MANDATORY + practically-required columns
+// — the minimum to create a usable employee that will actually import. Note the
+// schema strictly requires only firstName + lastName, but import SKIPS any row
+// with no email, so Work Email is effectively required and must be in the template.
+// Any other field (address, KYC, bank, etc.) can still be added as an extra column
+// in the uploaded file; the column mapper recognises them via autoMap. Keeping the
+// template lean stops users from feeling they must fill 50+ columns.
+// Both the CSV and Excel templates are generated from this same list, so they are
+// always identical.
+// Template columns mirror the single-value fields captured in the Add Employee
+// form (and importable via bulkEmployeeRowSchema). Fields the form doesn't collect
+// were dropped. Fields the form has but bulk import can't set — Role, Salary
+// Template, CTC — plus the repeatable sections (Education/Experience/Family/
+// Certifications) are surfaced as a "finish manually" popup after import instead.
 const TEMPLATE_HEADERS = [
+  // Identity / personal
   "EMP ID",
-  "Employee Name",
+  "First Name",
+  "Middle Name",
+  "Last Name",
   "Work Email",
   "Personal Email",
+  "Gender",
+  "Date of Birth",
+  // Contact
   "Work Phone",
   "Personal Phone",
+  // Emergency contact
+  "Emergency Contact Name",
+  "Emergency Contact Relation",
+  "Emergency Contact Phone",
+  "Emergency Contact Email",
+  // Current address
+  "Current Address Line 1",
+  "Current Address Line 2",
+  "Current City",
+  "Current State",
+  "Current ZIP",
+  "Current Country",
+  // Permanent address
+  "Permanent Address Line 1",
+  "Permanent Address Line 2",
+  "Permanent City",
+  "Permanent State",
+  "Permanent ZIP",
+  "Permanent Country",
+  // Employment
+  "Job Title",
   "Designation",
   "Department",
-  "Team",
-  "Grade",
-  "Employment Type",
-  "Worker Type",
-  "Work Location",
   "Office/Branch",
-  "Source of Hire",
+  "Reporting Manager (EMP ID)",
+  "Employment Type",
+  "Work Location",
   "Notice Period (Days)",
+  "Previous Experience (Months)",
   "Date of Joining",
-  "Date of Birth",
-  "Confirmation Date",
-  "Probation End Date",
-  "Gender",
-  "Marital Status",
-  "Blood Group",
-  "Nationality",
+  // Identity (KYC)
   "PAN Number",
   "Aadhaar Number",
+  // Bank
+  "Bank Name",
+  "Bank Account Number",
+  "Bank IFSC",
+];
+
+// Fields the manual Add Employee form captures that bulk import CANNOT set —
+// shown to the user in a popup after import so they finish these by hand.
+const MANUAL_FOLLOWUP_FIELDS = [
+  "Role & permissions",
+  "Salary Template & CTC (LPA)",
+  "Education history",
+  "Work experience",
+  "Family details",
+  "Certifications",
+];
+
+// Mandatory columns — mirror the required fields in the Add Employee form.
+// Highlighted light red (with a "Required field" note) in the Excel template.
+const MANDATORY_TEMPLATE_HEADERS = [
+  "First Name",
+  "Last Name",
+  "Work Email",
+  "Personal Phone",
+  "Gender",
+  "Date of Birth",
+  "Current Address Line 1",
+  "Current City",
+  "Current State",
+  "Current ZIP",
+  "Current Country",
+  "Job Title",
+  "Designation",
+  "Department",
+  "Office/Branch",
+  "Reporting Manager (EMP ID)",
+  "Date of Joining",
+  "PAN Number",
+  "Aadhaar Number",
+  "Bank Name",
+  "Bank Account Number",
+  "Bank IFSC",
 ];
 
 export default function BulkImportEmployeesPage() {
   const api = useApiClient();
+  const dialog = useDialog();
   const [fileName, setFileName] = useState("");
   const [rawText, setRawText] = useState("");
   const [dryRun, setDryRun] = useState(true);
@@ -404,6 +498,18 @@ export default function BulkImportEmployeesPage() {
             errors: Array.isArray(res.data.errors) ? res.data.errors : [],
           });
           setPendingImportId(null);
+          // Remind the admin which fields bulk import can't set, so they finish
+          // them by hand. Only on a real import that created employees.
+          if (!dryRun && res.data.successRows > 0) {
+            void dialog.alertDialog({
+              title: `${res.data.successRows} employee${res.data.successRows === 1 ? "" : "s"} imported — finish these manually`,
+              description:
+                "Bulk import can't set everything. For each imported employee, open their profile in Employees → Edit and complete:\n\n" +
+                MANUAL_FOLLOWUP_FIELDS.map((f) => `•  ${f}`).join("\n"),
+              variant: "warning",
+              confirmLabel: "Got it",
+            });
+          }
         }
       } catch (err) {
         console.error("[poll] error:", err);
@@ -416,7 +522,7 @@ export default function BulkImportEmployeesPage() {
       cancelled = true;
       clearInterval(handle);
     };
-  }, [pendingImportId, api]);
+  }, [pendingImportId, api, dryRun, dialog]);
 
   const parseCSV = (text: string): { headers: string[]; rows: Record<string, string>[] } => {
     const lines = text.trim().split(/\r?\n/).filter((l) => l.trim());
@@ -802,38 +908,81 @@ export default function BulkImportEmployeesPage() {
     return hasFullName || (hasFirst && hasLast);
   }, [mapping]);
 
-  const downloadTemplate = (format: "csv" | "xlsx") => {
+  const downloadTemplate = async (format: "csv" | "xlsx") => {
     const sampleValues: Record<string, string> = {
+      // Personal
       "EMP ID": "1001",
-      "Employee Name": "Rahul Verma",
+      "First Name": "Rahul",
+      "Middle Name": "Kumar",
+      "Last Name": "Verma",
+      "Gender": "Male",
+      "Date of Birth": "1995-08-12",
+      "Marital Status": "Single",
+      "Blood Group": "O+",
+      "Nationality": "Indian",
+      // Contact
       "Work Email": "rahul@quikit.ai",
       "Personal Email": "rahul.v@gmail.com",
       "Work Phone": "9876543210",
       "Personal Phone": "9988776655",
+      // Emergency contact
+      "Emergency Contact Name": "Suresh Verma",
+      "Emergency Contact Relation": "Father",
+      "Emergency Contact Phone": "9811122233",
+      "Emergency Contact Email": "suresh.verma@gmail.com",
+      // Current address
+      "Current Address Line 1": "12 MG Road",
+      "Current Address Line 2": "Near City Park",
+      "Current City": "Mumbai",
+      "Current State": "Maharashtra",
+      "Current ZIP": "400001",
+      "Current Country": "India",
+      // Permanent address
+      "Permanent Address Line 1": "45 Civil Lines",
+      "Permanent Address Line 2": "",
+      "Permanent City": "Jaipur",
+      "Permanent State": "Rajasthan",
+      "Permanent ZIP": "302006",
+      "Permanent Country": "India",
+      // Employment
       "Designation": "Software Engineer",
       "Department": "Engineering",
       "Team": "Backend",
       "Grade": "L3",
+      "Job Title": "Software Engineer",
+      "Reporting Manager (EMP ID)": "1000",
       "Employment Type": "Full Time",
       "Worker Type": "Permanent",
       "Work Location": "Office",
       "Office/Branch": "Mumbai",
       "Source of Hire": "Referral",
-      "Notice Period (Days)": "30 Days",
+      "Notice Period (Days)": "30",
+      "Previous Experience (Months)": "24",
       "Date of Joining": "2026-04-15",
-      "Date of Birth": "1995-08-12",
       "Confirmation Date": "2026-10-15",
       "Probation End Date": "2026-10-15",
-      "Gender": "Male",
-      "Marital Status": "Single",
-      "Blood Group": "O+",
-      "Nationality": "Indian",
+      // Education & skills
+      "Highest Qualification": "B.Tech Computer Science",
+      "Skills": "Node.js, React, PostgreSQL",
+      // Identity (KYC)
       "PAN Number": "ABCDE1234F",
       "Aadhaar Number": "123456789012",
+      "UAN Number": "100200300400",
+      "PF Account": "MH/BAN/0012345/000/0000456",
+      "ESI Number": "3100123456",
+      "Tax ID (TIN)": "",
+      // Bank
+      "Bank Name": "HDFC Bank",
+      "Bank Account Number": "50100123456789",
+      "Bank IFSC": "HDFC0001234",
+      "Bank Account Holder Name": "Rahul Kumar Verma",
     };
+    // Mandatory columns are suffixed with " *" in BOTH templates so the CSV and
+    // Excel headers match. The " *" is stripped on re-upload (normalizeHeader).
+    const decorate = (h: string) => (MANDATORY_TEMPLATE_HEADERS.includes(h) ? `${h} *` : h);
     if (format === "csv") {
       const csv = [
-        TEMPLATE_HEADERS.join(","),
+        TEMPLATE_HEADERS.map(decorate).join(","),
         TEMPLATE_HEADERS.map((h) => sampleValues[h] ?? "").join(","),
       ].join("\n");
       const blob = new Blob([csv], { type: "text/csv" });
@@ -844,10 +993,40 @@ export default function BulkImportEmployeesPage() {
       a.click();
       URL.revokeObjectURL(url);
     } else {
-      const ws = utils.json_to_sheet([sampleValues], { header: TEMPLATE_HEADERS });
-      const wb = utils.book_new();
-      utils.book_append_sheet(wb, ws, "Employees");
-      writeFile(wb, "employee-import-template.xlsx");
+      // exceljs (not the community xlsx build) supports cell fills, so mandatory
+      // header cells can be shaded light red.
+      const ExcelJS = (await import("exceljs")).default;
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet("Employees");
+      ws.columns = TEMPLATE_HEADERS.map((h) => ({
+        header: decorate(h),
+        key: h,
+        width: Math.max(16, decorate(h).length + 4),
+      }));
+      ws.addRow(TEMPLATE_HEADERS.map((h) => sampleValues[h] ?? ""));
+
+      const headerRow = ws.getRow(1);
+      headerRow.font = { bold: true };
+      TEMPLATE_HEADERS.forEach((h, i) => {
+        const cell = headerRow.getCell(i + 1);
+        const required = MANDATORY_TEMPLATE_HEADERS.includes(h);
+        // Required = light red, optional = light gray.
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: required ? "FFFCE4E4" : "FFF2F2F2" },
+        };
+        cell.note = required ? "Required field" : "Optional field";
+      });
+
+      const buf = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "employee-import-template.xlsx";
+      a.click();
+      URL.revokeObjectURL(url);
     }
   };
 
@@ -888,31 +1067,31 @@ export default function BulkImportEmployeesPage() {
 
   return (
     <div className="max-w-6xl">
-      <div className="flex items-center gap-3 mb-6">
-        <Upload className="text-[#3b82f6]" />
-        <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">
+      <div className="flex items-center gap-3 mb-4">
+        <Upload className="text-[#22c55e]" />
+        <h1 className="text-base font-semibold text-gray-900">
           Bulk Employee Import
         </h1>
       </div>
 
       {/* Step 1: Upload */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 mb-4">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="font-semibold text-gray-900">1. Upload File</h2>
+          <h2 className="text-[13px] font-semibold text-gray-900">1. Upload File</h2>
           <div className="flex gap-2">
             <button
               type="button"
               onClick={() => downloadTemplate("csv")}
-              className="flex items-center gap-1 text-xs text-[#2563eb] hover:underline"
+              className="flex items-center gap-1 text-xs font-medium text-[#16a34a] hover:underline"
             >
-              <Download size={12} /> CSV template
+              <Download size={13} /> CSV template
             </button>
             <button
               type="button"
               onClick={() => downloadTemplate("xlsx")}
-              className="flex items-center gap-1 text-xs text-[#2563eb] hover:underline"
+              className="flex items-center gap-1 text-xs font-medium text-[#16a34a] hover:underline"
             >
-              <Download size={12} /> Excel template
+              <Download size={13} /> Excel template
             </button>
           </div>
         </div>
@@ -923,7 +1102,7 @@ export default function BulkImportEmployeesPage() {
           type="file"
           accept=".csv,.xlsx,.xls"
           onChange={handleFile}
-          className="block w-full text-sm text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-[#dbeafe] file:text-[#2563eb] hover:file:bg-[#dbeafe]"
+          className="block w-full text-xs text-gray-700 file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-[#dcfce7] file:text-[#16a34a] hover:file:bg-[#dcfce7]"
         />
 
         {parseError && (
@@ -953,8 +1132,8 @@ export default function BulkImportEmployeesPage() {
 
       {/* Step 2: Map Columns */}
       {headers.length > 0 && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 mb-4">
-          <h2 className="font-semibold text-gray-900 mb-1">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
+          <h2 className="text-[13px] font-semibold text-gray-900 mb-1">
             2. Map Your Columns to HRMS Fields
           </h2>
           <p className="text-xs text-gray-500 mb-3">
@@ -964,16 +1143,19 @@ export default function BulkImportEmployeesPage() {
 
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-xs text-gray-600 uppercase">
+              <thead className="bg-gray-50 text-table-head text-gray-600 uppercase">
                 <tr>
                   <th className="text-left px-3 py-2 font-medium">Your Column</th>
                   <th className="text-left px-3 py-2 font-medium">Sample Value</th>
                   <th className="text-left px-3 py-2 font-medium">Map To</th>
+                  <th className="text-left px-3 py-2 font-medium">Required</th>
                 </tr>
               </thead>
               <tbody>
                 {headers.map((h) => {
                   const sample = rawRows[0]?.[h] ?? "";
+                  const mappedKey = mapping[h] ?? "skip";
+                  const mappedField = CANONICAL_FIELDS.find((f) => f.key === mappedKey);
                   return (
                     <tr key={h} className="border-t border-gray-100">
                       <td className="px-3 py-2 font-medium text-gray-900">{h}</td>
@@ -981,20 +1163,28 @@ export default function BulkImportEmployeesPage() {
                         {sample || <span className="text-gray-400">empty</span>}
                       </td>
                       <td className="px-3 py-2">
-                        <select
-                          value={mapping[h] ?? "skip"}
-                          onChange={(e) =>
-                            setMapping({ ...mapping, [h]: e.target.value as CanonicalKey })
+                        <Select
+                          value={mappedKey}
+                          onChange={(v) =>
+                            setMapping({ ...mapping, [h]: v as CanonicalKey })
                           }
-                          className="w-full border border-[var(--border)] rounded-lg px-2 py-1.5 text-sm"
-                        >
-                          {CANONICAL_FIELDS.map((f) => (
-                            <option key={f.key} value={f.key}>
-                              {f.label}
-                              {f.required ? " *" : ""}
-                            </option>
-                          ))}
-                        </select>
+                          size="sm"
+                          className="w-full"
+                          searchable
+                          options={CANONICAL_FIELDS.map((f) => ({
+                            value: f.key,
+                            label: f.required ? `${f.label} *` : f.label,
+                          }))}
+                        />
+                      </td>
+                      <td className="px-3 py-2">
+                        {mappedKey === "skip" || !mappedField ? (
+                          <span className="text-xs text-gray-400">—</span>
+                        ) : mappedField.required ? (
+                          <span className="inline-flex items-center rounded-full bg-red-50 text-red-700 ring-1 ring-red-200 px-2 py-0.5 text-[11px] font-medium">Required</span>
+                        ) : (
+                          <span className="inline-flex items-center rounded-full bg-gray-100 text-gray-500 px-2 py-0.5 text-[11px] font-medium">Optional</span>
+                        )}
                       </td>
                     </tr>
                   );
@@ -1021,10 +1211,10 @@ export default function BulkImportEmployeesPage() {
           <div className="flex items-start gap-2 mb-2">
             <AlertTriangle size={18} className="text-orange-600 flex-shrink-0 mt-0.5" />
             <div>
-              <h3 className="font-semibold text-orange-900">
+              <h3 className="text-[13px] font-semibold text-orange-900">
                 {rowsMissingEmail.length} row{rowsMissingEmail.length > 1 ? "s" : ""} missing email — will be skipped
               </h3>
-              <p className="text-sm text-orange-800 mt-1">
+              <p className="text-xs text-orange-800 mt-1">
                 Each employee needs at least a Work Email or Personal Email. Rows below will not be imported until you provide an email.
               </p>
             </div>
@@ -1042,8 +1232,8 @@ export default function BulkImportEmployeesPage() {
 
       {/* Step 3: Preview */}
       {enrichedRows.length > 0 && mappingValid && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 mb-4">
-          <h2 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
+          <h2 className="text-[13px] font-semibold text-gray-900 mb-3 flex items-center gap-2">
             <FileText size={16} /> 3. Preview ({enrichedRows.length} rows)
           </h2>
           {Object.keys(subSheets).length > 0 && (
@@ -1051,7 +1241,7 @@ export default function BulkImportEmployeesPage() {
               {(Object.entries(subSheets) as Array<[string, Map<string, Record<string, string>[]>]>).map(([type, m]) => {
                 const total = Array.from(m.values()).reduce((n, a) => n + a.length, 0);
                 return (
-                  <span key={type} className="text-[11px] font-medium bg-blue-50 text-blue-700 ring-1 ring-blue-200 px-2 py-0.5 rounded">
+                  <span key={type} className="text-[11px] font-medium bg-green-50 text-green-700 ring-1 ring-green-200 px-2 py-0.5 rounded">
                     {type}: {total} row{total === 1 ? "" : "s"} across {m.size} employee{m.size === 1 ? "" : "s"}
                   </span>
                 );
@@ -1070,11 +1260,11 @@ export default function BulkImportEmployeesPage() {
             return (
               <div className="overflow-auto max-h-[480px] mb-3 border border-gray-100 rounded">
                 <table className="text-xs min-w-max">
-                  <thead className="bg-gray-50 text-gray-600 sticky top-0 z-10">
+                  <thead className="bg-gray-50 text-table-head text-gray-600 sticky top-0 z-10">
                     <tr>
                       <th className="text-left px-2 py-1 sticky left-0 bg-gray-50 z-20">#</th>
                       {allKeys.map((k) => (
-                        <th key={k} className={"text-left px-2 py-1 whitespace-nowrap" + (arrayKeysPresent.includes(k) ? " bg-blue-50 text-blue-700" : "")}>{k}</th>
+                        <th key={k} className={"text-left px-2 py-1 whitespace-nowrap" + (arrayKeysPresent.includes(k) ? " bg-green-50 text-green-700" : "")}>{k}</th>
                       ))}
                     </tr>
                   </thead>
@@ -1086,7 +1276,7 @@ export default function BulkImportEmployeesPage() {
                           const v = (r as Record<string, unknown>)[k];
                           if (Array.isArray(v)) {
                             return (
-                              <td key={k} className="px-2 py-1 whitespace-nowrap text-blue-700">
+                              <td key={k} className="px-2 py-1 whitespace-nowrap text-green-700">
                                 <details>
                                   <summary className="cursor-pointer font-semibold">{v.length} item{v.length === 1 ? "" : "s"}</summary>
                                   <ul className="mt-1 ml-3 list-disc space-y-0.5 text-gray-700 font-normal">
@@ -1119,7 +1309,7 @@ export default function BulkImportEmployeesPage() {
 
           <div className="flex items-center justify-between pt-3 border-t border-gray-100">
             <div className="flex flex-col gap-1.5">
-              <label className="flex items-center gap-2 text-sm">
+              <label className="flex items-center gap-2 text-xs">
                 <input
                   type="checkbox"
                   checked={dryRun}
@@ -1127,7 +1317,7 @@ export default function BulkImportEmployeesPage() {
                 />
                 Dry run (validate only, don&apos;t insert)
               </label>
-              <label className="flex items-center gap-2 text-sm">
+              <label className="flex items-center gap-2 text-xs">
                 <input
                   type="checkbox"
                   checked={markActive}
@@ -1151,7 +1341,7 @@ export default function BulkImportEmployeesPage() {
                   : dryRun
                     ? "Validate"
                     : "Import"}
-              {!importMut.isPending && !pendingImportId && <ArrowRight size={14} />}
+              {!importMut.isPending && !pendingImportId && <ArrowRight size={13} />}
             </button>
           </div>
         </div>
@@ -1159,16 +1349,16 @@ export default function BulkImportEmployeesPage() {
 
       {/* In-progress poll banner */}
       {pendingImportId && pollProgress && (
-        <div className="bg-blue-50 border border-blue-300 rounded-lg p-4 mb-4">
+        <div className="bg-green-50 border border-green-300 rounded-lg p-4 mb-4">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="font-semibold text-blue-900">
+            <h3 className="text-[13px] font-semibold text-green-900">
               Import {pollProgress.status === "ImportPending" ? "queued" : "processing"}…
             </h3>
-            <span className="text-xs font-mono text-blue-700">{pendingImportId}</span>
+            <span className="text-xs font-mono text-green-700">{pendingImportId}</span>
           </div>
-          <div className="w-full bg-blue-100 rounded h-2 overflow-hidden">
+          <div className="w-full bg-green-100 rounded h-2 overflow-hidden">
             <div
-              className="bg-blue-500 h-2 transition-all"
+              className="bg-green-500 h-2 transition-all"
               style={{
                 width:
                   pollProgress.totalRows > 0
@@ -1177,20 +1367,20 @@ export default function BulkImportEmployeesPage() {
               }}
             />
           </div>
-          <div className="text-xs text-blue-800 mt-2 flex gap-4">
+          <div className="text-xs text-green-800 mt-2 flex gap-4">
             <span>Total: {pollProgress.totalRows}</span>
             <span>Processed: {pollProgress.processedRows}</span>
             <span className="text-green-700">OK: {pollProgress.successRows}</span>
             <span className="text-red-700">Failed: {pollProgress.failedRows}</span>
           </div>
-          <p className="text-[11px] text-blue-700 mt-1">Safe to leave page — refresh to resume polling.</p>
+          <p className="text-[11px] text-green-700 mt-1">Safe to leave page — refresh to resume polling.</p>
         </div>
       )}
 
       {/* Step 4: Result */}
       {result && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
-          <h2 className="font-semibold text-gray-900 mb-3">4. Result</h2>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+          <h2 className="text-[13px] font-semibold text-gray-900 mb-3">4. Result</h2>
           <div className="grid grid-cols-3 gap-3 mb-4">
             <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-center gap-2">
               <CheckCircle className="text-green-600" size={20} />
@@ -1215,7 +1405,7 @@ export default function BulkImportEmployeesPage() {
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <AlertTriangle className="text-yellow-600" size={14} />
-                <h3 className="font-medium text-gray-900 text-sm">Errors</h3>
+                <h3 className="text-[13px] font-semibold text-gray-900">Errors</h3>
               </div>
               <div className="space-y-1 max-h-64 overflow-y-auto">
                 {result.errors.map((e, i) => (
@@ -1228,6 +1418,23 @@ export default function BulkImportEmployeesPage() {
                 ))}
               </div>
             </div>
+          )}
+          {result.success > 0 && (
+            <>
+              <div className="mt-4 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2.5">
+                <p className="text-xs font-semibold text-amber-900 mb-1">Finish these manually for each imported employee</p>
+                <p className="text-[11px] text-amber-800 mb-1.5">Bulk import can&apos;t set these — open the profile in Employees → Edit:</p>
+                <ul className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px] text-amber-800 list-disc list-inside">
+                  {MANUAL_FOLLOWUP_FIELDS.map((f) => <li key={f}>{f}</li>)}
+                </ul>
+              </div>
+              <div className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-green-50 border border-green-200 px-3 py-2.5">
+                <p className="text-xs text-green-800">Imported employees aren&apos;t invited yet — send their portal invites from the Users screen.</p>
+                <Link href="/settings/users" className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 transition">
+                  Go to Users
+                </Link>
+              </div>
+            </>
           )}
         </div>
       )}

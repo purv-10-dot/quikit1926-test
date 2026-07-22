@@ -125,10 +125,10 @@ export default function Form16Page() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <FileBadge className="text-[#3b82f6]" />
+          <FileBadge className="text-[#22c55e]" />
           <div>
-            <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">Tax computation</h1>
-            <p className="text-sm text-gray-500">FY-end TDS certificate (Form 16) — Part A (TRACES) + Part B (salary breakup).</p>
+            <h1 className="text-page-title text-gray-900">Tax computation</h1>
+            <p className="text-xs text-gray-500">FY-end TDS certificate (Form 16) — Part A (TRACES) + Part B (salary breakup).</p>
           </div>
         </div>
         <Select
@@ -143,7 +143,7 @@ export default function Form16Page() {
         />
       </div>
 
-      <div className="rounded-md border border-[#dbeafe] bg-[#dbeafe] px-4 py-3 text-xs text-[#1d4ed8] flex items-start gap-2">
+      <div className="rounded-md border border-[#dcfce7] bg-[#dcfce7] px-4 py-3 text-xs text-[#15803d] flex items-start gap-2">
         <AlertCircle size={14} className="mt-0.5 shrink-0" />
         <div>
           <p className="font-semibold">About Tax computation (Form 16)</p>
@@ -156,8 +156,8 @@ export default function Form16Page() {
       </div>
 
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-100">
-          <h2 className="text-sm font-bold text-gray-900">Part B Summary — FY {fy}</h2>
+        <div className="px-4 py-3 border-b border-gray-100">
+          <h2 className="text-[13px] font-semibold text-gray-900">Part B Summary — FY {fy}</h2>
           <p className="text-xs text-gray-500 mt-0.5">
             {isLoading ? "Loading..." : res ? `${res.employeeCount} employees with released payslips in this FY.` : "—"}
           </p>
@@ -166,13 +166,13 @@ export default function Form16Page() {
         {isLoading ? (
           <div className="p-4"><SkeletonTable rows={6} cols={5} /></div>
         ) : !res || res.summaries.length === 0 ? (
-          <div className="py-12 text-center text-sm text-gray-500">
+          <div className="py-12 text-center text-xs text-gray-500">
             No released payroll data for FY {fy} yet. Run and release pay runs to populate the tax computation.
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">
+              <tr className="text-table-head font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">
                 <th className="text-left py-2 px-3">Employee</th>
                 <th className="text-left py-2 px-3">PAN</th>
                 <th className="text-right py-2 px-3">Months</th>
@@ -188,7 +188,7 @@ export default function Form16Page() {
               {res.summaries.map((s, i) => (
                 <tr key={s.employeeId} className="row-stagger border-b border-gray-50 hover:bg-gray-50" style={{ ["--i" as never]: Math.min(i, 10) }}>
                   <td className="py-3 px-3">
-                    <p className="font-medium text-gray-900">{s.employee.name}</p>
+                    <p className="text-[13px] font-medium text-gray-900">{s.employee.name}</p>
                     <p className="text-xs text-gray-500">{s.employee.employeeCode} · {s.employee.department ?? "—"}</p>
                   </td>
                   <td className="py-3 px-3 font-mono text-xs text-gray-700">{s.employee.pan ?? <span className="text-red-500">— Missing —</span>}</td>
@@ -203,7 +203,7 @@ export default function Form16Page() {
                       onClick={() => setViewTarget(s)}
                       disabled={!s.employee.pan}
                       title={!s.employee.pan ? "Employee PAN missing" : "View tax computation (Form 16 Part B)"}
-                      className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded"
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded"
                     >
                       <Eye size={12} /> View
                     </button>
@@ -214,16 +214,16 @@ export default function Form16Page() {
           </table>
         )}
 
-        <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between bg-gray-50/50">
+        <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-between bg-gray-50/50">
           <p className="text-xs text-gray-500">
             Generate consolidated PDFs for all employees, or download per-employee tax computation.
           </p>
           <button
             onClick={downloadAll}
             disabled={bulkBusy || !res || res.summaries.length === 0}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#16243A] hover:bg-[#1E3354] disabled:bg-gray-300 disabled:text-gray-600 disabled:cursor-not-allowed text-white rounded-md text-sm font-semibold"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:text-gray-600 disabled:cursor-not-allowed text-white rounded-md text-xs font-medium"
           >
-            {bulkBusy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+            {bulkBusy ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
             {bulkBusy ? "Downloading…" : "Generate Bulk Tax Computation (PDF)"}
           </button>
         </div>
@@ -306,11 +306,11 @@ function TaxComputationModal({
         {/* Header */}
         <div className="flex items-start justify-between p-4 border-b border-gray-100 bg-gradient-to-r from-[#f8fafc] to-white">
           <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-full bg-green-50 text-green-700 flex items-center justify-center shrink-0">
               <FileBadge size={18} />
             </div>
             <div>
-              <h3 className="text-base font-bold text-gray-900">Form 16 — Part B (Tax Computation)</h3>
+              <h3 className="text-[13px] font-semibold text-gray-900">Form 16 — Part B (Tax Computation)</h3>
               <p className="text-xs text-gray-500 mt-0.5">
                 {partB?.employee.name ?? fallbackName} · FY {fy}
                 {partB && ` · AY ${partB.assessmentYear} · ${partB.regime === "OldRegime" ? "Old Regime" : "New Regime"}`}
@@ -318,12 +318,12 @@ function TaxComputationModal({
             </div>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-            <X size={16} />
+            <X size={12} />
           </button>
         </div>
 
         {/* Body */}
-        <div className="overflow-y-auto p-5 space-y-4">
+        <div className="overflow-y-auto p-4 space-y-4">
           {isLoading && (
             <div className="space-y-2">
               <SkeletonLine w="60%" h={14} />
@@ -345,13 +345,13 @@ function TaxComputationModal({
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
                   <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Employer</p>
-                  <p className="text-sm font-semibold text-gray-900">{partB.employer.name ?? "—"}</p>
+                  <p className="text-[13px] font-semibold text-gray-900">{partB.employer.name ?? "—"}</p>
                   <p className="text-[11px] text-gray-600">PAN: <span className="font-mono">{partB.employer.pan ?? "—"}</span></p>
                   {partB.employer.address && <p className="text-[11px] text-gray-500 mt-1">{partB.employer.address}</p>}
                 </div>
                 <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
                   <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Employee</p>
-                  <p className="text-sm font-semibold text-gray-900">{partB.employee.name}</p>
+                  <p className="text-[13px] font-semibold text-gray-900">{partB.employee.name}</p>
                   <p className="text-[11px] text-gray-600">PAN: <span className="font-mono">{partB.employee.pan ?? "—"}</span> · {partB.employee.employeeCode}</p>
                   <p className="text-[11px] text-gray-500 mt-1">
                     {partB.employee.designation ?? "—"} · {partB.employee.department ?? "—"}
@@ -427,7 +427,7 @@ function TaxComputationModal({
               {partB.tds.monthly.length > 0 && (
                 <Section title="F. Monthly Salary & TDS Schedule">
                   <table className="w-full text-xs">
-                    <thead className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                    <thead className="text-table-head font-bold text-gray-500 uppercase tracking-wider">
                       <tr className="border-b border-gray-200">
                         <th className="text-left py-2 px-3">Month</th>
                         <th className="text-right py-2 px-3">Gross Paid</th>
@@ -464,7 +464,7 @@ function TaxComputationModal({
             <button
               type="button"
               onClick={onClose}
-              className="px-3 py-1.5 text-sm border border-gray-300 bg-white hover:bg-gray-50 rounded-md text-gray-700"
+              className="px-3 py-1.5 text-xs font-medium border border-gray-300 bg-white hover:bg-gray-50 rounded-md text-gray-700"
             >
               Close
             </button>
@@ -472,9 +472,9 @@ function TaxComputationModal({
               type="button"
               onClick={downloadPdf}
               disabled={downloading || !partB}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 text-white rounded-md font-semibold"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-md font-medium"
             >
-              {downloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+              {downloading ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
               {downloading ? "Downloading…" : "Download PDF"}
             </button>
           </div>
@@ -499,12 +499,12 @@ function Section({
     tone === "amber" ? "border-amber-200 bg-amber-50/40" :
     tone === "rose" ? "border-rose-200 bg-rose-50/40" :
     tone === "emerald" ? "border-emerald-200 bg-emerald-50/40" :
-    "border-blue-200 bg-blue-50/40";
+    "border-green-200 bg-green-50/40";
   const headerCls =
     tone === "amber" ? "text-amber-900 bg-amber-100/60" :
     tone === "rose" ? "text-rose-900 bg-rose-100/60" :
     tone === "emerald" ? "text-emerald-900 bg-emerald-100/60" :
-    "text-blue-900 bg-blue-100/60";
+    "text-green-900 bg-green-100/60";
   return (
     <div className={`rounded-md border ${toneCls} overflow-hidden`}>
       <div className={`px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider ${headerCls}`}>

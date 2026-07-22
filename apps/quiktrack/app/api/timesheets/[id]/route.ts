@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
+import { hasAdminAccess, isProjectSpaceAdmin } from "@/lib/api/permissions";
 
 const updateSchema = z.object({
   hours: z.number().min(0).max(24).optional(),
@@ -20,8 +21,23 @@ export const GET = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, {
     },
   });
   if (!entry) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
-  if (entry.userId !== userId) return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
-  return NextResponse.json({ success: true, data: entry });
+  // The owner may always view. Org admins and the entry's project Space Admin
+  // may also view it — they already see the aggregated totals in the grid, so
+  // the per-entry detail popover should open for them too.
+  const canView =
+    entry.userId === userId ||
+    (await hasAdminAccess(userId, orgId)) ||
+    (await isProjectSpaceAdmin(userId, entry.projectId));
+  if (!canView) return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
+  // Resolve the entry's OWNER so the detail popover shows whose time this is
+  // (QtTimesheetEntry has no user relation — look it up by userId). Without this
+  // the popover fell back to the logged-in user's name, mislabelling another
+  // person's entry once admins/Space Admins could view it.
+  const owner = await db.user.findUnique({
+    where: { id: entry.userId },
+    select: { firstName: true, lastName: true, email: true },
+  });
+  return NextResponse.json({ success: true, data: { ...entry, user: owner } });
 });
 
 export const PATCH = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {

@@ -251,6 +251,21 @@ export const MODULE_REGISTRY: AppModuleConfig[] = [
       { key: "underwriting.termSheet",        label: "Term Sheet Template", icon: "FileText", href: "/admin/term-sheet-template", parentKey: "underwriting" },
     ],
   },
+  {
+    // QuikChat — team messaging SPA. Flat module list (no sub-modules); the
+    // app is a single authed page, so modules toggle affordances/routes rather
+    // than sidebar nav entries. `messaging` is the always-on core (never
+    // disabled). All default-on (no `defaultDisabled`). Read-only in QuikChat:
+    // super admins toggle these; QuikChat only reads the flags (RBAC Phase 3).
+    appSlug: "quikchat",
+    modules: [
+      { key: "messaging", label: "Messaging", icon: "MessageSquare" },
+      { key: "calls", label: "Calls", icon: "Phone" },
+      { key: "assistant", label: "Assistant", icon: "Sparkles" },
+      { key: "calendar", label: "Calendar", icon: "Calendar" },
+      { key: "knowledge_base", label: "Knowledge Base", icon: "BookOpen" },
+    ],
+  },
 ];
 
 /* ─── Utilities ───────────────────────────────────────────────────────── */

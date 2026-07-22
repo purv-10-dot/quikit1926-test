@@ -39,20 +39,10 @@ const NO: PermCell = { code: null };
 const c = (code: string): PermCell => ({ code });
 
 export const PERMISSION_TREE: PermModule[] = [
-  {
-    key: "Dashboard",
-    label: "Dashboard",
-    leaves: [
-      { resource: "Dashboard", label: "Dashboard", actions: { view: c("hrms.dashboard.employee"), create: NO, update: NO, delete: NO } },
-      { resource: "Dashboard.Admin",   label: "Admin Dashboard",     actions: { view: c("hrms.dashboard.admin"),     create: NO, update: NO, delete: NO } },
-      { resource: "Dashboard.HR",      label: "HR Dashboard",        actions: { view: c("hrms.dashboard.hr"),        create: NO, update: NO, delete: NO } },
-      { resource: "Dashboard.Manager", label: "Manager Dashboard",   actions: { view: c("hrms.dashboard.manager"),   create: NO, update: NO, delete: NO } },
-      { resource: "Dashboard.Recruit", label: "Recruiter Dashboard", actions: { view: c("hrms.dashboard.recruiter"), create: NO, update: NO, delete: NO } },
-      { resource: "Dashboard.Finance", label: "Finance Dashboard",   actions: { view: c("hrms.dashboard.finance"),   create: NO, update: NO, delete: NO } },
-      { resource: "Dashboard.IT",      label: "IT Dashboard",        actions: { view: c("hrms.dashboard.it"),        create: NO, update: NO, delete: NO } },
-      { resource: "Dashboard.Audit",   label: "Audit Dashboard",     actions: { view: c("hrms.dashboard.audit"),     create: NO, update: NO, delete: NO } },
-    ],
-  },
+  // NOTE: Dashboards are intentionally NOT permission-gated here. Which dashboard
+  // a user lands on is derived from their role name (see widgetsForRole), so
+  // exposing per-dashboard view tickboxes was confusing and did nothing. This
+  // grid is only for real data entities with meaningful create/update/delete.
   {
     key: "Employee",
     label: "Employee",
@@ -134,15 +124,6 @@ export const PERMISSION_TREE: PermModule[] = [
     ],
   },
   {
-    key: "Asset",
-    label: "Asset",
-    leaves: [
-      { resource: "Asset",      label: "All Assets",  actions: { view: c("hrms.asset.read"),      create: c("hrms.asset.write"), update: c("hrms.asset.write"), delete: NO } },
-      { resource: "Asset.Self", label: "Own Assets",  actions: { view: c("hrms.asset.read_self"), create: NO, update: NO, delete: NO } },
-      { resource: "Asset.Team", label: "Team Assets", actions: { view: c("hrms.asset.read_team"), create: NO, update: NO, delete: NO } },
-    ],
-  },
-  {
     key: "Document",
     label: "Document",
     leaves: [
@@ -158,16 +139,6 @@ export const PERMISSION_TREE: PermModule[] = [
     leaves: [
       { resource: "Onboarding",  label: "Onboarding",  actions: { view: c("hrms.onboarding.read"),  create: c("hrms.onboarding.write"),  update: c("hrms.onboarding.write"), delete: NO } },
       { resource: "Offboarding", label: "Offboarding", actions: { view: c("hrms.offboarding.read"), create: c("hrms.offboarding.write"), update: c("hrms.offboarding.write"), delete: NO } },
-    ],
-  },
-  {
-    key: "Ticket",
-    label: "Help Desk",
-    leaves: [
-      { resource: "Ticket",         label: "All Tickets",      actions: { view: c("hrms.ticket.read"),         create: NO, update: c("hrms.ticket.write"), delete: c("hrms.ticket.delete") } },
-      { resource: "Ticket.Self",    label: "Own Tickets",      actions: { view: c("hrms.ticket.read_self"),    create: c("hrms.ticket.raise"), update: NO, delete: NO } },
-      { resource: "Ticket.Assigned",label: "Assigned Tickets", actions: { view: c("hrms.ticket.read_assigned"), create: NO, update: NO, delete: NO } },
-      { resource: "Ticket.Manage",  label: "Manage Categories / SLA", actions: { view: NO, create: NO, update: c("hrms.ticket.manage"), delete: NO } },
     ],
   },
   {
@@ -231,26 +202,37 @@ export interface NavGroup {
   items: NavItem[];
 }
 
+/**
+ * Complete mirror of the app sidebar (`components/hrms/layout/sidebar.tsx`).
+ * Every top-level tab and every sub-tab is listed here so roles can be
+ * customised down to the individual navigation item. Groups are the sidebar's
+ * expandable parents; standalone top-level links live under "General".
+ *
+ * Keep this in sync whenever a nav item is added/removed in the sidebar.
+ */
 export const NAV_TREE: NavGroup[] = [
   {
-    key: "core",
-    label: "Core",
+    key: "general",
+    label: "General",
     items: [
       { key: "dashboard", label: "Dashboard" },
-      { key: "tasks", label: "Tasks" },
-      { key: "tickets", label: "Help Desk" },
+      { key: "tasks", label: "Todo" },
+      { key: "wfh", label: "Work From Home" },
+      { key: "claims", label: "Claims & Declarations" },
+      { key: "expenses", label: "Expenses" },
     ],
   },
   {
     key: "people",
     label: "People",
     items: [
-      { key: "people.org-chart", label: "Org Chart" },
+      { key: "people.directory", label: "People" },
       { key: "people.history", label: "Employment History" },
       { key: "people.delegations", label: "Delegations" },
       { key: "people.onboarding", label: "Onboarding" },
       { key: "people.offboarding", label: "Offboarding" },
-      { key: "people.recruit", label: "Recruitment" },
+      { key: "people.requisition", label: "Raise Requisition" },
+      { key: "people.requisition-approvals", label: "Requisition Approvals" },
     ],
   },
   {
@@ -258,19 +240,20 @@ export const NAV_TREE: NavGroup[] = [
     label: "Time & Attendance",
     items: [
       { key: "time.attendance", label: "Attendance" },
+      { key: "time.attendance-admin", label: "Admin Attendance" },
+      { key: "time.regularizations", label: "Regularization Approvals" },
+      { key: "time.roster", label: "Duty Roster" },
       { key: "time.shifts", label: "Shifts" },
-      { key: "time.regularization", label: "Regularizations" },
-      { key: "time.logs", label: "Time Logs" },
     ],
   },
   {
     key: "leave",
-    label: "Leave",
+    label: "Leaves",
     items: [
       { key: "leave.my", label: "My Leaves" },
       { key: "leave.team", label: "Team Leaves" },
-      { key: "leave.calendar", label: "Calendar" },
-      { key: "leave.policies", label: "Policies" },
+      { key: "leave.calendar", label: "Leave & Holiday Calendar" },
+      { key: "leave.policies", label: "Leave Types" },
     ],
   },
   {
@@ -279,9 +262,16 @@ export const NAV_TREE: NavGroup[] = [
     items: [
       { key: "payroll.analytics", label: "Analytics" },
       { key: "payroll.runs", label: "Pay Runs" },
-      { key: "payroll.salaries", label: "Salaries" },
+      { key: "payroll.salaries", label: "Employee Salaries" },
+      { key: "payroll.approvals", label: "Approvals" },
+      { key: "payroll.tax-filings", label: "Tax Filings" },
+      { key: "payroll.tds", label: "TDS & Challans" },
+      { key: "payroll.one-time", label: "One-Time Pay & Deductions" },
+      { key: "payroll.full-final", label: "Full & Final" },
       { key: "payroll.reports", label: "Reports" },
-      { key: "payroll.my", label: "My Payslips" },
+      { key: "payroll.my", label: "My Payroll" },
+      { key: "payroll.advances", label: "Loans & Giving" },
+      { key: "payroll.prior", label: "Mid-year Joiners" },
     ],
   },
   {
@@ -289,27 +279,58 @@ export const NAV_TREE: NavGroup[] = [
     label: "Performance",
     items: [
       { key: "perf.goals", label: "Goals" },
-      { key: "perf.appraisals", label: "Appraisals" },
+      { key: "perf.kra-templates", label: "KRA/KPI Templates" },
+      { key: "perf.kra-assignments", label: "KRA Assignments" },
+      { key: "perf.reviews", label: "Reviews" },
       { key: "perf.feedback", label: "Feedback" },
+      { key: "perf.pip", label: "PIP" },
+    ],
+  },
+  {
+    key: "recruit",
+    label: "Recruit",
+    items: [
+      { key: "recruit.requisitions", label: "Requisitions" },
+      { key: "recruit.candidates", label: "Candidates" },
+      { key: "recruit.pipeline", label: "Pipeline" },
+      { key: "recruit.interviews", label: "Interviews" },
+      { key: "recruit.candidate-doc-types", label: "Candidate Document Types" },
     ],
   },
   {
     key: "engage",
-    label: "Engagement",
+    label: "Engage",
     items: [
-      { key: "engage.wall", label: "Engagement Wall" },
+      { key: "engage.social-wall", label: "Social Wall" },
       { key: "engage.announcements", label: "Announcements" },
       { key: "engage.surveys", label: "Surveys" },
+      { key: "engage.recognition", label: "Recognition" },
+      { key: "engage.approvals", label: "Approvals" },
     ],
   },
   {
-    key: "settings",
-    label: "Settings",
+    key: "documents",
+    label: "Documents",
     items: [
-      { key: "settings.company", label: "Company" },
-      { key: "settings.org", label: "Org Structure" },
-      { key: "settings.roles", label: "Roles & Permissions" },
-      { key: "settings.audit", label: "Audit Log" },
+      { key: "documents.company", label: "Company Documents" },
+      { key: "documents.my-vault", label: "My Vault" },
+    ],
+  },
+  {
+    key: "reports",
+    label: "Reports",
+    items: [
+      { key: "reports.dashboards", label: "Dashboards" },
+      { key: "reports.analytics", label: "Analytics" },
+      { key: "reports.query-builder", label: "Query Builder" },
+    ],
+  },
+  {
+    key: "administration",
+    label: "Administration",
+    items: [
+      { key: "admin.users", label: "Users" },
+      { key: "admin.settings", label: "Settings" },
     ],
   },
 ];

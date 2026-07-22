@@ -55,32 +55,41 @@ export default function ExpensePoliciesPage() {
     queryFn: () => api.get<Policy[]>("/api/v1/hrms/expenses/policies?limit=100"),
   });
 
+  // Refresh both this page's list (["expense-policies"]) AND the New Expense
+  // Claim form's policy dropdown (["expenses","policies"]) — otherwise, with the
+  // 60s staleTime, a freshly created/activated policy won't show in the claim
+  // form until its cache expires.
+  const invalidatePolicies = () => {
+    qc.invalidateQueries({ queryKey: ["expense-policies"] });
+    qc.invalidateQueries({ queryKey: ["expenses"] });
+  };
+
   const createMut = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.post("/api/v1/hrms/expenses/policies", body),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["expense-policies"] }); setShowModal(false); },
+    onSuccess: () => { invalidatePolicies(); setShowModal(false); },
   });
 
   const updateMut = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.put(`/api/v1/hrms/expenses/policies/${editingId}`, body),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["expense-policies"] }); setShowModal(false); setEditingId(null); },
+    onSuccess: () => { invalidatePolicies(); setShowModal(false); setEditingId(null); },
   });
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => api.delete(`/api/v1/hrms/expenses/policies/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["expense-policies"] }),
+    onSuccess: () => invalidatePolicies(),
   });
 
   const policies = data?.data ?? [];
 
   return (
-    <div className="w-full px-6 py-6">
+    <div className="w-full px-5 py-4">
       <PageHeader
-        icon={<ShieldCheck size={28} className="text-[#3b82f6]" />}
+        icon={<ShieldCheck size={28} className="text-[#22c55e]" />}
         title="Expense policies"
         subtitle="Per-category caps and rules."
         actions={
           <button onClick={openCreate} className="btn btn-primary">
-            <Plus size={14} /> New policy
+            <Plus size={13} /> New policy
           </button>
         }
       />
@@ -94,17 +103,17 @@ export default function ExpensePoliciesPage() {
             <div key={p.id} className={clsx("row-stagger bg-white rounded-lg shadow-sm border border-gray-200 p-4", !p.isActive && "opacity-60")} style={{ ["--i" as never]: Math.min(i, 10) }}>
               <div className="flex items-start justify-between mb-2">
                 <div>
-                  <h3 className="font-medium text-gray-900">{p.name}</h3>
-                  <span className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded-full text-xs font-medium">{p.category}</span>
+                  <h3 className="text-[13px] font-semibold text-gray-900">{p.name}</h3>
+                  <span className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded-full text-[11px] font-medium">{p.category}</span>
                 </div>
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => openEdit(p)}
-                    className="p-1.5 rounded-md text-gray-500 hover:text-blue-600 hover:bg-blue-50"
+                    className="p-1.5 rounded-md text-gray-500 hover:text-green-600 hover:bg-green-50"
                     aria-label="Edit policy"
                     title="Edit"
                   >
-                    <Pencil size={14} />
+                    <Pencil size={12} />
                   </button>
                   <button
                     onClick={async () => {
@@ -120,7 +129,7 @@ export default function ExpensePoliciesPage() {
                     aria-label="Delete policy"
                     title="Delete"
                   >
-                    <Trash2 size={14} />
+                    <Trash2 size={12} />
                   </button>
                 </div>
               </div>
@@ -130,9 +139,9 @@ export default function ExpensePoliciesPage() {
                 {p.maxPerYear && <div><b>Yearly:</b> ₹{Number(p.maxPerYear).toLocaleString("en-IN")}</div>}
               </div>
               <div className="flex flex-wrap gap-1 mt-3">
-                {p.requiresReceipt && <span className="text-xs bg-[#dbeafe] text-[#2563eb] px-2 py-0.5 rounded">Receipt ≥ ₹{Number(p.receiptThreshold)}</span>}
-                {p.requiresPreApproval && <span className="text-xs bg-yellow-50 text-yellow-700 px-2 py-0.5 rounded">Pre-approval</span>}
-                <span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded">{p.approvalLevels} approval level{p.approvalLevels > 1 ? "s" : ""}</span>
+                {p.requiresReceipt && <span className="text-[11px] font-medium bg-[#dcfce7] text-[#16a34a] px-2 py-0.5 rounded">Receipt ≥ ₹{Number(p.receiptThreshold)}</span>}
+                {p.requiresPreApproval && <span className="text-[11px] font-medium bg-yellow-50 text-yellow-700 px-2 py-0.5 rounded">Pre-approval</span>}
+                <span className="text-[11px] font-medium bg-gray-100 text-gray-700 px-2 py-0.5 rounded">{p.approvalLevels} approval level{p.approvalLevels > 1 ? "s" : ""}</span>
               </div>
             </div>
           ))}
@@ -166,9 +175,6 @@ export default function ExpensePoliciesPage() {
             <div><label className="block text-sm font-medium text-gray-700 mb-1">Max per month</label>
               <NumberInput value={form.maxPerMonth} onChange={(v) => setForm({ ...form, maxPerMonth: v })}
                 className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" /></div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Max per year</label>
-              <NumberInput value={form.maxPerYear} onChange={(v) => setForm({ ...form, maxPerYear: v })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" /></div>
             <div><label className="block text-sm font-medium text-gray-700 mb-1">Receipt threshold</label>
               <NumberInput value={form.receiptThreshold} onChange={(v) => setForm({ ...form, receiptThreshold: v })}
                 className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" /></div>
@@ -188,11 +194,11 @@ export default function ExpensePoliciesPage() {
             </label>
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => { setShowModal(false); setEditingId(null); }} className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm">Cancel</button>
+            <button type="button" onClick={() => { setShowModal(false); setEditingId(null); }} className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium">Cancel</button>
             <button
               type="submit"
               disabled={createMut.isPending || updateMut.isPending}
-              className="px-4 py-2 bg-[#16243A] text-white rounded-lg text-sm font-medium hover:bg-[#2563eb] disabled:opacity-50"
+              className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-50"
             >
               {editingId ? "Save changes" : "Create"}
             </button>

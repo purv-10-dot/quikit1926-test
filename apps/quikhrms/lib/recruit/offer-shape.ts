@@ -1,5 +1,65 @@
 import type { Prisma } from "@quikit/database";
 
+// Everything the "Send Offer" wizard captures beyond the dedicated offer* columns
+// is packed into JobApplication.offeredComponents (Json). This is the shape.
+export interface OfferMeta {
+  employmentType?: string;
+  compensationType?: string;
+  salaryStructureId?: string;
+  salaryTemplateName?: string;
+  probationPeriod?: string;
+  workMode?: string;
+  workLocation?: string;
+  components?: { name: string; annual: number }[];
+  /** @deprecated single-doc — kept so old offers still render/attach. */
+  supportingDoc?: { key: string; name?: string } | null;
+  supportingDocs?: { key: string; name?: string }[];
+}
+
+// Wizard input fields (from create/update offer payloads) used to build OfferMeta.
+export interface OfferMetaInput {
+  employmentType?: string;
+  compensationType?: string;
+  salaryStructureId?: string;
+  salaryTemplateName?: string;
+  probationPeriod?: string;
+  workMode?: string;
+  workLocation?: string;
+  components?: { name: string; annual: number }[];
+  supportingDocKey?: string;
+  supportingDocName?: string;
+  supportingDocs?: { key: string; name?: string }[];
+}
+
+/**
+ * Merge wizard input onto any existing offeredComponents JSON. Only keys present
+ * in `input` overwrite; the rest of the previous meta is preserved. Returns a
+ * Prisma-serializable value (or undefined when there's nothing to store).
+ */
+export function buildOfferMeta(input: OfferMetaInput, existing?: unknown): Prisma.InputJsonValue | undefined {
+  const prev: OfferMeta = existing && typeof existing === "object" && !Array.isArray(existing) ? (existing as OfferMeta) : {};
+  const next: OfferMeta = { ...prev };
+  if (input.employmentType !== undefined) next.employmentType = input.employmentType;
+  if (input.compensationType !== undefined) next.compensationType = input.compensationType;
+  if (input.salaryStructureId !== undefined) next.salaryStructureId = input.salaryStructureId;
+  if (input.salaryTemplateName !== undefined) next.salaryTemplateName = input.salaryTemplateName;
+  if (input.probationPeriod !== undefined) next.probationPeriod = input.probationPeriod;
+  if (input.workMode !== undefined) next.workMode = input.workMode;
+  if (input.workLocation !== undefined) next.workLocation = input.workLocation;
+  if (input.components !== undefined) next.components = input.components;
+  // Multiple supporting docs (current). When present, this replaces the whole
+  // set and clears the legacy single-doc field.
+  if (input.supportingDocs !== undefined) {
+    next.supportingDocs = input.supportingDocs;
+    next.supportingDoc = null;
+  } else if (input.supportingDocKey) {
+    // Legacy single-doc path — normalise into the array form.
+    next.supportingDocs = [{ key: input.supportingDocKey, name: input.supportingDocName }];
+    next.supportingDoc = null;
+  }
+  return Object.keys(next).length ? (next as Prisma.InputJsonValue) : undefined;
+}
+
 /**
  * Offer data was merged out of the standalone OfferDetail table onto
  * JobApplication (offer* columns). These helpers re-expose that data under the

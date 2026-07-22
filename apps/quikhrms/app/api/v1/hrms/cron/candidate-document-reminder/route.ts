@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { queueEmail } from "@/lib/services/mailer";
+import { resolveAndSend } from "@/lib/email/resolve";
 import { buildCandidateDocRequestEmail } from "@/lib/email-templates/candidate-document-request";
 
 const HOUR = 3600_000;
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
         where: { orgId: r.orgId }, select: { companyName: true },
       });
 
-      const tpl = buildCandidateDocRequestEmail({
+      const docData = {
         candidateName: `${r.application.candidate.firstName} ${r.application.candidate.lastName}`.trim(),
         jobTitle: r.application.requisition.title,
         bundle: r.bundle,
@@ -68,10 +68,28 @@ export async function POST(req: NextRequest) {
         companyName: company?.companyName ?? "Our Company",
         isReminder: true,
         reminderLevel: tier.level,
-      });
+      };
+      const docsListHtml = `<ul>${docData.docs
+        .map((d) => `<li>${d.name}${d.isRequired ? "" : " (optional)"}</li>`)
+        .join("")}</ul>`;
 
       // sent = queued; the email worker handles delivery + retries.
-      await queueEmail(r.orgId, { to: r.application.candidate.email, subject: tpl.subject, html: tpl.html, kind: "candidate-doc.reminder" });
+      await resolveAndSend(r.orgId, {
+        key: "candidate-doc.reminder",
+        to: r.application.candidate.email,
+        vars: {
+          candidateName: docData.candidateName,
+          jobTitle: docData.jobTitle,
+          bundle: docData.bundle,
+          portalUrl: docData.portalUrl,
+          expiryDays: docData.expiryDays,
+          reminderLevel: tier.level,
+          submissionDeadline: "",
+          docsListHtml,
+          companyName: docData.companyName,
+        },
+        fallback: () => buildCandidateDocRequestEmail(docData),
+      });
       await prisma.candidateDocumentRequest.update({
         where: { id: r.id },
         data: { reminderCount: tier.level, lastReminderAt: now },

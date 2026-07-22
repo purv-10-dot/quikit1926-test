@@ -4,7 +4,7 @@ import { withAuth } from "@/lib/with-auth";
 import { successResponse, notFound, conflict, validationError, internalError, forbidden } from "@/lib/api-response";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { decideWfhSchema } from "@/lib/validations/wfh";
-import { queueEmail } from "@/lib/services/mailer";
+import { resolveAndSend } from "@/lib/email/resolve";
 import { buildWfhNoticeEmail } from "@/lib/email-templates/wfh-notice";
 
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
@@ -74,14 +74,19 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
         };
 
         if (allDone && wfh.employee.workEmail) {
-          const tpl = buildWfhNoticeEmail({
+          const wfhData = {
             ...baseTpl,
-            variant: "decision_to_employee",
+            variant: "decision_to_employee" as const,
             recipientName: empName,
-            status: "Approved",
+            status: "Approved" as const,
             comment: parsed.data.comment ?? null,
+          };
+          await resolveAndSend(orgId, {
+            key: "wfh.approved",
+            to: wfh.employee.workEmail,
+            vars: { ...wfhData },
+            fallback: () => buildWfhNoticeEmail(wfhData),
           });
-          await queueEmail(orgId, { to: wfh.employee.workEmail, subject: tpl.subject, html: tpl.html, kind: "wfh.approved" });
         } else {
           const next = remaining[0];
           const nextApprover = await prisma.employee.findUnique({
@@ -89,13 +94,18 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
             select: { firstName: true, lastName: true, workEmail: true },
           });
           if (nextApprover?.workEmail) {
-            const tpl = buildWfhNoticeEmail({
+            const wfhData = {
               ...baseTpl,
-              variant: "approved_to_hr",
+              variant: "approved_to_hr" as const,
               recipientName: `${nextApprover.firstName} ${nextApprover.lastName}`.trim(),
               comment: parsed.data.comment ?? null,
+            };
+            await resolveAndSend(orgId, {
+              key: "wfh.next-approver",
+              to: nextApprover.workEmail,
+              vars: { ...wfhData },
+              fallback: () => buildWfhNoticeEmail(wfhData),
             });
-            await queueEmail(orgId, { to: nextApprover.workEmail, subject: tpl.subject, html: tpl.html, kind: "wfh.next-approver" });
           }
         }
       } catch (e) { console.error("wfh approve mail failed", e); }

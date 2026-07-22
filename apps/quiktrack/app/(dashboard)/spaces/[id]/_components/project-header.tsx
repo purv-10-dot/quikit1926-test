@@ -164,7 +164,7 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
             </Link>
             <span className="text-gray-300">/</span>
             <SpaceIcon icon={project.icon} name={project.name} color={project.color} size={18} radius={4} />
-            <span className="font-medium text-gray-900">{project.name}</span>
+            <span className="font-medium text-gray-900" data-project-name={project.name}>{project.name}</span>
           </div>
           <button
             type="button"

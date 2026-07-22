@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { queueEmail } from "@/lib/services/mailer";
+import { resolveAndSend } from "@/lib/email/resolve";
 import { buildForm12BBAckEmail } from "@/lib/email-templates/form12bb-acknowledgment";
 
 interface DeclSummary {
@@ -156,12 +156,13 @@ export async function sendEmployeeAcknowledgment(
       select: { companyName: true },
     });
 
-    const { subject, html } = buildForm12BBAckEmail({
+    const submittedAt = new Date();
+    const ackData = {
       employeeName: submitter.name,
       employeeCode: submitter.employeeCode,
       companyName: company?.companyName ?? "your company",
       financialYear: decl.financialYear,
-      submittedAt: new Date(),
+      submittedAt,
       hraClaimed: decl.hraClaimed,
       rentPaid: decl.rentPaid,
       ltaClaimed: decl.ltaClaimed,
@@ -170,9 +171,26 @@ export async function sendEmployeeAcknowledgment(
       chapterVIATotal: decl.chapterVIATotal,
       signedFileUrl: decl.signedFileUrl,
       documentCounts: decl.documentCounts,
-    });
+    };
+    const inr = (n: number) => `₹${Number(n).toLocaleString("en-IN")}`;
 
-    await queueEmail(orgId, { to: submitter.workEmail, subject, html, kind: "form12bb.ack" });
+    await resolveAndSend(orgId, {
+      key: "form12bb.ack",
+      to: submitter.workEmail,
+      vars: {
+        employeeName: ackData.employeeName,
+        employeeCode: ackData.employeeCode,
+        financialYear: ackData.financialYear,
+        submittedAt: submittedAt.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
+        rentPaid: inr(ackData.rentPaid),
+        ltaAmount: inr(ackData.ltaAmount),
+        homeLoanInterest: inr(ackData.homeLoanInterest),
+        chapterVIATotal: inr(ackData.chapterVIATotal),
+        signedFileUrl: ackData.signedFileUrl ?? "",
+        companyName: ackData.companyName,
+      },
+      fallback: () => buildForm12BBAckEmail(ackData),
+    });
     return { sent: true };
   } catch (err) {
     console.error("[form12bb-notify] Employee ack failed:", err);

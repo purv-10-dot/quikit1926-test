@@ -35,7 +35,7 @@ function LoginInner() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center max-w-md">
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 mb-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
             <p className="text-sm font-medium text-amber-800">
               QuikIT SSO is not configured (NEXT_PUBLIC_QUIKIT_URL is unset).
               Set the QuikIT env vars to enable SSO, or continue in local dev.
@@ -57,7 +57,7 @@ function LoginInner() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center max-w-md">
-          <div className="bg-red-50 border border-red-200 rounded-xl p-6 mb-4">
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
             <p className="text-sm font-medium text-red-800">
               {error === "session_expired"
                 ? "Your session has expired. Please log in again."

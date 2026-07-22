@@ -176,6 +176,10 @@ export async function userHasNav(
 
 export interface MyPermissions {
   isAdmin: boolean;
+  /** True when the user is a Space Admin of at least one project. Drives the
+   *  Reports nav/page access for non-admin Space Admins (org role never grants
+   *  this — it's a per-project role, resolved separately here). */
+  isSpaceAdmin: boolean;
   roleId: string | null;
   roleName: string | null;
   /** `${resource}:${action}` strings â€” UNION of role grants + user extras. */
@@ -192,6 +196,7 @@ export async function loadMyPermissions(
 ): Promise<MyPermissions> {
   const empty: MyPermissions = {
     isAdmin: false,
+    isSpaceAdmin: false,
     roleId: null,
     roleName: null,
     permissions: [],
@@ -201,6 +206,11 @@ export async function loadMyPermissions(
 
   const appId = await getQuikTrackAppId();
   if (!appId) return empty;
+
+  // Space-Admin-of-any-project signal, resolved from project roles (the app-role
+  // sets below never carry it). Kept even when the user has no app role/extras so
+  // a pure Space Admin still gets Reports access.
+  const isSpaceAdmin = (await spaceAdminProjectIds(userId, orgId)).length > 0;
 
   const [userRoles, extras] = await Promise.all([
     db.qtUserAppRole.findMany({
@@ -224,7 +234,9 @@ export async function loadMyPermissions(
     }),
   ]);
 
-  if (userRoles.length === 0 && extras.length === 0) return empty;
+  // A pure Space Admin may hold no app role/extras — still surface isSpaceAdmin
+  // so Reports stays reachable for them.
+  if (userRoles.length === 0 && extras.length === 0) return { ...empty, isSpaceAdmin };
 
   const primary = userRoles[0]?.role ?? null;
   const isAdmin = !!userRoles.find((ur) => isAdminRole(ur.role));
@@ -261,6 +273,7 @@ export async function loadMyPermissions(
 
   return {
     isAdmin,
+    isSpaceAdmin,
     roleId: primary?.id ?? null,
     roleName: primary?.name ?? null,
     permissions: Array.from(permSet),
@@ -351,4 +364,26 @@ export async function isProjectSpaceAdmin(
     select: { projectRole: { select: { name: true } } },
   });
   return assignment?.projectRole.name === SPACE_ADMIN_ROLE_NAME;
+}
+
+/**
+ * The ids of every (non-deleted, in-org) project where this user's project role
+ * is Space Admin. Used to scope the Reports module: a non-admin Space Admin sees
+ * only these projects' data. Org filter is enforced via both the role's `orgId`
+ * and the project relation (QtProjectUserRole has no orgId column of its own).
+ * `@@unique([projectId, userId])` guarantees the ids are already distinct.
+ */
+export async function spaceAdminProjectIds(
+  userId: string,
+  orgId: string,
+): Promise<string[]> {
+  const rows = await db.qtProjectUserRole.findMany({
+    where: {
+      userId,
+      projectRole: { name: SPACE_ADMIN_ROLE_NAME, orgId },
+      project: { orgId, isDeleted: false },
+    },
+    select: { projectId: true },
+  });
+  return rows.map((r) => r.projectId);
 }

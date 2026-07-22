@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, MoreHorizontal, X } from "lucide-react";
 import { StyledSelect } from "@/app/(dashboard)/spaces/[id]/settings/user-management/_components/styled-select";
@@ -71,6 +72,11 @@ export function AddPeopleModal({
   const wrapRef = useRef<HTMLDivElement>(null);
   const [showHits, setShowHits] = useState(false);
   const [debounced, setDebounced] = useState("");
+  // Portal to <body> so the fixed overlay can't be clipped/trapped by an
+  // ancestor's overflow/stacking context (e.g. the discovery view's
+  // `overflow-hidden` / fullscreen wrapper). Mount-guarded for SSR.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -346,7 +352,9 @@ export function AddPeopleModal({
   // the picker when at least one chip is a new email address.
   const needsInvitationMethod = people.some((p) => p.kind === "email" && !chipInProject(p));
 
-  return (
+  if (!mounted) return null;
+
+  return createPortal(
     <div
       className="fixed inset-0 z-[80] bg-black/40 flex items-start justify-center pt-20 px-4"
       onClick={onClose}
@@ -588,7 +596,8 @@ export function AddPeopleModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

@@ -20,7 +20,7 @@ interface ESICfg {
   grossCeiling: number;
 }
 
-const inputCls = "w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[#16243A] focus:border-transparent";
+const inputCls = "w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[#166534] focus:border-transparent";
 
 export function ESITab({ onSaved }: { onSaved?: () => void } = {}) {
   const api = useApiClient();
@@ -53,6 +53,8 @@ export function ESITab({ onSaved }: { onSaved?: () => void } = {}) {
   }, [data]);
 
   const saveMut = useMutation({
+    // Shown via the inline error banner below — suppress the global modal.
+    meta: { suppressGlobalError: true },
     mutationFn: (body: ESICfg) => api.put("/api/v1/hrms/payroll/statutory/esi", body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["payroll"] });
@@ -90,7 +92,7 @@ export function ESITab({ onSaved }: { onSaved?: () => void } = {}) {
       noValidate
       className="max-w-2xl space-y-4"
     >
-      <h2 className="text-base font-bold text-gray-900">Employees&apos; State Insurance</h2>
+      <h2 className="text-[13px] font-semibold text-gray-900">Employees&apos; State Insurance</h2>
       <div className="grid grid-cols-2 gap-3">
         <Field label="ESI Employer Code" required>
           <input
@@ -175,7 +177,7 @@ export function ESITab({ onSaved }: { onSaved?: () => void } = {}) {
       </div>
 
       <label className="flex items-start gap-2 text-sm text-gray-700 cursor-pointer">
-        <input type="checkbox" checked={form.includeEmployerInCTC} onChange={(e) => setForm({ ...form, includeEmployerInCTC: e.target.checked })} className="mt-0.5 text-[#3b82f6] rounded" />
+        <input type="checkbox" checked={form.includeEmployerInCTC} onChange={(e) => setForm({ ...form, includeEmployerInCTC: e.target.checked })} className="mt-0.5 text-[#22c55e] rounded" />
         Include employer&apos;s contribution in employee&apos;s salary structure.
       </label>
 
@@ -190,7 +192,7 @@ export function ESITab({ onSaved }: { onSaved?: () => void } = {}) {
         <button
           type="submit"
           disabled={saveMut.isPending || formInvalid}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md text-sm font-semibold shadow-sm"
+          className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md text-xs font-medium shadow-sm"
         >
           {saveMut.isPending ? "Enabling…" : "Enable"}
         </button>

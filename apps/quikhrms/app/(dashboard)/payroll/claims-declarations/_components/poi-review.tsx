@@ -78,14 +78,13 @@ export function PoiReview() {
       setReviewing(null);
       toast.success("Review saved");
     },
-    onError: (e: Error) => toast.error("Review failed", e.message),
   });
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-semibold text-gray-900">Investment proof review queue</p>
+          <p className="text-[13px] font-semibold text-gray-900">Investment proof review queue</p>
           <p className="text-xs text-gray-500">
             {isLoading ? "Loading…" : `${rows.length} proof${rows.length === 1 ? "" : "s"} matching filters`}
           </p>
@@ -116,7 +115,7 @@ export function PoiReview() {
         ) : rows.length === 0 ? (
           <div className="py-12 text-center">
             <Inbox size={32} className="mx-auto text-gray-300" />
-            <p className="text-sm text-gray-600 mt-2">No proofs matching this filter.</p>
+            <p className="text-xs text-gray-600 mt-2">No proofs matching this filter.</p>
             <p className="text-xs text-gray-500 mt-0.5">
               When employees submit Form 12BB, a review row is auto-created for each claimed section.
             </p>
@@ -124,7 +123,7 @@ export function PoiReview() {
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50/60">
+              <tr className="text-table-head font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50/60">
                 <th className="text-left py-2 px-3">Employee</th>
                 <th className="text-left py-2 px-3">Section</th>
                 <th className="text-right py-2 px-3">Declared</th>
@@ -142,7 +141,7 @@ export function PoiReview() {
                   <Fragment key={r.id}>
                     <tr className="border-b border-gray-50 hover:bg-gray-50/40">
                       <td className="py-2.5 px-3">
-                        <p className="font-medium text-gray-900">
+                        <p className="text-[13px] font-medium text-gray-900">
                           {r.employee ? `${r.employee.firstName} ${r.employee.lastName}` : "—"}
                         </p>
                         <p className="text-[11px] text-gray-500">
@@ -165,7 +164,7 @@ export function PoiReview() {
                       </td>
                       <td className="py-2.5 px-3">
                         {r.fileUrl ? (
-                          <a href={r.fileUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-blue-700 hover:underline">
+                          <a href={r.fileUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-green-700 hover:underline">
                             <FileText size={11} /> View
                           </a>
                         ) : (
@@ -177,17 +176,17 @@ export function PoiReview() {
                         {isOpenReview ? (
                           <button
                             onClick={() => setReviewing(null)}
-                            className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1"
+                            className="text-xs text-gray-500 hover:text-gray-700 px-2.5 py-1"
                           >Cancel</button>
                         ) : r.status === "Approved" || r.status === "Rejected" ? (
                           <button
                             onClick={() => setReviewing(r.id)}
-                            className="text-xs text-blue-700 hover:underline px-2 py-1"
+                            className="text-xs text-green-700 hover:underline px-2.5 py-1"
                           >Re-review</button>
                         ) : (
                           <button
                             onClick={() => setReviewing(r.id)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-[#16243A] hover:bg-[#1E3354] text-white rounded text-xs font-semibold"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-normal"
                           >
                             Review
                           </button>
@@ -195,7 +194,7 @@ export function PoiReview() {
                       </td>
                     </tr>
                     {isOpenReview && (
-                      <tr className="bg-blue-50/30">
+                      <tr className="bg-green-50/30">
                         <td colSpan={8} className="px-6 py-3">
                           <ReviewForm
                             row={r}
@@ -221,14 +220,14 @@ function StatusBadge({ status }: { status: POIStatus }) {
     status === "Approved" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
     status === "PartiallyApproved" ? "bg-amber-50 text-amber-700 border-amber-200" :
     status === "Rejected" ? "bg-rose-50 text-rose-700 border-rose-200" :
-    status === "UnderReview" ? "bg-blue-50 text-blue-700 border-blue-200" :
+    status === "UnderReview" ? "bg-green-50 text-green-700 border-green-200" :
     "bg-gray-100 text-gray-600 border-gray-200";
   const label =
     status === "PartiallyApproved" ? "Partial" :
     status === "UnderReview" ? "Reviewing" :
     status;
   return (
-    <span className={clsx("inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold border", cls)}>
+    <span className={clsx("inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium border", cls)}>
       {label}
     </span>
   );
@@ -271,9 +270,9 @@ function ReviewForm({
         <button
           onClick={approveFull}
           disabled={busy}
-          className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded font-semibold"
+          className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded font-medium"
         >
-          {busy ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+          {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
           Approve {inr(defaultAmount)}
         </button>
       </div>
@@ -289,9 +288,9 @@ function ReviewForm({
         <button
           onClick={approvePartial}
           disabled={busy}
-          className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white rounded font-semibold"
+          className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white rounded font-medium"
         >
-          {busy ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+          {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
           Approve custom
         </button>
       </div>
@@ -309,9 +308,9 @@ function ReviewForm({
         <button
           onClick={reject}
           disabled={busy}
-          className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white rounded font-semibold"
+          className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white rounded font-medium"
         >
-          {busy ? <Loader2 size={12} className="animate-spin" /> : <X size={12} />}
+          {busy ? <Loader2 size={13} className="animate-spin" /> : <X size={13} />}
           Reject
         </button>
       </div>

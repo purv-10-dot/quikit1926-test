@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, notFound, validationError, internalError } from "@/lib/api-response";
-import { updateGoalSchema } from "@/lib/validations/performance";
+import { updateGoalSchema, goalTypeFromDb } from "@/lib/validations/performance";
 
 export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
   try {
@@ -17,7 +17,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
       },
     });
     if (!goal) return notFound("Goal not found");
-    return successResponse(goal);
+    return successResponse(goalTypeFromDb(goal));
   } catch (error) { console.error("GET /performance/goals/:id error:", error); return internalError(); }
 });
 
@@ -35,7 +35,7 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
       data: { ...parsed.data, updatedBy: userId },
       include: { keyResults: true },
     });
-    return successResponse(goal);
+    return successResponse(goalTypeFromDb(goal));
   } catch (error) { console.error("PATCH /performance/goals/:id error:", error); return internalError(); }
 });
 

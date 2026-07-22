@@ -46,7 +46,7 @@ const INR = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
 
 const STATUS_BADGE: Record<Status, string> = {
   Pending: "bg-amber-100 text-amber-700",
-  Approved: "bg-blue-100 text-blue-700",
+  Approved: "bg-green-100 text-green-700",
   Applied: "bg-emerald-100 text-emerald-700",
   Rejected: "bg-red-100 text-red-700",
 };
@@ -134,7 +134,6 @@ export default function OneTimeEarningsPage() {
       qc.invalidateQueries({ queryKey: ["payroll", "one-time"] });
       setShowForm(false);
     },
-    onError: (e: Error) => toast.error("Create failed", e.message),
   });
 
   const reviewMut = useMutation({
@@ -144,7 +143,6 @@ export default function OneTimeEarningsPage() {
       toast.success("Updated");
       qc.invalidateQueries({ queryKey: ["payroll", "one-time"] });
     },
-    onError: (e: Error) => toast.error("Update failed", e.message),
   });
 
   const deleteMut = useMutation({
@@ -153,17 +151,16 @@ export default function OneTimeEarningsPage() {
       toast.success("Deleted");
       qc.invalidateQueries({ queryKey: ["payroll", "one-time"] });
     },
-    onError: (e: Error) => toast.error("Delete failed", e.message),
   });
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Gift className="text-[#3b82f6]" />
+          <Gift className="text-[#22c55e]" />
           <div>
-            <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">One-time pay & deductions</h1>
-            <p className="text-sm text-gray-500">
+            <h1 className="text-page-title text-gray-900">One-time pay & deductions</h1>
+            <p className="text-xs text-gray-500">
               Bonus, arrears, incentives, advance recovery & other ad-hoc adjustments. Approved entries auto-apply to the next pay run for the chosen period.
             </p>
           </div>
@@ -183,22 +180,22 @@ export default function OneTimeEarningsPage() {
           />
           <Link
             href="/payroll/one-time-earnings/settings"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 rounded-md text-sm font-semibold"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 rounded-md text-xs font-medium"
             title="Configure tax & statutory defaults per Kind"
           >
-            <Settings size={14} /> Defaults
+            <Settings size={13} /> Defaults
           </Link>
           <button
             onClick={() => setShowImport(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 rounded-md text-sm font-semibold"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 rounded-md text-xs font-medium"
           >
-            <Upload size={14} /> Import Excel
+            <Upload size={13} /> Import Excel
           </button>
           <button
             onClick={() => setShowForm((v) => !v)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#16243A] hover:bg-[#1E3354] text-white rounded-md text-sm font-semibold shadow-sm"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-xs font-medium shadow-sm"
           >
-            {showForm ? <X size={14} /> : <Plus size={14} />} {showForm ? "Cancel" : "New"}
+            {showForm ? <X size={13} /> : <Plus size={13} />} {showForm ? "Cancel" : "New"}
           </button>
         </div>
       </div>
@@ -226,11 +223,11 @@ export default function OneTimeEarningsPage() {
         {isLoading ? (
           <div className="p-4"><SkeletonTable rows={5} cols={6} /></div>
         ) : rows.length === 0 ? (
-          <div className="py-12 text-center text-sm text-gray-500">No records yet.</div>
+          <div className="py-12 text-center text-xs text-gray-500">No records yet.</div>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full text-xs">
             <thead>
-              <tr className="text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">
+              <tr className="text-table-head font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">
                 <th className="text-left py-2 px-3">Employee</th>
                 <th className="text-left py-2 px-3">Kind</th>
                 <th className="text-left py-2 px-3">Component</th>
@@ -244,7 +241,7 @@ export default function OneTimeEarningsPage() {
               {rows.map((r, i) => (
                 <tr key={r.id} className="row-stagger border-b border-gray-50 hover:bg-gray-50/50" style={{ ["--i" as never]: Math.min(i, 10) }}>
                   <td className="py-2 px-3">
-                    <p className="font-medium text-gray-900">{r.employee ? `${r.employee.firstName} ${r.employee.lastName}` : "—"}</p>
+                    <p className="text-[13px] font-medium text-gray-900">{r.employee ? `${r.employee.firstName} ${r.employee.lastName}` : "—"}</p>
                     <p className="text-xs text-gray-500">{r.employee?.employeeCode}</p>
                   </td>
                   <td className="py-2 px-3 text-gray-700">{r.kind}</td>
@@ -255,9 +252,9 @@ export default function OneTimeEarningsPage() {
                   <td className="py-2 px-3 text-gray-700">
                     {new Date(r.payPeriod).toLocaleString("en-IN", { month: "short", year: "numeric" })}
                   </td>
-                  <td className="py-2 px-3 text-right text-gray-900">₹{INR.format(Number(r.amount))}</td>
+                  <td className="py-2 px-3 text-right text-sm text-gray-900">₹{INR.format(Number(r.amount))}</td>
                   <td className="py-2 px-3">
-                    <span className={clsx("inline-block px-2 py-0.5 rounded text-[11px] font-semibold", STATUS_BADGE[r.status])}>
+                    <span className={clsx("inline-block px-2 py-0.5 rounded text-[11px] font-medium", STATUS_BADGE[r.status])}>
                       {r.status}
                     </span>
                     {r.rejectionReason && <p className="text-[11px] text-red-600 mt-0.5">{r.rejectionReason}</p>}
@@ -270,7 +267,7 @@ export default function OneTimeEarningsPage() {
                           className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"
                           title="Approve"
                         >
-                          <Check size={14} />
+                          <Check size={12} />
                         </button>
                         <button
                           onClick={() => {
@@ -281,7 +278,7 @@ export default function OneTimeEarningsPage() {
                           className="p-1 text-red-600 hover:bg-red-50 rounded"
                           title="Reject"
                         >
-                          <X size={14} />
+                          <X size={12} />
                         </button>
                       </div>
                     )}
@@ -293,7 +290,7 @@ export default function OneTimeEarningsPage() {
                         className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
                         title="Delete"
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={12} />
                       </button>
                     )}
                   </td>
@@ -343,7 +340,7 @@ function CreateForm({
   const kindFlags = liveByKind?.[kind] ?? KIND_FLAGS[kind];
 
   const inputCls =
-    "w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A] focus:border-[#16243A]";
+    "w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[#166534] focus:border-[#166534]";
 
   return (
     <form
@@ -447,10 +444,10 @@ function CreateForm({
 
       {/* Statutory flags — read-only. Set ONCE per Kind, server-authoritative.
           See lib/services/one-time-defaults.ts for the canonical table. */}
-      <div className="rounded-md border border-blue-100 bg-blue-50/60 px-3 py-2">
+      <div className="rounded-md border border-green-100 bg-green-50/60 px-3 py-2">
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1">
-            <p className="text-[10px] font-bold text-blue-900 uppercase tracking-wide">
+            <p className="text-[10px] font-bold text-green-900 uppercase tracking-wide">
               Tax &amp; statutory treatment for &quot;{KIND_OPTIONS.find((k) => k.value === kind)?.label}&quot;
             </p>
             <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px]">
@@ -459,7 +456,7 @@ function CreateForm({
               <Pill on={kindFlags.considerForESI} label="ESI" />
               <Pill on={kindFlags.considerForPT} label="PT" />
             </div>
-            <p className="text-[10px] text-blue-700 mt-1.5">
+            <p className="text-[10px] text-green-700 mt-1.5">
               Applied consistently for every {KIND_OPTIONS.find((k) => k.value === kind)?.label} entry across all employees.
             </p>
           </div>
@@ -481,7 +478,7 @@ function CreateForm({
         <button
           type="submit"
           disabled={submitting}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 text-white rounded-md text-sm font-semibold"
+          className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-md text-xs font-medium"
         >
           {submitting ? "Saving..." : "Save"}
         </button>
@@ -653,7 +650,6 @@ function ImportExcelModal({
       setResult(res.data);
       onImported(res.data.inserted);
     },
-    onError: (e: Error) => toast.error("Import failed", e.message),
   });
 
   return (
@@ -666,15 +662,15 @@ function ImportExcelModal({
       size="xl"
       bodyClassName="overflow-y-auto"
     >
-      <div className="p-6 space-y-5">
+      <div className="p-4 space-y-4">
         {/* Field reference table — always visible */}
         <div>
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-bold text-gray-900">Required & optional fields</h3>
+            <h3 className="text-[13px] font-semibold text-gray-900">Required & optional fields</h3>
             <button
               type="button"
               onClick={downloadTemplate}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold text-[#16243A] bg-[#16243A]/10 hover:bg-[#16243A] hover:text-white transition"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-[#166534] bg-[#166534]/10 hover:bg-[#166534] hover:text-white transition"
             >
               <Download size={13} /> Download template
             </button>
@@ -723,17 +719,17 @@ function ImportExcelModal({
             <button
               type="button"
               onClick={() => inputRef.current?.click()}
-              className="w-full rounded-xl ring-2 ring-dashed ring-gray-300 hover:ring-[#16243A] hover:bg-gray-50 p-8 text-center transition"
+              className="w-full rounded-xl ring-2 ring-dashed ring-gray-300 hover:ring-[#166534] hover:bg-gray-50 p-8 text-center transition"
             >
               <Upload size={28} className="text-gray-400 mx-auto mb-2" />
-              <p className="text-sm font-semibold text-gray-700">Click to upload an Excel file</p>
+              <p className="text-[13px] font-semibold text-gray-700">Click to upload an Excel file</p>
               <p className="text-[11px] text-gray-500 mt-1">.xlsx / .xls / .csv — up to 1,000 rows per import</p>
             </button>
           ) : (
             <div className="rounded-xl ring-1 ring-gray-200 bg-white p-4 flex items-center gap-3">
               <FileSpreadsheet size={22} className="text-emerald-600" />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-900 truncate">{fileName}</p>
+                <p className="text-[13px] font-semibold text-gray-900 truncate">{fileName}</p>
                 <p className="text-[11px] text-gray-500">
                   {parsed.length} valid row{parsed.length === 1 ? "" : "s"}
                   {parseErrors.length > 0 && ` · ${parseErrors.length} skipped`}
@@ -742,7 +738,7 @@ function ImportExcelModal({
               <button
                 type="button"
                 onClick={reset}
-                className="text-xs font-semibold text-gray-500 hover:text-gray-900 px-2"
+                className="text-xs font-medium text-gray-500 hover:text-gray-900 px-2"
               >
                 Change file
               </button>
@@ -808,7 +804,7 @@ function ImportExcelModal({
                 <Check size={18} className="text-emerald-600" />
               </div>
               <div>
-                <p className="text-sm font-bold text-gray-900">Import finished</p>
+                <p className="text-[13px] font-semibold text-gray-900">Import finished</p>
                 <p className="text-xs text-gray-600">
                   <span className="font-semibold text-emerald-700">{result.inserted}</span> inserted ·{" "}
                   <span className={clsx("font-semibold", result.failed > 0 ? "text-red-600" : "text-gray-400")}>{result.failed}</span> failed ·{" "}
@@ -835,11 +831,11 @@ function ImportExcelModal({
       </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-end gap-2 px-6 py-3.5 border-t border-gray-100 bg-gray-50/60">
+      <div className="flex items-center justify-end gap-2 px-5 py-3.5 border-t border-gray-100 bg-gray-50/60">
         <button
           type="button"
           onClick={() => { reset(); onClose(); }}
-          className="px-4 py-2 border border-gray-300 bg-white rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+          className="px-3 py-1.5 border border-gray-300 bg-white rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50"
         >
           {result ? "Close" : "Cancel"}
         </button>
@@ -848,7 +844,7 @@ function ImportExcelModal({
             type="button"
             disabled={parsed.length === 0 || importMut.isPending}
             onClick={() => importMut.mutate()}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium"
           >
             {importMut.isPending && <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
             {importMut.isPending

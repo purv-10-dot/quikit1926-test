@@ -11,6 +11,13 @@ const optionInputSchema = z.object({
   id: z.string().min(1).optional(), // present = existing option being renamed/toggled
   label: z.string().min(1).max(100),
   isActive: z.boolean().optional(),
+  // Discovery weighted multi-select: 0–5 strategic weight (None..Highest).
+  weight: z.number().int().min(0).max(5).nullable().optional(),
+  // Discovery per-option styling (Theme/Roadmap): hex color, emoji/icon, and a
+  // "highlight ideas with this color" flag (row tint). All additive/nullable.
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Color must be a hex value").nullable().optional(),
+  icon: z.string().max(16).nullable().optional(),
+  highlight: z.boolean().optional(),
 });
 
 export const createCustomFieldSchema = z
@@ -39,6 +46,7 @@ export const updateCustomFieldSchema = z.object({
   // Type and key are immutable (FRD §5.4) — intentionally absent.
   name: z.string().trim().min(1).max(100).optional(),
   description: z.string().max(300).nullable().optional(),
+  icon: z.string().max(16).nullable().optional(),
   isRequired: z.boolean().optional(),
   defaultValue: z.unknown().optional(),
   placeholder: z.string().max(200).nullable().optional(),
@@ -134,8 +142,13 @@ export function validateFieldValue(field: FieldForValidation, raw: FieldValue): 
       const ids = Array.from(new Set(raw.map((v) => String(v)).filter(Boolean)));
       return { ok: true, value: ids };
     }
+    case "SHORT_TEXT": {
+      const s = String(raw);
+      // Short text is capped at 255 chars (JPD) — enforced server-side too.
+      if (s.length > 255) return { ok: false, error: `${field.name} is limited to 255 characters.` };
+      return { ok: true, value: s };
+    }
     case "USER_PICKER":
-    case "SHORT_TEXT":
     case "LONG_TEXT":
     default: {
       const s = String(raw);

@@ -1,12 +1,11 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
-import { ChevronLeft, Download, Mail } from "lucide-react";
+import { Download, Mail } from "lucide-react";
 import { SkeletonLine } from "@/components/hrms/skeleton";
 import { withBasePath } from "@/lib/utils/base-path";
 
@@ -97,13 +96,13 @@ export default function PayslipDetailPage() {
   });
 
   const resendMut = useMutation({
+    // Surfaced via the toast.promise below — suppress the global modal.
+    meta: { suppressGlobalError: true },
     mutationFn: () =>
       api.post<{ queued: boolean; to: string }>(
         `/api/v1/hrms/payroll/runs/${runId}/payslips/${payslipId}/resend-email`,
         {},
       ),
-    onSuccess: (res) => toast.success("Payslip email queued", `Sent to ${res.data.to}`),
-    onError: (e: Error) => toast.error("Resend failed", e.message),
   });
 
   if (isLoading || !data?.data) return (
@@ -135,14 +134,15 @@ export default function PayslipDetailPage() {
   return (
     <div className="max-w-3xl mx-auto space-y-4 pb-10">
       <div className="flex items-center justify-between">
-        <Link href={`/payroll/runs/${runId}`} className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-[#3b82f6]">
-          <ChevronLeft size={14} /> Back to Pay Run
-        </Link>
         <div className="flex items-center gap-2">
           {p.status === "Released" && (
             <button
               type="button"
-              onClick={() => resendMut.mutate()}
+              onClick={() => toast.promise(resendMut.mutateAsync(), {
+                loading: "Emailing payslip…",
+                success: (res) => `Payslip emailed to ${res.data.to}`,
+                error: (e) => (e instanceof Error && e.message ? e.message : "Couldn't email the payslip"),
+              })}
               disabled={resendMut.isPending || !p.employee?.workEmail}
               title={p.employee?.workEmail ? `Send to ${p.employee.workEmail}` : "Employee has no work email"}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-emerald-200 bg-emerald-50 text-emerald-700 rounded hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -155,17 +155,17 @@ export default function PayslipDetailPage() {
             href={withBasePath(`/api/v1/hrms/payroll/payslips/${p.id}/pdf`)}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs bg-[#16243A] hover:bg-[#1E3354] text-white rounded"
+            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs bg-green-600 hover:bg-green-700 text-white rounded"
           >
             <Download size={12} /> Download PDF
           </a>
         </div>
       </div>
 
-      <div className="rounded-md border border-gray-200 bg-white p-8 space-y-5 shadow-sm">
+      <div className="rounded-md border border-gray-200 bg-white p-8 space-y-4 shadow-sm">
         <div className="text-center">
-          <h1 className="text-lg font-bold uppercase text-gray-900 tracking-wide">{companyName}</h1>
-          <p className="text-sm text-gray-700 mt-1">Pay Slip ({periodLabel})</p>
+          <h1 className="text-base font-semibold uppercase text-gray-900 tracking-wide">{companyName}</h1>
+          <p className="text-xs text-gray-700 mt-1">Pay Slip ({periodLabel})</p>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -186,7 +186,7 @@ export default function PayslipDetailPage() {
 
         <div className="rounded-md border border-gray-200 overflow-hidden">
           <div className="bg-gray-50 px-4 py-2 border-b border-gray-200">
-            <h3 className="text-sm font-bold text-gray-900">Salary Details</h3>
+            <h3 className="text-[13px] font-semibold text-gray-900">Salary Details</h3>
           </div>
           <div className="grid grid-cols-4">
             <DayCell label="Actual Days" value={String(actualDays)} />
@@ -237,11 +237,11 @@ function Card({ title, rows }: { title: string; rows: [string, string][] }) {
   return (
     <div className="rounded-md border border-gray-200 overflow-hidden">
       <div className="bg-gray-50 px-4 py-2 border-b border-gray-200">
-        <h3 className="text-sm font-bold text-gray-900">{title}</h3>
+        <h3 className="text-[13px] font-semibold text-gray-900">{title}</h3>
       </div>
       <div className="p-4 space-y-1.5">
         {rows.map(([k, v]) => (
-          <div key={k} className="grid grid-cols-2 text-sm">
+          <div key={k} className="grid grid-cols-2 text-xs">
             <span className="text-gray-600">{k}</span>
             <span className="text-gray-900">{v}</span>
           </div>
@@ -255,7 +255,7 @@ function DayCell({ label, value }: { label: string; value: string }) {
   return (
     <div className="px-3 py-3 border-r last:border-r-0 border-gray-200 text-center">
       <p className="text-xs font-bold text-gray-700">{label}</p>
-      <p className="text-base text-gray-900 mt-1">{value}</p>
+      <p className="text-sm text-gray-900 mt-1">{value}</p>
     </div>
   );
 }
@@ -264,7 +264,7 @@ function Section({ title, rightLabel, children }: { title: string; rightLabel?: 
   return (
     <div className="rounded-md border border-gray-200 overflow-hidden">
       <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex items-center justify-between">
-        <h3 className="text-sm font-bold text-gray-900">{title}</h3>
+        <h3 className="text-[13px] font-semibold text-gray-900">{title}</h3>
         {rightLabel && <span className="text-xs font-bold text-gray-500 uppercase">{rightLabel}</span>}
       </div>
       <div>{children}</div>

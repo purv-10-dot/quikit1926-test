@@ -18,18 +18,26 @@ import { mirrorAppRoleToCentral } from "@quikit/auth/assign-app-roles";
  *
  * A Member may only VIEW the assets assigned to them (row-scoping enforced in
  * the route layer via `Asset:viewAll` — which Members deliberately do NOT hold)
- * and see their own notifications. Everything else — the full register, other
- * users' data, categories, assignments, repairs, reports, budgets, settings —
- * is withheld. Asset-request capabilities will be added here when that feature
- * lands (new `AssetRequest` resource).
+ * and see their own notifications. They may also raise asset requests and see
+ * their own (`AssetRequest:view`, NOT `viewAll` — which reveals the approver
+ * queue). A Member may likewise raise a repair request on their own assigned
+ * asset and see their own (`RepairRequest:view` + `create`, NOT `viewAll`).
+ * Everything else — the full register, other users' data, categories,
+ * assignments, repairs, reports, budgets, settings — is withheld.
  *
  * NOTE: seeding is additive-only (backfill never removes). Trimming this list
  * does NOT revoke grants on orgs already seeded — run
- * `scripts/trim-member-permissions.ts` to strip the legacy over-grants.
+ * `scripts/trim-member-permissions.ts` to strip the legacy over-grants. Keep
+ * this in sync with `MEMBER_GRANTS` (scripts/seed-app.ts) and the `ALLOWED`
+ * set (scripts/trim-member-permissions.ts).
  */
 const MEMBER_DEFAULT_GRANTS: Array<{ resource: Resource; action: Action }> = [
   { resource: "Asset", action: "view" },
   { resource: "Notification", action: "view" },
+  { resource: "AssetRequest", action: "view" },
+  { resource: "AssetRequest", action: "create" },
+  { resource: "RepairRequest", action: "view" },
+  { resource: "RepairRequest", action: "create" },
 ];
 
 /* ───────────────────────── admin role ───────────────────────── */
