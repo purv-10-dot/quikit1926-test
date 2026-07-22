@@ -27,14 +27,14 @@ interface FeedbackItem {
 
 const typeIcons: Record<string, React.ReactNode> = {
   Praise: <Star size={14} className="text-yellow-500" />,
-  Constructive: <MessageSquare size={14} className="text-[#3b82f6]" />,
+  Constructive: <MessageSquare size={14} className="text-[#22c55e]" />,
   Suggestion: <MessageSquare size={14} className="text-purple-500" />,
   Recognition: <Award size={14} className="text-green-500" />,
 };
 
 const typeColors: Record<string, string> = {
   Praise: "bg-yellow-50 border-yellow-200",
-  Constructive: "bg-[#dbeafe] border-[#bfdbfe]",
+  Constructive: "bg-[#dcfce7] border-[#bbf7d0]",
   Suggestion: "bg-purple-50 border-purple-200",
   Recognition: "bg-green-50 border-green-200",
 };
@@ -50,7 +50,6 @@ export default function FeedbackPage() {
       toast.success("Feedback deleted");
       qc.invalidateQueries({ queryKey: ["feedback"] });
     },
-    onError: (e: Error) => toast.error("Delete failed", e.message),
   });
   const confirmDelete = async (fb: FeedbackItem) => {
     const ok = await dialog.confirm({
@@ -99,12 +98,12 @@ export default function FeedbackPage() {
   const feedbacks = data?.data ?? [];
 
   return (
-    <div className="w-full px-6 py-6">
+    <div className="w-full px-5 py-4">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-        <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">Continuous feedback</h1>
+        <h1 className="text-page-title text-gray-900">Continuous feedback</h1>
         <button onClick={() => { setForm({ toEmployeeId: "", type: "Praise", category: "Teamwork", message: "", isPublic: true }); setShowCreate(true); }}
           className="btn btn-primary">
-          <Plus size={14} /> Give feedback
+          <Plus size={13} /> Give feedback
         </button>
       </div>
 
@@ -145,7 +144,7 @@ export default function FeedbackPage() {
           <button
             type="button"
             onClick={() => { setTypeFilter(""); setCategoryFilter(""); setToEmployeeFilter(""); setFromEmployeeFilter(""); }}
-            className="text-xs text-[#3b82f6] hover:underline"
+            className="text-xs text-[#22c55e] hover:underline"
           >
             Clear
           </button>
@@ -166,7 +165,7 @@ export default function FeedbackPage() {
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="font-medium text-sm text-gray-900">{fb.fromEmployee.firstName} {fb.fromEmployee.lastName}</span>
+                    <span className="text-[13px] font-semibold text-gray-900">{fb.fromEmployee.firstName} {fb.fromEmployee.lastName}</span>
                     {typeIcons[fb.type]}
                     <span className="text-xs text-gray-500">{fb.type} &middot; {fb.category}</span>
                     <span className="text-xs text-gray-400 ml-auto">
@@ -184,11 +183,11 @@ export default function FeedbackPage() {
                   <p className="text-xs text-gray-500 mb-1">
                     To: <span className="font-medium">{fb.toEmployee.firstName} {fb.toEmployee.lastName}</span>
                   </p>
-                  <p className="text-sm text-gray-700">{fb.message}</p>
+                  <p className="text-xs text-gray-700">{fb.message}</p>
                   {fb.badges && fb.badges.length > 0 && (
                     <div className="flex gap-1 mt-2">
                       {(fb.badges as string[]).map((b, i) => (
-                        <span key={i} className="px-2 py-0.5 bg-white/70 rounded-full text-xs text-gray-600 border">{b}</span>
+                        <span key={i} className="px-2 py-0.5 bg-white/70 rounded-full text-[11px] font-medium text-gray-600 border">{b}</span>
                       ))}
                     </div>
                   )}
@@ -228,15 +227,15 @@ export default function FeedbackPage() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Message</label>
             <textarea value={form.message} onChange={(e) => setForm({ ...form, message: e.target.value })} required rows={4}
-              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]" />
           </div>
           <label className="flex items-center gap-2 text-sm text-gray-700">
             <input type="checkbox" checked={form.isPublic} onChange={(e) => setForm({ ...form, isPublic: e.target.checked })} className="rounded border-gray-300" />
             Visible on social wall
           </label>
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm">Cancel</button>
-            <button type="submit" className="px-4 py-2 bg-[#16243A] text-white rounded-lg text-sm font-medium hover:bg-[#2563eb]">Submit</button>
+            <button type="button" onClick={() => setShowCreate(false)} className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium">Cancel</button>
+            <button type="submit" className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700">Submit</button>
           </div>
         </form>
       </Modal>

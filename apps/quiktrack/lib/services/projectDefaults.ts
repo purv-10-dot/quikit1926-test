@@ -58,6 +58,10 @@ const PROJECT_SHELL_VIEW: Array<{ resource: string; action: string }> = [
   { resource: "ProjectTaskTable", action: "view" },
   { resource: "Doc", action: "view" },
   { resource: "Timesheet", action: "view" },
+  // Discovery: `IdeaView:view` gates the "Ideas" tab + the view list. Ideas
+  // themselves are membership-based (no Idea:view), matching Issue. Harmless on
+  // non-discovery spaces — the tab only renders for discovery projects.
+  { resource: "IdeaView", action: "view" },
   // Note: Issue / Sprint / IssueComment have no `view` grant — their visibility
   // is membership-based, not gated by a permission (see permissionsRegistry).
   // Report / Home / Dashboards are app-wide-only — governed by the app-wide
@@ -76,6 +80,12 @@ const CONTRIBUTOR_GRANTS: Array<{ resource: string; action: string }> = [
   { resource: "Doc", action: "create" },
   { resource: "Doc", action: "update" },
   { resource: "Timesheet", action: "create" },
+  // Discovery: create/edit/archive ideas and manage saved views. Permanent
+  // Idea:delete stays Space-Admin-only (FR §5.3), so it's not granted here.
+  { resource: "Idea", action: "create" },
+  { resource: "Idea", action: "update" },
+  { resource: "IdeaView", action: "create" },
+  { resource: "IdeaView", action: "update" },
   // No IssueComment/Timesheet update grant — those edits are author/owner-only
   // (ownership checks in the routes), not permission grants.
 ];
@@ -216,6 +226,39 @@ export async function seedProjectDefaults(
   }
 }
 
+/**
+ * Assign a project's default role (`isDefault` — Contributor out of the box) to
+ * a member who has no project role yet. The Add-Member / assign-projects UIs
+ * only write a `QtProjectUserRole` when the admin explicitly picks a role, so a
+ * forgotten pick used to leave the member "Unassigned" (the default flag was
+ * never applied as a fallback). This materializes it — the same behaviour the
+ * org user-creation flow already applies.
+ *
+ * Takes the full `db` client (not a tx) so callers can run it after a
+ * transaction commits. Idempotent against the (projectId, userId) unique key
+ * and never clobbers an existing assignment or an explicit pick. No-ops when
+ * the project has no default role configured.
+ */
+export async function assignDefaultProjectRoleIfNone(
+  projectId: string,
+  userId: string,
+  assignedBy: string,
+): Promise<void> {
+  const existing = await db.qtProjectUserRole.findUnique({
+    where: { projectId_userId: { projectId, userId } },
+    select: { id: true },
+  });
+  if (existing) return;
+  const def = await db.qtProjectRole.findFirst({
+    where: { projectId, isDefault: true },
+    select: { id: true },
+  });
+  if (!def) return;
+  await db.qtProjectUserRole.create({
+    data: { projectId, userId, projectRoleId: def.id, assignedBy },
+  });
+}
+
 /** Returns the QtProjectRole.id for the named starter role in this project. */
 export async function getStarterProjectRoleId(
   tx: Prisma.TransactionClient,
@@ -239,4 +282,31 @@ export async function getDefaultStatusId(
     select: { id: true },
   });
   return s?.id ?? null;
+}
+
+/**
+ * Next work-item key ("PROJ-N") for a project. We derive N from the MAX existing
+ * key suffix — NOT `count()+1`, which collides once any issue has been deleted or
+ * a key was skipped (count < max ⇒ regenerates an existing key ⇒ unique-key
+ * violation on QtIssue). We scan ALL keys (including soft-deleted) so a reused
+ * number can never resurrect a deleted item's key. Caller should still wrap the
+ * create in a small retry loop to survive a concurrent insert race.
+ */
+export async function nextIssueKey(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  projectKey: string,
+): Promise<string> {
+  const rows = await tx.qtIssue.findMany({
+    where: { projectId },
+    select: { key: true },
+  });
+  const prefix = `${projectKey}-`;
+  let max = 0;
+  for (const { key } of rows) {
+    if (!key.startsWith(prefix)) continue;
+    const n = Number.parseInt(key.slice(prefix.length), 10);
+    if (Number.isFinite(n) && n > max) max = n;
+  }
+  return `${projectKey}-${max + 1}`;
 }

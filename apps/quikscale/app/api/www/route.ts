@@ -12,7 +12,7 @@ import { audit, requestContext } from "@/lib/audit";
 import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
 import { notifyWWWAssignment } from "@/lib/services/wwwNotifications";
 import { isFeatureFlagEnabled } from "@/lib/utils/featureFlags";
-import { isOrgAdmin } from "@/lib/api/visibility";
+import { buildWwwScopeWhere } from "@/lib/api/wwwListQuery";
 import { fetchAuditUserMap, decorateAudit } from "@/lib/api/auditUsers";
 import { searchUserIds, dateSearchConditions } from "@/lib/api/listSearch";
 
@@ -31,36 +31,13 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   const teamFilter = searchParams.get("teamId") || undefined;
 
   const includeDeleted = searchParams.get("includeDeleted") === "true";
-  // Typed so the `orgId` tenant filter can't be silently dropped by a future edit.
-  const where: Prisma.WWWItemWhereInput = { orgId };
-  where.deletedAt = includeDeleted ? { not: null } : null;
-  // `status` accepts a single value (`status=completed`) or a comma-separated
-  // set (`status=on-track,behind-schedule`). The Dashboard WWW section uses a
-  // multi-select status filter, so a set maps to `status IN (...)`. An empty
-  // set (every status unchecked) forces an empty result via a sentinel.
-  if (status) {
-    const statuses = status.split(",").map((s) => s.trim()).filter(Boolean);
-    if (statuses.length === 1) where.status = statuses[0];
-    else if (statuses.length > 1) where.status = { in: statuses };
-    else where.status = "__none__";
-  }
-
-  // Row-level visibility: admins see all WWW items, non-admins see only
-  // items where they are the `who` (assigned person). An explicit who/team
-  // filter can only NARROW within that scope.
-  const wwwAdminBypass = await isOrgAdmin(userId, orgId);
-  if (!wwwAdminBypass) {
-    where.who = userId;
-  } else if (whoFilter) {
-    where.who = whoFilter; // explicit assignee filter takes precedence over team
-  } else if (teamFilter) {
-    const members = await db.orgMember.findMany({
-      where: { orgId, teamId: teamFilter, status: "active" },
-      select: { userId: true },
-    });
-    const memberIds = members.map((m) => m.userId);
-    where.who = memberIds.length > 0 ? { in: memberIds } : "__no_team_members__";
-  }
+  // Scope + trash + status + row-level visibility (`who`) live in the shared
+  // helper so the WWW export route enforces identical rules. Search + orderBy
+  // are layered on below.
+  const where = await buildWwwScopeWhere(
+    { orgId, userId },
+    { status, who: whoFilter, teamId: teamFilter, includeDeleted },
+  );
 
   if (search) {
     // Global search across every visible WWW column: what/notes, who (assignee

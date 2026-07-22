@@ -17,7 +17,6 @@ const TITLES: Record<string, string> = {
   "/audit-log": "Audit Log",
   "/notifications": "Notifications",
   "/reports": "Reports",
-  "/users": "User Directory",
   "/settings": "Settings",
 };
 
@@ -109,8 +108,14 @@ export function Topbar({ onMenuClick, displayName, email }: TopbarProps) {
               authUrl: process.env.NEXT_PUBLIC_AUTH_URL,
               quikitUrl: process.env.NEXT_PUBLIC_QUIKIT_URL,
               localSignOut: () => signOut({ redirect: false }),
+              // Land back on THIS app's marketing landing (localhost:3012 in
+              // dev). Pin the app's own base URL so the redirect is correct even
+              // when reached via a non-localhost origin; fall back to the current
+              // origin. Mirrors quiktrack's header logout.
               postLogoutRedirect:
-                (typeof window !== "undefined" ? window.location.origin : "") + "/",
+                (process.env.NEXT_PUBLIC_QUIKASSET_URL?.replace(/\/+$/, "") ??
+                  (typeof window !== "undefined" ? window.location.origin : "")) +
+                "/",
             })
           }
           className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-sm font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)]"

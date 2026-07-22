@@ -14,11 +14,12 @@ import {
   generateMonthlyQuarterDates, chainQuarterDates, isMonthBasedWeekCounts,
   addMonthsUTC, addDays, diffDays,
 } from "@/lib/utils/quarterGen";
+import { generateMeetingDayWeeks, meetingDayIndex } from "@/lib/utils/fiscal";
 import {
   RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton, Pagination,
 } from "@quikit/ui";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
-import { useCustomQuarterSettings } from "@/lib/hooks/useFeatureFlags";
+import { useCustomQuarterSettings, useWeeklyMeetingDay, invalidateFeatureFlagsCache } from "@/lib/hooks/useFeatureFlags";
 import { notify } from "@/lib/utils/notify";
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
@@ -118,8 +119,15 @@ function EditPanel({
   canUpdate?: boolean;
 }) {
   const customEnabled = useCustomQuarterSettings();
+  const meetingDay = useWeeklyMeetingDay();
+  // Meeting-day mode: week count is derived from the meeting day, so the manual
+  // "Number of weeks" input is hidden and never sent (server ignores it too).
+  const meetingDayMode = customEnabled && meetingDayIndex(meetingDay) !== null;
   const [startDate, setStartDate] = useState("");
   const [weeks,     setWeeks]     = useState("13");
+  // Meeting day is editable here while the FY is unlocked (the panel only opens
+  // for unlocked years). Saving re-derives every quarter's week count server-side.
+  const [meetingDaySel, setMeetingDaySel] = useState("Wednesday");
   const [saving,    setSaving]    = useState(false);
   const [error,     setError]     = useState("");
 
@@ -127,9 +135,10 @@ function EditPanel({
     if (open && row) {
       setStartDate(toInputDate(row.startDate));
       setWeeks(String(row.weekCount ?? 13));
+      if (meetingDay) setMeetingDaySel(meetingDay);
       setError("");
     }
-  }, [open, row]);
+  }, [open, row, meetingDay]);
 
   const isQ1Row = row?.quarter === "Q1";
 
@@ -138,13 +147,17 @@ function EditPanel({
     if ((!customEnabled || isQ1Row) && !startDate) { setError("Start date is required."); return; }
 
     const weeksNum = parseInt(weeks, 10);
-    if (customEnabled && (!Number.isFinite(weeksNum) || weeksNum < 1)) {
+    if (customEnabled && !meetingDayMode && (!Number.isFinite(weeksNum) || weeksNum < 1)) {
       setError("Enter a valid number of weeks.");
       return;
     }
 
+    // Meeting-day mode: weekCount is derived server-side — send only Q1's start
+    // (other quarters have nothing to edit; saving just re-derives the FY).
     const body = customEnabled
-      ? { ...(isQ1Row ? { startDate } : {}), weekCount: weeksNum }
+      ? (meetingDayMode
+          ? { ...(isQ1Row ? { startDate } : {}), weeklyMeetingDay: meetingDaySel }
+          : { ...(isQ1Row ? { startDate } : {}), weekCount: weeksNum })
       : { startDate };
 
     setSaving(true); setError("");
@@ -175,9 +188,12 @@ function EditPanel({
   // any other week count spans weeks×7 days. Legacy Q1 uses the 91-day split.
   const parsedStart = startDate ? new Date(startDate) : null;
   const qStartForPreview = isQ1Row ? parsedStart : new Date(row.startDate);
+  // Meeting-day mode is always month-based server-side (end = start + 3 months
+  // − 1 day), so the End Date preview must match the table's persisted value —
+  // NOT the weeks×7 fallback (14 weeks would otherwise over-count by ~7 days).
   const qEndPreview = qStartForPreview && !isNaN(qStartForPreview.getTime())
     ? (customEnabled
-        ? (weeksNumPreview === 13
+        ? ((meetingDayMode || weeksNumPreview === 13)
             ? addDays(addMonthsUTC(qStartForPreview, 3), -1)
             : addDays(qStartForPreview, weeksNumPreview * 7 - 1))
         : (parsedStart ? addDays(parsedStart, 91 - 1) : null))
@@ -217,6 +233,32 @@ function EditPanel({
             </div>
           )}
           <fieldset disabled={!canUpdate} className={!canUpdate ? "opacity-70 space-y-4" : "space-y-4"}>
+          {meetingDayMode && (
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1.5">Meeting Day</label>
+              {canUpdate ? (
+                <>
+                  <select
+                    value={meetingDaySel}
+                    onChange={e => { setMeetingDaySel(e.target.value); setError(""); }}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-accent-400"
+                  >
+                    {WEEKDAYS.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    Editable until you add data for this fiscal year. Changing it re-derives each
+                    quarter&apos;s week count. Locked once the year has KPI/Priority/OPSP data.
+                  </p>
+                </>
+              ) : (
+                <div className="w-full border border-gray-100 rounded-lg px-3 py-2 text-sm text-gray-400 bg-gray-50">
+                  {meetingDay}
+                  <span className="text-[10px] ml-2 text-gray-300">(read-only)</span>
+                </div>
+              )}
+            </div>
+          )}
+
           {(!customEnabled || isQ1Row) && (
             <div>
               <label className="text-xs font-medium text-gray-600 block mb-1.5">
@@ -231,7 +273,7 @@ function EditPanel({
             </div>
           )}
 
-          {customEnabled && (
+          {customEnabled && !meetingDayMode && (
             <div>
               <label className="text-xs font-medium text-gray-600 block mb-1.5">
                 Number of weeks <span className="text-red-400">*</span>
@@ -247,6 +289,20 @@ function EditPanel({
               {!isQ1Row && (
                 <p className="text-[10px] text-gray-400 mt-1">This quarter starts the day after the previous one ends.</p>
               )}
+            </div>
+          )}
+
+          {meetingDayMode && (
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1.5">Number of weeks</label>
+              <div className="w-full border border-gray-100 rounded-lg px-3 py-2 text-sm text-gray-400 bg-gray-50">
+                {row.weekCount ?? 13} weeks
+                <span className="text-[10px] ml-2 text-gray-300">(derived from {meetingDaySel} meeting day)</span>
+              </div>
+              <p className="text-[10px] text-gray-400 mt-1">
+                Each week runs {meetingDaySel} → the day before the next {meetingDaySel}. Week counts
+                (13 or 14, incl. partial weeks) update automatically{isQ1Row ? " when you change the start date" : ""}.
+              </p>
             </div>
           )}
 
@@ -397,8 +453,13 @@ function GenerateModal({
   // day-count split. Custom mode branches the same way the server does: all-13
   // weeks → month-based 3-month intervals (365/366 days, calendar-aligned); any
   // week ≠ 13 → week-based (weeks×7, FY length floats to the sum).
+  // Meeting-day mode: quarter dates are always calendar-month based and each
+  // quarter's week count is DERIVED from the meeting-day chain (13 or 14, incl.
+  // partial weeks). The manual per-quarter week inputs are hidden and stay 13.
+  const meetingDayIdxNum = customEnabled ? meetingDayIndex(meetingDay) : null;
   const weekCountsNum = weekCounts.map((w) => parseInt(w, 10) || 13);
-  const customMonthBased = isMonthBasedWeekCounts(weekCountsNum);
+  // In meeting-day mode force month-based generation regardless of week inputs.
+  const customMonthBased = meetingDayIdxNum !== null ? true : isMonthBasedWeekCounts(weekCountsNum);
   const fyEndPreview = parsedStart
     ? new Date(new Date(startDate).setFullYear(parsedStart.getFullYear() + 1, parsedStart.getMonth(), parsedStart.getDate() - 1))
     : null;
@@ -417,11 +478,14 @@ function GenerateModal({
           start: q.startDate,
           end: q.endDate,
           days: diffDays(q.startDate, q.endDate) + 1,
+          weeks: meetingDayIdxNum !== null
+            ? generateMeetingDayWeeks(q.startDate, q.endDate, meetingDayIdxNum).length
+            : undefined,
         }))
       : (() => {
           const days = [91, 91, 91, q4DaysPreview];
           const names = ["Q1", "Q2", "Q3", "Q4"];
-          const result: { name: string; start: Date; end: Date; days: number }[] = [];
+          const result: { name: string; start: Date; end: Date; days: number; weeks?: number }[] = [];
           let cursor = new Date(parsedStart.getTime());
           for (let i = 0; i < 4; i++) {
             const qStart = new Date(cursor.getTime());
@@ -496,7 +560,7 @@ function GenerateModal({
         <>
         <p className="text-xs text-gray-500 mb-4">
           {customEnabled
-            ? "Set the financial year start date, weekly meeting day, and weeks per quarter. Leave all quarters at 13 weeks for calendar-month quarters, or set any value for custom week lengths."
+            ? "Set the financial year start date and weekly meeting day. Quarters use calendar-month boundaries and each week follows the meeting-day cycle; weeks per quarter are derived automatically."
             : "Set the financial year start date. Quarters will be generated using day-count distribution."}
         </p>
 
@@ -528,34 +592,11 @@ function GenerateModal({
                 {WEEKDAYS.map(d => <option key={d} value={d}>{d}</option>)}
               </select>
             </div>
-            <div>
-              <label className="text-xs font-medium text-gray-600 block mb-1.5">Weeks per quarter</label>
-              <div className="grid grid-cols-4 gap-2">
-                {["Q1", "Q2", "Q3", "Q4"].map((q, i) => (
-                  <div key={q}>
-                    <span className="text-[10px] text-gray-500 block mb-0.5">{q}</span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={26}
-                      value={weekCounts[i]}
-                      onChange={e => {
-                        const next = [...weekCounts];
-                        next[i] = e.target.value;
-                        setWeekCounts(next);
-                        setError("");
-                      }}
-                      className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-accent-400"
-                    />
-                  </div>
-                ))}
-              </div>
-              <p className="text-[10px] text-gray-400 mt-1">
-                {customMonthBased
-                  ? "All 13 → calendar-month quarters (full 365/366-day year)."
-                  : "Custom week lengths → year length = sum of weeks × 7."}
-              </p>
-            </div>
+            <p className="text-[10px] text-gray-400">
+              Quarters use calendar-month boundaries. Each week runs {meetingDay} → the day
+              before the next {meetingDay}; the weeks per quarter (13 or 14, including partial
+              weeks at quarter edges) are derived automatically from the meeting day.
+            </p>
           </div>
         )}
 
@@ -592,7 +633,10 @@ function GenerateModal({
                       {fmtDate(q.start.toISOString())} → {fmtDate(q.end.toISOString())}
                     </p>
                   </div>
-                  <p className="text-[10px] text-gray-500 font-medium flex-shrink-0">{q.days} days</p>
+                  <p className="text-[10px] text-gray-500 font-medium flex-shrink-0 text-right">
+                    {q.weeks != null && <span className="block text-gray-700">{q.weeks} weeks</span>}
+                    {q.days} days
+                  </p>
                 </div>
               );
             })}
@@ -621,6 +665,8 @@ function GenerateModal({
 export default function QuarterSettingsPage() {
   const { canCreate, canUpdate, canDelete } = useResourcePermissions("Quarter");
   const customEnabled = useCustomQuarterSettings();
+  const meetingDay = useWeeklyMeetingDay();
+  const meetingDayActive = customEnabled && meetingDayIndex(meetingDay) !== null;
   const [rows,          setRows]          = useState<QuarterRow[]>([]);
   const [allYears,      setAllYears]      = useState<number[]>([]);
   const [loading,       setLoading]       = useState(true);
@@ -725,6 +771,10 @@ export default function QuarterSettingsPage() {
     // Week counts / boundaries may have changed — clear the quarter caches so
     // week-aware views (KPI grid, Priority labels) pick them up without reload.
     invalidateAllQuarterCaches();
+    // The meeting day is editable from the panel — refresh the flags cache so
+    // the header "Meeting Day" badge and week-aware hooks reflect the new value
+    // without a reload.
+    invalidateFeatureFlagsCache();
   }
 
   function handleGenerated(newRows: QuarterRow[]) {
@@ -734,6 +784,10 @@ export default function QuarterSettingsPage() {
       setAllYears(prev => [...new Set([...prev, fy])].sort((a, b) => b - a));
       fetchRows(fy);
       invalidateAllQuarterCaches();
+      // A fresh generate may have set a new weekly meeting day — refresh the
+      // flags cache so the header badge shows the just-saved value, not the
+      // stale one from before this generate.
+      invalidateFeatureFlagsCache();
     }
   }
 
@@ -923,6 +977,12 @@ export default function QuarterSettingsPage() {
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-accent-50 text-accent-600 text-xs font-medium border border-accent-200">
               <span className="h-1.5 w-1.5 rounded-full bg-accent-500 inline-block" />
               Quarter: {currentQW.quarter} • Week {currentQW.week}
+            </span>
+          )}
+          {meetingDayActive && filtered.length > 0 && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-accent-50 text-accent-600 text-xs font-medium border border-accent-200">
+              <CalendarDays className="h-3 w-3" />
+              Meeting Day: {meetingDay}
             </span>
           )}
           {fyHasData && (

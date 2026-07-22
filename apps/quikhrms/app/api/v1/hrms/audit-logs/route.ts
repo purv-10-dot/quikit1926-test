@@ -47,7 +47,28 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
       prisma.hrmsAuditLog.count({ where }),
     ]);
 
-    return successResponse(logs, paginationMeta(page, limit, total));
+    // Enrich each row with a human-readable actor name. Audit `userId` maps to
+    // an Employee.id in this app; fall back to the raw id when unresolved.
+    const userIds = [...new Set(logs.map((l) => l.userId).filter(Boolean))];
+    const employees = userIds.length
+      ? await prisma.employee.findMany({
+          where: { orgId, id: { in: userIds } },
+          select: { id: true, firstName: true, lastName: true, employeeCode: true },
+        })
+      : [];
+    const actorMap = new Map(
+      employees.map((e) => [
+        e.id,
+        `${e.firstName ?? ""} ${e.lastName ?? ""}`.trim() || e.employeeCode || e.id,
+      ]),
+    );
+
+    const enriched = logs.map((l) => ({
+      ...l,
+      actorName: actorMap.get(l.userId) ?? l.userId,
+    }));
+
+    return successResponse(enriched, paginationMeta(page, limit, total));
   } catch (error) {
     console.error("GET /audit-logs error:", error);
     return internalError();

@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Briefcase, Calendar, CheckCircle, Clock, XCircle, LogIn } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -16,8 +16,8 @@ interface PortalData {
   applications: Application[];
 }
 
-export default function CandidatePortalPage({ params }: { params: Promise<{ token: string }> }) {
-  const { token } = use(params);
+export default function CandidatePortalPage({ params }: { params: { token: string } }) {
+  const { token } = params;
   const [data, setData] = useState<PortalData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -52,7 +52,7 @@ export default function CandidatePortalPage({ params }: { params: Promise<{ toke
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-6">
+      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-5 py-4">
         <div className="max-w-5xl mx-auto flex items-center gap-4">
           <div className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center text-xl font-bold">
             {data.candidate.firstName[0]}{data.candidate.lastName[0]}
@@ -67,7 +67,7 @@ export default function CandidatePortalPage({ params }: { params: Promise<{ toke
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto p-6 space-y-4">
+      <div className="max-w-5xl mx-auto p-4 space-y-4">
         <h2 className="font-semibold text-gray-900 text-lg">My Applications ({data.applications.length})</h2>
 
         {data.applications.length === 0 ? (

@@ -38,7 +38,7 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
     console.error("PATCH /locations/:id error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.org.write"] });
 
 export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }, params) => {
   try {
@@ -56,4 +56,4 @@ export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }, para
     console.error("DELETE /locations/:id error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.org.write"] });

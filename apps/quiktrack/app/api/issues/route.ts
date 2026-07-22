@@ -3,7 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { createIssueSchema } from "@/lib/validation/issue";
-import { getDefaultStatusId } from "@/lib/services/projectDefaults";
+import { getDefaultStatusId, nextIssueKey } from "@/lib/services/projectDefaults";
 import { recalcParentRollup } from "@/lib/services/subtaskRollup";
 import { userCanInProject, forbidden, hasAdminAccess } from "@/lib/api/permissions";
 import { notifyMentions } from "@/lib/services/mentions";
@@ -183,6 +183,20 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
       ? { AND: [...customFilterWhere, ...(assigneeClause ? [assigneeClause] : [])] }
       : {}),
   };
+
+  // idsOnly mode: return every matching id for the current filter, unpaginated.
+  // Used by the backlog's "select all in section" so a bulk move/edit can act on
+  // items that haven't been scrolled into view yet (not just the loaded page).
+  // Capped so a pathological selection can't return an unbounded payload.
+  if (url.searchParams.get("idsOnly") === "1") {
+    const rows = await db.qtIssue.findMany({
+      where,
+      orderBy,
+      take: 5000,
+      select: { id: true },
+    });
+    return NextResponse.json({ success: true, data: rows, total: rows.length });
+  }
 
   // Build pagination args separately — inlining a ternary spread confuses TS
   // into thinking required keys (skip/take) might be undefined.
@@ -432,8 +446,10 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
       parsed.data.statusId ?? (await getDefaultStatusId(tx, project.id));
     if (!statusId) throw new Error("Project has no statuses");
 
-    const seq = await tx.qtIssue.count({ where: { projectId: project.id } });
-    const key = `${project.projectKey}-${seq + 1}`;
+    // Derive the key from the MAX existing suffix, not count()+1 — the latter
+    // regenerates an existing key once any issue has been deleted, tripping the
+    // QtIssue unique-key constraint.
+    const key = await nextIssueKey(tx, project.id, project.projectKey);
 
     return tx.qtIssue.create({
       data: {

@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, validationError, internalError } from "@/lib/api-response";
+import { successResponse, validationError, notFound, internalError } from "@/lib/api-response";
 import { createEmploymentHistorySchema } from "@/lib/validations/gap-fill";
 import { createAuditLog } from "@/lib/utils/audit";
 
@@ -27,6 +27,15 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
     }
 
     const d = parsed.data;
+
+    // Guard the FK: a missing / cross-org employee would otherwise throw a Prisma
+    // FK error caught by the generic catch → "Something went wrong".
+    const employee = await prisma.employee.findFirst({
+      where: { id: params.id, orgId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!employee) return notFound("Employee not found");
+
     const entry = await prisma.employmentHistory.create({
       data: {
         orgId,

@@ -21,13 +21,25 @@ export async function GET(
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
 
-  const vendorId = req.nextUrl.searchParams.get("vendorId");
-  if (!vendorId) {
-    return NextResponse.json({ error: "vendorId is required" }, { status: 400 });
-  }
-
   const rfq = await findRfqById(ctx.orgId, params.id);
   if (!rfq) return NextResponse.json({ error: "RFQ not found" }, { status: 404 });
+
+  // The RFQ PDF is per-vendor (it's the document a specific supplier
+  // receives). The detail page passes an explicit `vendorId`; the list
+  // "PDF" action doesn't, so fall back to the RFQ's first vendor there.
+  const rfqVendors = (rfq as { vendors?: Array<{ vendorId?: string | null }> })
+    .vendors;
+  const vendorId =
+    req.nextUrl.searchParams.get("vendorId") ||
+    (Array.isArray(rfqVendors)
+      ? rfqVendors.find((v) => v?.vendorId)?.vendorId ?? null
+      : null);
+  if (!vendorId) {
+    return NextResponse.json(
+      { error: "This RFQ has no vendor to preview" },
+      { status: 404 },
+    );
+  }
 
   const pdf = await buildRfqPreviewPdfForVendor(ctx.orgId, rfq, vendorId);
   if (!pdf) {

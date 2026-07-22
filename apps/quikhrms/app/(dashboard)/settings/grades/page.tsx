@@ -22,6 +22,7 @@ export default function GradesPage() {
   const [search, setSearch] = useState("");
   const [modal, setModal] = useState<{ open: boolean; item: GradeItem | null }>({ open: false, item: null });
   const [form, setForm] = useState({ name: "", level: 0, minSalary: 0, maxSalary: 0 });
+  const [formErr, setFormErr] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["grades"],
@@ -51,11 +52,16 @@ export default function GradesPage() {
     { key: "_count", label: "Employees", render: (g) => g._count.employees },
   ];
 
-  const openAdd = () => { setForm({ name: "", level: 0, minSalary: 0, maxSalary: 0 }); setModal({ open: true, item: null }); };
-  const openEdit = (item: GradeItem) => { setForm({ name: item.name, level: item.level, minSalary: Number(item.minSalary ?? 0), maxSalary: Number(item.maxSalary ?? 0) }); setModal({ open: true, item }); };
+  const openAdd = () => { setForm({ name: "", level: 0, minSalary: 0, maxSalary: 0 }); setFormErr(null); setModal({ open: true, item: null }); };
+  const openEdit = (item: GradeItem) => { setForm({ name: item.name, level: item.level, minSalary: Number(item.minSalary ?? 0), maxSalary: Number(item.maxSalary ?? 0) }); setFormErr(null); setModal({ open: true, item }); };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.name.trim()) return setFormErr("Name is required");
+    if (form.minSalary > 0 && form.maxSalary > 0 && form.minSalary > form.maxSalary) {
+      return setFormErr("Min salary can’t be greater than max salary");
+    }
+    setFormErr(null);
     modal.item ? updateMut.mutate({ id: modal.item.id, body: form }) : createMut.mutate(form);
   };
 
@@ -72,30 +78,31 @@ export default function GradesPage() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
             <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required
-              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Level</label>
             <NumberInput allowDecimal={false} value={form.level} onChange={(v) => setForm({ ...form, level: v ?? 0 })}
-              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]" />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Min Salary</label>
               <NumberInput value={form.minSalary} onChange={(v) => setForm({ ...form, minSalary: v ?? 0 })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Max Salary</label>
               <NumberInput value={form.maxSalary} onChange={(v) => setForm({ ...form, maxSalary: v ?? 0 })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]" />
             </div>
           </div>
+          {formErr && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">{formErr}</p>}
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={() => setModal({ open: false, item: null })}
-              className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm text-gray-700 hover:bg-gray-50">Cancel</button>
+              className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
             <button type="submit"
-              className="px-4 py-2 bg-[#16243A] text-white rounded-lg text-sm font-medium hover:bg-[#2563eb]">
+              className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700">
               {modal.item ? "Update" : "Create"}</button>
           </div>
         </form>

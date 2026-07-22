@@ -34,7 +34,7 @@ interface Assignment {
 }
 
 const STATUS_BADGE: Record<Assignment["status"], string> = {
-  Active: "bg-blue-100 text-blue-700",
+  Active: "bg-green-100 text-green-700",
   Completed: "bg-emerald-100 text-emerald-700",
   Cancelled: "bg-gray-100 text-gray-600",
 };
@@ -84,22 +84,22 @@ export default function KraAssignmentsPage() {
   };
 
   return (
-    <div className="w-full space-y-5">
+    <div className="w-full space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <Users size={28} className="text-[#3b82f6]" />
+          <Users size={28} className="text-[#22c55e]" />
           <div>
-            <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">KRA Assignments</h1>
-            <p className="text-sm text-gray-500">
+            <h1 className="text-page-title text-gray-900">KRA Assignments</h1>
+            <p className="text-xs text-gray-500">
               Scorecards assigned to employees. Each row carries a frozen copy of its template.
             </p>
           </div>
         </div>
         <Link
           href="/performance/kra-templates"
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-md text-sm font-semibold"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-md text-xs font-medium"
         >
-          <Target size={14} /> Templates
+          <Target size={13} /> Templates
         </Link>
       </div>
 
@@ -111,7 +111,7 @@ export default function KraAssignmentsPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by employee or scorecard…"
-            className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#16243A]/20 focus:border-[#16243A]"
+            className="w-full pl-8 pr-3 py-2 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#166534]/20 focus:border-[#166534]"
           />
         </div>
         <div className="w-44">
@@ -135,22 +135,22 @@ export default function KraAssignmentsPage() {
         ) : assignments.length === 0 ? (
           <div className="py-12 text-center">
             <Users size={28} className="text-gray-300 mx-auto mb-2" />
-            <p className="text-sm font-bold text-gray-900">No assignments yet</p>
+            <p className="text-[13px] font-semibold text-gray-900">No assignments yet</p>
             <p className="text-xs text-gray-500 mt-1">
-              Go to <Link href="/performance/kra-templates" className="text-[#3b82f6] hover:underline">KRA Templates</Link> and click <strong>Assign</strong> on a scorecard.
+              Go to <Link href="/performance/kra-templates" className="text-[#22c55e] hover:underline">KRA Templates</Link> and click <strong>Assign</strong> on a scorecard.
             </p>
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+          <table className="w-full text-xs">
+            <thead className="bg-gray-50 text-table-head uppercase text-gray-500">
               <tr>
-                <th className="text-left px-4 py-3">Employee</th>
-                <th className="text-left px-4 py-3">Scorecard</th>
-                <th className="text-left px-4 py-3">Period</th>
-                <th className="text-left px-4 py-3">Progress</th>
-                <th className="text-right px-4 py-3">Composite</th>
-                <th className="text-left px-4 py-3">Status</th>
-                <th className="text-right px-4 py-3 w-10"></th>
+                <th className="text-left px-4 py-2.5">Employee</th>
+                <th className="text-left px-4 py-2.5">Scorecard</th>
+                <th className="text-left px-4 py-2.5">Period</th>
+                <th className="text-left px-4 py-2.5">Progress</th>
+                <th className="text-right px-4 py-2.5">Composite</th>
+                <th className="text-left px-4 py-2.5">Status</th>
+                <th className="text-right px-4 py-2.5 w-10"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -169,12 +169,12 @@ export default function KraAssignmentsPage() {
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={a.employee.profilePhoto} alt="" className="w-8 h-8 rounded-full object-cover" />
                         ) : (
-                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center text-xs font-bold">
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-green-500 to-green-600 text-white flex items-center justify-center text-xs font-bold">
                             {initials}
                           </div>
                         )}
                         <div className="min-w-0">
-                          <p className="font-semibold text-gray-900 truncate">
+                          <p className="text-[13px] font-semibold text-gray-900 truncate">
                             {a.employee ? `${a.employee.firstName} ${a.employee.lastName}` : "—"}
                           </p>
                           <p className="text-[11px] text-gray-500 flex items-center gap-2">
@@ -202,7 +202,7 @@ export default function KraAssignmentsPage() {
                           <div
                             className={clsx(
                               "h-full transition-all",
-                              pct >= 100 ? "bg-emerald-500" : pct > 0 ? "bg-blue-500" : "bg-gray-300",
+                              pct >= 100 ? "bg-emerald-500" : pct > 0 ? "bg-green-500" : "bg-gray-300",
                             )}
                             style={{ width: `${pct}%` }}
                           />
@@ -227,16 +227,16 @@ export default function KraAssignmentsPage() {
                       <span className="text-[10px] text-gray-400"> / 5</span>
                     </td>
                     <td className="px-4 py-2.5">
-                      <span className={clsx("inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold", STATUS_BADGE[a.status])}>
+                      <span className={clsx("inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium", STATUS_BADGE[a.status])}>
                         {a.status}
                       </span>
                     </td>
                     <td className="px-2 py-2.5 text-right">
                       <Link
                         href={`/performance/kra-assignments/${a.id}`}
-                        className="inline-flex items-center justify-center w-7 h-7 rounded-md text-gray-400 hover:text-[#3b82f6] hover:bg-blue-50"
+                        className="inline-flex items-center justify-center w-7 h-7 rounded-md text-gray-400 hover:text-[#22c55e] hover:bg-green-50"
                       >
-                        <ArrowRight size={14} />
+                        <ArrowRight size={12} />
                       </Link>
                     </td>
                   </tr>

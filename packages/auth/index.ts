@@ -137,13 +137,6 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
               // switch.
               authorization: { params: { prompt: "select_account" } },
               profile(profile) {
-                console.log("[google.profile] raw profile from Google:", {
-                  sub: profile.sub,
-                  email: profile.email,
-                  name: profile.name,
-                  given_name: profile.given_name,
-                  family_name: profile.family_name,
-                });
                 return {
                   // Placeholder id — `signIn` callback replaces it with the
                   // DB User.id once we've confirmed the email exists.
@@ -167,7 +160,6 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
               clientSecret: process.env.MICROSOFT_CLIENT_SECRET,
               tenantId: process.env.MICROSOFT_TENANT_ID || "common",
               profile(profile) {
-                console.log("[azure-ad.profile] raw profile from Microsoft:", profile);
                 // Azure AD's id_token rarely splits given/family — derive
                 // both from `name` so we always have something to pre-fill.
                 const split = splitName(profile.name);
@@ -299,11 +291,6 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
               firstName: oauthFirst,
               lastName: oauthLast,
             });
-            console.log(
-              "[auth.signIn] OAuth pre-fill stored for",
-              email,
-              { firstName: oauthFirst, lastName: oauthLast, provider: account.provider },
-            );
           } catch (err) {
             console.error("[auth.signIn] failed to stash OAuth pre-fill:", err);
           }

@@ -113,6 +113,18 @@ export default function SettingsPage() {
     return true;
   });
 
+  // Deep-link support: `/settings?tab=configurations` (used by the
+  // "Quarters not set up yet" guard and other in-app links) opens that tab
+  // directly. Read client-side to avoid a Suspense boundary requirement.
+  // Re-runs when `isAdmin` resolves so a configurations deep-link still lands
+  // once the session confirms admin (the tab is admin-gated).
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (!t || !TABS.some((tab) => tab.key === t)) return;
+    if (t === "configurations" && !isAdmin) return;
+    setActiveTab(t as TabKey);
+  }, [isAdmin]);
+
   return (
     <div className="flex h-full">
       {/* Left tab sidebar */}
@@ -719,7 +731,7 @@ function ConfigurationsTab() {
         {/* Custom Quarter Settings */}
         <div className="border border-[var(--color-border)] rounded-xl p-5 bg-[var(--color-bg-primary)]">
           <h4 className="text-sm font-semibold text-[var(--color-text-primary)] mb-2">Custom Quarter Settings</h4>
-          <p className="text-xs text-[var(--color-text-secondary)] mb-4">Give each quarter a custom number of weeks (e.g. Q1 = 14, Q2 = 15) and edit quarter dates from Quarter Settings. When off, quarters stay 13 weeks.</p>
+          <p className="text-xs text-[var(--color-text-secondary)] mb-4">When on, weeks start on your chosen Weekly Meeting Day, so quarters run 13–14 weeks (with partial weeks at the edges). When off, every quarter is a fixed 13 weeks.</p>
           <div className="flex items-center justify-between">
             <Toggle
               enabled={customQuarterSettings}

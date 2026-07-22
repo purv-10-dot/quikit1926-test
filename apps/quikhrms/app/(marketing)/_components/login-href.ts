@@ -50,3 +50,11 @@ function buildLoginHref(): string {
 }
 
 export const LOGIN_HREF = buildLoginHref();
+
+/**
+ * Self-serve registration lives on the central QuikAuth /register wizard
+ * (workspace → OTP → password), which signs the user in and lands them on the
+ * launcher /apps grid — so, unlike login, it needs no callbackUrl/bridge back
+ * to HRMS. Built from the same AUTH_URL base as the login handoff above.
+ */
+export const SIGNUP_HREF = `${AUTH_URL}/register`;

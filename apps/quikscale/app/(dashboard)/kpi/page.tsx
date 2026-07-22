@@ -1,17 +1,18 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useKPIs, useDeleteKPI, useBulkRestoreKPI } from "@/lib/hooks/useKPI";
 import { notify } from "@/lib/utils/notify";
 import { useTableSort, useDebouncedTableSearch } from "@/lib/store";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { useInfiniteUsers } from "@/lib/hooks/useInfiniteUsers";
+import { useUserOption } from "@/lib/hooks/useUserOption";
 import { KPIListParams } from "@/lib/schemas/kpiSchema";
 import {
   getFiscalYear, getFiscalQuarter, fiscalYearLabel,
 } from "@/lib/utils/fiscal";
-import { useCurrentWeek, useWeekDateRange, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useCurrentQuarter, useWeekDateRange, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
 import { useNumberFormat } from "@/lib/hooks/useFeatureFlags";
 import { KPITable } from "./components/KPITable";
 import { KPIModal } from "./components/KPIModal";
@@ -26,6 +27,9 @@ import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
 import { runExport } from "@/lib/export/xlsx";
 import { getKPIs } from "@/lib/services/kpiService";
+import { computeWeeklyGoal } from "@/lib/utils/kpiHelpers";
+import { GlobalExportModal, type GlobalExportSelection } from "@/components/export/GlobalExportModal";
+import { downloadExport } from "@/lib/exports/downloadExport";
 import { UnreadCountsProvider } from "@/components/audit/UnreadCountsProvider";
 import { Target } from "lucide-react";
 
@@ -150,16 +154,11 @@ export default function IndividualKPIPage() {
 
   // When an owner filter is restored from context (or the owner sits beyond the
   // loaded 25-user page), the id won't be in the FilterPicker's `options`, so
-  // the trigger would fall back to "All owners". Resolve the owner's name from
-  // the loaded KPI rows (the list is owner-scoped when filtered) and feed it as
-  // the picker's `selectedOption` so the applied owner's name is shown.
-  const selectedOwnerOption = useMemo(() => {
-    if (!filterOwner || users.some((u) => u.id === filterOwner)) return undefined;
-    const ou = kpis.find((k) => k.owner === filterOwner)?.owner_user;
-    return ou
-      ? userToFilterOption({ id: filterOwner, firstName: ou.firstName, lastName: ou.lastName, email: "" })
-      : undefined;
-  }, [filterOwner, users, kpis]);
+  // the trigger would fall back to "All owners". Resolve the owner by id (via
+  // useUserOption) and feed it as the picker's `selectedOption` so the applied
+  // owner's name is shown even when the filtered list is empty (0 KPIs) — the
+  // old approach read the name from loaded KPI rows and broke on an empty list.
+  const selectedOwnerOption = useUserOption(filterOwner);
 
   // Bulk delete
   const deleteKPI = useDeleteKPI();
@@ -241,7 +240,13 @@ export default function IndividualKPIPage() {
             case "quarterlyGoal": return k.quarterlyGoal ?? "";
             case "qtdGoal": return k.qtdGoal ?? "";
             case "qtdAchieved": return k.qtdAchieved ?? 0;
-            case "weeklyGoal": return k.qtdGoal ?? "";
+            case "weeklyGoal": {
+              // Match the KPI table's Weekly Goal column (current week's target
+              // or flat split) — NOT the QTD goal. `fiscalWeek`/`weekCount` are
+              // read at export time (closure), so no render-time TDZ.
+              const wg = computeWeeklyGoal(k.weeklyTargets, k.target, k.qtdGoal, fiscalWeek ?? 1, weekCount);
+              return wg > 0 ? wg : "";
+            }
             case "progress": return typeof k.progressPercent === "number" ? `${k.progressPercent.toFixed(1)}%` : "";
             case "description": return k.description ?? "";
             default: return "";
@@ -265,10 +270,41 @@ export default function IndividualKPIPage() {
     });
   }, [moduleColumns, kpis, filters, viewTrash]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // DB-driven current week + date range (respects QuarterSetting.startDate).
-  // Both return null while loading → pill hides until ready.
-  const fiscalWeek = useCurrentWeek(currentYear, currentQuarter);
-  const fiscalWeekRange = useWeekDateRange(currentYear, currentQuarter, fiscalWeek);
+  // Global Export (server-side, range-aware). Opened from the "More" menu's
+  // Export Data via onExportClick; hits /api/kpi/export which streams the file
+  // for the selected week range + columns + format (.xlsx / PDF).
+  const [globalExportOpen, setGlobalExportOpen] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const handleGlobalExport = useCallback(
+    async (sel: GlobalExportSelection) => {
+      setExportError(null);
+      try {
+        await downloadExport("/api/kpi/export", {
+          columns: sel.columnKeys.join(","),
+          level: "individual",
+          year: sel.range.mode === "quarter" ? sel.range.year : currentYear,
+          quarters: sel.range.mode === "quarter" ? sel.range.quarters.join(",") : currentQuarter,
+          owner: filterOwner || undefined,
+          teamId: filterTeam || undefined,
+          includeDeleted: viewTrash || undefined,
+        });
+      } catch (err) {
+        setExportError(err instanceof Error ? err.message : "Export failed");
+        throw err; // keep the modal open on failure
+      }
+    },
+    [currentYear, currentQuarter, filterOwner, filterTeam, viewTrash],
+  );
+
+  // "You are here" pill — always reflects TODAY's real fiscal position, not the
+  // selected quarter filter. `useCurrentQuarter` resolves the quarter that
+  // actually contains today within the selected fiscal year (null when today is
+  // outside it → pill hides). Then the week + range are computed for that real
+  // quarter. Fixes the pill showing "Q1 · Week 13" (clamped) while today is
+  // actually Q2 · Week 2.
+  const realQuarter = useCurrentQuarter(currentYear);
+  const fiscalWeek = useCurrentWeek(currentYear, realQuarter);
+  const fiscalWeekRange = useWeekDateRange(currentYear, realQuarter, fiscalWeek);
   const activeFilterCount = (filterTeam ? 1 : 0) + (filterOwner ? 1 : 0);
 
   return (
@@ -280,9 +316,9 @@ export default function IndividualKPIPage() {
           <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
             {total} items
           </span>
-          {fiscalWeek !== null && (
+          {realQuarter && fiscalWeek !== null && (
             <span className="text-xs bg-accent-50 text-accent-600 border border-accent-100 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
-              {currentQuarter} · Week {fiscalWeek}{fiscalWeekRange ? ` · ${fiscalWeekRange}` : ""}
+              {realQuarter} · Week {fiscalWeek}{fiscalWeekRange ? ` · ${fiscalWeekRange}` : ""}
             </span>
           )}
         </div>
@@ -435,6 +471,7 @@ export default function IndividualKPIPage() {
             onToggleTrash={setViewTrash}
             rowCounts={{ page: kpis.length, filtered: total, all: total }}
             onExport={handleExport}
+            onExportClick={() => setGlobalExportOpen(true)}
             defaultExportColumnKeys={visibleColKeys}
           />
 
@@ -471,6 +508,7 @@ export default function IndividualKPIPage() {
             onPageChange={(p) => setFilters(f => ({ ...f, page: p }))}
             onPageSizeChange={(size) => setFilters(f => ({ ...f, pageSize: size, page: 1 }))}
             onSort={(col, dir) => setSort({ sortBy: col, sortOrder: dir })}
+            onClearSort={() => setSort({ sortBy: "", sortOrder: "desc" })}
             sortBy={reduxSortBy}
             sortOrder={reduxSortOrder}
             onRefresh={refetch}
@@ -496,6 +534,23 @@ export default function IndividualKPIPage() {
           onClose={() => setShowAddModal(false)}
           onSuccess={() => { setShowAddModal(false); refetch(); }}
         />
+      )}
+
+      {/* Global Export — range-aware server export (.xlsx / PDF) */}
+      <GlobalExportModal
+        open={globalExportOpen}
+        onClose={() => setGlobalExportOpen(false)}
+        title="Export Individual KPI"
+        columns={moduleColumns}
+        defaultCheckedKeys={visibleColKeys}
+        rangeMode="quarter"
+        quarterCtx={{ years: availableYears, defaultYear: currentYear, defaultQuarter: currentQuarter, formatYear: fiscalYearLabel }}
+        onExport={handleGlobalExport}
+      />
+      {exportError && (
+        <div className="fixed bottom-4 right-4 z-[60] bg-red-600 text-white text-xs px-3 py-2 rounded-lg shadow-lg">
+          {exportError}
+        </div>
       )}
     </div>
   );

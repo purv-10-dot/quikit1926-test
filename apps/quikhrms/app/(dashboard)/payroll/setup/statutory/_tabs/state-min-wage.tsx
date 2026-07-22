@@ -27,7 +27,7 @@ const STATES = [
   "Jammu and Kashmir", "Ladakh", "Lakshadweep", "Puducherry",
 ];
 
-const inputCls = "w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[#16243A] focus:border-transparent";
+const inputCls = "w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[#166534] focus:border-transparent";
 
 export function StateMinimumWageTab() {
   const api = useApiClient();
@@ -68,15 +68,15 @@ export function StateMinimumWageTab() {
   const list = data?.data ?? [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
-        <h2 className="text-base font-bold text-gray-900">State Minimum Wages</h2>
+        <h2 className="text-[13px] font-semibold text-gray-900">State Minimum Wages</h2>
         <p className="text-xs text-gray-500 mt-1">
           Used for statutory bonus calc cap = max(₹7,000, applicable state minimum wage). Update when state Govt notifies revisions.
         </p>
       </div>
 
-      <div className="rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-900 flex items-start gap-2">
+      <div className="rounded-md bg-green-50 border border-green-200 px-3 py-2 text-xs text-green-900 flex items-start gap-2">
         <Info size={14} className="mt-0.5 shrink-0" />
         <span>
           Lookup uses state only by default. Optional refinements (scheduled employment, skill level, zone) are stored but the
@@ -89,34 +89,34 @@ export function StateMinimumWageTab() {
           <table className="w-full text-xs">
             <thead className="bg-gray-50 text-gray-600">
               <tr>
-                <th className="text-left px-3 py-2">State</th>
-                <th className="text-left px-3 py-2">Scheduled Employment</th>
-                <th className="text-left px-3 py-2">Skill</th>
-                <th className="text-left px-3 py-2">Zone</th>
-                <th className="text-right px-3 py-2">Monthly Wage</th>
-                <th className="text-left px-3 py-2">Effective From</th>
-                <th className="text-left px-3 py-2">Notes</th>
-                <th className="w-10 px-3 py-2"></th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.04em]">State</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.04em]">Scheduled Employment</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.04em]">Skill</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.04em]">Zone</th>
+                <th className="text-right px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.04em]">Monthly Wage</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.04em]">Effective From</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.04em]">Notes</th>
+                <th className="w-10 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.04em]"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {list.map((r) => (
                 <tr key={r.id} className="hover:bg-gray-50">
-                  <td className="px-3 py-2 font-medium text-gray-900">{r.state}</td>
-                  <td className="px-3 py-2 text-gray-700">{r.scheduledEmployment || "—"}</td>
-                  <td className="px-3 py-2 text-gray-700">{r.skillLevel || "—"}</td>
-                  <td className="px-3 py-2 text-gray-700">{r.zone || "—"}</td>
-                  <td className="px-3 py-2 text-right font-mono text-gray-900">₹ {Number(r.monthlyWage).toLocaleString("en-IN")}</td>
-                  <td className="px-3 py-2 text-gray-700">{new Date(r.effectiveFrom).toLocaleDateString("en-IN")}</td>
-                  <td className="px-3 py-2 text-gray-500 truncate max-w-[160px]">{r.notes ?? "—"}</td>
-                  <td className="px-3 py-2 text-right">
+                  <td className="px-4 py-2.5 text-[13px] font-medium text-gray-900">{r.state}</td>
+                  <td className="px-4 py-2.5 text-gray-700">{r.scheduledEmployment || "—"}</td>
+                  <td className="px-4 py-2.5 text-gray-700">{r.skillLevel || "—"}</td>
+                  <td className="px-4 py-2.5 text-gray-700">{r.zone || "—"}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-gray-900">₹ {Number(r.monthlyWage).toLocaleString("en-IN")}</td>
+                  <td className="px-4 py-2.5 text-gray-700">{new Date(r.effectiveFrom).toLocaleDateString("en-IN")}</td>
+                  <td className="px-4 py-2.5 text-gray-500 truncate max-w-[160px]">{r.notes ?? "—"}</td>
+                  <td className="px-4 py-2.5 text-right">
                     <button
                       type="button"
                       onClick={() => deleteMut.mutate(r.id)}
                       title="Delete"
                       className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-600 transition"
                     >
-                      <Trash2 size={13} />
+                      <Trash2 size={12} />
                     </button>
                   </td>
                 </tr>
@@ -130,7 +130,7 @@ export function StateMinimumWageTab() {
         onSubmit={(e) => { e.preventDefault(); saveMut.mutate(form); }}
         className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-3"
       >
-        <p className="text-sm font-semibold text-gray-900">Add / Update Minimum Wage</p>
+        <p className="text-[13px] font-semibold text-gray-900">Add / Update Minimum Wage</p>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">State <span className="text-red-500">*</span></label>
@@ -173,8 +173,8 @@ export function StateMinimumWageTab() {
         </div>
 
         <div className="pt-2">
-          <button type="submit" disabled={saveMut.isPending} className="inline-flex items-center gap-2 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 text-white rounded-md text-sm font-semibold shadow-sm">
-            <Save size={14} /> {saveMut.isPending ? "Saving..." : "Save"}
+          <button type="submit" disabled={saveMut.isPending} className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-md text-xs font-medium shadow-sm">
+            <Save size={13} /> {saveMut.isPending ? "Saving..." : "Save"}
           </button>
         </div>
       </form>

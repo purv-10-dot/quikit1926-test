@@ -55,13 +55,13 @@ export default function AnalyticsPage() {
 
   return (
     <div>
-      <div className="flex items-center gap-3 mb-6">
-        <BarChart3 className="text-[#3b82f6]" />
-        <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">HR Analytics</h1>
+      <div className="flex items-center gap-3 mb-4">
+        <BarChart3 className="text-[#22c55e]" />
+        <h1 className="text-page-title text-gray-900">HR Analytics</h1>
       </div>
 
       {o && (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-4">
           <StatCard icon={<Users size={16} />} label="Active Headcount" value={o.headcount.active} color="blue" />
           <StatCard icon={<UserPlus size={16} />} label="New Hires (Month)" value={o.headcount.newHiresThisMonth} color="green" />
           <StatCard icon={<UserMinus size={16} />} label="On Leave" value={o.headcount.onLeave} color="yellow" />
@@ -71,7 +71,7 @@ export default function AnalyticsPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
         {h && (
           <>
             <ChartCard title="Headcount by Department" subtitle={`${h.byDepartment.length} departments · ${h.total} total`}>
@@ -96,7 +96,7 @@ export default function AnalyticsPage() {
 
             <ChartCard title="By Employment Type" subtitle={`${empTypeData.length} types`}>
               {empTypeData.length > 0 ? (
-                <BarChartView data={empTypeData} height={220} color="#6366f1" showValues />
+                <BarChartView data={empTypeData} height={220} color="#22c55e" showValues />
               ) : (
                 <EmptyChart />
               )}
@@ -168,11 +168,11 @@ function EmptyChart() {
 }
 
 function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: number; color: string }) {
-  const bg: Record<string, string> = { blue: "bg-[#dbeafe] text-[#2563eb]", green: "bg-green-50 text-green-700", yellow: "bg-yellow-50 text-yellow-700", red: "bg-red-50 text-red-700", purple: "bg-purple-50 text-purple-700", orange: "bg-orange-50 text-orange-700" };
+  const bg: Record<string, string> = { blue: "bg-[#dcfce7] text-[#16a34a]", green: "bg-green-50 text-green-700", yellow: "bg-yellow-50 text-yellow-700", red: "bg-red-50 text-red-700", purple: "bg-purple-50 text-purple-700", orange: "bg-orange-50 text-orange-700" };
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
       <div className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${bg[color]}`}>{icon} {label}</div>
-      <div className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900 mt-2">{value}</div>
+      <div className="font-serif-display text-xl md:text-2xl font-bold text-gray-900 mt-2">{value}</div>
     </div>
   );
 }

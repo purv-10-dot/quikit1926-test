@@ -37,6 +37,18 @@ export const SPACE_ADMIN_ROLE_NAME = "Space Admin";
  */
 export const SPACE_CREATOR_ROLE_NAME = "Space Creator";
 
+/**
+ * Seeded project roles that must NEVER be deleted (they back default access,
+ * full-access, and read-only tiers). Project roles have no `isSystem` flag, so
+ * protection is by name (plus the default role). Custom project roles are
+ * still deletable.
+ */
+export const PROTECTED_PROJECT_ROLE_NAMES: readonly string[] = [
+  SPACE_ADMIN_ROLE_NAME,
+  "Contributor",
+  "Viewer",
+];
+
 /* ───────────────────────── Tree types ───────────────────────── */
 
 export interface PermissionLeaf {
@@ -116,6 +128,19 @@ export const PERMISSION_TREE: PermissionModule[] = [
       { resource: "Issue", label: "Issue", actions: ["create", "update", "delete"] },
       // Create only: view isn't enforced; edit/delete are author-only (ownership).
       { resource: "IssueComment", label: "Comment", actions: ["create"] },
+    ],
+  },
+  {
+    key: "Discovery",
+    label: "Product Discovery",
+    leaves: [
+      // Idea visibility is membership-based (not gated), matching Issue: no
+      // `view`. Archive is an `update`; permanent delete is `delete` (Space
+      // Admin only — Contributors get create/update but not delete).
+      { resource: "Idea", label: "Idea", actions: ["create", "update", "delete"] },
+      // `view` gates the discovery "Ideas" tab AND the view list. create/update/
+      // delete manage saved views (a later phase ships >1 view type).
+      { resource: "IdeaView", label: "Idea view", actions: ACTIONS },
     ],
   },
   {

@@ -1,9 +1,10 @@
 "use client";
 
 import { toErrorMessage } from "@/lib/api/errors";
+import { formatDateTimeIST } from "@/lib/format/datetime";
 import { useEffect, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Package, Download, Send, FileText, Mail, Phone, X as XIcon, Lock, AlertTriangle, Eye } from "lucide-react";
+import { Package, Download, Send, FileText, Mail, Phone, X as XIcon, Lock, AlertTriangle } from "lucide-react";
 import { WhatsAppLink } from "@/components/WhatsAppLink";
 import dynamic from "next/dynamic";
 const PoSubmitPreviewModal = dynamic(
@@ -209,6 +210,7 @@ export default function PODetailPage() {
       year: "numeric",
       hour: "numeric",
       minute: "2-digit",
+      timeZone: "Asia/Kolkata",
     });
   };
 
@@ -489,7 +491,7 @@ export default function PODetailPage() {
                         <th className="px-3 py-2 text-right text-[10px] font-semibold text-gray-500 uppercase w-20">Qty</th>
                         <th className="px-3 py-2 text-right text-[10px] font-semibold text-gray-500 uppercase w-24">Rate</th>
                         <th className="px-3 py-2 text-right text-[10px] font-semibold text-gray-500 uppercase w-28">Amount</th>
-                        <th className="px-3 py-2 text-right text-[10px] font-semibold text-gray-500 uppercase w-16">GST %</th>
+                        <th className="px-3 py-2 text-right text-[10px] font-semibold text-gray-500 uppercase w-28">GST</th>
                         <th className="px-3 py-2 text-right text-[10px] font-semibold text-gray-500 uppercase w-28">Net</th>
                       </tr>
                     </thead>
@@ -532,6 +534,17 @@ export default function PODetailPage() {
                             line.netAmount ??
                             amount,
                         );
+                        // Per-line GST split — reads the server-stored
+                        // igst/cgst/sgst amounts. Inter-state lines carry
+                        // IGST, intra-state carry CGST + SGST.
+                        const lIgst = Number(line.igstAmount ?? 0);
+                        const lCgst = Number(line.cgstAmount ?? 0);
+                        const lSgst = Number(line.sgstAmount ?? 0);
+                        const lHasSplit = lIgst + lCgst + lSgst > 0;
+                        const lGstType =
+                          line.gstType ?? (lIgst > 0 ? "IGST" : "CGST+SGST");
+                        const fmtLine = (n: number) =>
+                          `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
                         return (
                           <tr key={line.id ?? line.lineId ?? i}>
                             <td className="px-3 py-3 text-xs text-gray-400">{i + 1}</td>
@@ -551,7 +564,19 @@ export default function PODetailPage() {
                               ₹ {amount.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                             </td>
                             <td className="px-3 py-3 text-xs text-right tabular-nums text-gray-600">
-                              {line.gstRate ?? "—"}
+                              <div>{line.gstRate != null ? `${line.gstRate}%` : "—"}</div>
+                              {lHasSplit && (
+                                <div className="text-[10px] text-gray-400 leading-tight mt-0.5">
+                                  {lGstType === "IGST" ? (
+                                    <div>IGST {fmtLine(lIgst)}</div>
+                                  ) : (
+                                    <>
+                                      <div>CGST {fmtLine(lCgst)}</div>
+                                      <div>SGST {fmtLine(lSgst)}</div>
+                                    </>
+                                  )}
+                                </div>
+                              )}
                             </td>
                             <td className="px-3 py-3 text-sm text-right font-semibold tabular-nums text-gray-900">
                               ₹ {net.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
@@ -588,12 +613,37 @@ export default function PODetailPage() {
                 const RUPEE = "\u20B9";
                 const fmtINR = (n: number) =>
                   `${RUPEE}${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+                // GST split \u2014 read the server-stored breakup (computed from
+                // project/company state vs vendor state). Inter-state POs
+                // carry IGST; intra-state POs carry CGST + SGST. Exactly one
+                // side is non-zero, so we render whichever the server filled.
+                const igst = parseFloat(String(po.totalIGST ?? "0")) || 0;
+                const cgst = parseFloat(String(po.totalCGST ?? "0")) || 0;
+                const sgst = parseFloat(String(po.totalSGST ?? "0")) || 0;
+                const gstType =
+                  po.gstType ?? (igst > 0 ? "IGST" : "CGST+SGST");
+                const hasGstSplit = igst + cgst + sgst > 0;
                 return (
                   <div className="border-t border-gray-100 bg-gradient-to-b from-gray-50/60 to-white">
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-px bg-gray-200">
+                    <div
+                      className={`grid gap-px bg-gray-200 ${
+                        hasGstSplit
+                          ? "grid-cols-2 md:grid-cols-4 lg:grid-cols-4"
+                          : "grid-cols-2 md:grid-cols-3 lg:grid-cols-6"
+                      }`}
+                    >
                       <StatCell label="Amount" value={fmtINR(gross)} />
                       <StatCell label="Line Disc." value={fmtINR(lineDisc)} />
                       <StatCell label="Net" value={fmtINR(net)} />
+                      {hasGstSplit &&
+                        (gstType === "IGST" ? (
+                          <StatCell label="IGST" value={fmtINR(igst)} />
+                        ) : (
+                          <>
+                            <StatCell label="CGST" value={fmtINR(cgst)} />
+                            <StatCell label="SGST" value={fmtINR(sgst)} />
+                          </>
+                        ))}
                       <StatCell label="Tax (GST)" value={fmtINR(tax)} />
                       <StatCell
                         label={`Freight (${RUPEE})`}
@@ -604,11 +654,20 @@ export default function PODetailPage() {
                         value={other.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                       />
                     </div>
-                    <div className="px-5 py-4 bg-gradient-to-r from-indigo-50/50 to-transparent border-t border-gray-100 flex items-center justify-between">
-                      <span className="text-sm font-bold text-indigo-700 uppercase tracking-wider">
+                    {hasGstSplit && (
+                      <div className="px-5 py-1.5 border-t border-gray-100 bg-white">
+                        <span className="text-[11px] text-gray-400">
+                          {gstType === "IGST"
+                            ? "Inter-state supply — IGST applicable"
+                            : "Intra-state supply — CGST + SGST applicable"}
+                        </span>
+                      </div>
+                    )}
+                    <div className="px-5 py-4 bg-gradient-to-r from-orange-50/50 to-transparent border-t border-gray-100 flex items-center justify-between">
+                      <span className="text-sm font-bold text-orange-700 uppercase tracking-wider">
                         Total Amount
                       </span>
-                      <span className="text-xl font-extrabold tabular-nums text-indigo-700">
+                      <span className="text-xl font-extrabold tabular-nums text-orange-700">
                         {fmtINR(grand)}
                       </span>
                     </div>
@@ -653,34 +712,21 @@ export default function PODetailPage() {
                         )}
                       </div>
                       <div className="flex items-center gap-2 ml-auto">
-                        {po.vendorPhone && (
-                          <WhatsAppLink
-                            phone={String(po.vendorPhone)}
-                            message={
-                              po.poNumber
-                                ? `Hello, regarding Purchase Order ${po.poNumber}.`
-                                : undefined
-                            }
-                            title={
-                              po.poNumber
-                                ? `WhatsApp vendor about ${po.poNumber}`
-                                : "WhatsApp vendor"
-                            }
-                            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#25D366] text-white hover:bg-[#20bd5a] transition-colors"
-                          />
-                        )}
-                        {lines.length > 0 && (
-                          <a
-                            href={`/api/purchase/orders/${id}/preview/pdf`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-xs text-orange-600 hover:text-orange-700 hover:underline"
-                            title="Open the PO PDF in a new tab"
-                          >
-                            <Eye className="w-3 h-3" />
-                            View PDF
-                          </a>
-                        )}
+                        <WhatsAppLink
+                          phone={String(po.vendorPhone ?? "")}
+                          showDisabled
+                          message={
+                            po.poNumber
+                              ? `Hello, regarding Purchase Order ${po.poNumber}.`
+                              : undefined
+                          }
+                          title={
+                            po.poNumber
+                              ? `WhatsApp vendor about ${po.poNumber}`
+                              : "WhatsApp vendor"
+                          }
+                          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#25D366] text-white hover:bg-[#20bd5a] transition-colors"
+                        />
                       </div>
                     </div>
                     {po.vendorContactPerson && (
@@ -754,7 +800,7 @@ export default function PODetailPage() {
                           : `/purchase/indents/${po.sourceIndentId}`,
                       )
                     }
-                    className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 hover:bg-indigo-100"
+                    className="w-9 h-9 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center shrink-0 hover:bg-orange-100"
                     title="Open source document"
                   >
                     <FileText className="w-4 h-4" />
@@ -769,7 +815,7 @@ export default function PODetailPage() {
                             : `/purchase/indents/${po.sourceIndentId}`,
                         )
                       }
-                      className="text-sm font-semibold text-gray-900 font-mono truncate hover:text-indigo-700 text-left"
+                      className="text-sm font-semibold text-gray-900 font-mono truncate hover:text-orange-700 text-left"
                     >
                       {po.sourceRfqNumber ?? po.sourceIndentNumber ?? "—"}
                     </button>
@@ -813,9 +859,7 @@ export default function PODetailPage() {
                       action: "request",
                       title: "Requested",
                       actionBy: approval.requestedByName || "Requester",
-                      actionAt: new Date(
-                        approval.requestedAt ?? "",
-                      ).toLocaleString(),
+                      actionAt: formatDateTimeIST(approval.requestedAt),
                     },
                   ];
                   (approval.workflow?.steps ?? []).forEach((s: ApprovalStep) => {
@@ -831,7 +875,7 @@ export default function PODetailPage() {
                         step: s.stepOrder,
                         action: acted.action,
                         actionBy: acted.actionByName || approverLabel,
-                        actionAt: new Date(acted.actionAt ?? "").toLocaleString(),
+                        actionAt: formatDateTimeIST(acted.actionAt),
                         comments: acted.comments || undefined,
                       });
                       return;
@@ -861,7 +905,7 @@ export default function PODetailPage() {
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
               <h3 className="text-sm font-semibold text-gray-900 mb-3">Audit</h3>
               <div className="space-y-2 text-xs text-gray-500">
-                <p>Created: {new Date(po.createdAt ?? "").toLocaleString()}</p>
+                <p>Created: {formatDateTimeIST(po.createdAt)}</p>
                 <p>By: {po.createdByName ?? po.createdBy ?? "—"}</p>
               </div>
             </div>
@@ -1086,7 +1130,15 @@ function InfoField({ label, value, bold }: { label: string; value: ReactNode; bo
 // the PO line items table. The thin 1px divider between cells is
 // painted by the parent's `gap-px` + `bg-gray-200` trick so every
 // cell shares a clean gridline without extra markup.
-function StatCell({ label, value }: { label: string; value: string }) {
+function StatCell({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string;
+  sub?: ReactNode;
+}) {
   return (
     <div className="bg-white px-4 py-3">
       <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
@@ -1095,6 +1147,11 @@ function StatCell({ label, value }: { label: string; value: string }) {
       <div className="text-base font-bold text-gray-900 tabular-nums mt-1">
         {value}
       </div>
+      {sub != null && (
+        <div className="text-[10px] text-gray-500 tabular-nums mt-0.5 leading-tight">
+          {sub}
+        </div>
+      )}
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { useToast } from "@/components/hrms/toast";
 import { useDialog } from "@/components/hrms/dialog";
 import { Modal } from "@/components/hrms/modal";
 import { EmployeeSelect } from "@/components/hrms/employees/employee-select";
+import { Select } from "@/components/hrms/select";
 import { Plus, Pencil, Trash2, Users, X, Home } from "lucide-react";
 import { clsx } from "clsx";
 import { WfhTabs } from "../../wfh/_components/wfh-tabs";
@@ -80,19 +81,16 @@ export default function WfhQuotaPage() {
   const createMut = useMutation({
     mutationFn: () => api.post("/api/v1/hrms/wfh/quota-groups", form),
     onSuccess: async () => { toast.success("Group created"); await refreshAll(); setShowCreate(false); resetForm(); },
-    onError: (e: Error) => toast.error("Create failed", e.message),
   });
 
   const updateMut = useMutation({
     mutationFn: () => api.patch(`/api/v1/hrms/wfh/quota-groups/${editing?.id}`, form),
     onSuccess: async () => { toast.success("Group updated"); await refreshAll(); setEditing(null); resetForm(); },
-    onError: (e: Error) => toast.error("Update failed", e.message),
   });
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => api.delete(`/api/v1/hrms/wfh/quota-groups/${id}`),
     onSuccess: async () => { toast.success("Group deleted"); await refreshAll(); if (activeGroupId) setActiveGroupId(null); },
-    onError: (e: Error) => toast.error("Delete failed", e.message),
   });
 
   const addMemberMut = useMutation({
@@ -102,7 +100,6 @@ export default function WfhQuotaPage() {
       await qc.invalidateQueries({ queryKey: ["wfh-quota-groups"] });
       setStaged([]);
     },
-    onError: (e: Error) => toast.error("Assign failed", e.message),
   });
 
   const removeMemberMut = useMutation({
@@ -111,7 +108,6 @@ export default function WfhQuotaPage() {
       toast.success("Removed");
       await qc.invalidateQueries({ queryKey: ["wfh-quota-groups"] });
     },
-    onError: (e: Error) => toast.error("Remove failed", e.message),
   });
 
   const { data: deptsData } = useQuery({
@@ -127,7 +123,6 @@ export default function WfhQuotaPage() {
       await qc.invalidateQueries({ queryKey: ["wfh-quota-groups"] });
       setDeptToAdd("");
     },
-    onError: (e: Error) => toast.error("Assign failed", e.message),
   });
 
   const removeDeptMut = useMutation({
@@ -136,7 +131,6 @@ export default function WfhQuotaPage() {
       toast.success("Department removed");
       await qc.invalidateQueries({ queryKey: ["wfh-quota-groups"] });
     },
-    onError: (e: Error) => toast.error("Remove failed", e.message),
   });
 
   const startEdit = (g: Group) => {
@@ -144,28 +138,28 @@ export default function WfhQuotaPage() {
     setForm({ name: g.name, description: g.description ?? "", yearlyQuota: g.yearlyQuota, mode: g.mode, isActive: g.isActive });
   };
 
-  const inputCls = "w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]";
+  const inputCls = "w-full px-3 py-2 border border-[var(--border)] rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]";
 
   return (
-    <div className="w-full px-6 py-6">
+    <div className="w-full px-5 py-4">
       <PageHeader
-        icon={<Home size={28} className="text-[#3b82f6]" />}
+        icon={<Home size={28} className="text-[#22c55e]" />}
         title="WFH quota groups"
         subtitle="Define yearly day limits and assign employees."
         actions={
           <button onClick={() => { resetForm(); setShowCreate(true); }} className="btn btn-primary">
-            <Plus size={14} /> New group
+            <Plus size={13} /> New group
           </button>
         }
       />
       <div className="mb-5"><WfhTabs /></div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-1 space-y-2">
           {isLoading ? (
-            <div className="text-sm text-gray-500 py-8 text-center">Loading...</div>
+            <div className="text-xs text-gray-500 py-8 text-center">Loading...</div>
           ) : groups.length === 0 ? (
-            <div className="bg-white border border-gray-200 rounded-lg p-8 text-center text-sm text-gray-500">
+            <div className="bg-white border border-gray-200 rounded-lg p-8 text-center text-xs text-gray-500">
               No groups yet. Create one to start.
             </div>
           ) : (
@@ -175,17 +169,17 @@ export default function WfhQuotaPage() {
                 onClick={() => setActiveGroupId(g.id)}
                 className={clsx(
                   "row-stagger bg-white border rounded-lg p-3 cursor-pointer transition",
-                  activeGroupId === g.id ? "border-[#16243A] shadow-sm" : "border-gray-200 hover:border-gray-300",
+                  activeGroupId === g.id ? "border-[#166534] shadow-sm" : "border-gray-200 hover:border-gray-300",
                 )}
                 style={{ ["--i" as never]: Math.min(i, 10) }}
               >
                 <div className="flex items-center justify-between">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-sm font-semibold text-gray-900 truncate">{g.name}</h3>
+                      <h3 className="text-[13px] font-semibold text-gray-900 truncate">{g.name}</h3>
                       <span className={clsx(
-                        "text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide",
-                        g.mode === "Department" ? "bg-indigo-50 text-indigo-700" : "bg-amber-50 text-amber-700",
+                        "text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide",
+                        g.mode === "Department" ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700",
                       )}>
                         {g.mode === "Department" ? "Dept" : "Emp"}
                       </span>
@@ -202,9 +196,9 @@ export default function WfhQuotaPage() {
                   <div className="flex items-center gap-1 ml-2">
                     <button
                       onClick={(e) => { e.stopPropagation(); startEdit(g); }}
-                      className="p-1.5 text-gray-400 hover:text-[#16243A] hover:bg-blue-50 rounded"
+                      className="p-1.5 text-gray-400 hover:text-[#166534] hover:bg-green-50 rounded"
                     >
-                      <Pencil size={13} />
+                      <Pencil size={12} />
                     </button>
                     <button
                       onClick={async (e) => {
@@ -219,7 +213,7 @@ export default function WfhQuotaPage() {
                       }}
                       className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
                     >
-                      <Trash2 size={13} />
+                      <Trash2 size={12} />
                     </button>
                   </div>
                 </div>
@@ -230,20 +224,20 @@ export default function WfhQuotaPage() {
 
         <div className="lg:col-span-2">
           {!activeGroupId ? (
-            <div className="bg-white border border-gray-200 rounded-lg p-12 text-center text-sm text-gray-500">
+            <div className="bg-white border border-gray-200 rounded-lg p-12 text-center text-xs text-gray-500">
               Select a group to view and manage members.
             </div>
           ) : !detail ? (
-            <div className="bg-white border border-gray-200 rounded-lg p-8 text-center text-sm text-gray-500">Loading...</div>
+            <div className="bg-white border border-gray-200 rounded-lg p-8 text-center text-xs text-gray-500">Loading...</div>
           ) : (
             <div className="bg-white border border-gray-200 rounded-lg">
               <div className="p-4 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h2 className="text-base font-bold text-gray-900">{detail.name}</h2>
+                    <h2 className="text-[13px] font-semibold text-gray-900">{detail.name}</h2>
                     <span className={clsx(
                       "px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide",
-                      detail.mode === "Department" ? "bg-indigo-50 text-indigo-700" : "bg-amber-50 text-amber-700",
+                      detail.mode === "Department" ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700",
                     )}>
                       {detail.mode === "Department" ? "Dept-wise" : "Employee-wise"}
                     </span>
@@ -256,21 +250,18 @@ export default function WfhQuotaPage() {
 
               {/* Departments section */}
               {detail.mode === "Department" && (
-              <div className="p-4 border-b border-gray-100 bg-indigo-50/30 space-y-2">
-                <label className="block text-[11px] font-semibold text-indigo-700 uppercase tracking-wide">Departments (bulk)</label>
+              <div className="p-4 border-b border-gray-100 bg-green-50/30 space-y-2">
+                <label className="block text-[11px] font-semibold text-green-700 uppercase tracking-wide">Departments (bulk)</label>
                 <div className="flex items-center gap-2">
-                  <select
+                  <Select
+                    className="flex-1"
+                    placeholder="Select department..."
                     value={deptToAdd}
-                    onChange={(e) => setDeptToAdd(e.target.value)}
-                    className="flex-1 px-3 py-2 border border-gray-200 rounded-md text-sm bg-white focus:outline-none focus:ring-1 focus:ring-[#16243A]"
-                  >
-                    <option value="">Select department...</option>
-                    {allDepts
+                    onChange={(v) => setDeptToAdd(v)}
+                    options={allDepts
                       .filter((d) => !detail.departments.some((dl) => dl.department.id === d.id))
-                      .map((d) => (
-                        <option key={d.id} value={d.id}>{d.name}{d.code ? ` (${d.code})` : ""}</option>
-                      ))}
-                  </select>
+                      .map((d) => ({ value: d.id, label: `${d.name}${d.code ? ` (${d.code})` : ""}` }))}
+                  />
                   <button
                     onClick={() => deptToAdd && addDeptMut.mutate(deptToAdd)}
                     disabled={!deptToAdd || addDeptMut.isPending}
@@ -282,9 +273,9 @@ export default function WfhQuotaPage() {
                 {detail.departments.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 pt-1">
                     {detail.departments.map((dl) => (
-                      <span key={dl.id} className="inline-flex items-center gap-1.5 px-2 py-1 bg-white border border-indigo-200 rounded-md text-xs">
-                        <span className="font-semibold text-indigo-900">{dl.department.name}</span>
-                        <span className="text-indigo-500">· {dl.department._count.employees} emp</span>
+                      <span key={dl.id} className="inline-flex items-center gap-1.5 px-2 py-1 bg-white border border-green-200 rounded-md text-xs">
+                        <span className="font-semibold text-green-900">{dl.department.name}</span>
+                        <span className="text-green-500">· {dl.department._count.employees} emp</span>
                         <button
                           onClick={async () => {
                             const ok = await confirm({
@@ -336,7 +327,7 @@ export default function WfhQuotaPage() {
                   <div className="flex flex-wrap gap-1.5">
                     {staged.map((s) => (
                       <span key={s.id} className="inline-flex items-center gap-1.5 px-2 py-1 bg-white border border-gray-200 rounded-md text-xs">
-                        <span className="w-5 h-5 rounded-full bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white text-[9px] font-bold flex items-center justify-center">
+                        <span className="w-5 h-5 rounded-full bg-gradient-to-br from-[#22c55e] to-[#16a34a] text-white text-[10px] font-bold flex items-center justify-center">
                           {s.firstName[0]}{s.lastName[0]}
                         </span>
                         <span className="text-gray-800">{s.firstName} {s.lastName}</span>
@@ -351,10 +342,10 @@ export default function WfhQuotaPage() {
               )}
 
               {detail.mode === "Employee" && (detail.members.length === 0 ? (
-                <div className="p-8 text-center text-sm text-gray-500">No members yet.</div>
+                <div className="p-8 text-center text-xs text-gray-500">No members yet.</div>
               ) : (
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 text-[10px] font-bold text-gray-500 uppercase">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50 text-table-head font-bold text-gray-500 uppercase">
                     <tr>
                       <th className="text-left px-4 py-2.5">Employee</th>
                       <th className="text-left px-4 py-2.5">Job</th>
@@ -366,7 +357,7 @@ export default function WfhQuotaPage() {
                     {detail.members.map((m) => (
                       <tr key={m.id} className="border-t border-gray-100">
                         <td className="px-4 py-2.5">
-                          <div className="font-medium text-gray-900">{m.firstName} {m.lastName}</div>
+                          <div className="text-[13px] font-medium text-gray-900">{m.firstName} {m.lastName}</div>
                           <div className="text-xs text-gray-500">{m.employeeCode ?? "—"}</div>
                         </td>
                         <td className="px-4 py-2.5 text-gray-700">{m.jobTitle ?? "—"}</td>
@@ -384,7 +375,7 @@ export default function WfhQuotaPage() {
                             }}
                             className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
                           >
-                            <X size={14} />
+                            <X size={12} />
                           </button>
                         </td>
                       </tr>
@@ -427,13 +418,13 @@ export default function WfhQuotaPage() {
                   type="button"
                   onClick={() => setForm({ ...form, mode: m })}
                   className={clsx(
-                    "px-3 py-2.5 rounded-lg border text-sm font-semibold text-left transition",
+                    "px-3 py-2.5 rounded-lg border text-xs font-semibold text-left transition",
                     form.mode === m
-                      ? "border-[#16243A] bg-[#16243A] text-white"
+                      ? "border-[#166534] bg-green-600 text-white"
                       : "border-gray-200 bg-white text-gray-700 hover:border-gray-300",
                   )}
                 >
-                  <div className="text-sm">{m === "Department" ? "Whole department(s)" : "Specific employees"}</div>
+                  <div className="text-xs">{m === "Department" ? "Whole department(s)" : "Specific employees"}</div>
                   <div className={clsx("text-[11px] font-normal mt-0.5", form.mode === m ? "text-white/70" : "text-gray-500")}>
                     {m === "Department" ? "All employees in chosen depts" : "Custom list, overrides dept rule"}
                   </div>

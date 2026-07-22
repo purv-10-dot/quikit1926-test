@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { userCanInProject, forbidden, hasAdminAccess } from "@/lib/api/permissions";
-import { filterUpdatePayload } from "@/lib/api/fieldLevels";
+import { filterUpdatePayload, getEffectiveFieldLevels } from "@/lib/api/fieldLevels";
 import { updateIssueSchema } from "@/lib/validation/issue";
 import { emailIssueAssigned, emailIssueStatusChanged } from "@/lib/email/sendEmail";
 import {
@@ -81,13 +81,24 @@ export const GET = withOrgAuth<{ id: string }>(
     });
     // Active custom fields for this issue's scope + the issue's stored values,
     // embedded so the detail panel renders in one round-trip (NFR-01).
-    const [customFields, customFieldValues] = await Promise.all([
+    const [customFields, customFieldValues, levelMap] = await Promise.all([
       getActiveFieldsForProject(orgId, issue.projectId),
       getValuesForIssue(orgId, issue.id),
+      // The caller's effective field-level permissions so the detail panel can
+      // render readonly/hidden fields as read-only instead of letting an edit
+      // silently fail server-side. Empty for admins (no restrictions).
+      getEffectiveFieldLevels(userId, orgId, issue.projectId, "Issue"),
     ]);
     return NextResponse.json({
       success: true,
-      data: { ...issue, subtasks, timeLogs, customFields, customFieldValues },
+      data: {
+        ...issue,
+        subtasks,
+        timeLogs,
+        customFields,
+        customFieldValues,
+        fieldLevels: Object.fromEntries(levelMap),
+      },
     });
   },
 );

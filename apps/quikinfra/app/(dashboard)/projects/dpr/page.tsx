@@ -924,6 +924,18 @@ function DPRRow({
 
           <button
             type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              window.open(`/api/projects/dpr/${row.id}/pdf`, "_blank", "noopener");
+            }}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-orange-700 hover:bg-orange-50 transition-colors"
+            title="View PDF"
+          >
+            <FileText className="w-4 h-4" />
+          </button>
+
+          <button
+            type="button"
             onClick={onOpen}
             className="p-1.5 rounded-lg text-slate-400 hover:text-orange-700 hover:bg-orange-50 transition-colors"
             title="Open"

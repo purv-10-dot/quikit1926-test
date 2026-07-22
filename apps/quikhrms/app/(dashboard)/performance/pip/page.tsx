@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Modal } from "@/components/hrms/modal";
+import { todayInput } from "@/lib/utils/date-input";
 import { EmployeeSelect } from "@/components/hrms/employees/employee-select";
 import { Select } from "@/components/hrms/ui/select";
 import { useDialog } from "@/components/hrms/dialog";
@@ -88,7 +89,6 @@ export default function PIPPage() {
       toast.success("PIP deleted");
       qc.invalidateQueries({ queryKey: ["pips"] });
     },
-    onError: (e: Error) => toast.error("Delete failed", e.message),
   });
   const confirmDeletePIP = async (p: PIPItem) => {
     const ok = await dialog.confirm({
@@ -103,12 +103,12 @@ export default function PIPPage() {
   const pips = data?.data ?? [];
 
   return (
-    <div className="w-full px-6 py-6">
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-        <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">Performance improvement plans</h1>
+    <div className="w-full px-5 py-4">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+        <h1 className="text-page-title text-gray-900">Performance improvement plans</h1>
         <button onClick={() => { setForm({ employeeId: "", reason: "", startDate: "", endDate: "" }); setShowCreate(true); }}
           className="btn btn-danger">
-          <Plus size={14} /> Initiate PIP
+          <Plus size={13} /> Initiate PIP
         </button>
       </div>
 
@@ -133,7 +133,7 @@ export default function PIPPage() {
           <button
             type="button"
             onClick={() => { setStatusFilter(""); setEmployeeFilter(""); }}
-            className="text-xs text-[#3b82f6] hover:underline"
+            className="text-xs text-[#22c55e] hover:underline"
           >
             Clear
           </button>
@@ -152,30 +152,30 @@ export default function PIPPage() {
           <table className="w-full">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Employee</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Reason</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Period</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Initiated By</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Status</th>
-                <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">Actions</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Employee</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Reason</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Period</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Initiated By</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Status</th>
+                <th className="text-right px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Actions</th>
               </tr>
             </thead>
             <tbody>
               {pips.map((p, i) => (
                 <tr key={p.id} className="row-stagger border-b border-gray-100 hover:bg-gray-50" style={{ ["--i" as never]: Math.min(i, 10) }}>
-                  <td className="px-4 py-3">
-                    <p className="text-sm font-medium text-gray-900">{p.employee.firstName} {p.employee.lastName}</p>
+                  <td className="px-4 py-2.5">
+                    <p className="text-[13px] font-medium text-gray-900">{p.employee.firstName} {p.employee.lastName}</p>
                     <p className="text-xs text-gray-500">{p.employee.department?.name}</p>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-700 max-w-[200px] truncate">{p.reason}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700">{formatDate(p.startDate)} — {formatDate(p.endDate)}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700">{p.initiatedBy.firstName} {p.initiatedBy.lastName}</td>
-                  <td className="px-4 py-3">
-                    <span className={clsx("px-2 py-0.5 rounded-full text-xs font-medium", statusColors[p.status])}>
+                  <td className="px-4 py-2.5 text-xs text-gray-700 max-w-[200px] truncate">{p.reason}</td>
+                  <td className="px-4 py-2.5 text-xs text-gray-700">{formatDate(p.startDate)} — {formatDate(p.endDate)}</td>
+                  <td className="px-4 py-2.5 text-xs text-gray-700">{p.initiatedBy.firstName} {p.initiatedBy.lastName}</td>
+                  <td className="px-4 py-2.5">
+                    <span className={clsx("px-2 py-0.5 rounded-full text-[11px] font-medium", statusColors[p.status])}>
                       {statusLabels[p.status] ?? p.status}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-4 py-2.5 text-right">
                     {p.status === "PIPActive" && (
                       <div className="flex gap-2 justify-end">
                         <button
@@ -191,10 +191,10 @@ export default function PIPPage() {
                             });
                             if (ok) updateMut.mutate({ id: p.id, status: "PIPCompletedSuccess", outcome: "Improved" });
                           }}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-green-50 text-green-700 ring-1 ring-green-200 text-xs font-semibold hover:bg-green-100 hover:ring-green-300 transition disabled:opacity-50"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-green-50 text-green-700 ring-1 ring-green-200 text-xs font-normal hover:bg-green-100 hover:ring-green-300 transition disabled:opacity-50"
                           title="Mark as successfully completed"
                         >
-                          <CheckCircle2 size={13} /> Complete
+                          <CheckCircle2 size={12} /> Complete
                         </button>
                         <button
                           type="button"
@@ -209,10 +209,10 @@ export default function PIPPage() {
                             });
                             if (ok) updateMut.mutate({ id: p.id, status: "PIPFailed", outcome: "Terminated" });
                           }}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-red-50 text-red-700 ring-1 ring-red-200 text-xs font-semibold hover:bg-red-100 hover:ring-red-300 transition disabled:opacity-50"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-red-50 text-red-700 ring-1 ring-red-200 text-xs font-normal hover:bg-red-100 hover:ring-red-300 transition disabled:opacity-50"
                           title="Mark as failed"
                         >
-                          <XCircle size={13} /> Fail
+                          <XCircle size={12} /> Fail
                         </button>
                       </div>
                     )}
@@ -222,7 +222,7 @@ export default function PIPPage() {
                       title="Delete PIP"
                       className="ml-2 p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 rounded transition"
                     >
-                      <Trash2 size={13} />
+                      <Trash2 size={12} />
                     </button>
                   </td>
                 </tr>
@@ -243,23 +243,23 @@ export default function PIPPage() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
             <textarea value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} required rows={3}
-              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]" />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-              <input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} required
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+              <input type="date" value={form.startDate} min={todayInput()} onChange={(e) => setForm({ ...form, startDate: e.target.value })} required
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
-              <input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} required
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+              <input type="date" value={form.endDate} min={todayInput()} onChange={(e) => setForm({ ...form, endDate: e.target.value })} required
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]" />
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm">Cancel</button>
-            <button type="submit" className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700">Initiate</button>
+            <button type="button" onClick={() => setShowCreate(false)} className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium">Cancel</button>
+            <button type="submit" className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-medium hover:bg-red-700">Initiate</button>
           </div>
         </form>
       </Modal>

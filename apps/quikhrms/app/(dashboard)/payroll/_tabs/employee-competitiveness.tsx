@@ -54,7 +54,7 @@ export default function EmployeeCompetitivenessTab() {
     }).sort((a, b) => a.deltaPct - b.deltaPct);
   }, [enriched, filter, search]);
 
-  if (isLoading) return <div className="rounded-lg border border-gray-200 bg-white p-12 text-center text-gray-400 text-sm">Loading…</div>;
+  if (isLoading) return <div className="rounded-lg border border-gray-200 bg-white p-12 text-center text-gray-400 text-xs">Loading…</div>;
   if (rows.length === 0) return <Empty />;
 
   return (
@@ -72,7 +72,7 @@ export default function EmployeeCompetitivenessTab() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search employee"
-            className="px-3 py-1.5 text-sm border border-gray-200 rounded-md w-64 focus:outline-none focus:ring-1 focus:ring-[#16243A]"
+            className="px-3 py-1.5 text-sm border border-gray-200 rounded-md w-64 focus:outline-none focus:ring-1 focus:ring-[#166534]"
           />
           <div className="flex gap-1 rounded-md border border-gray-200 bg-gray-50 p-0.5">
             {([
@@ -84,7 +84,7 @@ export default function EmployeeCompetitivenessTab() {
                 key={b.v}
                 type="button"
                 onClick={() => setFilter(b.v)}
-                className={`px-3 py-1 text-xs font-semibold rounded ${filter === b.v ? "bg-white text-[#16243A] shadow-sm" : "text-gray-600 hover:text-gray-900"}`}
+                className={`px-3 py-1 text-xs font-semibold rounded ${filter === b.v ? "bg-white text-[#166534] shadow-sm" : "text-gray-600 hover:text-gray-900"}`}
               >
                 {b.label}
               </button>
@@ -96,32 +96,32 @@ export default function EmployeeCompetitivenessTab() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50">
-                <th className="text-left py-2 px-3">Employee</th>
-                <th className="text-left py-2 px-3">Designation</th>
-                <th className="text-right py-2 px-3">Current CTC</th>
-                <th className="text-right py-2 px-3">Peer Median</th>
-                <th className="text-right py-2 px-3">Delta %</th>
-                <th className="text-left py-2 px-3">Band</th>
+              <tr className="text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em] border-b border-gray-200 bg-gray-50">
+                <th className="text-left px-4 py-2.5">Employee</th>
+                <th className="text-left px-4 py-2.5">Designation</th>
+                <th className="text-right px-4 py-2.5">Current CTC</th>
+                <th className="text-right px-4 py-2.5">Peer Median</th>
+                <th className="text-right px-4 py-2.5">Delta %</th>
+                <th className="text-left px-4 py-2.5">Band</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((r) => (
                 <tr key={r.salaryId} className="border-b border-gray-50 hover:bg-gray-50">
-                  <td className="py-2 px-3">
-                    <p className="font-medium text-gray-900">{r.name}</p>
+                  <td className="px-4 py-2.5">
+                    <p className="text-[13px] font-medium text-gray-900">{r.name}</p>
                     <p className="text-[10px] text-gray-500">{r.code}</p>
                   </td>
-                  <td className="py-2 px-3 text-gray-700">{r.designationName}</td>
-                  <td className="py-2 px-3 text-right tabular-nums">{INR_LAKH(r.ctc)}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-gray-700">{INR_LAKH(r.peerMedian)}</td>
-                  <td className={`py-2 px-3 text-right tabular-nums font-semibold ${r.deltaPct < 0 ? "text-red-600" : r.deltaPct > 0 ? "text-emerald-600" : "text-gray-500"}`}>
+                  <td className="px-4 py-2.5 text-xs text-gray-700">{r.designationName}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{INR_LAKH(r.ctc)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">{INR_LAKH(r.peerMedian)}</td>
+                  <td className={`px-4 py-2.5 text-right tabular-nums font-semibold ${r.deltaPct < 0 ? "text-red-600" : r.deltaPct > 0 ? "text-emerald-600" : "text-gray-500"}`}>
                     <span className="inline-flex items-center gap-1">
                       {r.deltaPct < 0 ? <TrendingDown size={12} /> : r.deltaPct > 0 ? <TrendingUp size={12} /> : null}
                       {r.deltaPct > 0 ? "+" : ""}{r.deltaPct.toFixed(1)}%
                     </span>
                   </td>
-                  <td className="py-2 px-3">
+                  <td className="px-4 py-2.5">
                     <BandPill band={r.band} />
                   </td>
                 </tr>
@@ -145,7 +145,7 @@ function BandPill({ band }: { band: "underpaid" | "fair" | "overpaid" }) {
   } as const;
   const labels = { underpaid: "Underpaid", fair: "Fair", overpaid: "Overpaid" } as const;
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ring-1 ${styles[band]}`}>
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ring-1 ${styles[band]}`}>
       {band === "underpaid" && <AlertTriangle size={10} />}
       {labels[band]}
     </span>

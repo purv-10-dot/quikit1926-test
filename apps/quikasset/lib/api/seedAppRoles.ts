@@ -11,18 +11,33 @@
 import { db } from "@/lib/db";
 import { allPermissionPairs, type Resource, type Action } from "@/lib/api/permissionsRegistry";
 import { getQuikAssetAppId } from "@/lib/api/permissions";
+import { mirrorAppRoleToCentral } from "@quikit/auth/assign-app-roles";
 
-/** Member role's curated default grants. */
+/**
+ * Member role's curated default grants (BRD Phase 0).
+ *
+ * A Member may only VIEW the assets assigned to them (row-scoping enforced in
+ * the route layer via `Asset:viewAll` — which Members deliberately do NOT hold)
+ * and see their own notifications. They may also raise asset requests and see
+ * their own (`AssetRequest:view`, NOT `viewAll` — which reveals the approver
+ * queue). A Member may likewise raise a repair request on their own assigned
+ * asset and see their own (`RepairRequest:view` + `create`, NOT `viewAll`).
+ * Everything else — the full register, other users' data, categories,
+ * assignments, repairs, reports, budgets, settings — is withheld.
+ *
+ * NOTE: seeding is additive-only (backfill never removes). Trimming this list
+ * does NOT revoke grants on orgs already seeded — run
+ * `scripts/trim-member-permissions.ts` to strip the legacy over-grants. Keep
+ * this in sync with `MEMBER_GRANTS` (scripts/seed-app.ts) and the `ALLOWED`
+ * set (scripts/trim-member-permissions.ts).
+ */
 const MEMBER_DEFAULT_GRANTS: Array<{ resource: Resource; action: Action }> = [
-  { resource: "Dashboard", action: "view" },
-  { resource: "Report", action: "view" },
-  { resource: "AuditLog", action: "view" },
+  { resource: "Asset", action: "view" },
   { resource: "Notification", action: "view" },
-  ...(["Asset", "Category", "Assignment", "Repair", "Replacement", "Employee"] as const).flatMap(
-    (resource) =>
-      (["view", "create", "update", "delete"] as const).map((action) => ({ resource, action })),
-  ),
-  { resource: "Budget", action: "view" },
+  { resource: "AssetRequest", action: "view" },
+  { resource: "AssetRequest", action: "create" },
+  { resource: "RepairRequest", action: "view" },
+  { resource: "RepairRequest", action: "create" },
 ];
 
 /* ───────────────────────── admin role ───────────────────────── */
@@ -158,6 +173,16 @@ export async function ensureUserOnRole(
   await db.astUserAppRole.create({
     data: { userId, orgId, roleId, assignedBy: assignedBy ?? null },
   });
+
+  // Keep the central UserAppAccess.role mirror (what the Admin Portal shows)
+  // in sync with the QuikAsset app role just assigned.
+  const [role, appId] = await Promise.all([
+    db.astAppRole.findUnique({ where: { id: roleId }, select: { name: true } }),
+    getQuikAssetAppId(),
+  ]);
+  if (appId) {
+    await mirrorAppRoleToCentral(db, { orgId, userId, appId, roleName: role?.name });
+  }
 }
 
 /* ───────────────────────── orchestrator ───────────────────────── */

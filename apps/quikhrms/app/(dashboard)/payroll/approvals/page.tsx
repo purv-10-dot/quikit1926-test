@@ -40,26 +40,26 @@ export default function PayrollApprovalsPage() {
   };
 
   return (
-    <div className="w-full px-6 py-6 space-y-4">
+    <div className="w-full px-5 py-4 space-y-4">
       <div className="flex items-start gap-3">
-        <CheckSquare size={28} className="text-[#3b82f6] mt-1.5" />
+        <CheckSquare size={28} className="text-[#22c55e] mt-1.5" />
         <div>
-          <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900 leading-tight">Approvals</h1>
-          <p className="text-sm text-gray-500 mt-1">Review and action employee submissions.</p>
+          <h1 className="text-page-title text-gray-900 leading-tight">Approvals</h1>
+          <p className="text-xs text-gray-500 mt-1">Review and action employee submissions.</p>
         </div>
       </div>
 
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
         <div className="border-b border-gray-200 px-5">
-          <div className="flex gap-6 overflow-x-auto">
+          <div className="flex gap-4 overflow-x-auto">
             {TABS.map((t) => (
               <button
                 key={t.key}
                 onClick={() => switchTab(t.key)}
                 data-active={tab === t.key}
                 className={clsx(
-                  "tab-underline whitespace-nowrap py-3 px-1 text-sm -mb-px inline-flex items-center gap-1.5",
-                  tab === t.key ? "text-[#3b82f6] font-semibold" : "text-gray-500 hover:text-gray-700",
+                  "tab-underline whitespace-nowrap py-3 px-1 text-[13px] font-semibold -mb-px inline-flex items-center gap-1.5",
+                  tab === t.key ? "text-[#22c55e] font-semibold" : "text-gray-500 hover:text-gray-700",
                 )}
               >
                 {t.icon} {t.label}
@@ -68,7 +68,7 @@ export default function PayrollApprovalsPage() {
           </div>
         </div>
 
-        <div className="p-5">
+        <div className="p-4">
           {tab === "Reimbursements" && <ReimbursementsTab />}
           {tab === "ProofOfInvestments" && <POITab />}
           {tab === "SalaryRevision" && <SalaryRevisionTab />}

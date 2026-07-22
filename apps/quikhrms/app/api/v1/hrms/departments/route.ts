@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { withAuth } from "@/lib/with-auth";
+import { withAuth, withServiceAuth } from "@/lib/with-auth";
 import { successResponse, validationError, conflict, internalError } from "@/lib/api-response";
 import { createDepartmentSchema } from "@/lib/validations/organization";
 import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
@@ -13,7 +13,7 @@ const DEPT_INCLUDE = {
   _count: { select: { employees: { where: { deletedAt: null } }, teams: { where: { deletedAt: null } } } },
 } satisfies Prisma.DepartmentInclude;
 
-export const GET = withAuth(async (req: NextRequest, ctx) => {
+export const GET = withServiceAuth(async (req: NextRequest, ctx) => {
   try {
     const { orgId } = ctx;
     const { searchParams } = new URL(req.url);
@@ -94,4 +94,4 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     console.error("POST /departments error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.org.write"] });

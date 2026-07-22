@@ -3,7 +3,7 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { verifyCandidateDocToken } from "@/lib/services/candidate-doc-token";
-import { uploadToS3 } from "@/lib/storage";
+import { putObject } from "@/lib/storage";
 
 const MAX_BYTES = 15 * 1024 * 1024;
 const ALLOWED = new Set([
@@ -69,8 +69,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
   const safeExt = ext.replace(/[^a-zA-Z0-9.]/g, "").slice(0, 8);
   const key = `candidate-docs/${payload.orgId}/${request.id}/${randomUUID()}${safeExt}`;
   const buf = Buffer.from(await file.arrayBuffer());
-  const stored = await uploadToS3({ key, body: buf, contentType: file.type });
-  const proxyUrl = `/api/v1/hrms/uploads/proxy?key=${encodeURIComponent(stored.key)}`;
+  await putObject(key, buf, file.type);
+  const proxyUrl = `/api/v1/hrms/uploads/proxy?key=${encodeURIComponent(key)}`;
 
   // Create or replace
   let upload;

@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import { Bug, BookOpen, CheckSquare, Zap, ListTree } from "lucide-react";
+import type { CustomFilter } from "@/lib/customFields/filterQuery";
 
 export type IssueType = "TASK" | "BUG" | "STORY" | "EPIC" | "SUBTASK";
 export type Priority = "HIGHEST" | "HIGH" | "MEDIUM" | "LOW" | "LOWEST";
@@ -68,6 +69,7 @@ export interface ListFilters {
   type: string;
   priority: string;
   assigneeId: string;
+  customFilters: CustomFilter[];
 }
 
 export const EMPTY_FILTERS: ListFilters = {
@@ -76,6 +78,7 @@ export const EMPTY_FILTERS: ListFilters = {
   type: "",
   priority: "",
   assigneeId: "",
+  customFilters: [],
 };
 
 export function userLabel(u: UserLite | null): string {

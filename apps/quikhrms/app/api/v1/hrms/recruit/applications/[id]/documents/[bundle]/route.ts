@@ -69,7 +69,16 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
     if (!isBundle(params.bundle)) return validationError("Invalid bundle");
     const body = await req.json().catch(() => ({}));
     const rawIds = Array.isArray(body?.documentTypeIds) ? body.documentTypeIds.filter((v: unknown) => typeof v === "string" && v.length > 0) : null;
-    const r = await triggerCandidateDocBundle(orgId, params.id, params.bundle, userId, rawIds);
+    // Optional HR-set submission deadline (ISO date string). Reject a malformed value.
+    let deadline: Date | null | undefined;
+    if (typeof body?.submissionDeadline === "string" && body.submissionDeadline.trim()) {
+      const d = new Date(body.submissionDeadline);
+      if (Number.isNaN(d.getTime())) return validationError("Invalid submission deadline");
+      deadline = d;
+    } else if (body?.submissionDeadline === null) {
+      deadline = null;
+    }
+    const r = await triggerCandidateDocBundle(orgId, params.id, params.bundle, userId, rawIds, deadline);
     return successResponse(r, undefined, 201);
   } catch (e) {
     console.error("POST docs bundle trigger", e);

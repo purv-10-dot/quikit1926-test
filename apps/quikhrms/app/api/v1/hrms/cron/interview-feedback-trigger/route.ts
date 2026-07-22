@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { queueEmail } from "@/lib/services/mailer";
+import { resolveAndSend } from "@/lib/email/resolve";
 import { generateFeedbackToken } from "@/lib/services/feedback-token";
 import { buildInterviewFeedbackRequestEmail } from "@/lib/email-templates/interview-feedback-request";
 import { stageNames } from "@/lib/services/pipeline-stages";
@@ -49,7 +49,16 @@ export async function POST(req: NextRequest) {
     processed++;
 
     try {
-      const { token, expiresAt } = generateFeedbackToken(iv.id, iv.orgId);
+      // Reuse the token minted at invite time (kept on the interview) so the
+      // "Submit Feedback" link in the assignment email stays valid; only mint a
+      // fresh one if it's missing or already expired.
+      let token = iv.feedbackToken;
+      let expiresAt = iv.feedbackTokenExpiresAt;
+      if (!token || !expiresAt || expiresAt.getTime() < now.getTime()) {
+        const gen = generateFeedbackToken(iv.id, iv.orgId);
+        token = gen.token;
+        expiresAt = gen.expiresAt;
+      }
 
       await prisma.interview.update({
         where: { id: iv.id },
@@ -73,7 +82,7 @@ export async function POST(req: NextRequest) {
         where: { orgId: iv.orgId }, select: { companyName: true },
       });
 
-      const tpl = buildInterviewFeedbackRequestEmail({
+      const fbData = {
         interviewerName: `${iv.interviewer.firstName} ${iv.interviewer.lastName}`.trim(),
         candidateName: `${iv.application.candidate.firstName} ${iv.application.candidate.lastName}`.trim(),
         jobTitle: iv.application.requisition.title,
@@ -85,10 +94,15 @@ export async function POST(req: NextRequest) {
         feedbackUrl: `${base}/interview-feedback/${token}`,
         expiryDays: 7,
         companyName: company?.companyName ?? "Our Company",
-      });
+      };
 
       // mailed = queued; the email worker handles delivery + retries.
-      await queueEmail(iv.orgId, { to: iv.interviewer.workEmail, subject: tpl.subject, html: tpl.html, kind: "interview.feedback-request" });
+      await resolveAndSend(iv.orgId, {
+        key: "interview.feedback-request",
+        to: iv.interviewer.workEmail,
+        vars: { ...fbData },
+        fallback: () => buildInterviewFeedbackRequestEmail(fbData),
+      });
       mailed++;
     } catch (e) {
       failed++;

@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, notFound, errorResponse, internalError } from "@/lib/api-response";
 import { ErrorCode } from "@/lib/types/api";
-import { sendMail } from "@/lib/services/mailer";
+import { resolveAndSend } from "@/lib/email/resolve";
 import { buildInterviewFeedbackRequestEmail } from "@/lib/email-templates/interview-feedback-request";
 import { generateFeedbackToken } from "@/lib/services/feedback-token";
 import { stageNames } from "@/lib/services/pipeline-stages";
@@ -62,7 +62,7 @@ export const POST = withAuth(async (_req: NextRequest, { orgId }, params) => {
     const level = ((iv.reminderCount ?? 0) + 1) as 1 | 2 | 3;
     const cappedLevel = (level > 3 ? 3 : level) as 1 | 2 | 3;
 
-    const tpl = buildInterviewFeedbackRequestEmail({
+    const fbData = {
       interviewerName: `${iv.interviewer.firstName} ${iv.interviewer.lastName}`.trim(),
       candidateName: `${iv.application.candidate.firstName} ${iv.application.candidate.lastName}`.trim(),
       jobTitle: iv.application.requisition.title,
@@ -76,9 +76,14 @@ export const POST = withAuth(async (_req: NextRequest, { orgId }, params) => {
       companyName: company?.companyName ?? "Our Company",
       isReminder: true,
       reminderLevel: cappedLevel,
-    });
+    };
 
-    const r = await sendMail({ to: iv.interviewer.workEmail, subject: tpl.subject, html: tpl.html });
+    const r = await resolveAndSend(orgId, {
+      key: "interview.feedback-reminder",
+      to: iv.interviewer.workEmail,
+      vars: { ...fbData, reminderLevel: cappedLevel },
+      fallback: () => buildInterviewFeedbackRequestEmail(fbData),
+    });
     if (!r.sent) return errorResponse(ErrorCode.INTERNAL_ERROR, r.error || "Mail send failed", 500);
 
     await prisma.interview.update({

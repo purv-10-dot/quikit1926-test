@@ -102,10 +102,14 @@ export function CreateIssueModal({
   open,
   onClose,
   initialProjectId,
+  onProjectChange,
 }: {
   open: boolean;
   onClose: () => void;
   initialProjectId?: string;
+  /** Notifies a wrapper (e.g. the discovery Create dispatcher) when the user
+   *  switches the Project here, so it can flip to the right form for the type. */
+  onProjectChange?: (projectId: string) => void;
 }) {
   const router = useRouter();
   const { data: session } = useSession();
@@ -187,6 +191,12 @@ export function CreateIssueModal({
       alive = false;
     };
   }, [open, initialProjectId, projectId]);
+
+  // When opened with an explicit initialProjectId, honor it (callers like the
+  // discovery Create dispatcher pass the chosen space).
+  useEffect(() => {
+    if (open && initialProjectId) setProjectId(initialProjectId);
+  }, [open, initialProjectId]);
 
   // Reset form whenever modal opens fresh.
   useEffect(() => {
@@ -369,6 +379,7 @@ export function CreateIssueModal({
                 setStatusId("");
                 setSprintId("");
                 setAssigneeId("");
+                onProjectChange?.(id);
               }}
             />
           </Field>
@@ -492,8 +503,9 @@ export function CreateIssueModal({
             <DateInput value={startDate} onChange={setStartDate} />
           </Field>
 
-          {/* Sprint — Epics are not sprint-scoped, so hide for EPIC */}
-          {type !== "EPIC" && (
+          {/* Sprint — Epics are not sprint-scoped (hide for EPIC), and functional
+              projects have no sprints at all, so hide when none exist. */}
+          {type !== "EPIC" && sprints.length > 0 && (
             <Field label="Sprint" hint="QuikTrack sprint field">
               <BoardFilterSelect
                 value={sprintId}

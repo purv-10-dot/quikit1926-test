@@ -14,6 +14,7 @@
     "./modal": "./components/modal.tsx",
     "./utils": "./lib/utils.ts",
     "./global-signout": "./lib/global-signout.ts",
+    "./auth-theme-css": "./lib/auth-theme-css.ts",
     "./styles": "./styles/globals.css",
     "./theme-applier": "./components/theme-applier.tsx",
     "./app-access-denied-popup": "./components/app-access-denied-popup.tsx",

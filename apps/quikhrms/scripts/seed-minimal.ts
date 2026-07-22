@@ -143,30 +143,6 @@ async function seed() {
     });
   }
 
-  // ── 6. Ticket Categories ────────────────────────
-  console.log("  Ticket categories...");
-  const ticketCats = [
-    { slug: "hr", name: "HR", description: "HR queries", slaResponseHours: 8, slaResolveHours: 48 },
-    { slug: "it", name: "IT Support", description: "IT issues", slaResponseHours: 4, slaResolveHours: 24 },
-    { slug: "payroll", name: "Payroll", description: "Salary, payslip queries", slaResponseHours: 12, slaResolveHours: 72 },
-    { slug: "admin", name: "Admin", description: "Office facilities", slaResponseHours: 12, slaResolveHours: 72 },
-    { slug: "finance", name: "Finance", description: "Reimbursements, invoices", slaResponseHours: 12, slaResolveHours: 72 },
-  ];
-  for (const c of ticketCats) {
-    await prisma.ticketCategory.upsert({
-      where: { orgId_slug: { orgId: TENANT, slug: c.slug } },
-      create: {
-        orgId: TENANT,
-        ...c,
-        defaultAssigneeId: ADMIN,
-        isActive: true,
-        createdBy: ADMIN,
-        updatedBy: ADMIN,
-      },
-      update: {},
-    });
-  }
-
   console.log("\n✅ Minimal seed complete.\n");
   console.log("Admin login:");
   console.log(`  x-tenant-id: ${TENANT}`);

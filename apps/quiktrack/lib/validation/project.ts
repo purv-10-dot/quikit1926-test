@@ -14,8 +14,9 @@ export const createProjectSchema = z.object({
   projectType: z.enum(["software", "discovery", "service"]).optional(),
   // Which template the space is created from. Drives runtime behavior
   // (sprints vs Kanban-style Activity Board, renamable backlog). Defaults to
-  // "scrum" when omitted.
-  templateKey: z.enum(["scrum", "functional"]).optional(),
+  // "scrum" when omitted. "discovery" provisions a Jira Product Discovery-style
+  // space: Idea work items, a scoring field set, and the "All ideas" Table view.
+  templateKey: z.enum(["scrum", "functional", "discovery"]).optional(),
   icon: z.string().max(50).optional(),
   color: z.string().regex(/^#([0-9a-fA-F]{6})$/).optional(),
   startDate: z.string().datetime().optional(),

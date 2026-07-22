@@ -24,6 +24,30 @@ export type MeasurementUnit = string; // "Number" | "Percentage" | "Currency"
 export type WeeklyBreakdown = Record<number, string>;
 
 /**
+ * Whether the Target Value field must be locked (read-only) while editing a KPI.
+ *
+ * Changing the Target redistributes the weekly Target Breakdown across ALL
+ * weeks — including past ones. When "Add Past Week Data" (`canAddPastWeek`) is
+ * OFF, those past-week cells are locked, so allowing a Target edit would
+ * silently rewrite locked cells. We therefore lock the Target itself.
+ *
+ *  - Create mode (`isEditMode === false`) is always editable (no past weeks yet).
+ *  - We only lock once flags have loaded, so the field doesn't flash locked →
+ *    unlocked (or vice-versa) on first paint while `usePastWeekFlags` resolves.
+ */
+export function isTargetValueLocked(opts: {
+  isEditMode: boolean;
+  flagsLoaded: boolean;
+  canAddPastWeek: boolean;
+}): boolean {
+  return opts.isEditMode && opts.flagsLoaded && !opts.canAddPastWeek;
+}
+
+/** Shared tooltip/helper copy for the locked Target Value field. */
+export const TARGET_LOCK_TIP =
+  "Target Value is locked because Add Past Week Data is disabled. Enable it in Settings → Configurations to edit.";
+
+/**
  * Format a single weekly breakdown value for display.
  * - Number unit: rounded to nearest integer
  * - All other units: 2 decimal places
@@ -34,6 +58,45 @@ export function fmtBreakdown(
 ): string {
   if (measurementUnit === "Number") return String(Math.round(val));
   return val.toFixed(2);
+}
+
+/**
+ * True when the Cumulative "1 per week" distribution applies: a whole-number
+ * Number-unit target that fits within the editable weeks. See
+ * docs/kpi-cumulative-one-per-week.md.
+ */
+export function isOnePerWeekCase(
+  divisionType: DivisionType,
+  unit: MeasurementUnit,
+  target: number,
+  editableCount: number,
+): boolean {
+  return (
+    divisionType === "Cumulative" &&
+    unit === "Number" &&
+    Number.isInteger(target) &&
+    target >= 1 &&
+    target <= editableCount
+  );
+}
+
+/**
+ * Distribute `target` as 1 per week across the LAST `target` editable weeks,
+ * everything before gets "0". `weeks` is 1..weekCount, `lastEditableWeek` is
+ * the highest editable week. Callers must gate on {@link isOnePerWeekCase}
+ * (which guarantees `target <= editableCount`, so no `1` lands in a past week).
+ */
+export function onePerWeekBreakdown(
+  weeks: number[],
+  lastEditableWeek: number,
+  target: number,
+): WeeklyBreakdown {
+  const map: WeeklyBreakdown = {};
+  const threshold = lastEditableWeek - target; // weeks strictly above this get 1
+  weeks.forEach((w) => {
+    map[w] = w > threshold ? "1" : "0";
+  });
+  return map;
 }
 
 /**
@@ -84,6 +147,12 @@ export function buildBreakdown(
   // Cumulative: distribute only across editable weeks
   const editableCount = Math.max(1, weeksPerQuarter + 1 - firstEditableWeek);
   const lastEditableWeek = weeksPerQuarter;
+
+  // Cumulative + Number, whole target within the editable weeks: spread 1 per
+  // week across the tail instead of dumping the flooring residue on Week 13.
+  if (isOnePerWeekCase(divisionType, measurementUnit, targetNum, editableCount)) {
+    return onePerWeekBreakdown(weeks, lastEditableWeek, targetNum);
+  }
 
   if (measurementUnit === "Number") {
     const base = Math.floor(targetNum / editableCount);
@@ -221,6 +290,12 @@ export function buildOwnerBreakdown(
   const lastEditableWeek = weeksPerQuarter;
   const map: WeeklyBreakdown = {};
 
+  // 1-per-week applies only when the owner's sub-target is itself a whole
+  // number within the editable weeks (e.g. a single 100% owner).
+  if (isOnePerWeekCase(division, unit, ownerSubTarget, editableCount)) {
+    return onePerWeekBreakdown(weeks, lastEditableWeek, ownerSubTarget);
+  }
+
   if (unit === "Number") {
     const base = Math.floor(ownerSubTarget / editableCount);
     // Last week absorbs all flooring residue.
@@ -342,6 +417,16 @@ export function redistributeFromCurrentWeek(
   const remaining = Math.max(0, targetNum - pastSum);
   const editableCount = Math.max(1, weeksPerQuarter + 1 - firstEditableWeek);
   const lastEditableWeek = weeksPerQuarter;
+
+  // 1-per-week on the remaining amount over the editable tail. Past cells in
+  // `out` are already preserved above, so we only touch editable weeks here.
+  if (isOnePerWeekCase(divisionType, unit, remaining, editableCount)) {
+    const threshold = lastEditableWeek - remaining; // weeks above this get 1
+    for (let w = firstEditableWeek; w <= lastEditableWeek; w++) {
+      out[w] = w > threshold ? "1" : "0";
+    }
+    return out;
+  }
 
   if (unit === "Number") {
     const base = Math.floor(remaining / editableCount);

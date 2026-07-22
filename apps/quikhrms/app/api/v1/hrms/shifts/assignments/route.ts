@@ -84,6 +84,14 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
     });
     if (existing.length === 0) return validationError("No valid employees to assign");
 
+    // Verify the shift exists in this org — otherwise createMany throws a Prisma
+    // FK error that surfaces as a generic "Something went wrong".
+    const shift = await prisma.shiftPolicy.findFirst({
+      where: { id: data.shiftId, orgId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!shift) return validationError("The selected shift no longer exists.");
+
     const result = await prisma.shiftAssignment.createMany({
       data: existing.map((e) => ({
         orgId,

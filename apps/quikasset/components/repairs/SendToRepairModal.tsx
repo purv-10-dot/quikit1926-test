@@ -6,12 +6,13 @@ import { cn } from "@/lib/utils"
 import SearchableSelect from "@/components/assignments/SearchableSelect"
 import type { Asset } from "@/types/asset"
 import type { Assignment } from "@/types/assignment"
+import type { Vendor } from "@/types/vendor"
 
 type FormData = {
   assetId: string
   issueTitle: string
   issueDescription: string
-  vendor: string
+  vendorId: string
   estimatedCost: string
   sentDate: string
   expectedReturn: string
@@ -42,11 +43,12 @@ export default function SendToRepairModal({ onClose, onSave }: Props) {
 
   const [form, setForm] = useState<FormData>({
     assetId: "", issueTitle: "", issueDescription: "",
-    vendor: "", estimatedCost: "", sentDate: today, expectedReturn: "", notes: "",
+    vendorId: "", estimatedCost: "", sentDate: today, expectedReturn: "", notes: "",
   })
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({})
   const [saving, setSaving] = useState(false)
   const [assets, setAssets] = useState<Asset[]>([])
+  const [vendors, setVendors] = useState<Vendor[]>([])
   const [assignee, setAssignee] = useState<Assignment | null>(null)
   const [loadingAssignee, setLoadingAssignee] = useState(false)
 
@@ -57,6 +59,8 @@ export default function SendToRepairModal({ onClose, onSave }: Props) {
         const data: Asset[] = j.data ?? []
         setAssets(data.filter((a) => a.assetStatus === "Available" || a.assetStatus === "Assigned"))
       })
+    // Active vendors for the picker (replaces the old free-text vendor field).
+    fetch("/api/vendors?status=Active").then((r) => r.json()).then((j) => setVendors(j.data ?? []))
   }, [])
 
   const selectedAsset = assets.find((a) => a.id === form.assetId)
@@ -102,6 +106,7 @@ export default function SendToRepairModal({ onClose, onSave }: Props) {
     label: a.itemName,
     sublabel: a.itemCode,
   }))
+  const vendorOptions = vendors.map((v) => ({ value: v.id, label: v.name, sublabel: v.contactPerson ?? undefined }))
 
   const inputCls = (err?: string) => cn(
     "w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent-400 bg-white",
@@ -199,11 +204,10 @@ export default function SendToRepairModal({ onClose, onSave }: Props) {
           {/* Vendor + Estimated Cost */}
           <div className="grid grid-cols-2 gap-4">
             <Field label="Vendor / Service Center">
-              <input
-                value={form.vendor}
-                onChange={(e) => set("vendor", e.target.value)}
-                placeholder="e.g. Dell Service Center"
-                className={inputCls()}
+              <SearchableSelect
+                options={vendorOptions} value={form.vendorId}
+                onChange={(v) => set("vendorId", v)}
+                placeholder="Select vendor" searchPlaceholder="Search vendors…"
               />
             </Field>
             <Field label="Estimated Cost">

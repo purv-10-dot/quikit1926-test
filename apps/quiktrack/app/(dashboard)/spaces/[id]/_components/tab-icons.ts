@@ -9,6 +9,7 @@ import {
   ListTree,
   Clock,
   FileText,
+  Lightbulb,
 } from "lucide-react";
 
 /**
@@ -27,4 +28,5 @@ export const TAB_ICONS: Record<string, typeof Globe> = {
   "task-table": ListTree,
   timesheet: Clock,
   docs: FileText,
+  ideas: Lightbulb,
 };

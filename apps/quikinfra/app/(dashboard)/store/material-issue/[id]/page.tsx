@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { DocDetailLayout, type LineCol } from "@/components/procurement/DocDetailLayout";
+import { formatDateTimeIST } from "@/lib/format/datetime";
 
 interface MiLine { id: string; item: { code: string; name: string }; uom: { code: string };
   issuedQty: string; unitRate: string; amount: string; remarks: string | null }
@@ -40,7 +41,7 @@ export default function MiDetailPage() {
         { label: "Project", value: mi.project?.name ?? "—" },
         { label: "Location", value: mi.location?.name ?? "—" },
         { label: "Issue Date", value: new Date(mi.issueDate).toISOString().slice(0, 10) },
-        { label: "Posted At", value: mi.postedAt ? new Date(mi.postedAt).toLocaleString() : "—" },
+        { label: "Posted At", value: formatDateTimeIST(mi.postedAt) },
       ]}
       lineColumns={columns}
       lines={mi.lines}

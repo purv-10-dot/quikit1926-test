@@ -1,4 +1,4 @@
-import { baseLayout, infoTable } from "./_base";
+import { emailShell, hero, detailBlock, alert, btnPrimary, para, esc, BRAND } from "./_base";
 
 export interface PayslipEmailInput {
   employeeName: string;
@@ -26,32 +26,40 @@ function formatDate(d: Date): string {
 export function buildPayslipEmail(input: PayslipEmailInput): { subject: string; html: string } {
   const label = monthLabel(input.periodStart);
   const subject = `Payslip for ${label} — ${input.employeeName}`;
+  const firstName = input.employeeName.split(" ")[0] ?? input.employeeName;
 
   const body = `
-    <p style="margin:0 0 16px;font-size:14px;">
-      Your payslip for <strong>${label}</strong> has been released.
-    </p>
-    ${infoTable([
-      ["Employee Code", input.employeeCode],
-      ["Period", `${formatDate(input.periodStart)} – ${formatDate(input.periodEnd)}`],
-      ["Pay Date", formatDate(input.payDate)],
-      ["Gross Earnings", INR.format(input.grossEarnings)],
-      ["Total Deductions", INR.format(input.totalDeductions)],
-      ["Net Pay", INR.format(input.netPay)],
-    ])}
-    <p style="margin:16px 0 0;font-size:13px;color:#6b7280;">
-      For a full breakdown of earnings and deductions, view your payslip in the employee portal.
-    </p>
+    ${hero({
+      title: "Your Payslip",
+      subtitle: `For ${esc(label)}. Please find your payslip summary below.`,
+      accent: "blue",
+    })}
+    ${para(`Hi <strong>${esc(firstName)}</strong>, your payslip for <strong>${esc(label)}</strong> has been released.`)}
+    ${alert(
+      "success",
+      `<span style="font-size:22px;font-weight:800;color:${BRAND.green};">₹${input.netPay.toLocaleString("en-IN")}</span>`,
+      "Net Salary (In Hand)",
+    )}
+    ${detailBlock(
+      [
+        ["Gross Earnings", `₹${input.grossEarnings.toLocaleString("en-IN")}`],
+        ["Total Deductions", `₹${input.totalDeductions.toLocaleString("en-IN")}`],
+        ["Net Pay", `₹${input.netPay.toLocaleString("en-IN")}`],
+        ["Pay Date", esc(formatDate(input.payDate))],
+        ["Pay Period", `${esc(formatDate(input.periodStart))} – ${esc(formatDate(input.periodEnd))}`],
+      ],
+      { heading: "Salary Summary", accent: "blue" },
+    )}
+    ${input.payslipUrl ? btnPrimary("Download Payslip", input.payslipUrl, "blue") : ""}
+    ${para(`<span style="font-size:13px;color:${BRAND.soft};">Employee Code: ${esc(input.employeeCode)} · For a full breakdown of earnings and deductions, view your payslip in the employee portal.</span>`)}
   `;
 
-  const html = baseLayout({
-    title: "Payslip Released",
-    subtitle: label,
-    greeting: `Hi ${input.employeeName.split(" ")[0] ?? input.employeeName},`,
-    body,
-    ctaLabel: input.payslipUrl ? "View Payslip" : undefined,
-    ctaUrl: input.payslipUrl,
+  const html = emailShell({
+    accent: "blue",
     companyName: input.companyName,
+    preheader: `Your payslip for ${label} — Net ${INR.format(input.netPay)}`,
+    body,
+    helpName: "Payroll Team",
   });
 
   return { subject, html };

@@ -4,6 +4,8 @@ import { withAuth } from "@/lib/with-auth";
 import { successResponse, validationError, internalError } from "@/lib/api-response";
 import { upsertEmailTemplateSchema } from "@/lib/validations/payroll";
 import { createAuditLog } from "@/lib/utils/audit";
+import { allowedVarNames, isKnownEmailKey } from "@/lib/email/registry";
+import { findUnknownVars } from "@/lib/email/validate-vars";
 
 export const GET = withAuth(async (_req: NextRequest, { orgId }) => {
   try {
@@ -25,6 +27,21 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     if (!parsed.success) {
       return validationError("Validation failed", parsed.error.flatten().fieldErrors);
     }
+
+    // Reject unknown events and any {{variable}} the event doesn't provide, so a
+    // tenant template never renders a broken/blank token in production.
+    if (!isKnownEmailKey(parsed.data.key)) {
+      return validationError(`Unknown email event: "${parsed.data.key}".`);
+    }
+    const allowed = allowedVarNames(parsed.data.key);
+    const unknown = findUnknownVars(parsed.data.subject, parsed.data.body, allowed);
+    if (unknown.length) {
+      return validationError(
+        `Unknown variables: ${unknown.map((n) => `{{${n}}}`).join(", ")}. ` +
+          `Allowed for this template: ${[...allowed].map((n) => `{{${n}}}`).join(", ")}`,
+      );
+    }
+
     const record = await prisma.emailTemplate.upsert({
       where: { orgId_key_channel: { orgId, key: parsed.data.key, channel: parsed.data.channel } },
       update: {

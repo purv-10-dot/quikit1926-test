@@ -5,6 +5,7 @@ import { successResponse, validationError, internalError } from "@/lib/api-respo
 import { createAuditLog } from "@/lib/utils/audit";
 import { ensureSuperAdminRemains } from "@/lib/rbac/guards";
 import { APP_ID } from "@/lib/rbac/registry";
+import { mirrorHrmsRolesToCentral } from "@/lib/rbac/mirrorRole";
 import { z } from "zod";
 
 const bulkRoleSchema = z.object({
@@ -27,12 +28,14 @@ export const PUT = withAuth(async (req: NextRequest, { orgId, userId }) => {
 
     const { employeeIds, roleId } = parsed.data;
 
+    let roleName: string | null = null;
     if (roleId) {
       const role = await prisma.hrmsAppRole.findFirst({
         where: { id: roleId, orgId: orgId, appId: APP_ID },
-        select: { id: true },
+        select: { id: true, name: true },
       });
       if (!role) return validationError("Role not found");
+      roleName = role.name;
     }
 
     try {
@@ -61,6 +64,10 @@ export const PUT = withAuth(async (req: NextRequest, { orgId, userId }) => {
         });
       }
     });
+
+    // Keep the central UserAppAccess.role mirror (what the Admin Portal shows)
+    // in sync with the role just assigned in QuikHrms.
+    await mirrorHrmsRolesToCentral(orgId, validIds, roleName);
 
     for (const id of validIds) invalidatePermissionCache(orgId, id);
 

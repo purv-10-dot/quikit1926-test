@@ -7,6 +7,7 @@ import {
   seedAdminAppRole,
   ensureUserOnRole,
 } from "@/lib/api/seedAdminAppRole";
+import { mirrorAppRoleToCentral } from "@quikit/auth/assign-app-roles";
 
 const bodySchema = z.object({
   /** AppRole.id, or null to revoke. Special "admin" auto-seeds the admin role. */
@@ -120,6 +121,15 @@ export async function PATCH(
           select: { id: true, name: true },
         })
       : null;
+
+    // Keep the central UserAppAccess.role mirror (what the Admin Portal shows)
+    // in sync with the role just assigned in QuikTrack.
+    await mirrorAppRoleToCentral(db, {
+      orgId,
+      userId: params.id,
+      appId,
+      roleName: role?.name,
+    });
 
     return NextResponse.json({
       success: true,

@@ -293,6 +293,24 @@ export async function POST(req: NextRequest) {
         };
       });
 
+    // Server-side mirror of the drawer's per-vendor item rule: when the
+    // request carries a `vendors` array (what the UI always sends),
+    // every vendor must have at least one item assigned — an empty
+    // selection is no longer accepted as "send all".
+    if (
+      Array.isArray(body.vendors) &&
+      repoVendors.some((v) => v.assignedItemIds.length === 0)
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Please select the item material for the vendor — each vendor must have at least one item assigned.",
+          code: "VENDOR_ITEMS_REQUIRED",
+        },
+        { status: 400 },
+      );
+    }
+
     const record = await createRfq({
       orgId: ctx.orgId,
       rfqNumber,

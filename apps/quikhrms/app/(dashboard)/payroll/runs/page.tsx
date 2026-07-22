@@ -22,12 +22,12 @@ interface PayRun {
 }
 
 const INR = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
-const inputCls = "w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[#16243A] focus:border-transparent";
+const inputCls = "w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[#166534] focus:border-transparent";
 
 function statusClass(s: string) {
   switch (s) {
     case "Draft": return "bg-gray-100 text-gray-700";
-    case "Processing": return "bg-[#dbeafe] text-[#2563eb]";
+    case "Processing": return "bg-[#dcfce7] text-[#16a34a]";
     case "Approved": return "bg-amber-100 text-amber-700";
     case "Paid": return "bg-emerald-100 text-emerald-700";
     case "Cancelled": return "bg-red-100 text-red-700";
@@ -59,17 +59,17 @@ export default function PayRunsPage() {
   const hasFilter = !!(month || dateFrom || dateTo);
 
   return (
-    <div className="w-full px-6 py-6 space-y-4">
+    <div className="w-full px-5 py-4 space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-start gap-3">
-          <Play size={28} className="text-[#3b82f6] mt-1.5" />
+          <Play size={28} className="text-[#22c55e] mt-1.5" />
           <div>
-            <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900 leading-tight">Pay runs</h1>
-            <p className="text-sm text-gray-500 mt-1">Process monthly payroll, review payslips, approve and release.</p>
+            <h1 className="text-page-title text-gray-900 leading-tight">Pay runs</h1>
+            <p className="text-xs text-gray-500 mt-1">Process monthly payroll, review payslips, approve and release.</p>
           </div>
         </div>
         <button onClick={() => setCreateOpen(true)} className="btn btn-primary">
-          <Plus size={14} /> New pay run
+          <Plus size={13} /> New pay run
         </button>
       </div>
 
@@ -88,7 +88,7 @@ export default function PayRunsPage() {
             <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="border border-[var(--border)] rounded-lg px-3 py-2 text-sm" />
           </div>
           {hasFilter && (
-            <button onClick={() => { setMonth(""); setDateFrom(""); setDateTo(""); }} className="px-3 py-2 border border-gray-200 rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-50">
+            <button onClick={() => { setMonth(""); setDateFrom(""); setDateTo(""); }} className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-50">
               Reset
             </button>
           )}
@@ -101,19 +101,19 @@ export default function PayRunsPage() {
           <div className="p-4"><SkeletonTable rows={5} cols={5} /></div>
         ) : rows.length === 0 ? (
           <div className="py-12 text-center">
-            <div className="mx-auto w-16 h-16 rounded-full bg-gradient-to-br from-[#dbeafe] to-[#dbeafe] flex items-center justify-center mb-3">
-              <Calendar size={28} className="text-[#bfdbfe]" />
+            <div className="mx-auto w-16 h-16 rounded-full bg-gradient-to-br from-[#dcfce7] to-[#dcfce7] flex items-center justify-center mb-3">
+              <Calendar size={28} className="text-[#bbf7d0]" />
             </div>
-            <p className="text-sm text-gray-600">No pay runs yet.</p>
+            <p className="text-xs text-gray-600">No pay runs yet.</p>
             <p className="text-xs text-gray-500 mt-1">Assign salaries to employees first, then create a pay run.</p>
-            <button onClick={() => setCreateOpen(true)} className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] text-white rounded-md text-sm font-semibold">
-              <Plus size={14} /> Create Pay Run
+            <button onClick={() => setCreateOpen(true)} className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-xs font-medium">
+              <Plus size={13} /> Create Pay Run
             </button>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full text-xs">
             <thead>
-              <tr className="text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">
+              <tr className="text-table-head font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">
                 <th className="text-left py-2 px-3">Period</th>
                 <th className="text-left py-2 px-3">Pay Date</th>
                 <th className="text-right py-2 px-3">Employees</th>
@@ -126,13 +126,13 @@ export default function PayRunsPage() {
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-sm text-gray-500">No pay runs match the selected period.</td>
+                  <td colSpan={7} className="py-8 text-center text-xs text-gray-500">No pay runs match the selected period.</td>
                 </tr>
               )}
               {filtered.map((r, i) => (
                 <tr key={r.id} className="row-stagger border-b border-gray-50 hover:bg-gray-50" style={{ ["--i" as never]: Math.min(i, 10) }}>
                   <td className="py-3 px-3">
-                    <Link href={`/payroll/runs/${r.id}`} className="text-[#3b82f6] font-medium hover:underline">
+                    <Link href={`/payroll/runs/${r.id}`} className="text-[13px] text-[#22c55e] font-medium hover:underline">
                       {new Date(r.periodStart).toLocaleString("en-IN", { month: "short", year: "numeric" }).toUpperCase()}
                     </Link>
                     <p className="text-xs text-gray-500">
@@ -193,6 +193,7 @@ function CreatePayRunForm({ onCancel, onCreated }: { onCancel: () => void; onCre
   const mut = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.post<{ id: string }>("/api/v1/hrms/payroll/runs", body),
     onSuccess: (res) => onCreated(res.data.id),
+    meta: { suppressGlobalError: true },
     onError: (e: Error) => setErr(e.message),
   });
 
@@ -209,7 +210,7 @@ function CreatePayRunForm({ onCancel, onCreated }: { onCancel: () => void; onCre
         if (periodInvalid) return;
         mut.mutate(form);
       }}
-      className="p-5 space-y-3"
+      className="p-4 space-y-3"
     >
       <div className="grid grid-cols-2 gap-3">
         <div>
@@ -261,7 +262,7 @@ function CreatePayRunForm({ onCancel, onCreated }: { onCancel: () => void; onCre
         <button
           type="submit"
           disabled={mut.isPending || periodInvalid}
-          className="px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-md text-sm font-semibold shadow-sm"
+          className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-md text-sm font-semibold shadow-sm"
         >
           {mut.isPending ? "Creating..." : "Create"}
         </button>

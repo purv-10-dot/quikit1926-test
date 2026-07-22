@@ -36,7 +36,7 @@ const typeMeta: Record<RecogType, {
   hint: string;
 }> = {
   Kudos:    { Icon: Star,      bg: "bg-amber-50",   text: "text-amber-700",   ring: "ring-amber-200",   chip: "bg-amber-100 text-amber-800",   gradient: "from-amber-400 to-orange-500", hint: "Quick thank you" },
-  Badge:    { Icon: Award,     bg: "bg-blue-50",    text: "text-blue-700",    ring: "ring-blue-200",    chip: "bg-blue-100 text-blue-800",     gradient: "from-blue-500 to-indigo-600", hint: "Skill / behavior" },
+  Badge:    { Icon: Award,     bg: "bg-green-50",    text: "text-green-700",    ring: "ring-green-200",    chip: "bg-green-100 text-green-800",     gradient: "from-green-500 to-green-600", hint: "Skill / behavior" },
   Award:    { Icon: Trophy,    bg: "bg-violet-50",  text: "text-violet-700",  ring: "ring-violet-200",  chip: "bg-violet-100 text-violet-800", gradient: "from-violet-500 to-purple-600", hint: "Big achievement" },
   Shoutout: { Icon: Megaphone, bg: "bg-emerald-50", text: "text-emerald-700", ring: "ring-emerald-200", chip: "bg-emerald-100 text-emerald-800", gradient: "from-emerald-500 to-teal-600", hint: "Public callout" },
 };
@@ -131,7 +131,7 @@ export default function RecognitionPage() {
   return (
     <div>
       {/* Hero */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#3F1A56] via-[#7C2D92] to-[#C026D3] mb-6">
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#3F1A56] via-[#7C2D92] to-[#C026D3] mb-4">
         <svg className="absolute inset-0 w-full h-full opacity-50" viewBox="0 0 1200 200" preserveAspectRatio="none">
           <defs>
             <radialGradient id="rec-glow" cx="0.85" cy="0.5" r="0.5">
@@ -146,27 +146,27 @@ export default function RecognitionPage() {
             <path d="M 460 140 Q 700 100 940 140 T 1300 140" />
           </g>
         </svg>
-        <div className="relative px-8 py-7 flex items-center justify-between gap-6">
+        <div className="relative px-6 py-7 flex items-center justify-between gap-6">
           <div>
             <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-white/15 backdrop-blur-sm ring-1 ring-white/20 text-[11px] font-bold tracking-widest text-white/90 uppercase">
               <Trophy size={12} /> Recognition wall
             </div>
-            <h1 className="font-serif-display text-white text-3xl md:text-4xl font-bold mt-3">
+            <h1 className="font-serif-display text-white text-base font-semibold mt-3">
               Celebrate great work
             </h1>
-            <p className="text-white/80 text-sm mt-1">A small nod goes a long way. Send kudos, hand out badges, give shoutouts.</p>
+            <p className="text-white/80 text-xs mt-1">A small nod goes a long way. Send kudos, hand out badges, give shoutouts.</p>
           </div>
           <button
             onClick={openCreate}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-[#3F1A56] text-sm font-semibold shadow-lg hover:shadow-xl transition-shadow shrink-0"
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white text-[#3F1A56] text-xs font-medium shadow-lg hover:shadow-xl transition-shadow shrink-0"
           >
-            <Plus size={16} /> <span className="hidden sm:inline">Give recognition</span><span className="sm:hidden">Give</span>
+            <Plus size={13} /> <span className="hidden sm:inline">Give recognition</span><span className="sm:hidden">Give</span>
           </button>
         </div>
       </div>
 
       {/* Stat strip */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
         <StatCard iconBg="bg-amber-50" iconColor="text-amber-600" Icon={Trophy} label="Total kudos" value={stats.total} caption="On the wall" />
         <StatCard iconBg="bg-emerald-50" iconColor="text-emerald-600" Icon={Flame} label="This week" value={stats.thisWeek} caption="Last 7 days" />
         <StatCard iconBg="bg-violet-50" iconColor="text-violet-600" Icon={Sparkles} label="Points awarded" value={stats.totalPoints} caption="Across all kudos" />
@@ -174,8 +174,8 @@ export default function RecognitionPage() {
       </div>
 
       {/* Two-column layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-5">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-2 space-y-4">
           {/* Filter bar */}
           <div className="surface-card p-3 flex items-center gap-3 flex-wrap">
             <div className="relative flex-1 min-w-[200px]">
@@ -185,7 +185,7 @@ export default function RecognitionPage() {
                 placeholder="Search recognitions..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 border border-[var(--border)] rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-violet-500"
+                className="w-full pl-9 pr-3 py-2 border border-[var(--border)] rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-violet-500"
               />
             </div>
             <div className="flex items-center gap-1 bg-gray-50 rounded-lg p-1 flex-wrap">
@@ -193,7 +193,7 @@ export default function RecognitionPage() {
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
-                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                  className={`px-3 py-1.5 rounded-md text-[13px] font-semibold transition-colors ${
                     filter === f ? "bg-white text-[#3F1A56] shadow-sm" : "text-gray-500 hover:text-gray-700"
                   }`}
                 >
@@ -211,8 +211,8 @@ export default function RecognitionPage() {
               <div className="w-14 h-14 rounded-2xl bg-violet-50 flex items-center justify-center mx-auto mb-3">
                 <Trophy size={24} className="text-violet-600" />
               </div>
-              <p className="font-serif-display text-lg font-bold text-gray-900">No recognitions yet</p>
-              <p className="text-sm text-gray-500 mt-1">{search || filter !== "All" ? "Try a different filter." : "Be the first to celebrate someone."}</p>
+              <p className="font-serif-display text-[13px] font-semibold text-gray-900">No recognitions yet</p>
+              <p className="text-xs text-gray-500 mt-1">{search || filter !== "All" ? "Try a different filter." : "Be the first to celebrate someone."}</p>
             </div>
           ) : (
             <div className="space-y-4">
@@ -222,7 +222,7 @@ export default function RecognitionPage() {
                 return (
                   <article
                     key={r.id}
-                    className="row-stagger card-hover-lift surface-card p-5"
+                    className="row-stagger card-hover-lift surface-card p-4"
                     style={{ ["--i" as never]: Math.min(idx, 10) }}
                   >
                     <div className="flex items-start gap-3">
@@ -231,7 +231,7 @@ export default function RecognitionPage() {
                       <div className="min-w-0 flex-1">
                         {/* Header line */}
                         <div className="flex items-start justify-between gap-2">
-                          <div className="text-sm leading-snug min-w-0">
+                          <div className="text-[13px] leading-snug min-w-0">
                             <span className="font-bold text-gray-900">{r.fromEmployee.firstName} {r.fromEmployee.lastName}</span>
                             <span className="text-gray-500"> recognised </span>
                             <span className="font-bold text-gray-900">{r.toEmployee.firstName} {r.toEmployee.lastName}</span>
@@ -258,7 +258,7 @@ export default function RecognitionPage() {
                         </div>
 
                         {/* Message */}
-                        <p className="text-sm text-gray-700 mt-2.5 leading-relaxed">{r.message}</p>
+                        <p className="text-xs text-gray-700 mt-2.5 leading-relaxed">{r.message}</p>
 
                         {/* To employee chip */}
                         <div className="mt-3 inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-gray-50 ring-1 ring-gray-100">
@@ -275,10 +275,10 @@ export default function RecognitionPage() {
         </div>
 
         {/* Sidebar */}
-        <aside className="space-y-5">
+        <aside className="space-y-4">
           {/* Leaderboard */}
-          <div className="surface-card p-5">
-            <h3 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
+          <div className="surface-card p-4">
+            <h3 className="text-[13px] font-semibold text-gray-900 mb-3 flex items-center gap-2">
               <Crown size={14} className="text-amber-500" /> Most recognised
             </h3>
             {stats.topRecipients.length === 0 ? (
@@ -297,7 +297,7 @@ export default function RecognitionPage() {
                       #{i + 1}
                     </div>
                     <Avatar emp={{ firstName: p.name.split(" ")[0], lastName: p.name.split(" ")[1] ?? "", profilePhoto: p.photo }} size="xs" />
-                    <span className="text-sm font-semibold text-gray-800 truncate flex-1">{p.name}</span>
+                    <span className="text-[13px] font-semibold text-gray-800 truncate flex-1">{p.name}</span>
                     <span className="text-xs font-bold text-violet-600">{p.count}</span>
                   </li>
                 ))}
@@ -306,8 +306,8 @@ export default function RecognitionPage() {
           </div>
 
           {/* Type legend */}
-          <div className="surface-card p-5">
-            <h3 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
+          <div className="surface-card p-4">
+            <h3 className="text-[13px] font-semibold text-gray-900 mb-3 flex items-center gap-2">
               <TrendingUp size={14} className="text-violet-600" /> Recognition types
             </h3>
             <ul className="space-y-2">
@@ -320,7 +320,7 @@ export default function RecognitionPage() {
                       <Icon size={14} />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-bold text-gray-900">{t}</p>
+                      <p className="text-[13px] font-semibold text-gray-900">{t}</p>
                       <p className="text-[11px] text-gray-500 truncate">{m.hint}</p>
                     </div>
                   </li>
@@ -330,8 +330,8 @@ export default function RecognitionPage() {
           </div>
 
           {/* Tips */}
-          <div className="surface-card p-5">
-            <h3 className="text-sm font-bold text-gray-900 mb-2">Tips</h3>
+          <div className="surface-card p-4">
+            <h3 className="text-[13px] font-semibold text-gray-900 mb-2">Tips</h3>
             <ul className="text-xs text-gray-600 space-y-1.5 list-disc list-inside">
               <li>Be specific — name what they did and why it mattered.</li>
               <li>Send within a week of the moment.</li>
@@ -354,7 +354,7 @@ export default function RecognitionPage() {
       >
         <form onSubmit={(e) => { e.preventDefault(); createMut.mutate(form); }}>
           {/* Preview */}
-          <div className="px-6 pt-5 pb-4 bg-gradient-to-br from-violet-50/60 via-white to-amber-50/40 border-b border-gray-100">
+          <div className="px-5 pt-4 pb-4 bg-gradient-to-br from-violet-50/60 via-white to-amber-50/40 border-b border-gray-100">
             <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2">Preview</p>
             <div className="flex items-start gap-3">
               <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${meta.gradient} flex items-center justify-center text-white shrink-0 shadow-md`}>
@@ -376,7 +376,7 @@ export default function RecognitionPage() {
                     </span>
                   ) : null}
                 </div>
-                <p className="text-sm text-gray-700 mt-1.5 leading-snug">
+                <p className="text-xs text-gray-700 mt-1.5 leading-snug">
                   {form.message || "Your message will appear here..."}
                 </p>
               </div>
@@ -384,7 +384,7 @@ export default function RecognitionPage() {
           </div>
 
           {/* Form body */}
-          <div className="p-6 space-y-5">
+          <div className="p-4 space-y-4">
             <EmployeeSelect
               label="Recognise"
               required
@@ -417,7 +417,7 @@ export default function RecognitionPage() {
                       )}>
                         <Icon size={14} />
                       </div>
-                      <span className={clsx("text-sm font-semibold", active ? "text-gray-900" : "text-gray-700")}>{t}</span>
+                      <span className={clsx("text-[13px] font-semibold", active ? "text-gray-900" : "text-gray-700")}>{t}</span>
                       <span className="text-[10px] text-gray-500 truncate w-full">{m.hint}</span>
                     </button>
                   );
@@ -476,7 +476,7 @@ export default function RecognitionPage() {
                   {form.isPublic ? <Globe2 size={14} /> : <Users size={14} />}
                 </div>
                 <div className="text-left min-w-0">
-                  <p className="text-sm font-semibold text-gray-800">{form.isPublic ? "Public" : "Private"}</p>
+                  <p className="text-[13px] font-semibold text-gray-800">{form.isPublic ? "Public" : "Private"}</p>
                   <p className="text-[11px] text-gray-500 truncate">{form.isPublic ? "Visible on the wall" : "Only sender + recipient"}</p>
                 </div>
               </div>
@@ -487,7 +487,7 @@ export default function RecognitionPage() {
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-between gap-3 px-6 py-4 bg-gray-50/70 border-t border-gray-100">
+          <div className="flex items-center justify-between gap-3 px-5 py-4 bg-gray-50/70 border-t border-gray-100">
             <p className="text-[11px] text-gray-500 hidden sm:block">
               {form.type}
               {form.badge ? ` · ${form.badge}` : ""}
@@ -498,16 +498,16 @@ export default function RecognitionPage() {
               <button
                 type="button"
                 onClick={() => setShowCreate(false)}
-                className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm font-medium text-gray-700 hover:bg-white"
+                className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-white"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={createMut.isPending || !form.toEmployeeId || !form.message.trim()}
-                className="inline-flex items-center gap-2 px-5 py-2 bg-gradient-to-r from-[#7C2D92] to-[#C026D3] text-white rounded-lg text-sm font-semibold shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                className="inline-flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-[#7C2D92] to-[#C026D3] text-white rounded-lg text-xs font-medium shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
               >
-                <Send size={14} />
+                <Send size={13} />
                 {createMut.isPending ? "Sending…" : "Send recognition"}
               </button>
             </div>
@@ -549,8 +549,8 @@ function StatCard({
         <Icon size={20} className={iconColor} />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-bold text-gray-900 truncate">{label}</p>
-        <p className="font-serif-display text-2xl font-bold text-gray-900 leading-tight mt-0.5">{value}</p>
+        <p className="text-[13px] font-semibold text-gray-900 truncate">{label}</p>
+        <p className="font-serif-display text-xl font-bold text-gray-900 leading-tight mt-0.5">{value}</p>
         <p className="text-[11px] text-gray-500 truncate">{caption}</p>
       </div>
     </div>

@@ -24,6 +24,7 @@
  */
 
 import { toErrorMessage } from "@/lib/api/errors";
+import { formatDateTimeIST } from "@/lib/format/datetime";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -417,7 +418,7 @@ export default function EstimationDetailPage() {
       step: h.stepOrder ?? 0,
       action: h.action,
       actionBy: h.actionByName ?? "User",
-      actionAt: h.actionAt ? new Date(h.actionAt).toLocaleString() : "",
+      actionAt: h.actionAt ? formatDateTimeIST(h.actionAt) : "",
       comments: h.comments ?? undefined,
     })) ?? [];
 
@@ -974,7 +975,7 @@ export default function EstimationDetailPage() {
                     </div>
                     <div className="mt-0.5 text-gray-900">
                       {estimation.createdAt
-                        ? new Date(estimation.createdAt).toLocaleString()
+                        ? formatDateTimeIST(estimation.createdAt)
                         : "—"}
                     </div>
                   </div>
@@ -992,7 +993,7 @@ export default function EstimationDetailPage() {
                         Last Updated
                       </div>
                       <div className="mt-0.5 text-gray-900">
-                        {new Date(estimation.updatedAt).toLocaleString()}
+                        {formatDateTimeIST(estimation.updatedAt)}
                       </div>
                     </div>
                   )}

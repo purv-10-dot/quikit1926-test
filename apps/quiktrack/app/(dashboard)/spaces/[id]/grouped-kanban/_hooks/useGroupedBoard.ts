@@ -18,6 +18,7 @@ async function fetchGroupedBoard(
   if (filters.priority) params.set("priority", filters.priority);
   if (filters.type) params.set("type", filters.type);
   if (filters.search) params.set("search", filters.search);
+  if (filters.customFilters) params.set("customFilters", filters.customFilters);
 
   const res = await fetch(
     `/api/projects/${projectId}/grouped-board?${params.toString()}`,

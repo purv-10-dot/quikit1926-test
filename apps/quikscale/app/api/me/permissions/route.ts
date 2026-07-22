@@ -3,7 +3,7 @@ import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { db } from "@/lib/db";
 import { ADMIN_TIER_ROLES } from "@quikit/shared";
 import { loadMyPermissions } from "@/lib/api/permissions";
-import { seedAllDefaultRoles, ensureUserOnRole } from "@/lib/api/seedAdminAppRole";
+import { seedAllDefaultRoles, ensureUserOnRole, collapseToLatestRole } from "@/lib/api/seedAdminAppRole";
 
 // GET /api/me/permissions
 // Returns the current user's effective permission set for QuikScale in the
@@ -41,8 +41,16 @@ export const GET = withOrgAuth(async ({ session, userId, orgId }) => {
       });
       if (!hasRole) await ensureUserOnRole(userId, orgId, adminRoleId);
     }
+
+    // SELF-HEAL — enforce a single QuikScale role per user. The Admin Portal
+    // write path appends on a role change and never deletes the old row (see
+    // RBAC_ROLE_CHANGE_BUG.md), so a stale `admin` row would keep winning.
+    // This collapses any duplicates to the most recently assigned role, on
+    // every mount, so the DB converges to one row and all readers stay correct
+    // without touching the shared write path (which QuikTrack also uses).
+    await collapseToLatestRole(userId, orgId);
   } catch {
-    // Swallow — seed/bind is best-effort, retried on the next mount.
+    // Swallow — seed/bind/self-heal is best-effort, retried on the next mount.
   }
   const data = await loadMyPermissions(userId, orgId);
   return NextResponse.json({ success: true, data });

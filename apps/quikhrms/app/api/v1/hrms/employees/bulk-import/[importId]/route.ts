@@ -1,9 +1,9 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { withAuth } from "@/lib/with-auth";
+import { withServiceAuth } from "@/lib/with-auth";
 import { successResponse, validationError, notFound, internalError } from "@/lib/api-response";
 
-export const GET = withAuth(async (
+export const GET = withServiceAuth(async (
   _req: NextRequest,
   { orgId },
   params,

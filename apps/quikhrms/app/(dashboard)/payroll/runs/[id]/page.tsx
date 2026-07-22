@@ -8,6 +8,8 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { ChevronLeft, Calculator, Check, Send, Eye, Download, FileText, Building2, AlertTriangle, X, FileSpreadsheet, Pencil, RotateCcw, Gift, ArrowUpRight, Search } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonLine } from "@/components/hrms/skeleton";
+import { Select } from "@/components/hrms/select";
+import { useToast } from "@/components/hrms/toast";
 import { withBasePath } from "@/lib/utils/base-path";
 
 interface PayslipLine {
@@ -106,7 +108,7 @@ const INR = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
 function statusClass(s: string) {
   switch (s) {
     case "Draft": return "bg-gray-100 text-gray-700";
-    case "Processing": return "bg-[#dbeafe] text-[#2563eb]";
+    case "Processing": return "bg-[#dcfce7] text-[#16a34a]";
     case "Approved": return "bg-amber-100 text-amber-700";
     case "Paid": return "bg-emerald-100 text-emerald-700";
     default: return "bg-gray-100 text-gray-600";
@@ -116,6 +118,7 @@ function statusClass(s: string) {
 export default function PayRunDetailPage() {
   const api = useApiClient();
   const qc = useQueryClient();
+  const toast = useToast();
   const params = useParams();
   const id = params.id as string;
 
@@ -171,6 +174,8 @@ export default function PayRunDetailPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["payroll", "runs", id] }),
   });
   const releaseMut = useMutation({
+    // Surfaced via the toast.promise below — suppress the global modal.
+    meta: { suppressGlobalError: true },
     mutationFn: () => api.post(`/api/v1/hrms/payroll/runs/${id}/release`, {}),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["payroll", "runs", id] }),
   });
@@ -208,7 +213,7 @@ export default function PayRunDetailPage() {
     <div className="p-8 space-y-3 text-center">
       <p className="text-sm text-gray-700 font-medium">Pay run not found.</p>
       <p className="text-xs text-gray-500">{(error as Error | null)?.message ?? "It may have been deleted."}</p>
-      <Link href="/payroll/runs" className="inline-flex items-center gap-1 text-xs text-[#3b82f6] hover:underline">
+      <Link href="/payroll/runs" className="inline-flex items-center gap-1 text-xs text-[#22c55e] hover:underline">
         <ChevronLeft size={14} /> Back to Pay Runs
       </Link>
     </div>
@@ -230,18 +235,14 @@ export default function PayRunDetailPage() {
 
   return (
     <div className="space-y-4">
-      <Link href="/payroll/runs" className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-[#3b82f6]">
-        <ChevronLeft size={14} /> Back to Pay Runs
-      </Link>
-
-      <div className="rounded-lg border border-gray-200 bg-white shadow-sm p-5">
+      <div className="rounded-lg border border-gray-200 bg-white shadow-sm p-4">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-lg font-bold text-gray-900">
+              <h1 className="text-page-title text-gray-900">
                 Payroll for {new Date(run.periodStart).toLocaleString("en-IN", { month: "long", year: "numeric" })}
               </h1>
-              <span className={clsx("text-xs font-semibold px-2 py-0.5 rounded", statusClass(run.status))}>{run.status}</span>
+              <span className={clsx("text-[11px] font-medium px-2 py-0.5 rounded", statusClass(run.status))}>{run.status}</span>
             </div>
             <p className="text-xs text-gray-500 mt-1">
               Period: {new Date(run.periodStart).toLocaleDateString("en-IN")} — {new Date(run.periodEnd).toLocaleDateString("en-IN")} · Pay Date: {new Date(run.payDate).toLocaleDateString("en-IN")}
@@ -253,9 +254,9 @@ export default function PayRunDetailPage() {
               <button
                 onClick={() => computeMut.mutate()}
                 disabled={busy || computeRunning}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 text-white rounded-md text-sm font-semibold shadow-sm"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-md text-xs font-medium shadow-sm"
               >
-                <Calculator size={14} /> {
+                <Calculator size={13} /> {
                   computeMut.isPending
                     ? "Queueing..."
                     : computeRunning
@@ -268,18 +269,18 @@ export default function PayRunDetailPage() {
               <button
                 onClick={() => setConfirmAction("approve")}
                 disabled={busy}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white rounded-md text-sm font-semibold shadow-sm"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white rounded-md text-xs font-medium shadow-sm"
               >
-                <Check size={14} /> {approveMut.isPending ? "Approving..." : "Approve"}
+                <Check size={13} /> {approveMut.isPending ? "Approving..." : "Approve"}
               </button>
             )}
             {run.status === "Approved" && (
               <button
                 onClick={handleRelease}
                 disabled={busy}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-md text-sm font-semibold shadow-sm"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-md text-xs font-medium shadow-sm"
               >
-                <Send size={14} /> {releaseMut.isPending ? "Releasing..." : "Release Payslips"}
+                <Send size={13} /> {releaseMut.isPending ? "Releasing..." : "Release Payslips"}
               </button>
             )}
             {(run.status === "Approved" || run.status === "Paid") && (
@@ -287,10 +288,10 @@ export default function PayRunDetailPage() {
                 <BankAdviceMenu runId={run.id} />
                 <Link
                   href={`/payroll/runs/${run.id}/reconcile`}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-gray-50 text-gray-700 border border-[var(--border)] rounded-md text-sm font-semibold"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-gray-50 text-gray-700 border border-[var(--border)] rounded-md text-xs font-medium"
                   title="Bank Reconciliation"
                 >
-                  <Building2 size={14} /> Reconcile
+                  <Building2 size={13} /> Reconcile
                 </Link>
                 <Form24QButton
                   runId={run.id}
@@ -320,7 +321,7 @@ export default function PayRunDetailPage() {
             "mt-4 rounded-md border px-3 py-2 text-xs",
             computeStatusRes.data.compute.status === "failed"
               ? "bg-red-50 border-red-200 text-red-800"
-              : "bg-blue-50 border-blue-200 text-blue-800",
+              : "bg-green-50 border-green-200 text-green-800",
           )}>
             <div className="font-semibold">
               {computeStatusRes.data.compute.status === "queued" && "Compute job queued — waiting for worker..."}
@@ -338,7 +339,7 @@ export default function PayRunDetailPage() {
           </div>
         )}
 
-        <div className="mt-5 grid grid-cols-4 gap-3">
+        <div className="mt-4 grid grid-cols-4 gap-3">
           <KPI label="Employees" value={String(run.employeeCount)} />
           <KPI label="Gross Earnings" value={`₹${INR.format(Number(run.totalGross))}`} />
           <KPI label="Deductions" value={`₹${INR.format(Number(run.totalDeductions))}`} />
@@ -354,8 +355,8 @@ export default function PayRunDetailPage() {
       />
 
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
-          <h2 className="text-sm font-bold text-gray-900">Payslips</h2>
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
+          <h2 className="text-[13px] font-semibold text-gray-900">Payslips</h2>
           {run.payslips.length > 0 && (
             <div className="relative">
               <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -363,19 +364,19 @@ export default function PayRunDetailPage() {
                 value={empFilter}
                 onChange={(e) => setEmpFilter(e.target.value)}
                 placeholder="Filter by employee, code or dept…"
-                className="w-72 max-w-full pl-7 pr-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]"
+                className="w-72 max-w-full pl-7 pr-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]"
               />
             </div>
           )}
         </div>
         {run.payslips.length === 0 ? (
-          <div className="py-10 text-center text-sm text-gray-500">
+          <div className="py-10 text-center text-xs text-gray-500">
             No payslips yet. Click <span className="font-semibold">Compute Payslips</span> to generate.
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full text-xs">
             <thead>
-              <tr className="text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">
+              <tr className="text-table-head font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">
                 <th className="text-left py-2 px-3">Employee</th>
                 <th className="text-left py-2 px-3">Department</th>
                 <th className="text-right py-2 px-3">Paid Days</th>
@@ -389,13 +390,13 @@ export default function PayRunDetailPage() {
             <tbody>
               {visiblePayslips.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-sm text-gray-500">No payslips match “{empFilter}”.</td>
+                  <td colSpan={8} className="py-8 text-center text-xs text-gray-500">No payslips match “{empFilter}”.</td>
                 </tr>
               )}
               {visiblePayslips.map((p) => (
                 <tr key={p.id} className="border-b border-gray-50 hover:bg-gray-50">
                   <td className="py-3 px-3">
-                    <p className="font-medium text-gray-900">{p.employee ? `${p.employee.firstName} ${p.employee.lastName}` : "Unknown"}</p>
+                    <p className="text-[13px] font-medium text-gray-900">{p.employee ? `${p.employee.firstName} ${p.employee.lastName}` : "Unknown"}</p>
                     <p className="text-xs text-gray-500">{p.employee?.employeeCode}</p>
                   </td>
                   <td className="py-3 px-3 text-gray-700">{p.employee?.department?.name ?? "—"}</td>
@@ -406,30 +407,30 @@ export default function PayRunDetailPage() {
                         onClick={() => setAdjustTarget(p)}
                         title="Click to adjust paid days"
                         className={clsx(
-                          "group inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-sm font-semibold border transition",
+                          "group inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border transition",
                           p.adjustment
                             ? "bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100 hover:border-amber-400"
-                            : "bg-white border-gray-300 text-gray-700 hover:bg-blue-50 hover:border-[#3b82f6] hover:text-[#3b82f6]",
+                            : "bg-white border-gray-300 text-gray-700 hover:bg-green-50 hover:border-[#22c55e] hover:text-[#22c55e]",
                         )}
                       >
                         <span className="tabular-nums">{Number(p.paidDays)}/{Number(p.workingDays)}</span>
                         {p.adjustment && (
-                          <span className="px-1 py-px rounded-sm bg-amber-200/70 text-amber-900 text-[9px] font-bold uppercase tracking-wide">
+                          <span className="px-1 py-px rounded-sm bg-amber-200/70 text-amber-900 text-[10px] font-bold uppercase tracking-wide">
                             Adj
                           </span>
                         )}
                         <Pencil size={12} className={clsx(
                           "transition",
-                          p.adjustment ? "text-amber-700" : "text-gray-400 group-hover:text-[#3b82f6]",
+                          p.adjustment ? "text-amber-700" : "text-gray-400 group-hover:text-[#22c55e]",
                         )} />
                       </button>
                     ) : (
-                      <span className="inline-flex items-center gap-1.5 text-sm text-gray-700 tabular-nums">
+                      <span className="inline-flex items-center gap-1.5 text-xs text-gray-700 tabular-nums">
                         {Number(p.paidDays)}/{Number(p.workingDays)}
                         {p.adjustment && (
                           <span
                             title={`Manually adjusted${p.adjustment.reason ? ` — ${p.adjustment.reason}` : ""}`}
-                            className="px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200 text-[9px] font-bold uppercase tracking-wide"
+                            className="px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200 text-[10px] font-bold uppercase tracking-wide"
                           >
                             Adj
                           </span>
@@ -449,10 +450,10 @@ export default function PayRunDetailPage() {
                               : `Recovering ₹${INR.format(p.tdsRecoveries.reduce((s, r) => s + r.perMonthAmount, 0))} from prior override`
                           }
                           className={clsx(
-                            "px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide ring-1",
+                            "px-1.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ring-1",
                             p.tdsAdjustment
                               ? "bg-purple-50 text-purple-700 ring-purple-200"
-                              : "bg-indigo-50 text-indigo-700 ring-indigo-200",
+                              : "bg-green-50 text-green-700 ring-green-200",
                           )}
                         >
                           {p.tdsAdjustment ? "TDS Adj" : "TDS Rec"}
@@ -462,9 +463,9 @@ export default function PayRunDetailPage() {
                   </td>
                   <td className="py-3 px-3 text-right text-gray-900 font-semibold">₹{INR.format(Number(p.netPay))}</td>
                   <td className="py-3 px-3">
-                    <span className={clsx("text-xs font-semibold px-2 py-0.5 rounded",
+                    <span className={clsx("text-[11px] font-medium px-2 py-0.5 rounded",
                       p.status === "Released" ? "bg-emerald-100 text-emerald-700" :
-                      p.status === "Generated" ? "bg-[#dbeafe] text-[#2563eb]" : "bg-gray-100 text-gray-600",
+                      p.status === "Generated" ? "bg-[#dcfce7] text-[#16a34a]" : "bg-gray-100 text-gray-600",
                     )}>{p.status}</span>
                   </td>
                   <td className="py-3 px-3 text-right">
@@ -483,15 +484,15 @@ export default function PayRunDetailPage() {
                           TDS
                         </button>
                       )}
-                      <Link href={`/payroll/runs/${run.id}/payslips/${p.id}`} className="text-[#3b82f6] hover:underline" title="View detail">
-                        <Eye size={14} />
+                      <Link href={`/payroll/runs/${run.id}/payslips/${p.id}`} className="text-[#22c55e] hover:underline" title="View detail">
+                        <Eye size={12} />
                       </Link>
                       <button
                         onClick={() => downloadPayslipPdf(p.id, p.employee?.firstName ?? "payslip", p.employee?.employeeCode ?? p.id)}
-                        className="text-gray-500 hover:text-[#3b82f6]"
+                        className="text-gray-500 hover:text-[#22c55e]"
                         title="Download PDF"
                       >
-                        <Download size={14} />
+                        <Download size={12} />
                       </button>
                     </div>
                   </td>
@@ -535,7 +536,11 @@ export default function PayRunDetailPage() {
           onClose={() => { setConfirmAction(null); setPreflight(null); }}
           onConfirm={() => {
             if (confirmAction === "approve") approveMut.mutate();
-            else releaseMut.mutate();
+            else toast.promise(releaseMut.mutateAsync(), {
+              loading: "Releasing & emailing payslips…",
+              success: "Payslips released & emailed",
+              error: (e) => (e instanceof Error && e.message ? e.message : "Couldn't release the payslips"),
+            });
             setConfirmAction(null);
           }}
         />
@@ -629,9 +634,9 @@ function Form24QButton({
       onClick={handleDownload}
       disabled={loading}
       title={title}
-      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-gray-50 disabled:opacity-60 text-gray-700 border border-[var(--border)] rounded-md text-sm font-semibold"
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-gray-50 disabled:opacity-60 text-gray-700 border border-[var(--border)] rounded-md text-xs font-medium"
     >
-      <FileText size={14} /> {loading ? "Preparing…" : label}
+      <FileText size={13} /> {loading ? "Preparing…" : label}
     </button>
   );
 }
@@ -679,9 +684,9 @@ function TaxExcelButton({ runId }: { runId: string }) {
       onClick={handleDownload}
       disabled={loading}
       title="Download all tax / statutory contribution details as Excel"
-      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-md text-sm font-semibold shadow-sm"
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-md text-xs font-medium shadow-sm"
     >
-      <FileSpreadsheet size={14} /> {loading ? "Preparing…" : "Tax Excel"}
+      <FileSpreadsheet size={13} /> {loading ? "Preparing…" : "Tax Excel"}
     </button>
   );
 }
@@ -715,8 +720,8 @@ function BankAdviceMenu({ runId }: { runId: string }) {
 
   return (
     <div className="relative group">
-      <button className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-gray-50 text-gray-700 border border-[var(--border)] rounded-md text-sm font-semibold">
-        <Building2 size={14} /> Bank Advice
+      <button className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-gray-50 text-gray-700 border border-[var(--border)] rounded-md text-xs font-medium">
+        <Building2 size={13} /> Bank Advice
       </button>
       <div className="absolute right-0 top-full pt-1 z-20 hidden group-hover:block min-w-[160px]">
         <div className="bg-white rounded-md shadow-lg ring-1 ring-gray-200 overflow-hidden">
@@ -724,7 +729,7 @@ function BankAdviceMenu({ runId }: { runId: string }) {
             <button
               key={f.key}
               onClick={() => downloadAdvice(f.key, f.label)}
-              className="block w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 hover:text-[#3b82f6]"
+              className="block w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 hover:text-[#22c55e]"
             >
               {f.label}
             </button>
@@ -739,7 +744,7 @@ function KPI({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-md border border-gray-200 bg-gradient-to-b from-gray-50/50 to-white p-3">
       <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">{label}</p>
-      <p className="text-base font-bold text-gray-900 mt-0.5">{value}</p>
+      <p className="text-sm font-bold text-gray-900 mt-0.5">{value}</p>
     </div>
   );
 }
@@ -779,14 +784,14 @@ function OneTimeEntriesPanel({
 
   if (entries.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50/50 px-5 py-3 flex items-center justify-between">
+      <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50/50 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2 text-xs text-gray-500">
           <Gift size={14} className="text-gray-400" />
           No one-time bonuses, arrears, incentives or deductions queued for this period.
         </div>
         <Link
           href="/payroll/one-time-earnings"
-          className="inline-flex items-center gap-1 text-xs font-semibold text-[#3b82f6] hover:underline"
+          className="inline-flex items-center gap-1 text-xs font-semibold text-[#22c55e] hover:underline"
         >
           Add one <ArrowUpRight size={12} />
         </Link>
@@ -796,15 +801,15 @@ function OneTimeEntriesPanel({
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
-      <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Gift size={15} className="text-[#3b82f6]" />
-          <h2 className="text-sm font-bold text-gray-900">One-time entries for this period</h2>
+          <Gift size={15} className="text-[#22c55e]" />
+          <h2 className="text-[13px] font-semibold text-gray-900">One-time entries for this period</h2>
           <span className="text-[11px] text-gray-500">({entries.length})</span>
         </div>
         <Link
           href="/payroll/one-time-earnings"
-          className="inline-flex items-center gap-1 text-xs font-semibold text-[#3b82f6] hover:underline"
+          className="inline-flex items-center gap-1 text-xs font-semibold text-[#22c55e] hover:underline"
         >
           Manage all <ArrowUpRight size={12} />
         </Link>
@@ -812,7 +817,7 @@ function OneTimeEntriesPanel({
 
       {/* Warning banner if anything is still Pending */}
       {pending.length > 0 && editable && (
-        <div className="px-5 py-2.5 bg-amber-50 border-b border-amber-200 flex items-start gap-2">
+        <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-200 flex items-start gap-2">
           <AlertTriangle size={14} className="text-amber-600 mt-0.5 shrink-0" />
           <p className="text-xs text-amber-900">
             <b>{pending.length} entry{pending.length === 1 ? "" : "s"} still Pending</b> — they will NOT apply
@@ -822,28 +827,28 @@ function OneTimeEntriesPanel({
       )}
 
       {/* Mini summary */}
-      <div className="px-5 py-2 bg-gray-50/60 border-b border-gray-100 grid grid-cols-4 gap-3 text-[11px]">
+      <div className="px-4 py-2 bg-gray-50/60 border-b border-gray-100 grid grid-cols-4 gap-3 text-[11px]">
         <div>
           <p className="font-bold text-gray-500 uppercase">Pending</p>
-          <p className="text-sm font-bold text-amber-700 mt-0.5">{pending.length}</p>
+          <p className="text-xs font-bold text-amber-700 mt-0.5">{pending.length}</p>
         </div>
         <div>
           <p className="font-bold text-gray-500 uppercase">Approved (will apply)</p>
-          <p className="text-sm font-bold text-blue-700 mt-0.5">{approved.length}</p>
+          <p className="text-xs font-bold text-green-700 mt-0.5">{approved.length}</p>
         </div>
         <div>
           <p className="font-bold text-gray-500 uppercase">+ Earnings</p>
-          <p className="text-sm font-bold text-emerald-700 mt-0.5">₹{INR.format(earningsTotal)}</p>
+          <p className="text-xs font-bold text-emerald-700 mt-0.5">₹{INR.format(earningsTotal)}</p>
         </div>
         <div>
           <p className="font-bold text-gray-500 uppercase">- Deductions</p>
-          <p className="text-sm font-bold text-red-700 mt-0.5">₹{INR.format(deductionsTotal)}</p>
+          <p className="text-xs font-bold text-red-700 mt-0.5">₹{INR.format(deductionsTotal)}</p>
         </div>
       </div>
 
-      <table className="w-full text-sm">
+      <table className="w-full text-xs">
         <thead>
-          <tr className="text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50/40">
+          <tr className="text-table-head font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50/40">
             <th className="text-left py-2 px-3">Employee</th>
             <th className="text-left py-2 px-3">Kind</th>
             <th className="text-left py-2 px-3">Component</th>
@@ -856,7 +861,7 @@ function OneTimeEntriesPanel({
           {[...pending, ...approved, ...applied, ...rejected].map((e) => (
             <tr key={e.id} className="border-b border-gray-50 hover:bg-gray-50/40">
               <td className="py-2 px-3">
-                <p className="font-medium text-gray-900">
+                <p className="text-[13px] font-medium text-gray-900">
                   {e.employee ? `${e.employee.firstName} ${e.employee.lastName}` : "—"}
                 </p>
                 <p className="text-[11px] text-gray-500 font-mono">{e.employee?.employeeCode ?? ""}</p>
@@ -969,7 +974,7 @@ function ConfirmActionModal({
               {isApprove ? <Check size={18} /> : <Send size={18} />}
             </div>
             <div>
-              <h3 className="text-base font-bold text-gray-900">{title}</h3>
+              <h3 className="text-[13px] font-semibold text-gray-900">{title}</h3>
               <p className="text-xs text-gray-500 mt-0.5 leading-relaxed max-w-md">{subtitle}</p>
             </div>
           </div>
@@ -982,20 +987,20 @@ function ConfirmActionModal({
           {/* Run totals snapshot */}
           <div className="grid grid-cols-4 gap-2 text-center">
             <div className="rounded-md bg-gray-50 border border-gray-200 p-2">
-              <p className="text-[9px] font-bold text-gray-500 uppercase">Employees</p>
-              <p className="text-sm font-bold text-gray-900 mt-0.5">{run.employeeCount}</p>
+              <p className="text-[10px] font-bold text-gray-500 uppercase">Employees</p>
+              <p className="text-xs font-bold text-gray-900 mt-0.5">{run.employeeCount}</p>
             </div>
             <div className="rounded-md bg-gray-50 border border-gray-200 p-2">
-              <p className="text-[9px] font-bold text-gray-500 uppercase">Gross</p>
-              <p className="text-sm font-bold text-gray-900 mt-0.5">₹{INR.format(Number(run.totalGross))}</p>
+              <p className="text-[10px] font-bold text-gray-500 uppercase">Gross</p>
+              <p className="text-xs font-bold text-gray-900 mt-0.5">₹{INR.format(Number(run.totalGross))}</p>
             </div>
             <div className="rounded-md bg-gray-50 border border-gray-200 p-2">
-              <p className="text-[9px] font-bold text-gray-500 uppercase">Deductions</p>
-              <p className="text-sm font-bold text-red-700 mt-0.5">₹{INR.format(Number(run.totalDeductions))}</p>
+              <p className="text-[10px] font-bold text-gray-500 uppercase">Deductions</p>
+              <p className="text-xs font-bold text-red-700 mt-0.5">₹{INR.format(Number(run.totalDeductions))}</p>
             </div>
             <div className="rounded-md bg-gray-50 border border-gray-200 p-2">
-              <p className="text-[9px] font-bold text-gray-500 uppercase">Net Pay</p>
-              <p className="text-sm font-bold text-emerald-700 mt-0.5">₹{INR.format(Number(run.totalNet))}</p>
+              <p className="text-[10px] font-bold text-gray-500 uppercase">Net Pay</p>
+              <p className="text-xs font-bold text-emerald-700 mt-0.5">₹{INR.format(Number(run.totalNet))}</p>
             </div>
           </div>
 
@@ -1043,11 +1048,11 @@ function ConfirmActionModal({
 
           {/* TDS Recoveries being applied THIS month */}
           {tdsRecoveriesCount > 0 && (
-            <div className="rounded-md border border-indigo-200 bg-indigo-50/50 p-3">
-              <h4 className="text-xs font-bold text-indigo-900 uppercase tracking-wide mb-1">
+            <div className="rounded-md border border-green-200 bg-green-50/50 p-3">
+              <h4 className="text-xs font-bold text-green-900 uppercase tracking-wide mb-1">
                 TDS recoveries applied this month ({tdsRecoveriesCount} employees)
               </h4>
-              <p className="text-[11px] text-indigo-800">
+              <p className="text-[11px] text-green-800">
                 Total extra TDS this month from prior overrides: <b>₹{INR.format(totalRecoveryThisMonth)}</b>
               </p>
             </div>
@@ -1075,11 +1080,11 @@ function ConfirmActionModal({
 
           {/* One-time entries */}
           {oneTimeApproved.length > 0 && (
-            <div className="rounded-md border border-blue-200 bg-blue-50/50 p-3">
-              <h4 className="text-xs font-bold text-blue-900 uppercase tracking-wide mb-1">
+            <div className="rounded-md border border-green-200 bg-green-50/50 p-3">
+              <h4 className="text-xs font-bold text-green-900 uppercase tracking-wide mb-1">
                 One-time pay & deductions applied ({oneTimeApproved.length})
               </h4>
-              <p className="text-[11px] text-blue-800">
+              <p className="text-[11px] text-green-800">
                 Earnings: <b className="text-emerald-700">+ ₹{INR.format(oneTimeEarningsAmt)}</b>
                 {oneTimeDeductionsAmt > 0 && (
                   <> · Deductions: <b className="text-red-700">− ₹{INR.format(oneTimeDeductionsAmt)}</b></>
@@ -1131,7 +1136,7 @@ function ConfirmActionModal({
             type="button"
             disabled={busy}
             onClick={onClose}
-            className="px-3 py-1.5 text-sm border border-[var(--border)] bg-white hover:bg-gray-50 rounded-md text-gray-700 disabled:opacity-50"
+            className="px-3 py-1.5 text-xs font-medium border border-[var(--border)] bg-white hover:bg-gray-50 rounded-md text-gray-700 disabled:opacity-50"
           >
             Cancel
           </button>
@@ -1139,9 +1144,9 @@ function ConfirmActionModal({
             type="button"
             disabled={busy || locked}
             onClick={onConfirm}
-            className={clsx("inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-white rounded-md font-semibold disabled:opacity-60 disabled:cursor-not-allowed", ctaColor)}
+            className={clsx("inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-white rounded-md font-medium disabled:opacity-60 disabled:cursor-not-allowed", ctaColor)}
           >
-            {isApprove ? <Check size={14} /> : <Send size={14} />} {ctaLabel}
+            {isApprove ? <Check size={13} /> : <Send size={13} />} {ctaLabel}
           </button>
         </div>
       </div>
@@ -1206,6 +1211,7 @@ function AdjustTdsModal({
       );
     },
     onSuccess: () => onSaved(),
+    meta: { suppressGlobalError: true },
     onError: (e: Error) => setError(e.message || "Failed to save TDS adjustment"),
   });
 
@@ -1213,6 +1219,7 @@ function AdjustTdsModal({
     mutationFn: () =>
       api.delete(`/api/v1/hrms/payroll/runs/${runId}/payslips/${payslip.id}/adjust-tds`),
     onSuccess: () => onSaved(),
+    meta: { suppressGlobalError: true },
     onError: (e: Error) => setError(e.message || "Failed to reset TDS adjustment"),
   });
 
@@ -1231,7 +1238,7 @@ function AdjustTdsModal({
       >
         <div className="flex items-start justify-between p-4 border-b border-gray-100">
           <div>
-            <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+            <h3 className="text-[13px] font-semibold text-gray-900 flex items-center gap-2">
               <span className="px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 text-[10px] font-bold uppercase tracking-wide">
                 TDS Override
               </span>
@@ -1260,7 +1267,7 @@ function AdjustTdsModal({
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-md border border-gray-200 bg-gray-50 p-2.5">
               <p className="text-[10px] font-bold text-gray-500 uppercase">Calculated TDS</p>
-              <p className="text-lg font-bold text-gray-900 mt-0.5 tabular-nums">₹{INR.format(baseTds)}</p>
+              <p className="text-base font-bold text-gray-900 mt-0.5 tabular-nums">₹{INR.format(baseTds)}</p>
             </div>
             <div className="rounded-md border border-purple-300 bg-purple-50 p-2.5">
               <p className="text-[10px] font-bold text-purple-700 uppercase">Use this month</p>
@@ -1271,7 +1278,7 @@ function AdjustTdsModal({
                 value={overrideTds}
                 onChange={(e) => { setError(null); setOverrideTds(e.target.value); }}
                 disabled={busy}
-                className="w-full mt-0.5 text-lg font-bold text-purple-900 bg-transparent border-0 border-b-2 border-purple-400 focus:outline-none focus:border-purple-600 disabled:opacity-60 tabular-nums"
+                className="w-full mt-0.5 text-base font-bold text-purple-900 bg-transparent border-0 border-b-2 border-purple-400 focus:outline-none focus:border-purple-600 disabled:opacity-60 tabular-nums"
               />
             </div>
           </div>
@@ -1282,7 +1289,7 @@ function AdjustTdsModal({
             shortfall > 0
               ? "bg-amber-50 border-amber-200 text-amber-900"
               : shortfall < 0
-                ? "bg-blue-50 border-blue-200 text-blue-900"
+                ? "bg-green-50 border-green-200 text-green-900"
                 : "bg-gray-50 border-gray-200 text-gray-600",
           )}>
             {shortfall > 0 && (
@@ -1342,16 +1349,13 @@ function AdjustTdsModal({
               {strategy === "SpreadOverMonths" && (
                 <div className="flex items-center gap-2 pt-1">
                   <label className="text-[11px] font-bold text-gray-700 uppercase tracking-wide">Months</label>
-                  <select
-                    value={recoveryMonths}
-                    onChange={(e) => setRecoveryMonths(Number(e.target.value))}
+                  <Select
+                    value={String(recoveryMonths)}
+                    onChange={(v) => setRecoveryMonths(Number(v))}
                     disabled={busy}
-                    className="border border-gray-300 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300 disabled:opacity-60"
-                  >
-                    {[2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((m) => (
-                      <option key={m} value={m}>{m}</option>
-                    ))}
-                  </select>
+                    size="sm"
+                    options={[2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((m) => ({ value: String(m), label: String(m) }))}
+                  />
                   <span className="text-[10px] text-gray-400">
                     Capped to months remaining in this FY.
                   </span>
@@ -1402,7 +1406,7 @@ function AdjustTdsModal({
               type="button"
               disabled={busy}
               onClick={onClose}
-              className="px-3 py-1.5 text-sm border border-[var(--border)] bg-white hover:bg-gray-50 rounded-md text-gray-700 disabled:opacity-50"
+              className="px-3 py-1.5 text-xs font-medium border border-[var(--border)] bg-white hover:bg-gray-50 rounded-md text-gray-700 disabled:opacity-50"
             >
               Cancel
             </button>
@@ -1410,9 +1414,9 @@ function AdjustTdsModal({
               type="button"
               disabled={busy || !changed || !validNumber}
               onClick={() => save.mutate()}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-purple-600 hover:bg-purple-700 text-white rounded-md font-semibold disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs bg-purple-600 hover:bg-purple-700 text-white rounded-md font-medium disabled:opacity-50"
             >
-              <Check size={14} /> {save.isPending ? "Saving & recomputing..." : "Save & Recompute"}
+              <Check size={13} /> {save.isPending ? "Saving & recomputing..." : "Save & Recompute"}
             </button>
           </div>
         </div>
@@ -1426,7 +1430,7 @@ function KindBadge({ kind }: { kind: OneTimeEntry["kind"] }) {
   return (
     <span className={clsx(
       "inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold",
-      isDeduction ? "bg-red-50 text-red-700 ring-1 ring-red-100" : "bg-blue-50 text-blue-700 ring-1 ring-blue-100",
+      isDeduction ? "bg-red-50 text-red-700 ring-1 ring-red-100" : "bg-green-50 text-green-700 ring-1 ring-green-100",
     )}>
       {kind.replace(/([a-z])([A-Z])/g, "$1 $2")}
     </span>
@@ -1436,7 +1440,7 @@ function KindBadge({ kind }: { kind: OneTimeEntry["kind"] }) {
 function StatusBadge({ status }: { status: OneTimeEntry["status"] }) {
   const map: Record<OneTimeEntry["status"], string> = {
     Pending: "bg-amber-100 text-amber-700",
-    Approved: "bg-blue-100 text-blue-700",
+    Approved: "bg-green-100 text-green-700",
     Applied: "bg-emerald-100 text-emerald-700",
     Rejected: "bg-red-100 text-red-700",
   };
@@ -1473,6 +1477,7 @@ function AdjustDaysModal({
       );
     },
     onSuccess: () => onSaved(),
+    meta: { suppressGlobalError: true },
     onError: (e: Error) => setError(e.message || "Failed to save adjustment"),
   });
 
@@ -1480,6 +1485,7 @@ function AdjustDaysModal({
     mutationFn: () =>
       api.delete(`/api/v1/hrms/payroll/runs/${runId}/payslips/${payslip.id}/adjust-days`),
     onSuccess: () => onSaved(),
+    meta: { suppressGlobalError: true },
     onError: (e: Error) => setError(e.message || "Failed to reset adjustment"),
   });
 
@@ -1500,7 +1506,7 @@ function AdjustDaysModal({
       >
         <div className="flex items-start justify-between p-4 border-b border-gray-100">
           <div>
-            <h3 className="text-sm font-bold text-gray-900">Adjust Paid Days</h3>
+            <h3 className="text-[13px] font-semibold text-gray-900">Adjust Paid Days</h3>
             <p className="text-xs text-gray-500 mt-0.5">
               {empName} {payslip.employee?.employeeCode ? `· ${payslip.employee.employeeCode}` : ""}
             </p>
@@ -1521,7 +1527,7 @@ function AdjustDaysModal({
           <div className="grid grid-cols-3 gap-3 text-center">
             <div>
               <p className="text-[10px] font-bold text-gray-500 uppercase">Working Days</p>
-              <p className="text-lg font-bold text-gray-900 mt-0.5">{workingDays}</p>
+              <p className="text-base font-bold text-gray-900 mt-0.5">{workingDays}</p>
             </div>
             <div>
               <p className="text-[10px] font-bold text-gray-500 uppercase">Paid Days</p>
@@ -1533,12 +1539,12 @@ function AdjustDaysModal({
                 value={paidDays}
                 onChange={(e) => { setError(null); setPaidDays(e.target.value); }}
                 disabled={busy}
-                className="w-full mt-0.5 text-lg font-bold text-center border-2 border-[#3b82f6] rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/30 disabled:opacity-60"
+                className="w-full mt-0.5 text-base font-bold text-center border-2 border-[#22c55e] rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#22c55e]/30 disabled:opacity-60"
               />
             </div>
             <div>
               <p className="text-[10px] font-bold text-gray-500 uppercase">LOP Days</p>
-              <p className="text-lg font-bold text-gray-900 mt-0.5">{lopPreview}</p>
+              <p className="text-base font-bold text-gray-900 mt-0.5">{lopPreview}</p>
             </div>
           </div>
 
@@ -1552,7 +1558,7 @@ function AdjustDaysModal({
               onChange={(e) => setReason(e.target.value)}
               disabled={busy}
               placeholder="e.g. Approved comp-off after attendance was already cut"
-              className="w-full text-xs border border-gray-300 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/30 resize-none disabled:opacity-60"
+              className="w-full text-xs border border-gray-300 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#22c55e]/30 resize-none disabled:opacity-60"
             />
           </div>
 
@@ -1584,7 +1590,7 @@ function AdjustDaysModal({
               type="button"
               disabled={busy}
               onClick={onClose}
-              className="px-3 py-1.5 text-sm border border-[var(--border)] bg-white hover:bg-gray-50 rounded-md text-gray-700 disabled:opacity-50"
+              className="px-3 py-1.5 text-xs font-medium border border-[var(--border)] bg-white hover:bg-gray-50 rounded-md text-gray-700 disabled:opacity-50"
             >
               Cancel
             </button>
@@ -1592,9 +1598,9 @@ function AdjustDaysModal({
               type="button"
               disabled={busy || !changed}
               onClick={() => save.mutate()}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-[#16243A] hover:bg-[#1E3354] text-white rounded-md font-semibold disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs bg-green-600 hover:bg-green-700 text-white rounded-md font-medium disabled:opacity-50"
             >
-              <Check size={14} /> {save.isPending ? "Saving & recomputing..." : "Save & Recompute"}
+              <Check size={13} /> {save.isPending ? "Saving & recomputing..." : "Save & Recompute"}
             </button>
           </div>
         </div>

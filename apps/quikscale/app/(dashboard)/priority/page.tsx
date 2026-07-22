@@ -3,11 +3,14 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { usePrioritiesPaginated, useDeletePriority, useBulkRestorePriority, type PriorityFilters } from "@/lib/hooks/usePriority";
 import { useInfiniteUsers } from "@/lib/hooks/useInfiniteUsers";
+import { useUserOption } from "@/lib/hooks/useUserOption";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import {
-  getFiscalYear, getFiscalQuarter, fiscalYearLabel,
+  getFiscalYear, getFiscalQuarter, fiscalYearLabel, weeksArray,
 } from "@/lib/utils/fiscal";
-import { useCurrentWeek, useWeekDateRange } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useCurrentQuarter, useWeekDateRange, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
+import { GlobalExportModal, type GlobalExportSelection } from "@/components/export/GlobalExportModal";
+import { downloadExport } from "@/lib/exports/downloadExport";
 import { PriorityTable } from "./components/PriorityTable";
 import { PriorityModal } from "./components/PriorityModal";
 import { FilterPicker, userToFilterOption, EmptyState, FiscalPeriodPicker, type FiscalQuarter, type ExportSelection } from "@quikit/ui";
@@ -76,6 +79,10 @@ export default function PriorityPage() {
     isFetchingNextPage: ownersLoadingMore,
     fetchNextPage: fetchMoreOwners,
   } = useInfiniteUsers(filterTeam || undefined, ownerSearch);
+  // Resolve the applied owner by id so the picker shows their name even when
+  // the owner isn't in the loaded 25-user page AND the filtered list is empty
+  // (e.g. an owner filter inherited from My Dashboard with 0 matching rows).
+  const selectedOwnerOption = useUserOption(filterOwner);
   // Hidden cols come from the DB-backed user pref. Sort now lives in the
   // shared Redux tables slice (lib/store) — same pattern as KPI + WWW. The
   // priorityPrefs hook is kept for hiddenCols only.
@@ -163,9 +170,12 @@ export default function PriorityPage() {
   // is touched, so we never request an out-of-range page.
   useEffect(() => { setPage(1); }, [search, filterOwner, filterTeam, filterStatus, year, quarter, viewTrash, pageSize, prioritySort]);
 
-  // DB-driven current week + date range (respects QuarterSetting.startDate).
-  const fiscalWeek = useCurrentWeek(year, quarter);
-  const fiscalWeekRange = useWeekDateRange(year, quarter, fiscalWeek);
+  // "You are here" pill — reflects TODAY's real fiscal position (the quarter
+  // that actually contains today within the selected year), not the selected
+  // quarter filter. Null when today is outside the selected FY → pill hides.
+  const realQuarter = useCurrentQuarter(year);
+  const fiscalWeek = useCurrentWeek(year, realQuarter);
+  const fiscalWeekRange = useWeekDateRange(year, realQuarter, fiscalWeek);
   const activeFilterCount = (filterTeam ? 1 : 0) + (filterStatus ? 1 : 0) + (filterOwner ? 1 : 0);
 
   const handlePriorityExport = useCallback(async (sel: ExportSelection) => {
@@ -194,6 +204,40 @@ export default function PriorityPage() {
     });
   }, [priorityColumns, priorities, year, quarter, viewTrash]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Global Export (server-side, week-range aware). Adds Week N status columns
+  // to the static column set; hits /api/priority/export.
+  const weekCount = useQuarterWeekCount(year, quarter);
+  const priorityExportColumnsUi = [
+    ...priorityColumns,
+    ...weeksArray(weekCount).map((w) => ({ key: `week${w}`, label: `Week ${w}` })),
+  ];
+  const priorityExportDefaults = [
+    ...visiblePriorityCols,
+    ...weeksArray(weekCount).map((w) => `week${w}`),
+  ];
+  const [globalExportOpen, setGlobalExportOpen] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const handlePriorityGlobalExport = useCallback(
+    async (sel: GlobalExportSelection) => {
+      setExportError(null);
+      try {
+        await downloadExport("/api/priority/export", {
+          columns: sel.columnKeys.join(","),
+          year: sel.range.mode === "quarter" ? sel.range.year : year,
+          quarters: sel.range.mode === "quarter" ? sel.range.quarters.join(",") : quarter,
+          status: filterStatus || undefined,
+          owner: filterOwner || undefined,
+          teamId: filterTeam || undefined,
+          includeDeleted: viewTrash || undefined,
+        });
+      } catch (err) {
+        setExportError(err instanceof Error ? err.message : "Export failed");
+        throw err;
+      }
+    },
+    [quarter, year, filterStatus, filterOwner, filterTeam, viewTrash],
+  );
+
   return (
     <div className="flex flex-col h-full">
       {/* Page Header */}
@@ -203,9 +247,9 @@ export default function PriorityPage() {
           <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
             {total} {total === 1 ? "item" : "items"}
           </span>
-          {fiscalWeek !== null && (
+          {realQuarter && fiscalWeek !== null && (
             <span className="text-xs bg-accent-50 text-accent-600 border border-accent-100 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
-              {quarter} · Week {fiscalWeek}{fiscalWeekRange ? ` · ${fiscalWeekRange}` : ""}
+              {realQuarter} · Week {fiscalWeek}{fiscalWeekRange ? ` · ${fiscalWeekRange}` : ""}
             </span>
           )}
         </div>
@@ -313,6 +357,7 @@ export default function PriorityPage() {
                     value={filterOwner}
                     onChange={(v) => { setFilterOwner(v); ctx.setFilterOwner(v); }}
                     options={users.map(userToFilterOption)}
+                    selectedOption={selectedOwnerOption}
                     onSearchChange={setOwnerSearch}
                     onLoadMore={fetchMoreOwners}
                     hasMore={ownersHasMore}
@@ -366,6 +411,7 @@ export default function PriorityPage() {
             onToggleTrash={setViewTrash}
             rowCounts={{ page: priorities.length, filtered: total, all: total }}
             onExport={handlePriorityExport}
+            onExportClick={() => setGlobalExportOpen(true)}
             defaultExportColumnKeys={visiblePriorityCols}
           />
 
@@ -420,6 +466,23 @@ export default function PriorityPage() {
           onClose={() => setShowAddModal(false)}
           onSuccess={() => { setShowAddModal(false); refetch(); }}
         />
+      )}
+
+      {/* Global Export — range-aware server export (.xlsx / PDF) */}
+      <GlobalExportModal
+        open={globalExportOpen}
+        onClose={() => setGlobalExportOpen(false)}
+        title="Export Priority"
+        columns={priorityExportColumnsUi}
+        defaultCheckedKeys={priorityExportDefaults}
+        rangeMode="quarter"
+        quarterCtx={{ years: availableYears, defaultYear: year, defaultQuarter: quarter, formatYear: fiscalYearLabel }}
+        onExport={handlePriorityGlobalExport}
+      />
+      {exportError && (
+        <div className="fixed bottom-4 right-4 z-[60] bg-red-600 text-white text-xs px-3 py-2 rounded-lg shadow-lg">
+          {exportError}
+        </div>
       )}
     </div>
   );

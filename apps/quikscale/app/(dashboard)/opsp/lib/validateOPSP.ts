@@ -213,18 +213,52 @@ export function backfillPeriods(form: FormData): FormData {
     return { ...row, ...patch };
   };
 
-  return {
-    ...form,
-    targetRows: form.targetRows.map((r) =>
-      fillRow(r as unknown as Record<string, string>, targetParts, yrs),
-    ) as unknown as TargetRow[],
-    goalRows: form.goalRows.map((r) =>
-      fillRow(r as unknown as Record<string, string>, partKeys.goals, 4),
-    ) as unknown as GoalRow[],
-    actionsQtr: form.actionsQtr.map((r) =>
-      fillRow(r as unknown as Record<string, string>, partKeys.actions, 3),
-    ) as unknown as ActionRow[],
+  // Reference-stable map: return the SAME array when no row was backfilled, so
+  // callers can cheaply detect "nothing changed". Handing back fresh array
+  // references every call (even a pure no-op) re-triggers the Targets→Goals→
+  // Actions cascades in useOPSPForm — which is how clicking Finalize used to
+  // repopulate rows the user had cleared. See ProdBug-OPSP.
+  const mapStable = <R extends Record<string, string>>(
+    rows: R[],
+    parts: readonly string[],
+    periods: number,
+  ): R[] => {
+    let changed = false;
+    const out = rows.map((r) => {
+      const filled = fillRow(r, parts, periods);
+      if (filled !== r) changed = true;
+      return filled;
+    });
+    return changed ? out : rows;
   };
+
+  const targetRows = mapStable(
+    form.targetRows as unknown as Record<string, string>[],
+    targetParts,
+    yrs,
+  ) as unknown as TargetRow[];
+  const goalRows = mapStable(
+    form.goalRows as unknown as Record<string, string>[],
+    partKeys.goals,
+    4,
+  ) as unknown as GoalRow[];
+  const actionsQtr = mapStable(
+    form.actionsQtr as unknown as Record<string, string>[],
+    partKeys.actions,
+    3,
+  ) as unknown as ActionRow[];
+
+  // Whole-form reference stability too: if no section changed, return `form`
+  // itself so `backfillPeriods(form) === form` and the caller's guard skips
+  // setForm entirely.
+  if (
+    targetRows === (form.targetRows as unknown) &&
+    goalRows === (form.goalRows as unknown) &&
+    actionsQtr === (form.actionsQtr as unknown)
+  ) {
+    return form;
+  }
+  return { ...form, targetRows, goalRows, actionsQtr };
 }
 
 export function validateOPSP(form: FormData): ValidationError[] {

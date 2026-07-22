@@ -1,6 +1,5 @@
 "use client";
 
-import { use } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
@@ -11,6 +10,7 @@ import { SkeletonLine } from "@/components/hrms/skeleton";
 interface Clearance {
   offboardingId: string;
   employeeId: string;
+  employee: { id: string; firstName: string; lastName: string; displayName: string | null; employeeCode: string } | null;
   status: string;
   lastWorkingDate: string;
   overallProgress: number;
@@ -26,8 +26,8 @@ interface Clearance {
   }>;
 }
 
-export default function ClearancePage({ params }: { params: Promise<{ employeeId: string }> }) {
-  const { employeeId } = use(params);
+export default function ClearancePage({ params }: { params: { employeeId: string } }) {
+  const { employeeId } = params;
   const api = useApiClient();
 
   const { data, isLoading } = useQuery({
@@ -49,32 +49,32 @@ export default function ClearancePage({ params }: { params: Promise<{ employeeId
 
   return (
     <div className="max-w-5xl">
-      <Link href={`/offboarding/${employeeId}`} className="inline-flex items-center gap-1 text-sm text-[#3b82f6] hover:underline mb-4">
+      <Link href={`/offboarding/${employeeId}`} className="inline-flex items-center gap-1 text-xs font-medium text-[#22c55e] hover:underline mb-4">
         <ArrowLeft size={14} /> Back to offboarding
       </Link>
 
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-4">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
         <div className="flex items-start justify-between mb-4">
           <div>
-            <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900 flex items-center gap-2">
-              <ShieldCheck className={allGranted ? "text-green-600" : "text-[#3b82f6]"} /> Clearance Status
+            <h1 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+              <ShieldCheck className={allGranted ? "text-green-600" : "text-[#22c55e]"} /> Clearance Status
             </h1>
-            <div className="text-sm text-gray-500 mt-1 font-mono">{c.employeeId}</div>
-            <div className="text-sm text-gray-500">Last working day: {new Date(c.lastWorkingDate).toLocaleDateString("en-IN")}</div>
+            <div className="text-sm text-gray-500 mt-1">{c.employee ? (c.employee.displayName ?? `${c.employee.firstName} ${c.employee.lastName}`.trim()) : c.employeeId}</div>
+            <div className="text-xs text-gray-500">Last working day: {new Date(c.lastWorkingDate).toLocaleDateString("en-IN")}</div>
           </div>
           {allGranted ? (
-            <span className="px-3 py-1.5 bg-green-100 text-green-700 rounded-lg font-semibold text-sm flex items-center gap-1">
+            <span className="px-3 py-1.5 bg-green-100 text-green-700 rounded-lg font-medium text-[11px] flex items-center gap-1">
               <CheckCircle size={14} /> Fully Cleared
             </span>
           ) : (
-            <span className="px-3 py-1.5 bg-yellow-100 text-yellow-700 rounded-lg font-semibold text-sm">
+            <span className="px-3 py-1.5 bg-yellow-100 text-yellow-700 rounded-lg font-medium text-[11px]">
               {c.overallProgress}% Complete
             </span>
           )}
         </div>
 
         <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-          <div className={clsx("h-full transition-all", allGranted ? "bg-green-500" : "bg-[#dbeafe]0")} style={{ width: `${c.overallProgress}%` }} />
+          <div className={clsx("h-full transition-all", allGranted ? "bg-green-500" : "bg-[#dcfce7]0")} style={{ width: `${c.overallProgress}%` }} />
         </div>
       </div>
 
@@ -86,24 +86,24 @@ export default function ClearancePage({ params }: { params: Promise<{ employeeId
                 {g.clearanceGranted ? <CheckCircle size={18} className="text-green-600" /> :
                  g.blocked > 0 ? <XCircle size={18} className="text-red-500" /> :
                  <Clock size={18} className="text-yellow-500" />}
-                <h3 className="font-semibold text-gray-900">{g.department}</h3>
+                <h3 className="text-[13px] font-semibold text-gray-900">{g.department}</h3>
                 <span className="text-xs text-gray-500">{g.completed}/{g.total} tasks • {g.progress}%</span>
               </div>
               {g.clearanceGranted ? (
-                <span className="px-2 py-0.5 bg-green-600 text-white rounded-full text-xs font-bold">CLEARED</span>
+                <span className="px-2 py-0.5 bg-green-600 text-white rounded-full text-[11px] font-medium">CLEARED</span>
               ) : (
-                <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full text-xs font-bold">PENDING</span>
+                <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full text-[11px] font-medium">PENDING</span>
               )}
             </div>
             <div className="divide-y divide-gray-100">
               {g.tasks.map((t) => (
-                <div key={t.id} className="px-4 py-2 text-sm flex items-center justify-between">
+                <div key={t.id} className="px-4 py-2 text-xs flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     {t.status === "TaskCompleted" ? <CheckCircle size={14} className="text-green-500" /> :
                      t.status === "TaskBlocked" ? <XCircle size={14} className="text-red-500" /> :
                      <Clock size={14} className="text-gray-400" />}
-                    <span className={t.status === "TaskCompleted" ? "line-through text-gray-400" : "text-gray-800"}>{t.title}</span>
-                    <span className="px-1.5 py-0.5 bg-gray-100 rounded text-xs text-gray-500">{t.category}</span>
+                    <span className={clsx("text-[13px] font-semibold", t.status === "TaskCompleted" ? "line-through text-gray-400" : "text-gray-800")}>{t.title}</span>
+                    <span className="px-1.5 py-0.5 bg-gray-100 rounded text-[11px] font-medium text-gray-500">{t.category}</span>
                   </div>
                   {t.completedAt && <span className="text-xs text-gray-400">{new Date(t.completedAt).toLocaleDateString("en-IN")}</span>}
                 </div>

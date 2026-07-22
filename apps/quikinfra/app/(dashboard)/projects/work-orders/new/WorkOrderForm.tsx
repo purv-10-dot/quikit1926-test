@@ -119,6 +119,9 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // When a Labour-Only save is attempted with empty required cells, flip this
+  // on so the LabourScopeTable highlights each missing field inline.
+  const [showLabourErrors, setShowLabourErrors] = useState(false);
 
   const isLabourOnly = isLabourWorkType(workType);
   const hasScopeLines = isLabourOnly ? labourScope.length > 0 : scope.length > 0;
@@ -205,6 +208,7 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
 
   const handleSave = async () => {
     setError("");
+    setShowLabourErrors(false);
     if (!projectId) return setError("Pick a project");
     if (!contractorId) return setError("Select a contractor");
     if (!plannedStart) return setError("Pick a planned start date");
@@ -214,6 +218,7 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
     }
     if (isLabourOnly) {
       if (labourScope.length === 0) {
+        setShowLabourErrors(true);
         return setError("Add at least one labour activity");
       }
       const invalidLabour = labourScope.find(
@@ -225,6 +230,7 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
           s.labourTypes.some((lt) => !lt.type || !(parseFloat(lt.count) > 0))
       );
       if (invalidLabour) {
+        setShowLabourErrors(true);
         return setError(
           "For every row fill date, activity name, group, and a count for each labour type"
         );
@@ -492,6 +498,7 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
               lines={labourScope}
               onChange={setLabourScope}
               workCategories={workCategories}
+              showErrors={showLabourErrors}
             />
           ) : scope.length === 0 ? (
             <button

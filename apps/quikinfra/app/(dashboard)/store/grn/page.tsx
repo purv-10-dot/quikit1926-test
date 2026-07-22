@@ -10,7 +10,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, Send } from "lucide-react";
+import { Eye, Send, FileText } from "lucide-react";
 import { PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { useGRNs, usePurchaseOrders, useSubmitGRN } from "@/hooks/use-purchase";
@@ -21,6 +21,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { renderGrnLine } from "@/components/GrnLineRow";
 import { buildGrnFields } from "@/lib/grn-form-fields";
 import { buildTabCounts, filterByTab, type TabSpec } from "@/lib/tab-counts";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { toErrorMessage } from "@/lib/api/errors";
 
 const STATUS_TABS: TabSpec[] = [
   { key: "all", label: "All" },
@@ -55,6 +57,8 @@ export default function GRNPage() {
 
   const { data: result, isLoading } = useGRNs({ status: "all", search: "" });
   const submitMutation = useSubmitGRN();
+  const [submitTarget, setSubmitTarget] = useState<{ id: string; grnNumber: string | null } | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const allRows = result?.data ?? [];
   const tabs = useMemo(() => buildTabCounts(allRows, STATUS_TABS), [allRows]);
   const data = useMemo(
@@ -62,11 +66,23 @@ export default function GRNPage() {
     [allRows, activeTab],
   );
 
-  const handleSubmit = async (grnId: string) => {
-    if (!confirm("Submit this GRN for approval?")) return;
+  // Submit-for-approval opens a lightweight ConfirmDialog instead of a
+  // browser confirm().
+  const handleSubmit = (row: { id: string; grnNumber?: string | null }) => {
+    setSubmitError(null);
+    setSubmitTarget({ id: row.id, grnNumber: row.grnNumber ?? null });
+  };
+
+  const doSubmit = async () => {
+    if (!submitTarget) return;
+    setSubmitError(null);
     try {
-      await submitMutation.mutateAsync(grnId);
-    } catch { /* error toast handled globally */ }
+      await submitMutation.mutateAsync(submitTarget.id);
+      setSubmitTarget(null);
+    } catch (err: unknown) {
+      // Keep the dialog open so the user can read the failure reason.
+      setSubmitError(toErrorMessage(err, "Failed to submit GRN"));
+    }
   };
 
   const { data: projectsData } = useProjects();
@@ -336,6 +352,8 @@ export default function GRNPage() {
       key: "_actions",
       label: "Actions",
       width: "100px",
+      align: "right",
+      sortable: false,
       render: (row) => (
         <div className="flex items-center justify-end gap-1">
           <button
@@ -348,11 +366,25 @@ export default function GRNPage() {
           >
             <Eye className="w-4 h-4" />
           </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              window.open(
+                `/api/purchase/grn/${row.id}/preview/pdf`,
+                "_blank",
+                "noopener",
+              );
+            }}
+            className="p-1.5 rounded hover:bg-orange-50 text-gray-500 hover:text-orange-600"
+            title="View PDF"
+          >
+            <FileText className="w-4 h-4" />
+          </button>
           {row.status === "draft" && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                handleSubmit(row.id);
+                handleSubmit(row);
               }}
               className="p-1.5 rounded hover:bg-gray-100 text-orange-500"
               title="Submit for Approval"
@@ -386,6 +418,36 @@ export default function GRNPage() {
         />
       </PageContainer>
       <QuickCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} config={config} />
+
+      <ConfirmDialog
+        open={!!submitTarget}
+        onClose={() => {
+          if (!submitMutation.isPending) {
+            setSubmitTarget(null);
+            setSubmitError(null);
+          }
+        }}
+        onConfirm={doSubmit}
+        title="Submit for Approval"
+        confirmLabel="Submit"
+        tone="primary"
+        loading={submitMutation.isPending}
+        message={
+          <>
+            Submit GRN{" "}
+            <span className="font-semibold text-slate-900">
+              {submitTarget?.grnNumber ?? submitTarget?.id}
+            </span>{" "}
+            for approval? It will be routed through the active GRN workflow and
+            you won't be able to edit it until an approver returns it.
+            {submitError && (
+              <span className="mt-3 block rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                {submitError}
+              </span>
+            )}
+          </>
+        }
+      />
     </>
   );
 }

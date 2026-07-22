@@ -9,7 +9,7 @@ import { TableSkeleton } from "@/components/ui/Skeleton";
 import {
   getFiscalYear, getFiscalQuarter, fiscalYearLabel,
 } from "@/lib/utils/fiscal";
-import { useCurrentWeek, useWeekDateRange, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useCurrentQuarter, useWeekDateRange, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
 import { useNumberFormat } from "@/lib/hooks/useFeatureFlags";
 import type { KPIRow } from "@/lib/types/kpi";
 import { TeamSection } from "./components/TeamSection";
@@ -25,6 +25,8 @@ import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
 import { runExport } from "@/lib/export/xlsx";
+import { GlobalExportModal, type GlobalExportSelection } from "@/components/export/GlobalExportModal";
+import { downloadExport } from "@/lib/exports/downloadExport";
 import { getKPIs } from "@/lib/services/kpiService";
 
 const FISCAL_YEAR = getFiscalYear();
@@ -175,9 +177,12 @@ export default function TeamsKPIPage() {
 
   const selectedFilterTeams = teams.filter(t => filterTeamIds.includes(t.id));
 
-  // DB-driven current week + date range (respects QuarterSetting.startDate).
-  const fiscalWeek = useCurrentWeek(year, quarter);
-  const fiscalWeekRange = useWeekDateRange(year, quarter, fiscalWeek);
+  // "You are here" pill — reflects TODAY's real fiscal position (the quarter
+  // that actually contains today within the selected year), not the selected
+  // quarter filter. Null when today is outside the selected FY → pill hides.
+  const realQuarter = useCurrentQuarter(year);
+  const fiscalWeek = useCurrentWeek(year, realQuarter);
+  const fiscalWeekRange = useWeekDateRange(year, realQuarter, fiscalWeek);
   const isLoading = teamsLoading || kpisLoading;
 
   // Close pickers on outside click
@@ -201,9 +206,9 @@ export default function TeamsKPIPage() {
           <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
             {total} {total === 1 ? "item" : "items"}
           </span>
-          {fiscalWeek !== null && (
+          {realQuarter && fiscalWeek !== null && (
             <span className="text-xs bg-accent-50 text-accent-600 border border-accent-100 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
-              {quarter} · Week {fiscalWeek}{fiscalWeekRange ? ` · ${fiscalWeekRange}` : ""}
+              {realQuarter} · Week {fiscalWeek}{fiscalWeekRange ? ` · ${fiscalWeekRange}` : ""}
             </span>
           )}
         </div>
@@ -404,6 +409,7 @@ export default function TeamsKPIPage() {
             kpis={kpis}
             year={year}
             quarter={quarter}
+            teamIds={filterTeamIds}
           />
 
           {/* + Add KPI — gated purely on the dynamic RBAC `TeamKPI:create`
@@ -487,15 +493,19 @@ function TeamKPIMoreActions({
   kpis,
   year,
   quarter,
+  teamIds,
 }: {
   viewTrash: boolean;
   setViewTrash: (v: boolean) => void;
   kpis: KPIRow[];
   year: number;
   quarter: string;
+  teamIds: string[];
 }) {
   const tablePrefs = useTablePrefs("kpi");
   const weekCount = useQuarterWeekCount(year, quarter);
+  const { years: fyYears } = useFiscalYears();
+  const availableExportYears = fyYears.length ? fyYears : [year];
   // Includes the quarter's week columns so "Hide all" actually hides every data
   // column. See `apps/quikscale/app/(dashboard)/kpi/page.tsx` for the
   // canonical comment on framework row controls.
@@ -548,16 +558,53 @@ function TeamKPIMoreActions({
     });
   };
 
+  const [globalExportOpen, setGlobalExportOpen] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const handleGlobalExport = async (sel: GlobalExportSelection) => {
+    setExportError(null);
+    try {
+      await downloadExport("/api/kpi/export", {
+        level: "team",
+        columns: sel.columnKeys.join(","),
+        year: sel.range.mode === "quarter" ? sel.range.year : year,
+        quarters: sel.range.mode === "quarter" ? sel.range.quarters.join(",") : quarter,
+        teamIds: teamIds.length ? teamIds.join(",") : undefined,
+        includeDeleted: viewTrash || undefined,
+      });
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : "Export failed");
+      throw err;
+    }
+  };
+
   return (
-    <ModuleMoreActions
-      columns={moduleColumns}
-      hiddenCols={tablePrefs.hiddenCols}
-      onHiddenColsChange={(next) => tablePrefs.setHiddenCols(next)}
-      isTrashActive={viewTrash}
-      onToggleTrash={setViewTrash}
-      rowCounts={{ page: kpis.length, filtered: kpis.length, all: kpis.length }}
-      onExport={handleExport}
-      defaultExportColumnKeys={visibleColKeys}
-    />
+    <>
+      <ModuleMoreActions
+        columns={moduleColumns}
+        hiddenCols={tablePrefs.hiddenCols}
+        onHiddenColsChange={(next) => tablePrefs.setHiddenCols(next)}
+        isTrashActive={viewTrash}
+        onToggleTrash={setViewTrash}
+        rowCounts={{ page: kpis.length, filtered: kpis.length, all: kpis.length }}
+        onExport={handleExport}
+        onExportClick={() => setGlobalExportOpen(true)}
+        defaultExportColumnKeys={visibleColKeys}
+      />
+      <GlobalExportModal
+        open={globalExportOpen}
+        onClose={() => setGlobalExportOpen(false)}
+        title="Export Team KPI"
+        columns={moduleColumns}
+        defaultCheckedKeys={visibleColKeys}
+        rangeMode="quarter"
+        quarterCtx={{ years: availableExportYears, defaultYear: year, defaultQuarter: quarter, formatYear: fiscalYearLabel }}
+        onExport={handleGlobalExport}
+      />
+      {exportError && (
+        <div className="fixed bottom-4 right-4 z-[60] bg-red-600 text-white text-xs px-3 py-2 rounded-lg shadow-lg">
+          {exportError}
+        </div>
+      )}
+    </>
   );
 }

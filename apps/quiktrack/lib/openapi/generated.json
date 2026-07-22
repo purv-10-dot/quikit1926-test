@@ -1,0 +1,3970 @@
+{
+  "paths": {
+    "/api/activity": {
+      "get": {
+        "tags": [
+          "activity"
+        ],
+        "summary": "List activity",
+        "description": "GET /api/activity. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_activity",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "activity"
+        ],
+        "summary": "Create an activity",
+        "description": "POST /api/activity. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "post_api_activity",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/apps/switcher": {
+      "get": {
+        "tags": [
+          "apps"
+        ],
+        "summary": "List switcher",
+        "description": "GET /api/apps/switcher. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_apps_switcher",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/backlog/issues": {
+      "get": {
+        "tags": [
+          "backlog"
+        ],
+        "summary": "List issues",
+        "description": "GET /api/backlog/issues. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_backlog_issues",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/checklist": {
+      "get": {
+        "tags": [
+          "checklist"
+        ],
+        "summary": "List checklist",
+        "description": "GET /api/checklist. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_checklist",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "checklist"
+        ],
+        "summary": "Create a checklist",
+        "description": "POST /api/checklist. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "post_api_checklist",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/checklist/statuses": {
+      "get": {
+        "tags": [
+          "checklist"
+        ],
+        "summary": "List statuses of checklist",
+        "description": "GET /api/checklist/statuses. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_checklist_statuses",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "checklist"
+        ],
+        "summary": "Add a status to checklist",
+        "description": "POST /api/checklist/statuses. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "post_api_checklist_statuses",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/checklist/statuses/{statusId}": {
+      "patch": {
+        "tags": [
+          "checklist"
+        ],
+        "summary": "Update a status",
+        "description": "PATCH /api/checklist/statuses/{statusId}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "patch_api_checklist_statuses_statusId",
+        "parameters": [
+          {
+            "name": "statusId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "checklist"
+        ],
+        "summary": "Delete a status",
+        "description": "DELETE /api/checklist/statuses/{statusId}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "delete_api_checklist_statuses_statusId",
+        "parameters": [
+          {
+            "name": "statusId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/checklist/{itemId}": {
+      "patch": {
+        "tags": [
+          "checklist"
+        ],
+        "summary": "Update a checklist",
+        "description": "PATCH /api/checklist/{itemId}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "patch_api_checklist_itemId",
+        "parameters": [
+          {
+            "name": "itemId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "checklist"
+        ],
+        "summary": "Delete a checklist",
+        "description": "DELETE /api/checklist/{itemId}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "delete_api_checklist_itemId",
+        "parameters": [
+          {
+            "name": "itemId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/dashboard/for-you": {
+      "get": {
+        "tags": [
+          "dashboard"
+        ],
+        "summary": "List for you",
+        "description": "GET /api/dashboard/for-you. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_dashboard_for_you",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/feedback": {
+      "post": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Create a feedback",
+        "description": "POST /api/feedback. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "post_api_feedback",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/filters/{id}": {
+      "get": {
+        "tags": [
+          "filters"
+        ],
+        "summary": "Get a filter",
+        "description": "GET /api/filters/{id}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_filters_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/groups/move-task": {
+      "post": {
+        "tags": [
+          "groups"
+        ],
+        "summary": "Create a group",
+        "description": "POST /api/groups/move-task. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "post_api_groups_move_task",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/groups/{id}": {
+      "patch": {
+        "tags": [
+          "groups"
+        ],
+        "summary": "Update a group",
+        "description": "PATCH /api/groups/{id}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "patch_api_groups_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "groups"
+        ],
+        "summary": "Delete a group",
+        "description": "DELETE /api/groups/{id}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "delete_api_groups_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/issues/bulk-delete": {
+      "post": {
+        "tags": [
+          "issues"
+        ],
+        "summary": "Bulk-delete issue",
+        "description": "POST /api/issues/bulk-delete. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "post_api_issues_bulk_delete",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/issues/bulk-import": {
+      "post": {
+        "tags": [
+          "issues"
+        ],
+        "summary": "Bulk-import issue",
+        "description": "POST /api/issues/bulk-import. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "post_api_issues_bulk_import",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/issues": {
+      "get": {
+        "tags": [
+          "issues"
+        ],
+        "summary": "List issues",
+        "description": "GET /api/issues. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_issues",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "issues"
+        ],
+        "summary": "Create an issue",
+        "description": "POST /api/issues. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "post_api_issues",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/issues/{id}/attachments": {
+      "get": {
+        "tags": [
+          "issues"
+        ],
+        "summary": "List attachments of issue",
+        "description": "GET /api/issues/{id}/attachments. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_issues_id_attachments",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/issues/{id}/attachments/{attachmentId}": {
+      "get": {
+        "tags": [
+          "issues"
+        ],
+        "summary": "Get an attachment",
+        "description": "GET /api/issues/{id}/attachments/{attachmentId}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_issues_id_attachments_attachmentId",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attachmentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/issues/{id}/comments": {
+      "get": {
+        "tags": [
+          "issues"
+        ],
+        "summary": "List comments of issue",
+        "description": "GET /api/issues/{id}/comments. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_issues_id_comments",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "issues"
+        ],
+        "summary": "Add a comment to issue",
+        "description": "POST /api/issues/{id}/comments. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "post_api_issues_id_comments",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/issues/{id}/comments/{commentId}": {
+      "patch": {
+        "tags": [
+          "issues"
+        ],
+        "summary": "Update a comment",
+        "description": "PATCH /api/issues/{id}/comments/{commentId}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "patch_api_issues_id_comments_commentId",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "commentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "issues"
+        ],
+        "summary": "Delete a comment",
+        "description": "DELETE /api/issues/{id}/comments/{commentId}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "delete_api_issues_id_comments_commentId",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "commentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/issues/{id}/full": {
+      "get": {
+        "tags": [
+          "issues"
+        ],
+        "summary": "List full",
+        "description": "GET /api/issues/{id}/full. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_issues_id_full",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/issues/{id}/history": {
+      "get": {
+        "tags": [
+          "issues"
+        ],
+        "summary": "List history of issue",
+        "description": "GET /api/issues/{id}/history. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_issues_id_history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/issues/{id}/links": {
+      "get": {
+        "tags": [
+          "issues"
+        ],
+        "summary": "List links of issue",
+        "description": "GET /api/issues/{id}/links. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_issues_id_links",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "issues"
+        ],
+        "summary": "Add a link to issue",
+        "description": "POST /api/issues/{id}/links. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "post_api_issues_id_links",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/issues/{id}/links/{linkId}": {
+      "delete": {
+        "tags": [
+          "issues"
+        ],
+        "summary": "Delete a link",
+        "description": "DELETE /api/issues/{id}/links/{linkId}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "delete_api_issues_id_links_linkId",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "linkId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/issues/{id}/move": {
+      "patch": {
+        "tags": [
+          "issues"
+        ],
+        "summary": "Move issue",
+        "description": "PATCH /api/issues/{id}/move. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "patch_api_issues_id_move",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/issues/{id}": {
+      "get": {
+        "tags": [
+          "issues"
+        ],
+        "summary": "Get an issue",
+        "description": "GET /api/issues/{id}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_issues_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "issues"
+        ],
+        "summary": "Update an issue",
+        "description": "PATCH /api/issues/{id}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "patch_api_issues_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "issues"
+        ],
+        "summary": "Delete an issue",
+        "description": "DELETE /api/issues/{id}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "delete_api_issues_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/me/access": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "List access",
+        "description": "GET /api/me/access. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_me_access",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/me/permissions": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "List permissions of me",
+        "description": "GET /api/me/permissions. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_me_permissions",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/me/project-permissions": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "List project permissions",
+        "description": "GET /api/me/project-permissions. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_me_project_permissions",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/me/tour-status": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "List tour status",
+        "description": "GET /api/me/tour-status. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_me_tour_status",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/migration/jira": {
+      "post": {
+        "tags": [
+          "migration"
+        ],
+        "summary": "Create a migration",
+        "description": "POST /api/migration/jira. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "post_api_migration_jira",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/projects": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "List projects",
+        "description": "GET /api/projects. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_projects",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Create a project",
+        "description": "POST /api/projects. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "post_api_projects",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/custom-fields": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "List custom fields of project",
+        "description": "GET /api/projects/{id}/custom-fields. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_projects_id_custom_fields",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Add a custom field to project",
+        "description": "POST /api/projects/{id}/custom-fields. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "post_api_projects_id_custom_fields",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/custom-fields/{fieldId}": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Get a custom field",
+        "description": "GET /api/projects/{id}/custom-fields/{fieldId}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_projects_id_custom_fields_fieldId",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "fieldId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Update a custom field",
+        "description": "PATCH /api/projects/{id}/custom-fields/{fieldId}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "patch_api_projects_id_custom_fields_fieldId",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "fieldId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Delete a custom field",
+        "description": "DELETE /api/projects/{id}/custom-fields/{fieldId}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "delete_api_projects_id_custom_fields_fieldId",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "fieldId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/docs/folders": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "List folders of doc",
+        "description": "GET /api/projects/{id}/docs/folders. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_projects_id_docs_folders",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Add a folder to doc",
+        "description": "POST /api/projects/{id}/docs/folders. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "post_api_projects_id_docs_folders",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/docs/import": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Import doc",
+        "description": "POST /api/projects/{id}/docs/import. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "post_api_projects_id_docs_import",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/docs": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "List docs of project",
+        "description": "GET /api/projects/{id}/docs. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_projects_id_docs",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Add a doc to project",
+        "description": "POST /api/projects/{id}/docs. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "post_api_projects_id_docs",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Update docs of project",
+        "description": "PUT /api/projects/{id}/docs. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "put_api_projects_id_docs",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/grouped-board": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "List grouped board",
+        "description": "GET /api/projects/{id}/grouped-board. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_projects_id_grouped_board",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/groups/reorder": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Reorder group",
+        "description": "POST /api/projects/{id}/groups/reorder. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "post_api_projects_id_groups_reorder",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/groups": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "List groups of project",
+        "description": "GET /api/projects/{id}/groups. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_projects_id_groups",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Add a group to project",
+        "description": "POST /api/projects/{id}/groups. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "post_api_projects_id_groups",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/issue-fields": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "List issue fields of project",
+        "description": "GET /api/projects/{id}/issue-fields. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_projects_id_issue_fields",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/links": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "List links of project",
+        "description": "GET /api/projects/{id}/links. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_projects_id_links",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/members": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "List members of project",
+        "description": "GET /api/projects/{id}/members. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_projects_id_members",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Add a member to project",
+        "description": "POST /api/projects/{id}/members. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "post_api_projects_id_members",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/members/{userId}/permissions": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "List permissions of member",
+        "description": "GET /api/projects/{id}/members/{userId}/permissions. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_projects_id_members_userId_permissions",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/members/{userId}/role": {
+      "patch": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Update a member",
+        "description": "PATCH /api/projects/{id}/members/{userId}/role. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "patch_api_projects_id_members_userId_role",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/members/{userId}": {
+      "patch": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Update a member",
+        "description": "PATCH /api/projects/{id}/members/{userId}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "patch_api_projects_id_members_userId",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Delete a member",
+        "description": "DELETE /api/projects/{id}/members/{userId}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "delete_api_projects_id_members_userId",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/restore": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Restore project",
+        "description": "POST /api/projects/{id}/restore. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "post_api_projects_id_restore",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/roles": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "List roles of project",
+        "description": "GET /api/projects/{id}/roles. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_projects_id_roles",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Add a role to project",
+        "description": "POST /api/projects/{id}/roles. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "post_api_projects_id_roles",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/roles/{roleId}/field-permissions": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "List field permissions of role",
+        "description": "GET /api/projects/{id}/roles/{roleId}/field-permissions. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_projects_id_roles_roleId_field_permissions",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "roleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Update field permissions of role",
+        "description": "PUT /api/projects/{id}/roles/{roleId}/field-permissions. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "put_api_projects_id_roles_roleId_field_permissions",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "roleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/roles/{roleId}/permissions": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "List permissions of role",
+        "description": "GET /api/projects/{id}/roles/{roleId}/permissions. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_projects_id_roles_roleId_permissions",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "roleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Update permissions of role",
+        "description": "PUT /api/projects/{id}/roles/{roleId}/permissions. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "put_api_projects_id_roles_roleId_permissions",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "roleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/roles/{roleId}": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Get a role",
+        "description": "GET /api/projects/{id}/roles/{roleId}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_projects_id_roles_roleId",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "roleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Update a role",
+        "description": "PATCH /api/projects/{id}/roles/{roleId}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "patch_api_projects_id_roles_roleId",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "roleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Delete a role",
+        "description": "DELETE /api/projects/{id}/roles/{roleId}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "delete_api_projects_id_roles_roleId",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "roleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/projects/{id}": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Get a project",
+        "description": "GET /api/projects/{id}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_projects_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Update a project",
+        "description": "PATCH /api/projects/{id}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "patch_api_projects_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Delete a project",
+        "description": "DELETE /api/projects/{id}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "delete_api_projects_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/statuses/reorder": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Reorder status",
+        "description": "POST /api/projects/{id}/statuses/reorder. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "post_api_projects_id_statuses_reorder",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/statuses": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "List statuses of project",
+        "description": "GET /api/projects/{id}/statuses. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_projects_id_statuses",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Add a status to project",
+        "description": "POST /api/projects/{id}/statuses. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "post_api_projects_id_statuses",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/statuses/{statusId}": {
+      "patch": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Update a status",
+        "description": "PATCH /api/projects/{id}/statuses/{statusId}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "patch_api_projects_id_statuses_statusId",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "statusId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Delete a status",
+        "description": "DELETE /api/projects/{id}/statuses/{statusId}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "delete_api_projects_id_statuses_statusId",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "statusId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/summary": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "List summary",
+        "description": "GET /api/projects/{id}/summary. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_projects_id_summary",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/reports/executive/employees": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "List employees",
+        "description": "GET /api/reports/executive/employees. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_reports_executive_employees",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/reports/executive": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "List executive",
+        "description": "GET /api/reports/executive. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_reports_executive",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/reports/resource": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "List resource",
+        "description": "GET /api/reports/resource. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_reports_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/reports/role-users": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "List role users",
+        "description": "GET /api/reports/role-users. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_reports_role_users",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/reports/task-time/{id}": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Get a task time",
+        "description": "GET /api/reports/task-time/{id}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_reports_task_time_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/reports/tasks/export": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Export task",
+        "description": "GET /api/reports/tasks/export. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_reports_tasks_export",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/reports/tasks": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "List tasks",
+        "description": "GET /api/reports/tasks. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_reports_tasks",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/reports/user-time/{id}": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Get an user time",
+        "description": "GET /api/reports/user-time/{id}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_reports_user_time_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/reports/views": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "List views",
+        "description": "GET /api/reports/views. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_reports_views",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Create a report",
+        "description": "POST /api/reports/views. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "post_api_reports_views",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/reports/views/{id}": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Get a view",
+        "description": "GET /api/reports/views/{id}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_reports_views_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Update a view",
+        "description": "PATCH /api/reports/views/{id}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "patch_api_reports_views_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Delete a view",
+        "description": "DELETE /api/reports/views/{id}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "delete_api_reports_views_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/search": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "List search",
+        "description": "GET /api/search. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_search",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/settings/company": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "List company",
+        "description": "GET /api/settings/company. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_settings_company",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Update a setting",
+        "description": "PATCH /api/settings/company. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "patch_api_settings_company",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/settings/custom-fields": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "List custom fields of setting",
+        "description": "GET /api/settings/custom-fields. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_settings_custom_fields",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Add a custom field to setting",
+        "description": "POST /api/settings/custom-fields. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "post_api_settings_custom_fields",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/settings/custom-fields/{id}": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Get a custom field",
+        "description": "GET /api/settings/custom-fields/{id}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_settings_custom_fields_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Update a custom field",
+        "description": "PATCH /api/settings/custom-fields/{id}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "patch_api_settings_custom_fields_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Delete a custom field",
+        "description": "DELETE /api/settings/custom-fields/{id}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "delete_api_settings_custom_fields_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/sprints": {
+      "get": {
+        "tags": [
+          "sprints"
+        ],
+        "summary": "List sprints",
+        "description": "GET /api/sprints. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_sprints",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "sprints"
+        ],
+        "summary": "Create a sprint",
+        "description": "POST /api/sprints. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "post_api_sprints",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/sprints/{id}/complete": {
+      "post": {
+        "tags": [
+          "sprints"
+        ],
+        "summary": "Complete sprint",
+        "description": "POST /api/sprints/{id}/complete. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "post_api_sprints_id_complete",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/sprints/{id}": {
+      "patch": {
+        "tags": [
+          "sprints"
+        ],
+        "summary": "Update a sprint",
+        "description": "PATCH /api/sprints/{id}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "patch_api_sprints_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "sprints"
+        ],
+        "summary": "Delete a sprint",
+        "description": "DELETE /api/sprints/{id}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "delete_api_sprints_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/sprints/{id}/start": {
+      "patch": {
+        "tags": [
+          "sprints"
+        ],
+        "summary": "Start sprint",
+        "description": "PATCH /api/sprints/{id}/start. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "patch_api_sprints_id_start",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/statuses/{id}": {
+      "patch": {
+        "tags": [
+          "statuses"
+        ],
+        "summary": "Update a status",
+        "description": "PATCH /api/statuses/{id}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "patch_api_statuses_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "statuses"
+        ],
+        "summary": "Delete a status",
+        "description": "DELETE /api/statuses/{id}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "delete_api_statuses_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/timesheets/copy-previous-week": {
+      "post": {
+        "tags": [
+          "timesheets"
+        ],
+        "summary": "Copy previous week of timesheet",
+        "description": "POST /api/timesheets/copy-previous-week. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "post_api_timesheets_copy_previous_week",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/timesheets/grid": {
+      "get": {
+        "tags": [
+          "timesheets"
+        ],
+        "summary": "List grid",
+        "description": "GET /api/timesheets/grid. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_timesheets_grid",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/timesheets": {
+      "get": {
+        "tags": [
+          "timesheets"
+        ],
+        "summary": "List timesheets",
+        "description": "GET /api/timesheets. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_timesheets",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "timesheets"
+        ],
+        "summary": "Create a timesheet",
+        "description": "POST /api/timesheets. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "post_api_timesheets",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/timesheets/{id}": {
+      "get": {
+        "tags": [
+          "timesheets"
+        ],
+        "summary": "Get a timesheet",
+        "description": "GET /api/timesheets/{id}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_timesheets_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "timesheets"
+        ],
+        "summary": "Update a timesheet",
+        "description": "PATCH /api/timesheets/{id}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "patch_api_timesheets_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "timesheets"
+        ],
+        "summary": "Delete a timesheet",
+        "description": "DELETE /api/timesheets/{id}. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "delete_api_timesheets_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/users/search": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "List search",
+        "description": "GET /api/users/search. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_users_search",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/view-prefs": {
+      "get": {
+        "tags": [
+          "view-prefs"
+        ],
+        "summary": "List view prefs",
+        "description": "GET /api/view-prefs. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "get_api_view_prefs",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "view-prefs"
+        ],
+        "summary": "Update a view pref",
+        "description": "PUT /api/view-prefs. Requires a Bearer token; runs as your user within your organization.",
+        "operationId": "put_api_view_prefs",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token"
+          },
+          "403": {
+            "description": "No access to this resource"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "activity",
+      "description": "A chronological audit trail of changes across the organization — issue updates, status changes, comments, and more.\n\nUse `GET /api/activity` to page through recent events; results are scoped to the projects you can access. `POST` records a new activity entry. Handy for building \"recent activity\" feeds or syncing changes into an external system."
+    },
+    {
+      "name": "apps",
+      "description": "The QuikIT app launcher for the signed-in user.\n\n`GET /api/apps/switcher` returns the list of QuikIT apps (QuikTrack, QuikCRM, …) the user has access to, used to render the cross-app switcher. Read-only."
+    },
+    {
+      "name": "backlog",
+      "description": "Issues that live in a project's backlog and haven't been pulled into an active sprint yet.\n\n`GET /api/backlog/issues` returns the backlog for a project (pass `projectId`), ordered for sprint planning. Combine with the **sprints** endpoints to move work from the backlog into a sprint."
+    },
+    {
+      "name": "checklist",
+      "description": "Reusable checklist items and the statuses that track their completion.\n\nCreate, list, update, and delete checklist items (`/api/checklist`) and manage the set of checklist statuses (`/api/checklist/statuses`). Checklists attach to issues to break work into verifiable steps."
+    },
+    {
+      "name": "dashboard",
+      "description": "Aggregated, personalized data for the QuikTrack dashboard.\n\n`GET /api/dashboard/for-you` returns the current user's tailored view — assigned work, mentions, and items needing attention — already scoped to what they can see."
+    },
+    {
+      "name": "feedback",
+      "description": "Product feedback submitted by users from inside the app.\n\n`POST /api/feedback` records a new feedback entry; `GET` lists submitted feedback. Useful for routing in-app feedback into your own triage workflow."
+    },
+    {
+      "name": "filters",
+      "description": "Saved issue filters — named, reusable sets of search criteria.\n\nCreate and manage filters so users (and API callers) can re-run the same query without rebuilding it each time. Filters are scoped to the user and organization."
+    },
+    {
+      "name": "groups",
+      "description": "Board groupings — how issues are clustered on a board (by status, assignee, custom field, etc.) and the ability to move a task between groups.\n\nManage group definitions (`/api/groups`) and reposition work with `/api/groups/move-task`. Pair with **projects → grouped-board** to render a grouped board view."
+    },
+    {
+      "name": "issues",
+      "description": "The core of QuikTrack — work items of every type (tasks, bugs, stories, epics, and subtasks).\n\nThis is the richest area of the API. You can:\n- **List & create** issues (`GET`/`POST /api/issues`), filtered by project, status, sprint, assignee, type, and custom fields.\n- **Read, update, delete** a single issue (`/api/issues/{id}`) and fetch its full detail (`/full`) or change **history**.\n- Manage **comments**, **attachments**, and **links** between issues.\n- **Move** an issue between statuses/sprints and roll up subtask progress to parents.\n- **Bulk import** and **bulk delete** for large operations.\n\nEvery action respects project membership and field-level permissions."
+    },
+    {
+      "name": "me",
+      "description": "Information about the currently-authenticated user (the owner of the Bearer token).\n\nRead your effective **access** (`/api/me/access`), org- and project-level **permissions** (`/api/me/permissions`, `/api/me/project-permissions`), and onboarding **tour state**. Use these to decide what UI or actions to expose before making a call that might return `403`."
+    },
+    {
+      "name": "migration",
+      "description": "One-way data import from external trackers into QuikTrack.\n\n`POST /api/migration/jira` imports projects and issues from Jira. Intended for onboarding, not continuous sync."
+    },
+    {
+      "name": "projects",
+      "description": "Projects and everything scoped inside them — the second-largest area of the API.\n\nManage projects themselves (create, read, update, archive/restore) plus their nested resources:\n- **members** and their per-project **roles / permissions**\n- **statuses** (workflow columns) and their ordering\n- **custom fields** and issue-field configuration\n- project **roles**, **groups**, **links**, **docs**, and a project **summary**\n\nAccess to each project follows the caller's membership and role in that project."
+    },
+    {
+      "name": "reports",
+      "description": "Analytics and reporting across your work.\n\nIncludes **executive** summaries (org- and employee-level), **resource** allocation, per-**task** and per-**user** time reports (with CSV **export**), role-based user breakdowns, and saved report **views**. Results are aggregated and scoped to what the caller can access."
+    },
+    {
+      "name": "search",
+      "description": "Cross-entity search over QuikTrack.\n\n`GET /api/search` returns matching issues, projects, and other entities in one call, filtered to what the caller can access. Use it to power a global search box."
+    },
+    {
+      "name": "settings",
+      "description": "Organization-level settings and custom-field definitions.\n\nRead and update **company** settings (`/api/settings/company`) and define the **custom fields** available on issues across the org (`/api/settings/custom-fields`). Typically admin-managed."
+    },
+    {
+      "name": "sprints",
+      "description": "Sprints and their lifecycle.\n\nCreate and list sprints (`/api/sprints`), read/update a single sprint, and drive its lifecycle: **start** a sprint (`/{id}/start`) and **complete** it (`/{id}/complete`), which moves unfinished work back to the backlog. Pair with **backlog** and **issues** for full sprint planning."
+    },
+    {
+      "name": "statuses",
+      "description": "Issue statuses (workflow states).\n\n`/api/statuses/{id}` reads and updates a single status. Statuses are normally created and ordered per-project via the **projects → statuses** endpoints; this group covers direct status operations."
+    },
+    {
+      "name": "timesheets",
+      "description": "Time tracking — hours logged against issues and projects.\n\nLog and list time entries (`/api/timesheets`), read/update/delete a single entry (`/{id}`), fetch a weekly **grid** view (`/grid`), and **copy the previous week** to jump-start the current one. Entries are scoped to the logging user."
+    },
+    {
+      "name": "users",
+      "description": "User lookup within the organization.\n\n`GET /api/users/search` finds users by name or email — used to populate assignee and mention pickers. Returns only users the caller is allowed to see."
+    },
+    {
+      "name": "view-prefs",
+      "description": "Per-user view preferences.\n\nStore and retrieve a user's UI preferences (column layouts, sort orders, saved view state) so the app restores their setup across sessions and devices."
+    }
+  ],
+  "_meta": {
+    "generatedOperations": 125,
+    "generatedPaths": 80
+  }
+}

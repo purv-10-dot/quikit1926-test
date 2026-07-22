@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useWWWItemsPaginated, useDeleteWWW, useBulkRestoreWWW, type WWWFilters } from "@/lib/hooks/useWWW";
 import { useInfiniteUsers } from "@/lib/hooks/useInfiniteUsers";
+import { useUserOption } from "@/lib/hooks/useUserOption";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { WWWTable } from "./components/WWWTable";
 import { WWWPanel } from "./components/WWWPanel";
@@ -16,6 +17,8 @@ import { AddButton } from "@quikit/ui";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 import { Trophy } from "lucide-react";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
+import { GlobalExportModal, type GlobalExportSelection } from "@/components/export/GlobalExportModal";
+import { downloadExport } from "@/lib/exports/downloadExport";
 import { runExport } from "@/lib/export/xlsx";
 import { notify } from "@/lib/utils/notify";
 
@@ -53,6 +56,10 @@ export default function WWWPage() {
     isFetchingNextPage: ownersLoadingMore,
     fetchNextPage: fetchMoreOwners,
   } = useInfiniteUsers(filterTeam || undefined, ownerSearch);
+  // Resolve the applied "who" by id so the picker shows their name even when
+  // that person isn't in the loaded 25-user page AND the filtered list is
+  // empty (e.g. a filter inherited from My Dashboard with 0 matching rows).
+  const selectedWhoOption = useUserOption(filterWho);
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -174,6 +181,31 @@ export default function WWWPage() {
     });
   }, [wwwColumns, items, viewTrash]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Global Export (server-side, date-range aware). Hits /api/www/export; the
+  // interval is a From/To range on the `when` due date (blank → all).
+  const [globalExportOpen, setGlobalExportOpen] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const handleWwwGlobalExport = useCallback(
+    async (sel: GlobalExportSelection) => {
+      setExportError(null);
+      try {
+        await downloadExport("/api/www/export", {
+          columns: sel.columnKeys.join(","),
+          from: sel.range.mode === "date" ? sel.range.from : undefined,
+          to: sel.range.mode === "date" ? sel.range.to : undefined,
+          status: filterStatus || undefined,
+          who: filterWho || undefined,
+          teamId: filterTeam || undefined,
+          includeDeleted: viewTrash || undefined,
+        });
+      } catch (err) {
+        setExportError(err instanceof Error ? err.message : "Export failed");
+        throw err;
+      }
+    },
+    [filterStatus, filterWho, filterTeam, viewTrash],
+  );
+
   return (
     <div className="flex flex-col h-full">
       {/* Page Header */}
@@ -288,6 +320,7 @@ export default function WWWPage() {
                     value={filterWho}
                     onChange={(v) => { setFilterWho(v); ctx.setFilterOwner(v); }}
                     options={users.map(userToFilterOption)}
+                    selectedOption={selectedWhoOption}
                     onSearchChange={setOwnerSearch}
                     onLoadMore={fetchMoreOwners}
                     hasMore={ownersHasMore}
@@ -328,6 +361,7 @@ export default function WWWPage() {
             onToggleTrash={setViewTrash}
             rowCounts={{ page: items.length, filtered: total, all: total }}
             onExport={handleWwwExport}
+            onExportClick={() => setGlobalExportOpen(true)}
             defaultExportColumnKeys={visibleWwwCols}
           />
 
@@ -377,6 +411,22 @@ export default function WWWPage() {
           onClose={() => setShowAddModal(false)}
           onSuccess={() => { setShowAddModal(false); refetch(); }}
         />
+      )}
+
+      {/* Global Export — date-range aware server export (.xlsx / PDF) */}
+      <GlobalExportModal
+        open={globalExportOpen}
+        onClose={() => setGlobalExportOpen(false)}
+        title="Export WWW"
+        columns={wwwColumns}
+        defaultCheckedKeys={visibleWwwCols}
+        rangeMode="date"
+        onExport={handleWwwGlobalExport}
+      />
+      {exportError && (
+        <div className="fixed bottom-4 right-4 z-[60] bg-red-600 text-white text-xs px-3 py-2 rounded-lg shadow-lg">
+          {exportError}
+        </div>
       )}
     </div>
   );

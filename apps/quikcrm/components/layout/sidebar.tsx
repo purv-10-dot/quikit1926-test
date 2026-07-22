@@ -173,7 +173,7 @@ export function Sidebar() {
 function QuikCrmMark({ className = "h-8 w-8 rounded-lg object-cover" }: { className?: string }) {
   return (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src="/icon.png" alt="" width={32} height={32} className={className} />
+    <img src="/icon.svg" alt="" width={32} height={32} className={className} />
   );
 }
 

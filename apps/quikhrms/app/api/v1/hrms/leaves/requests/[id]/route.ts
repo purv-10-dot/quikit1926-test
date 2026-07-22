@@ -39,12 +39,19 @@ export const GET = withAuth(async (_req: NextRequest, ctx, params) => {
 });
 
 /** PATCH /api/v1/hrms/leaves/requests/:id — cancel/recall */
-export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
+export const PATCH = withAuth(async (req: NextRequest, ctx, params) => {
+  const { orgId, userId } = ctx;
   try {
     const existing = await prisma.leaveRequest.findFirst({
       where: { id: params.id, orgId, deletedAt: null },
     });
     if (!existing) return notFound("Leave request not found");
+
+    // Ownership / hierarchy guard: only the request's owner (self), a manager
+    // above them, or an admin may cancel/recall. Without this any employee in
+    // the tenant could cancel another's leave and mutate their balance.
+    const allowed = await canAccessEmployee(ctx, existing.employeeId);
+    if (!allowed) return forbidden("You cannot modify this leave request");
 
     const body = await req.json();
     const parsed = updateLeaveRequestSchema.safeParse(body);

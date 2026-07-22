@@ -55,7 +55,8 @@
       "Bash(DATABASE_URL=\"postgresql://postgres@localhost:5432/quikskill_lms\" npx prisma migrate status --schema prisma/schema.prisma)",
       "Bash(DATABASE_URL=\"postgresql://postgres@localhost:5432/quikskill_lms\" DATABASE_URL_DIRECT=\"postgresql://postgres:@localhost:5432/quikskill_lms?sslmode=disable\" npx prisma migrate deploy --schema prisma/schema.prisma)",
       "Bash(../../node_modules/.bin/tsc --noEmit)",
-      "Bash(../../node_modules/.bin/vitest run *)"
+      "Bash(../../node_modules/.bin/vitest run *)",
+      "WebFetch(domain:unpkg.com)"
     ],
     "additionalDirectories": [
       "c:\\wwwwwwwwww\\Authmergewithmainbranch\\QuikIT\\apps\\auth\\app\\api\\auth\\me"

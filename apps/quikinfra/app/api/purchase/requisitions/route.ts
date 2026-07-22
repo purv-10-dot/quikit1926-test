@@ -12,6 +12,7 @@ import {
   nextPrNumber,
   withPrNumberRetry,
 } from "@/lib/purchase/pr-repository";
+import { procurementByPr } from "@/lib/purchase/procurement-status";
 import { parsePagination } from "@/lib/http/pagination";
 import {
   validatePrLinesAgainstBudget,
@@ -51,16 +52,29 @@ export async function GET(req: NextRequest) {
     search: search || undefined,
     ...(p.paginated ? { take: p.take, skip: p.skip } : {}),
   });
+
+  // Attach a rolled-up PO/GRN status per PR so the list can show
+  // procurement tracking ("ordered? / arrived?") without opening each PR.
+  const rows = data as Array<{ id?: string }>;
+  const procByPr = await procurementByPr(
+    ctx.orgId,
+    rows.map((r) => r?.id ?? "").filter(Boolean),
+  );
+  const enriched = rows.map((r) => ({
+    ...r,
+    procurement: (r?.id && procByPr.get(r.id)) || null,
+  }));
+
   if (p.paginated) {
     return NextResponse.json({
-      data,
-      total: data.length,
+      data: enriched,
+      total: enriched.length,
       page: p.page,
       pageSize: p.pageSize,
-      hasMore: data.length === p.pageSize,
+      hasMore: enriched.length === p.pageSize,
     });
   }
-  return NextResponse.json({ data, total: data.length });
+  return NextResponse.json({ data: enriched, total: enriched.length });
 }
 
 export async function POST(req: NextRequest) {

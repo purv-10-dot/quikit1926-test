@@ -22,6 +22,52 @@ export const weeksArray = (count: number = DEFAULT_WEEKS_PER_QUARTER): number[] 
   Array.from({ length: count }, (_, i) => i + 1);
 export const MEASUREMENT_UNITS = ["Number", "Percentage", "Currency"] as const;
 
+/**
+ * Weekly meeting day-name → JS `Date.getDay()` index (Sunday=0 … Saturday=6).
+ * Used by Custom Quarter Settings' meeting-day week alignment.
+ */
+export const DAY_NAME_TO_INDEX: Record<string, number> = {
+  Sunday: 0,
+  Monday: 1,
+  Tuesday: 2,
+  Wednesday: 3,
+  Thursday: 4,
+  Friday: 5,
+  Saturday: 6,
+};
+
+/**
+ * Resolve a weekly meeting day-name (e.g. "Thursday") to its `getDay()` index,
+ * or `null` when unset/unknown. A `null` result is the OFF signal — every
+ * week-date helper falls back to the legacy calendar math when it sees null,
+ * so Custom Quarter Settings being disabled changes nothing.
+ */
+export function meetingDayIndex(day: string | null | undefined): number | null {
+  if (!day) return null;
+  const idx = DAY_NAME_TO_INDEX[day];
+  return idx === undefined ? null : idx;
+}
+
+/**
+ * Custom Quarter Settings — meeting-day week alignment.
+ *
+ * Returns the first date on/after `quarterStart` whose weekday matches
+ * `meetingDayIndex` (0=Sun…6=Sat). This is the anchor for Week 1 when a weekly
+ * meeting day is configured: e.g. a quarter starting Wed 01 Apr with a Thursday
+ * meeting day anchors to Thu 02 Apr, so every KPI/Priority week runs Thu→Wed.
+ * If the quarter already starts on the meeting day, the same day is returned.
+ *
+ * The 0–6 leading days before the anchor belong to no week (per the spec's
+ * example, where 01 Apr is not part of Week 1). Result is a fresh local-midnight
+ * Date; the input is not mutated.
+ */
+export function alignToMeetingDay(quarterStart: Date, meetingDayIdx: number): Date {
+  const d = new Date(quarterStart.getFullYear(), quarterStart.getMonth(), quarterStart.getDate());
+  const diff = ((meetingDayIdx - d.getDay()) % 7 + 7) % 7;
+  d.setDate(d.getDate() + diff);
+  return d;
+}
+
 /** Current fiscal year (April-based). */
 export function getFiscalYear(): number {
   const m = new Date().getMonth();
@@ -141,12 +187,147 @@ export function getCurrentFiscalWeek(
 export function getCurrentFiscalWeekFromStart(
   startDate: string | Date,
   total: number = DEFAULT_WEEKS_PER_QUARTER,
+  meetingDay?: string | null,
+  endDate?: string | Date | null,
 ): number {
+  const idx = meetingDayIndex(meetingDay);
+  // Custom Quarter Settings + a known quarter end: find which meeting-day week
+  // (including partial weeks) contains today, via the canonical generator.
+  if (idx !== null && endDate != null) {
+    const weeks = generateMeetingDayWeeks(startDate, endDate, idx);
+    if (weeks.length === 0) return 1;
+    const now = toLocalDay(new Date()).getTime();
+    if (now < weeks[0].start.getTime()) return 1;
+    for (let i = 0; i < weeks.length; i++) {
+      if (now <= weeks[i].end.getTime()) return i + 1;
+    }
+    return weeks.length;
+  }
+  // Legacy uniform-week fallback (meeting day off, or no quarter end supplied):
+  // measure elapsed weeks from the start (or the meeting-day anchor).
   const start = typeof startDate === "string" ? new Date(startDate) : startDate;
+  const anchor = idx !== null ? alignToMeetingDay(start, idx) : start;
   const now = new Date();
-  if (now < start) return 1;
-  const elapsed = Math.floor((now.getTime() - start.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1;
+  if (now < anchor) return 1;
+  const elapsed = Math.floor((now.getTime() - anchor.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1;
   return Math.min(total, Math.max(1, elapsed));
+}
+
+/**
+ * QTD "reference week" — the value to pass to `computeQtd` as its `currentWeek`
+ * so quarter-to-date counts the right number of COMPLETED weeks, accounting for
+ * whether the quarter is past, current, or future relative to `now`:
+ *
+ *   - past   (now  >  quarter end)   → `weekCount + 1`  → QTD counts ALL weeks
+ *                                       (the quarter is finished; nothing is
+ *                                       "in progress" to exclude)
+ *   - future (now  <  quarter start) → `1`              → QTD is 0
+ *   - current                        → the elapsed week  → `computeQtd` excludes
+ *                                       the in-progress week, as it does today
+ *
+ * This is what fixes a fully-past quarter showing QTD short by its final week:
+ * `getCurrentFiscalWeekFromStart` clamps to `[1, weekCount]`, so a past quarter
+ * reads as "week `weekCount`, in progress" and its last week is dropped from
+ * QTD. Here a past quarter returns `weekCount + 1` instead.
+ *
+ * Differs from `getCurrentFiscalWeekFromStart` ONLY for past quarters — current
+ * and future results are identical, so no other week math changes. Meeting-day
+ * aware for the current-quarter elapsed calc (Custom Quarter Settings); works
+ * with the toggle on OR off because past/future detection uses the quarter's
+ * start/end dates, which always exist.
+ */
+export function qtdReferenceWeek(
+  startDate: string | Date,
+  endDate: string | Date,
+  weekCount: number = DEFAULT_WEEKS_PER_QUARTER,
+  now: Date = new Date(),
+  meetingDay?: string | null,
+): number {
+  const today = toLocalDay(now).getTime();
+  const start = toLocalDay(startDate).getTime();
+  const end = toLocalDay(endDate).getTime();
+  if (today > end) return weekCount + 1;   // past → all weeks complete
+  if (today < start) return 1;             // future → nothing started (QTD 0)
+  return getCurrentFiscalWeekFromStart(startDate, weekCount, meetingDay, endDate);
+}
+
+/**
+ * Custom Quarter Settings — the canonical week list for a quarter, aligned to
+ * the weekly meeting day. THE single source of truth for both the stored
+ * per-quarter `weekCount` and every displayed week range.
+ *
+ * Model: weeks run meetingDay → meetingDay+6 (e.g. Thu → Wed). Every quarter
+ * behaves identically:
+ *   - if the quarter start is NOT a meeting day, the days from the start up to
+ *     the first meeting day form a PARTIAL Week 1 (e.g. quarter starts Wed
+ *     01 Apr, meeting day Monday, first Monday 06 Apr → Week 1 = 01–05 Apr);
+ *   - the final week is clipped to the quarter end (partial trailing week).
+ * A quarter therefore has 13 or 14 weeks depending on its boundaries. No
+ * calendar date inside the quarter is ever left unassigned — Q1 is treated the
+ * same as Q2–Q4 (its leading days become a partial Week 1, not dropped).
+ *
+ * All dates are treated at local midnight; inputs are not mutated. Returns []
+ * when the range is empty/inverted.
+ */
+export function generateMeetingDayWeeks(
+  quarterStart: string | Date,
+  quarterEnd: string | Date,
+  meetingDayIdx: number,
+): Array<{ start: Date; end: Date }> {
+  const qStart = toLocalDay(quarterStart);
+  const qEnd = toLocalDay(quarterEnd);
+  const weeks: Array<{ start: Date; end: Date }> = [];
+  if (qEnd.getTime() < qStart.getTime()) return weeks;
+
+  const addDaysLocal = (d: Date, n: number) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+  const firstMeeting = alignToMeetingDay(qStart, meetingDayIdx);
+
+  let cursor: Date;
+  if (firstMeeting.getTime() > qStart.getTime()) {
+    // Leading partial week: [qStart .. day before the first meeting day].
+    const pEnd = addDaysLocal(firstMeeting, -1);
+    weeks.push({ start: qStart, end: pEnd.getTime() > qEnd.getTime() ? qEnd : pEnd });
+    cursor = firstMeeting;
+  } else {
+    cursor = qStart; // quarter starts exactly on the meeting day
+  }
+
+  while (cursor.getTime() <= qEnd.getTime()) {
+    const wEnd = addDaysLocal(cursor, 6);
+    weeks.push({ start: cursor, end: wEnd.getTime() > qEnd.getTime() ? qEnd : wEnd });
+    cursor = addDaysLocal(cursor, 7);
+  }
+  return weeks;
+}
+
+/**
+ * Internal — compute the [start, end] Dates for one week of a quarter.
+ *
+ * When a `meetingDay` resolves to a weekday index AND a `quarterEnd` is known,
+ * weeks come from `generateMeetingDayWeeks` (meeting-day aligned, partial weeks,
+ * 13-or-14 count). When `meetingDay` is null/unset — Custom Quarter Settings off
+ * — or no `quarterEnd` is supplied, this falls back to the legacy
+ * `qStart + (week-1)*7 … +6` math, so nothing changes for non-custom tenants.
+ */
+function weekBounds(
+  year: number,
+  quarter: string,
+  weekNumber: number,
+  actualStartDate?: string | Date | null,
+  meetingDay?: string | null,
+  quarterEnd?: string | Date | null,
+): { start: Date; end: Date } {
+  const qs = getQuarterStart(year, quarter, actualStartDate);
+  const idx = meetingDayIndex(meetingDay);
+  if (idx !== null && quarterEnd != null) {
+    const wk = generateMeetingDayWeeks(qs, quarterEnd, idx)[weekNumber - 1];
+    if (wk) return wk;
+    // weekNumber past the last week → fall through to the uniform math below.
+  }
+  const start = new Date(qs.getFullYear(), qs.getMonth(), qs.getDate() + (weekNumber - 1) * 7);
+  const end = new Date(qs.getFullYear(), qs.getMonth(), qs.getDate() + weekNumber * 7 - 1);
+  return { start, end };
 }
 
 /**
@@ -162,10 +343,10 @@ export function getWeekDateRange(
   quarter: string,
   weekNumber: number,
   actualStartDate?: string | Date | null,
+  meetingDay?: string | null,
+  quarterEnd?: string | Date | null,
 ): string {
-  const qs = getQuarterStart(year, quarter, actualStartDate);
-  const start = new Date(qs.getFullYear(), qs.getMonth(), qs.getDate() + (weekNumber - 1) * 7);
-  const end = new Date(qs.getFullYear(), qs.getMonth(), qs.getDate() + weekNumber * 7 - 1);
+  const { start, end } = weekBounds(year, quarter, weekNumber, actualStartDate, meetingDay, quarterEnd);
   const fmt = (d: Date) => d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
   return `${fmt(start)} – ${fmt(end)}`;
 }
@@ -226,10 +407,10 @@ export function weekDateLabel(
   quarter: string,
   weekNumber: number,
   actualStartDate?: string | Date | null,
+  meetingDay?: string | null,
+  quarterEnd?: string | Date | null,
 ): string {
-  const qs = getQuarterStart(year, quarter, actualStartDate);
-  const start = new Date(qs.getFullYear(), qs.getMonth(), qs.getDate() + (weekNumber - 1) * 7);
-  const end = new Date(qs.getFullYear(), qs.getMonth(), qs.getDate() + weekNumber * 7 - 1);
+  const { start, end } = weekBounds(year, quarter, weekNumber, actualStartDate, meetingDay, quarterEnd);
   const startMonth = start.toLocaleDateString("en-GB", { month: "short" });
   const endMonth = end.toLocaleDateString("en-GB", { month: "short" });
   if (startMonth === endMonth) {

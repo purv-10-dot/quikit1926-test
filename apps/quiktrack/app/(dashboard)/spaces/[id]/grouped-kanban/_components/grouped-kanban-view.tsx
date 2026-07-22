@@ -34,6 +34,7 @@ import { EditIssueModal } from "@/components/edit-issue-modal";
 import { CreateIssueModal } from "@/components/create-issue-modal";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApiData } from "@/lib/hooks/useApiData";
+import type { CustomFieldDTO } from "@/lib/services/customFields";
 import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import { useFilterPersistence } from "@/lib/hooks/usePersistentFilters";
@@ -110,6 +111,10 @@ export function GroupedKanbanView({ projectId }: { projectId: string }) {
           title: e.title,
         })),
     },
+  );
+  const { data: customFields = [] } = useApiData<CustomFieldDTO[]>(
+    ["quiktrack", "project-issue-fields", projectId],
+    `/api/projects/${projectId}/issue-fields`,
   );
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -218,6 +223,7 @@ export function GroupedKanbanView({ projectId }: { projectId: string }) {
         }}
         sprints={sprints}
         members={members}
+        customFields={customFields}
         groupBy={fieldGrouping.groupBy}
         onGroupByChange={fieldGrouping.setGroupBy}
         onCreateGroup={() => setCreateOpen(true)}
