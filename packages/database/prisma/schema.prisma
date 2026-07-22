@@ -1,13 +1,14 @@
 generator client {
   provider        = "prisma-client-js"
   previewFeatures = ["multiSchema"]
+  binaryTargets   = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DATABASE_URL_DIRECT")
-  schemas   = ["app_quikasset", "app_quikcrm", "app_quikfinance", "app_quikhrms", "app_quikinfra", "app_quikscale", "app_quiksocial", "app_quiksupport", "app_quiktrack", "app_quikvc", "auth", "public", "quikit"]
+  schemas   = ["app_quikasset", "app_quikchat", "app_quikcrm", "app_quikfinance", "app_quikhrms", "app_quikinfra", "app_quikscale", "app_quiksocial", "app_quiksupport", "app_quiktrack", "app_quikvc", "auth", "public", "quikit"]
 }
 
 model App {
@@ -28,6 +29,7 @@ model App {
   AppRole          QtAppRole[]
   cnAppRoles       CnAppRole[]
   qsAppRoles       QsAppRole[]
+  qcAppRoles       QcAppRole[]
   healthChecks     AppHealthCheck[]
   moduleFlags      AppModuleFlag[]
   oauthClient      OAuthClient?
@@ -232,6 +234,9 @@ model Org {
   UserPermissionExtra      QtUserPermissionExtra[]
   qsAppRoles               QsAppRole[]
   qsUserAppRoles           QsUserAppRole[]
+  qcAppRoles               QcAppRole[]
+  qcUserAppRoles           QcUserAppRole[]
+  qcUserPermissionExtras   QcUserPermissionExtra[]
   vcApplications           VCApplication[]
   vcAuditLogs              VCAuditLog[]
   vcCapitalCalls           VCCapitalCall[]
@@ -348,6 +353,8 @@ model User {
   cnUserAppRoles          CnUserAppRole[]
   cnUserPermissionExtras  CnUserPermissionExtra[]
   qsUserAppRoles          QsUserAppRole[]
+  qcUserAppRoles          QcUserAppRole[]
+  qcPermissionExtras      QcUserPermissionExtra[]
   cnUserProfiles          CnUserProfile[]
   cnUserProjectAccess     CnUserProjectAccess[]
   qtProjectUserRoles      QtProjectUserRole[]
@@ -361,6 +368,7 @@ model User {
   qsUserTeams             QsUserTeam[]
   memberships             OrgMember[]
   appAccess               UserAppAccess[]
+  astEmployees            AstEmployee[]
 
   @@index([email])
   @@schema("auth")
@@ -644,6 +652,11 @@ model KPI {
   scaledDisplay      Boolean          @default(false)
   reverseColor       Boolean          @default(false)
   frequency          String           @default("weekly")
+  // Classification of the KPI's role in the metric chain: "Leading" (predictive,
+  // an input you can act on now) vs "Lagging" (outcome, measured after the fact).
+  // "NA" = unclassified (default). Plain string + app-level enum validation,
+  // matching every other KPI single-select (never a Prisma enum).
+  kpiType            String           @default("NA")
   // True when this KPI was created via the OPSP "Export → Create KPIs" flow.
   // Display-only (shown in the KPI grid); never edited from the Add/Edit form.
   importedFromOpsp   Boolean          @default(false)
@@ -664,7 +677,11 @@ model KPI {
   notes              KPINote[]
   weeklyValues       KPIWeeklyValue[]
 
+  // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
+  position           Float?
+
   @@index([orgId])
+  @@index([orgId, position])
   @@index([orgId, deletedAt])
   @@index([orgId, kpiLevel, deletedAt])
   @@index([owner])
@@ -830,7 +847,11 @@ model Priority {
   team             QsTeam?                @relation(fields: [teamId], references: [id])
   weeklyStatuses   PriorityWeeklyStatus[]
 
+  // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
+  position         Float?
+
   @@index([orgId])
+  @@index([orgId, position])
   @@index([orgId, deletedAt])
   @@index([orgId, year, quarter, deletedAt])
   @@index([owner])
@@ -880,7 +901,11 @@ model WWWItem {
   revisionLogs     WWWRevisionLog[]
   noteEntries      WWWNote[]
 
+  // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
+  position         Float?
+
   @@index([orgId])
+  @@index([orgId, position])
   @@index([who])
   @@index([when])
   @@index([status])
@@ -944,11 +969,19 @@ model CategoryMaster {
   /// Fill mode — "Manual" requires the user to enter every cell;
   /// "Automatic" lets `calculateBreakdown` distribute Projected across periods.
   breakdownType String   @default("Automatic")
+  /// Soft-delete tombstone. Null = active; set = in Trash (restorable). Mirrors
+  /// the KPI/Priority/WWW soft-delete convention.
+  deletedAt     DateTime?
+  /// Fractional manual sort position for drag-to-reorder. Null rows fall back to
+  /// createdAt ordering. Mirrors the reorderable-grid `position` convention.
+  position      Float?
   org           Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, nameKey, dataType, currency], name: "category_tenant_name_type_currency_uniq")
   @@index([orgId])
   @@index([dataType])
+  @@index([orgId, deletedAt])
+  @@index([orgId, position])
   @@schema("app_quikscale")
 }
 
@@ -964,10 +997,16 @@ model UnitMaster {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   createdBy   String
+  /// Soft-delete tombstone. Null = active; set = in Trash (restorable).
+  deletedAt   DateTime?
+  /// Fractional manual sort position for drag-to-reorder (null → createdAt order).
+  position    Float?
   org         Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, nameKey], name: "unit_tenant_name_uniq")
   @@index([orgId])
+  @@index([orgId, deletedAt])
+  @@index([orgId, position])
   @@schema("app_quikscale")
 }
 
@@ -1067,6 +1106,10 @@ model UserTablePreference {
   hiddenCols String?
   sort       String?
   colWidths  String?
+  // JSON-stringified string[] of column keys in the user's chosen drag-and-drop
+  // order. Null = default order. Unknown/removed keys are pruned and any new
+  // columns are appended in their default position at read time (forward-compat).
+  colOrder   String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1101,8 +1144,12 @@ model Client {
   teamMembers     ClientTeamMember[]
   weeklyMeetings  ClientWeeklyMeeting[]
 
+  // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
+  position        Float?
+
   @@unique([orgId, name])
   @@index([orgId])
+  @@index([orgId, position])
   @@index([orgId, isActive])
   @@index([deletedAt])
   @@schema("app_quikscale")
@@ -1167,7 +1214,11 @@ model ClientMember {
   weeklyDashboardNA ClientWeeklyMeetingTeamDashboardNA[]
   weeklyScores      ClientWeeklyMemberScore[]
 
+  // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
+  position          Float?
+
   @@index([orgId])
+  @@index([orgId, position])
   @@index([orgId, deletedAt])
   @@index([email])
   @@schema("app_quikscale")
@@ -1203,7 +1254,11 @@ model ClientDailyHuddle {
   absentMembers       ClientDailyHuddleAbsence[]
   absentTeamMembers   ClientDailyHuddleTeamAbsence[]
 
+  // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
+  position            Float?
+
   @@index([orgId])
+  @@index([orgId, position])
   @@index([orgId, deletedAt])
   @@index([clientId])
   @@index([meetingDate])
@@ -1289,7 +1344,11 @@ model ClientWeeklyMeeting {
   dashboardNATeamMembers ClientWeeklyMeetingTeamDashboardNA[]
   memberScores           ClientWeeklyMemberScore[]
 
+  // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
+  position               Float?
+
   @@index([orgId])
+  @@index([orgId, position])
   @@index([orgId, deletedAt])
   @@index([clientId])
   @@index([meetingDate])
@@ -9605,6 +9664,7 @@ model QtCustomField {
   key          String // immutable, generated from name (e.g. "customer_tier")
   type         String // SHORT_TEXT | LONG_TEXT | NUMBER | DATE | DROPDOWN_SINGLE | DROPDOWN_MULTI | CHECKBOX | URL | USER_PICKER | LABELS
   description  String?
+  icon         String? // optional emoji icon (JPD field editor). TODO(integration): sign-off before Neon.
   status       String                @default("active") // "active" | "archived"
   isRequired   Boolean               @default(false)
   defaultValue Json? // type-dependent default (string | number | bool | string[])
@@ -9636,6 +9696,10 @@ model QtCustomFieldOption {
   value     String // stored value (slug); kept stable across label renames
   position  Int           @default(0)
   isActive  Boolean       @default(true)
+  weight    Int? // TODO(integration): discovery weighted multi-select — 0–5 strategic weight per option (None..Highest). Additive, nullable; needs owner sign-off before Neon.
+  color     String? // TODO(integration): discovery per-option color (hex, e.g. Theme/Roadmap chips). Additive, nullable; needs owner sign-off before Neon.
+  icon      String? // TODO(integration): discovery per-option icon/emoji (Theme/Roadmap). Additive, nullable; needs owner sign-off before Neon.
+  highlight Boolean       @default(false) // TODO(integration): discovery "Highlight ideas with this color" — tint the row bg. Additive, default false; needs owner sign-off before Neon.
   createdAt DateTime      @default(now())
   field     QtCustomField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
 
@@ -9747,6 +9811,8 @@ model QtIdea {
   comments     QtIdeaComment[]
   insights     QtIdeaInsight[]
   deliveries   QtIdeaDelivery[]
+  attachments  QtIdeaAttachment[]
+  links        QtIdeaLink[]
 
   @@unique([projectId, key])
   @@index([orgId])
@@ -9891,6 +9957,59 @@ model QtIdeaDelivery {
   @@schema("app_quiktrack")
 }
 
+// TODO(integration): discovery view-level comments (JPD "All ideas" About/
+// Comments drawer). Additive; needs owner sign-off before Neon.
+model QtIdeaViewComment {
+  id        String   @id @default(cuid())
+  orgId     String
+  viewId    String
+  body      String
+  isDeleted Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+
+  @@index([viewId, createdAt])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+// TODO(integration): discovery idea attachments. Additive; owner sign-off before Neon.
+model QtIdeaAttachment {
+  id        String   @id @default(cuid())
+  orgId     String
+  ideaId    String
+  fileName  String
+  url       String
+  mimeType  String?
+  size      Int?
+  createdAt DateTime @default(now())
+  createdBy String?
+  idea      QtIdea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+
+  @@index([ideaId, createdAt])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+// TODO(integration): discovery idea "Linked work items" (JPD) — linkType + a
+// cross-project QtIssue reference (no FK; resolved at read time). Additive.
+model QtIdeaLink {
+  id        String   @id @default(cuid())
+  orgId     String
+  ideaId    String
+  issueId   String
+  linkType  String   @default("relates to")
+  createdAt DateTime @default(now())
+  createdBy String?
+  idea      QtIdea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+
+  @@unique([ideaId, issueId, linkType])
+  @@index([ideaId])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
 // ============================================================================
 // QuikHRMS (app_quikhrms schema) — merged from apps/quikhrms. Models that
 // collided with existing names are prefixed Hrms* (Team->HrmsTeam, etc.).
@@ -9900,6 +10019,7 @@ model QtIdeaDelivery {
 enum Gender {
   Male
   Female
+  Transgender
   NonBinary
   PreferNotToSay
 
@@ -9920,8 +10040,7 @@ enum EmploymentType {
   PartTime
   Contract
   Intern
-  Freelancer
-  Consultant
+  Freelance
 
   @@schema("app_quikhrms")
 }
@@ -11003,9 +11122,10 @@ model RosterEntry {
 model LeaveType {
   id    String  @id @default(cuid())
   orgId String
-  name  String
-  code  String
-  color String?
+  name        String
+  code        String
+  color       String?
+  description String?
 
   isPaid          Boolean @default(true)
   isCarryForward  Boolean @default(false)
@@ -11030,11 +11150,13 @@ model LeaveType {
   isOnceInLifetime Boolean @default(false)
 
   applicableGender         String? // All|Male|Female|Other
+  applicableMaritalStatus  String? // All|Single|Married
   applicableEmploymentType Json?
   applicableAfterDays      Int     @default(0)
 
   requiresDocumentation  Boolean @default(false)
   documentationAfterDays Int?
+  documentationType      String? // which document is required (e.g. "Medical Certificate", "Birth Proof")
 
   isNegativeBalanceAllowed Boolean @default(false)
   maxNegativeBalance       Int?
@@ -11051,6 +11173,26 @@ model LeaveType {
   compOffExpiryDays Int?
 
   isDefault Boolean @default(false)
+
+  // ── Leave rules wizard (per-leave-type config) ──────────────────────────
+  // Step 1 — Accrual & accumulation
+  isUnlimited           Boolean @default(false) // no yearly cap on entitlement
+  noAccrualJoinAfterDay Int? // no credit if the employee joins after this day-of-month
+
+  // Step 2 — Applying leave & approvals
+  selfApplyAllowed  Boolean @default(true) // employee can see + apply for this leave
+  requiresApproval  Boolean @default(true) // request needs approval (else auto-approved)
+  advanceNoticeDays Int? // must apply at least N days before the leave start (null = off)
+  applicableAfterRef String? @default("JoiningDate") // JoiningDate|ConfirmationDate — anchor for applicableAfterDays
+  backdateCutoffDay  Int? // block back-dated leave after this day-of-month
+  blockIfBalanceLeaveTypeId String? // not available while balance remains in this leave type
+  requiresComment    Boolean @default(false) // comment mandatory when applying
+
+  // Step 3 — Additional restrictions
+  maxDaysPerMonth    Int? // max leave DAYS of this type per calendar month
+  applyCutoffDay     Int? // cannot apply for this leave after this day-of-month
+  minGapDays         Int? // minimum gap (days) required between two instances
+  blockedDuringNotice Boolean @default(false) // notice-period employees cannot avail
 
   createdBy String?
   updatedBy String?
@@ -11903,12 +12045,18 @@ model JobRequisition {
   positions         Int     @default(1)
   filledPositions   Int     @default(0)
 
+  // Job Requisition Form fields (moreYeahs template parity).
+  jobLocation   String? // free-text city / office location
+  jobDuration   String? // e.g. contract length ("6 months"), "Permanent"
+  workTimings   String? // working hours / shift ("9 AM–6 PM", "Night shift")
+  interviewMode String? // "Video" | "InPerson" | "Either" | "NotRequired"
+
   type           RequisitionType @default(NewPosition)
   employmentType EmploymentType  @default(FullTime)
   workLocation   WorkLocation    @default(Office)
 
-  experienceMin  Int?
-  experienceMax  Int?
+  experienceMin  Decimal? @db.Decimal(4, 1)
+  experienceMax  Decimal? @db.Decimal(4, 1)
   salaryMin      Decimal? @db.Decimal(15, 2)
   salaryMax      Decimal? @db.Decimal(15, 2)
   salaryCurrency String   @default("INR")
@@ -11920,6 +12068,8 @@ model JobRequisition {
   skills           Json?
   skillWeights     Json? // Array<{ skill: string; weight: number }> — ATS scoring weights (1-10)
   education        String?
+  passingYear      Int? // minimum year of passing for the required qualification
+  technicalQuestions Json? // Array<string> — interview/technical questions for this job
   benefits         Json?
 
   // Role Scorecard (optional) — modeled after the Topgrading/JD-Scorecard pattern.
@@ -11944,6 +12094,17 @@ model JobRequisition {
 
   closedDate    DateTime? @db.Date
   closureReason String?
+
+  // Extended requisition metadata (job posting + hiring plan). These columns
+  // already exist in the DB; kept in sync here so the generated client accepts them.
+  jobOpeningName    String?
+  interviewPanel    Json? // Array<employeeId> — interview panel members
+  postToJobPortal   Boolean   @default(false)
+  budget            Decimal?  @db.Decimal(15, 2)
+  etaToFillDays     Int?
+  targetJoiningDate DateTime? @db.Date
+  jobGrade          String?
+  costCenter        String?
 
   createdBy String?
   updatedBy String?
@@ -12075,6 +12236,14 @@ model JobApplication {
 
   rejectionReason String?
   rejectionStage  String?
+  // A "penalty-free" rejection (e.g. closed because the requisition was
+  // cancelled / not selected after a hold-resume review). Excluded from the
+  // re-apply cooling-period block so the candidate can still apply elsewhere.
+  rejectionExempt Boolean @default(false)
+  // Set when a "still interested?" invite is sent after a hold-resume. While
+  // this is set (and status is still AppOnHold), the candidate is awaiting
+  // confirmation — they only re-enter the pipeline after clicking "Yes".
+  reconfirmSentAt DateTime?
 
   // Offer — formerly the separate OfferDetail table (1:1, keyed by
   // applicationId). Folded in here. offerStatus = null means no offer exists
@@ -12132,6 +12301,10 @@ model Interview {
   round         Int           @default(1)
   type          InterviewType @default(Video)
   interviewerId String
+  // Additional panel interviewers beyond the primary `interviewerId`. They
+  // receive the same invite email + calendar attendance; the scorecard stays
+  // attributed to the primary interviewer.
+  additionalInterviewerIds String[] @default([])
 
   scheduledAt DateTime
   duration    Int      @default(60)
@@ -12581,6 +12754,7 @@ enum ApprovalModule {
   ProofOfInvestment
   SalaryRevision
   OneTimeEarning
+  Requisition
 
   @@schema("app_quikhrms")
 }
@@ -12648,6 +12822,10 @@ model CompanySettings {
   workWeek            Json?
   workHoursPerDay     Decimal @default(8) @db.Decimal(4, 2)
 
+  // Recruit: months a rejected candidate must wait before re-applying.
+  // null / 0 = no cooling period.
+  candidateCoolingMonths Int?
+
   // Offer letter branding (S3 keys; served via proxy)
   letterheadKey        String?
   sealKey              String?
@@ -12655,6 +12833,15 @@ model CompanySettings {
   signatoryName        String?
   signatoryDesignation String?
   offerLetterFooter    String?
+  // Editable offer-letter body template with {{dynamic}} fields (see
+  // lib/recruit/offer-letter-fields.ts). Null → renderer uses the built-in default.
+  offerLetterBody      String?
+
+  // First-run org setup gate (admin onboarding). Latched true once Departments,
+  // Locations, a complete Approval chain, and Payroll setup are all done — after
+  // which HRMS is unlocked permanently (deleting records later never re-locks).
+  hrmsSetupCompleted   Boolean   @default(false)
+  hrmsSetupCompletedAt DateTime?
 
   createdBy String?
   updatedBy String?
@@ -13080,6 +13267,14 @@ model EmployeeProvision {
   @@schema("app_quikhrms")
 }
 
+enum ResignationApprovalStatus {
+  Pending
+  Approved
+  Rejected
+
+  @@schema("app_quikhrms")
+}
+
 model OffboardingInstance {
   id         String  @id @default(cuid())
   orgId      String
@@ -13095,6 +13290,14 @@ model OffboardingInstance {
   exitInterviewAt    DateTime?
   notes              String?
 
+  // Self-service resignation approval flow. Null on instances that HR/admin
+  // created directly (i.e. that never went through employee self-service).
+  resignationApprovalStatus  ResignationApprovalStatus?
+  resignationApproverId      String?
+  resignationDecisionById    String?
+  resignationDecisionAt      DateTime?
+  resignationRejectionReason String?
+
   createdBy String?
   updatedBy String?
   createdAt DateTime  @default(now())
@@ -13108,6 +13311,8 @@ model OffboardingInstance {
   @@index([orgId, deletedAt])
   @@index([orgId, status])
   @@index([orgId, employeeId])
+  @@index([orgId, resignationApprovalStatus])
+  @@index([orgId, resignationApproverId])
   @@schema("app_quikhrms")
 }
 
@@ -15349,6 +15554,7 @@ model CandidateDocumentRequest {
   token              String    @unique
   tokenExpiresAt     DateTime
   requestSentAt      DateTime  @default(now())
+  submissionDeadline DateTime? // Submit-by date shown to the candidate
   // Candidate hit "Submit for Review" — locks further uploads until HR clears it.
   // `completedAt` (above) reflects HR-side completion, this one reflects candidate-side.
   submittedAt        DateTime?
@@ -15424,7 +15630,9 @@ model RequisitionApproval {
   requisitionId String
   approverId    String
   level         Int                     @default(1)
-  role          RequisitionApproverRole
+  // Nullable: rows created from a configurable Approval Chain have no fixed
+  // DeptHead/HR role (legacy hardcoded rows still set it).
+  role          RequisitionApproverRole?
 
   status    RequisitionApprovalStatus @default(Pending)
   comment   String?
@@ -17924,6 +18132,63 @@ enum AstAssignmentStatus {
   @@schema("app_quikasset")
 }
 
+enum AstAssetRequestKind {
+  Physical
+  Subscription
+
+  @@schema("app_quikasset")
+}
+
+enum AstAssetRequestType {
+  New
+  Replacement
+  Upgrade
+  Additional
+
+  @@schema("app_quikasset")
+}
+
+enum AstAssetRequestPriority {
+  Low
+  Medium
+  High
+  Urgent
+
+  @@schema("app_quikasset")
+}
+
+enum AstAssetRequestStatus {
+  Draft
+  Submitted
+  PendingApproval
+  Approved
+  Rejected
+  PartiallyFulfilled
+  Fulfilled
+  Cancelled
+
+  @@schema("app_quikasset")
+}
+
+enum AstRepairRequestStatus {
+  Submitted
+  Approved
+  Rejected
+  Fulfilled
+  Cancelled
+
+  @@schema("app_quikasset")
+}
+
+enum AstRepairRequestUrgency {
+  Low
+  Medium
+  High
+  Urgent
+
+  @@schema("app_quikasset")
+}
+
 /// Employee directory (asset HOLDERS) — distinct from the platform login User.
 model AstEmployee {
   id          String          @id @default(cuid())
@@ -17938,13 +18203,33 @@ model AstEmployee {
   status      AstStatus       @default(Active)
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
+  userId      String?
+  user        User?           @relation(fields: [userId], references: [id])
   assignments AstAssignment[]
   replacements AstReplacement[]
 
   @@unique([orgId, employeeId])
   @@unique([orgId, email])
+  @@unique([orgId, userId])
   @@index([orgId])
+  @@index([userId])
   @@map("employees")
+  @@schema("app_quikasset")
+}
+
+/// Soft-delete marker for "removed from QuikAsset". A row here hides the user
+/// from the merged Users list AND denies QuikAsset access (auth layer), without
+/// destroying any User/OrgMember/UserAppAccess/AstUserAppRole/AstEmployee data.
+model AstUserRemoval {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String
+  removedAt DateTime @default(now())
+  removedBy String?
+
+  @@unique([orgId, userId])
+  @@index([orgId])
+  @@map("user_removals")
   @@schema("app_quikasset")
 }
 
@@ -17995,11 +18280,16 @@ model AstAsset {
   condition            String
   warrantyEndDate      String?
   description          String
+  invoiceFileKey       String?
+  invoiceFileName      String?
+  invoiceFileType      String?
+  invoiceFileSize      Int?
   assetStatus          AstAssetStatus   @default(Available)
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
   assignments          AstAssignment[]
   repairs              AstRepair[]
+  repairRequests       AstRepairRequest[]
   replacementsReceived AstReplacement[] @relation("ReplacementAsset")
 
   @@unique([orgId, itemCode])
@@ -18019,7 +18309,11 @@ model AstRepair {
   asset            AstAsset         @relation(fields: [assetId], references: [id])
   issueTitle       String
   issueDescription String
+  // Legacy free-text vendor — kept as a fallback for old repairs; superseded by
+  // the vendorId FK below (new repairs pick a vendor). Do not drop yet.
   vendor           String?
+  vendorId         String?
+  vendorRef        AstVendor?       @relation(fields: [vendorId], references: [id])
   estimatedCost    Float?
   actualCost       Float?
   sentDate         String
@@ -18030,10 +18324,39 @@ model AstRepair {
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
   replacements     AstReplacement[]
+  repairRequests   AstRepairRequest[]
 
   @@index([orgId])
   @@index([assetId])
+  @@index([vendorId])
   @@map("repairs")
+  @@schema("app_quikasset")
+}
+
+/// Vendor / supplier master (minimal — no GST/PAN/bank/SLA/ratings/purchase
+/// history yet; those depend on Procurement). Linked from AstRepair.vendorId.
+model AstVendor {
+  id            String          @id @default(cuid())
+  orgId         String
+  name          String
+  contactPerson String?
+  phone         String?
+  email         String?
+  address       String?
+  status        AstVendorStatus @default(Active)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  repairs       AstRepair[]
+
+  @@index([orgId])
+  @@map("vendors")
+  @@schema("app_quikasset")
+}
+
+enum AstVendorStatus {
+  Active
+  Inactive
+
   @@schema("app_quikasset")
 }
 
@@ -18075,11 +18398,83 @@ model AstAssignment {
   status         AstAssignmentStatus @default(Active)
   assignedAt     DateTime            @default(now())
   returnedAt     DateTime?
+  requestId      String?
+  request        AstAssetRequest?    @relation(fields: [requestId], references: [id])
 
   @@index([orgId])
   @@index([assetId])
   @@index([userId])
+  @@index([requestId])
   @@map("assignments")
+  @@schema("app_quikasset")
+}
+
+/// Employee-raised asset request (Module 1). Physical requests fulfil by
+/// creating an AstAssignment (see `fulfilments`); subscription requests fulfil
+/// status-only with a `fulfilmentNote`. baseCategoryId/categoryId are loose
+/// references to Category Master (no FK) — itemType is the free-text item name.
+model AstAssetRequest {
+  id                String                  @id @default(cuid())
+  orgId             String
+  requesterUserId   String
+  itemKind          AstAssetRequestKind     @default(Physical)
+  itemType          String
+  baseCategoryId    String?
+  categoryId        String?
+  requestType       AstAssetRequestType
+  quantity          Int                     @default(1)
+  quantityFulfilled Int                     @default(0)
+  justification     String
+  priority          AstAssetRequestPriority @default(Medium)
+  requiredBy        String?
+  status            AstAssetRequestStatus   @default(Draft)
+  reviewedByUserId  String?
+  reviewedAt        DateTime?
+  decisionNote      String?
+  fulfilmentNote    String?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  fulfilments       AstAssignment[]
+
+  @@index([orgId])
+  @@index([orgId, status])
+  @@index([requesterUserId])
+  @@map("asset_requests")
+  @@schema("app_quikasset")
+}
+
+/// Employee-raised repair request. An employee reports a fault on ONE of their
+/// own assigned assets (`assetId`); an approver reviews it and, on approval,
+/// "sends to repair" — creating a real AstRepair (`repairId`/`repair`) and
+/// flipping the asset to InRepair, mirroring how AstAssetRequest fulfils into an
+/// AstAssignment. `requesterUserId` is a plain column (the platform User.id, the
+/// same scoping column AstAssetRequest uses), joined to AstEmployee for display
+/// name in app code. Vendor/cost/dates are NOT employee-facing — the approver
+/// supplies them at "send to repair" time on the created AstRepair.
+model AstRepairRequest {
+  id               String                  @id @default(cuid())
+  orgId            String
+  requesterUserId  String
+  assetId          String
+  asset            AstAsset                @relation(fields: [assetId], references: [id])
+  issueTitle       String
+  issueDescription String
+  urgency          AstRepairRequestUrgency @default(Medium)
+  status           AstRepairRequestStatus  @default(Submitted)
+  reviewedByUserId String?
+  reviewedAt       DateTime?
+  decisionNote     String?
+  repairId         String?
+  repair           AstRepair?              @relation(fields: [repairId], references: [id])
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  @@index([orgId])
+  @@index([orgId, status])
+  @@index([requesterUserId])
+  @@index([assetId])
+  @@index([repairId])
+  @@map("repair_requests")
   @@schema("app_quikasset")
 }
 
@@ -18719,4 +19114,401 @@ model QspUserPermissionExtra {
   @@index([userId, orgId])
   @@map("UserPermissionExtra")
   @@schema("app_quiksupport")
+}
+
+// ============================================================================
+// QuikChat (app_quikchat) — ported Batch 2
+// ============================================================================
+
+model QcChannel {
+  id          String            @id @default(uuid())
+  orgId       String
+  type        String // 'dm' | 'group'
+  visibility  String // 'public' | 'private'
+  name        String?
+  description String?
+  avatarUrl   String?
+  createdById String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  members     QcChannelMember[]
+  messages    QcMessage[]
+
+  @@index([orgId, type, visibility])
+  @@schema("app_quikchat")
+}
+
+model QcChannelMember {
+  id         String    @id @default(uuid())
+  orgId      String
+  channelId  String
+  userId     String
+  role       String    @default("member") // 'admin' | 'member'
+  isPinned      Boolean   @default(false) // per-member favourite → drives priority/recent split
+  lastReadAt    DateTime?
+  lastDeliveredAt DateTime? // S14a: client received messages up to here (delivery ticks)
+  joinedAt      DateTime  @default(now())
+  channel    QcChannel @relation(fields: [channelId], references: [id])
+
+  @@unique([orgId, channelId, userId])
+  @@index([orgId, userId])
+  @@schema("app_quikchat")
+}
+
+model QcMessage {
+  id              String    @id @default(uuid())
+  orgId           String
+  channelId       String
+  senderId        String?
+  actorType       String    @default("human") // 'human' | 'ai_agent'
+  agentRunId      String?
+  type            String    @default("Text") // Text | Media | SystemActivity | Delete | Call
+  content         String
+  data            Json?
+  reactions       Json      @default("{}")
+  parentMessageId String?
+  isPinned        Boolean   @default(false)
+  clientMessageId String? // client-generated UUID for idempotent sends
+  editedAt        DateTime?
+  createdAt       DateTime  @default(now())
+  channel         QcChannel @relation(fields: [channelId], references: [id])
+
+  @@unique([channelId, clientMessageId])
+  @@index([orgId, channelId, createdAt])
+  @@schema("app_quikchat")
+}
+
+model QcInvite {
+  id          String    @id @default(uuid())
+  orgId       String
+  channelId   String
+  code        String    @unique
+  createdById String?
+  maxUses     Int? // null = unlimited
+  useCount    Int       @default(0)
+  expiresAt   DateTime?
+  revokedAt   DateTime? // soft revocation — kept for audit
+  createdAt   DateTime  @default(now())
+
+  @@index([orgId, channelId])
+  @@schema("app_quikchat")
+}
+
+// ── RBAC v2 (app-level roles & permissions) ────────────────────────────────
+// Mirrors the canonical QuikScale four-table model (app_quikscale.AppRole …)
+// verbatim, prefixed `Qc*` and `@@map`'d to the physical names the shared
+// `@quikit/auth` assignAppRoles helper resolves by literal table name
+// (`app_quikchat."AppRole"` / `"UserAppRole"`). See docs/RBAC_PLAN.md.
+model QcAppRole {
+  id          String              @id @default(cuid())
+  orgId       String
+  appId       String
+  name        String
+  description String?
+  isSystem    Boolean             @default(false)
+  isDefault   Boolean             @default(false)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  createdBy   String?
+  app         App                 @relation(fields: [appId], references: [id], onDelete: Cascade)
+  org         Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  permissions QcRolePermission[]
+  members     QcUserAppRole[]
+
+  @@unique([orgId, appId, name])
+  @@index([orgId, appId])
+  @@map("AppRole")
+  @@schema("app_quikchat")
+}
+
+model QcUserAppRole {
+  id         String    @id @default(cuid())
+  userId     String
+  orgId      String
+  roleId     String
+  assignedAt DateTime  @default(now())
+  assignedBy String?
+  org        Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  role       QcAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId, roleId])
+  @@index([roleId])
+  @@index([userId, orgId])
+  @@map("UserAppRole")
+  @@schema("app_quikchat")
+}
+
+model QcRolePermission {
+  id       String    @id @default(cuid())
+  roleId   String
+  resource String
+  action   String
+  role     QcAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, resource, action])
+  @@index([roleId])
+  @@map("RolePermission")
+  @@schema("app_quikchat")
+}
+
+/// Per-user additive permission grants — applied ON TOP of the user's role
+/// grants. Lets an admin extend one user's access without changing the role
+/// for everyone on it.
+model QcUserPermissionExtra {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String
+  resource  String
+  action    String
+  grantedBy String?
+  createdAt DateTime @default(now())
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId, resource, action])
+  @@index([userId, orgId])
+  @@map("UserPermissionExtra")
+  @@schema("app_quikchat")
+}
+
+// Activity-feed row, one per (recipient, event). Delivery + gating live in
+// app/src/server/notifications.service.ts (ported from the original backend).
+model QcNotification {
+  id        String   @id @default(uuid())
+  orgId     String
+  userId    String // recipient
+  type      String // mention | dm | keyword | reaction | thread_reply
+  actorId   String? // who caused it (message sender / reactor)
+  channelId String?
+  messageId String?
+  preview   String   @default("") // short text for the bell + OS popup
+  meta      Json? // channelName/actorName snapshot, matched keyword, reason, …
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([orgId, userId, createdAt])
+  @@index([orgId, userId, isRead])
+  @@schema("app_quikchat")
+}
+
+// One row per user (per org): their global notification defaults.
+model QcUserNotificationSettings {
+  id                  String    @id @default(uuid())
+  orgId               String
+  userId              String
+  defaultChannelLevel String    @default("all") // all | mentions | none
+  dmsLevel            String    @default("all")
+  soundEnabled        Boolean   @default(true)
+  desktopEnabled      Boolean   @default(true) // master OS-popup switch
+  emailEnabled        Boolean   @default(false)
+  dndEnabled          Boolean   @default(false)
+  dndStart            String? // local "HH:MM"
+  dndEnd              String?
+  snoozedUntil        DateTime? // global snooze — silences everything OS-side
+  priorityDuringDnd   Boolean   @default(true)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@unique([orgId, userId])
+  @@schema("app_quikchat")
+}
+
+// Per-channel override of the user's default level. Absence = inherit default.
+model QcNotificationPreference {
+  id         String    @id @default(uuid())
+  orgId      String
+  userId     String
+  channelId  String
+  level      String    @default("all") // all | mentions | none
+  mutedUntil DateTime? // temporary mute → level effectively 'none' until then
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([userId, channelId])
+  @@schema("app_quikchat")
+}
+
+// Per-user highlight words (lowercased). A word-boundary match mints a keyword
+// notification even without an @-mention.
+model QcNotificationKeyword {
+  id        String   @id @default(uuid())
+  orgId     String
+  userId    String
+  keyword   String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, keyword])
+  @@schema("app_quikchat")
+}
+
+// Per-user UI preferences (S14b). One row per (org, user). Theme default
+// "system" (follows prefers-color-scheme); explicit light/dark override it.
+model QcUserUiPrefs {
+  id        String   @id @default(uuid())
+  orgId     String
+  userId    String
+  theme     String   @default("system") // system | light | dark
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, userId])
+  @@schema("app_quikchat")
+}
+
+// Scheduled meeting (S15a). Chat-facing PROJECTION of an external calendar
+// event (the external calendar is the source of truth for time/attendance).
+// Merge-ready: app_quikchat schema, Qc prefix, orgId indexed.
+model QcMeeting {
+  id               String              @id @default(uuid())
+  orgId            String
+  channelId        String
+  organizerId      String
+  title            String
+  description      String?
+  start            DateTime // stored UTC; rendered local client-side
+  end              DateTime
+  joinUrl          String? // conferencing (Meet) link, if requested
+  externalEventId  String? // provider event id (stub-evt-… on the stub)
+  status           String              @default("scheduled") // scheduled | cancelled
+  createdMessageId String? // the Meeting card message that announced it
+  callId           String?  // links to active QcCall when call is in progress
+  createdAt        DateTime            @default(now())
+  attendees        QcMeetingAttendee[]
+
+  @@index([orgId])
+  @@index([channelId])
+  @@index([callId])
+  @@schema("app_quikchat")
+}
+
+model QcMeetingAttendee {
+  id        String    @id @default(uuid())
+  meetingId String
+  userId    String
+  email     String
+  rsvp      String    @default("needs_action") // needs_action | accepted | declined | tentative
+  meeting   QcMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, userId])
+  @@schema("app_quikchat")
+}
+
+// Per-user calendar OAuth connection (S15b). Stores a provider refresh token
+// ENCRYPTED AT REST (AES-256-GCM via CALENDAR_TOKEN_ENC_KEY) — never plaintext.
+// Used by the per-user-connect providers (Microsoft); Google's single-account
+// model needs no per-user row. Merge-ready: app_quikchat, Qc prefix, orgId idx.
+model QcCalendarConnection {
+  id           String   @id @default(uuid())
+  orgId        String
+  userId       String
+  provider     String // 'microsoft' (extensible)
+  refreshToken String // ENCRYPTED blob — see calendar/crypto.ts
+  email        String
+  scopes       String // space-delimited granted scopes
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, provider])
+  @@index([orgId])
+  @@schema("app_quikchat")
+}
+
+// Personal calendar (S17). A named calendar in the user's "My calendars" list
+// (color + visibility). Merge-ready: app_quikchat, Qc prefix, orgId indexed.
+model QcCalendar {
+  id        String            @id @default(uuid())
+  orgId     String
+  userId    String            // owner
+  name      String
+  color     String            // hex; default color for its events
+  isDefault Boolean           @default(false) // the primary "Calendar"
+  visible   Boolean           @default(true)  // "My calendars" checkbox
+  sortOrder Int               @default(0)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  events    QcCalendarEvent[]
+
+  @@index([orgId, userId])
+  @@schema("app_quikchat")
+}
+
+// A personal calendar event (S17). start/end stored UTC, rendered local
+// client-side (matches QcMeeting). status mirrors QcMeeting (confirmed|cancelled).
+model QcCalendarEvent {
+  id          String     @id @default(uuid())
+  orgId       String
+  userId      String     // owner (denormalized from calendar for scoping/query)
+  calendarId  String
+  title       String
+  description String?
+  location    String?
+  start       DateTime
+  end         DateTime
+  allDay      Boolean    @default(false)
+  color       String?    // optional per-event override; else inherit calendar.color
+  joinUrl     String?
+  status      String     @default("confirmed")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  calendar    QcCalendar @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, userId, start])
+  @@index([calendarId])
+  @@schema("app_quikchat")
+}
+
+// In-chat AI assistant enable flag (S12). One row per (org, channel); the
+// org-level default uses channelId = "" (empty). Resolution: per-channel row
+// wins, else the org row, else the built-in default.
+model QcAssistantConfig {
+  id        String   @id @default(uuid())
+  orgId     String
+  channelId String   @default("") // "" = org-level default
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, channelId])
+  @@schema("app_quikchat")
+}
+
+// ============================================================================
+// Calling & Conferencing (CALL-1 through CALL-5)
+// ============================================================================
+
+model QcCall {
+  id           String    @id @default(uuid())
+  orgId        String
+  channelId    String?   // nullable for direct calls not in a channel
+  meetingId    String?   // links to QcMeeting if call was started from a meeting
+  initiatorId  String
+  type         String    // 'audio' | 'video'
+  status       String    // 'ringing' | 'active' | 'ended' | 'missed' | 'rejected' | 'timed_out'
+  startedAt    DateTime  @default(now())
+  answeredAt   DateTime? // set when the first participant accepts (active)
+  endedAt      DateTime?
+  duration     Int?      // seconds, computed on end from answeredAt or startedAt
+
+  participants QcCallParticipant[]
+
+  @@index([orgId])
+  @@index([channelId])
+  @@index([meetingId])
+  @@schema("app_quikchat")
+}
+
+model QcCallParticipant {
+  id               String    @id @default(uuid())
+  callId           String
+  userId           String
+  joinedAt         DateTime?
+  leftAt           DateTime?
+  state            String    // 'waiting' | 'connected' | 'disconnected'
+  lastHeartbeatAt  DateTime? // used by the sweep to reap stale active calls
+
+  call      QcCall    @relation(fields: [callId], references: [id], onDelete: Cascade)
+
+  @@unique([callId, userId])
+  @@schema("app_quikchat")
 }

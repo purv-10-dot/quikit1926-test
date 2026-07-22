@@ -30,16 +30,6 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${GeistSans.variable} ${GeistMono.variable} ${fraunces.variable} h-full antialiased`}
     >
-      <head>
-        <script
-          dangerouslySetInnerHTML={{
-            // Apply saved dark theme before hydration to avoid a flash — but NOT on
-            // pre-auth/branded pages (login, password reset, invites, candidate
-            // portal), which have their own fixed design and must stay light.
-            __html: `try{var p=location.pathname;var preAuth=/(login|forgot-password|reset-password|invite|candidate-portal|candidate-documents|interview-feedback)/.test(p);var t=localStorage.getItem('hrms.theme');if(t==='dark'&&!preAuth)document.documentElement.classList.add('dark');}catch(e){}`,
-          }}
-        />
-      </head>
       <body className="min-h-full flex flex-col">
         <Providers>{children}</Providers>
       </body>

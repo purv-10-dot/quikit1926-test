@@ -53,34 +53,31 @@ export default function LegalEntitiesPage() {
   const createMut = useMutation({
     mutationFn: (b: Record<string, unknown>) => api.post<Entity>("/api/v1/hrms/legal-entities", b),
     onSuccess: () => { toast.success("Created"); qc.invalidateQueries({ queryKey: ["legal-entities"] }); setShowForm(false); setEditing(null); },
-    onError: (e: Error) => toast.error("Save failed", e.message),
   });
   const updateMut = useMutation({
     mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) => api.put<Entity>(`/api/v1/hrms/legal-entities/${id}`, body),
     onSuccess: () => { toast.success("Updated"); qc.invalidateQueries({ queryKey: ["legal-entities"] }); setEditing(null); setShowForm(false); },
-    onError: (e: Error) => toast.error("Save failed", e.message),
   });
   const delMut = useMutation({
     mutationFn: (id: string) => api.delete(`/api/v1/hrms/legal-entities/${id}`),
     onSuccess: () => { toast.success("Deleted"); qc.invalidateQueries({ queryKey: ["legal-entities"] }); },
-    onError: (e: Error) => toast.error("Delete failed", e.message),
   });
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Building2 className="text-[#3b82f6]" />
+          <Building2 className="text-[#22c55e]" />
           <div>
-            <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">Legal Entities</h1>
-            <p className="text-sm text-gray-500">Multiple registered companies under one tenant. Each has own PAN/TAN, currency, statutory codes.</p>
+            <h1 className="text-base font-semibold text-gray-900">Legal Entities</h1>
+            <p className="text-xs text-gray-500">Multiple registered companies under one tenant. Each has own PAN/TAN, currency, statutory codes.</p>
           </div>
         </div>
         <button
           onClick={() => { setEditing(null); setShowForm((v) => !v); }}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#16243A] hover:bg-[#1E3354] text-white rounded-md text-sm font-semibold"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-xs font-medium"
         >
-          {showForm ? <X size={14} /> : <Plus size={14} />} {showForm ? "Cancel" : "New Entity"}
+          {showForm ? <X size={13} /> : <Plus size={13} />} {showForm ? "Cancel" : "New Entity"}
         </button>
       </div>
 
@@ -94,11 +91,11 @@ export default function LegalEntitiesPage() {
       )}
 
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
-        {isLoading ? <div className="p-6 text-center text-sm text-gray-500">Loading…</div> :
+        {isLoading ? <div className="p-4 text-center text-sm text-gray-500">Loading…</div> :
          items.length === 0 ? <div className="py-12 text-center text-sm text-gray-500">No entities yet. Create one to enable multi-entity payroll.</div> :
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-[10px] font-bold text-gray-500 uppercase border-b border-gray-200">
+            <tr className="text-table-head font-bold text-gray-500 uppercase border-b border-gray-200">
               <th className="text-left py-2 px-3">Code</th>
               <th className="text-left py-2 px-3">Name</th>
               <th className="text-left py-2 px-3">Country</th>
@@ -122,13 +119,13 @@ export default function LegalEntitiesPage() {
                 <td className="py-2 px-3 text-gray-700 font-mono">{e.pan ?? "—"}</td>
                 <td className="py-2 px-3 text-gray-700 font-mono">{e.tan ?? "—"}</td>
                 <td className="py-2 px-3">
-                  <span className={clsx("inline-block px-2 py-0.5 rounded text-[11px] font-semibold",
+                  <span className={clsx("inline-block px-2 py-0.5 rounded text-[11px] font-medium",
                     e.status === "Active" ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-600")}>{e.status}</span>
                 </td>
                 <td className="py-2 px-3 text-right">
-                  <button onClick={() => { setEditing(e); setShowForm(true); }} className="text-[#3b82f6] text-xs hover:underline mr-2">Edit</button>
+                  <button onClick={() => { setEditing(e); setShowForm(true); }} className="text-[#22c55e] text-xs hover:underline mr-2">Edit</button>
                   <button onClick={() => { if (confirm(`Delete ${e.name}?`)) delMut.mutate(e.id); }} className="text-gray-400 hover:text-red-600">
-                    <Trash2 size={14} />
+                    <Trash2 size={12} />
                   </button>
                 </td>
               </tr>
@@ -182,7 +179,7 @@ function EntityForm({ existing, submitting, onCancel, onSubmit }: {
     }
   }, [existing]);
 
-  const inputCls = "w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]";
+  const inputCls = "w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]";
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((p) => ({ ...p, [k]: v }));
 
   return (
@@ -192,7 +189,7 @@ function EntityForm({ existing, submitting, onCancel, onSubmit }: {
         const payload = Object.fromEntries(Object.entries(form).map(([k, v]) => [k, typeof v === "string" && v === "" ? null : v]));
         onSubmit(payload);
       }}
-      className="rounded-lg border border-gray-200 bg-white p-5 grid grid-cols-3 gap-3"
+      className="rounded-lg border border-gray-200 bg-white p-4 grid grid-cols-3 gap-3"
     >
       <Field label="Code *"><input value={form.code} onChange={(e) => set("code", e.target.value.toUpperCase())} className={inputCls + " font-mono"} required /></Field>
       <Field label="Name *"><input value={form.name} onChange={(e) => set("name", e.target.value)} className={inputCls} required /></Field>
@@ -223,10 +220,10 @@ function EntityForm({ existing, submitting, onCancel, onSubmit }: {
       </div>
 
       <div className="col-span-3 flex justify-end gap-2">
-        <button type="button" onClick={onCancel} className="px-3 py-2 text-sm border border-[var(--border)] rounded-md">Cancel</button>
+        <button type="button" onClick={onCancel} className="px-3 py-1.5 text-xs font-medium border border-[var(--border)] rounded-md">Cancel</button>
         <button type="submit" disabled={submitting}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 text-white rounded-md text-sm font-semibold">
-          <Save size={14} /> {submitting ? "Saving…" : existing ? "Update" : "Create"}
+          className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-md text-xs font-medium">
+          <Save size={13} /> {submitting ? "Saving…" : existing ? "Update" : "Create"}
         </button>
       </div>
     </form>

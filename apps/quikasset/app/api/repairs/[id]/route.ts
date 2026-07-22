@@ -11,7 +11,7 @@ const updateSchema = z.object({
   issueTitle: z.string().optional(),
   issueDescription: z.string().optional(),
   sentDate: z.string().optional(),
-  vendor: z.string().nullable().optional(),
+  vendorId: z.string().nullable().optional(),
   estimatedCost: z.coerce.number().nullable().optional(),
   actualCost: z.coerce.number().nullable().optional(),
   expectedReturn: z.string().nullable().optional(),
@@ -41,8 +41,14 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId, userEmail
   const row = await db.astRepair.findFirst({ where: { id, orgId }, select: { id: true } });
   if (!row) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
 
-  const { issueTitle, issueDescription, sentDate, vendor, estimatedCost, actualCost, expectedReturn, returnedDate, notes } =
+  const { issueTitle, issueDescription, sentDate, vendorId, estimatedCost, actualCost, expectedReturn, returnedDate, notes } =
     parsed.data;
+
+  // Guard the vendor FK against cross-org linking (null clears the link).
+  if (vendorId) {
+    const vendorOwned = await db.astVendor.findFirst({ where: { id: vendorId, orgId }, select: { id: true } });
+    if (!vendorOwned) return NextResponse.json({ success: false, error: "Vendor not found" }, { status: 404 });
+  }
 
   const repair = await db.astRepair.update({
     where: { id },
@@ -50,14 +56,14 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId, userEmail
       issueTitle: issueTitle || undefined,
       issueDescription: issueDescription || undefined,
       sentDate: sentDate || undefined,
-      vendor: vendor ?? undefined,
+      vendorId: vendorId === undefined ? undefined : vendorId || null,
       estimatedCost: estimatedCost != null ? estimatedCost : undefined,
       actualCost: actualCost != null ? actualCost : undefined,
       expectedReturn: expectedReturn || null,
       returnedDate: returnedDate || null,
       notes: notes || null,
     },
-    include: { asset: { include: { baseCategory: true, category: true } } },
+    include: { asset: { include: { baseCategory: true, category: true } }, vendorRef: true },
   });
   await audit({
     orgId,

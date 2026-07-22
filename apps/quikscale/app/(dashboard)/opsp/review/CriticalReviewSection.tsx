@@ -25,8 +25,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { AlertTriangle, Loader2 } from "lucide-react";
-import { CriticalTable, type CriticalTableEntry } from "./CriticalTable";
+import { CriticalTable, CRITICAL_HIDEABLE_COLUMNS, type CriticalTableEntry } from "./CriticalTable";
 import { CriticalReviewDrawer } from "./CriticalReviewDrawer";
+import { MasterDataMoreActions } from "@/components/table/MasterDataMoreActions";
+import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { EntityChangeHistoryPanel } from "@/components/audit/EntityChangeHistoryPanel";
 import { criticalReviewAuditConfig } from "@/components/audit/criticalReviewAuditConfig";
 import { criticalEntityId, criticalScopeLabel, CARD_LABELS } from "@/lib/audit/criticalFields";
@@ -90,6 +92,9 @@ export function CriticalReviewSection({
 }) {
   const visibleTabs = MODULE_TABS.filter((t) => allowedModules.includes(t.key));
   const [activeModule, setActiveModule] = useState<Module>(allowedModules[0] ?? "people");
+  // Column show/hide for the Critical cards — shared across both cards + all
+  // scopes (it's about which columns to display, consistent everywhere).
+  const { hiddenCols, hideCol, setHiddenCols } = useTablePrefs("opspReviewCritical");
   // Individual (people) subject: null = self; an id when an admin picks a user.
   const [targetUserId, setTargetUserId] = useState<string | null>(null);
   const [data, setData] = useState<CriticalReviewData | null>(null);
@@ -244,18 +249,28 @@ export function CriticalReviewSection({
           </button>
         ))}
 
-        {/* Individual scope: admin user-picker to review another user's criticals. */}
-        {canPickUser && activeModule === "people" && (
-          <div className="ml-auto flex items-center gap-2">
-            <span className="text-[11px] font-semibold text-gray-500">Reviewing:</span>
-            <SectionUserPicker
-              value={targetUserId}
-              selfId={selfId}
-              selfName={selfName}
-              onChange={(u) => setTargetUserId(u)}
-            />
-          </div>
-        )}
+        {/* Right side: optional Individual user-picker + Manage Columns menu. */}
+        <div className="ml-auto flex items-center gap-2">
+          {canPickUser && activeModule === "people" && (
+            <>
+              <span className="text-[11px] font-semibold text-gray-500">Reviewing:</span>
+              <SectionUserPicker
+                value={targetUserId}
+                selfId={selfId}
+                selfName={selfName}
+                onChange={(u) => setTargetUserId(u)}
+              />
+            </>
+          )}
+          <MasterDataMoreActions
+            columns={CRITICAL_HIDEABLE_COLUMNS}
+            hiddenCols={hiddenCols}
+            onHiddenColsChange={setHiddenCols}
+            isTrashActive={false}
+            onToggleTrash={() => {}}
+            showTrash={false}
+          />
+        </div>
       </div>
 
       {/* ── Read-only banner (draft / reviewed) ── */}
@@ -280,6 +295,8 @@ export function CriticalReviewSection({
           index={1}
           card={moduleCards.critical}
           entry={entryFor("critical")}
+          hiddenCols={hiddenCols}
+          onHideCol={hideCol}
           onOpenEdit={() => setDrawer({ open: true, cardType: "critical" })}
           onOpenLogs={
             data?.opspId
@@ -296,6 +313,8 @@ export function CriticalReviewSection({
           index={2}
           card={moduleCards.balancing}
           entry={entryFor("balancing")}
+          hiddenCols={hiddenCols}
+          onHideCol={hideCol}
           onOpenEdit={() => setDrawer({ open: true, cardType: "balancing" })}
           onOpenLogs={
             data?.opspId

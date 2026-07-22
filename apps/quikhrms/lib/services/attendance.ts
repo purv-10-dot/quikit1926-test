@@ -9,6 +9,8 @@ export interface DayCell {
   status: DayStatus;
   checkIn: Date | null;
   checkOut: Date | null;
+  /** Every clock-in/clock-out session for the day (ISO strings, open `out === null`). */
+  punches: { in: string; out: string | null }[];
   grossHours: number;
   effectiveHours: number;
   isLate: boolean;
@@ -32,6 +34,14 @@ export interface WeekSummary {
     weekendDays: number;
     absentDays: number;
     totalHours: number;
+    // Hours view (Days/Hours toggle). Worked categories use actual effective
+    // hours; non-worked-but-payable categories use days × workHoursPerDay.
+    payableHours: number;
+    presentHours: number;
+    onDutyHours: number;
+    paidLeaveHours: number;
+    holidayHours: number;
+    weekendHours: number;
   };
   shift: { name: string; start: string; end: string } | null;
 }
@@ -43,7 +53,7 @@ export async function getWeekSummary(orgId: string, employeeId: string, weekStar
   end.setDate(end.getDate() + 6);
   end.setHours(23, 59, 59, 999);
 
-  const [records, shiftAssign, holidays, leaves, rosterEntries] = await Promise.all([
+  const [records, shiftAssign, holidays, leaves, rosterEntries, company] = await Promise.all([
     prisma.attendanceRecord.findMany({
       where: { orgId, employeeId, date: { gte: start, lte: end }, deletedAt: null },
       orderBy: { date: "asc" },
@@ -76,7 +86,15 @@ export async function getWeekSummary(orgId: string, employeeId: string, weekStar
       },
       include: { shift: true },
     }),
+    prisma.companySettings.findUnique({
+      where: { orgId },
+      select: { workHoursPerDay: true },
+    }),
   ]);
+
+  // Standard paid hours per day — drives the Days→Hours conversion for
+  // non-worked categories (leave, holiday, weekend). Default 8h.
+  const workHoursPerDay = Number(company?.workHoursPerDay ?? 8) || 8;
 
   const shift = shiftAssign?.shift
     ? { name: shiftAssign.shift.name, start: shiftAssign.shift.startTime, end: shiftAssign.shift.endTime, weekOffs: shiftAssign.shift.weekOffs }
@@ -137,6 +155,7 @@ export async function getWeekSummary(orgId: string, employeeId: string, weekStar
       status,
       checkIn: rec?.checkIn ?? null,
       checkOut: rec?.checkOut ?? null,
+      punches: Array.isArray(rec?.punches) ? (rec!.punches as Punch[]) : [],
       grossHours: Number(rec?.grossHours ?? 0),
       effectiveHours: Number(rec?.effectiveHours ?? 0),
       isLate: rec?.isLateCheckIn ?? false,
@@ -150,17 +169,40 @@ export async function getWeekSummary(orgId: string, employeeId: string, weekStar
     });
   }
 
+  // Totals only count days that have actually occurred. Future days still carry
+  // a display status (e.g. an upcoming Saturday shows as "Weekend" in the
+  // calendar), but counting them here would inflate payable days with days that
+  // haven't happened yet.
+  const now = new Date();
+  const elapsed = days.filter((d) => d.date <= now);
+
+  const presentCells = elapsed.filter((d) => d.status === "Present" || d.status === "WFH" || d.status === "OnDuty");
+  const onDutyCells = elapsed.filter((d) => d.status === "OnDuty");
+  const sumHours = (cells: DayCell[]) => cells.reduce((s, d) => s + d.effectiveHours, 0);
+
   const totals = {
-    presentDays: days.filter((d) => d.status === "Present" || d.status === "WFH" || d.status === "OnDuty").length,
-    onDutyDays: days.filter((d) => d.status === "OnDuty").length,
-    paidLeaveDays: days.filter((d) => d.status === "OnLeave" && leaves.find((l) => l.leaveType.isPaid)).length,
-    holidayDays: days.filter((d) => d.status === "Holiday").length,
-    weekendDays: days.filter((d) => d.status === "Weekend").length,
-    absentDays: days.filter((d) => d.status === "Absent").length,
-    totalHours: days.reduce((s, d) => s + d.effectiveHours, 0),
+    presentDays: presentCells.length,
+    onDutyDays: onDutyCells.length,
+    paidLeaveDays: elapsed.filter((d) => d.status === "OnLeave" && leaves.find((l) => l.leaveType.isPaid)).length,
+    holidayDays: elapsed.filter((d) => d.status === "Holiday").length,
+    weekendDays: elapsed.filter((d) => d.status === "Weekend").length,
+    absentDays: elapsed.filter((d) => d.status === "Absent").length,
+    totalHours: elapsed.reduce((s, d) => s + d.effectiveHours, 0),
     payableDays: 0,
+    // Hours view — worked categories use real effective hours; the rest are
+    // days × standard workHoursPerDay.
+    presentHours: sumHours(presentCells),
+    onDutyHours: sumHours(onDutyCells),
+    paidLeaveHours: 0,
+    holidayHours: 0,
+    weekendHours: 0,
+    payableHours: 0,
   };
   totals.payableDays = totals.presentDays + totals.paidLeaveDays + totals.holidayDays + totals.weekendDays;
+  totals.paidLeaveHours = totals.paidLeaveDays * workHoursPerDay;
+  totals.holidayHours = totals.holidayDays * workHoursPerDay;
+  totals.weekendHours = totals.weekendDays * workHoursPerDay;
+  totals.payableHours = totals.presentHours + totals.paidLeaveHours + totals.holidayHours + totals.weekendHours;
 
   return { days, totals, shift: { name: shift.name, start: shift.start, end: shift.end } };
 }

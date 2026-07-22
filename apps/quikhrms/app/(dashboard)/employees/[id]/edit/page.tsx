@@ -1,17 +1,19 @@
 "use client";
 
-import { Suspense, use, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useApiClient, ApiError } from "@/lib/hooks/use-api";
+import { useApiClient } from "@/lib/hooks/use-api";
 import { useDepartments, useDesignations, useLocations } from "@/lib/hooks/use-ref-data";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 import { useToast } from "@/components/hrms/toast";
+import { useDialog } from "@/components/hrms/dialog";
 import {
   X, Pencil, ShieldAlert,
   User, Phone, Briefcase, ShieldCheck, ClipboardCheck,
   Mail, Calendar, MapPin, Building2, IdCard, Save, Check, Banknote,
+  ArrowLeft, ArrowRight, Lock,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { Select } from "@/components/hrms/ui/select";
@@ -19,10 +21,10 @@ import { NumberInput } from "@/components/hrms/ui/number-input";
 import { SkeletonLine } from "@/components/hrms/skeleton";
 import { BankDetailsFields } from "@/components/hrms/bank-details-fields";
 
-type EmploymentType = "FullTime" | "PartTime" | "Contract" | "Intern" | "Freelancer" | "Consultant";
+type EmploymentType = "FullTime" | "PartTime" | "Contract" | "Intern";
 type WorkLocation = "Office" | "Remote" | "Hybrid";
 type EmployeeStatus = "Active" | "PreBoarding" | "OnLeave" | "OnNotice" | "Suspended" | "Relieved";
-type Gender = "Male" | "Female" | "NonBinary" | "PreferNotToSay";
+type Gender = "Male" | "Female" | "Transgender" | "NonBinary" | "PreferNotToSay";
 
 interface Department { id: string; name: string; }
 interface Designation { id: string; title: string; }
@@ -34,8 +36,11 @@ interface BankAccount {
   accountNumber?: string;
   ifscCode?: string;
   branchName?: string;
+  accountType?: string | null;
   isPrimary?: boolean;
 }
+
+type BankAccountType = "Savings" | "Current" | "Salary" | "NRE" | "NRO";
 
 interface EmployeeData {
   id: string; firstName: string; lastName: string; middleName: string | null;
@@ -58,9 +63,10 @@ interface EmployeeData {
   bankAccountNumber?: string;
   bankIfsc?: string;
   bankBranch?: string;
+  bankAccountType?: BankAccountType | "";
 }
 
-const EMP_TYPES: EmploymentType[] = ["FullTime", "PartTime", "Contract", "Intern", "Freelancer", "Consultant"];
+const EMP_TYPES: EmploymentType[] = ["FullTime", "PartTime", "Contract", "Intern"];
 const WORK_LOCS: WorkLocation[] = ["Office", "Remote", "Hybrid"];
 
 const STEPS = [
@@ -74,16 +80,16 @@ const STEPS = [
 
 type StepId = typeof STEPS[number]["id"];
 
-export default function EditEmployeePage({ params }: { params: Promise<{ id: string }> }) {
+export default function EditEmployeePage({ params }: { params: { id: string } }) {
   return (
-    <Suspense fallback={<div className="p-6 space-y-2"><SkeletonLine w="40%" h={16} /><SkeletonLine w="70%" h={12} /><SkeletonLine w="60%" h={12} /></div>}>
+    <Suspense fallback={<div className="p-4 space-y-2"><SkeletonLine w="40%" h={16} /><SkeletonLine w="70%" h={12} /><SkeletonLine w="60%" h={12} /></div>}>
       <EditEmployeePageInner params={params} />
     </Suspense>
   );
 }
 
-function EditEmployeePageInner({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+function EditEmployeePageInner({ params }: { params: { id: string } }) {
+  const { id } = params;
   const api = useApiClient();
   const router = useRouter();
   const qc = useQueryClient();
@@ -125,34 +131,22 @@ function EditEmployeePageInner({ params }: { params: Promise<{ id: string }> }) 
         bankAccountNumber: primaryBank?.accountNumber ?? "",
         bankIfsc: primaryBank?.ifscCode ?? "",
         bankBranch: primaryBank?.branchName ?? "",
+        bankAccountType: (primaryBank?.accountType as BankAccountType | undefined) ?? "",
       });
     }
   }, [empRes]);
 
-  useEffect(() => {
-    const root = scrollRef.current;
-    if (!root) return;
-    const obs = new IntersectionObserver(
-      (entries) => {
-        const visible = entries.filter((e) => e.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio);
-        if (visible[0]) {
-          const sid = (visible[0].target as HTMLElement).dataset.stepId as StepId | undefined;
-          if (sid) setActiveStep(sid);
-        }
-      },
-      { root, rootMargin: "-15% 0px -65% 0px", threshold: [0, 0.25, 0.5, 0.75, 1] },
-    );
-    Object.values(sectionRefs.current).forEach((el) => el && obs.observe(el));
-    return () => obs.disconnect();
-  }, [form]);
-
-  const scrollToStep = (sid: StepId) => {
-    const el = sectionRefs.current[sid];
-    if (el && scrollRef.current) {
-      scrollRef.current.scrollTo({ top: el.offsetTop - 8, behavior: "smooth" });
-      setActiveStep(sid);
-    }
+  // True wizard navigation — only the active step's section renders (mirrors
+  // the Add Employee form). Jumping steps resets scroll to the top.
+  const stepIdx = STEPS.findIndex((s) => s.id === activeStep);
+  const isFirstStep = stepIdx === 0;
+  const isLastStep = stepIdx >= STEPS.length - 1;
+  const goToStep = (sid: StepId) => {
+    setActiveStep(sid);
+    scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   };
+  const nextStep = () => { if (!isLastStep) goToStep(STEPS[stepIdx + 1].id); };
+  const prevStep = () => { if (!isFirstStep) goToStep(STEPS[stepIdx - 1].id); };
 
   const { data: depts } = useDepartments();
   const { data: desigs } = useDesignations();
@@ -160,6 +154,7 @@ function EditEmployeePageInner({ params }: { params: Promise<{ id: string }> }) 
   const { data: managers } = useQuery({ queryKey: ["employees-mgrs"], queryFn: () => api.get<Employee[]>("/api/v1/hrms/employees?limit=100") });
 
   const toast = useToast();
+  const dialog = useDialog();
   const updateMut = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.patch(`/api/v1/hrms/employees/${id}`, body),
     onSuccess: () => {
@@ -175,13 +170,6 @@ function EditEmployeePageInner({ params }: { params: Promise<{ id: string }> }) 
       toast.success("Changes saved");
       router.push(returnTo && returnTo.startsWith("/") ? returnTo : `/employees/${id}`);
     },
-    onError: (e) => {
-      if (e instanceof ApiError) {
-        toast.error(e.message || "Failed to save", `Status ${e.status} · ${e.code}`, e.details as Record<string, string[]> | null);
-      } else {
-        toast.error("Unexpected error", e instanceof Error ? e.message : undefined);
-      }
-    },
   });
 
   if (!form || meLoading) return (
@@ -196,17 +184,17 @@ function EditEmployeePageInner({ params }: { params: Promise<{ id: string }> }) 
     return (
       <div className="max-w-2xl mx-auto mt-10">
         <div className="surface-card overflow-hidden">
-          <div className="px-5 py-4 border-b border-amber-100 bg-gradient-to-r from-amber-50 to-white flex items-center gap-3">
+          <div className="px-4 py-4 border-b border-amber-100 bg-gradient-to-r from-amber-50 to-white flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center">
               <ShieldAlert size={20} />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-gray-900">Edit not allowed</h1>
+              <h1 className="text-base font-semibold text-gray-900">Edit not allowed</h1>
               <p className="text-xs text-gray-500">You can only edit your own profile.</p>
             </div>
           </div>
-          <div className="p-5 space-y-3">
-            <p className="text-sm text-gray-700">
+          <div className="p-4 space-y-3">
+            <p className="text-xs text-gray-700">
               You can only edit your own profile. To edit someone else&apos;s, you need the &ldquo;Manage Employees&rdquo; permission — ask your HR admin.
             </p>
             <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
@@ -223,15 +211,97 @@ function EditEmployeePageInner({ params }: { params: Promise<{ id: string }> }) 
     );
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.gender) {
-      toast.error("Gender required", "Select gender in Personal section.");
+  // Actual save. Validation lives here in JS (not native `required`) because the
+  // wizard hides non-active steps with display:none, and the browser refuses to
+  // run native validation on a hidden required field — it throws "not focusable"
+  // and silently blocks submit. So every save (from any step) routes through here.
+  const doSave = async () => {
+    // Mandatory fields (marked with a red * in the form). PAN/Aadhaar/Bank stay
+    // recommended-but-optional on edit — many legacy imports lack them and the
+    // API treats them as optional. Jump to the offending step so it's visible.
+    if (!form.firstName?.trim() || !form.lastName?.trim()) {
+      goToStep("personal");
+      toast.error("Name required", "First and last name are required.");
       return;
     }
-    // PAN/Aadhaar/Bank are recommended (marked *) but NOT blocking on edit — many
-    // employees were imported without them, and the API treats them as optional.
-    // Blocking here meant any unrelated edit silently failed to save.
+    if (!form.gender) {
+      goToStep("personal");
+      toast.error("Gender required", "Select gender in Personal Details.");
+      return;
+    }
+    if (!form.dateOfBirth) {
+      goToStep("personal");
+      toast.error("Date of birth required", "Select date of birth in Personal Details.");
+      return;
+    }
+    if (!form.workEmail?.trim()) {
+      goToStep("contact");
+      toast.error("Work email required", "This employee has no work email set.");
+      return;
+    }
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailPattern.test(form.workEmail.trim())) {
+      goToStep("contact");
+      toast.error("Invalid work email", "Enter a valid work email address.");
+      return;
+    }
+    if (form.personalEmail?.trim() && !emailPattern.test(form.personalEmail.trim())) {
+      goToStep("contact");
+      toast.error("Invalid personal email", "Enter a valid personal email address.");
+      return;
+    }
+    // Contact-step phone checks run before Employment so the error jumps to the
+    // step in wizard order (Personal → Contact → Employment).
+    if (!form.personalPhone?.trim()) {
+      goToStep("contact");
+      toast.error("Personal phone required", "Enter the personal phone number in Contact.");
+      return;
+    }
+    if (form.personalPhone.replace(/\D/g, "").length !== 10) {
+      goToStep("contact");
+      toast.error("Invalid phone", "Personal phone must be exactly 10 digits.");
+      return;
+    }
+    if (form.workPhone?.trim() && form.workPhone.replace(/\D/g, "").length !== 10) {
+      goToStep("contact");
+      toast.error("Invalid work phone", "Work phone must be exactly 10 digits.");
+      return;
+    }
+    if (!form.jobTitle?.trim() || !form.designationId || !form.departmentId || !form.officeLocationId) {
+      goToStep("employment");
+      toast.error("Employment details required", "Job title, designation, department and office location are mandatory.");
+      return;
+    }
+    if (!form.reportingManagerId) {
+      goToStep("employment");
+      toast.error("Reporting Manager required", "Pick a reporting manager in Employment.");
+      return;
+    }
+    if (!form.dateOfJoining) {
+      goToStep("employment");
+      toast.error("Date of Joining required", "Set the joining date in Employment.");
+      return;
+    }
+    if (!form.panNumber?.trim() || !form.aadhaarNumber?.trim()) {
+      goToStep("identity");
+      toast.error("Identity required", "PAN and Aadhaar are mandatory.");
+      return;
+    }
+    if (!form.bankName?.trim() || !form.bankAccountNumber?.trim() || !form.bankIfsc?.trim()) {
+      goToStep("bank");
+      toast.error("Bank details required", "Bank name, account number and IFSC are mandatory.");
+      return;
+    }
+    // Clear confirmation popup so the user knows the save is happening (avoids
+    // the "did it save?" confusion from a silent redirect).
+    const ok = await dialog.confirm({
+      title: "Save changes?",
+      description: `Update ${form.firstName} ${form.lastName}'s profile with your changes?`,
+      confirmLabel: "Save changes",
+      cancelLabel: "Keep editing",
+      variant: "info",
+    });
+    if (!ok) return;
     updateMut.mutate({
       firstName: form.firstName,
       lastName: form.lastName,
@@ -264,10 +334,19 @@ function EditEmployeePageInner({ params }: { params: Promise<{ id: string }> }) 
             accountNumber: form.bankAccountNumber.trim(),
             ifscCode: form.bankIfsc?.trim() || undefined,
             branchName: form.bankBranch?.trim() || undefined,
+            accountType: form.bankAccountType || undefined,
             isPrimary: true,
           }]
         : undefined,
     });
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    // Enter / submit on a non-final step just advances, so the user never saves
+    // early by pressing Enter mid-form. On the final step it saves.
+    if (!isLastStep) { nextStep(); return; }
+    doSave();
   };
 
   const update = (patch: Partial<EmployeeData>) => setForm({ ...form, ...patch });
@@ -279,13 +358,13 @@ function EditEmployeePageInner({ params }: { params: Promise<{ id: string }> }) 
 
   return (
     <div className="bg-gray-50 -m-6 min-h-screen flex flex-col">
-      <header className="bg-white border-b border-gray-100 px-6 py-3 flex items-center justify-between sticky top-0 z-20">
+      <header className="bg-white border-b border-gray-100 px-5 py-3 flex items-center justify-between sticky top-0 z-20">
         <div className="flex items-center gap-2">
-          <div className="w-9 h-9 rounded-xl bg-[#16243A]/5 text-[#16243A] flex items-center justify-center">
+          <div className="w-9 h-9 rounded-xl bg-[#166534]/5 text-[#166534] flex items-center justify-center">
             <Pencil size={18} />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-gray-900 leading-tight">Edit Employee</h1>
+            <h1 className="text-base font-semibold text-gray-900 leading-tight">Edit Employee</h1>
             <p className="text-xs text-gray-500">{form.firstName} {form.lastName}</p>
           </div>
         </div>
@@ -294,7 +373,7 @@ function EditEmployeePageInner({ params }: { params: Promise<{ id: string }> }) 
         </Link>
       </header>
 
-      <div className="bg-white border-b border-gray-100 px-6 py-4 sticky top-[57px] z-10">
+      <div className="bg-white border-b border-gray-100 px-5 py-4 sticky top-[57px] z-10">
         <div className="flex items-center justify-between gap-2 max-w-5xl mx-auto">
           {STEPS.map((s, idx) => {
             const active = activeStep === s.id;
@@ -303,19 +382,19 @@ function EditEmployeePageInner({ params }: { params: Promise<{ id: string }> }) 
               <button
                 key={s.id}
                 type="button"
-                onClick={() => scrollToStep(s.id)}
+                onClick={() => goToStep(s.id)}
                 className="flex items-center gap-2.5 flex-1 min-w-0 text-left group"
               >
                 <div className={clsx(
                   "w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 transition",
-                  active ? "bg-[#16243A] text-white"
-                    : passed ? "bg-[#16243A]/15 text-[#16243A]"
+                  active ? "bg-green-600 text-white"
+                    : passed ? "bg-[#166534]/15 text-[#166534]"
                     : "border-2 border-gray-300 text-gray-500 bg-white",
                 )}>
                   {passed ? <Check size={14} /> : s.num}
                 </div>
                 <div className="min-w-0">
-                  <p className={clsx("text-sm font-semibold truncate leading-tight", active ? "text-[#16243A]" : "text-gray-700")}>
+                  <p className={clsx("text-[13px] font-semibold truncate leading-tight", active ? "text-[#166534]" : "text-gray-700")}>
                     {s.title}
                   </p>
                   <p className="text-[11px] text-gray-500 truncate">{s.subtitle}</p>
@@ -328,24 +407,25 @@ function EditEmployeePageInner({ params }: { params: Promise<{ id: string }> }) 
       </div>
 
       <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0">
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-6">
-          <div className="max-w-5xl mx-auto space-y-5 pb-8">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-4">
+          <div className="max-w-5xl mx-auto space-y-4 pb-5">
             <Section
               id="personal"
               icon={<User size={18} />}
               title="Personal Details"
               subtitle="Basic information about the employee."
               sectionRef={(el) => { sectionRefs.current.personal = el; }}
+              active={activeStep === "personal"}
             >
               <div className="grid grid-cols-2 gap-x-5 gap-y-4">
                 <Field label="First Name" required>
                   <IconInput icon={<User size={14} />}>
-                    <input required placeholder="Enter first name" value={form.firstName} onChange={(e) => update({ firstName: e.target.value })} className={inputCls} />
+                    <input placeholder="Enter first name" value={form.firstName} onChange={(e) => update({ firstName: e.target.value })} className={inputCls} />
                   </IconInput>
                 </Field>
                 <Field label="Last Name" required>
                   <IconInput icon={<User size={14} />}>
-                    <input required placeholder="Enter last name" value={form.lastName} onChange={(e) => update({ lastName: e.target.value })} className={inputCls} />
+                    <input placeholder="Enter last name" value={form.lastName} onChange={(e) => update({ lastName: e.target.value })} className={inputCls} />
                   </IconInput>
                 </Field>
                 <Field label="Middle Name">
@@ -361,25 +441,26 @@ function EditEmployeePageInner({ params }: { params: Promise<{ id: string }> }) 
                     options={[
                       { value: "Male", label: "Male" },
                       { value: "Female", label: "Female" },
+                      { value: "Transgender", label: "Transgender" },
                       { value: "NonBinary", label: "Non-Binary" },
                       { value: "PreferNotToSay", label: "Prefer not to say" },
                     ]}
                   />
                 </Field>
-                <Field label="Date of Birth">
-                  <input type="date" value={form.dateOfBirth ?? ""} onChange={(e) => update({ dateOfBirth: e.target.value })} className={inputCls} />
+                <Field label="Date of Birth" required>
+                  <input type="date" max={(() => { const d = new Date(); d.setFullYear(d.getFullYear() - 14); return d.toISOString().slice(0, 10); })()} value={form.dateOfBirth ?? ""} onChange={(e) => update({ dateOfBirth: e.target.value })} className={inputCls} />
                 </Field>
                 <div />
 
                 {/* Handicapped flag + Statutory applicability override.
                     These affect what the payroll engine deducts for this employee. */}
                 <div className="col-span-2 pt-3 border-t border-gray-100">
-                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                  <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={form.isHandicapped ?? false}
                       onChange={(e) => update({ isHandicapped: e.target.checked })}
-                      className="text-[#3b82f6] rounded"
+                      className="text-[#22c55e] rounded"
                     />
                     Handicapped <span className="text-xs text-gray-400">(bumps ESI ceiling to ₹25k)</span>
                   </label>
@@ -423,11 +504,17 @@ function EditEmployeePageInner({ params }: { params: Promise<{ id: string }> }) 
               title="Contact"
               subtitle="Contact information for communication."
               sectionRef={(el) => { sectionRefs.current.contact = el; }}
+              active={activeStep === "contact"}
             >
               <div className="grid grid-cols-2 gap-x-5 gap-y-4">
-                <Field label="Work Email (locked)">
-                  <IconInput icon={<Mail size={14} />}>
-                    <input value={form.workEmail} disabled className={`${inputCls} bg-gray-100`} />
+                <Field label="Work Email" required>
+                  <IconInput icon={<Lock size={14} />}>
+                    <input
+                      value={form.workEmail}
+                      disabled
+                      title="Work email is locked and can't be edited here"
+                      className={`${inputCls} bg-gray-100 text-gray-500 cursor-not-allowed`}
+                    />
                   </IconInput>
                 </Field>
                 <Field label="Personal Email">
@@ -435,7 +522,7 @@ function EditEmployeePageInner({ params }: { params: Promise<{ id: string }> }) 
                     <input type="email" placeholder="personal.email@example.com" value={form.personalEmail ?? ""} onChange={(e) => update({ personalEmail: e.target.value })} className={inputCls} />
                   </IconInput>
                 </Field>
-                <Field label="Personal Phone">
+                <Field label="Personal Phone" required>
                   <IconInput icon={<Phone size={14} />}>
                     <input inputMode="tel" maxLength={15} placeholder="Enter personal phone number" value={form.personalPhone ?? ""} onChange={(e) => update({ personalPhone: sanitizePhone(e.target.value) })} className={inputCls} />
                   </IconInput>
@@ -454,14 +541,15 @@ function EditEmployeePageInner({ params }: { params: Promise<{ id: string }> }) 
               title="Employment"
               subtitle="Job and employment related information."
               sectionRef={(el) => { sectionRefs.current.employment = el; }}
+              active={activeStep === "employment"}
             >
               <div className="grid grid-cols-2 gap-x-5 gap-y-4">
-                <Field label="Job Title">
+                <Field label="Job Title" required>
                   <IconInput icon={<Briefcase size={14} />}>
                     <input placeholder="Enter job title" value={form.jobTitle ?? ""} onChange={(e) => update({ jobTitle: e.target.value })} className={inputCls} />
                   </IconInput>
                 </Field>
-                <Field label="Designation">
+                <Field label="Designation" required>
                   <Select
                     value={form.designationId ?? ""}
                     onChange={(v) => update({ designationId: v || null })}
@@ -470,7 +558,7 @@ function EditEmployeePageInner({ params }: { params: Promise<{ id: string }> }) 
                     options={(desigs?.data ?? []).map((d) => ({ value: d.id, label: d.title }))}
                   />
                 </Field>
-                <Field label="Department">
+                <Field label="Department" required>
                   <Select
                     value={form.departmentId ?? ""}
                     onChange={(v) => update({ departmentId: v || null })}
@@ -479,7 +567,7 @@ function EditEmployeePageInner({ params }: { params: Promise<{ id: string }> }) 
                     options={(depts?.data ?? []).map((d) => ({ value: d.id, label: d.name }))}
                   />
                 </Field>
-                <Field label="Office Location">
+                <Field label="Office Location" required>
                   <Select
                     value={form.officeLocationId ?? ""}
                     onChange={(v) => update({ officeLocationId: v || null })}
@@ -488,7 +576,7 @@ function EditEmployeePageInner({ params }: { params: Promise<{ id: string }> }) 
                     options={(locs?.data ?? []).map((l) => ({ value: l.id, label: l.name }))}
                   />
                 </Field>
-                <Field label="Reporting Manager">
+                <Field label="Reporting Manager" required>
                   <Select
                     value={form.reportingManagerId ?? ""}
                     onChange={(v) => update({ reportingManagerId: v || null })}
@@ -498,7 +586,7 @@ function EditEmployeePageInner({ params }: { params: Promise<{ id: string }> }) 
                   />
                 </Field>
                 <Field label="Date of Joining" required>
-                  <input type="date" required value={form.dateOfJoining} onChange={(e) => update({ dateOfJoining: e.target.value })} className={inputCls} />
+                  <input type="date" value={form.dateOfJoining} onChange={(e) => update({ dateOfJoining: e.target.value })} className={inputCls} />
                 </Field>
                 <Field label="Employment Type">
                   <Select
@@ -520,20 +608,6 @@ function EditEmployeePageInner({ params }: { params: Promise<{ id: string }> }) 
                 <Field label="Previous Experience (months)">
                   <NumberInput allowDecimal={false} value={form.previousExperience} onChange={(v) => update({ previousExperience: v })} className={inputCls} />
                 </Field>
-                <Field label="Status">
-                  <Select
-                    value={form.status}
-                    onChange={(v) => update({ status: v as EmployeeStatus })}
-                    options={[
-                      { value: "Active", label: "Active" },
-                      { value: "PreBoarding", label: "Pre-Boarding" },
-                      { value: "OnLeave", label: "On Leave" },
-                      { value: "OnNotice", label: "On Notice" },
-                      { value: "Suspended", label: "Suspended" },
-                      { value: "Relieved", label: "Relieved" },
-                    ]}
-                  />
-                </Field>
               </div>
             </Section>
 
@@ -543,16 +617,17 @@ function EditEmployeePageInner({ params }: { params: Promise<{ id: string }> }) 
               title="Identity *"
               subtitle="PAN and Aadhaar mandatory."
               sectionRef={(el) => { sectionRefs.current.identity = el; }}
+              active={activeStep === "identity"}
             >
               <div className="grid grid-cols-2 gap-x-5 gap-y-4">
                 <Field label="PAN Number" required>
                   <IconInput icon={<IdCard size={14} />}>
-                    <input required placeholder="Enter PAN number" value={form.panNumber ?? ""} onChange={(e) => update({ panNumber: e.target.value.toUpperCase() })} className={`${inputCls} font-mono`} maxLength={10} />
+                    <input placeholder="Enter PAN number" value={form.panNumber ?? ""} onChange={(e) => update({ panNumber: e.target.value.toUpperCase() })} className={`${inputCls} font-mono text-sm`} maxLength={10} />
                   </IconInput>
                 </Field>
                 <Field label="Aadhaar Number" required>
                   <IconInput icon={<IdCard size={14} />}>
-                    <input required inputMode="numeric" placeholder="Enter Aadhaar number" value={form.aadhaarNumber ?? ""} onChange={(e) => update({ aadhaarNumber: sanitizeDigits(e.target.value) })} className={`${inputCls} font-mono tracking-widest`} maxLength={12} />
+                    <input inputMode="numeric" placeholder="Enter Aadhaar number" value={form.aadhaarNumber ?? ""} onChange={(e) => update({ aadhaarNumber: sanitizeDigits(e.target.value) })} className={`${inputCls} font-mono tracking-widest text-sm`} maxLength={12} />
                   </IconInput>
                 </Field>
               </div>
@@ -564,13 +639,16 @@ function EditEmployeePageInner({ params }: { params: Promise<{ id: string }> }) 
               title="Bank Details *"
               subtitle="Bank name, account number and IFSC are mandatory."
               sectionRef={(el) => { sectionRefs.current.bank = el; }}
+              active={activeStep === "bank"}
             >
               <BankDetailsFields
+                markRequired
                 value={{
                   bankName: form.bankName ?? "",
                   bankAccountNumber: form.bankAccountNumber ?? "",
                   bankIfsc: form.bankIfsc ?? "",
                   bankBranch: form.bankBranch ?? "",
+                  bankAccountType: form.bankAccountType ?? "",
                 }}
                 onChange={(patch) => update(patch)}
                 inputCls={inputCls}
@@ -583,6 +661,7 @@ function EditEmployeePageInner({ params }: { params: Promise<{ id: string }> }) 
               title="Review"
               subtitle="Verify details before saving changes."
               sectionRef={(el) => { sectionRefs.current.review = el; }}
+              active={activeStep === "review"}
             >
               <div className="grid grid-cols-2 gap-x-5 gap-y-3 text-sm">
                 <ReviewRow icon={<User size={13} />} label="Full Name" value={[form.firstName, form.middleName, form.lastName].filter(Boolean).join(" ") || "—"} />
@@ -606,18 +685,41 @@ function EditEmployeePageInner({ params }: { params: Promise<{ id: string }> }) 
           </div>
         </div>
 
-        <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-3 flex items-center gap-2 z-10">
-          <button type="submit" disabled={updateMut.isPending} className="btn btn-primary">
-            <Save size={14} /> {updateMut.isPending ? "Saving..." : "Save Changes"}
-          </button>
-          <Link href={`/employees/${id}`} className="btn btn-ghost">Cancel</Link>
+        <div className="sticky bottom-0 bg-white border-t border-gray-100 px-5 py-3 flex items-center justify-between gap-2 z-10">
+          <div className="flex items-center gap-2">
+            <Link href={`/employees/${id}`} className="btn btn-ghost">Cancel</Link>
+            <span className="text-xs text-gray-400 hidden sm:inline">Step {stepIdx + 1} of {STEPS.length}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {!isFirstStep && (
+              <button type="button" onClick={prevStep} className="btn btn-secondary">
+                <ArrowLeft size={14} /> Back
+              </button>
+            )}
+            {!isLastStep ? (
+              <>
+                {/* Editing existing data — let the user save from any step
+                    instead of forcing a walk to the final Review step. */}
+                <button type="button" onClick={doSave} disabled={updateMut.isPending} className="btn btn-secondary">
+                  <Save size={13} /> {updateMut.isPending ? "Saving..." : "Save changes"}
+                </button>
+                <button type="button" onClick={nextStep} className="btn btn-primary">
+                  Next <ArrowRight size={13} />
+                </button>
+              </>
+            ) : (
+              <button type="button" onClick={doSave} disabled={updateMut.isPending} className="btn btn-primary">
+                <Save size={13} /> {updateMut.isPending ? "Saving..." : "Save Changes"}
+              </button>
+            )}
+          </div>
         </div>
       </form>
     </div>
   );
 }
 
-const inputCls = "w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-[#16243A] focus:border-[#16243A]";
+const inputCls = "w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-[#166534] focus:border-[#166534]";
 
 function sanitizeDigits(v: string): string {
   return v.replace(/\D/g, "");
@@ -637,7 +739,7 @@ function IconInput({ icon, children }: { icon: React.ReactNode; children: React.
 }
 
 function Section({
-  id, icon, title, subtitle, children, sectionRef,
+  id, icon, title, subtitle, children, sectionRef, active,
 }: {
   id: StepId;
   icon: React.ReactNode;
@@ -645,15 +747,16 @@ function Section({
   subtitle: string;
   children: React.ReactNode;
   sectionRef: (el: HTMLElement | null) => void;
+  active: boolean;
 }) {
   return (
-    <section ref={sectionRef} data-step-id={id} className="surface-card p-5">
+    <section ref={sectionRef} data-step-id={id} className={clsx("surface-card p-4", !active && "hidden")}>
       <div className="flex items-start gap-2.5 mb-4 pb-4 border-b border-gray-100">
-        <div className="w-9 h-9 rounded-xl bg-[#16243A]/5 text-[#16243A] flex items-center justify-center shrink-0">
+        <div className="w-9 h-9 rounded-xl bg-[#166534]/5 text-[#166534] flex items-center justify-center shrink-0">
           {icon}
         </div>
         <div>
-          <h2 className="font-bold text-gray-900 leading-tight">{title}</h2>
+          <h2 className="text-[13px] font-semibold text-gray-900 leading-tight">{title}</h2>
           <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>
         </div>
       </div>
@@ -665,7 +768,7 @@ function Section({
 function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-sm font-semibold text-gray-800 mb-1.5">
+      <label className="block text-xs font-medium text-gray-800 mb-1.5">
         {label} {required && <span className="text-red-500">*</span>}
       </label>
       {children}
@@ -691,15 +794,15 @@ function EditStatutoryToggle({ label, checked, onChange, hint }: {
 }) {
   return (
     <div className={`rounded-lg ring-1 p-3 transition ${checked ? "ring-emerald-200 bg-emerald-50/40" : "ring-amber-200 bg-amber-50/40"}`}>
-      <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 cursor-pointer">
+      <label className="flex items-center gap-2 text-xs font-medium text-gray-800 cursor-pointer">
         <input
           type="checkbox"
           checked={checked}
           onChange={(e) => onChange(e.target.checked)}
-          className="rounded text-[#3b82f6]"
+          className="rounded text-[#22c55e]"
         />
         {label}
-        <span className={`ml-auto text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full ${checked ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+        <span className={`ml-auto text-[11px] font-medium uppercase tracking-wide px-1.5 py-0.5 rounded-full ${checked ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
           {checked ? "Default" : "Excluded"}
         </span>
       </label>

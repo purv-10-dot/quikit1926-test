@@ -74,11 +74,13 @@ interface Props {
   value: BankFieldsValue;
   onChange: (patch: Partial<BankFieldsValue>) => void;
   inputCls: string;
+  /** Show a red asterisk on the mandatory fields (IFSC, Bank Name, Account Number). */
+  markRequired?: boolean;
 }
 
-const inputClsBase = "w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-[#16243A] focus:border-[#16243A]";
+const inputClsBase = "w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-[#166534] focus:border-[#166534]";
 
-export function BankDetailsFields({ value, onChange, inputCls = inputClsBase }: Props) {
+export function BankDetailsFields({ value, onChange, inputCls = inputClsBase, markRequired = false }: Props) {
   const [ifscState, setIfscState] = useState<"idle" | "loading" | "ok" | "invalid">("idle");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -124,7 +126,7 @@ export function BankDetailsFields({ value, onChange, inputCls = inputClsBase }: 
   return (
     <>
       <div className="grid grid-cols-2 gap-x-5 gap-y-4">
-        <Field label="IFSC Code" hint={ifscState === "ok" ? "Bank + branch auto-filled" : ifscState === "invalid" ? "Invalid IFSC — fill bank manually" : undefined} hintColor={ifscState === "ok" ? "text-emerald-600" : "text-amber-600"}>
+        <Field label="IFSC Code" required={markRequired} hint={ifscState === "ok" ? "Bank + branch auto-filled" : ifscState === "invalid" ? "Invalid IFSC — fill bank manually" : undefined} hintColor={ifscState === "ok" ? "text-emerald-600" : "text-amber-600"}>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none z-10">
               <IdCard size={14} />
@@ -144,7 +146,7 @@ export function BankDetailsFields({ value, onChange, inputCls = inputClsBase }: 
           </div>
         </Field>
 
-        <Field label="Bank Name">
+        <Field label="Bank Name" required={markRequired}>
           <Select
             value={value.bankName}
             onChange={(v) => onChange({ bankName: v })}
@@ -168,7 +170,7 @@ export function BankDetailsFields({ value, onChange, inputCls = inputClsBase }: 
           </div>
         </Field>
 
-        <Field label="Account Number">
+        <Field label="Account Number" required={markRequired}>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none z-10">
               <Banknote size={14} />
@@ -207,10 +209,12 @@ function matchBank(apiBank: string): string {
   return found ?? apiBank.trim();
 }
 
-function Field({ label, hint, hintColor, children }: { label: string; hint?: string; hintColor?: string; children: React.ReactNode }) {
+function Field({ label, required, hint, hintColor, children }: { label: string; required?: boolean; hint?: string; hintColor?: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-gray-700 mb-1">{label}</label>
+      <label className="block text-xs font-medium text-gray-700 mb-1">
+        {label} {required && <span className="text-red-500">*</span>}
+      </label>
       {children}
       {hint && <p className={`text-[11px] mt-1 ${hintColor ?? "text-gray-500"}`}>{hint}</p>}
     </div>

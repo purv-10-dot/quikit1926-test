@@ -8,7 +8,7 @@ import { useSession, signOut } from "next-auth/react";
 import { useTheme } from "next-themes";
 import { HelpCircle, Settings, Plus, PanelLeft, ListChecks } from "lucide-react";
 import { UserMenu, globalSignOut } from "@quikit/ui";
-import { CreateIssueModal } from "@/components/create-issue-modal";
+import { CreateIdeaModal } from "@/app/(dashboard)/spaces/[id]/ideas/_components/create-idea-modal";
 import { ChecklistDrawer } from "@/components/checklist/checklist-drawer";
 import { NotificationsPopover } from "@/components/shell/notifications-popover";
 import { HelpPanel } from "@/components/help-panel";
@@ -30,7 +30,10 @@ export function Header({ onToggleSidebar, sidebarOpen = true }: HeaderProps) {
   const { data: session } = useSession();
   const params = useParams();
   const pathname = usePathname() ?? "";
-  const currentProjectId = typeof params?.id === "string" ? params.id : undefined;
+  // The Header lives in the dashboard shell (above the /spaces/[id] segment), so
+  // useParams() has no `id` here — derive the current project id from the path.
+  const spaceMatch = pathname.match(/\/spaces\/([^/?#]+)/);
+  const currentProjectId = (typeof params?.id === "string" ? params.id : undefined) ?? spaceMatch?.[1];
   // Hide the global search + Create button on tenant-level admin pages where
   // they aren't relevant (user management / migration / general settings).
   const hideSearchAndCreate =
@@ -44,15 +47,19 @@ export function Header({ onToggleSidebar, sidebarOpen = true }: HeaderProps) {
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<GlobalSearchPopoverHandle>(null);
 
-  // Theme-aware logo. `mounted` gate prevents an SSR/CSR hydration mismatch:
-  // next-themes returns `undefined` on the first render, so we serve the
-  // light logo until the client knows which theme to apply.
+  // Theme-aware logo. Each monogram is a self-contained badge, so we show the
+  // one that contrasts with the active theme: the DARK monogram in light mode,
+  // the LIGHT monogram in dark mode. The `mounted` gate prevents an SSR/CSR
+  // hydration mismatch — next-themes returns `undefined` on the first render,
+  // so we default to the light-theme (dark monogram) asset until the client
+  // knows which theme to apply.
   const { resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  const logoSrc = mounted && resolvedTheme === "dark"
-    ? "/header-icon-dark.svg"
-    : "/header-icon.png";
+  const isDark = mounted && resolvedTheme === "dark";
+  const logoSrc = isDark
+    ? "/header-icon-light.svg"
+    : "/header-icon-dark.svg";
 
   // "/" anywhere outside an input focuses the global search box.
   useEffect(() => {
@@ -99,16 +106,24 @@ export function Header({ onToggleSidebar, sidebarOpen = true }: HeaderProps) {
           }`}
         >
           <AppSwitcherVertical />
-          <Link href="/" className="flex items-center px-1">
+          <Link href="/" className="flex items-center gap-2 px-1">
             <Image
               src={logoSrc}
               alt="QuikTrack"
-              width={140}
+              width={28}
               height={28}
-              className="h-7 w-auto object-contain"
+              className="h-7 w-7 object-contain"
               priority
               unoptimized={logoSrc.endsWith(".svg")}
             />
+            {/* App name — theme-aware so it stays legible on the light header
+                (ink) and the dark #11161C header (near-white). */}
+            <span
+              className="text-xl font-bold leading-none tracking-tight"
+              style={{ color: isDark ? "#F8FAFC" : "#0F172A" }}
+            >
+              QuikTrack
+            </span>
           </Link>
           <button
             onClick={onToggleSidebar}
@@ -181,11 +196,18 @@ export function Header({ onToggleSidebar, sidebarOpen = true }: HeaderProps) {
           </div>
         </div>
       </header>
-      <CreateIssueModal
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        initialProjectId={currentProjectId}
-      />
+      {/* One entry point everywhere: the smart Create dispatcher defaults the
+          Space to the current project and shows the idea form for discovery
+          projects or the Create Task form otherwise; the Space picker switches
+          between them. */}
+      {createOpen && (
+        <CreateIdeaModal
+          projectId={currentProjectId ?? ""}
+          projectName="this space"
+          onCreated={() => window.dispatchEvent(new CustomEvent("qt:idea-created"))}
+          onClose={() => setCreateOpen(false)}
+        />
+      )}
       <HelpPanel open={helpOpen} onClose={() => setHelpOpen(false)} />
       <ChecklistDrawer open={checklistOpen} onClose={() => setChecklistOpen(false)} />
     </div>

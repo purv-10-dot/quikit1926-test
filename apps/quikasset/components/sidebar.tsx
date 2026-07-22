@@ -7,19 +7,32 @@ import { NAV_RESOURCE } from "@/lib/api/permissionsRegistry";
 import {
   LayoutDashboard,
   Package,
+  Boxes,
   ArrowLeftRight,
   Wrench,
+  ClipboardCheck,
   ClipboardList,
+  FilePlus2,
   Mail,
   BarChart2,
-  Users,
   UserCog,
   Settings,
   Tags,
+  Building2,
   X,
 } from "lucide-react";
 
-type NavItem = { label: string; href: string; icon: React.ElementType; sub?: boolean };
+type NavItem = {
+  label: string;
+  href: string;
+  icon: React.ElementType;
+  sub?: boolean;
+  /** Overrides the default `<NAV_RESOURCE[href]>:view` visibility check. */
+  perm?: { resource: string; action: string };
+  /** Visible if the caller holds ANY of these pairs (OR). Used by pages that
+   *  merge multiple separately-gated resources into one screen. */
+  anyPerm?: { resource: string; action: string }[];
+};
 type NavSection = { label: string | null; items: NavItem[] };
 
 const NAV_SECTIONS: NavSection[] = [
@@ -27,23 +40,50 @@ const NAV_SECTIONS: NavSection[] = [
     label: null,
     items: [
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-      { label: "Asset Inventory", href: "/assets", icon: Package },
+    ],
+  },
+  {
+    // Personal, member-visible items — what any user does with their own stuff.
+    label: "My Work",
+    items: [
+      // Member landing — their own assigned assets (any Asset:view holder).
+      { label: "My Assets", href: "/employee-view", icon: Boxes, perm: { resource: "Asset", action: "view" } },
+      // Employee self-service — raise/track own requests (any AssetRequest:view holder).
+      { label: "My Requests", href: "/my-requests", icon: FilePlus2, perm: { resource: "AssetRequest", action: "view" } },
+      // Employee self-service — track own repair requests (any RepairRequest:view holder).
+      { label: "My Repair Requests", href: "/my-repair-requests", icon: Wrench, perm: { resource: "RepairRequest", action: "view" } },
+      { label: "Notification", href: "/notifications", icon: Mail },
+    ],
+  },
+  {
+    // Operational surface for asset managers / approvers / admins.
+    label: "Asset Management",
+    items: [
+      // Full org register — asset managers/admins only.
+      { label: "Asset Inventory", href: "/assets", icon: Package, perm: { resource: "Asset", action: "viewAll" } },
       { label: "Category Master", href: "/assets/categories", icon: Tags, sub: true },
       { label: "Assignments", href: "/assignments", icon: ArrowLeftRight },
+      // Unified approver queue for both asset requests and employee repair requests.
+      // Visible to holders of EITHER AssetRequest:viewAll or RepairRequest:viewAll.
+      {
+        label: "Employee Requests",
+        href: "/employee-requests",
+        icon: ClipboardCheck,
+        anyPerm: [
+          { resource: "AssetRequest", action: "viewAll" },
+          { resource: "RepairRequest", action: "viewAll" },
+        ],
+      },
       { label: "Repair & Recovery", href: "/repair", icon: Wrench },
+      { label: "Vendors", href: "/vendors", icon: Building2, perm: { resource: "Vendor", action: "view" } },
     ],
   },
   {
     label: "Reports & Logs",
     items: [
-      { label: "Audit Log", href: "/audit-log", icon: ClipboardList },
-      { label: "Notification", href: "/notifications", icon: Mail },
       { label: "Reports", href: "/reports", icon: BarChart2 },
+      { label: "Audit Log", href: "/audit-log", icon: ClipboardList },
     ],
-  },
-  {
-    label: "Views",
-    items: [{ label: "User Directory", href: "/users", icon: Users }],
   },
   {
     label: "Admin",
@@ -67,8 +107,10 @@ export function Sidebar({ permissions, isAdmin, displayName, roleName, mobileOpe
   const pathname = usePathname();
   const permSet = new Set(permissions);
 
-  const canSee = (href: string) => {
-    const resource = NAV_RESOURCE[href];
+  const canSee = (item: NavItem) => {
+    if (item.anyPerm) return isAdmin || item.anyPerm.some((p) => permSet.has(`${p.resource}:${p.action}`));
+    if (item.perm) return isAdmin || permSet.has(`${item.perm.resource}:${item.perm.action}`);
+    const resource = NAV_RESOURCE[item.href];
     if (!resource) return true;
     if (resource === "Settings") return isAdmin;
     return isAdmin || permSet.has(`${resource}:view`);
@@ -100,9 +142,14 @@ export function Sidebar({ permissions, isAdmin, displayName, roleName, mobileOpe
       >
         <div className="flex h-14 items-center justify-between border-b border-white/10 px-4">
           <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/15">
-              <Package className="h-4 w-4" />
-            </div>
+            {/* Fixed dark (accent-800) surface, so we always use the light
+                (white-badge) monogram — the dark badge would blend in. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/brand/quikasset-light.svg"
+              alt="QuikAsset"
+              className="h-7 w-7 rounded-lg object-contain"
+            />
             <div>
               <p className="text-sm font-bold leading-tight">QuikAsset</p>
               <p className="text-[10px] leading-tight text-white/50">Asset management</p>
@@ -115,7 +162,7 @@ export function Sidebar({ permissions, isAdmin, displayName, roleName, mobileOpe
 
         <nav className="flex-1 space-y-4 overflow-y-auto px-2 py-3">
           {NAV_SECTIONS.map((section, si) => {
-            const items = section.items.filter((i) => canSee(i.href));
+            const items = section.items.filter((i) => canSee(i));
             if (items.length === 0) return null;
             return (
               <div key={si}>

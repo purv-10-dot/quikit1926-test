@@ -7,7 +7,7 @@
 import { prisma } from "@/lib/prisma";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import mammoth from "mammoth";
-import { getS3Object, extractKeyFromUrl } from "@/lib/storage";
+import { getObject, extractKeyFromUrl } from "@/lib/storage";
 
 const PDF_MIME = "application/pdf";
 const TEXT_PLAIN = "text/plain";
@@ -50,7 +50,7 @@ export async function extractDocumentText(documentId: string, orgId: string): Pr
     if (proxyMatch) {
       try {
         const key = decodeURIComponent(proxyMatch[1]);
-        const obj = await getS3Object(key);
+        const obj = await getObject(key);
         if (obj.body.byteLength > MAX_FETCH_BYTES) return { ok: false, reason: `Proxy file too large (${obj.body.byteLength})`, source: "s3" };
         const buf = obj.body;
         const mime = doc.fileType || obj.contentType || "application/octet-stream";
@@ -74,7 +74,7 @@ export async function extractDocumentText(documentId: string, orgId: string): Pr
     if (storageKey) {
       source = "s3";
       try {
-        const obj = await getS3Object(storageKey);
+        const obj = await getObject(storageKey);
         if (obj.body.byteLength > MAX_FETCH_BYTES) return { ok: false, reason: `Storage file too large (${obj.body.byteLength} > ${MAX_FETCH_BYTES})`, source };
         buf = obj.body;
         mime = doc.fileType || obj.contentType || "application/octet-stream";

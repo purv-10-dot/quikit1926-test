@@ -9,7 +9,7 @@ import { clsx } from "clsx";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 
 interface Log {
-  id: string; userId: string; action: string; entityType: string; entityId: string | null;
+  id: string; userId: string; actorName?: string; action: string; entityType: string; entityId: string | null;
   changes: Record<string, unknown> | null; metadata: Record<string, unknown> | null;
   ipAddress: string | null; createdAt: string;
 }
@@ -17,7 +17,7 @@ interface Log {
 const ACTIONS = ["Create", "Update", "Delete", "Login", "Logout", "Export", "Import", "Approve", "Reject", "StatusChange"];
 const actionColors: Record<string, string> = {
   Create: "bg-green-100 text-green-700",
-  Update: "bg-[#dbeafe] text-[#2563eb]",
+  Update: "bg-[#dcfce7] text-[#16a34a]",
   Delete: "bg-red-100 text-red-700",
   Approve: "bg-green-100 text-green-700",
   Reject: "bg-red-100 text-red-700",
@@ -65,10 +65,10 @@ export default function AuditLogsPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <ScrollText className="text-[#3b82f6]" />
-          <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">Audit Log</h1>
+          <ScrollText className="text-[#22c55e]" />
+          <h1 className="text-page-title text-gray-900">Audit Log</h1>
         </div>
         <button onClick={exportCSV}
           className="flex items-center gap-2 border border-[var(--border)] px-3 py-2 rounded-lg text-sm hover:bg-gray-50">
@@ -100,7 +100,7 @@ export default function AuditLogsPage() {
       ) : (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+            <thead className="bg-gray-50 text-table-head uppercase text-gray-500">
               <tr>
                 <th className="text-left px-4 py-2">Timestamp</th>
                 <th className="text-left px-4 py-2">Actor</th>
@@ -114,7 +114,7 @@ export default function AuditLogsPage() {
               {logs.map((l, i) => (
                 <tr key={l.id} className="row-stagger hover:bg-gray-50" style={{ ["--i" as never]: Math.min(i, 10) }}>
                   <td className="px-4 py-2 text-xs text-gray-500">{new Date(l.createdAt).toLocaleString("en-IN")}</td>
-                  <td className="px-4 py-2 font-mono text-xs">{l.userId}</td>
+                  <td className={clsx("px-4 py-2 text-xs", l.actorName && l.actorName !== l.userId ? "text-gray-700" : "font-mono text-gray-500")}>{l.actorName || l.userId}</td>
                   <td className="px-4 py-2">
                     <span className={clsx("px-2 py-0.5 rounded-full text-xs font-medium", actionColors[l.action] ?? "bg-gray-100 text-gray-700")}>
                       {l.action}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useTheme } from "next-themes";
 
 // TODO(integration): upstream the vertical variant to @quikit/ui once the
 // other apps agree on the layout. For now this is a QuikTrack-only override
@@ -34,11 +35,30 @@ const DEFAULT_ICON = { emoji: "📦", bg: "bg-gray-100" };
 const BRAND_ICONS: Record<string, string> = {
   quikit: "/app-icons/quikit.svg",
   admin: "/app-icons/admin.svg",
+  quikchat: "/app-icons/quikchat.svg",
   quikinfra: "/app-icons/quikinfra.svg",
   quikscale: "/app-icons/quikscale.svg",
   quiktrack: "/app-icons/quiktrack.svg",
   quiksocial: "/app-icons/quiksocial.svg",
+  quikhrms: "/app-icons/quikhrms.svg",
 };
+
+/** Slugs that ship a theme-paired monogram (dark badge for light UI, light
+ *  badge for dark UI). In dark theme the popover surface is dark, so we swap
+ *  these to their `-light.svg` variant to keep the badge visible. */
+const THEMED_ICON_SLUGS = new Set([
+  "admin",
+  "quikasset",
+  "quikscale",
+  "quikcrm",
+  "quikchat",
+  "quikinfra",
+  "quiktrack",
+  "quiksocial",
+  "quiksupport",
+  "quikhrms",
+  "quikfinance",
+]);
 
 /**
  * QuikTrack's vertical AppSwitcher — same data source as the shared
@@ -52,6 +72,15 @@ export function AppSwitcherVertical() {
   const [loading, setLoading] = useState(false);
   const [fetched, setFetched] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+
+  // Theme-aware icons: the popover surface follows the app theme, so in dark
+  // mode we serve the light monogram. `mounted` gates the SSR/CSR hydration
+  // (next-themes returns undefined on first render → default to light-theme
+  // icons, i.e. the dark badges).
+  const { resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const darkTheme = mounted && resolvedTheme === "dark";
 
   useEffect(() => {
     if (!open || fetched) return;
@@ -144,7 +173,10 @@ export function AppSwitcherVertical() {
             {!loading &&
               apps.map((app) => {
                 const iconInfo = ICON_FALLBACKS[app.slug] || DEFAULT_ICON;
-                const iconSrc = BRAND_ICONS[app.slug] ?? app.iconUrl;
+                const iconSrc =
+                  darkTheme && THEMED_ICON_SLUGS.has(app.slug)
+                    ? `/app-icons/${app.slug}-light.svg`
+                    : BRAND_ICONS[app.slug] ?? app.iconUrl;
                 const isCurrent = app.id === currentApp?.id;
                 return (
                   <button

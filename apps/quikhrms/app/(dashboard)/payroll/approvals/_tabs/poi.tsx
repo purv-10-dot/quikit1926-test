@@ -57,7 +57,7 @@ export function POITab() {
             onClick={() => setStatus(s)}
             className={clsx(
               "px-3 py-1 text-xs rounded-full border transition",
-              status === s ? "bg-[#16243A] text-white border-[#3b82f6]" : "bg-white text-gray-600 border-gray-300 hover:border-[#93c5fd]",
+              status === s ? "bg-green-600 text-white border-[#22c55e]" : "bg-white text-gray-600 border-gray-300 hover:border-[#86efac]",
             )}
           >
             {s.replace(/([A-Z])/g, " $1").trim()}
@@ -68,12 +68,12 @@ export function POITab() {
       {isLoading ? (
         <SkeletonTable rows={5} cols={5} />
       ) : rows.length === 0 ? (
-        <div className="py-10 text-center text-sm text-gray-500">No {status.toLowerCase()} investment proofs.</div>
+        <div className="py-10 text-center text-xs text-gray-500">No {status.toLowerCase()} investment proofs.</div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">
+              <tr className="text-table-head font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">
                 <th className="text-left py-2 px-3">Employee</th>
                 <th className="text-left py-2 px-3">FY</th>
                 <th className="text-left py-2 px-3">Section</th>
@@ -89,18 +89,18 @@ export function POITab() {
               {rows.map((r, i) => (
                 <tr key={r.id} className="row-stagger border-b border-gray-50 hover:bg-gray-50" style={{ ["--i" as never]: Math.min(i, 10) }}>
                   <td className="py-3 px-3">
-                    <p className="font-medium text-gray-900">{r.employee ? `${r.employee.firstName} ${r.employee.lastName}` : "Unknown"}</p>
+                    <p className="text-[13px] font-medium text-gray-900">{r.employee ? `${r.employee.firstName} ${r.employee.lastName}` : "Unknown"}</p>
                     <p className="text-xs text-gray-500">{r.employee?.employeeCode}</p>
                   </td>
-                  <td className="py-3 px-3 text-gray-700">{r.financialYear}</td>
-                  <td className="py-3 px-3 text-gray-700">{r.section}</td>
-                  <td className="py-3 px-3 text-gray-700">{r.investmentType.replace(/([A-Z])/g, " $1").trim()}</td>
+                  <td className="py-3 px-3 text-xs text-gray-700">{r.financialYear}</td>
+                  <td className="py-3 px-3 text-xs text-gray-700">{r.section}</td>
+                  <td className="py-3 px-3 text-xs text-gray-700">{r.investmentType.replace(/([A-Z])/g, " $1").trim()}</td>
                   <td className="py-3 px-3 text-right text-gray-900">₹{INR.format(Number(r.declaredAmount))}</td>
                   <td className="py-3 px-3 text-right text-gray-900">₹{INR.format(Number(r.proofAmount))}</td>
                   <td className="py-3 px-3 text-right text-gray-900">{r.approvedAmount != null ? `₹${INR.format(Number(r.approvedAmount))}` : "—"}</td>
                   <td className="py-3 px-3">
                     {r.fileUrl ? (
-                      <a href={r.fileUrl} target="_blank" rel="noreferrer" className="text-[#3b82f6] hover:underline inline-flex items-center gap-1 text-xs">
+                      <a href={r.fileUrl} target="_blank" rel="noreferrer" className="text-[#22c55e] hover:underline inline-flex items-center gap-1 text-xs">
                         View <ExternalLink size={10} />
                       </a>
                     ) : <span className="text-gray-400 text-xs">—</span>}
@@ -109,7 +109,7 @@ export function POITab() {
                     {(r.status === "Submitted" || r.status === "UnderReview") && (
                       <button
                         onClick={() => setTarget(r)}
-                        className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-[#16243A] hover:bg-[#1E3354] text-white rounded"
+                        className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-green-600 hover:bg-green-700 text-white rounded"
                       >
                         Review
                       </button>
@@ -147,7 +147,7 @@ function ReviewForm({
   const [approvedAmount, setApprovedAmount] = useState<number | null>(Number(proof.proofAmount));
   const [reason, setReason] = useState("");
   return (
-    <form onSubmit={(e) => { e.preventDefault(); onSubmit({ status, approvedAmount, rejectionReason: reason || null }); }} className="p-5 space-y-3">
+    <form onSubmit={(e) => { e.preventDefault(); onSubmit({ status, approvedAmount, rejectionReason: reason || null }); }} className="p-4 space-y-3">
       <div className="rounded bg-gray-50 border border-gray-200 p-3 text-xs">
         <p className="font-semibold">{proof.employee ? `${proof.employee.firstName} ${proof.employee.lastName}` : "—"}</p>
         <p className="text-gray-600">{proof.section} · {proof.investmentType.replace(/([A-Z])/g, " $1").trim()} · FY {proof.financialYear}</p>
@@ -182,9 +182,9 @@ function ReviewForm({
       )}
 
       <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
-        <button type="button" onClick={onCancel} className="px-4 py-2 border border-[var(--border)] bg-white hover:bg-gray-50 text-gray-700 rounded-md text-sm font-medium">Cancel</button>
-        <button type="submit" disabled={pending} className="inline-flex items-center gap-1 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 text-white rounded-md text-sm font-semibold shadow-sm">
-          <Check size={14} /> {pending ? "Submitting..." : "Submit Review"}
+        <button type="button" onClick={onCancel} className="px-3 py-1.5 border border-[var(--border)] bg-white hover:bg-gray-50 text-gray-700 rounded-md text-xs font-medium">Cancel</button>
+        <button type="submit" disabled={pending} className="inline-flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-md text-xs font-medium shadow-sm">
+          <Check size={13} /> {pending ? "Submitting..." : "Submit Review"}
         </button>
       </div>
     </form>

@@ -116,7 +116,7 @@ export function SkeletonPage({ variant = "table" }: { variant?: "table" | "cards
   return (
     <div className="fade-in-content">
       {/* Page header */}
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex items-center justify-between mb-4">
         <div className="space-y-2">
           <Skeleton className="w-48 h-6" rounded="md" />
           <Skeleton className="w-64 h-3" rounded="sm" />
@@ -134,7 +134,7 @@ export function SkeletonPage({ variant = "table" }: { variant?: "table" | "cards
       {variant === "detail" && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2 space-y-3">
-            <div className="rounded-lg border border-gray-200 bg-white p-5 space-y-3">
+            <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3">
               <Skeleton className="w-40 h-4" rounded="sm" />
               <div className="grid grid-cols-2 gap-3 pt-2">
                 {Array.from({ length: 6 }).map((_, i) => (
@@ -145,14 +145,14 @@ export function SkeletonPage({ variant = "table" }: { variant?: "table" | "cards
                 ))}
               </div>
             </div>
-            <div className="rounded-lg border border-gray-200 bg-white p-5 space-y-2.5">
+            <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-2.5">
               {Array.from({ length: 5 }).map((_, i) => (
                 <Skeleton key={i} className="w-full h-3" rounded="sm" />
               ))}
             </div>
           </div>
           <div className="space-y-3">
-            <div className="rounded-lg border border-gray-200 bg-white p-5 space-y-3">
+            <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3">
               <Skeleton className="w-24 h-20" rounded="full" variant="brand" />
               <Skeleton className="w-32 h-4" rounded="sm" />
               <Skeleton className="w-24 h-3" rounded="sm" />
@@ -227,9 +227,9 @@ export function SkeletonSwap({
 /** Form skeleton — vertical field groups */
 export function SkeletonForm({ groups = 3, fieldsPerGroup = 3 }: { groups?: number; fieldsPerGroup?: number }) {
   return (
-    <div className="space-y-5 fade-in-content">
+    <div className="space-y-4 fade-in-content">
       {Array.from({ length: groups }).map((_, g) => (
-        <div key={g} className="rounded-lg border border-gray-200 bg-white p-5 space-y-3">
+        <div key={g} className="rounded-lg border border-gray-200 bg-white p-4 space-y-3">
           <Skeleton className="w-32 h-4" rounded="sm" />
           <div className="grid grid-cols-2 gap-3">
             {Array.from({ length: fieldsPerGroup }).map((_, f) => (

@@ -24,14 +24,29 @@ export const GET = withAuth(async (req: NextRequest, { orgId, userId }) => {
       prisma.delegation.count({ where }),
     ]);
 
-    return successResponse(items, paginationMeta(page, limit, total));
+    // Resolve delegator/delegatee ids → names so the UI shows people, not ids.
+    const empIds = [...new Set(items.flatMap((d) => [d.delegatorId, d.delegateeId]))];
+    const emps = empIds.length
+      ? await prisma.employee.findMany({
+          where: { orgId, id: { in: empIds } },
+          select: { id: true, firstName: true, lastName: true, employeeCode: true },
+        })
+      : [];
+    const empMap = new Map(emps.map((e) => [e.id, e]));
+    const enriched = items.map((d) => ({
+      ...d,
+      delegator: empMap.get(d.delegatorId) ?? null,
+      delegatee: empMap.get(d.delegateeId) ?? null,
+    }));
+
+    return successResponse(enriched, paginationMeta(page, limit, total));
   } catch (error) {
     console.error("GET /delegations error:", error);
     return internalError();
   }
 });
 
-export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
+export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissions }) => {
   try {
     const body = await req.json();
     const parsed = createDelegationSchema.safeParse(body);
@@ -43,6 +58,19 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
 
     if (d.delegateeId === userId) {
       return validationError("You cannot delegate to yourself.");
+    }
+
+    // You can only delegate authorities you actually hold. Super-admin ("*")
+    // may delegate anything.
+    if (!permissions.includes("*")) {
+      const missing = [...new Set(
+        d.modules.flatMap((m) => m.permissions).filter((code) => !permissions.includes(code)),
+      )];
+      if (missing.length) {
+        return validationError(
+          `You cannot delegate permissions you don't have: ${missing.join(", ")}`,
+        );
+      }
     }
 
     // Block downline: delegatee must not be a direct or indirect subordinate.
@@ -98,7 +126,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       const delegateeName = delegatee ? `${delegatee.firstName} ${delegatee.lastName}`.trim() : "an employee";
       const fromStr = new Date(d.fromDate).toLocaleDateString("en-IN");
       const toStr = d.toDate ? new Date(d.toDate).toLocaleDateString("en-IN") : "no end date";
-      const modulesStr = d.modules.join(", ");
+      const modulesStr = d.modules.map((m) => m.module).join(", ");
 
       const recipients: Array<{ id: string; title: string; message: string }> = [];
       // Always notify delegatee.

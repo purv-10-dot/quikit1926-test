@@ -1,11 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
-import { Shield, ChevronLeft, Check, ArrowRight, ArrowLeft } from "lucide-react";
+import { Shield, Check, ArrowRight, ArrowLeft } from "lucide-react";
 import { clsx } from "clsx";
 import { EPFTab } from "./_tabs/epf";
 import { ESITab } from "./_tabs/esi";
@@ -28,7 +27,7 @@ interface StatutoryStatus {
 
 export default function StatutoryComponentsPage() {
   return (
-    <Suspense fallback={<div className="p-6 space-y-2"><SkeletonLine w="40%" h={16} /><SkeletonLine w="70%" h={12} /><SkeletonLine w="60%" h={12} /></div>}>
+    <Suspense fallback={<div className="p-4 space-y-2"><SkeletonLine w="40%" h={16} /><SkeletonLine w="70%" h={12} /><SkeletonLine w="60%" h={12} /></div>}>
       <StatutoryComponentsPageInner />
     </Suspense>
   );
@@ -66,17 +65,13 @@ function StatutoryComponentsPageInner() {
 
   return (
     <div className="max-w-5xl mx-auto pb-24">
-      <Link href="/payroll/setup" className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-[#3b82f6] mb-3">
-        <ChevronLeft size={14} /> Back to Payroll Setup
-      </Link>
-
       {/* Hero */}
-      <div className="rounded-2xl bg-gradient-to-r from-[#16243A] to-[#2563eb] text-white px-6 py-5 shadow-sm flex items-start gap-4 mb-5">
+      <div className="rounded-2xl bg-gradient-to-r from-[#166534] to-[#16a34a] text-white px-5 py-4 shadow-sm flex items-start gap-4 mb-5">
         <div className="w-11 h-11 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
           <Shield size={22} />
         </div>
         <div className="flex-1">
-          <h1 className="font-serif-display text-2xl font-bold leading-tight">Statutory Components</h1>
+          <h1 className="font-serif-display text-base font-semibold leading-tight">Statutory Components</h1>
           <p className="text-xs text-white/75 mt-1">
             EPF, ESI, PT, LWF and Bonus — configure once, applies to all payroll runs.
           </p>
@@ -90,7 +85,7 @@ function StatutoryComponentsPageInner() {
       </div>
 
       {/* Stepper rail + content */}
-      <div className="flex gap-5">
+      <div className="flex gap-4">
         {/* Left rail */}
         <aside className="w-60 shrink-0">
           <nav className="space-y-1.5 sticky top-4">
@@ -104,18 +99,18 @@ function StatutoryComponentsPageInner() {
                   onClick={() => setTab(t)}
                   className={clsx(
                     "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition",
-                    active ? "bg-white border border-[#3b82f6] shadow-sm" : "border border-transparent hover:bg-white/60",
+                    active ? "bg-white border border-[#22c55e] shadow-sm" : "border border-transparent hover:bg-white/60",
                   )}
                 >
                   <div
                     className={clsx(
                       "w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 transition",
-                      done ? "bg-emerald-500 text-white" : active ? "bg-[#16243A] text-white" : "border-2 border-gray-300 text-gray-500 bg-white",
+                      done ? "bg-emerald-500 text-white" : active ? "bg-green-600 text-white" : "border-2 border-gray-300 text-gray-500 bg-white",
                     )}
                   >
                     {done ? <Check size={14} strokeWidth={3} /> : idx + 1}
                   </div>
-                  <span className={clsx("text-sm font-semibold", active ? "text-[#16243A]" : done ? "text-gray-700" : "text-gray-600")}>
+                  <span className={clsx("text-[13px] font-semibold", active ? "text-[#166534]" : done ? "text-gray-700" : "text-gray-600")}>
                     {t}
                   </span>
                 </button>
@@ -127,7 +122,7 @@ function StatutoryComponentsPageInner() {
         {/* Content */}
         <div className="flex-1 min-w-0">
           <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
-            <div className="p-5">
+            <div className="p-4">
               {tab === "EPF" && <EPFTab />}
               {tab === "ESI" && <ESITab />}
               {tab === "Professional Tax" && <ProfessionalTaxTab />}
@@ -146,17 +141,17 @@ function StatutoryComponentsPageInner() {
             type="button"
             onClick={() => setTab(TABS[Math.max(0, currentIdx - 1)])}
             disabled={currentIdx === 0}
-            className="inline-flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            <ArrowLeft size={14} /> Previous
+            <ArrowLeft size={13} /> Previous
           </button>
           <button
             type="button"
             onClick={() => setTab(TABS[Math.min(TABS.length - 1, currentIdx + 1)])}
             disabled={currentIdx === TABS.length - 1}
-            className="inline-flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            Next <ArrowRight size={14} />
+            Next <ArrowRight size={13} />
           </button>
         </div>
         <button
@@ -164,9 +159,9 @@ function StatutoryComponentsPageInner() {
           onClick={() => router.push(returnTo.startsWith("/") ? returnTo : "/payroll/setup")}
           disabled={!hasAny}
           title={hasAny ? "Return to setup" : "Configure at least one statutory component"}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold shadow-sm"
+          className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium shadow-sm"
         >
-          Done <ArrowRight size={14} />
+          Done <ArrowRight size={13} />
         </button>
       </div>
     </div>

@@ -127,6 +127,10 @@ vi.mock("@/lib/utils/featureFlags", () => ({
     canEditPastWeek: false,
   })),
   getCurrentFiscalWeekFromDB: vi.fn(async () => 1),
+  // Quarter-aware week gate — defaults to the current quarter, week 1. Tests
+  // that need a specific fiscal week/position override via
+  // vi.mocked(getWeekGateFromDB).mockResolvedValue({ currentWeek, quarterPosition }).
+  getWeekGateFromDB: vi.fn(async () => ({ currentWeek: 1, quarterPosition: "current" as const })),
   // Default-off; individual tests override via vi.mocked(...).mockResolvedValue.
   isFeatureFlagEnabled: vi.fn(async () => false),
   getCanAddPastQuarterHabit: vi.fn(async () => false),
@@ -150,6 +154,24 @@ vi.mock("next/navigation", () => ({
   redirect: vi.fn(),
   notFound: vi.fn(),
 }));
+
+// ---------------------------------------------------------------------------
+// jsdom polyfills
+// ---------------------------------------------------------------------------
+// jsdom has no ResizeObserver, but several components (HorizontalScroller,
+// used by every data grid) construct one in a mount effect. Historically only
+// a couple of test files stubbed it on `global`, and the rest passed only by
+// accident — the stub leaked across files sharing a worker. That made the
+// suite order-dependent (adding/reordering a test file could break KPIModal,
+// LogModal, StatsTab, etc. with "ResizeObserver is not defined"). Defining it
+// once here makes every test deterministic. Harmless in the node environment.
+if (typeof (globalThis as any).ResizeObserver === "undefined") {
+  (globalThis as any).ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Silence expected route-handler error logs

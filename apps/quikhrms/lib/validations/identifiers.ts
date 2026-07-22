@@ -55,3 +55,43 @@ export const zEpfEstablishmentId = z
 export const zEsiEmployerCode = z
   .string()
   .regex(ESI_REGEX, "Invalid ESI Employer Code — must be 17 digits");
+
+// ─── Contact & common field validators (shared across all HRMS forms) ───────
+
+// Indian mobile: 10 digits starting 6-9, with an optional +91 / 0 prefix.
+export const PHONE_PATTERN = "(?:\\+91[- ]?|0)?[6-9][0-9]{9}";
+export const PHONE_REGEX = /^(?:\+91[- ]?|0)?[6-9]\d{9}$/;
+// Loose phone (mobile OR landline): 7–15 digits, optional +, spaces/hyphens allowed.
+export const PHONE_LOOSE_REGEX = /^\+?[0-9][0-9\s-]{6,15}$/;
+export const PINCODE_REGEX = /^[1-9][0-9]{5}$/;      // Indian PIN — 6 digits, no leading 0
+export const IFSC_REGEX = /^[A-Z]{4}0[A-Z0-9]{6}$/;  // 4 letters + 0 + 6 alphanumerics
+export const BANK_ACCOUNT_REGEX = /^[0-9]{9,18}$/;   // 9–18 digits
+
+/** Treat empty string / null as "not provided" so optional fields don't fail. */
+const emptyToUndefined = (v: unknown) => (v === "" || v === null ? undefined : v);
+
+/** Required 10-digit Indian mobile. */
+export const zPhone = z.string().regex(PHONE_REGEX, "Enter a valid 10-digit mobile number");
+/** Optional 10-digit Indian mobile (blank allowed). */
+export const zPhoneOptional = z.preprocess(emptyToUndefined, zPhone.optional());
+/** Optional mobile-or-landline number (blank allowed). */
+export const zPhoneLooseOptional = z.preprocess(
+  emptyToUndefined,
+  z.string().regex(PHONE_LOOSE_REGEX, "Enter a valid phone number").optional(),
+);
+
+export const zEmail = z.string().email("Enter a valid email address");
+export const zEmailOptional = z.preprocess(emptyToUndefined, zEmail.optional());
+
+export const zPincode = z.string().regex(PINCODE_REGEX, "Enter a valid 6-digit PIN code");
+export const zPincodeOptional = z.preprocess(emptyToUndefined, zPincode.optional());
+
+export const zIfsc = z.string().regex(IFSC_REGEX, "Invalid IFSC — 4 letters + 0 + 6 chars (e.g. HDFC0001234)");
+export const zIfscOptional = z.preprocess(emptyToUndefined, zIfsc.optional());
+
+export const zBankAccount = z.string().regex(BANK_ACCOUNT_REGEX, "Account number must be 9–18 digits");
+export const zBankAccountOptional = z.preprocess(emptyToUndefined, zBankAccount.optional());
+
+// Optional (blank-allowed) variants of the statutory IDs.
+export const zPanOptional = z.preprocess(emptyToUndefined, zPan.optional());
+export const zAadhaarOptional = z.preprocess(emptyToUndefined, zAadhaar.optional());

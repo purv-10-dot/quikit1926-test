@@ -22,6 +22,8 @@ export interface PriorityExportRow {
   updatedAt: Date | null;
   /** weekNumber → status label ("on-track", "completed", …). */
   weekStatusMap: Record<number, string>;
+  /** weekNumber → that week's note (drives the Excel hover comment). */
+  weekNoteMap: Record<number, string>;
 }
 
 export interface PriorityExportColumn {
@@ -30,6 +32,8 @@ export interface PriorityExportColumn {
   value: (row: PriorityExportRow) => Cell;
   /** Optional cell fill (ARGB) — used by the weekly-status columns. */
   fill?: (row: PriorityExportRow) => string | undefined;
+  /** Optional Excel hover comment — used by the notes-bearing columns. */
+  note?: (row: PriorityExportRow) => string | undefined;
 }
 
 function fmtDate(d: Date | null): string {
@@ -42,7 +46,7 @@ const STATIC_COLUMNS: PriorityExportColumn[] = [
   { key: "owner", label: "Owner", value: (r) => r.ownerName },
   { key: "startWeek", label: "Start Week", value: (r) => r.startWeek ?? "" },
   { key: "endWeek", label: "End Week", value: (r) => r.endWeek ?? "" },
-  { key: "lastNote", label: "Last Note", value: (r) => r.lastNote },
+  { key: "lastNote", label: "Last Note", value: (r) => r.lastNote, note: (r) => r.lastNote || undefined },
   { key: "importedFromOpsp", label: "Imported from OPSP", value: (r) => (r.importedFromOpsp ? "Yes" : "No") },
   { key: "createdBy", label: "Created By", value: (r) => r.createdByName },
   { key: "updatedBy", label: "Updated By", value: (r) => r.updatedByName },
@@ -56,6 +60,8 @@ export function priorityWeekColumns(weeks: number[]): PriorityExportColumn[] {
     label: `Week ${w}`,
     value: (r: PriorityExportRow) => r.weekStatusMap[w] ?? "",
     fill: (r: PriorityExportRow) => statusArgb(r.weekStatusMap[w]),
+    // This week's note as an Excel hover comment (mirrors the grid cell tooltip).
+    note: (r: PriorityExportRow) => r.weekNoteMap[w] || undefined,
   }));
 }
 

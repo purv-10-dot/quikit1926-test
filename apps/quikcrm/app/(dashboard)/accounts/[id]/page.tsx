@@ -8,7 +8,6 @@ import { AccountDashboardShell } from "@/components/accounts/account-dashboard-s
 import { mapAccountOpportunitiesForOverview } from "@/lib/services/accounts/overview-map";
 import { getFullAccountRecord } from "@/lib/services/accounts/full-record";
 
-
 const ADMIN_ROLE = "Administrator";
 
 function iso(d: Date | string | null | undefined): string | null {

@@ -104,7 +104,12 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
     ];
   }
 
-  const { orderBy } = parseSort(request, WEEKLY_SORT_WHITELIST, mapWeeklySort);
+  const { sortBy, orderBy: sortedOrderBy } = parseSort(request, WEEKLY_SORT_WHITELIST, mapWeeklySort);
+  // Manual (drag-to-reorder) mode when no column sort is chosen.
+  const orderBy: Prisma.ClientWeeklyMeetingOrderByWithRelationInput | Prisma.ClientWeeklyMeetingOrderByWithRelationInput[] =
+    sortBy === "__default"
+      ? [{ position: { sort: "asc", nulls: "first" } }, { createdAt: "desc" }]
+      : sortedOrderBy;
   const { page, limit, skip, take } = parsePagination(request);
   const [rows, total] = await Promise.all([
     db.clientWeeklyMeeting.findMany({

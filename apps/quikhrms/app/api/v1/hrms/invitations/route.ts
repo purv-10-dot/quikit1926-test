@@ -3,18 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, validationError, conflict, internalError, serviceUnavailable } from "@/lib/api-response";
 import { createInvitationSchema } from "@/lib/validations/invitation";
-import { generateInviteToken, inviteExpiry } from "@/lib/auth/invite-token";
-import { dispatchInvitationEmail } from "@/lib/services/invitation";
 import { createAuditLog } from "@/lib/utils/audit";
-import { provisionMemberRemote } from "@/lib/auth/provision-member-remote";
-import { deprovisionMemberRemote } from "@/lib/auth/deprovision-member-remote";
-
-/** App slug HRMS is registered under in the central QuikIT app registry. */
-const QUIKHRMS_APP_SLUG = "quikhrms";
-
-const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-/** Central QuikIT base — hosts the /invitations/accept set-password flow. */
-const QUIKIT_URL = process.env.QUIKIT_URL ?? process.env.NEXT_PUBLIC_QUIKIT_URL ?? "";
+import { provisionCentralInvite } from "@/lib/services/invitation";
 
 /** Display status: a Pending invite past its expiry reads as Expired. */
 function effectiveStatus(status: string, expiresAt: Date): string {
@@ -95,106 +85,30 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     });
     if (validRoles !== data.roleIds.length) return validationError("One or more roles are invalid");
 
-    // Provision the person in central QuikIT as an org "member" (their HRMS role
-    // is whatever the admin picked, stored in HRMS's own DB; central is always
-    // "member"). This is what lets them sign in via QuikIT SSO. New central users
-    // get a temp password we email; existing QuikIT users are linked by email.
-    const provision = await provisionMemberRemote({
-      orgId: orgId,
+    // Provision directly against central QuikIT (creates the User + OrgMember +
+    // UserAppAccess and sends the onboarding invite email) and record the local
+    // Invitation row. Same as QuikScale's in-app invite — no HTTP hop.
+    const invite = await provisionCentralInvite({
+      orgId,
+      invitedBy: userId,
       email,
       firstName: data.firstName,
       lastName: data.lastName,
-      appSlug: QUIKHRMS_APP_SLUG,
+      roleIds: data.roleIds,
       invitationMethod: data.invitationMethod,
+      departmentId: data.departmentId ?? null,
+      designationId: data.designationId ?? null,
+      managerId: data.managerId ?? null,
     });
-    if (!provision.ok) {
-      // Best-effort: central QuikIT provisioning is optional. If it's unavailable
-      // (e.g. the central member endpoint isn't deployed), still create the local
-      // invitation and send the SSO invite email — the invitee signs in via QuikIT
-      // SSO (mirrors the bulk employee-import flow). Don't fail the invite.
-      // invitationToken / tempPassword stay null below, so the email carries the
-      // plain login link instead of a central accept link.
-      console.warn("[invitations] central provisioning unavailable — sending SSO invite:", email, provision.error);
-    }
-
-    // token hash satisfies the Invitation.token @unique column; it's no longer
-    // emailed (login is SSO) but keeps each invite row uniquely keyed.
-    const { hash } = generateInviteToken();
-    const expiresAt = inviteExpiry();
-
-    let invitation;
-    try {
-      invitation = await prisma.invitation.create({
-        data: {
-          orgId,
-          email,
-          firstName: data.firstName,
-          lastName: data.lastName,
-          roleIds: data.roleIds,
-          departmentId: data.departmentId ?? null,
-          designationId: data.designationId ?? null,
-          managerId: data.managerId ?? null,
-          token: hash,
-          // Persist the central accept token (new native users only) so resend can
-          // rebuild the same accept link without re-provisioning.
-          centralInviteToken: provision.invitationToken ?? null,
-          expiresAt,
-          status: "Pending",
-          invitedBy: userId,
-        },
-      });
-    } catch (createErr) {
-      // Dual-write compensation: the central provision succeeded but our side
-      // failed, which would leave a central account with no HRMS invite (and a
-      // temp password no one was emailed). Undo the provision for brand-new
-      // users so the admin can simply retry; existing users were only linked,
-      // and central's guarded DELETE won't touch them anyway.
-      if (provision.isNewUser && provision.userId) {
-        const rollback = await deprovisionMemberRemote({
-          orgId: orgId,
-          userId: provision.userId,
-          appSlug: QUIKHRMS_APP_SLUG,
-        });
-        if (!rollback.ok) {
-          console.error("[invitations] central rollback failed — manual cleanup may be needed:", provision.userId, rollback.error);
-        }
-      }
-      throw createErr;
-    }
-
-    const inviter = await prisma.employee.findFirst({
-      where: { id: userId, orgId },
-      select: { firstName: true, lastName: true },
-    });
-
-    // New native users go through the central accept flow (enter temp password →
-    // set their own); this works regardless of any existing session in the
-    // browser. Existing/SSO users just sign in via the normal login redirect.
-    const setupUrl =
-      provision.invitationToken && QUIKIT_URL
-        ? `${QUIKIT_URL.replace(/\/$/, "")}/invitations/accept?token=${encodeURIComponent(provision.invitationToken)}`
-        : null;
-
-    const mail = await dispatchInvitationEmail({
-      orgId,
-      to: email,
-      inviteeName: `${data.firstName} ${data.lastName}`.trim(),
-      loginUrl: `${req.nextUrl.origin}${BASE_PATH}/login`,
-      setupUrl,
-      expiresAt,
-      inviterName: inviter ? `${inviter.firstName} ${inviter.lastName}`.trim() : null,
-      // Only brand-new QuikIT users get a temp password to include in the email.
-      tempPassword: provision.tempPassword ?? null,
-    });
+    if (!invite.ok) return validationError(invite.error ?? "Could not provision the invite centrally");
 
     await createAuditLog({
-      orgId, userId, action: "Create", entityType: "Invitation", entityId: invitation.id,
-      metadata: { email, roleIds: data.roleIds, method: data.invitationMethod, emailQueued: mail.queued, emailSent: mail.sent },
+      orgId, userId, action: "Create", entityType: "Invitation", entityId: email,
+      metadata: { email, roleIds: data.roleIds, method: data.invitationMethod, centralUserId: invite.userId },
     });
 
     return successResponse(
-      // emailSent stays true when queued OR sent so the existing UI toast reads "email sent".
-      { id: invitation.id, email, status: "Pending", expiresAt, emailSent: mail.queued || mail.sent, emailError: mail.error },
+      { email, status: "Pending", emailSent: invite.ok },
       undefined,
       201,
     );

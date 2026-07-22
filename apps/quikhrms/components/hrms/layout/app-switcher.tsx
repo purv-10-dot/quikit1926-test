@@ -55,7 +55,7 @@ function AppIcon({ app, base }: { app: LauncherApp; base: string }) {
 
   if (idx >= candidates.length) {
     return (
-      <div className="w-9 h-9 rounded-lg bg-[#16243A] text-white flex items-center justify-center text-[12px] font-bold">
+      <div className="w-9 h-9 rounded-lg bg-green-600 text-white flex items-center justify-center text-[12px] font-bold">
         {initials(app.name)}
       </div>
     );
@@ -133,9 +133,9 @@ export function AppSwitcher() {
           <div className="text-[15px] font-semibold text-gray-700 mb-3 px-1">Apps</div>
 
           {isLoading ? (
-            <div className="py-8 text-center text-sm text-gray-400">Loading…</div>
+            <div className="py-5 text-center text-sm text-gray-400">Loading…</div>
           ) : apps.length === 0 ? (
-            <div className="py-8 text-center text-sm text-gray-400">
+            <div className="py-5 text-center text-sm text-gray-400">
               No apps available for your account.
             </div>
           ) : (
@@ -165,7 +165,7 @@ export function AppSwitcher() {
             <div className="mt-3 pt-3 border-t border-gray-100 text-center">
               <a
                 href={`${iconBase || quikitUrl.replace(/\/$/, "")}/apps`}
-                className="text-[13px] font-medium text-[#3b82f6] hover:text-[#2563eb]"
+                className="text-[13px] font-medium text-[#22c55e] hover:text-[#16a34a]"
               >
                 View all apps
               </a>

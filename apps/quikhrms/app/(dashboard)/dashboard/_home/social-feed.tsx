@@ -19,7 +19,7 @@ import { clsx } from "clsx";
 
 type ReactionKey = "like" | "love" | "haha" | "wow" | "sad" | "celebrate";
 const REACTIONS: { key: ReactionKey; emoji: string; label: string; color: string }[] = [
-  { key: "like",      emoji: "👍", label: "Like",      color: "text-[#16243A]" },
+  { key: "like",      emoji: "👍", label: "Like",      color: "text-[#166534]" },
   { key: "love",      emoji: "❤️", label: "Love",      color: "text-red-600" },
   { key: "haha",      emoji: "😂", label: "Haha",      color: "text-amber-600" },
   { key: "wow",       emoji: "😮", label: "Wow",       color: "text-amber-600" },
@@ -66,11 +66,11 @@ function ReactionPicker({ selected, count, onPick, onToggleClear, disabled }: Re
         onClick={() => { if (selected) onToggleClear(); else onPick("like"); }}
         onMouseEnter={() => { cancelClose(); setOpen(true); }}
         className={clsx(
-          "w-full flex items-center justify-center gap-2 py-2 text-sm rounded-lg transition disabled:opacity-60",
+          "w-full flex items-center justify-center gap-2 py-1 px-2.5 text-xs font-normal rounded-lg transition disabled:opacity-60",
           current ? `${current.color} bg-gray-50 font-semibold` : "text-gray-600 hover:bg-gray-50",
         )}
       >
-        {current ? <span className="text-base leading-none">{current.emoji}</span> : <Smile size={15} />}
+        {current ? <span className="text-base leading-none">{current.emoji}</span> : <Smile size={12} />}
         {current ? current.label : "React"}
         {count > 0 && <span className="text-xs text-gray-500 font-normal">({count})</span>}
       </button>
@@ -87,7 +87,7 @@ function ReactionPicker({ selected, count, onPick, onToggleClear, disabled }: Re
               title={r.label}
               className={clsx(
                 "text-2xl leading-none p-1 rounded-full transition-transform hover:scale-125 hover:-translate-y-0.5",
-                selected === r.key && "ring-2 ring-[#16243A]/30 bg-[#16243A]/5",
+                selected === r.key && "ring-2 ring-[#166534]/30 bg-[#166534]/5",
               )}
             >
               {r.emoji}
@@ -183,7 +183,7 @@ interface PostTypeTheme {
 
 const POST_TYPE_THEME: Record<Post["type"], PostTypeTheme> = {
   Update:           { label: "Update",          Icon: Sparkles,     badgeBg: "bg-slate-50 text-slate-700",     badgeRing: "ring-slate-200",   iconColor: "text-slate-500",   accentBar: "from-slate-400/0 to-slate-400/0" },
-  Announcement:     { label: "Announcement",    Icon: Megaphone,    badgeBg: "bg-blue-50 text-blue-700",       badgeRing: "ring-blue-200",    iconColor: "text-blue-600",    accentBar: "from-blue-500 to-indigo-500" },
+  Announcement:     { label: "Announcement",    Icon: Megaphone,    badgeBg: "bg-green-50 text-green-700",       badgeRing: "ring-green-200",    iconColor: "text-green-600",    accentBar: "from-green-500 to-green-500" },
   RecognitionPost:  { label: "Recognition",     Icon: Trophy,       badgeBg: "bg-amber-50 text-amber-700",     badgeRing: "ring-amber-200",   iconColor: "text-amber-600",   accentBar: "from-amber-400 to-orange-400" },
   Birthday:         { label: "Birthday",        Icon: Cake,         badgeBg: "bg-pink-50 text-pink-700",       badgeRing: "ring-pink-200",    iconColor: "text-pink-500",    accentBar: "from-pink-400 to-rose-400" },
   WorkAnniversary:  { label: "Work Anniversary",Icon: PartyPopper,  badgeBg: "bg-violet-50 text-violet-700",   badgeRing: "ring-violet-200",  iconColor: "text-violet-500",  accentBar: "from-violet-500 to-fuchsia-500" },
@@ -194,7 +194,7 @@ const POST_TYPE_THEME: Record<Post["type"], PostTypeTheme> = {
 
 const AVATAR_GRADIENTS = [
   "from-emerald-500 to-teal-600",
-  "from-blue-500 to-indigo-600",
+  "from-green-500 to-green-600",
   "from-rose-500 to-pink-600",
   "from-amber-500 to-orange-600",
   "from-violet-500 to-fuchsia-600",
@@ -250,10 +250,10 @@ export function SocialFeed() {
   if (items.length === 0) {
     return (
       <div className="surface-card py-14 text-center">
-        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-50 to-indigo-50 ring-1 ring-blue-100 mx-auto mb-3 flex items-center justify-center">
-          <Sparkles size={20} className="text-blue-500" />
+        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-green-50 to-green-50 ring-1 ring-green-100 mx-auto mb-3 flex items-center justify-center">
+          <Sparkles size={20} className="text-green-500" />
         </div>
-        <p className="text-sm font-bold text-gray-900">Nothing on the wall yet</p>
+        <p className="text-[13px] font-semibold text-gray-900">Nothing on the wall yet</p>
         <p className="text-xs text-gray-500 mt-1">Be the first — share an update, kudos or poll above.</p>
       </div>
     );
@@ -263,11 +263,11 @@ export function SocialFeed() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-sm">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center shadow-sm">
             <Sparkles size={14} className="text-white" />
           </div>
-          <h3 className="text-base font-bold text-gray-900">Social Wall</h3>
-          <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-[10px] font-bold">{items.length}</span>
+          <h3 className="text-[13px] font-semibold text-gray-900">Social Wall</h3>
+          <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-[11px] font-medium">{items.length}</span>
         </div>
       </div>
       {items.map((it) => {
@@ -297,13 +297,11 @@ function PostCard({ post }: { post: Post }) {
       setComment("");
       qc.invalidateQueries({ queryKey: ["home", "feed", "posts"] });
     },
-    onError: (e: Error) => toast.error("Comment failed", e.message),
   });
 
   const reactMut = useMutation({
     mutationFn: () => api.patch(`/api/v1/hrms/engage/social/${post.id}`, { action: "like" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["home", "feed", "posts"] }),
-    onError: (e: Error) => toast.error("React failed", e.message),
   });
 
   const editMut = useMutation({
@@ -314,7 +312,6 @@ function PostCard({ post }: { post: Post }) {
       setIsEditing(false);
       toast.success("Post updated");
     },
-    onError: (e: Error) => toast.error("Edit failed", e.message),
   });
 
   const deleteMut = useMutation({
@@ -324,12 +321,18 @@ function PostCard({ post }: { post: Post }) {
       qc.invalidateQueries({ queryKey: ["social-posts"] });
       toast.success("Post deleted");
     },
-    onError: (e: Error) => toast.error("Delete failed", e.message),
   });
 
   const likes = Array.isArray(post.likes) ? post.likes : [];
   const liked = !!myId && likes.includes(myId);
   const [myReaction, setMyReaction] = useState<ReactionKey | null>(liked ? "like" : null);
+  // myId resolves asynchronously (dashboard config) and the feed refetches after
+  // each like, so `liked` can flip true *after* this card first mounts. Re-sync
+  // the reaction highlight to the persisted state, otherwise the user's own like
+  // looks like it disappears on refresh even though it's saved server-side.
+  useEffect(() => {
+    setMyReaction(liked ? "like" : null);
+  }, [liked]);
   const [showLikers, setShowLikers] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -362,7 +365,7 @@ function PostCard({ post }: { post: Post }) {
   return (
     <div className="surface-card overflow-hidden relative transition hover:shadow-md">
       {post.isPinned && (
-        <div className="absolute top-3 right-3 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200 text-[10px] font-bold z-10">
+        <div className="absolute top-3 right-3 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200 text-[11px] font-medium z-10">
           <Pin size={10} fill="currentColor" /> Pinned
         </div>
       )}
@@ -370,7 +373,7 @@ function PostCard({ post }: { post: Post }) {
         <div className={clsx("h-1 bg-gradient-to-r", theme.accentBar)} />
       )}
 
-      <div className="p-5">
+      <div className="p-4">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3 min-w-0">
             {emp?.profilePhoto ? (
@@ -383,9 +386,9 @@ function PostCard({ post }: { post: Post }) {
             )}
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <p className="text-sm font-bold text-gray-900 truncate">{emp ? `${emp.firstName} ${emp.lastName}` : "Unknown"}</p>
+                <p className="text-[13px] font-semibold text-gray-900 truncate">{emp ? `${emp.firstName} ${emp.lastName}` : "Unknown"}</p>
                 {post.type !== "Update" && (
-                  <span className={clsx("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ring-1", theme.badgeBg, theme.badgeRing)}>
+                  <span className={clsx("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ring-1", theme.badgeBg, theme.badgeRing)}>
                     <TypeIcon size={10} className={theme.iconColor} /> {theme.label}
                   </span>
                 )}
@@ -401,7 +404,7 @@ function PostCard({ post }: { post: Post }) {
               onClick={() => setMenuOpen((o) => !o)}
               className="p-1.5 text-gray-400 hover:text-gray-700 rounded-full hover:bg-gray-100"
             >
-              <MoreHorizontal size={16} />
+              <MoreHorizontal size={12} />
             </button>
             {menuOpen && (
               <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-xl shadow-2xl ring-1 ring-slate-200 overflow-hidden z-20">
@@ -409,7 +412,7 @@ function PostCard({ post }: { post: Post }) {
                   <>
                     <button
                       onClick={() => { setEditContent(post.content); setIsEditing(true); setMenuOpen(false); }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-gray-700 hover:bg-slate-50 hover:text-blue-600 transition"
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-[11px] text-gray-700 hover:bg-slate-50 hover:text-green-600 transition"
                     >
                       <Pencil size={13} /> Edit post
                     </button>
@@ -424,13 +427,13 @@ function PostCard({ post }: { post: Post }) {
                         });
                         if (ok) deleteMut.mutate();
                       }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-red-600 hover:bg-red-50 transition"
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-[11px] text-red-600 hover:bg-red-50 transition"
                     >
                       <Trash2 size={13} /> Delete post
                     </button>
                   </>
                 ) : (
-                  <button className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-gray-500" disabled>
+                  <button className="w-full flex items-center gap-2.5 px-3 py-2 text-[11px] text-gray-500" disabled>
                     Author-only actions
                   </button>
                 )}
@@ -445,13 +448,13 @@ function PostCard({ post }: { post: Post }) {
               value={editContent}
               onChange={(e) => setEditContent(e.target.value)}
               rows={3}
-              className="w-full px-3 py-2 text-sm bg-gray-50 ring-1 ring-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-300 focus:bg-white transition resize-none"
+              className="w-full px-3 py-2 text-xs bg-gray-50 ring-1 ring-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-300 focus:bg-white transition resize-none"
             />
             <div className="flex justify-end gap-2 mt-2">
               <button
                 type="button"
                 onClick={() => { setIsEditing(false); setEditContent(post.content); }}
-                className="px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 rounded-lg transition"
+                className="px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 rounded-lg transition"
               >
                 Cancel
               </button>
@@ -459,14 +462,14 @@ function PostCard({ post }: { post: Post }) {
                 type="button"
                 disabled={!editContent.trim() || editContent.trim() === post.content || editMut.isPending}
                 onClick={() => editMut.mutate(editContent.trim())}
-                className="px-3 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition disabled:opacity-50"
+                className="px-3 py-1.5 text-xs font-medium bg-green-600 hover:bg-green-700 text-white rounded-lg transition disabled:opacity-50"
               >
                 {editMut.isPending ? "Saving…" : "Save"}
               </button>
             </div>
           </div>
         ) : (
-          <div className="mt-3 text-sm text-gray-800 whitespace-pre-line leading-relaxed">
+          <div className="mt-3 text-xs text-gray-800 whitespace-pre-line leading-relaxed">
             {post.content}
           </div>
         )}
@@ -482,11 +485,11 @@ function PostCard({ post }: { post: Post }) {
             {likes.length > 0 ? (
               <button
                 onClick={() => setShowLikers(true)}
-                className="inline-flex items-center gap-2 hover:text-blue-600 hover:underline transition"
+                className="inline-flex items-center gap-2 hover:text-green-600 hover:underline transition"
                 title="View who liked this"
               >
                 <span className="flex -space-x-1">
-                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-500 text-white ring-2 ring-white">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-500 text-white ring-2 ring-white">
                     <ThumbsUp size={10} fill="currentColor" />
                   </span>
                   <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-rose-500 text-white ring-2 ring-white">
@@ -500,7 +503,7 @@ function PostCard({ post }: { post: Post }) {
             {post._count.comments > 0 && (
               <button
                 onClick={() => setShowComments((s) => !s)}
-                className="hover:text-blue-600 hover:underline transition"
+                className="hover:text-green-600 hover:underline transition"
               >
                 {post._count.comments} {post._count.comments === 1 ? "comment" : "comments"}
               </button>
@@ -519,11 +522,11 @@ function PostCard({ post }: { post: Post }) {
           <button
             onClick={() => setShowComments((s) => !s)}
             className={clsx(
-              "flex items-center justify-center gap-2 py-2 text-sm font-semibold rounded-lg transition",
-              showComments ? "text-blue-600 bg-blue-50/60" : "text-gray-600 hover:text-gray-900 hover:bg-gray-50",
+              "flex items-center justify-center gap-2 py-1 px-2.5 text-xs font-normal rounded-lg transition",
+              showComments ? "text-green-600 bg-green-50/60" : "text-gray-600 hover:text-gray-900 hover:bg-gray-50",
             )}
           >
-            <MessageSquare size={16} /> Comment
+            <MessageSquare size={12} /> Comment
           </button>
           <button
             onClick={async () => {
@@ -537,9 +540,9 @@ function PostCard({ post }: { post: Post }) {
                 }
               } catch { /* user cancelled */ }
             }}
-            className="flex items-center justify-center gap-2 py-2 text-sm font-semibold text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-lg transition"
+            className="flex items-center justify-center gap-2 py-1 px-2.5 text-xs font-normal text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-lg transition"
           >
-            <Share2 size={16} /> Share
+            <Share2 size={12} /> Share
           </button>
         </div>
 
@@ -558,7 +561,7 @@ function PostCard({ post }: { post: Post }) {
                       {c.employee ? `${c.employee.firstName} ${c.employee.lastName}` : "Unknown"}
                       <span className="text-gray-400 font-normal ml-2">{timeAgo(c.createdAt)}</span>
                     </p>
-                    <p className="text-sm text-gray-700 mt-0.5">{c.content}</p>
+                    <p className="text-xs text-gray-700 mt-0.5">{c.content}</p>
                   </div>
                 </div>
               );
@@ -571,15 +574,15 @@ function PostCard({ post }: { post: Post }) {
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
                 placeholder="Write a comment..."
-                className="flex-1 px-4 py-2 bg-gray-50 ring-1 ring-gray-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 focus:bg-white transition"
+                className="flex-1 px-4 py-2 bg-gray-50 ring-1 ring-gray-200 rounded-full text-xs focus:outline-none focus:ring-2 focus:ring-green-300 focus:bg-white transition"
               />
               <button
                 type="submit"
                 disabled={!comment.trim() || commentMut.isPending}
-                className="w-9 h-9 rounded-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white flex items-center justify-center transition shrink-0"
+                className="w-9 h-9 rounded-full bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white flex items-center justify-center transition shrink-0"
                 aria-label="Post comment"
               >
-                <Send size={14} />
+                <Send size={12} />
               </button>
             </form>
           </div>
@@ -608,7 +611,6 @@ function InteractivePoll({ postId, poll }: { postId: string; poll: PollData }) {
       qc.invalidateQueries({ queryKey: ["home", "feed", "posts"] });
       qc.invalidateQueries({ queryKey: ["social-posts"] });
     },
-    onError: (e: Error) => toast.error("Vote failed", e.message),
   });
 
   return (
@@ -617,9 +619,9 @@ function InteractivePoll({ postId, poll }: { postId: string; poll: PollData }) {
         <div className="w-7 h-7 rounded-lg bg-sky-100 flex items-center justify-center">
           <Vote size={14} className="text-sky-600" />
         </div>
-        <p className="text-sm font-bold text-gray-900 flex-1">{poll.question}</p>
+        <p className="text-[13px] font-semibold text-gray-900 flex-1">{poll.question}</p>
         {closed && (
-          <span className="px-2 py-0.5 rounded-full bg-gray-200 text-gray-700 text-[10px] font-bold uppercase tracking-wider">
+          <span className="px-2 py-0.5 rounded-full bg-gray-200 text-gray-700 text-[11px] font-medium uppercase tracking-wider">
             Closed
           </span>
         )}
@@ -639,30 +641,30 @@ function InteractivePoll({ postId, poll }: { postId: string; poll: PollData }) {
               className={clsx(
                 "relative w-full overflow-hidden rounded-lg ring-1 transition text-left disabled:cursor-not-allowed",
                 mine
-                  ? "ring-2 ring-blue-500 bg-white"
-                  : "ring-gray-200 bg-white hover:ring-blue-300 hover:bg-blue-50/40",
+                  ? "ring-2 ring-green-500 bg-white"
+                  : "ring-gray-200 bg-white hover:ring-green-300 hover:bg-green-50/40",
               )}
             >
               <div
                 className={clsx(
                   "absolute inset-y-0 left-0 transition-all duration-300",
-                  mine ? "bg-blue-100/60" : leader && totalVotes > 0 ? "bg-sky-100/50" : "bg-gray-100/60",
+                  mine ? "bg-green-100/60" : leader && totalVotes > 0 ? "bg-sky-100/50" : "bg-gray-100/60",
                 )}
                 style={{ width: `${pct}%` }}
               />
               <div className="relative flex items-center justify-between gap-3 px-3.5 py-2.5">
                 <div className="flex items-center gap-2 min-w-0">
                   {mine && (
-                    <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-blue-600 text-white shrink-0">
+                    <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-green-600 text-white shrink-0">
                       <CheckIcon />
                     </span>
                   )}
-                  <span className={clsx("text-sm truncate", mine ? "font-bold text-blue-700" : "font-medium text-gray-800")}>
+                  <span className={clsx("text-[13px] truncate", mine ? "font-bold text-green-700" : "font-medium text-gray-800")}>
                     {opt.text}
                   </span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <span className={clsx("text-xs font-semibold tabular-nums", mine ? "text-blue-700" : "text-gray-600")}>{pct}%</span>
+                  <span className={clsx("text-xs font-semibold tabular-nums", mine ? "text-green-700" : "text-gray-600")}>{pct}%</span>
                   <span className="text-[11px] text-gray-400 tabular-nums">({votes})</span>
                 </div>
               </div>
@@ -701,7 +703,7 @@ function MediaGrid({ items }: { items: PostAttachment[] }) {
               type="button"
               onClick={() => setLightboxIndex(i)}
               className={clsx(
-                "relative bg-gray-100 cursor-zoom-in group focus:outline-none focus:ring-2 focus:ring-blue-400",
+                "relative bg-gray-100 cursor-zoom-in group focus:outline-none focus:ring-2 focus:ring-green-400",
                 n === 1 && "h-80",
                 n === 2 && "h-56",
                 n >= 3 && "h-44",
@@ -810,7 +812,7 @@ function MediaLightbox({
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); onClose(); }}
-        className="absolute top-4 right-4 w-11 h-11 rounded-full bg-white text-gray-900 hover:bg-gray-100 shadow-lg ring-1 ring-black/10 flex items-center justify-center transition focus:outline-none focus:ring-2 focus:ring-blue-400"
+        className="absolute top-4 right-4 w-11 h-11 rounded-full bg-white text-gray-900 hover:bg-gray-100 shadow-lg ring-1 ring-black/10 flex items-center justify-center transition focus:outline-none focus:ring-2 focus:ring-green-400"
         aria-label="Close"
         title="Close (Esc)"
       >
@@ -928,15 +930,15 @@ function LikersModal({ postId, count, onClose }: { postId: string; count: number
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-500 text-white">
+            <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-500 text-white">
               <ThumbsUp size={11} fill="currentColor" />
             </span>
-            <h3 className="text-sm font-bold text-gray-900">{count} {count === 1 ? "Like" : "Likes"}</h3>
+            <h3 className="text-[13px] font-semibold text-gray-900">{count} {count === 1 ? "Like" : "Likes"}</h3>
           </div>
           <button onClick={onClose} className="w-7 h-7 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500">
-            <X size={14} />
+            <X size={12} />
           </button>
         </div>
         <div className="max-h-80 overflow-auto py-2">
@@ -958,7 +960,7 @@ function LikersModal({ postId, count, onClose }: { postId: string; count: number
                     </div>
                   )}
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-gray-900 truncate">{p.firstName} {p.lastName}</p>
+                    <p className="text-[13px] font-semibold text-gray-900 truncate">{p.firstName} {p.lastName}</p>
                     {p.title && <p className="text-[11px] text-gray-500 truncate">{p.title}</p>}
                   </div>
                 </div>
@@ -979,7 +981,7 @@ function KudosCard({ recognition }: { recognition: Recognition }) {
   const [myReaction, setMyReaction] = useState<ReactionKey | null>(null);
 
   return (
-    <div className="surface-card p-5">
+    <div className="surface-card p-4">
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
@@ -992,19 +994,19 @@ function KudosCard({ recognition }: { recognition: Recognition }) {
             </div>
           )}
           <div className="min-w-0">
-            <p className="text-sm font-bold text-gray-900 truncate">{from ? `${from.firstName} ${from.lastName}` : "Someone"}</p>
+            <p className="text-[13px] font-semibold text-gray-900 truncate">{from ? `${from.firstName} ${from.lastName}` : "Someone"}</p>
             <p className="text-[11px] text-gray-400 flex items-center gap-1.5 mt-0.5">
               {timeAgo(recognition.createdAt)} <span>·</span> <Globe size={10} />
             </p>
           </div>
         </div>
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wider bg-amber-50 text-amber-700 shrink-0">
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium uppercase tracking-wider bg-amber-50 text-amber-700 shrink-0">
           <Trophy size={10} /> {recognition.type}
         </span>
       </div>
 
       {/* Message */}
-      <p className="text-sm text-gray-800 mt-3 leading-relaxed">
+      <p className="text-xs text-gray-800 mt-3 leading-relaxed">
         Great job, <span className="font-bold">{to ? `${to.firstName} ${to.lastName}` : "teammate"}</span> — {recognition.message}
       </p>
 
@@ -1029,13 +1031,13 @@ function KudosCard({ recognition }: { recognition: Recognition }) {
         <div className="border-r border-gray-100 p-1">
           <ReactionPicker
             selected={myReaction}
-            count={0}
+            count={myReaction ? 1 : 0}
             onPick={(k) => setMyReaction(k)}
             onToggleClear={() => setMyReaction(null)}
           />
         </div>
-        <button className="flex items-center justify-center gap-2 py-3 text-sm text-gray-600 hover:text-[#16243A] hover:bg-gray-50 transition">
-          <MessageSquare size={15} /> Comment
+        <button className="flex items-center justify-center gap-2 py-1 px-2.5 text-xs font-normal text-gray-600 hover:text-[#166534] hover:bg-gray-50 transition">
+          <MessageSquare size={12} /> Comment
         </button>
       </div>
     </div>
@@ -1074,14 +1076,14 @@ function SurveyCard({ survey }: { survey: MySurvey }) {
   const closingSoon = left <= 3;
 
   return (
-    <article className="surface-card p-5">
+    <article className="surface-card p-4">
       <div className="flex items-start gap-3">
-        <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
-          <ClipboardList size={18} className="text-blue-600" />
+        <div className="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center shrink-0">
+          <ClipboardList size={18} className="text-green-600" />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wider bg-blue-50 text-blue-700">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium uppercase tracking-wider bg-green-50 text-green-700">
               Survey
             </span>
             <span className="text-[11px] text-gray-500">{survey.type.replace("Survey", "")}</span>
@@ -1097,7 +1099,7 @@ function SurveyCard({ survey }: { survey: MySurvey }) {
             )}
           </div>
 
-          <h3 className="text-base font-bold text-gray-900 mt-1.5 leading-snug">
+          <h3 className="text-[13px] font-semibold text-gray-900 mt-1.5 leading-snug">
             {survey.title}
           </h3>
           <p className="text-xs text-gray-500 mt-0.5">
@@ -1105,22 +1107,22 @@ function SurveyCard({ survey }: { survey: MySurvey }) {
             {new Date(survey.endDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
           </p>
 
-          <p className="text-sm text-gray-600 mt-2.5">
+          <p className="text-xs text-gray-600 mt-2.5">
             Your input is requested. Takes a minute.
           </p>
 
           <div className="flex items-center gap-2 mt-3.5">
             <Link
               href={`/engage/surveys/${survey.id}/take`}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#16243A] text-white text-sm font-semibold hover:bg-[#1E3354] transition"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-600 text-white text-xs font-medium hover:bg-[#15803d] transition"
             >
               <CheckCircle2 size={13} /> Take survey
             </Link>
             <Link
               href="/engage/surveys/my"
-              className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-semibold text-gray-500 hover:text-gray-800"
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-800"
             >
-              All surveys <ChevronRight size={12} />
+              All surveys <ChevronRight size={13} />
             </Link>
           </div>
         </div>

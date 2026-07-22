@@ -7,6 +7,19 @@ import { useToast } from "@/components/hrms/toast";
 import { Modal } from "@/components/hrms/modal";
 import { FileCheck2, Clock, CheckCircle2, XCircle, Inbox, Paperclip, Filter as FilterIcon, ChevronRight, ChevronDown, User } from "lucide-react";
 import { clsx } from "clsx";
+import { ExcelExportButton } from "@/components/hrms/excel-export-button";
+
+const DOC_EXPORT_COLUMNS = [
+  { header: "Candidate", key: "candidate", width: 22 },
+  { header: "Email", key: "email", width: 26 },
+  { header: "Role", key: "role", width: 22 },
+  { header: "Stage", key: "stage", width: 16 },
+  { header: "Document", key: "document", width: 24 },
+  { header: "File", key: "fileName", width: 26 },
+  { header: "Bundle", key: "bundle", width: 14 },
+  { header: "Status", key: "status", width: 12 },
+  { header: "Uploaded", key: "uploaded", width: 14 },
+];
 
 type Bundle = "PreOffer" | "PostOffer";
 
@@ -57,6 +70,19 @@ export default function DocumentReviewQueue() {
   const items = data?.data ?? [];
   const filtered = bundleFilter === "all" ? items : items.filter((i) => i.request.bundle === bundleFilter);
 
+  // Flat row-per-document export of the currently filtered documents.
+  const docExportRows = filtered.map((i) => ({
+    candidate: `${i.request.application.candidate.firstName} ${i.request.application.candidate.lastName}`.trim(),
+    email: i.request.application.candidate.email,
+    role: i.request.application.requisition.title,
+    stage: i.request.application.currentStage ?? "",
+    document: i.documentType?.name ?? i.customLabel ?? "Other",
+    fileName: i.fileName,
+    bundle: i.request.bundle === "PreOffer" ? "Before Offer" : "After Offer",
+    status: i.status,
+    uploaded: new Date(i.uploadedAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
+  }));
+
   // Group documents by candidate (applicationId).
   interface CandidateGroup {
     appId: string;
@@ -104,7 +130,6 @@ export default function DocumentReviewQueue() {
       qc.invalidateQueries({ queryKey: ["doc-reviews"] });
       setDecision(null); setReason("");
     },
-    onError: (e: Error) => toast.error("Action failed", e.message),
   });
 
   const stats = {
@@ -114,18 +139,21 @@ export default function DocumentReviewQueue() {
   };
 
   return (
-    <div className="w-full px-6 py-6">
+    <div className="w-full px-5 py-4">
       <div className="flex items-start justify-between mb-5 gap-3 flex-wrap">
         <div className="flex items-start gap-3">
-          <FileCheck2 size={28} className="text-[#3b82f6] mt-1.5" />
+          <FileCheck2 size={28} className="text-[#22c55e] mt-1.5" />
           <div>
-            <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900 leading-tight">Candidate document reviews</h1>
-            <p className="text-sm text-gray-500 mt-1">Approve or reject documents uploaded by candidates.</p>
+            <h1 className="text-page-title text-gray-900 leading-tight">Candidate document reviews</h1>
+            <p className="text-xs text-gray-500 mt-1">Approve or reject documents uploaded by candidates.</p>
           </div>
         </div>
-        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200 text-xs font-bold">
-          <Inbox size={12} /> {stats.total} pending
-        </span>
+        <div className="flex items-center gap-2">
+          <ExcelExportButton filename="candidate-documents" sheetName="Documents" columns={DOC_EXPORT_COLUMNS} rows={docExportRows} />
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200 text-[11px] font-semibold">
+            <Inbox size={12} /> {stats.total} pending
+          </span>
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-3 mb-4">
@@ -141,19 +169,19 @@ export default function DocumentReviewQueue() {
           {(["all", "PreOffer", "PostOffer"] as const).map((b) => (
             <button key={b}
               onClick={() => setBundleFilter(b)}
-              className={clsx("px-2.5 py-1 rounded-full text-xs font-semibold ring-1 transition",
-                bundleFilter === b ? "bg-[#16243A] text-white ring-[#3b82f6] shadow-sm" : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50")}>
+              className={clsx("px-2.5 py-1 rounded-full text-[13px] font-semibold ring-1 transition",
+                bundleFilter === b ? "bg-green-600 text-white ring-[#22c55e] shadow-sm" : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50")}>
               {b === "all" ? "All" : b === "PreOffer" ? "Before Offer" : "After Offer"}
             </button>
           ))}
         </div>
 
         {isLoading ? (
-          <div className="p-8 text-center text-slate-400 text-sm">Loading…</div>
+          <div className="p-8 text-center text-slate-400 text-xs">Loading…</div>
         ) : groups.length === 0 ? (
           <div className="p-12 text-center text-slate-500">
             <CheckCircle2 size={36} className="mx-auto mb-2 text-emerald-300" />
-            <p className="text-sm font-medium">No documents pending review</p>
+            <p className="text-[13px] font-semibold">No documents pending review</p>
           </div>
         ) : (
           <ul className="divide-y divide-slate-100">
@@ -170,18 +198,18 @@ export default function DocumentReviewQueue() {
                     {isOpen
                       ? <ChevronDown size={16} className="text-slate-400 shrink-0" />
                       : <ChevronRight size={16} className="text-slate-400 shrink-0" />}
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-green-50 text-green-600">
                       <User size={15} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-slate-900">{g.name}</p>
+                      <p className="text-[13px] font-semibold text-slate-900">{g.name}</p>
                       <p className="text-[11px] text-slate-500 truncate">
                         {g.email} · {g.role}{g.stage ? ` · ${g.stage}` : ""}
                       </p>
                     </div>
                     <div className="shrink-0 flex items-center gap-1.5">
                       {g.pre > 0 && (
-                        <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-700 ring-1 ring-blue-200">
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-50 text-green-700 ring-1 ring-green-200">
                           {g.pre} Before
                         </span>
                       )}
@@ -190,7 +218,7 @@ export default function DocumentReviewQueue() {
                           {g.post} After
                         </span>
                       )}
-                      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 ring-1 ring-amber-200">
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 ring-1 ring-amber-200">
                         {g.docs.length} pending
                       </span>
                     </div>
@@ -202,31 +230,31 @@ export default function DocumentReviewQueue() {
                       <table className="w-full">
                         <thead>
                           <tr className="bg-slate-50/80 border-b border-slate-200">
-                            <th className="text-left px-4 py-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Document</th>
-                            <th className="text-left px-4 py-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wide">File</th>
-                            <th className="text-left px-4 py-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Bundle</th>
-                            <th className="text-left px-4 py-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Uploaded</th>
-                            <th className="text-right px-4 py-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Action</th>
+                            <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Document</th>
+                            <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">File</th>
+                            <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Bundle</th>
+                            <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Uploaded</th>
+                            <th className="text-right px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Action</th>
                           </tr>
                         </thead>
                         <tbody>
                           {g.docs.map((i) => (
                             <tr key={i.id} className="border-b border-slate-100 last:border-0 hover:bg-white">
-                              <td className="px-4 py-2.5 text-sm">
+                              <td className="px-4 py-2.5 text-[13px]">
                                 <p className="font-medium text-slate-800">{i.documentType?.name ?? i.customLabel ?? "Other"}</p>
                                 {i.documentType?.isRequired && <span className="text-[10px] text-red-600 font-bold">Required</span>}
                                 {!i.documentType && <span className="text-[10px] text-slate-400 italic">Candidate-added</span>}
                               </td>
                               <td className="px-4 py-2.5">
                                 <a href={i.fileUrl} target="_blank" rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 text-sm text-[#3b82f6] hover:underline">
+                                  className="inline-flex items-center gap-1 text-xs text-[#22c55e] hover:underline">
                                   <Paperclip size={12} /> {i.fileName}
                                 </a>
                                 {i.fileSize != null && <p className="text-[11px] text-slate-400">{Math.round(i.fileSize / 1024)} KB</p>}
                               </td>
                               <td className="px-4 py-2.5">
-                                <span className={clsx("px-2 py-0.5 rounded-full text-[11px] font-semibold ring-1",
-                                  i.request.bundle === "PreOffer" ? "bg-blue-50 text-blue-700 ring-blue-200" : "bg-emerald-50 text-emerald-700 ring-emerald-200")}>
+                                <span className={clsx("px-2 py-0.5 rounded-full text-[11px] font-medium ring-1",
+                                  i.request.bundle === "PreOffer" ? "bg-green-50 text-green-700 ring-green-200" : "bg-emerald-50 text-emerald-700 ring-emerald-200")}>
                                   {i.request.bundle === "PreOffer" ? "Before Offer" : "After Offer"}
                                 </span>
                               </td>
@@ -237,12 +265,12 @@ export default function DocumentReviewQueue() {
                                 <div className="inline-flex gap-1">
                                   <button
                                     onClick={() => { setReason(""); setDecision({ kind: "approve", row: i }); }}
-                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100"
-                                  ><CheckCircle2 size={11} /> Approve</button>
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-normal bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100"
+                                  ><CheckCircle2 size={12} /> Approve</button>
                                   <button
                                     onClick={() => { setReason(""); setDecision({ kind: "reject", row: i }); }}
-                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold bg-red-50 text-red-700 ring-1 ring-red-200 hover:bg-red-100"
-                                  ><XCircle size={11} /> Reject</button>
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-normal bg-red-50 text-red-700 ring-1 ring-red-200 hover:bg-red-100"
+                                  ><XCircle size={12} /> Reject</button>
                                 </div>
                               </td>
                             </tr>
@@ -262,10 +290,10 @@ export default function DocumentReviewQueue() {
         title={decision?.kind === "approve" ? "Approve document" : "Reject document"} size="md">
         {decision && (
           <form onSubmit={(e) => { e.preventDefault(); decideMut.mutate({ id: decision.row.id, kind: decision.kind }); }} className="space-y-4">
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm">
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs">
               <div className="font-semibold">{decision.row.request.application.candidate.firstName} {decision.row.request.application.candidate.lastName}</div>
               <div className="text-xs text-slate-500 mt-0.5">{decision.row.documentType?.name ?? decision.row.customLabel} · {decision.row.request.bundle === "PreOffer" ? "Before Offer" : "After Offer"}</div>
-              <a href={decision.row.fileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-[#3b82f6] hover:underline inline-flex items-center gap-1 mt-1"><Paperclip size={10} /> {decision.row.fileName}</a>
+              <a href={decision.row.fileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-[#22c55e] hover:underline inline-flex items-center gap-1 mt-1"><Paperclip size={10} /> {decision.row.fileName}</a>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Comment {decision.kind === "reject" && "(shown to candidate)"}</label>
@@ -274,14 +302,14 @@ export default function DocumentReviewQueue() {
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 placeholder={decision.kind === "approve" ? "Optional note…" : "Tell candidate what to fix…"}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]"
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
               />
             </div>
             <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
               <button type="button" onClick={() => setDecision(null)} disabled={decideMut.isPending}
-                className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancel</button>
+                className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancel</button>
               <button type="submit" disabled={decideMut.isPending}
-                className={clsx("px-5 py-2 text-white rounded-lg text-sm font-semibold shadow-sm disabled:opacity-50",
+                className={clsx("px-3 py-1.5 text-white rounded-lg text-xs font-medium shadow-sm disabled:opacity-50",
                   decision.kind === "approve" ? "bg-gradient-to-r from-emerald-500 to-green-600" : "bg-gradient-to-r from-red-500 to-rose-600")}>
                 {decideMut.isPending ? "Saving…" : decision.kind === "approve" ? "Approve" : "Reject"}
               </button>
@@ -294,13 +322,13 @@ export default function DocumentReviewQueue() {
 }
 
 function StatCard({ label, value, icon, color }: { label: string; value: number; icon: React.ReactNode; color: "blue" | "amber" | "emerald" }) {
-  const cls = { blue: "bg-blue-50 text-blue-600", amber: "bg-amber-50 text-amber-600", emerald: "bg-emerald-50 text-emerald-600" }[color];
+  const cls = { blue: "bg-green-50 text-green-600", amber: "bg-amber-50 text-amber-600", emerald: "bg-emerald-50 text-emerald-600" }[color];
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex items-center gap-3">
       <div className={clsx("w-11 h-11 rounded-lg flex items-center justify-center", cls)}>{icon}</div>
       <div>
         <p className="text-[11px] text-slate-500 font-medium">{label}</p>
-        <p className="text-2xl font-bold text-slate-900 leading-tight">{value}</p>
+        <p className="text-xl font-bold text-slate-900 leading-tight">{value}</p>
       </div>
     </div>
   );

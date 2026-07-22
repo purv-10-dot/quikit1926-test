@@ -65,6 +65,8 @@ export interface KPIRow {
   scaledDisplay?: boolean;
   reverseColor?: boolean;
   frequency?: string;
+  /** Leading (predictive input) vs Lagging (outcome) classification; "NA" = unset. */
+  kpiType?: string;
   /** True when created via the OPSP "Export → Create KPIs" flow (display-only). */
   importedFromOpsp?: boolean;
   // Team KPI per-owner weekly targets: { userId: { weekNumber: value } }

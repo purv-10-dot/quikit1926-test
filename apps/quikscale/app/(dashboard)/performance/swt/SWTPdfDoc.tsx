@@ -34,12 +34,13 @@ const CATEGORY: Record<string, { label: string; bg: string; text: string }> = {
   markets:      { label: "Markets",            bg: "#DBEAFE", text: "#1E40AF" },
   consumer:     { label: "Consumer",           bg: "#FEF3C7", text: "#92400E" },
   social:       { label: "Social",             bg: "#FFE4E6", text: "#9F1239" },
+  regulatory:   { label: "Regulatory",         bg: "#F1F5F9", text: "#334155" },
 };
 
 const DIRECTION: Record<string, { label: string; bg: string; text: string }> = {
-  positive: { label: "Positive", bg: "#DCFCE7", text: "#166534" },
-  negative: { label: "Negative", bg: "#FEE2E2", text: "#991B1B" },
-  neutral:  { label: "Neutral",  bg: "#F3F4F6", text: "#4B5563" },
+  positive: { label: "Opportunity", bg: "#DCFCE7", text: "#166534" },
+  negative: { label: "Threat",      bg: "#FEE2E2", text: "#991B1B" },
+  neutral:  { label: "Neutral",     bg: "#F3F4F6", text: "#4B5563" },
 };
 
 const QUESTION = {

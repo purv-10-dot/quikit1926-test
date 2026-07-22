@@ -7,7 +7,7 @@ import { ProjectPermissionMatrix } from "./permission-matrix";
 import { AddRoleModal } from "./add-role-modal";
 import { FieldPermissionMatrix } from "@/app/(dashboard)/settings/user-management/_components/field-permission-matrix";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
-import { SPACE_ADMIN_ROLE_NAME } from "@/lib/api/permissionsRegistry";
+import { SPACE_ADMIN_ROLE_NAME, PROTECTED_PROJECT_ROLE_NAMES } from "@/lib/api/permissionsRegistry";
 import { confirmDialog } from "@/lib/ui/confirm";
 
 interface ProjectRole {
@@ -116,7 +116,12 @@ export function ProjectRoleManagementTab({ projectId }: { projectId: string }) {
                     </span>
                   )}
                 </span>
-                {canManageRoles && (
+                {/* Seeded roles (Space Admin / Contributor / Viewer) and the
+                    default role are structural — hide their trash (the server
+                    rejects deletion too). Custom roles stay deletable. */}
+                {canManageRoles &&
+                  !PROTECTED_PROJECT_ROLE_NAMES.includes(r.name) &&
+                  !r.isDefault && (
                   <span
                     role="button"
                     tabIndex={0}

@@ -39,7 +39,7 @@ interface FNF {
 const INR = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
 const STATUS_BADGE: Record<Status, string> = {
   Draft: "bg-gray-100 text-gray-700",
-  Computed: "bg-blue-100 text-blue-700",
+  Computed: "bg-green-100 text-green-700",
   Approved: "bg-amber-100 text-amber-700",
   Paid: "bg-emerald-100 text-emerald-700",
   Cancelled: "bg-red-100 text-red-700",
@@ -70,24 +70,23 @@ export default function FNFListPage() {
       qc.invalidateQueries({ queryKey: ["payroll", "full-final"] });
       setShowForm(false);
     },
-    onError: (e: Error) => toast.error("Create failed", e.message),
   });
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <DoorOpen className="text-[#3b82f6]" />
+          <DoorOpen className="text-[#22c55e]" />
           <div>
-            <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">Full &amp; final settlement</h1>
-            <p className="text-sm text-gray-500">Compute pending salary, leave encashment, gratuity, bonus, and recoveries on exit.</p>
+            <h1 className="text-page-title text-gray-900">Full &amp; final settlement</h1>
+            <p className="text-xs text-gray-500">Compute pending salary, leave encashment, gratuity, bonus, and recoveries on exit.</p>
           </div>
         </div>
         <button
           onClick={() => setShowForm((v) => !v)}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#16243A] hover:bg-[#1E3354] text-white rounded-md text-sm font-semibold"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-xs font-medium"
         >
-          {showForm ? <X size={14} /> : <Plus size={14} />} {showForm ? "Cancel" : "New F&F"}
+          {showForm ? <X size={13} /> : <Plus size={13} />} {showForm ? "Cancel" : "New F&F"}
         </button>
       </div>
 
@@ -103,11 +102,11 @@ export default function FNFListPage() {
         {isLoading ? (
           <div className="p-4"><SkeletonTable rows={5} cols={6} /></div>
         ) : items.length === 0 ? (
-          <div className="py-12 text-center text-sm text-gray-500">No settlements yet.</div>
+          <div className="py-12 text-center text-xs text-gray-500">No settlements yet.</div>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full text-xs">
             <thead>
-              <tr className="text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">
+              <tr className="text-table-head font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">
                 <th className="text-left py-2 px-3">Employee</th>
                 <th className="text-left py-2 px-3">LWD</th>
                 <th className="text-right py-2 px-3">Pending Salary</th>
@@ -122,23 +121,23 @@ export default function FNFListPage() {
               {items.map((f, i) => (
                 <tr key={f.id} className="row-stagger border-b border-gray-50 hover:bg-gray-50/50" style={{ ["--i" as never]: Math.min(i, 10) }}>
                   <td className="py-2 px-3">
-                    <p className="font-medium text-gray-900">{f.employee ? `${f.employee.firstName} ${f.employee.lastName}` : "—"}</p>
+                    <p className="text-[13px] font-medium text-gray-900">{f.employee ? `${f.employee.firstName} ${f.employee.lastName}` : "—"}</p>
                     <p className="text-xs text-gray-500">{f.employee?.employeeCode}</p>
                   </td>
                   <td className="py-2 px-3 text-gray-700">{new Date(f.lastWorkingDate).toLocaleDateString("en-IN")}</td>
-                  <td className="py-2 px-3 text-right text-gray-900">₹{INR.format(Number(f.pendingSalary))}</td>
-                  <td className="py-2 px-3 text-right text-gray-900">₹{INR.format(Number(f.leaveEncashment))}</td>
-                  <td className="py-2 px-3 text-right text-gray-900">₹{INR.format(Number(f.gratuityAmount))}</td>
-                  <td className="py-2 px-3 text-right text-gray-900 font-bold">₹{INR.format(Number(f.netSettlement))}</td>
+                  <td className="py-2 px-3 text-right text-sm text-gray-900">₹{INR.format(Number(f.pendingSalary))}</td>
+                  <td className="py-2 px-3 text-right text-sm text-gray-900">₹{INR.format(Number(f.leaveEncashment))}</td>
+                  <td className="py-2 px-3 text-right text-sm text-gray-900">₹{INR.format(Number(f.gratuityAmount))}</td>
+                  <td className="py-2 px-3 text-right text-sm text-gray-900 font-bold">₹{INR.format(Number(f.netSettlement))}</td>
                   <td className="py-2 px-3">
-                    <span className={clsx("inline-block px-2 py-0.5 rounded text-[11px] font-semibold", STATUS_BADGE[f.status])}>
+                    <span className={clsx("inline-block px-2 py-0.5 rounded text-[11px] font-medium", STATUS_BADGE[f.status])}>
                       {f.status}
                     </span>
                   </td>
                   <td className="py-2 px-3 text-right">
                     <Link
                       href={`/payroll/full-final/${f.id}`}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#16243A] hover:bg-[#1E3354] text-white text-xs font-semibold shadow-sm transition group"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-green-600 hover:bg-green-700 text-white text-xs font-medium shadow-sm transition group"
                     >
                       <DoorOpen size={12} />
                       Open
@@ -164,7 +163,7 @@ function CreateFNFForm({ employees, submitting, onSubmit }: {
   const [resignationDate, setResignationDate] = useState(new Date().toISOString().slice(0, 10));
   const [lastWorkingDate, setLastWorkingDate] = useState(new Date().toISOString().slice(0, 10));
   const [reason, setReason] = useState("");
-  const inputCls = "w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]";
+  const inputCls = "w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]";
 
   return (
     <form
@@ -188,7 +187,7 @@ function CreateFNFForm({ employees, submitting, onSubmit }: {
         <input value={reason} onChange={(e) => setReason(e.target.value)} className={inputCls} placeholder="Resignation, retirement, termination, etc." />
       </div>
       <div className="col-span-4 flex justify-end">
-        <button type="submit" disabled={submitting || !employeeId} className="inline-flex items-center gap-2 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 text-white rounded-md text-sm font-semibold">
+        <button type="submit" disabled={submitting || !employeeId} className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-md text-xs font-medium">
           {submitting ? "Computing…" : "Compute F&F"}
         </button>
       </div>

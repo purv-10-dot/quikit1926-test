@@ -1,195 +1,208 @@
+import crypto from "crypto";
+import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
-import { sendMail } from "@/lib/services/mailer";
-import { buildInvitationEmail } from "@/lib/email-templates/invitation";
 import { generateInviteToken, inviteExpiry } from "@/lib/auth/invite-token";
-import { absoluteUrl } from "@/lib/config/app";
+import { resolveAndSend } from "@/lib/email/resolve";
+import {
+  INVITE_METHOD,
+  MEMBERSHIP_ROLES,
+  renderInvitationEmail,
+  type SsoProvider,
+} from "@quikit/shared";
+import { classifySsoProviderAsync } from "@quikit/shared/sso-domain-server";
+import { generateTempPassword } from "@quikit/shared/temp-password";
 
-/** Resolve the tenant's display name for emails. */
-export async function companyName(orgId: string): Promise<string> {
-  const c = await prisma.companySettings.findUnique({
-    where: { orgId },
-    select: { companyName: true },
-  });
-  return c?.companyName?.trim() || "QuikIT HRMS";
-}
+/** App slug HRMS is registered under in the central QuikIT app registry. */
+const QUIKHRMS_APP_SLUG = "quikhrms";
 
-interface BuildInviteArgs {
-  orgId: string;
-  to: string;
-  inviteeName: string;
-  loginUrl: string; // e.g. https://host/core/login — SSO sign-in landing
-  /** Central QuikIT accept flow (set-password) URL for brand-new native users; null otherwise. */
-  setupUrl?: string | null;
-  expiresAt: Date;
-  inviterName?: string | null;
-  /** Pre-resolved company name — pass it in bulk to avoid N DB lookups. */
-  company?: string;
-  /** QuikIT temporary password for brand-new central users (null when they already have a QuikIT account). */
+export interface CentralInviteResult {
+  /** Central account + membership + app access created and invite email sent. */
+  ok: boolean;
+  userId?: string;
+  isNewUser?: boolean;
+  invitationToken?: string | null;
   tempPassword?: string | null;
-}
-
-/** Build the invitation email payload (subject + html). */
-async function buildInvite(args: BuildInviteArgs): Promise<{ subject: string; html: string }> {
-  return buildInvitationEmail({
-    inviteeName: args.inviteeName,
-    companyName: args.company ?? (await companyName(args.orgId)),
-    loginUrl: args.loginUrl,
-    setupUrl: args.setupUrl ?? null,
-    inviterName: args.inviterName,
-    expiresAt: args.expiresAt.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }),
-    tempPassword: args.tempPassword ?? null,
-  });
-}
-
-export interface InviteDispatchResult {
-  queued: boolean;       // pushed onto the EMAIL queue (worker will send)
-  sent: boolean;         // sent inline (fallback when queue unavailable)
   error?: string;
 }
 
 /**
- * Send a SINGLE invitation email directly via SMTP (no BullMQ / Redis).
- * Single-user invites are sent inline on the request — the queue is reserved
- * for bulk import only. Never throws.
+ * Central-first invite — written DIRECTLY against the shared central DB, exactly
+ * like QuikScale's `app/api/org/users` flow (no HTTP hop to a provisioning
+ * endpoint; HRMS shares the same `@quikit/database` client and central schema).
+ *
+ * Effect (idempotent):
+ *   1. Central `User` — created if new (native → bcrypt temp password +
+ *      mustChangePassword so the Set-Password screen fires on first login).
+ *   2. Central `OrgMember` — active membership (role "member") + single-use
+ *      invitation token.
+ *   3. Central `UserAppAccess` — grants the person QuikHRMS access.
+ *   4. Onboarding invite email — sent by HRMS via the shared template
+ *      (`renderInvitationEmail`) carrying the set-up link + temp password.
+ *   5. Local HRMS `Invitation` row — for the Users & Invitations list.
  */
-export async function dispatchInvitationEmail(args: BuildInviteArgs): Promise<InviteDispatchResult> {
-  let subject: string, html: string;
-  try {
-    ({ subject, html } = await buildInvite(args));
-  } catch (err) {
-    return { queued: false, sent: false, error: err instanceof Error ? err.message : "build failed" };
-  }
-  const r = await sendMail({ to: args.to, subject, html });
-  return { queued: false, sent: r.sent, error: r.error };
-}
-
-/**
- * A single new employee created via the Add Employee form with "send invite":
- * create the Pending Invitation linked to the employee (so it shows in Users &
- * Invitations) and send the activation email DIRECTLY via SMTP — no BullMQ job,
- * no Redis queue entry. (Bulk import uses inviteImportedEmployees, which queues.)
- * Never throws.
- */
-export async function inviteSingleEmployee(
-  orgId: string,
-  invitedBy: string,
-  emp: ImportedEmployee,
-): Promise<InviteDispatchResult> {
-  const email = emp.workEmail.toLowerCase();
-  const company = await companyName(orgId);
-  const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-  const loginUrl = absoluteUrl(`${basePath}/login`);
-  const expiresAt = inviteExpiry();
-
-  // Create the Pending invitation row only if one isn't already open for this email.
-  const existing = await prisma.invitation.findFirst({
-    where: { orgId, deletedAt: null, status: "Pending", email: { equals: email, mode: "insensitive" } },
-    select: { id: true },
-  });
-  if (!existing) {
-    const { hash } = generateInviteToken();
-    await prisma.invitation.create({
-      data: {
-        orgId, email, firstName: emp.firstName, lastName: emp.lastName,
-        roleIds: emp.roleId ? [emp.roleId] : [],
-        token: hash, expiresAt, status: "Pending", invitedBy, employeeId: emp.id,
-      },
-    });
-  }
-
-  // Inline SMTP send — single invite never touches the queue.
-  return dispatchInvitationEmail({
-    orgId,
-    to: email,
-    inviteeName: `${emp.firstName} ${emp.lastName}`.trim(),
-    loginUrl,
-    expiresAt,
-    company,
-  });
-}
-
-/**
- * Bulk variant — sends the invitation email INLINE via SMTP (no queue). Used by
- * the bulk employee-import flow, which runs in an in-process background task, so
- * sending inline here never blocks a request. Returns whether the email sent.
- */
-export async function queueInvitationEmail(args: BuildInviteArgs): Promise<boolean> {
-  const r = await dispatchInvitationEmail(args);
-  return r.sent;
-}
-
-export interface ImportedEmployee {
-  id: string;
-  workEmail: string;
+export async function provisionCentralInvite(args: {
+  orgId: string;
+  invitedBy: string;
+  email: string;
   firstName: string;
   lastName: string;
-  roleId: string | null;
-}
+  roleIds?: string[];
+  employeeId?: string | null;
+  invitationMethod?: string;
+  departmentId?: string | null;
+  designationId?: string | null;
+  managerId?: string | null;
+}): Promise<CentralInviteResult> {
+  const email = args.email.trim().toLowerCase();
+  const firstName = args.firstName?.trim() || email.split("@")[0];
+  const lastName = args.lastName?.trim() || "-";
 
-/**
- * For employees freshly created by a People bulk import: create a Pending
- * invitation linked to each employee (so it shows in Users & Invitations) and
- * queue an activation email so they set their own password. Skips anyone who
- * already has a pending invite. Runs in the worker — never blocks a request.
- */
-export async function inviteImportedEmployees(
-  orgId: string,
-  invitedBy: string,
-  employees: ImportedEmployee[],
-): Promise<{ invited: number; queued: number }> {
-  if (employees.length === 0) return { invited: 0, queued: 0 };
-
-  const emails = [...new Set(employees.map((e) => e.workEmail.toLowerCase()))];
-  const existing = await prisma.invitation.findMany({
-    where: { orgId, deletedAt: null, status: "Pending", email: { in: emails, mode: "insensitive" } },
-    select: { email: true },
-  });
-  const pending = new Set(existing.map((i) => i.email.toLowerCase()));
-
-  const company = await companyName(orgId);
-  const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-  const loginUrl = absoluteUrl(`${basePath}/login`);
-
-  let invited = 0;
-  let queued = 0;
-  for (const emp of employees) {
-    const email = emp.workEmail.toLowerCase();
-    if (pending.has(email)) continue;
-    pending.add(email);
-
-    // token hash satisfies the Invitation.token @unique column; it's no longer
-    // emailed (login is SSO) but keeps each invite row uniquely keyed.
-    const { hash } = generateInviteToken();
-    const expiresAt = inviteExpiry();
-    await prisma.invitation.create({
-      data: {
-        orgId,
-        email,
-        firstName: emp.firstName,
-        lastName: emp.lastName,
-        roleIds: emp.roleId ? [emp.roleId] : [],
-        token: hash,
-        expiresAt,
-        status: "Pending",
-        invitedBy,
-        employeeId: emp.id, // links the invite to the already-created employee
-      },
+  try {
+    // 0) The quikhrms app must exist centrally and be enabled for the org.
+    const app = await prisma.app.findFirst({ where: { slug: QUIKHRMS_APP_SLUG }, select: { id: true, name: true } });
+    if (!app) return { ok: false, error: "QuikHRMS app is not registered centrally." };
+    const orgApp = await prisma.orgAppAccess.findFirst({
+      where: { orgId: args.orgId, appId: app.id, enabled: true },
+      select: { appId: true },
     });
-    invited++;
+    if (!orgApp) return { ok: false, error: "QuikHRMS is not provisioned for this organisation." };
 
-    try {
-      await queueInvitationEmail({
-        orgId,
-        to: email,
-        inviteeName: `${emp.firstName} ${emp.lastName}`.trim(),
-        loginUrl,
-        expiresAt,
-        company,
-      });
-      queued++;
-    } catch (err) {
-      console.error("[invite-import] enqueue failed:", email, err);
+    // SSO only when the email genuinely classifies as a supported provider;
+    // otherwise fall back to native (temp password) so onboarding never
+    // dead-ends on a non-Google/Microsoft address.
+    let ssoProvider: SsoProvider | null = null;
+    let method: (typeof INVITE_METHOD)[keyof typeof INVITE_METHOD] = INVITE_METHOD.NATIVE;
+    if (args.invitationMethod === INVITE_METHOD.SSO) {
+      ssoProvider = await classifySsoProviderAsync(email);
+      if (ssoProvider) method = INVITE_METHOD.SSO;
     }
+    const isSso = method === INVITE_METHOD.SSO;
+
+    // 1) Central User — create if new; seed a temp password for native.
+    let user = await prisma.user.findUnique({ where: { email }, select: { id: true, password: true } });
+    let isNewUser = false;
+    let tempPassword: string | null = null;
+    if (!user) {
+      if (!isSso) tempPassword = generateTempPassword();
+      user = await prisma.user.create({
+        data: {
+          firstName, lastName, email,
+          password: !isSso && tempPassword ? await bcrypt.hash(tempPassword, 12) : null,
+          mustChangePassword: !isSso,
+        },
+        select: { id: true, password: true },
+      });
+      isNewUser = true;
+    } else if (!isSso && !user.password) {
+      tempPassword = generateTempPassword();
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { password: await bcrypt.hash(tempPassword, 12), mustChangePassword: true },
+      });
+    }
+
+    // 2) Central OrgMember — active membership + single-use token.
+    const invitationToken = crypto.randomUUID();
+    await prisma.orgMember.upsert({
+      where: { orgId_userId: { orgId: args.orgId, userId: user.id } },
+      create: {
+        orgId: args.orgId, userId: user.id, role: MEMBERSHIP_ROLES.MEMBER, status: "active",
+        invitationToken, invitedAt: new Date(), inviteMethod: method, inviteProvider: ssoProvider,
+        createdBy: args.invitedBy,
+      },
+      update: { status: "active", invitationToken, inviteMethod: method, inviteProvider: ssoProvider },
+    });
+
+    // 3) Central UserAppAccess — grant QuikHRMS access (idempotent).
+    const hasAccess = await prisma.userAppAccess.findFirst({
+      where: { orgId: args.orgId, appId: app.id, userId: user.id }, select: { id: true },
+    });
+    if (!hasAccess) {
+      await prisma.userAppAccess.create({
+        data: { userId: user.id, orgId: args.orgId, appId: app.id, role: "member", grantedBy: args.invitedBy },
+      });
+    }
+
+    // 3b) Link the HRMS Employee → central User now (not lazily on first login).
+    // `updateMany` with authUserId: null makes it idempotent and never
+    // re-points an employee already bound to another identity.
+    if (args.employeeId) {
+      await prisma.employee.updateMany({
+        where: { id: args.employeeId, orgId: args.orgId, authUserId: null },
+        data: { authUserId: user.id },
+      });
+    }
+
+    // 4) Send the onboarding invite email (HRMS transport + shared template).
+    try {
+      const org = await prisma.org.findUnique({ where: { id: args.orgId }, select: { name: true, brandColor: true } });
+      const appBaseUrl = process.env.NEXT_PUBLIC_QUIKIT_URL ?? process.env.QUIKIT_URL ?? "http://localhost:3000";
+      const inviteInput = {
+        to: email,
+        firstName,
+        orgName: org?.name ?? "your organisation",
+        orgLogoUrl: null,
+        orgBrandColor: org?.brandColor ?? null,
+        inviterName: `${org?.name ?? "QuikIT"} HR`,
+        role: "Member",
+        appNames: [app.name],
+        token: invitationToken,
+        appBaseUrl,
+        inviteMethod: method,
+        ssoProvider,
+        tempPassword: tempPassword ?? "",
+      };
+      await resolveAndSend(args.orgId, {
+        key: "employee.invite",
+        to: email,
+        vars: {
+          firstName,
+          orgName: inviteInput.orgName,
+          inviterName: inviteInput.inviterName,
+          role: inviteInput.role,
+          inviteUrl: `${appBaseUrl}/invitations/accept?token=${invitationToken}`,
+          companyName: inviteInput.orgName,
+        },
+        fallback: () => renderInvitationEmail(inviteInput),
+      });
+    } catch (mailErr) {
+      console.error("[central-invite] onboarding email failed:", email, mailErr);
+    }
+
+    // 5) Local HRMS Invitation row for the Users & Invitations list.
+    const expiresAt = inviteExpiry();
+    const existing = await prisma.invitation.findFirst({
+      where: { orgId: args.orgId, deletedAt: null, status: "Pending", email: { equals: email, mode: "insensitive" } },
+      select: { id: true },
+    });
+    if (existing) {
+      await prisma.invitation.update({
+        where: { id: existing.id },
+        data: {
+          centralInviteToken: invitationToken, expiresAt, invitedBy: args.invitedBy,
+          ...(args.employeeId ? { employeeId: args.employeeId } : {}),
+          ...(args.roleIds ? { roleIds: args.roleIds } : {}),
+        },
+      });
+    } else {
+      await prisma.invitation.create({
+        data: {
+          orgId: args.orgId, email, firstName, lastName,
+          roleIds: args.roleIds ?? [],
+          departmentId: args.departmentId ?? null,
+          designationId: args.designationId ?? null,
+          managerId: args.managerId ?? null,
+          token: generateInviteToken().hash,
+          centralInviteToken: invitationToken,
+          expiresAt, status: "Pending", invitedBy: args.invitedBy,
+          ...(args.employeeId ? { employeeId: args.employeeId } : {}),
+        },
+      });
+    }
+
+    return { ok: true, userId: user.id, isNewUser, invitationToken, tempPassword };
+  } catch (err) {
+    console.error("[central-invite] failed:", email, err);
+    return { ok: false, error: err instanceof Error ? err.message : "Central invite failed" };
   }
-  return { invited, queued };
 }

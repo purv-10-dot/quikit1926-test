@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import type { AuthContext } from "@/lib/types/api";
 import { getCached, invalidateKeys, cacheKeys } from "@/lib/services/cache";
 import { APP_ID, joinCode } from "@/lib/rbac/registry";
+import { expandDelegatedPermissions } from "@/lib/rbac/delegatable";
 import { provisionEmployee, provisionFromInvitation } from "@/lib/rbac/provisioning";
 import { verifyJWT } from "@quikit/auth/jwt";
 
@@ -136,6 +137,51 @@ export async function resolveIdentity(
   return null;
 }
 
+/** Agent claims carried by the AI Runtime service-auth path (P0-1). */
+interface ServiceClaims {
+  actingAgentId: string;
+  actingAs: string;
+}
+
+/**
+ * AI Runtime service-auth (the runtime acting *as* a specific employee).
+ *
+ * The runtime presents `x-internal-secret: INTERNAL_AI_RUNTIME_SECRET` (a
+ * dedicated secret — deliberately NOT `INTERNAL_SECRET`, so a leak of the
+ * launcher's handoff secret can never be used to impersonate an employee)
+ * plus `x-org-id` + `x-acting-employee-id`. We validate the secret, confirm
+ * the acting employee is real + active in that org, and hand back its
+ * Employee.id. The caller (withAuth) then resolves permissions for that
+ * employee exactly as it would for a human session — so the agent inherits
+ * that employee's access and nothing more, and the same PreBoarding /
+ * mustChangePassword locks apply.
+ *
+ * Returns null when the secret is absent/wrong or the required headers are
+ * missing/unresolvable, so withAuth falls through to the normal session path.
+ */
+async function resolveServiceIdentity(
+  req: NextRequest
+): Promise<{ orgId: string; userId: string; agent: ServiceClaims } | null> {
+  const secret = process.env.INTERNAL_AI_RUNTIME_SECRET;
+  const provided = req.headers.get("x-internal-secret");
+  if (!secret || !provided || provided !== secret) return null;
+
+  const orgId = req.headers.get("x-org-id")?.trim();
+  const actingEmployeeId = req.headers.get("x-acting-employee-id")?.trim();
+  if (!orgId || !actingEmployeeId) return null;
+
+  const actingAgentId = req.headers.get("x-acting-agent-id")?.trim() || "unknown-agent";
+  const actingAs = req.headers.get("x-acting-as")?.trim() || "ai_agent";
+
+  const emp = await prisma.employee.findFirst({
+    where: { orgId, id: actingEmployeeId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!emp) return null;
+
+  return { orgId, userId: emp.id, agent: { actingAgentId, actingAs } };
+}
+
 type RouteHandler = (
   req: NextRequest,
   ctx: AuthContext,
@@ -160,6 +206,12 @@ interface WithAuthOptions {
    * daily cap).
    */
   rateLimit?: RateLimitSpec | RateLimitSpec[];
+  /**
+   * Allow the AI Runtime service-auth path (P0-1) on this route: an
+   * `x-internal-secret` + acting-employee header set is accepted in place of a
+   * user session. Off by default — opt in per route (or use `withServiceAuth`).
+   */
+  allowServiceAuth?: boolean;
 }
 
 interface RateLimitSpec {
@@ -204,7 +256,6 @@ const PREBOARDING_ALLOWED = new Set<string>([
   "hrms.holiday.read",
   "hrms.announcement.read",
   "hrms.notification.read_self",
-  "hrms.asset.read_self",
 ]);
 
 /**
@@ -332,6 +383,57 @@ async function resolveDevImpersonation(orgId: string, roleName: string): Promise
   };
 }
 
+/**
+ * Extra permissions lent to `delegateeId` by ACTIVE delegations pointed at them.
+ *
+ * A delegation only ever grants what the DELEGATOR still holds — we intersect the
+ * requested codes with the delegator's live permissions — so the delegatee can
+ * never exceed the delegator, and the grant evaporates the instant the delegator
+ * loses the right, the window closes, or the delegation is switched off.
+ *
+ * Uncached on purpose: delegations are rare and setup/expiry must take effect
+ * immediately (the delegator-side perm lookup it calls IS cached). Returns both
+ * the flat union and the per-delegator breakdown (for on-behalf audit + routing).
+ */
+async function resolveDelegatedPermissions(
+  orgId: string,
+  delegateeId: string,
+): Promise<{ permissions: string[]; sources: { delegatorId: string; permissions: string[] }[] }> {
+  const now = new Date();
+  const dels = await prisma.delegation.findMany({
+    where: {
+      orgId,
+      delegateeId,
+      deletedAt: null,
+      isActive: true,
+      fromDate: { lte: now },
+      OR: [{ toDate: null }, { toDate: { gte: now } }],
+    },
+    select: { delegatorId: true, modules: true },
+  });
+  if (dels.length === 0) return { permissions: [], sources: [] };
+
+  const union = new Set<string>();
+  const sources: { delegatorId: string; permissions: string[] }[] = [];
+  const delegatorPerms = new Map<string, Set<string>>();
+
+  for (const d of dels) {
+    let held = delegatorPerms.get(d.delegatorId);
+    if (!held) {
+      const rp = await resolvePermissions(orgId, d.delegatorId);
+      held = new Set(rp.permissions);
+      delegatorPerms.set(d.delegatorId, held);
+    }
+    const isSuperDelegator = held.has("*");
+    const requested = expandDelegatedPermissions(d.modules);
+    const granted = requested.filter((code) => isSuperDelegator || held!.has(code));
+    if (granted.length === 0) continue;
+    for (const code of granted) union.add(code);
+    sources.push({ delegatorId: d.delegatorId, permissions: granted });
+  }
+  return { permissions: [...union], sources };
+}
+
 export async function invalidatePermissionCache(orgId: string, userId?: string) {
   if (userId) {
     await invalidateKeys(cacheKeys.permissions(orgId, userId));
@@ -386,7 +488,23 @@ export function withAuth(handler: RouteHandler, options?: WithAuthOptions) {
     try {
       const params = await context.params;
 
-      const identity = await resolveIdentity(req);
+      // Identity precedence: AI Runtime service-auth (when the route opts in and
+      // the headers/secret are present), else the normal central-session / dev-
+      // header path. `service` is non-null only for the agent path.
+      let identity: { orgId: string; userId: string; fromSession: boolean } | null = null;
+      let service: ServiceClaims | null = null;
+      if (options?.allowServiceAuth) {
+        const svc = await resolveServiceIdentity(req);
+        if (svc) {
+          // fromSession=true suppresses dev-header role spoofing: the agent is a
+          // trusted first-party caller, never the local no-login flow.
+          identity = { orgId: svc.orgId, userId: svc.userId, fromSession: true };
+          service = svc.agent;
+        }
+      }
+      if (!identity) {
+        identity = await resolveIdentity(req);
+      }
       if (!identity) {
         return unauthorized("Missing authentication credentials");
       }
@@ -456,6 +574,20 @@ export function withAuth(handler: RouteHandler, options?: WithAuthOptions) {
         }
       }
 
+      // Delegation: fold in any permissions lent to this user by active
+      // delegations pointed at them (never exceeding the delegator, auto-
+      // expiring). Skipped for locked-out states — super-admin already has "*",
+      // and a PreBoarding / temp-password user must stay narrowed regardless of
+      // what someone delegated to them.
+      let delegatedFrom: { delegatorId: string; permissions: string[] }[] | undefined;
+      if (!permissions.includes("*") && !preBoarding && !mustChangePassword) {
+        const delegated = await resolveDelegatedPermissions(orgId, userId);
+        if (delegated.permissions.length) {
+          permissions = [...new Set([...permissions, ...delegated.permissions])];
+          delegatedFrom = delegated.sources;
+        }
+      }
+
       const effectiveRoles = roleCode ? [roleCode, ...headerRoles] : headerRoles;
       const isSuperAdmin = permissions.includes("*") || effectiveRoles.includes("admin");
 
@@ -479,6 +611,9 @@ export function withAuth(handler: RouteHandler, options?: WithAuthOptions) {
         permissions: isSuperAdmin ? ["*"] : permissions,
         roleCode,
         mustChangePassword,
+        actorType: service ? "ai_agent" : "user",
+        ...(service && { actingAgentId: service.actingAgentId }),
+        ...(delegatedFrom && { delegatedFrom }),
       };
       return await handler(req, authCtx, params);
     } catch (error) {
@@ -495,4 +630,21 @@ export function withAuth(handler: RouteHandler, options?: WithAuthOptions) {
       return internalError();
     }
   };
+}
+
+/**
+ * withAuth variant that additionally accepts the AI Runtime service-auth path
+ * (P0-1): `x-internal-secret: INTERNAL_AI_RUNTIME_SECRET` + `x-org-id` +
+ * `x-acting-employee-id` (optionally `x-acting-agent-id`, `x-acting-as`).
+ *
+ * The agent runs with exactly the acting employee's resolved permissions —
+ * the same RBAC, orgId scoping, and PreBoarding/mustChangePassword locks as a
+ * human session. Every request carries actorType="ai_agent" + actingAgentId on
+ * the AuthContext so mutating routes can attribute the change in the audit log.
+ *
+ * A normal user session still works on these routes — service-auth is only
+ * attempted when the internal secret header is present.
+ */
+export function withServiceAuth(handler: RouteHandler, options?: WithAuthOptions) {
+  return withAuth(handler, { ...options, allowServiceAuth: true });
 }

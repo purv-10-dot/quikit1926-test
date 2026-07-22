@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PAN_REGEX, TAN_REGEX, GSTIN_REGEX, CIN_REGEX } from "./identifiers";
+import { PAN_REGEX, TAN_REGEX, GSTIN_REGEX, CIN_REGEX, zPhoneLooseOptional } from "./identifiers";
 
 // Treat "", null, undefined as "not provided" so optional regex fields don't trip.
 // Cast preserves inferred string type (preprocess output otherwise typed `unknown`).
@@ -20,16 +20,16 @@ export const updateCompanySettingsSchema = z.object({
     { message: "Must be absolute URL or relative path" },
   ),
   website: z.string().url().optional().nullable().or(z.literal("")),
-  email: z.string().email().optional().nullable().or(z.literal("")),
-  phone: z.string().optional().nullable(),
+  email: z.string().min(1, "Company email is required").email("Enter a valid company email"),
+  phone: zPhoneLooseOptional.nullable(),
   addressLine1: z.string().min(1, "Address is required"),
   addressLine2: z.string().optional().nullable(),
-  city: z.string().optional().nullable(),
-  state: z.string().optional().nullable(),
+  city: z.string().min(1, "City is required"),
+  state: z.string().min(1, "State is required"),
   country: z.string().optional().nullable(),
   postalCode: z.string().optional().nullable(),
   gstin: optStr(z.string().regex(GSTIN_REGEX, "GSTIN format invalid (e.g. 27ABCDE1234F1Z5)")),
-  pan:   optStr(z.string().regex(PAN_REGEX,   "PAN format invalid (e.g. ABCDE1234F)")),
+  pan:   z.string().min(1, "Company PAN is required").regex(PAN_REGEX, "PAN format invalid (e.g. ABCDE1234F)"),
   cin:   optStr(z.string().regex(CIN_REGEX,   "CIN format invalid (21 chars, e.g. U72200KA2010PTC012345)")),
   tan:   optStr(z.string().regex(TAN_REGEX,   "TAN format invalid (e.g. ABCD12345E)")),
   tdsCircleCodeArea:  optStr(z.string().max(3)),
@@ -42,6 +42,8 @@ export const updateCompanySettingsSchema = z.object({
   fiscalYearStart: z.number().int().min(1).max(12).optional(),
   probationPeriodDays: z.number().int().min(0).optional(),
   noticePeriodDays: z.number().int().min(0).optional(),
+  // Recruit re-apply cooling period, in months (0/null = none).
+  candidateCoolingMonths: z.number().int().min(0).max(12).nullable(),
   workWeek: z.array(z.enum(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])).optional(),
   workHoursPerDay: z.number().min(1).max(24).optional(),
 });
@@ -76,7 +78,7 @@ export const bulkCompanyHolidaySchema = z.object({
 export const ApprovalModuleEnum = z.enum([
   "Leave", "Expense", "Asset", "Onboarding", "Offboarding", "Attendance", "Document",
   "Engagement", "Feedback",
-  "Reimbursement", "ProofOfInvestment", "SalaryRevision", "OneTimeEarning",
+  "Reimbursement", "ProofOfInvestment", "SalaryRevision", "OneTimeEarning", "Requisition",
 ]);
 
 /**

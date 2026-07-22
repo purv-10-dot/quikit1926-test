@@ -23,7 +23,7 @@ interface CycleItem {
 
 const statusColors: Record<string, string> = {
   Setup: "bg-gray-100 text-gray-600",
-  GoalSetting: "bg-[#dbeafe] text-[#2563eb]",
+  GoalSetting: "bg-[#dcfce7] text-[#16a34a]",
   SelfReview: "bg-yellow-100 text-yellow-700",
   ManagerReview: "bg-orange-100 text-orange-700",
   PeerReview: "bg-purple-100 text-purple-700",
@@ -67,7 +67,6 @@ export default function ReviewsPage() {
       toast.success("Cycle deleted");
       qc.invalidateQueries({ queryKey: ["appraisal-cycles"] });
     },
-    onError: (e: Error) => toast.error("Delete failed", e.message),
   });
   const confirmDelete = async (c: CycleItem) => {
     const ok = await dialog.confirm({
@@ -82,12 +81,12 @@ export default function ReviewsPage() {
   const cycles = data?.data ?? [];
 
   return (
-    <div className="w-full px-6 py-6">
+    <div className="w-full px-5 py-4">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-        <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">Performance reviews</h1>
+        <h1 className="text-page-title text-gray-900">Performance reviews</h1>
         <button onClick={() => { setForm({ name: "", type: "Annual", startDate: "", endDate: "" }); setShowCreate(true); }}
           className="btn btn-primary">
-          <Plus size={14} /> New cycle
+          <Plus size={13} /> New cycle
         </button>
       </div>
 
@@ -116,7 +115,7 @@ export default function ReviewsPage() {
           <button
             type="button"
             onClick={() => { setStatusFilter(""); setTypeFilter(""); }}
-            className="text-xs text-[#3b82f6] hover:underline"
+            className="text-xs text-[#22c55e] hover:underline"
           >
             Clear
           </button>
@@ -132,32 +131,32 @@ export default function ReviewsPage() {
           <table className="w-full">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Cycle</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Type</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Period</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Status</th>
-                <th className="text-center px-4 py-3 text-xs font-medium text-gray-500 uppercase">Appraisals</th>
-                <th className="w-12 px-3 py-3"></th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Cycle</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Type</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Period</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Status</th>
+                <th className="text-center px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Appraisals</th>
+                <th className="w-12 px-3 py-2.5"></th>
               </tr>
             </thead>
             <tbody>
               {cycles.map((c, i) => (
                 <tr key={c.id} className="row-stagger border-b border-gray-100 hover:bg-gray-50" style={{ ["--i" as never]: Math.min(i, 10) }}>
-                  <td className="px-4 py-3 text-sm font-medium text-gray-900">{c.name}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700">{c.type}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700">{formatDate(c.startDate)} — {formatDate(c.endDate)}</td>
-                  <td className="px-4 py-3">
-                    <span className={clsx("px-2 py-0.5 rounded-full text-xs font-medium", statusColors[c.status])}>{c.status}</span>
+                  <td className="px-4 py-2.5 text-[13px] font-medium text-gray-900">{c.name}</td>
+                  <td className="px-4 py-2.5 text-xs text-gray-700">{c.type}</td>
+                  <td className="px-4 py-2.5 text-xs text-gray-700">{formatDate(c.startDate)} — {formatDate(c.endDate)}</td>
+                  <td className="px-4 py-2.5">
+                    <span className={clsx("px-2 py-0.5 rounded-full text-[11px] font-medium", statusColors[c.status])}>{c.status}</span>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-700 text-center">{c._count.appraisals}</td>
-                  <td className="px-3 py-3 text-right">
+                  <td className="px-4 py-2.5 text-xs text-gray-700 text-center">{c._count.appraisals}</td>
+                  <td className="px-3 py-2.5 text-right">
                     <button
                       type="button"
                       onClick={() => confirmDelete(c)}
                       title="Delete cycle"
                       className="p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 rounded transition"
                     >
-                      <Trash2 size={14} />
+                      <Trash2 size={12} />
                     </button>
                   </td>
                 </tr>
@@ -172,7 +171,7 @@ export default function ReviewsPage() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
             <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required
-              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
@@ -186,17 +185,17 @@ export default function ReviewsPage() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
               <input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} required
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
               <input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} required
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]" />
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm">Cancel</button>
-            <button type="submit" className="px-4 py-2 bg-[#16243A] text-white rounded-lg text-sm font-medium hover:bg-[#2563eb]">Create</button>
+            <button type="button" onClick={() => setShowCreate(false)} className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium">Cancel</button>
+            <button type="submit" className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700">Create</button>
           </div>
         </form>
       </Modal>

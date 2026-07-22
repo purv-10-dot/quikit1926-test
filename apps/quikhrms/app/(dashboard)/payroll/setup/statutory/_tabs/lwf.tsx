@@ -23,7 +23,7 @@ interface LWFCfg {
   deductionCycle: Cycle;
 }
 
-const inputCls = "w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#16243A]/20 focus:border-[#16243A]";
+const inputCls = "w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#166534]/20 focus:border-[#166534]";
 const lockedCls = "w-full px-3 py-2 text-sm border border-gray-200 rounded-md bg-gray-100 text-gray-700 font-mono cursor-not-allowed";
 
 interface LWFPreset {
@@ -148,9 +148,9 @@ export function LWFTab({ onSaved }: { onSaved?: () => void } = {}) {
   const isPercent = form.calcType === "PercentOfWage";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
-        <h2 className="text-base font-bold text-gray-900">Labour Welfare Fund</h2>
+        <h2 className="text-[13px] font-semibold text-gray-900">Labour Welfare Fund</h2>
         <p className="text-xs text-gray-500 mt-1">
           LWF is a state-administered levy. Rates and cycles below are populated from the
           state&apos;s LWF Act and are locked to prevent accidental drift from statute.
@@ -164,7 +164,7 @@ export function LWFTab({ onSaved }: { onSaved?: () => void } = {}) {
             return (
               <div key={cfg.id} className="rounded-lg border border-gray-200 bg-white p-4">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold text-gray-900">{cfg.state}</p>
+                  <p className="text-[13px] font-semibold text-gray-900">{cfg.state}</p>
                   <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
                     {pct ? "% of Wage" : "Flat"}
                   </span>
@@ -199,8 +199,8 @@ export function LWFTab({ onSaved }: { onSaved?: () => void } = {}) {
         className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-4"
       >
         <div className="flex items-center justify-between">
-          <p className="text-sm font-semibold text-gray-900">Add / Update Configuration</p>
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 ring-1 ring-blue-100 text-[10px] font-bold">
+          <p className="text-[13px] font-semibold text-gray-900">Add / Update Configuration</p>
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50 text-green-700 ring-1 ring-green-100 text-[10px] font-bold">
             <Lock size={10} /> Rates locked to state statute
           </span>
         </div>
@@ -226,7 +226,7 @@ export function LWFTab({ onSaved }: { onSaved?: () => void } = {}) {
                 checked={form.enabled && applicable}
                 disabled={!applicable}
                 onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
-                className="rounded text-[#3b82f6]"
+                className="rounded text-[#22c55e]"
               />
               Enabled
             </label>
@@ -237,7 +237,7 @@ export function LWFTab({ onSaved }: { onSaved?: () => void } = {}) {
           <div className="rounded-lg ring-1 ring-amber-200 bg-amber-50 p-4 flex items-start gap-3">
             <Info size={16} className="text-amber-600 shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm font-bold text-amber-900">
+              <p className="text-[13px] font-semibold text-amber-900">
                 LWF is not applicable in {form.state}
               </p>
               <p className="text-xs text-amber-800 mt-0.5 leading-relaxed">
@@ -273,9 +273,9 @@ export function LWFTab({ onSaved }: { onSaved?: () => void } = {}) {
           <button
             type="submit"
             disabled={saveMut.isPending || !applicable}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-md text-sm font-semibold shadow-sm"
+            className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-md text-xs font-medium shadow-sm"
           >
-            <Save size={14} /> {saveMut.isPending ? "Saving…" : "Save"}
+            <Save size={13} /> {saveMut.isPending ? "Saving…" : "Save"}
           </button>
         </div>
       </form>

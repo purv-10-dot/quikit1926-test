@@ -4,6 +4,7 @@ import { Prisma } from "@quikit/database";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
+import { writableAssetIds } from "@/lib/api/assetScope";
 
 const auth = withOrgAuthForResource("Asset");
 
@@ -13,8 +14,8 @@ const updateSchema = z.object({
   baseCategoryId: z.string().optional(),
   categoryId: z.string().optional(),
   itemName: z.string().optional(),
-  itemCode: z.string().optional(),
-  serialNumber: z.string().optional(),
+  itemCode: z.string().trim().min(1, "Item Code is required").optional(),
+  serialNumber: z.string().trim().min(1, "Serial Number is required").optional(),
   invoiceNumber: z.string().optional(),
   price: z.coerce.number().nullable().optional(),
   purchaseDate: z.string().optional(),
@@ -35,6 +36,10 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId, userEmail
       { status: 400 },
     );
   }
+  // Row scope: non-viewAll callers may only touch assets assigned to them.
+  const [writable] = await writableAssetIds(orgId, userId, userEmail, [id]);
+  if (!writable) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+
   const row = await db.astAsset.findFirst({ where: { id, orgId }, select: { id: true } });
   if (!row) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
 
@@ -58,6 +63,10 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId, userEmail
 
 export const DELETE = auth.delete<{ id: string }>(async ({ orgId, userId, userEmail }, _req, { params }) => {
   const { id } = params;
+  // Row scope: non-viewAll callers may only touch assets assigned to them.
+  const [writable] = await writableAssetIds(orgId, userId, userEmail, [id]);
+  if (!writable) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+
   const existing = await db.astAsset.findFirst({
     where: { id, orgId },
     select: { id: true, itemName: true, itemCode: true },

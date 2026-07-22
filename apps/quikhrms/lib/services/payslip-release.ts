@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { buildPayslipEmail } from "@/lib/email-templates/payslip";
 import { buildPayslipPdf, type PayslipPdfInput } from "@/lib/services/payroll-pdf";
-import { queueEmail } from "@/lib/services/mailer";
+import { resolveAndSend } from "@/lib/email/resolve";
 import { buildPayrollEvent, emitPayrollEvent, PAYROLL_EVENTS } from "@/lib/events/payroll";
 
 interface BankAccount {
@@ -67,7 +67,7 @@ export async function buildAndQueuePayslipEmail(args: {
 
   const companyName = company?.companyName ?? "QuikIT HRMS";
 
-  const { subject, html } = buildPayslipEmail({
+  const payslipData = {
     employeeName: `${employee.firstName} ${employee.lastName}`.trim(),
     employeeCode: employee.employeeCode,
     companyName,
@@ -77,7 +77,7 @@ export async function buildAndQueuePayslipEmail(args: {
     grossEarnings: Number(payslip.grossEarnings),
     totalDeductions: Number(payslip.totalDeductions),
     netPay: Number(payslip.netPay),
-  });
+  };
 
   const earnings: { name: string; amount: number }[] = [];
   const deductions: { name: string; amount: number }[] = [];
@@ -134,11 +134,23 @@ export async function buildAndQueuePayslipEmail(args: {
     netPay: Number(payslip.netPay),
   });
 
-  await queueEmail(orgId, {
+  const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
+  const fmtDate = (d: Date) => d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  await resolveAndSend(orgId, {
+    key: "payslip.release",
     to: employee.workEmail,
-    subject,
-    html,
-    kind: "payslip.release",
+    vars: {
+      employeeName: payslipData.employeeName,
+      employeeCode: payslipData.employeeCode,
+      companyName,
+      period: payslipData.periodStart.toLocaleString("en-IN", { month: "long", year: "numeric" }),
+      payDate: fmtDate(payslipData.payDate),
+      grossEarnings: inr(payslipData.grossEarnings),
+      totalDeductions: inr(payslipData.totalDeductions),
+      netPay: inr(payslipData.netPay),
+      payslipUrl: "",
+    },
+    fallback: () => buildPayslipEmail(payslipData),
     attachments: [
       {
         filename: `Payslip-${employee.employeeCode}-${new Date(payslip.periodStart).toISOString().slice(0, 7)}.pdf`,

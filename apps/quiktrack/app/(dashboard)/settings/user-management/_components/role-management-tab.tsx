@@ -102,7 +102,12 @@ export function RoleManagementTab() {
                     </span>
                   )}
                 </span>
-                {!r.isSystem && (
+                {/* Admin (isSystem), the default role (Member), and Space
+                    Creator are protected — no trash (the server rejects deletion
+                    too). Project Manager and custom roles stay deletable. */}
+                {!r.isSystem &&
+                  !r.isDefault &&
+                  r.name !== SPACE_CREATOR_ROLE_NAME && (
                   <span
                     role="button"
                     tabIndex={0}

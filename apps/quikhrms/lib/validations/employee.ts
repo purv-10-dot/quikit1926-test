@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { zPhone, zPhoneOptional, zPhoneLooseOptional, zBankAccount, zIfscOptional, zPanOptional, zAadhaarOptional } from "./identifiers";
 
 const addressSchema = z.object({
   line1: z.string().min(1),
@@ -6,13 +7,13 @@ const addressSchema = z.object({
   city: z.string().min(1),
   state: z.string().min(1),
   country: z.string().min(1),
-  zipCode: z.string().min(1),
+  zipCode: z.string().min(1), // format validated client-side (mapper sends "—" sentinels for partial addresses)
 });
 
 const emergencyContactSchema = z.object({
   name: z.string().min(1),
   relationship: z.string().min(1),
-  phone: z.string().min(1),
+  phone: zPhone,
   email: z.string().email().optional().or(z.literal("")),
   address: z.string().optional(),
 });
@@ -65,8 +66,8 @@ const identityDocumentSchema = z.object({
 
 const bankAccountSchema = z.object({
   bankName: z.string().min(1),
-  accountNumber: z.string().min(1),
-  ifscCode: z.string().optional(),
+  accountNumber: zBankAccount,
+  ifscCode: zIfscOptional,
   branchName: z.string().optional(),
   accountType: z.enum(["Savings", "Current", "Salary", "NRE", "NRO"]).optional(),
   isPrimary: z.boolean().default(false),
@@ -99,8 +100,8 @@ const employeeBaseSchema = z.object({
   middleName: z.string().optional(),
   lastName: z.string().min(1, "Last name required"),
   displayName: z.string().optional(),
-  gender: z.enum(["Male", "Female", "NonBinary", "PreferNotToSay"]).optional(),
-  dateOfBirth: z.string().optional(),
+  gender: z.enum(["Male", "Female", "Transgender", "NonBinary", "PreferNotToSay"]).optional(),
+  dateOfBirth: z.string().min(1, "Date of birth is required"),
   bloodGroup: z.enum([
     "APositive", "ANegative", "BPositive", "BNegative",
     "ABPositive", "ABNegative", "OPositive", "ONegative",
@@ -126,8 +127,8 @@ const employeeBaseSchema = z.object({
 
   personalEmail: z.string().email().optional(),
   workEmail: z.string().email("Valid work email required"),
-  personalPhone: z.string().optional(),
-  workPhone: z.string().optional(),
+  personalPhone: zPhoneOptional,
+  workPhone: zPhoneLooseOptional,
   linkedinUrl: z.string().url().optional(),
   githubUrl: z.string().url().optional(),
   portfolioUrl: z.string().url().optional(),
@@ -143,7 +144,7 @@ const employeeBaseSchema = z.object({
   gradeId: z.string().optional(),
   reportingManagerId: z.string().min(1, "Reporting manager required"),
   dottedLineManagerId: z.string().optional(),
-  employmentType: z.enum(["FullTime", "PartTime", "Contract", "Intern", "Freelancer", "Consultant"]).default("FullTime"),
+  employmentType: z.enum(["FullTime", "PartTime", "Contract", "Intern"]).default("FullTime"),
   workerType: z.enum(["Permanent", "Temporary", "Probation", "Notice"]).default("Permanent"),
   workLocation: z.enum(["Office", "Remote", "Hybrid"]).default("Office"),
   officeLocationId: z.string().optional(),
@@ -157,8 +158,8 @@ const employeeBaseSchema = z.object({
 
   identityDocuments: z.array(identityDocumentSchema).optional(),
   bankAccounts: z.array(bankAccountSchema).optional(),
-  panNumber: z.string().optional(),
-  aadhaarNumber: z.string().optional(),
+  panNumber: zPanOptional,
+  aadhaarNumber: zAadhaarOptional,
   taxIdentificationNumber: z.string().optional(),
 
   skills: z.array(skillSchema).optional(),
@@ -180,12 +181,41 @@ const employeeBaseSchema = z.object({
   sendInvite: z.boolean().optional(),
 });
 
-export const createEmployeeSchema = employeeBaseSchema;
+// Cross-field date logic shared by create + edit. Null-safe so partial edits
+// that omit a date don't trip it. YYYY-MM-DD strings compare lexicographically.
+function employeeDateChecks(
+  d: { dateOfBirth?: string; dateOfJoining?: string; probationEndDate?: string; confirmationDate?: string },
+  ctx: z.RefinementCtx,
+) {
+  // DOB can't be in the future, and the employee must be at least 14.
+  if (d.dateOfBirth) {
+    const today = new Date().toISOString().slice(0, 10);
+    const minAgeCutoff = new Date();
+    minAgeCutoff.setFullYear(minAgeCutoff.getFullYear() - 14);
+    const minAgeDate = minAgeCutoff.toISOString().slice(0, 10);
+    if (d.dateOfBirth > today) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Date of birth cannot be in the future", path: ["dateOfBirth"] });
+    } else if (d.dateOfBirth > minAgeDate) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Employee must be at least 14 years old", path: ["dateOfBirth"] });
+    }
+  }
+  if (d.dateOfBirth && d.dateOfJoining && d.dateOfBirth >= d.dateOfJoining) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Date of birth must be before the date of joining", path: ["dateOfBirth"] });
+  }
+  if (d.probationEndDate && d.dateOfJoining && d.probationEndDate < d.dateOfJoining) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Probation end date must be on or after the date of joining", path: ["probationEndDate"] });
+  }
+  if (d.confirmationDate && d.dateOfJoining && d.confirmationDate < d.dateOfJoining) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Confirmation date must be on or after the date of joining", path: ["confirmationDate"] });
+  }
+}
+
+export const createEmployeeSchema = employeeBaseSchema.superRefine(employeeDateChecks);
 
 export const updateEmployeeSchema = employeeBaseSchema.partial().omit({
   workEmail: true,
   dateOfJoining: true,
-});
+}).superRefine(employeeDateChecks);
 
 export type CreateEmployeeInput = z.infer<typeof createEmployeeSchema>;
 export type UpdateEmployeeInput = z.infer<typeof updateEmployeeSchema>;

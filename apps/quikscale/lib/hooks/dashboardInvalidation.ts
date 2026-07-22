@@ -43,6 +43,17 @@ export const ENTITY_INVALIDATION_KEYS: Record<DashboardEntity, readonly (readonl
  * Invalidate every query affected by a change to `entity`. Pass `id` to also
  * bust that row's detail cache (which prefix-matches its weekly/notes/audit
  * children). Best-effort: a missing mapping degrades to the list + dashboard.
+ *
+ * `refetchType: "all"` is deliberate. By default `invalidateQueries` only
+ * REFETCHES the queries that are currently active (mounted); inactive ones are
+ * merely marked stale and don't refetch until they remount. The editor almost
+ * never has the Dashboard mounted while editing on a module page, so with the
+ * default the Dashboard's `["<entity>-infinite"]` + `["dashboard"]` queries sat
+ * stale and only refreshed on the NEXT navigation to the Dashboard — which read
+ * to users as "my edit didn't show up". Forcing `"all"` refetches those
+ * inactive queries in the background the moment any edit lands, so the Dashboard
+ * is already fresh whenever the user switches to it (and updates live if it's
+ * already open).
  */
 export function invalidateEntity(
   queryClient: QueryClient,
@@ -52,9 +63,9 @@ export function invalidateEntity(
   const families =
     ENTITY_INVALIDATION_KEYS[entity] ?? [[entity, "list"], ["dashboard"]];
   for (const key of families) {
-    queryClient.invalidateQueries({ queryKey: key as readonly unknown[] });
+    queryClient.invalidateQueries({ queryKey: key as readonly unknown[], refetchType: "all" });
   }
   if (opts?.id) {
-    queryClient.invalidateQueries({ queryKey: [entity, "detail", opts.id] });
+    queryClient.invalidateQueries({ queryKey: [entity, "detail", opts.id], refetchType: "all" });
   }
 }

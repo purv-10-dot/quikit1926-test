@@ -3,22 +3,40 @@
 @tailwind utilities;
 
 :root {
-  /* HiBob-inspired palette */
-  --background: #faf4ef;
-  --foreground: #1b1a1f;
-  --muted-foreground: #6b7280;
-  --sidebar-bg: #1e3a8a;
-  --sidebar-bg-hover: #1e40af;
-  --sidebar-active: #3b82f6;
-  --sidebar-text: #dbeafe;
-  --sidebar-text-muted: #93c5fd;
-  --accent: #16243A;
-  --accent-hover: #1E3354;
+  /* Premium enterprise palette (Rippling / Deel / Linear / Stripe) */
+  --background: #F8FAFC;
+  --foreground: #111827;
+  --muted-foreground: #6B7280;
+  --muted: #9CA3AF;
+  --sidebar-bg: #ffffff;
+  --sidebar-bg-hover: #F1F5F9;
+  --sidebar-active: #16A34A;
+  --sidebar-text: #374151;
+  --sidebar-text-muted: #9CA3AF;
+  --accent: #16A34A;
+  --accent-hover: #15803D;
   --card-bg: #ffffff;
-  --card-border: rgba(15, 23, 42, 0.06);
+  --card-border: #ECECEC;
   --input-bg: #ffffff;
   --input-text: #111827;
-  --border: #f0e4d8;
+  --border: #E5E7EB;
+
+  /* Radius scale — mapped to the design spec. The shared @quikit/ui Tailwind
+     config maps rounded-{sm,md,lg,xl,2xl} → these vars, so tuning them here
+     restyles corners app-wide. Modal (24px) uses rounded-3xl (Tailwind default). */
+  --radius-sm: 0.375rem;  /* 6px  */
+  --radius-md: 0.5rem;    /* 8px   sidebar items */
+  --radius-lg: 0.625rem;  /* 10px  inputs, buttons */
+  --radius-xl: 0.75rem;   /* 12px  dropdowns */
+  --radius-2xl: 0.875rem; /* 14px  cards */
+
+  /* Soft elevation scale — shared @quikit/ui config maps shadow-{sm,md,lg,xl}
+     → these vars; undefined in HRMS meant those utilities rendered NO shadow.
+     Kept intentionally light for the calm enterprise look. */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 6px 20px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 12px 32px rgba(0, 0, 0, 0.08);
 }
 
 .dark {
@@ -27,11 +45,11 @@
   --muted-foreground: #94a3b8;
   --sidebar-bg: #0f172a;
   --sidebar-bg-hover: #1e293b;
-  --sidebar-active: #2563eb;
+  --sidebar-active: #16a34a;
   --sidebar-text: #cbd5e1;
   --sidebar-text-muted: #64748b;
-  --accent: #3b82f6;
-  --accent-hover: #2563eb;
+  --accent: #22c55e;
+  --accent-hover: #16a34a;
   --card-bg: #111a2c;
   --card-border: rgba(255, 255, 255, 0.08);
   --input-bg: #0f172a;
@@ -155,18 +173,30 @@
 .dark .group:hover .group-hover\:text-slate-900,
 .dark .group:hover .group-hover\:text-slate-800 { color: #f1f5f9; }
 
-/* Brand navy (#16243A / #1E3354) is a dark accent used for text/icons on light
+/* Brand navy (#166534 / #15803d) is a dark accent used for text/icons on light
    surfaces — invisible on dark. Remap it (and its hover/group-hover forms) to a
    light brand tone so headings, icons and hover labels stay readable. */
-.dark .text-\[\#16243A\], .dark .text-\[\#16243a\],
-.dark .text-\[\#1E3354\], .dark .text-\[\#1e3354\] { color: #93c5fd; }
-.dark .hover\:text-\[\#16243A\]:hover, .dark .hover\:text-\[\#1E3354\]:hover { color: #bfdbfe; }
-.dark .group:hover .group-hover\:text-\[\#16243A\],
-.dark .group:hover .group-hover\:text-\[\#1E3354\] { color: #bfdbfe; }
+.dark .text-\[\#166534\], .dark .text-\[\#166534\],
+.dark .text-\[\#15803d\], .dark .text-\[\#15803d\] { color: #86efac; }
+.dark .hover\:text-\[\#166534\]:hover, .dark .hover\:text-\[\#15803d\]:hover { color: #bbf7d0; }
+.dark .group:hover .group-hover\:text-\[\#166534\],
+.dark .group:hover .group-hover\:text-\[\#15803d\] { color: #bbf7d0; }
 
 /* Hover borders that darken on light → lighten on dark. */
 .dark .hover\:border-gray-300:hover, .dark .hover\:border-gray-400:hover,
 .dark .hover\:border-slate-300:hover, .dark .hover\:border-slate-400:hover { border-color: #334155; }
+
+/* Brand gradient headers on dropdowns/popovers (user menu, notification bell,
+   role switcher) use `from-[#f0fdf4] to-white`. Gradient stops are custom
+   properties, so the solid `.bg-white` remap above can't reach them — the header
+   otherwise renders as a bright light band in dark mode. Remap this exact pair
+   to dark surfaces. The compound selector leaves every other `to-white`
+   gradient in the app untouched. */
+.dark .from-\[\#f0fdf4\].to-white {
+  --tw-gradient-from: #16233b var(--tw-gradient-from-position);
+  --tw-gradient-to: #111a2c var(--tw-gradient-to-position);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
 
 body {
   background: var(--background);
@@ -174,13 +204,15 @@ body {
   font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
 }
 
-/* HiBob-style display heading — Fraunces serif */
+/* Design spec: Inter only. Page/section titles render as premium sans
+   (Linear/Stripe style) — the former Fraunces serif class now resolves to
+   Inter 600 with tight tracking so existing `.font-serif-display` headings
+   pick up the new type system without per-page edits. */
 .hibob-display,
 .font-serif-display {
-  font-family: var(--font-fraunces), "Fraunces", Georgia, "Times New Roman", serif;
-  font-weight: 700;
-  letter-spacing: -0.015em;
-  font-variation-settings: "opsz" 144;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.02em;
 }
 
 /* ── Pill button system (HiBob-style) ──────────────── */
@@ -188,24 +220,26 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
-  font-weight: 600;
+  gap: 0.375rem;
+  font-weight: 500;
   font-size: 13px;
   line-height: 1;
-  border-radius: 9999px;
-  padding: 0.625rem 1.25rem;
-  transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease, transform 80ms ease;
+  height: 34px;
+  border-radius: 10px;
+  padding: 0 12px;
+  transition: background-color 150ms ease-out, color 150ms ease-out, box-shadow 150ms ease-out, transform 200ms ease-out;
   border: 1px solid transparent;
   cursor: pointer;
   white-space: nowrap;
 }
-.btn:disabled { opacity: 0.55; cursor: not-allowed; }
-.btn:active:not(:disabled) { transform: translateY(0.5px); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn:hover:not(:disabled) { transform: translateY(-1px); }
+.btn:active:not(:disabled) { transform: translateY(0); }
 
 .btn-primary {
   background: var(--accent);
   color: #ffffff;
-  box-shadow: 0 1px 2px rgba(59, 130, 246, 0.25);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
 
@@ -228,17 +262,82 @@ body {
 }
 .btn-danger:hover:not(:disabled) { background: #b91c1c; }
 
-.btn-sm { padding: 0.4rem 0.85rem; font-size: 12px; }
-.btn-lg { padding: 0.85rem 1.6rem; font-size: 14px; }
-.btn-icon { padding: 0.55rem; }
+.btn-sm { height: 28px; padding: 0 10px; font-size: 12px; border-radius: 8px; }
+.btn-lg { height: 38px; padding: 0 16px; }
+.btn-icon { width: 32px; height: 32px; padding: 0; }
 
 /* Surface card */
 .surface-card {
-  background: #ffffff;
-  border-radius: 16px;
-  border: 1px solid rgba(15, 23, 42, 0.06);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  background: var(--card-bg);
+  border-radius: 14px;
+  border: 1px solid var(--card-border);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
+
+/* ── Design-system component classes ─────────────────────
+   Canonical primitives so pages stop hardcoding sizes.
+   card 24px pad / 18px radius · badge 11px/600 22px pill ·
+   ds-table 46px head + 52px rows · ds-control 40px fields. */
+/* Wide enterprise modal (document request, etc.) — authored so the width never
+   depends on Tailwind JIT of an arbitrary value. */
+.ds-modal-wide { max-width: min(960px, calc(100vw - 2rem)); }
+
+.ds-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 14px; box-shadow: var(--shadow-sm); padding: 16px; }
+.ds-card.is-compact { padding: 12px; }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* Any <table class="ds-table"> becomes spec-compliant: 46px header, 52px rows,
+   12px/600 uppercase headers, 14px cells, 16px horizontal padding. */
+.ds-table { width: 100%; border-collapse: collapse; }
+.ds-table thead th {
+  height: 34px;
+  padding: 0 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground);
+  text-align: left;
+  background: var(--background);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.ds-table tbody td {
+  height: 38px;
+  padding: 0 12px;
+  font-size: 13px;
+  color: #374151;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.ds-table tbody tr:last-child td { border-bottom: 0; }
+
+/* 38px form controls that live OUTSIDE a <form> (search bars, toolbar selects)
+   — :where(form) styles don't reach them, so opt in with .ds-control. */
+.ds-control {
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  font-size: 13px;
+  padding: 0 12px;
+  color: var(--input-text);
+  outline: none;
+  transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
+}
+.ds-control:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.12); }
 
 /* Accent chip */
 .hibob-chip {
@@ -276,40 +375,44 @@ select {
 /* ── Default form-field look (zero specificity via :where) ──
    Catches un-classed inputs/textareas/selects so every form gets
    the canonical bob style automatically. Tailwind class utilities
-   beat these defaults whenever a component opts out. */
-:where(form) :where(input):not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]),
+   beat these defaults whenever a component opts out.
+   NOTE: the :not([type=...]) chain MUST live INSIDE :where() — otherwise
+   each attribute selector adds specificity (≈0,9,0) and silently overrides
+   Tailwind utilities like pl-9 (e.g. icon inputs overlapping their icon). */
+:where(form) :where(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"])),
 :where(form) :where(textarea),
 :where(form) :where(select) {
   width: 100%;
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.875rem;
+  border-radius: 10px;
+  /* 6px + 6px + 20px line-height + 2px border ≈ 34px control height */
+  padding: 0.375rem 0.625rem;
+  font-size: 0.8125rem;
   line-height: 1.25rem;
   background: #ffffff;
   color: #111827;
   outline: none;
-  transition: border-color 150ms ease, box-shadow 150ms ease;
+  transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
 }
-:where(form) :where(input):not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]):focus,
+:where(form) :where(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"])):focus,
 :where(form) :where(textarea):focus,
 :where(form) :where(select):focus {
-  border-color: #16243A;
-  box-shadow: 0 0 0 1px #16243A;
+  border-color: #16A34A;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.12);
 }
-:where(form) :where(textarea) { min-height: 80px; resize: vertical; }
+:where(form) :where(textarea) { min-height: 64px; resize: vertical; }
 :where(form) :where(input[type="checkbox"]) {
   width: 1rem;
   height: 1rem;
   border-radius: 0.25rem;
-  accent-color: #16243A;
+  accent-color: #16A34A;
 }
 :where(form) :where(label) {
   display: block;
-  font-size: 0.875rem;
-  font-weight: 600;
+  font-size: 0.75rem;
+  font-weight: 500;
   color: #1f2937;
-  margin-bottom: 0.375rem;
+  margin-bottom: 0.25rem;
 }
 :where(form) :where(label):has(> input[type="checkbox"]),
 :where(form) :where(label):has(> input[type="radio"]) {
@@ -342,8 +445,8 @@ select option:disabled {
 
 select option:checked,
 select option:hover {
-  background-color: #dbeafe;
-  color: #1e40af;
+  background-color: #dcfce7;
+  color: #166534;
 }
 
 /* ── Shimmer / Skeleton loaders ─────────────────────── */
@@ -521,4 +624,34 @@ select:not([multiple]) {
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
+}
+
+/* Hide the scrollbar on a scroll area while keeping it scrollable (wheel/touch).
+   Used on modal scroll regions where a visible bar looks cluttered. */
+.no-scrollbar {
+  -ms-overflow-style: none;   /* IE/old Edge */
+  scrollbar-width: none;      /* Firefox */
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;              /* Chrome/Safari/Edge */
+  width: 0;
+  height: 0;
+}
+
+/* Show ONLY a horizontal scrollbar (bottom); hide the vertical one but keep it
+   wheel-scrollable. Used on the Duty Roster grid so users can scroll across the
+   whole month while vertical scrolling stays chromeless. */
+.scrollbar-x-only::-webkit-scrollbar {
+  height: 10px;
+}
+.scrollbar-x-only::-webkit-scrollbar:vertical {
+  width: 0;
+  display: none;
+}
+.scrollbar-x-only::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.4);
+  border-radius: 9999px;
+}
+.scrollbar-x-only::-webkit-scrollbar-track {
+  background: transparent;
 }

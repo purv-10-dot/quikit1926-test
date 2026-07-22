@@ -3,7 +3,7 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, validationError, internalError } from "@/lib/api-response";
-import { uploadToS3 } from "@/lib/storage";
+import { putObject } from "@/lib/storage";
 
 const MB = 1024 * 1024;
 const MAX_IMAGE_BYTES = 5 * MB;
@@ -62,13 +62,12 @@ export const POST = withAuth(async (req: NextRequest, { orgId }) => {
     const key = `uploads/${orgId}/${id}${safeExt}`;
 
     const buf = Buffer.from(await file.arrayBuffer());
-    const result = await uploadToS3({ key, body: buf, contentType: file.type });
-    const proxyUrl = `/api/v1/hrms/uploads/proxy?key=${encodeURIComponent(result.key)}`;
+    await putObject(key, buf, file.type);
+    const proxyUrl = `/api/v1/hrms/uploads/proxy?key=${encodeURIComponent(key)}`;
 
     return successResponse({
       url: proxyUrl,
-      directUrl: result.url,
-      key: result.key,
+      key,
       fileName: file.name,
       fileType: file.type,
       fileSize: file.size,

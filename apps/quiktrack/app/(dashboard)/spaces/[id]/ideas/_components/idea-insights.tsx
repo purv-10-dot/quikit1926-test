@@ -10,10 +10,6 @@ import {
   Link as LinkIcon,
   Globe,
   X,
-  Chrome,
-  MessageSquare,
-  Users,
-  ExternalLink,
   Pencil,
   Trash2,
 } from "lucide-react";
@@ -202,9 +198,6 @@ export function IdeaInsights({
             <button type="button" onClick={() => setCreating(true)} className="rounded bg-blue-600 px-3 py-1.5 font-medium text-white hover:bg-blue-700">
               Create an insight
             </button>
-            <span className="text-gray-500">
-              or use the <span className="text-blue-600">Chrome Extension</span>, <span className="text-blue-600">Slack app</span> or <span className="text-blue-600">Teams app</span>
-            </span>
           </div>
 
           {/* Search / filter / sort */}
@@ -321,22 +314,8 @@ function CaptureInsightsCard({ onCreate }: { onCreate: () => void }) {
       <h3 className="text-sm font-semibold text-gray-900">Capture insights</h3>
       <p className="mt-1 pr-6 text-sm leading-relaxed text-gray-600">
         You can bring qualitative and quantitative data points such as quotes, images, and
-        conversations into an idea from multiple apps or manually as an insight.{" "}
-        <a href="#" className="inline-flex items-center gap-0.5 text-blue-600 hover:underline">
-          Learn more about insights <ExternalLink className="h-3 w-3" />
-        </a>
+        conversations into an idea manually as an insight.
       </p>
-      <div className="mt-4 flex flex-wrap items-center gap-4 text-sm">
-        <span className="inline-flex items-center gap-1.5 text-blue-600">
-          <Chrome className="h-4 w-4 text-gray-600" /> Chrome Extension
-        </span>
-        <span className="inline-flex items-center gap-1.5 text-blue-600">
-          <MessageSquare className="h-4 w-4 text-gray-600" /> Slack app
-        </span>
-        <span className="inline-flex items-center gap-1.5 text-blue-600">
-          <Users className="h-4 w-4 text-gray-600" /> Teams app
-        </span>
-      </div>
       <button type="button" onClick={onCreate} className="mt-4 rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700">
         Create an insight
       </button>

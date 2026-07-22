@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { verifyFeedbackToken } from "@/lib/services/feedback-token";
-import { queueEmail } from "@/lib/services/mailer";
+import { resolveAndSend } from "@/lib/email/resolve";
 import { stageNames } from "@/lib/services/pipeline-stages";
 import { whereEmployeeHasAnyRole, sortByMaxRolePriorityDesc, appRolesNameSelect } from "@/lib/rbac/queries";
+import { sendRejectionEmail } from "@/lib/recruit/rejection-mail";
 
 const ok = <T>(data: T, status = 200) => NextResponse.json({ success: true, data }, { status });
 const err = (code: string, message: string, status: number) =>
@@ -87,7 +88,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
 }
 
 const submitSchema = z.object({
-  overallRating: z.number().int().min(1).max(5),
+  overallRating: z.number().int().min(1).max(10),
   recommendation: z.enum(["StrongHire", "Hire", "MaybeHire", "NoHire", "StrongNoHire"]),
   strengths: z.string().max(5000).optional(),
   concerns: z.string().max(5000).optional(),
@@ -127,36 +128,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
     },
   });
 
-  // Advance stage if Approve + next stage exists (lightweight, no full stage-feedback route reuse)
-  if (data.recommendation === "Hire" || data.recommendation === "StrongHire") {
-    try {
-      const pipeline = iv.application?.requisition?.pipelineId
-        ? await prisma.hiringPipeline.findFirst({ where: { id: iv.application.requisition.pipelineId, orgId: iv.orgId } })
-        : await prisma.hiringPipeline.findFirst({ where: { orgId: iv.orgId, isDefault: true } });
-      const stages = stageNames(pipeline?.stages);
-      const app = await prisma.jobApplication.findFirst({
-        where: { id: iv.applicationId, orgId: iv.orgId, deletedAt: null },
-        select: { currentStage: true, stageHistory: true },
-      });
-      if (app) {
-        const idx = app.currentStage ? stages.indexOf(app.currentStage) : -1;
-        const next = idx >= 0 && idx < stages.length - 1 ? stages[idx + 1] : null;
-        if (next) {
-          const history = Array.isArray(app.stageHistory) ? (app.stageHistory as unknown[]) : [];
-          await prisma.jobApplication.update({
-            where: { id: iv.applicationId },
-            data: {
-              currentStage: next,
-              stageHistory: JSON.parse(JSON.stringify([
-                ...history,
-                { stage: next, date: new Date().toISOString(), movedBy: "feedback-token", reason: "Approved via feedback link" },
-              ])),
-            },
-          });
-        }
-      }
-    } catch (e) { console.error("stage-advance via feedback token failed:", e); }
-  } else if (data.recommendation === "NoHire" || data.recommendation === "StrongNoHire") {
+  // Submitting feedback (via the reminder link) does NOT auto-advance the stage.
+  // Advancing is a deliberate action from the pipeline UI, which requires this
+  // feedback to exist AND creates the next stage's interview stub. Auto-advancing
+  // here pushed candidates into the next stage with no interview scheduled.
+  // A strongly negative recommendation still auto-rejects (terminal, no scheduling).
+  if (data.recommendation === "NoHire" || data.recommendation === "StrongNoHire") {
     await prisma.jobApplication.update({
       where: { id: iv.applicationId },
       data: {
@@ -164,6 +141,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
         rejectionReason: data.concerns || data.overallComments || "Rejected via interviewer feedback",
       },
     }).catch(() => null);
+
+    // Notify the candidate (with the re-apply cooling note). Background.
+    if (iv.application?.candidate?.email) {
+      void sendRejectionEmail(iv.orgId, {
+        to: iv.application.candidate.email,
+        candidateName: `${iv.application.candidate.firstName} ${iv.application.candidate.lastName}`.trim(),
+        jobTitle: iv.application.requisition?.title ?? "the role",
+      });
+    }
   }
 
   // Notify HR
@@ -189,7 +175,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
           <p>Hi ${hr.firstName} ${hr.lastName},</p>
           <p>${iv.interviewer.firstName} ${iv.interviewer.lastName} has submitted feedback for <strong>${iv.application.candidate.firstName} ${iv.application.candidate.lastName}</strong> (${iv.application.requisition.title}).</p>
           <ul style="color:#374151;">
-            <li><strong>Rating:</strong> ${data.overallRating}/5</li>
+            <li><strong>Rating:</strong> ${data.overallRating}/10</li>
             <li><strong>Recommendation:</strong> ${data.recommendation}</li>
             ${data.strengths ? `<li><strong>Strengths:</strong> ${data.strengths}</li>` : ""}
             ${data.concerns ? `<li><strong>Concerns:</strong> ${data.concerns}</li>` : ""}
@@ -197,7 +183,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
           </ul>
           <p style="color:#6b7280;font-size:12px;">${companyName} HRMS</p>
         </div>`;
-      await queueEmail(iv.orgId, { to: hr.workEmail, subject, html, kind: "interview.hr-notify" });
+      await resolveAndSend(iv.orgId, {
+        key: "interview.hr-notify",
+        to: hr.workEmail,
+        vars: {
+          hrName: `${hr.firstName} ${hr.lastName}`.trim(),
+          interviewerName: `${iv.interviewer.firstName} ${iv.interviewer.lastName}`.trim(),
+          candidateName: `${iv.application.candidate.firstName} ${iv.application.candidate.lastName}`.trim(),
+          requisitionTitle: iv.application.requisition.title,
+          overallRating: `${data.overallRating}/10`,
+          recommendation: data.recommendation ?? "",
+          strengths: data.strengths ?? "",
+          concerns: data.concerns ?? "",
+          overallComments: data.overallComments ?? "",
+          companyName,
+        },
+        fallback: () => ({ subject, html }),
+      });
     } catch (e) { console.error("HR notify after token feedback failed:", e); }
   })();
 

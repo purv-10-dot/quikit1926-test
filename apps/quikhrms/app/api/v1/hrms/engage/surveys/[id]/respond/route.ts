@@ -11,6 +11,16 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
     if (!survey) return notFound("Survey not found");
     if (survey.status !== "SurveyActive") return validationError("Survey is not active");
 
+    // One response per employee on identified surveys. Anonymous surveys store
+    // no employeeId, so they can't be deduped and remain open to re-submission.
+    if (!survey.isAnonymous) {
+      const existing = await prisma.hrmsSurveyResponse.findFirst({
+        where: { orgId, surveyId: params.id, employeeId: userId },
+        select: { id: true },
+      });
+      if (existing) return validationError("You have already responded to this survey");
+    }
+
     const body = await req.json();
     const parsed = surveyResponseSchema.safeParse(body);
     if (!parsed.success) return validationError("Validation failed", parsed.error.flatten().fieldErrors);

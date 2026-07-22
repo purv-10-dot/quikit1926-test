@@ -33,9 +33,16 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
       ? Math.round((instance.tasks.filter((t) => t.status === "TaskCompleted" || t.status === "TaskSkipped").length / instance.tasks.length) * 100)
       : 0;
 
+    // OffboardingInstance stores only employeeId (no Prisma relation), so resolve the name separately.
+    const employee = await prisma.employee.findFirst({
+      where: { orgId, id: instance.employeeId },
+      select: { id: true, firstName: true, lastName: true, displayName: true, employeeCode: true },
+    });
+
     return successResponse({
       offboardingId: instance.id,
       employeeId: instance.employeeId,
+      employee,
       status: instance.status,
       lastWorkingDate: instance.lastWorkingDate,
       overallProgress,

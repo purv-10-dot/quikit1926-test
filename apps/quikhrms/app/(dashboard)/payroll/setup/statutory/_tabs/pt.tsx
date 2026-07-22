@@ -25,7 +25,7 @@ interface PTCfg {
   slabs: PTSlab[];
 }
 
-const inputCls = "w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[#16243A] focus:border-transparent";
+const inputCls = "w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[#166534] focus:border-transparent";
 
 const STATES = Object.keys(PT_STATE_PRESETS).sort();
 
@@ -65,9 +65,9 @@ export function ProfessionalTaxTab({ onSaved }: { onSaved?: () => void } = {}) {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
-        <h2 className="text-base font-bold text-gray-900">Professional Tax</h2>
+        <h2 className="text-[13px] font-semibold text-gray-900">Professional Tax</h2>
         <p className="text-xs text-gray-500 mt-1">This tax is levied on an employee&apos;s income by the State Government. Tax slabs differ in each state.</p>
       </div>
 
@@ -75,7 +75,7 @@ export function ProfessionalTaxTab({ onSaved }: { onSaved?: () => void } = {}) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {list.map((cfg) => (
             <div key={cfg.id} className="rounded-lg border border-gray-200 bg-white p-4">
-              <p className="text-sm font-semibold text-gray-900">{cfg.state}</p>
+              <p className="text-[13px] font-semibold text-gray-900">{cfg.state}</p>
               <div className="mt-2 space-y-1 text-xs text-gray-600">
                 <div className="flex justify-between"><span>PT Number</span><span className="font-medium text-gray-800">{cfg.ptNumber || "—"}</span></div>
                 <div className="flex justify-between"><span>Deduction Cycle</span><span className="font-medium text-gray-800">{cfg.deductionCycle}</span></div>
@@ -91,7 +91,7 @@ export function ProfessionalTaxTab({ onSaved }: { onSaved?: () => void } = {}) {
         onSubmit={(e) => { e.preventDefault(); saveMut.mutate(form); }}
         className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-3"
       >
-        <p className="text-sm font-semibold text-gray-900">Add / Update Configuration</p>
+        <p className="text-[13px] font-semibold text-gray-900">Add / Update Configuration</p>
         <div className="grid grid-cols-3 gap-3">
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">State <span className="text-red-500">*</span></label>
@@ -120,12 +120,12 @@ export function ProfessionalTaxTab({ onSaved }: { onSaved?: () => void } = {}) {
         </div>
 
         {activePreset && (
-          <div className="rounded-lg border border-[#bfdbfe] bg-gradient-to-r from-[#eff6ff] to-white px-4 py-3 flex items-start gap-3">
-            <div className="w-8 h-8 rounded-lg bg-[#dbeafe] text-[#2563eb] flex items-center justify-center shrink-0">
+          <div className="rounded-lg border border-[#bbf7d0] bg-gradient-to-r from-[#f0fdf4] to-white px-4 py-3 flex items-start gap-3">
+            <div className="w-8 h-8 rounded-lg bg-[#dcfce7] text-[#16a34a] flex items-center justify-center shrink-0">
               <Sparkles size={14} />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-gray-900">
+              <p className="text-[13px] font-semibold text-gray-900">
                 Official {activePreset.state} slabs available
               </p>
               <p className="text-xs text-gray-600 mt-0.5">
@@ -136,7 +136,7 @@ export function ProfessionalTaxTab({ onSaved }: { onSaved?: () => void } = {}) {
             <button
               type="button"
               onClick={applyPreset}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#16243A] hover:bg-[#1E3354] text-white rounded-md text-xs font-semibold shadow-sm shrink-0"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-xs font-medium shadow-sm shrink-0"
             >
               Apply preset
             </button>
@@ -146,7 +146,7 @@ export function ProfessionalTaxTab({ onSaved }: { onSaved?: () => void } = {}) {
         <div>
           <div className="flex items-center justify-between mb-2">
             <p className="text-xs font-semibold text-gray-700">Tax Slabs <span className="text-red-500">*</span></p>
-            <button type="button" onClick={() => setForm({ ...form, slabs: [...form.slabs, { fromAmount: 0, toAmount: null, taxAmount: 0, gender: "All" }] })} className="inline-flex items-center gap-1 text-xs text-[#3b82f6] hover:underline">
+            <button type="button" onClick={() => setForm({ ...form, slabs: [...form.slabs, { fromAmount: 0, toAmount: null, taxAmount: 0, gender: "All" }] })} className="inline-flex items-center gap-1 text-xs text-[#22c55e] hover:underline">
               <Plus size={12} /> Add slab
             </button>
           </div>
@@ -185,7 +185,7 @@ export function ProfessionalTaxTab({ onSaved }: { onSaved?: () => void } = {}) {
                     />
                   </div>
                   <button type="button" onClick={() => setForm({ ...form, slabs: form.slabs.filter((_, i) => i !== idx) })} className="col-span-1 text-gray-400 hover:text-red-600">
-                    <Trash2 size={14} />
+                    <Trash2 size={12} />
                   </button>
                 </div>
               );
@@ -194,8 +194,8 @@ export function ProfessionalTaxTab({ onSaved }: { onSaved?: () => void } = {}) {
         </div>
 
         <div className="pt-2">
-          <button type="submit" disabled={saveMut.isPending} className="inline-flex items-center gap-2 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 text-white rounded-md text-sm font-semibold shadow-sm">
-            <Save size={14} /> {saveMut.isPending ? "Saving..." : "Save"}
+          <button type="submit" disabled={saveMut.isPending} className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-md text-xs font-medium shadow-sm">
+            <Save size={13} /> {saveMut.isPending ? "Saving..." : "Save"}
           </button>
         </div>
       </form>

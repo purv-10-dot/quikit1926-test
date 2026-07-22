@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useTheme } from "next-themes";
 import { Button, Input } from "@quikit/ui";
 import { Suspense } from "react";
 
@@ -10,6 +11,17 @@ function SignInForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") ?? "/dashboard";
+  const { resolvedTheme } = useTheme();
+
+  // Theme-aware Admin wordmark lockup. `mounted` gates the next-themes
+  // undefined-on-first-render so we default to the dark-badge (light-theme)
+  // asset and avoid a hydration mismatch.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const wordmarkSrc =
+    mounted && resolvedTheme === "dark"
+      ? "/brand/admin-wordmark-light.svg"
+      : "/brand/admin-wordmark-dark.svg";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -43,10 +55,13 @@ function SignInForm() {
   return (
     <div className="w-full max-w-sm rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-8 shadow-sm">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-[var(--color-text-primary)]">
-          QuikAdmin
-        </h1>
-        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={wordmarkSrc}
+          alt="Admin Portal"
+          className="h-9 w-auto object-contain"
+        />
+        <p className="mt-3 text-sm text-[var(--color-text-secondary)]">
           Sign in to your organisation dashboard
         </p>
       </div>

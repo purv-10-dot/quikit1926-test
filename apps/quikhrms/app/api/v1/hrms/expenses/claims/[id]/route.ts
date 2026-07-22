@@ -12,10 +12,27 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
       include: {
         approvals: { orderBy: { actionAt: "desc" } },
         policy: { select: { id: true, name: true, approvalLevels: true, approvalChain: true } },
+        employee: { select: { id: true, firstName: true, lastName: true, employeeCode: true } },
       },
     });
     if (!claim) return notFound("Claim not found");
-    return successResponse(claim);
+
+    // ExpenseApproval.approverId has no Employee relation — resolve names by id.
+    const approverIds = [...new Set(claim.approvals.map((a) => a.approverId))];
+    const approvers = approverIds.length
+      ? await prisma.employee.findMany({
+          where: { orgId, id: { in: approverIds } },
+          select: { id: true, firstName: true, lastName: true, employeeCode: true },
+        })
+      : [];
+    const approverMap = new Map(approvers.map((e) => [e.id, e]));
+
+    const payload = {
+      ...claim,
+      approvals: claim.approvals.map((a) => ({ ...a, approver: approverMap.get(a.approverId) ?? null })),
+    };
+
+    return successResponse(payload);
   } catch (error) {
     console.error("GET /expenses/claims/[id] error:", error);
     return internalError();

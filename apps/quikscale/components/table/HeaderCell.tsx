@@ -28,6 +28,7 @@
  */
 import { ColMenu } from "@quikit/ui";
 import { ResizeHandle } from "@/lib/hooks/useColumnResize";
+import { DragHandle } from "@/lib/hooks/useColumnDnD";
 import { FreezeIcon } from "@/components/ui/FreezeIcon";
 
 export type SortDirection = "asc" | "desc";
@@ -72,6 +73,15 @@ export interface HeaderCellProps {
    *  padding/border palette without duplicating the component. Appended
    *  after the always-applied `group relative ...` base. */
   thClassName?: string;
+
+  /** Drag-to-reorder: when provided, a grip handle is rendered and pointer-down
+   *  starts a column drag. Omit to disable reordering for this column. */
+  onDragStart?: (e: React.PointerEvent) => void;
+  /** Extra classes for the live drop indicator (left/right edge line) when this
+   *  column is the current drop target. */
+  dropIndicatorClass?: string;
+  /** Dim the cell while it is the one being dragged. */
+  isDragging?: boolean;
 }
 
 const BASE_TH_CLASS = "group relative px-3 py-2 text-left whitespace-nowrap";
@@ -93,6 +103,9 @@ export function HeaderCell({
   frozenUpTo,
   onFreeze,
   thClassName,
+  onDragStart,
+  dropIndicatorClass,
+  isDragging,
 }: HeaderCellProps) {
   if (isHidden(k)) return null;
   const effectiveSortKey = sortKey ?? k;
@@ -116,11 +129,20 @@ export function HeaderCell({
         frozen
           ? `sticky z-[35] bg-accent-50${boundary ? " shadow-[2px_0_4px_rgba(0,0,0,0.06)]" : ""}`
           : "",
+        dropIndicatorClass ?? "",
+        isDragging ? "opacity-40" : "",
       ].join(" ").trim()}
     >
       <div className="flex items-center gap-1">
+        {onDragStart && <DragHandle onStart={onDragStart} />}
         {boundary && <FreezeIcon />}
-        <span className="flex-1 truncate min-w-0" title={label}>
+        {/* The label doubles as a drag handle when reordering is enabled, so
+            grabbing the column title reorders (matches user expectation). */}
+        <span
+          className={`flex-1 truncate min-w-0 ${onDragStart ? "cursor-grab active:cursor-grabbing touch-none" : ""}`}
+          title={label}
+          onPointerDown={onDragStart}
+        >
           {label}
           {isSorted && (sortOrder === "asc" ? " ↑" : " ↓")}
         </span>

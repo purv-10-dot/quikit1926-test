@@ -1,9 +1,13 @@
 "use client";
 
+import { Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ACTIONS, RESOURCES, isValidPermissionPair } from "@/lib/api/permissionsRegistry";
 
 export const permKey = (resource: string, action: string) => `${resource}:${action}`;
+
+/** Friendlier column headers for actions whose camelCase reads poorly. */
+const ACTION_LABELS: Record<string, string> = { viewAll: "View all" };
 
 interface Props {
   /** Editable grants (toggleable). */
@@ -30,7 +34,7 @@ export function PermissionMatrix({ value, onToggle, locked, readOnly }: Props) {
             <th className="px-3 py-2 text-left font-semibold">Resource</th>
             {ACTIONS.map((a) => (
               <th key={a} className="px-3 py-2 text-center font-semibold capitalize">
-                {a}
+                {ACTION_LABELS[a] ?? a}
               </th>
             ))}
           </tr>
@@ -48,20 +52,28 @@ export function PermissionMatrix({ value, onToggle, locked, readOnly }: Props) {
                     </td>
                   );
                 }
-                const isLocked = !!locked?.has(key);
-                const checked = value.has(key) || isLocked;
-                const disabled = readOnly || isLocked;
+                // Role-granted permissions are inherited and locked — shown as a
+                // lock, never a lookalike checkbox, so they can't be mistaken for a
+                // toggle that "won't respond". Only extras render as checkboxes.
+                if (locked?.has(key)) {
+                  return (
+                    <td key={action} className="px-3 py-2 text-center">
+                      <span title="Granted by role — change the role to adjust" className="inline-flex">
+                        <Lock className="mx-auto h-3.5 w-3.5 text-accent-600" aria-label="Granted by role (locked)" />
+                      </span>
+                    </td>
+                  );
+                }
                 return (
                   <td key={action} className="px-3 py-2 text-center">
                     <input
                       type="checkbox"
-                      checked={checked}
-                      disabled={disabled}
+                      checked={value.has(key)}
+                      disabled={readOnly}
                       onChange={() => onToggle(key)}
-                      title={isLocked ? "Granted by role" : undefined}
                       className={cn(
-                        "h-3.5 w-3.5 rounded border-gray-300 accent-[var(--color-accent-600)]",
-                        disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
+                        "h-3.5 w-3.5 rounded border-gray-300 accent-accent-600",
+                        readOnly ? "cursor-not-allowed opacity-60" : "cursor-pointer",
                       )}
                     />
                   </td>

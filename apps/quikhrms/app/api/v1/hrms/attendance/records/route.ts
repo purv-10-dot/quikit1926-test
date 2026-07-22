@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { withAuth } from "@/lib/with-auth";
+import { withServiceAuth } from "@/lib/with-auth";
 import { successResponse, internalError, forbidden } from "@/lib/api-response";
 import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
 import { resolveScope, employeeScopeFilter } from "@/lib/rbac/scope";
@@ -8,7 +8,7 @@ import { getHierarchyAccessibleEmployeeIds, intersectEmployeeIds } from "@/lib/r
 import type { Prisma } from "@quikit/database";
 
 /** GET /api/v1/hrms/attendance/records — list attendance records */
-export const GET = withAuth(async (req: NextRequest, ctx) => {
+export const GET = withServiceAuth(async (req: NextRequest, ctx) => {
   try {
     const { orgId } = ctx;
     const { searchParams } = new URL(req.url);
@@ -92,7 +92,25 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
       prisma.attendanceRecord.count({ where }),
     ]);
 
-    return successResponse(records, paginationMeta(page, limit, total));
+    // Attach the rostered shift (name/code) per record from the duty roster.
+    const ymd = (d: Date) => new Date(d).toISOString().slice(0, 10);
+    const empIds = [...new Set(records.map((r) => r.employeeId))];
+    const rosterEntries = empIds.length
+      ? await prisma.rosterEntry.findMany({
+          where: { orgId, deletedAt: null, employeeId: { in: empIds }, shiftId: { not: null } },
+          select: { employeeId: true, date: true, shift: { select: { name: true, code: true } } },
+        })
+      : [];
+    const shiftByKey = new Map<string, { name: string; code: string }>();
+    for (const e of rosterEntries) {
+      if (e.shift) shiftByKey.set(`${e.employeeId}|${ymd(e.date)}`, { name: e.shift.name, code: e.shift.code });
+    }
+    const enriched = records.map((r) => {
+      const s = shiftByKey.get(`${r.employeeId}|${ymd(r.date)}`) ?? null;
+      return { ...r, shiftName: s?.name ?? null, shiftCode: s?.code ?? null };
+    });
+
+    return successResponse(enriched, paginationMeta(page, limit, total));
   } catch (error) {
     console.error("GET /attendance/records error:", error);
     return internalError();

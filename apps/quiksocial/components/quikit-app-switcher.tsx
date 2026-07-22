@@ -124,11 +124,13 @@ const DEFAULT_ICON = "📦";
 const BRAND_ICONS: Record<string, string> = {
   quikit: "/app-icons/quikit.svg",
   admin: "/app-icons/admin.svg",
+  quikchat: "/app-icons/quikchat.svg",
   quikinfra: "/app-icons/quikinfra.svg",
   quikscale: "/app-icons/quikscale.svg",
   quiktrack: "/app-icons/quiktrack.svg",
   quiksocial: "/app-icons/quiksocial.svg",
   quikcrm: "/app-icons/quikcrm.svg",
+  quikhrms: "/app-icons/quikhrms.svg",
 };
 
 /* ─── Component ─────────────────────────────────────────────────────────── */

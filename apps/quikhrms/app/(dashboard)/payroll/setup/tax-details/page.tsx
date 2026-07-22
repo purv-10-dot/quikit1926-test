@@ -5,9 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient, ApiError } from "@/lib/hooks/use-api";
-import {
-  ChevronLeft, Save, CheckCircle2, ShieldCheck, IdCard, User, Users, MapPin, AlertCircle, Briefcase,
-} from "lucide-react";
+import { Save, CheckCircle2, ShieldCheck, IdCard, User, Users, MapPin, AlertCircle, Briefcase } from "lucide-react";
 import { clsx } from "clsx";
 import { Select } from "@/components/hrms/ui/select";
 import { SkeletonLine } from "@/components/hrms/skeleton";
@@ -31,12 +29,12 @@ interface TaxDetails {
 
 const inputBase =
   "w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white placeholder:text-gray-400 " +
-  "focus:outline-none focus:ring-2 focus:ring-[#16243A]/20 focus:border-[#16243A] transition";
+  "focus:outline-none focus:ring-2 focus:ring-[#166534]/20 focus:border-[#166534] transition";
 const inputUpper = clsx(inputBase, "font-mono tracking-wider uppercase");
 
 export default function TaxDetailsPage() {
   return (
-    <Suspense fallback={<div className="p-6 space-y-2"><SkeletonLine w="40%" h={16} /><SkeletonLine w="70%" h={12} /><SkeletonLine w="60%" h={12} /></div>}>
+    <Suspense fallback={<div className="p-4 space-y-2"><SkeletonLine w="40%" h={16} /><SkeletonLine w="70%" h={12} /><SkeletonLine w="60%" h={12} /></div>}>
       <TaxDetailsPageInner />
     </Suspense>
   );
@@ -84,6 +82,7 @@ function TaxDetailsPageInner() {
       setSaved(true);
       setTimeout(() => router.push(returnTo.startsWith("/") ? returnTo : "/payroll/setup"), 800);
     },
+    meta: { suppressGlobalError: true },
     onError: (e: Error) => {
       if (e instanceof ApiError) {
         setErr(e.message);
@@ -99,20 +98,13 @@ function TaxDetailsPageInner() {
   return (
     <div className="max-w-4xl mx-auto pb-24">
       {/* Breadcrumb */}
-      <Link
-        href="/payroll/setup"
-        className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-[#3b82f6] mb-3"
-      >
-        <ChevronLeft size={14} /> Back to Payroll Setup
-      </Link>
-
       {/* Header */}
-      <div className="rounded-2xl bg-gradient-to-r from-[#16243A] to-[#2563eb] text-white px-6 py-5 shadow-sm flex items-start gap-4 mb-5">
+      <div className="rounded-2xl bg-gradient-to-r from-[#166534] to-[#16a34a] text-white px-5 py-4 shadow-sm flex items-start gap-4 mb-5">
         <div className="w-11 h-11 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
           <ShieldCheck size={22} />
         </div>
         <div>
-          <h1 className="font-serif-display text-2xl font-bold leading-tight">Tax Details</h1>
+          <h1 className="font-serif-display text-base font-semibold leading-tight">Tax Details</h1>
           <p className="text-xs text-white/75 mt-1">
             Authorized signatory + PAN used on Form 16, Form 24Q and TDS challans.
           </p>
@@ -132,7 +124,7 @@ function TaxDetailsPageInner() {
             deductorDesignation: form.deductorDesignation?.trim() || null,
           });
         }}
-        className="space-y-5"
+        className="space-y-4"
       >
         {/* Authorized Signatory */}
         <Card icon={<User size={16} />} title="Authorized Signatory" subtitle="Person who signs payroll-tax filings on behalf of the company.">
@@ -155,8 +147,8 @@ function TaxDetailsPageInner() {
                       setForm({ ...form, deductorType: opt.v, deductorEmployeeId: null, deductorName: "" })
                     }
                     className={clsx(
-                      "inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold rounded-md transition",
-                      active ? "bg-white text-[#16243A] shadow-sm" : "text-gray-500 hover:text-gray-700",
+                      "inline-flex items-center gap-1.5 px-4 py-1.5 text-[13px] font-semibold rounded-md transition",
+                      active ? "bg-white text-[#166534] shadow-sm" : "text-gray-500 hover:text-gray-700",
                     )}
                   >
                     {opt.icon}
@@ -251,12 +243,12 @@ function TaxDetailsPageInner() {
 
         {/* Status messages */}
         {saved && (
-          <div className="flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2.5">
+          <div className="flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2.5">
             <CheckCircle2 size={16} /> Tax details saved successfully — redirecting…
           </div>
         )}
         {err && (
-          <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5">
+          <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5">
             <div className="flex items-center gap-2 font-semibold">
               <AlertCircle size={16} /> {err}
             </div>
@@ -280,16 +272,16 @@ function TaxDetailsPageInner() {
           <div className="flex items-center gap-2">
             <Link
               href="/payroll/setup"
-              className="px-4 py-2 text-sm border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50"
+              className="px-3 py-1.5 text-xs font-medium border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50"
             >
               Cancel
             </Link>
             <button
               type="submit"
               disabled={saveMut.isPending}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 text-white rounded-lg text-sm font-semibold shadow-sm"
+              className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-lg text-xs font-medium shadow-sm"
             >
-              <Save size={14} /> {saveMut.isPending ? "Saving…" : "Save"}
+              <Save size={13} /> {saveMut.isPending ? "Saving…" : "Save"}
             </button>
           </div>
         </div>
@@ -308,16 +300,16 @@ function Card({
 }) {
   return (
     <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
-      <div className="flex items-start gap-3 px-5 py-4 border-b border-gray-100">
-        <div className="w-9 h-9 rounded-lg bg-[#16243A]/5 text-[#16243A] flex items-center justify-center shrink-0">
+      <div className="flex items-start gap-3 px-4 py-4 border-b border-gray-100">
+        <div className="w-9 h-9 rounded-lg bg-[#166534]/5 text-[#166534] flex items-center justify-center shrink-0">
           {icon}
         </div>
         <div>
-          <h2 className="text-sm font-bold text-gray-900 leading-tight">{title}</h2>
+          <h2 className="text-[13px] font-semibold text-gray-900 leading-tight">{title}</h2>
           {subtitle && <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>}
         </div>
       </div>
-      <div className="p-5">{children}</div>
+      <div className="p-4">{children}</div>
     </section>
   );
 }

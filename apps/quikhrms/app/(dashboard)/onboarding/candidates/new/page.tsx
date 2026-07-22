@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -10,13 +10,15 @@ import { useToast } from "@/components/hrms/toast";
 import {
   X, Upload, Plus, Trash2, UserPlus,
   User, IdCard, MapPin, Briefcase, GraduationCap, History, Sparkles, Save, Check, ShieldAlert,
-  Users, Award,
+  Users, Award, ArrowLeft, ArrowRight,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { Select } from "@/components/hrms/select";
 import { Select as UiSelect } from "@/components/hrms/ui/select";
 import { FormField, FormInput, FormTextarea, FormCheckbox } from "@/components/hrms/form";
 import { NumberInput } from "@/components/hrms/ui/number-input";
+import { todayInput } from "@/lib/utils/date-input";
+import { INDIA_STATE_OPTS as STATE_OPTS } from "@/lib/data/india-states";
 
 type SourceOfHire = "Referral" | "JobPortal" | "LinkedIn" | "Agency" | "Campus" | "Direct" | "Other";
 
@@ -51,11 +53,6 @@ const COUNTRY_OPTS = [
   { value: "IN", label: "India" },
   { value: "US", label: "United States" },
   { value: "UK", label: "United Kingdom" },
-];
-const STATE_OPTS = [
-  { value: "Maharashtra", label: "Maharashtra" },
-  { value: "Karnataka", label: "Karnataka" },
-  { value: "Delhi", label: "Delhi" },
 ];
 
 const STEPS = [
@@ -128,35 +125,19 @@ export default function NewCandidatePage() {
 
   const [activeStep, setActiveStep] = useState<StepId>("personal");
   const scrollRef = useRef<HTMLDivElement>(null);
-  const sectionRefs = useRef<Record<StepId, HTMLElement | null>>({
-    personal: null, identity: null, address: null, emergency: null, professional: null,
-    education: null, experience: null, family: null, certifications: null,
-  });
 
-  useEffect(() => {
-    const root = scrollRef.current;
-    if (!root) return;
-    const obs = new IntersectionObserver(
-      (entries) => {
-        const visible = entries.filter((e) => e.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio);
-        if (visible[0]) {
-          const id = (visible[0].target as HTMLElement).dataset.stepId as StepId | undefined;
-          if (id) setActiveStep(id);
-        }
-      },
-      { root, rootMargin: "-15% 0px -65% 0px", threshold: [0, 0.25, 0.5, 0.75, 1] },
-    );
-    Object.values(sectionRefs.current).forEach((el) => el && obs.observe(el));
-    return () => obs.disconnect();
-  }, []);
+  const stepIndex = STEPS.findIndex((s) => s.id === activeStep);
+  const isFirstStep = stepIndex === 0;
+  const isLastStep = stepIndex === STEPS.length - 1;
 
-  const scrollToStep = (id: StepId) => {
-    const el = sectionRefs.current[id];
-    if (el && scrollRef.current) {
-      scrollRef.current.scrollTo({ top: el.offsetTop - 8, behavior: "smooth" });
-      setActiveStep(id);
-    }
+  // Stepper navigation. Only the active step's section is shown; scroll the
+  // panel back to the top on each change so long sections start at the header.
+  const goToStep = (id: StepId) => {
+    setActiveStep(id);
+    scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   };
+  const nextStep = () => { if (!isLastStep) goToStep(STEPS[stepIndex + 1].id); };
+  const prevStep = () => { if (!isFirstStep) goToStep(STEPS[stepIndex - 1].id); };
 
   const { data: depts } = useDepartments();
   const { data: desigs } = useDesignations();
@@ -167,6 +148,9 @@ export default function NewCandidatePage() {
   const { data: templates } = useQuery({ queryKey: ["onboarding-templates"], queryFn: () => api.get<{ id: string; name: string; tasks: unknown[] }[]>("/api/v1/hrms/onboarding/templates?isActive=true&limit=50") });
 
   const submitMut = useMutation({
+    // The submit handler catches and shows an ApiError-aware toast (with details),
+    // so suppress the global modal to avoid a double popup.
+    meta: { suppressGlobalError: true },
     mutationFn: (body: Record<string, unknown>) => api.post("/api/v1/hrms/onboarding/candidates", body),
   });
 
@@ -297,7 +281,7 @@ export default function NewCandidatePage() {
       );
       if (mode === "submit-new") {
         setForm((f) => ({ ...f, firstName: "", lastName: "", workEmail: "", personalEmail: "", personalPhone: "", panNumber: "", aadhaarNumber: "", uanNumber: "" }));
-        scrollToStep("personal");
+        goToStep("personal");
       } else {
         router.push("/onboarding");
       }
@@ -341,15 +325,46 @@ export default function NewCandidatePage() {
 
   const designationOpts = (desigs?.data ?? []).map((d) => ({ value: d.id, label: d.title }));
 
+  // Step actions (Save Draft / Back / Next / Submit). Rendered both at the end
+  // of the active card and in the sticky bottom bar, so the user can advance
+  // without scrolling down to the footer. Kept as a function (not a shared
+  // element) so each render site gets its own instances.
+  const renderStepButtons = () => (
+    <>
+      <button onClick={() => handleSubmit("draft")} disabled={submitMut.isPending} className="btn btn-secondary">
+        Save Draft
+      </button>
+      {!isFirstStep && (
+        <button type="button" onClick={prevStep} className="btn btn-secondary">
+          <ArrowLeft size={14} /> Back
+        </button>
+      )}
+      {!isLastStep ? (
+        <button type="button" onClick={nextStep} className="btn btn-primary">
+          Next <ArrowRight size={13} />
+        </button>
+      ) : (
+        <>
+          <button onClick={() => handleSubmit("submit-new")} disabled={submitMut.isPending} className="btn btn-secondary">
+            Submit and New
+          </button>
+          <button onClick={() => handleSubmit("submit")} disabled={submitMut.isPending} className="btn btn-primary">
+            <Save size={13} /> {submitMut.isPending ? "Saving..." : "Submit"}
+          </button>
+        </>
+      )}
+    </>
+  );
+
   return (
     <div className="bg-gray-50 -m-6 min-h-screen flex flex-col">
-      <header className="bg-white border-b border-gray-100 px-6 py-3 flex items-center justify-between sticky top-0 z-20">
+      <header className="bg-white border-b border-gray-100 px-5 py-3 flex items-center justify-between sticky top-0 z-20">
         <div className="flex items-center gap-2">
-          <div className="w-9 h-9 rounded-xl bg-[#16243A]/5 text-[#16243A] flex items-center justify-center">
+          <div className="w-9 h-9 rounded-xl bg-[#166534]/5 text-[#166534] flex items-center justify-center">
             <UserPlus size={18} />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-gray-900 leading-tight">Add Candidate</h1>
+            <h1 className="text-page-title text-gray-900 leading-tight">Add Candidate</h1>
             <p className="text-xs text-gray-500">Onboard a new candidate to the organisation.</p>
           </div>
         </div>
@@ -365,31 +380,31 @@ export default function NewCandidatePage() {
               const active = activeStep === s.id;
               const passed = STEPS.findIndex((x) => x.id === activeStep) > idx;
               return (
-                <button key={s.id} type="button" onClick={() => scrollToStep(s.id)}
+                <button key={s.id} type="button" onClick={() => goToStep(s.id)}
                   className={clsx(
                     "w-full flex items-start gap-3 px-3 py-2.5 rounded-lg text-left transition",
                     active ? "bg-white shadow-sm" : "hover:bg-white/60",
                   )}>
                   <div className={clsx(
                     "w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 transition",
-                    active ? "bg-[#16243A] text-white"
-                      : passed ? "bg-[#16243A]/15 text-[#16243A]"
+                    active ? "bg-green-600 text-white"
+                      : passed ? "bg-[#166534]/15 text-[#166534]"
                       : "border-2 border-gray-300 text-gray-500 bg-white",
                   )}>
                     {passed ? <Check size={14} /> : s.num}
                   </div>
                   <div className="min-w-0">
-                    <p className={clsx("text-sm font-semibold leading-tight", active ? "text-[#16243A]" : "text-gray-700")}>{s.title}</p>
+                    <p className={clsx("text-[13px] font-semibold leading-tight", active ? "text-[#166534]" : "text-gray-700")}>{s.title}</p>
                     <p className="text-[11px] text-gray-500 mt-0.5">{s.subtitle}</p>
                   </div>
                 </button>
               );
             })}
           </nav>
-          <div className="m-4 p-3 rounded-xl bg-[#16243A]/5 border border-[#16243A]/10">
+          <div className="m-4 p-3 rounded-xl bg-[#166534]/5 border border-[#166534]/10">
             <div className="flex items-center gap-1.5 mb-1">
-              <Sparkles size={13} className="text-[#16243A]" />
-              <span className="text-xs font-bold text-[#16243A]">Tip</span>
+              <Sparkles size={13} className="text-[#166534]" />
+              <span className="text-xs font-bold text-[#166534]">Tip</span>
             </div>
             <p className="text-[11px] text-gray-600 leading-snug">
               Complete details speed up onboarding and reduce back-and-forth.
@@ -398,16 +413,16 @@ export default function NewCandidatePage() {
         </aside>
 
         <div className="flex-1 flex flex-col min-w-0">
-          <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-6">
-            <div className="max-w-4xl mx-auto space-y-5 pb-8">
+          <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-4">
+            <div className="max-w-4xl mx-auto space-y-4 pb-5">
               <Section
                 id="personal"
                 icon={<User size={18} />}
                 title="Personal Details"
                 subtitle="Basic contact information of the candidate."
-                sectionRef={(el) => { sectionRefs.current.personal = el; }}
+                active={activeStep === "personal"}
               >
-                <div className="grid grid-cols-2 gap-x-5 gap-y-4">
+                <div className="grid grid-cols-2 gap-x-4 gap-y-4">
                   <FormField label="First Name" required>
                     <FormInput placeholder="Enter first name" required value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} />
                   </FormField>
@@ -421,20 +436,21 @@ export default function NewCandidatePage() {
                     <FormInput type="email" placeholder="personal.email@example.com" value={form.personalEmail} onChange={(e) => setForm({ ...form, personalEmail: e.target.value })} />
                   </FormField>
                   <FormField label="Phone" required>
-                    <div className="flex items-stretch border border-[var(--border)] rounded-lg overflow-hidden bg-white focus-within:ring-1 focus-within:ring-[#16243A] focus-within:border-[#16243A]">
-                      <select value={form.phoneCode} onChange={(e) => setForm({ ...form, phoneCode: e.target.value })}
-                        className="bg-gray-50 border-r border-[var(--border)] px-2 text-sm outline-none cursor-pointer" style={{ minWidth: 68 }}>
-                        <option value="+91">🇮🇳 +91</option>
-                        <option value="+1">🇺🇸 +1</option>
-                        <option value="+44">🇬🇧 +44</option>
-                        <option value="+971">🇦🇪 +971</option>
-                        <option value="+65">🇸🇬 +65</option>
-                        <option value="+61">🇦🇺 +61</option>
-                      </select>
+                    <div className="flex items-stretch border border-[var(--border)] rounded-lg overflow-hidden bg-white focus-within:ring-1 focus-within:ring-[#166534] focus-within:border-[#166534]">
+                      <Select value={form.phoneCode} onChange={(v) => setForm({ ...form, phoneCode: v })}
+                        size="sm" className="min-w-[92px]"
+                        options={[
+                          { value: "+91", label: "🇮🇳 +91" },
+                          { value: "+1", label: "🇺🇸 +1" },
+                          { value: "+44", label: "🇬🇧 +44" },
+                          { value: "+971", label: "🇦🇪 +971" },
+                          { value: "+65", label: "🇸🇬 +65" },
+                          { value: "+61", label: "🇦🇺 +61" },
+                        ]} />
                       <input required type="tel" inputMode="numeric" pattern="[0-9]{10}" maxLength={10} placeholder="10-digit number"
                         value={form.personalPhone}
                         onChange={(e) => setForm({ ...form, personalPhone: e.target.value.replace(/\D/g, "").slice(0, 10) })}
-                        className="flex-1 min-w-0 px-3 text-sm outline-none border-0" />
+                        className="flex-1 min-w-0 px-3 text-xs outline-none border-0" />
                     </div>
                   </FormField>
                   <FormField label="Photo" hint="JPG / PNG / GIF · 5 MB max">
@@ -442,7 +458,7 @@ export default function NewCandidatePage() {
                       <Upload size={14} className="text-gray-400 shrink-0" />
                       <input placeholder="Image URL or upload" value={form.profilePhoto}
                         onChange={(e) => setForm({ ...form, profilePhoto: e.target.value })}
-                        className="flex-1 min-w-0 text-sm outline-none border-0 bg-transparent" />
+                        className="flex-1 min-w-0 text-xs outline-none border-0 bg-transparent" />
                       <input
                         ref={photoInputRef}
                         type="file"
@@ -463,7 +479,7 @@ export default function NewCandidatePage() {
                         type="button"
                         disabled={photoUploading}
                         onClick={() => photoInputRef.current?.click()}
-                        className="text-[#16243A] text-xs font-semibold hover:underline shrink-0 disabled:opacity-60"
+                        className="text-[#166534] text-xs font-semibold hover:underline shrink-0 disabled:opacity-60"
                       >
                         {photoUploading ? "Uploading…" : "Browse"}
                       </button>
@@ -477,9 +493,9 @@ export default function NewCandidatePage() {
                 icon={<IdCard size={18} />}
                 title="Identity"
                 subtitle="KYC and identity details."
-                sectionRef={(el) => { sectionRefs.current.identity = el; }}
+                active={activeStep === "identity"}
               >
-                <div className="grid grid-cols-3 gap-x-5 gap-y-4">
+                <div className="grid grid-cols-3 gap-x-4 gap-y-4">
                   <FormField label="Aadhaar Number">
                     <FormInput inputMode="numeric" placeholder="12-digit Aadhaar" value={form.aadhaarNumber} onChange={(e) => setForm({ ...form, aadhaarNumber: e.target.value.replace(/\D/g, "").slice(0, 12) })} className="font-mono tracking-widest" maxLength={12} />
                   </FormField>
@@ -497,16 +513,16 @@ export default function NewCandidatePage() {
                 icon={<MapPin size={18} />}
                 title="Address"
                 subtitle="Present and permanent address."
-                sectionRef={(el) => { sectionRefs.current.address = el; }}
+                active={activeStep === "address"}
               >
                 <div className="space-y-4">
                   <div>
-                    <p className="text-sm font-semibold text-gray-800 mb-2">Present address</p>
+                    <p className="text-[13px] font-semibold text-gray-800 mb-2">Present address</p>
                     <AddressBlock value={form.currentAddress} onChange={(key, v) => updateAddress("currentAddress", key, v)} />
                   </div>
                   <div className="border-t border-gray-100 pt-4">
                     <div className="flex items-center justify-between mb-2">
-                      <p className="text-sm font-semibold text-gray-800">Permanent address</p>
+                      <p className="text-[13px] font-semibold text-gray-800">Permanent address</p>
                       <FormCheckbox label="Same as Present address"
                         checked={form.sameAsPresent}
                         onChange={(e) => setForm({ ...form, sameAsPresent: e.target.checked })} />
@@ -523,7 +539,7 @@ export default function NewCandidatePage() {
                 icon={<ShieldAlert size={18} />}
                 title="Emergency Contact"
                 subtitle="Person to reach in case of emergency. At least one recommended."
-                sectionRef={(el) => { sectionRefs.current.emergency = el; }}
+                active={activeStep === "emergency"}
               >
                 <div className="space-y-4">
                   {form.emergencyContacts.map((c, i) => (
@@ -571,8 +587,8 @@ export default function NewCandidatePage() {
                     </div>
                   ))}
                   <button type="button" onClick={addEmergencyContact}
-                    className="flex items-center gap-1.5 text-sm text-[#3b82f6] hover:underline">
-                    <Plus size={14} /> Add another contact
+                    className="flex items-center gap-1.5 text-xs text-[#22c55e] hover:underline">
+                    <Plus size={13} /> Add another contact
                   </button>
                 </div>
               </Section>
@@ -582,9 +598,9 @@ export default function NewCandidatePage() {
                 icon={<Briefcase size={18} />}
                 title="Professional Details"
                 subtitle="Job, qualifications and onboarding template."
-                sectionRef={(el) => { sectionRefs.current.professional = el; }}
+                active={activeStep === "professional"}
               >
-                <div className="grid grid-cols-2 gap-x-5 gap-y-4">
+                <div className="grid grid-cols-2 gap-x-4 gap-y-4">
                   <FormField label="Title" required>
                     {designationOpts.length > 0 ? (
                       <Select value={form.designationId}
@@ -625,23 +641,23 @@ export default function NewCandidatePage() {
                   <FormField label="CTC (LPA)" required>
                     <NumberInput min={0} value={form.ctcLpa} onChange={(v) => setForm({ ...form, ctcLpa: v })}
                       placeholder="e.g. 12.5"
-                      className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#16243A] focus:border-[#16243A]" />
+                      className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#166534] focus:border-[#166534]" />
                   </FormField>
                   <FormField label="Source of Hire">
                     <Select value={form.sourceOfHire} onChange={(v) => setForm({ ...form, sourceOfHire: v as SourceOfHire })}
                       placeholder="Select source" clearable options={SOURCES.map((s) => ({ value: s, label: s }))} />
                   </FormField>
                   <FormField label="Experience (months)">
-                    <NumberInput allowDecimal={false} min={0} value={form.previousExperience} onChange={(v) => setForm({ ...form, previousExperience: v })} className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#16243A] focus:border-[#16243A]" />
+                    <NumberInput allowDecimal={false} min={0} value={form.previousExperience} onChange={(v) => setForm({ ...form, previousExperience: v })} className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#166534] focus:border-[#166534]" />
                   </FormField>
                   <FormField label="Current Salary">
-                    <NumberInput min={0} value={form.currentSalary} onChange={(v) => setForm({ ...form, currentSalary: v })} className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#16243A] focus:border-[#16243A]" />
+                    <NumberInput min={0} value={form.currentSalary} onChange={(v) => setForm({ ...form, currentSalary: v })} className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#166534] focus:border-[#166534]" />
                   </FormField>
                   <FormField label="Highest Qualification">
                     <FormInput placeholder="e.g. B.Tech Computer Science" value={form.highestQualification} onChange={(e) => setForm({ ...form, highestQualification: e.target.value })} />
                   </FormField>
                   <FormField label="Tentative Joining Date" required>
-                    <FormInput type="date" value={form.tentativeJoiningDate}
+                    <FormInput type="date" value={form.tentativeJoiningDate} min={todayInput()}
                       onChange={(e) => setForm({ ...form, tentativeJoiningDate: e.target.value, dateOfJoining: form.dateOfJoining || e.target.value })} />
                   </FormField>
                   <FormField label="Onboarding Template">
@@ -657,7 +673,7 @@ export default function NewCandidatePage() {
                       <Upload size={14} className="text-gray-400 shrink-0" />
                       <input placeholder="Paste URL or upload" value={form.offerLetterUrl}
                         onChange={(e) => setForm({ ...form, offerLetterUrl: e.target.value })}
-                        className="flex-1 min-w-0 text-sm outline-none border-0 bg-transparent" />
+                        className="flex-1 min-w-0 text-xs outline-none border-0 bg-transparent" />
                       <input
                         ref={offerLetterInputRef}
                         type="file"
@@ -678,14 +694,14 @@ export default function NewCandidatePage() {
                         type="button"
                         disabled={offerLetterUploading}
                         onClick={() => offerLetterInputRef.current?.click()}
-                        className="text-[#16243A] text-xs font-semibold hover:underline shrink-0 disabled:opacity-60"
+                        className="text-[#166534] text-xs font-semibold hover:underline shrink-0 disabled:opacity-60"
                       >
                         {offerLetterUploading ? "Uploading…" : "Browse"}
                       </button>
                     </div>
                   </FormField>
                 </div>
-                <div className="grid grid-cols-2 gap-x-5 gap-y-4 mt-4">
+                <div className="grid grid-cols-2 gap-x-4 gap-y-4 mt-4">
                   <FormField label="Skill Set">
                     <FormTextarea rows={3} placeholder="React, Node.js, AWS..." value={form.skillSet} onChange={(e) => setForm({ ...form, skillSet: e.target.value })} />
                   </FormField>
@@ -700,22 +716,22 @@ export default function NewCandidatePage() {
                 icon={<GraduationCap size={18} />}
                 title="Education"
                 subtitle="Schools, degrees, and completion."
-                sectionRef={(el) => { sectionRefs.current.education = el; }}
+                active={activeStep === "education"}
                 action={
-                  <button type="button" onClick={addEducation} className="inline-flex items-center gap-1 text-xs font-semibold text-[#16243A] hover:underline">
+                  <button type="button" onClick={addEducation} className="inline-flex items-center gap-1 text-xs font-semibold text-[#166534] hover:underline">
                     <Plus size={12} /> Add Row
                   </button>
                 }
               >
                 <div className="overflow-x-auto -mx-1">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50/60 text-[10px] uppercase tracking-wide text-gray-500">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50/60 text-table-head uppercase tracking-wide text-gray-500">
                       <tr>
-                        <th className="text-left px-2 py-2 font-bold">School Name</th>
-                        <th className="text-left px-2 py-2 font-bold">Degree</th>
-                        <th className="text-left px-2 py-2 font-bold">Field of Study</th>
-                        <th className="text-left px-2 py-2 font-bold">Completion</th>
-                        <th className="text-left px-2 py-2 font-bold">Notes</th>
+                        <th className="text-left px-2 py-2 font-semibold">School Name</th>
+                        <th className="text-left px-2 py-2 font-semibold">Degree</th>
+                        <th className="text-left px-2 py-2 font-semibold">Field of Study</th>
+                        <th className="text-left px-2 py-2 font-semibold">Completion</th>
+                        <th className="text-left px-2 py-2 font-semibold">Notes</th>
                         <th className="w-8"></th>
                       </tr>
                     </thead>
@@ -742,22 +758,22 @@ export default function NewCandidatePage() {
                 icon={<History size={18} />}
                 title="Experience"
                 subtitle="Past roles and organisations."
-                sectionRef={(el) => { sectionRefs.current.experience = el; }}
+                active={activeStep === "experience"}
                 action={
-                  <button type="button" onClick={addExperience} className="inline-flex items-center gap-1 text-xs font-semibold text-[#16243A] hover:underline">
+                  <button type="button" onClick={addExperience} className="inline-flex items-center gap-1 text-xs font-semibold text-[#166534] hover:underline">
                     <Plus size={12} /> Add Row
                   </button>
                 }
               >
                 <div className="overflow-x-auto -mx-1">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50/60 text-[10px] uppercase tracking-wide text-gray-500">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50/60 text-table-head uppercase tracking-wide text-gray-500">
                       <tr>
-                        <th className="text-left px-2 py-2 font-bold">Occupation</th>
-                        <th className="text-left px-2 py-2 font-bold">Company</th>
-                        <th className="text-left px-2 py-2 font-bold">Summary</th>
-                        <th className="text-left px-2 py-2 font-bold">Duration</th>
-                        <th className="text-left px-2 py-2 font-bold">Current</th>
+                        <th className="text-left px-2 py-2 font-semibold">Occupation</th>
+                        <th className="text-left px-2 py-2 font-semibold">Company</th>
+                        <th className="text-left px-2 py-2 font-semibold">Summary</th>
+                        <th className="text-left px-2 py-2 font-semibold">Duration</th>
+                        <th className="text-left px-2 py-2 font-semibold">Current</th>
                         <th className="w-8"></th>
                       </tr>
                     </thead>
@@ -788,21 +804,21 @@ export default function NewCandidatePage() {
                 icon={<Users size={18} />}
                 title="Family Details"
                 subtitle="Spouse, children, parents and dependents."
-                sectionRef={(el) => { sectionRefs.current.family = el; }}
+                active={activeStep === "family"}
                 action={
-                  <button type="button" onClick={addFamilyMember} className="inline-flex items-center gap-1 text-xs font-semibold text-[#16243A] hover:underline">
+                  <button type="button" onClick={addFamilyMember} className="inline-flex items-center gap-1 text-xs font-semibold text-[#166534] hover:underline">
                     <Plus size={12} /> Add Row
                   </button>
                 }
               >
                 <div className="overflow-x-auto -mx-1">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50/60 text-[10px] uppercase tracking-wide text-gray-500">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50/60 text-table-head uppercase tracking-wide text-gray-500">
                       <tr>
-                        <th className="text-left px-2 py-2 font-bold">Name</th>
-                        <th className="text-left px-2 py-2 font-bold">Relation</th>
-                        <th className="text-left px-2 py-2 font-bold">Date of Birth</th>
-                        <th className="text-left px-2 py-2 font-bold">Occupation</th>
+                        <th className="text-left px-2 py-2 font-semibold">Name</th>
+                        <th className="text-left px-2 py-2 font-semibold">Relation</th>
+                        <th className="text-left px-2 py-2 font-semibold">Date of Birth</th>
+                        <th className="text-left px-2 py-2 font-semibold">Occupation</th>
                         <th className="w-8"></th>
                       </tr>
                     </thead>
@@ -831,23 +847,23 @@ export default function NewCandidatePage() {
                 icon={<Award size={18} />}
                 title="Certifications"
                 subtitle="Professional courses, certificates and credentials."
-                sectionRef={(el) => { sectionRefs.current.certifications = el; }}
+                active={activeStep === "certifications"}
                 action={
-                  <button type="button" onClick={addCertification} className="inline-flex items-center gap-1 text-xs font-semibold text-[#16243A] hover:underline">
+                  <button type="button" onClick={addCertification} className="inline-flex items-center gap-1 text-xs font-semibold text-[#166534] hover:underline">
                     <Plus size={12} /> Add Row
                   </button>
                 }
               >
                 <div className="overflow-x-auto -mx-1">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50/60 text-[10px] uppercase tracking-wide text-gray-500">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50/60 text-table-head uppercase tracking-wide text-gray-500">
                       <tr>
-                        <th className="text-left px-2 py-2 font-bold">Name</th>
-                        <th className="text-left px-2 py-2 font-bold">Course Name</th>
-                        <th className="text-left px-2 py-2 font-bold">Issuing Authority</th>
-                        <th className="text-left px-2 py-2 font-bold">Year</th>
-                        <th className="text-left px-2 py-2 font-bold">Expiry</th>
-                        <th className="text-left px-2 py-2 font-bold">Credential URL</th>
+                        <th className="text-left px-2 py-2 font-semibold">Name</th>
+                        <th className="text-left px-2 py-2 font-semibold">Course Name</th>
+                        <th className="text-left px-2 py-2 font-semibold">Issuing Authority</th>
+                        <th className="text-left px-2 py-2 font-semibold">Year</th>
+                        <th className="text-left px-2 py-2 font-semibold">Expiry</th>
+                        <th className="text-left px-2 py-2 font-semibold">Credential URL</th>
                         <th className="w-8"></th>
                       </tr>
                     </thead>
@@ -869,20 +885,23 @@ export default function NewCandidatePage() {
                   </table>
                 </div>
               </Section>
+
+              {/* In-card step navigation — sits directly under the active card
+                  so Next/Submit is reachable without scrolling to the footer. */}
+              <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+                {renderStepButtons()}
+              </div>
             </div>
           </div>
 
-          <div className="border-t border-gray-100 px-6 py-3 flex items-center gap-2 bg-white sticky bottom-0">
-            <button onClick={() => handleSubmit("submit")} disabled={submitMut.isPending} className="btn btn-primary">
-              <Save size={14} /> {submitMut.isPending ? "Saving..." : "Submit"}
-            </button>
-            <button onClick={() => handleSubmit("submit-new")} disabled={submitMut.isPending} className="btn btn-primary">
-              Submit and New
-            </button>
-            <button onClick={() => handleSubmit("draft")} disabled={submitMut.isPending} className="btn btn-secondary">
-              Save Draft
-            </button>
-            <Link href="/onboarding" className="btn btn-ghost">Cancel</Link>
+          <div className="border-t border-gray-100 px-5 py-3 flex items-center justify-between gap-2 bg-white sticky bottom-0">
+            <div className="flex items-center gap-2">
+              <Link href="/onboarding" className="btn btn-ghost">Cancel</Link>
+              <span className="text-xs text-gray-400 hidden sm:inline">Step {stepIndex + 1} of {STEPS.length}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {renderStepButtons()}
+            </div>
           </div>
         </div>
       </div>
@@ -900,7 +919,7 @@ function hasAddress(a: Address) {
 }
 
 function Section({
-  id, icon, title, subtitle, action, children, sectionRef,
+  id, icon, title, subtitle, action, children, active,
 }: {
   id: StepId;
   icon: React.ReactNode;
@@ -908,17 +927,17 @@ function Section({
   subtitle: string;
   action?: React.ReactNode;
   children: React.ReactNode;
-  sectionRef: (el: HTMLElement | null) => void;
+  active: boolean;
 }) {
   return (
-    <section ref={sectionRef} data-step-id={id} className="surface-card p-5">
+    <section data-step-id={id} className={clsx("surface-card p-4", !active && "hidden")}>
       <div className="flex items-start justify-between gap-3 mb-4 pb-4 border-b border-gray-100">
         <div className="flex items-start gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-[#16243A]/5 text-[#16243A] flex items-center justify-center shrink-0">
+          <div className="w-9 h-9 rounded-xl bg-[#166534]/5 text-[#166534] flex items-center justify-center shrink-0">
             {icon}
           </div>
           <div>
-            <h2 className="font-bold text-gray-900 leading-tight">{title}</h2>
+            <h2 className="text-[13px] font-semibold text-gray-900 leading-tight">{title}</h2>
             <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>
           </div>
         </div>
