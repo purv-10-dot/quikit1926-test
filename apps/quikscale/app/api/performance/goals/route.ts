@@ -7,7 +7,7 @@ import {
   listGoalsParamsSchema,
 } from "@/lib/schemas/goalSchema";
 import { validationError } from "@/lib/api/validationError";
-import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
+import { rateLimitAsync, LIMITS } from "@/lib/api/rateLimit";
 
 /**
  * GET /api/performance/goals
@@ -114,7 +114,7 @@ export const GET = withOrgAuth(
  */
 export const POST = withOrgAuth(
   async ({ orgId, userId }, request) => {
-    const rl = rateLimit({
+    const rl = await rateLimitAsync({
       routeKey: "goal:create",
       clientKey: `${orgId}:${userId}`,
       limit: LIMITS.mutation.limit,

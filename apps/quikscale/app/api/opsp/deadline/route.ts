@@ -6,7 +6,7 @@ import { authOptions } from "@/lib/auth";
 import { getOrgId } from "@/lib/api/getOrgId";
 import { resolveOpspOwnerOrSelf } from "@/lib/api/opspOwner";
 import { toErrorMessage } from "@/lib/api/errors";
-import { getFiscalYear, getFiscalQuarter } from "@/lib/utils/fiscal";
+import { getFiscalYear, getFiscalQuarter, resolveQuarterForDate } from "@/lib/utils/fiscal";
 import { diffDays, addDays } from "@/lib/utils/quarterGen";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import {
@@ -62,14 +62,32 @@ export async function GET(_req: NextRequest) {
     }
 
     const fiscalYear = getFiscalYear();
-    const fiscalQuarter = getFiscalQuarter();
+    const now = new Date();
 
     // OPSP is org-shared: the deadline/review banners track the org's canonical
     // plan, so every member sees the same finalize/review countdown.
     const ownerId = await resolveOpspOwnerOrSelf(orgId, session.user.id);
 
-    // Parallelize the three reads — period lookups for the org's OPSP.
-    const [opsp, flagRows, strictQuarterSetting] = await Promise.all([
+    // Custom-Quarter aware "current quarter". A tenant's configured
+    // QuarterSetting date ranges can push a quarter past its calendar-month
+    // boundary (e.g. a custom 14-week Q1 ending in July), where the calendar
+    // getFiscalQuarter() wrongly reports Q2. Resolve the quarter from those rows
+    // first and fall back to the calendar quarter only when none are configured.
+    // See resolveQuarterForDate.
+    const quarterRows = await db.quarterSetting.findMany({
+      where: { orgId, fiscalYear },
+      select: { quarter: true, startDate: true, endDate: true },
+    });
+    const resolvedQuarter = resolveQuarterForDate(quarterRows, now);
+    const fiscalQuarter = resolvedQuarter ?? getFiscalQuarter();
+    // Reuse the matched row (avoids a second strict findUnique) when custom
+    // quarters resolved the period; else fall back to the strict lookup below.
+    const matchedRow = resolvedQuarter
+      ? quarterRows.find((r) => r.quarter === resolvedQuarter) ?? null
+      : null;
+
+    // Parallelize the reads — period lookup for the org's OPSP + threshold flags.
+    const [opsp, flagRows] = await Promise.all([
       db.oPSPData.findFirst({
         where: { orgId, userId: ownerId, year: fiscalYear, quarter: fiscalQuarter },
         select: { id: true, status: true, createdAt: true, year: true, quarter: true },
@@ -81,24 +99,31 @@ export async function GET(_req: NextRequest) {
         },
         select: { key: true, enabled: true, value: true },
       }),
-      db.quarterSetting.findUnique({
-        where: { orgId_fiscalYear_quarter: { orgId, fiscalYear, quarter: fiscalQuarter } },
-        select: { startDate: true, endDate: true },
-      }),
     ]);
 
-    if (!opsp) {
-      return NextResponse.json({ success: true, finalize: null, review: null });
-    }
+    // Quarter-end anchor (Mode B + review). Reuse the custom-quarter row matched
+    // above; only hit the strict per-quarter lookup when no custom rows exist.
+    const strictQuarterSetting = matchedRow
+      ? { startDate: matchedRow.startDate, endDate: matchedRow.endDate }
+      : quarterRows.length === 0
+        ? await db.quarterSetting.findUnique({
+            where: { orgId_fiscalYear_quarter: { orgId, fiscalYear, quarter: fiscalQuarter } },
+            select: { startDate: true, endDate: true },
+          })
+        : null;
 
     const flags = new Map(flagRows.map((f) => [f.key, f]));
     const finalizeDays = parseExplicitThresholdDays(flags.get("opsp_threshold_days") ?? null);
     const reviewDays = parseExplicitThresholdDays(flags.get("opsp_review_threshold_days") ?? null);
 
-    const period = resolvePeriodLabel(opsp.year, opsp.quarter);
-    const now = new Date();
+    // NOTE: we no longer early-return when the current-quarter OPSP is missing.
+    // The Finalize banner tracks the current quarter, but the Review reminder
+    // tracks a (possibly PAST) finalized-but-unreviewed quarter — so even with no
+    // current-quarter OPSP, a pending review must still surface.
 
-    /* ──────────────────── Finalize banner ──────────────────── */
+    const period = opsp ? resolvePeriodLabel(opsp.year, opsp.quarter) : "current OPSP";
+
+    /* ──────────────────── Finalize banner (current quarter) ──────────────────── */
     let finalize:
       | { mode: "A" | "B"; show: true; daysLeft: number; message: string; period: string;
           createdAt?: string; autoFinalizeDate?: string; thresholdDays?: number; opspStatus?: string }
@@ -106,7 +131,7 @@ export async function GET(_req: NextRequest) {
 
     // Mode A is preferred. Eligible when (i) the OPSP is in draft, (ii) createdAt
     // is present, and (iii) the finalize threshold is explicitly configured.
-    if (opsp.status !== "finalized" && opsp.status !== "reviewed") {
+    if (opsp && opsp.status !== "finalized" && opsp.status !== "reviewed") {
       if (finalizeDays !== null && opsp.createdAt) {
         // ── Mode A ──
         const createdAt = startOfDayUTC(new Date(opsp.createdAt));
@@ -172,40 +197,69 @@ export async function GET(_req: NextRequest) {
       // else: no Mode A inputs AND no quarter row → finalize stays null.
     }
 
-    /* ──────────────────── Review banner ──────────────────── */
+    /* ──────────────────── Review banner / modal ──────────────────── */
+    // The review reminder is NOT tied to the current quarter. You review a
+    // quarter's OPSP *after* it's finalized, and that usually happens once you've
+    // already moved into the NEXT quarter (the period gate only needs the prior
+    // quarter finalized to unlock the next one). So the review target is the
+    // OLDEST finalized-but-unreviewed OPSP — the most overdue pending review —
+    // independent of whichever quarter is current.
+    //
+    //   • Still within `reviewDays` of that quarter's end → countdown banner.
+    //   • Quarter already ended (overdue) → the client escalates to a blocking
+    //     modal. Reminder persists until the review is submitted (status
+    //     transitions off "finalized" to "reviewed").
     let review:
       | { show: true; daysUntilQuarterEnd: number; isOverdue: boolean; message: string; period: string }
       | null = null;
 
-    if (opsp.status !== "reviewed" && reviewDays !== null) {
-      // Resolve quarter end via the lenient ladder:
-      //   1. Strict (org, fiscalYear, fiscalQuarter) — already loaded
-      //   2. Fiscal-year flex (org, opsp.year, opsp.quarter)
-      //   3. Synthetic calendar quarter end on opsp.year
-      let quarterEnd: Date | null = strictQuarterSetting
-        ? endOfDayUTC(strictQuarterSetting.endDate)
-        : null;
+    if (reviewDays !== null) {
+      const reviewOpsp = await db.oPSPData.findFirst({
+        where: { orgId, userId: ownerId, status: "finalized" },
+        select: { year: true, quarter: true },
+        orderBy: [{ year: "asc" }, { quarter: "asc" }],
+      });
 
-      if (!quarterEnd && (opsp.year !== fiscalYear || opsp.quarter !== fiscalQuarter)) {
-        const flex = await db.quarterSetting.findUnique({
-          where: { orgId_fiscalYear_quarter: { orgId, fiscalYear: opsp.year, quarter: opsp.quarter } },
-          select: { endDate: true },
-        });
-        if (flex) quarterEnd = endOfDayUTC(flex.endDate);
-      }
-      if (!quarterEnd) {
-        quarterEnd = getSyntheticCalendarQuarterEnd(opsp.year, opsp.quarter);
-      }
+      if (reviewOpsp) {
+        // Resolve the review quarter's end via the lenient ladder:
+        //   1. Reuse the current-quarter row when the review target IS current.
+        //   2. Strict (org, reviewOpsp.year, reviewOpsp.quarter) lookup.
+        //   3. Synthetic calendar quarter end as last resort.
+        let quarterEnd: Date | null =
+          strictQuarterSetting &&
+          reviewOpsp.year === fiscalYear &&
+          reviewOpsp.quarter === fiscalQuarter
+            ? endOfDayUTC(strictQuarterSetting.endDate)
+            : null;
 
-      const result = buildOpspReviewReminderMessage({ now, quarterEnd, reviewDays, period });
-      if (result) {
-        review = {
-          show: true,
-          daysUntilQuarterEnd: result.daysUntilQuarterEnd,
-          isOverdue: result.isOverdue,
-          message: result.message,
-          period,
-        };
+        if (!quarterEnd) {
+          const qs = await db.quarterSetting.findUnique({
+            where: {
+              orgId_fiscalYear_quarter: {
+                orgId,
+                fiscalYear: reviewOpsp.year,
+                quarter: reviewOpsp.quarter,
+              },
+            },
+            select: { endDate: true },
+          });
+          if (qs) quarterEnd = endOfDayUTC(qs.endDate);
+        }
+        if (!quarterEnd) {
+          quarterEnd = getSyntheticCalendarQuarterEnd(reviewOpsp.year, reviewOpsp.quarter);
+        }
+
+        const reviewPeriod = resolvePeriodLabel(reviewOpsp.year, reviewOpsp.quarter);
+        const result = buildOpspReviewReminderMessage({ now, quarterEnd, reviewDays, period: reviewPeriod });
+        if (result) {
+          review = {
+            show: true,
+            daysUntilQuarterEnd: result.daysUntilQuarterEnd,
+            isOverdue: result.isOverdue,
+            message: result.message,
+            period: reviewPeriod,
+          };
+        }
       }
     }
 

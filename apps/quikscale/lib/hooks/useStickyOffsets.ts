@@ -9,7 +9,9 @@ import { useLayoutEffect, useState, useCallback, useMemo, RefObject } from "reac
  * user-frozen columns receive a `left` value that doesn't account for the
  * rail's pixel width and visually overlap it.
  *
- * Recalculates whenever `frozenUpTo`, `hiddenCols`, or `colWidths` change.
+ * Recalculates whenever `frozenUpTo`, `hiddenCols`, or `colWidths` change, and
+ * (via a childList MutationObserver on the header row) whenever the columns are
+ * reordered / added / removed — a pure drag-reorder changes none of those deps.
  *
  * Offsets live in state (not a ref) so a measurement update triggers a
  * re-render — without that, freeze/unfreeze/resize cycles render with stale
@@ -52,23 +54,41 @@ export function useStickyOffsets(
   const [offsets, setOffsets] = useState<Map<string, number>>(() => new Map());
 
   useLayoutEffect(() => {
-    if (!headerRowRef.current) {
+    const row = headerRowRef.current;
+    if (!row) {
       setOffsets((prev) => (prev.size === 0 ? prev : new Map()));
       return;
     }
-    const ths = headerRowRef.current.querySelectorAll<HTMLElement>("th[data-col-key]");
-    const next = new Map<string, number>();
-    let accum = 0;
-    ths.forEach((th) => {
-      const key = th.dataset.colKey!;
-      next.set(key, accum);
-      accum += th.offsetWidth;
-    });
-    setOffsets((prev) => {
-      if (prev.size !== next.size) return next;
-      for (const [k, v] of next) if (prev.get(k) !== v) return next;
-      return prev;
-    });
+
+    const measure = () => {
+      const ths = row.querySelectorAll<HTMLElement>("th[data-col-key]");
+      const next = new Map<string, number>();
+      let accum = 0;
+      ths.forEach((th) => {
+        const key = th.dataset.colKey!;
+        next.set(key, accum);
+        accum += th.offsetWidth;
+      });
+      setOffsets((prev) => {
+        if (prev.size !== next.size) return next;
+        for (const [k, v] of next) if (prev.get(k) !== v) return next;
+        return prev;
+      });
+    };
+
+    measure();
+
+    // Re-measure when the header's columns are reordered / added / removed.
+    // A drag-reorder moves the keyed <th> nodes (React `insertBefore`) WITHOUT
+    // changing frozenUpTo / hiddenCols / colWidths — those keep the same
+    // references — so the dependency array below never fires and the offset map
+    // would otherwise stay pinned to the OLD column order, leaving an empty gap
+    // to the right of the moved column. A childList MutationObserver catches
+    // exactly this case. It runs before paint (microtask), so no visible flash,
+    // and the equality guard in `measure` prevents any re-render loop.
+    const observer = new MutationObserver(measure);
+    observer.observe(row, { childList: true });
+    return () => observer.disconnect();
   }, [headerRowRef, frozenUpTo, hiddenCols, colWidths]);
 
   // Pre-compute a fallback offsets map from colWidths + COL_ORDER so the

@@ -653,6 +653,11 @@ model KPI {
   scaledDisplay      Boolean          @default(false)
   reverseColor       Boolean          @default(false)
   frequency          String           @default("weekly")
+  // Classification of the KPI's role in the metric chain: "Leading" (predictive,
+  // an input you can act on now) vs "Lagging" (outcome, measured after the fact).
+  // "NA" = unclassified (default). Plain string + app-level enum validation,
+  // matching every other KPI single-select (never a Prisma enum).
+  kpiType            String           @default("NA")
   // True when this KPI was created via the OPSP "Export → Create KPIs" flow.
   // Display-only (shown in the KPI grid); never edited from the Add/Edit form.
   importedFromOpsp   Boolean          @default(false)
@@ -673,7 +678,11 @@ model KPI {
   notes              KPINote[]
   weeklyValues       KPIWeeklyValue[]
 
+  // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
+  position           Float?
+
   @@index([orgId])
+  @@index([orgId, position])
   @@index([orgId, deletedAt])
   @@index([orgId, kpiLevel, deletedAt])
   @@index([owner])
@@ -839,7 +848,11 @@ model Priority {
   team             QsTeam?                @relation(fields: [teamId], references: [id])
   weeklyStatuses   PriorityWeeklyStatus[]
 
+  // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
+  position         Float?
+
   @@index([orgId])
+  @@index([orgId, position])
   @@index([orgId, deletedAt])
   @@index([orgId, year, quarter, deletedAt])
   @@index([owner])
@@ -889,7 +902,11 @@ model WWWItem {
   revisionLogs     WWWRevisionLog[]
   noteEntries      WWWNote[]
 
+  // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
+  position         Float?
+
   @@index([orgId])
+  @@index([orgId, position])
   @@index([who])
   @@index([when])
   @@index([status])
@@ -953,11 +970,19 @@ model CategoryMaster {
   /// Fill mode — "Manual" requires the user to enter every cell;
   /// "Automatic" lets `calculateBreakdown` distribute Projected across periods.
   breakdownType String   @default("Automatic")
+  /// Soft-delete tombstone. Null = active; set = in Trash (restorable). Mirrors
+  /// the KPI/Priority/WWW soft-delete convention.
+  deletedAt     DateTime?
+  /// Fractional manual sort position for drag-to-reorder. Null rows fall back to
+  /// createdAt ordering. Mirrors the reorderable-grid `position` convention.
+  position      Float?
   org           Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, nameKey, dataType, currency], name: "category_tenant_name_type_currency_uniq")
   @@index([orgId])
   @@index([dataType])
+  @@index([orgId, deletedAt])
+  @@index([orgId, position])
   @@schema("app_quikscale")
 }
 
@@ -973,10 +998,16 @@ model UnitMaster {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   createdBy   String
+  /// Soft-delete tombstone. Null = active; set = in Trash (restorable).
+  deletedAt   DateTime?
+  /// Fractional manual sort position for drag-to-reorder (null → createdAt order).
+  position    Float?
   org         Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, nameKey], name: "unit_tenant_name_uniq")
   @@index([orgId])
+  @@index([orgId, deletedAt])
+  @@index([orgId, position])
   @@schema("app_quikscale")
 }
 
@@ -1076,6 +1107,10 @@ model UserTablePreference {
   hiddenCols String?
   sort       String?
   colWidths  String?
+  // JSON-stringified string[] of column keys in the user's chosen drag-and-drop
+  // order. Null = default order. Unknown/removed keys are pruned and any new
+  // columns are appended in their default position at read time (forward-compat).
+  colOrder   String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1110,8 +1145,12 @@ model Client {
   teamMembers     ClientTeamMember[]
   weeklyMeetings  ClientWeeklyMeeting[]
 
+  // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
+  position        Float?
+
   @@unique([orgId, name])
   @@index([orgId])
+  @@index([orgId, position])
   @@index([orgId, isActive])
   @@index([deletedAt])
   @@schema("app_quikscale")
@@ -1176,7 +1215,11 @@ model ClientMember {
   weeklyDashboardNA ClientWeeklyMeetingTeamDashboardNA[]
   weeklyScores      ClientWeeklyMemberScore[]
 
+  // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
+  position          Float?
+
   @@index([orgId])
+  @@index([orgId, position])
   @@index([orgId, deletedAt])
   @@index([email])
   @@schema("app_quikscale")
@@ -1212,7 +1255,11 @@ model ClientDailyHuddle {
   absentMembers       ClientDailyHuddleAbsence[]
   absentTeamMembers   ClientDailyHuddleTeamAbsence[]
 
+  // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
+  position            Float?
+
   @@index([orgId])
+  @@index([orgId, position])
   @@index([orgId, deletedAt])
   @@index([clientId])
   @@index([meetingDate])
@@ -1298,7 +1345,11 @@ model ClientWeeklyMeeting {
   dashboardNATeamMembers ClientWeeklyMeetingTeamDashboardNA[]
   memberScores           ClientWeeklyMemberScore[]
 
+  // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
+  position               Float?
+
   @@index([orgId])
+  @@index([orgId, position])
   @@index([orgId, deletedAt])
   @@index([clientId])
   @@index([meetingDate])

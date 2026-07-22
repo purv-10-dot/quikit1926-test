@@ -71,6 +71,74 @@ export function editsSince<T extends { createdAt: string }>(entries: T[], sinceT
   return entries.filter((e) => Date.parse(e.createdAt) > sinceTs);
 }
 
+/**
+ * A history-drawer view scope. `null`/absent = show everything. When set, the
+ * drawer shows every edit with `createdAt <= untilTs` (the "cumulative up to
+ * this user" view described in the change stepper).
+ */
+export interface HistoryScope {
+  actorId: string;
+  actorName: string;
+  untilTs: number;
+}
+
+/**
+ * One row of the post-finalize change stepper — a single user's aggregated
+ * edits. `latestTs` doubles as the "cumulative up to this user" cutoff: the
+ * history drawer shows every edit (by anyone) with `createdAt <= latestTs`, so
+ * a later editor's row surfaces both their own changes AND the earlier ones
+ * they edited on top of.
+ */
+export interface ActorChangeGroup {
+  actorId: string;
+  actorName: string;
+  latestTs: number; // epoch ms of this actor's most recent edit
+  fieldCount: number; // distinct field paths this actor changed
+  editCount: number; // total edit-log rows for this actor
+}
+
+/**
+ * Group edit-log entries by author, one row per user, sorted so the most recent
+ * editor is first. `fieldCount` counts DISTINCT field paths (so re-editing the
+ * same field twice still reads as one field), `editCount` counts raw rows.
+ * Entries with an unparseable `createdAt` are skipped. Actor identity falls back
+ * to `actorName` when `actorId` is absent (the drawer's cutoff is time-based, so
+ * a missing id never breaks the cumulative view).
+ */
+export function groupEditsByActor(entries: EditLogLike[]): ActorChangeGroup[] {
+  const map = new Map<
+    string,
+    { actorId: string; actorName: string; latestTs: number; fields: Set<string>; editCount: number }
+  >();
+  for (const e of entries) {
+    const ts = Date.parse(e.createdAt);
+    if (Number.isNaN(ts)) continue;
+    const key = e.actorId ?? e.actorName;
+    const g = map.get(key) ?? {
+      actorId: e.actorId ?? "",
+      actorName: e.actorName,
+      latestTs: ts,
+      fields: new Set<string>(),
+      editCount: 0,
+    };
+    g.latestTs = Math.max(g.latestTs, ts);
+    if (e.field) g.fields.add(e.field);
+    g.editCount += 1;
+    // Keep the freshest display name if it ever varies across rows.
+    if (ts >= g.latestTs) g.actorName = e.actorName;
+    map.set(key, g);
+  }
+  return [...map.values()]
+    .map((g) => ({
+      actorId: g.actorId,
+      actorName: g.actorName,
+      latestTs: g.latestTs,
+      fieldCount: g.fields.size,
+      editCount: g.editCount,
+    }))
+    .sort((a, b) => b.latestTs - a.latestTs);
+}
+
 /** The most recent edit (max createdAt) + who made it. Null when no entries. */
 export function latestEdit(entries: EditLogLike[]): { ts: number; actorName: string } | null {
   let best: { ts: number; actorName: string } | null = null;

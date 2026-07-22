@@ -211,8 +211,10 @@ export default function PriorityPage() {
     ...priorityColumns,
     ...weeksArray(weekCount).map((w) => ({ key: `week${w}`, label: `Week ${w}` })),
   ];
+  // Global Export defaults to EVERY column (not just grid-visible ones) so no
+  // field — including Last Note — is silently dropped; the user can still uncheck.
   const priorityExportDefaults = [
-    ...visiblePriorityCols,
+    ...priorityColumns.map((c) => c.key),
     ...weeksArray(weekCount).map((w) => `week${w}`),
   ];
   const [globalExportOpen, setGlobalExportOpen] = useState(false);

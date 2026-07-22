@@ -14,12 +14,17 @@ export type Cell = string | number | null | undefined;
 /** ARGB hex per cell (aligned to `rows`), or undefined for no fill. */
 export type FillMatrix = (string | undefined)[][];
 
+/** Hover-comment text per cell (aligned to `rows`), or undefined for no note. */
+export type NoteMatrix = (string | undefined)[][];
+
 export interface WorkbookSheet {
   sheetName: string;
   headers: string[];
   rows: Cell[][];
   /** Optional per-cell fill colors (ARGB), aligned to `rows` by [row][col]. */
   fills?: FillMatrix;
+  /** Optional per-cell hover comments (Excel cell notes), aligned to `rows` by [row][col]. */
+  notes?: NoteMatrix;
 }
 
 export type BuildWorkbookOptions = WorkbookSheet;
@@ -36,16 +41,20 @@ function applyFilledCell(cell: ExcelJS.Cell, argb: string): void {
   cell.alignment = { horizontal: "center", vertical: "middle" };
 }
 
-function addSheet(wb: ExcelJS.Workbook, { sheetName, headers, rows, fills }: WorkbookSheet): void {
+function addSheet(wb: ExcelJS.Workbook, { sheetName, headers, rows, fills, notes }: WorkbookSheet): void {
   const ws = wb.addWorksheet(safeSheetName(sheetName));
   ws.addRow(headers).eachCell(applyHeader);
   rows.forEach((r, ri) => {
     const row = ws.addRow(headers.map((_, i) => normalizeCell(r[i])));
     const rowFills = fills?.[ri];
-    if (rowFills) {
+    const rowNotes = notes?.[ri];
+    if (rowFills || rowNotes) {
       headers.forEach((_, i) => {
-        const argb = rowFills[i];
+        const argb = rowFills?.[i];
         if (argb) applyFilledCell(row.getCell(i + 1), argb);
+        const note = rowNotes?.[i];
+        // A cell note renders as an Excel hover comment (matches the grid's tooltips).
+        if (note) row.getCell(i + 1).note = note;
       });
     }
   });

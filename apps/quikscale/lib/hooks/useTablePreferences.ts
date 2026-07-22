@@ -9,18 +9,28 @@ export type TableName =
   | "clientMaster"
   | "clientMembers"
   | "dailyHuddle"
-  | "weeklyMeeting";
+  | "weeklyMeeting"
+  // Master-data grids migrated onto the shared <FeatureGrid> stack.
+  | "categories"
+  | "units"
+  // OPSP Review tables (DataTable + useDataTableGrid column features).
+  | "opspReviewPrimary"
+  | "opspReviewSecondary"
+  // OPSP Critical # Review cards — column show/hide only (card layout).
+  | "opspReviewCritical";
 
 export interface TablePref {
   frozenCol: string | null;
   hiddenCols: string[];
   sort: string | null; // format: "colKey:asc" | "colKey:desc"
   colWidths: Record<string, number>;
+  /** Drag-and-drop column order (array of column keys). Empty = default order. */
+  colOrder: string[];
 }
 
 type AllPrefs = Record<TableName, TablePref>;
 
-const EMPTY_PREF: TablePref = { frozenCol: null, hiddenCols: [], sort: null, colWidths: {} };
+const EMPTY_PREF: TablePref = { frozenCol: null, hiddenCols: [], sort: null, colWidths: {}, colOrder: [] };
 const EMPTY_ALL: AllPrefs = {
   kpi: EMPTY_PREF,
   priority: EMPTY_PREF,
@@ -29,6 +39,11 @@ const EMPTY_ALL: AllPrefs = {
   clientMembers: EMPTY_PREF,
   dailyHuddle: EMPTY_PREF,
   weeklyMeeting: EMPTY_PREF,
+  categories: EMPTY_PREF,
+  units: EMPTY_PREF,
+  opspReviewPrimary: EMPTY_PREF,
+  opspReviewSecondary: EMPTY_PREF,
+  opspReviewCritical: EMPTY_PREF,
 };
 
 let cache: AllPrefs | null = null;
@@ -46,6 +61,11 @@ const TABLE_KEYS: TableName[] = [
   "clientMembers",
   "dailyHuddle",
   "weeklyMeeting",
+  "categories",
+  "units",
+  "opspReviewPrimary",
+  "opspReviewSecondary",
+  "opspReviewCritical",
 ];
 
 async function fetchPreferences() {
@@ -64,6 +84,7 @@ async function fetchPreferences() {
           ...EMPTY_PREF,
           ...incoming,
           colWidths: incoming.colWidths ?? {},
+          colOrder: incoming.colOrder ?? [],
         };
         return acc;
       }, {} as AllPrefs);
@@ -82,6 +103,7 @@ async function persist(table: TableName, partial: Partial<TablePref>) {
   if ("hiddenCols" in partial) body.hiddenCols = partial.hiddenCols;
   if ("sort" in partial) body.sort = partial.sort;
   if ("colWidths" in partial) body.colWidths = partial.colWidths;
+  if ("colOrder" in partial) body.colOrder = partial.colOrder;
 
   try {
     await fetch("/api/settings/table-preferences", {
@@ -181,11 +203,23 @@ export function useTablePrefs(table: TableName) {
     persist(table, { colWidths: widths });
   };
 
+  /**
+   * Persist the full drag-and-drop column order. Pass `[]` (or null) to clear
+   * back to the table's default order. Optimistic cache update + DB save.
+   */
+  const setColumnOrder = (order: string[]) => {
+    if (!cache) cache = EMPTY_ALL;
+    cache = { ...cache, [table]: { ...cache[table], colOrder: order } };
+    notifyListeners();
+    persist(table, { colOrder: order });
+  };
+
   return {
     frozenCol: pref.frozenCol,
     hiddenCols: pref.hiddenCols,
     sort: pref.sort,
     colWidths: pref.colWidths,
+    colOrder: pref.colOrder,
     setFrozenCol,
     hideCol,
     showCol,
@@ -194,6 +228,7 @@ export function useTablePrefs(table: TableName) {
     setSort,
     setColWidth,
     saveColWidths,
+    setColumnOrder,
     loaded: cache !== null,
   };
 }

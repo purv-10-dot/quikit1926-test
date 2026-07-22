@@ -496,15 +496,20 @@ function ConfigurationsTab() {
 
   const fetchFlags = useCallback(async () => {
     try {
-      const res = await fetch("/api/settings/configurations");
+      // `cache: "no-store"` is required — without it the browser can serve a
+      // stale GET after a save, so the just-saved threshold (e.g. review = 5)
+      // fails to appear on reload. Mirrors the shared useFeatureFlags hook.
+      const res = await fetch("/api/settings/configurations", { cache: "no-store" });
       const json = await res.json();
       if (json.success) {
         const map: Record<string, FlagData> = {};
         for (const f of json.data) map[f.key] = f;
         setFlags(map);
-        setOpspThreshold(map["opsp_threshold_days"]?.value || "");
-        setOpspReviewThreshold(map["opsp_review_threshold_days"]?.value || "");
-        setFutureDaysLimit(map["future_days_limit"]?.value || "");
+        // Use `?? ""` (not `|| ""`) so a saved "0" — a valid "warn immediately"
+        // threshold — is preserved instead of being blanked out.
+        setOpspThreshold(map["opsp_threshold_days"]?.value ?? "");
+        setOpspReviewThreshold(map["opsp_review_threshold_days"]?.value ?? "");
+        setFutureDaysLimit(map["future_days_limit"]?.value ?? "");
       }
     } finally { setLoading(false); }
   }, []);
@@ -564,7 +569,14 @@ function ConfigurationsTab() {
       });
       const json = await res.json();
       if (json.success) {
-        setFlags((prev) => ({ ...prev, [key]: json.data[0] }));
+        const saved: FlagData | undefined = json.data?.[0];
+        setFlags((prev) => ({ ...prev, [key]: saved ?? prev[key] }));
+        // Re-sync the input from the persisted row so the field mirrors exactly
+        // what's in the DB (authoritative after save; survives reload).
+        const persisted = saved?.value ?? value;
+        if (key === "opsp_threshold_days") setOpspThreshold(persisted);
+        else if (key === "opsp_review_threshold_days") setOpspReviewThreshold(persisted);
+        else if (key === "future_days_limit") setFutureDaysLimit(persisted);
         showToast("Settings saved successfully");
         invalidateFeatureFlagsCache();
       }
@@ -753,8 +765,10 @@ function ConfigurationsTab() {
           {quarterDaysLeft !== null && (
             <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 mb-4">
               <p className="text-xs text-amber-700">
-                The threshold is counted backwards from the quarter end{quarterEndLabel ? ` (${quarterEndLabel})` : ""}.
-                Your current quarter {quarterEndsPhrase}, so the finalize threshold cannot be higher than {quarterDaysLeft}.
+                The countdown starts from the day this quarter&apos;s OPSP was created — it will
+                auto-finalize this many days after creation. Because it must finalize before the
+                quarter closes{quarterEndLabel ? ` (${quarterEndLabel})` : ""}, and your current
+                quarter {quarterEndsPhrase}, the finalize threshold cannot be higher than {quarterDaysLeft}.
               </p>
             </div>
           )}
