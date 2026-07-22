@@ -1,24 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import {
-  AlertTriangle,
-  Star,
-  CheckSquare,
-  Bug,
-  BookOpen,
-  Zap,
-  Link2,
-  Lightbulb,
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { AlertTriangle, Star } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FilterToolbar, type ToolbarState, defaultToolbarStateFor } from "./filter-toolbar";
-import { Pager, SkeletonRows } from "./filter-view-parts";
+import { Pager } from "./filter-view-parts";
 import { SaveFilterModal } from "./save-filter-modal";
 import { BulkActionsBar, type BulkRow } from "./bulk-actions-bar";
+import { EditableFilterTable, type FilterListIssue } from "./editable-filter-table";
 import { useFilterPersistence } from "@/lib/hooks/usePersistentFilters";
+import type { IssueType, Priority } from "../../../spaces/[id]/list/_components/list-types";
 
 interface IssueRow {
   id: string;
@@ -26,6 +17,16 @@ interface IssueRow {
   title: string;
   type: string;
   priority: string;
+  statusId: string | null;
+  parentId: string | null;
+  epicId: string | null;
+  sprintId: string | null;
+  startDate: string | null;
+  dueDate: string | null;
+  storyPoints: number | null;
+  eta: number | null;
+  assigneeId: string | null;
+  reporterId: string | null;
   createdAt: string;
   updatedAt: string;
   project: { id: string; name: string; projectKey: string } | null;
@@ -49,27 +50,6 @@ interface ApiResponse {
   meta?: { title?: string; fallback?: string };
   error?: string;
 }
-
-/** Work-type icon + color, matching the board/modal type glyphs. */
-const TYPE_ICON: Record<string, { Icon: LucideIcon; color: string }> = {
-  TASK: { Icon: CheckSquare, color: "text-blue-500" },
-  BUG: { Icon: Bug, color: "text-red-500" },
-  STORY: { Icon: BookOpen, color: "text-green-600" },
-  EPIC: { Icon: Zap, color: "text-purple-500" },
-  SUBTASK: { Icon: Link2, color: "text-blue-500" },
-  IDEA: { Icon: Lightbulb, color: "text-amber-500" },
-};
-function typeIcon(type: string) {
-  return TYPE_ICON[type] ?? TYPE_ICON.TASK;
-}
-
-const dateFmt: Intl.DateTimeFormatOptions = {
-  month: "short",
-  day: "2-digit",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-};
 
 export function FilterView({ filterId }: { filterId: string }) {
   const [items, setItems] = useState<IssueRow[]>([]);
@@ -111,6 +91,39 @@ export function FilterView({ filterId }: { filterId: string }) {
   useEffect(() => {
     setSelectedIds(new Set());
   }, [filterId, page]);
+
+  // Map the API rows to the table's row shape. The list-types ListIssue carries
+  // a few fields the read-only view never used (sprint, subtaskCount); the API
+  // now returns the editable ones, so fill what we have and default the rest.
+  const tableItems: FilterListIssue[] = useMemo(
+    () =>
+      items.map((it) => ({
+        id: it.id,
+        key: it.key,
+        title: it.title,
+        type: it.type as IssueType,
+        statusId: it.statusId ?? it.status?.id ?? "",
+        status: it.status,
+        priority: (it.priority || null) as Priority | null,
+        parentId: it.parentId,
+        epicId: it.epicId,
+        sprintId: it.sprintId,
+        sprint: null,
+        assigneeId: it.assigneeId ?? it.assignee?.id ?? null,
+        assignee: it.assignee,
+        reporterId: it.reporterId ?? it.reporter?.id ?? null,
+        reporter: it.reporter,
+        startDate: it.startDate,
+        dueDate: it.dueDate,
+        storyPoints: it.storyPoints,
+        eta: it.eta,
+        createdAt: it.createdAt,
+        updatedAt: it.updatedAt,
+        subtaskCount: 0,
+        project: it.project,
+      })),
+    [items],
+  );
 
   const bulkRows: BulkRow[] = useMemo(
     () =>
@@ -305,120 +318,26 @@ export function FilterView({ filterId }: { filterId: string }) {
         onSaveFilter={() => setSaveOpen(true)}
       />
 
-      <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
-        <table className="w-full text-sm table-fixed">
-          <thead className="bg-gray-50 border-b border-gray-200 text-left text-xs font-medium text-gray-600 uppercase tracking-wide">
-            <tr>
-              <th className="px-3 py-2.5 w-10">
-                <input
-                  type="checkbox"
-                  aria-label="Select all on page"
-                  checked={allOnPageSelected}
-                  onChange={toggleAllOnPage}
-                  disabled={selectableItems.length === 0}
-                  className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600"
-                />
-              </th>
-              <th className="px-3 py-2.5 w-[32%]">Work</th>
-              <th className="px-3 py-2.5 w-[12%]">Assignee</th>
-              <th className="px-3 py-2.5 w-[12%]">Reporter</th>
-              <th className="px-3 py-2.5 w-[8%]">Priority</th>
-              <th className="px-3 py-2.5 w-[12%]">Status</th>
-              <th className="px-3 py-2.5 w-[10%]">Created</th>
-              <th className="px-3 py-2.5 w-[10%]">Updated</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {loading && items.length === 0 ? (
-              <SkeletonRows rows={Math.min(pageSize, 8)} />
-            ) : error ? (
-              <tr>
-                <td colSpan={8} className="px-3 py-8 text-center text-red-600 text-sm">
-                  {error}
-                </td>
-              </tr>
-            ) : items.length === 0 ? (
-              <tr>
-                <td colSpan={8} className="px-3 py-8 text-center text-gray-400 text-sm">
-                  No work items match this filter.
-                </td>
-              </tr>
-            ) : (
-              items.map((it) => {
-                const selectable = it.type !== "IDEA" && !!it.project;
-                return (
-                <tr key={it.id} className={`hover:bg-gray-50 ${selectedIds.has(it.id) ? "bg-blue-50/40" : ""}`}>
-                  <td className="px-3 py-2">
-                    <input
-                      type="checkbox"
-                      aria-label={`Select ${it.key}`}
-                      checked={selectedIds.has(it.id)}
-                      onChange={() => toggleRow(it.id)}
-                      disabled={!selectable}
-                      className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 disabled:opacity-30"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      {(() => {
-                        const T = typeIcon(it.type);
-                        return <T.Icon className={`h-4 w-4 shrink-0 ${T.color}`} />;
-                      })()}
-                      {it.project ? (
-                        <Link
-                          href={
-                            it.type === "IDEA"
-                              ? `/spaces/${it.project.id}/ideas`
-                              : `/spaces/${it.project.id}/work/${it.id}`
-                          }
-                          className="text-blue-600 hover:underline font-medium shrink-0"
-                        >
-                          {it.key}
-                        </Link>
-                      ) : (
-                        <span className="font-medium text-gray-700 shrink-0">{it.key}</span>
-                      )}
-                      <span className="text-gray-700 truncate">{it.title}</span>
-                    </div>
-                  </td>
-                  <td className="px-3 py-2">
-                    <UserCell user={it.assignee} />
-                  </td>
-                  <td className="px-3 py-2">
-                    <UserCell user={it.reporter} />
-                  </td>
-                  <td className="px-3 py-2 text-gray-700 capitalize">
-                    {it.priority.toLowerCase()}
-                  </td>
-                  <td className="px-3 py-2">
-                    {it.status ? (
-                      <span
-                        className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium uppercase tracking-wide"
-                        style={{
-                          background: `${it.status.color}1f`,
-                          color: it.status.color,
-                          border: `1px solid ${it.status.color}55`,
-                        }}
-                      >
-                        {it.status.name}
-                      </span>
-                    ) : (
-                      <span className="text-gray-400">—</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-gray-600 text-xs">
-                    {new Date(it.createdAt).toLocaleString(undefined, dateFmt)}
-                  </td>
-                  <td className="px-3 py-2 text-gray-600 text-xs">
-                    {new Date(it.updatedAt).toLocaleString(undefined, dateFmt)}
-                  </td>
-                </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+      {error ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-8 text-center text-sm text-red-600">
+          {error}
+        </div>
+      ) : (
+        <EditableFilterTable
+          filterId={filterId}
+          issues={tableItems}
+          loading={loading}
+          selectedIds={selectedIds}
+          onToggleRow={toggleRow}
+          onToggleAll={toggleAllOnPage}
+          allSelected={allOnPageSelected}
+          onOpenIssue={(id) => {
+            const row = items.find((i) => i.id === id);
+            if (row?.project) router.push(`/spaces/${row.project.id}/work/${id}`);
+          }}
+          onPatched={() => setRefreshKey((k) => k + 1)}
+        />
+      )}
 
       <BulkActionsBar
         rows={bulkRows}
@@ -439,26 +358,6 @@ export function FilterView({ filterId }: { filterId: string }) {
         onPageChange={setPage}
         onPageSizeChange={setPageSize}
       />
-    </div>
-  );
-}
-
-function UserCell({ user }: { user: UserLite | null }) {
-  if (!user) return <span className="text-gray-400">Unassigned</span>;
-  const initial = (user.firstName?.[0] ?? user.email[0] ?? "?").toUpperCase();
-  return (
-    <div className="flex items-center gap-2 min-w-0">
-      {user.avatar ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={user.avatar} alt="" className="h-6 w-6 rounded-full shrink-0" />
-      ) : (
-        <span className="h-6 w-6 shrink-0 rounded-full bg-blue-500 text-white text-[11px] font-semibold flex items-center justify-center">
-          {initial}
-        </span>
-      )}
-      <span className="text-gray-700 truncate">
-        {user.firstName} {user.lastName}
-      </span>
     </div>
   );
 }
