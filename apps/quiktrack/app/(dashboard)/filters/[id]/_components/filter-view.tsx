@@ -17,6 +17,7 @@ import { useRouter } from "next/navigation";
 import { FilterToolbar, type ToolbarState, defaultToolbarStateFor } from "./filter-toolbar";
 import { Pager, SkeletonRows } from "./filter-view-parts";
 import { SaveFilterModal } from "./save-filter-modal";
+import { BulkActionsBar, type BulkRow } from "./bulk-actions-bar";
 import { useFilterPersistence } from "@/lib/hooks/usePersistentFilters";
 
 interface IssueRow {
@@ -83,7 +84,49 @@ export function FilterView({ filterId }: { filterId: string }) {
   const [pageSize, setPageSize] = useState(25);
   const [toolbar, setToolbar] = useState<ToolbarState>(() => defaultToolbarStateFor(filterId));
   const [saveOpen, setSaveOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [refreshKey, setRefreshKey] = useState(0);
   const router = useRouter();
+
+  // Discovery ideas (type IDEA) live in a separate model with different bulk
+  // endpoints, so they aren't bulk-selectable here — only real issues.
+  const selectableItems = useMemo(() => items.filter((i) => i.type !== "IDEA" && i.project), [items]);
+  const toggleRow = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const allOnPageSelected =
+    selectableItems.length > 0 && selectableItems.every((i) => selectedIds.has(i.id));
+  const toggleAllOnPage = () =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allOnPageSelected) selectableItems.forEach((i) => next.delete(i.id));
+      else selectableItems.forEach((i) => next.add(i.id));
+      return next;
+    });
+  // Clear the selection when the filter or page changes (ids no longer visible).
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [filterId, page]);
+
+  const bulkRows: BulkRow[] = useMemo(
+    () =>
+      items
+        .filter((i) => selectedIds.has(i.id) && i.project)
+        .map((i) => ({
+          id: i.id,
+          key: i.key,
+          title: i.title,
+          type: i.type,
+          projectId: i.project!.id,
+          projectName: i.project!.name,
+          statusId: i.status?.id ?? null,
+        })),
+    [items, selectedIds],
+  );
 
   // A saved filter's id is prefixed `sf_`. It isn't a backend filter slug, so
   // its results query runs against the "all" base with the saved criteria
@@ -223,7 +266,7 @@ export function FilterView({ filterId }: { filterId: string }) {
     return () => {
       alive = false;
     };
-  }, [resultSlug, savedReady, savedName, debounced, page, pageSize, toolbarQs]);
+  }, [resultSlug, savedReady, savedName, debounced, page, pageSize, toolbarQs, refreshKey]);
 
   return (
     <div className="px-6 py-4">
@@ -266,9 +309,19 @@ export function FilterView({ filterId }: { filterId: string }) {
         <table className="w-full text-sm table-fixed">
           <thead className="bg-gray-50 border-b border-gray-200 text-left text-xs font-medium text-gray-600 uppercase tracking-wide">
             <tr>
-              <th className="px-3 py-2.5 w-[34%]">Work</th>
-              <th className="px-3 py-2.5 w-[13%]">Assignee</th>
-              <th className="px-3 py-2.5 w-[13%]">Reporter</th>
+              <th className="px-3 py-2.5 w-10">
+                <input
+                  type="checkbox"
+                  aria-label="Select all on page"
+                  checked={allOnPageSelected}
+                  onChange={toggleAllOnPage}
+                  disabled={selectableItems.length === 0}
+                  className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600"
+                />
+              </th>
+              <th className="px-3 py-2.5 w-[32%]">Work</th>
+              <th className="px-3 py-2.5 w-[12%]">Assignee</th>
+              <th className="px-3 py-2.5 w-[12%]">Reporter</th>
               <th className="px-3 py-2.5 w-[8%]">Priority</th>
               <th className="px-3 py-2.5 w-[12%]">Status</th>
               <th className="px-3 py-2.5 w-[10%]">Created</th>
@@ -280,19 +333,31 @@ export function FilterView({ filterId }: { filterId: string }) {
               <SkeletonRows rows={Math.min(pageSize, 8)} />
             ) : error ? (
               <tr>
-                <td colSpan={7} className="px-3 py-8 text-center text-red-600 text-sm">
+                <td colSpan={8} className="px-3 py-8 text-center text-red-600 text-sm">
                   {error}
                 </td>
               </tr>
             ) : items.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-3 py-8 text-center text-gray-400 text-sm">
+                <td colSpan={8} className="px-3 py-8 text-center text-gray-400 text-sm">
                   No work items match this filter.
                 </td>
               </tr>
             ) : (
-              items.map((it) => (
-                <tr key={it.id} className="hover:bg-gray-50">
+              items.map((it) => {
+                const selectable = it.type !== "IDEA" && !!it.project;
+                return (
+                <tr key={it.id} className={`hover:bg-gray-50 ${selectedIds.has(it.id) ? "bg-blue-50/40" : ""}`}>
+                  <td className="px-3 py-2">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${it.key}`}
+                      checked={selectedIds.has(it.id)}
+                      onChange={() => toggleRow(it.id)}
+                      disabled={!selectable}
+                      className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 disabled:opacity-30"
+                    />
+                  </td>
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2 min-w-0">
                       {(() => {
@@ -348,11 +413,22 @@ export function FilterView({ filterId }: { filterId: string }) {
                     {new Date(it.updatedAt).toLocaleString(undefined, dateFmt)}
                   </td>
                 </tr>
-              ))
+                );
+              })
             )}
           </tbody>
         </table>
       </div>
+
+      <BulkActionsBar
+        rows={bulkRows}
+        onSelectAll={toggleAllOnPage}
+        onClear={() => setSelectedIds(new Set())}
+        onDone={() => {
+          setSelectedIds(new Set());
+          setRefreshKey((k) => k + 1); // re-run the results fetch
+        }}
+      />
 
       <Pager
         page={page}
