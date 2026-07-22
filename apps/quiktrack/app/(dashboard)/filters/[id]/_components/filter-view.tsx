@@ -2,7 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, Star } from "lucide-react";
+import {
+  AlertTriangle,
+  Star,
+  CheckSquare,
+  Bug,
+  BookOpen,
+  Zap,
+  Link2,
+  Lightbulb,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { FilterToolbar, type ToolbarState, defaultToolbarStateFor } from "./filter-toolbar";
 import { Pager, SkeletonRows } from "./filter-view-parts";
 import { useFilterPersistence } from "@/lib/hooks/usePersistentFilters";
@@ -35,6 +45,19 @@ interface ApiResponse {
   total?: number;
   meta?: { title?: string; fallback?: string };
   error?: string;
+}
+
+/** Work-type icon + color, matching the board/modal type glyphs. */
+const TYPE_ICON: Record<string, { Icon: LucideIcon; color: string }> = {
+  TASK: { Icon: CheckSquare, color: "text-blue-500" },
+  BUG: { Icon: Bug, color: "text-red-500" },
+  STORY: { Icon: BookOpen, color: "text-green-600" },
+  EPIC: { Icon: Zap, color: "text-purple-500" },
+  SUBTASK: { Icon: Link2, color: "text-blue-500" },
+  IDEA: { Icon: Lightbulb, color: "text-amber-500" },
+};
+function typeIcon(type: string) {
+  return TYPE_ICON[type] ?? TYPE_ICON.TASK;
 }
 
 const dateFmt: Intl.DateTimeFormatOptions = {
@@ -73,6 +96,8 @@ export function FilterView({ filterId }: { filterId: string }) {
     if (toolbar.statusCategory.length)
       qs.set("statusCategory", toolbar.statusCategory.join(","));
     if (toolbar.resolution) qs.set("resolution", toolbar.resolution);
+    if (toolbar.customFilters?.length)
+      qs.set("customFilters", JSON.stringify(toolbar.customFilters));
     return qs.toString();
   }, [toolbar]);
 
@@ -199,9 +224,17 @@ export function FilterView({ filterId }: { filterId: string }) {
                 <tr key={it.id} className="hover:bg-gray-50">
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2 min-w-0">
+                      {(() => {
+                        const T = typeIcon(it.type);
+                        return <T.Icon className={`h-4 w-4 shrink-0 ${T.color}`} />;
+                      })()}
                       {it.project ? (
                         <Link
-                          href={`/spaces/${it.project.id}/work/${it.id}`}
+                          href={
+                            it.type === "IDEA"
+                              ? `/spaces/${it.project.id}/ideas`
+                              : `/spaces/${it.project.id}/work/${it.id}`
+                          }
                           className="text-blue-600 hover:underline font-medium shrink-0"
                         >
                           {it.key}
