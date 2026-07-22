@@ -1,30 +1,38 @@
 'use client';
 /**
- * TenantOnboardingWizard — ported from the old QuikSkills frontend
- * (`src/components/TenantOnboardingWizard.tsx`), replacing a 24-line stub.
+ * TenantOnboardingWizard — creating a new tenant.
  *
  * Mounted by `app/(super-admin)/tenants/page.tsx`. This is the ONLY caller of
- * `POST /api/tenants/onboard`, which was hardened earlier in this migration pass
- * — until now that endpoint had no UI to drive it (GAP_REPORT §4b).
+ * `POST /api/tenants/onboard`.
  *
- * Contract verified field-by-field against the route's zod schema
- * (`app/api/tenants/onboard/route.ts`): every required field — orgName,
- * fullAddress, country, officialPhone, officialEmail, firstName, lastName, phone,
- * email, roleInOrganization, billingFirstName, billingLastName, billingAddress —
- * is registered on this form, plus the optional website / middleName /
+ * CONTRACT (do not break — `__tests__/components/tenant-onboarding-wizard.dom.test.tsx`
+ * drives this form by `[name="…"]` and by the literal button labels `Next`,
+ * `Back` and `Submit & Launch`). Every field the route's zod schema requires is
+ * registered here: orgName, fullAddress, country, officialPhone, officialEmail,
+ * firstName, lastName, phone, email, roleInOrganization, billingFirstName,
+ * billingLastName, billingAddress — plus optional website / middleName /
  * billingMiddleName / storageLimit and the defaulted tenantType.
  *
- * NOT ported alongside it, deliberately: `OnboardingWizard` and its
- * `useTenantOnboarding` hook. That hook POSTs to `/tenants` with only
- * {name, gstNumber} — an endpoint that could never succeed (its DTO carried 4
- * fields while the schema required 13 more; see the QUESTION in §3.2 tenants).
- * Its only consumer was `SuperAdminOnboarding`, which this app has already
- * reimplemented as `/onboarding` (902 lines) posting to `/tenants/onboard`
- * directly. Porting either would be dead code.
+ * The 2026-07 redesign changed presentation only. Same three steps, same
+ * per-step `trigger()` gate, same payload, same error mapping. What changed:
+ *
+ *   - a persistent left rail, so the operator can always see how many steps
+ *     remain and what they already completed (the old dialog showed a thin
+ *     stepper that scrolled away with the content);
+ *   - a real review step before submit — this creates an organisation AND its
+ *     admin user, which was previously committed from a button the operator
+ *     reached without ever seeing the values together;
+ *   - a success state instead of the dialog vanishing, so it is obvious the
+ *     tenant was created and what the admin's email is;
+ *   - storage quota as presets, since the old free-number input gave no clue
+ *     what a sensible value was.
  */
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { X, ChevronRight, ChevronLeft, Building2, User, CreditCard, GraduationCap, Briefcase } from 'lucide-react';
+import {
+  X, ChevronRight, ChevronLeft, Building2, User, CreditCard, GraduationCap,
+  Briefcase, Check, AlertCircle, Loader2, Sparkles, HardDrive, ClipboardCheck,
+} from 'lucide-react';
 import { api } from '@/lib/api';
 
 interface OrganizationProfile {
@@ -61,29 +69,74 @@ interface TenantOnboardingWizardProps {
   onSuccess: () => void;
 }
 
-const TenantOnboardingWizard: React.FC<TenantOnboardingWizardProps> = ({
-  onClose,
-  onSuccess,
-}) => {
+const STEPS = [
+  { id: 1, title: 'Organization', blurb: 'Who they are', icon: Building2 },
+  { id: 2, title: 'Primary contact', blurb: 'Who runs it', icon: User },
+  { id: 3, title: 'Billing & quota', blurb: 'Limits and invoicing', icon: CreditCard },
+] as const;
+
+const COUNTRIES = [
+  'United States', 'United Kingdom', 'Canada', 'Australia', 'India', 'Germany', 'France', 'Other',
+];
+
+const ROLES = [
+  'HR Head', 'CEO', 'CTO', 'Learning & Development Manager',
+  'Training Manager', 'Operations Manager', 'Other',
+];
+
+const STORAGE_PRESETS = [2, 5, 10, 25, 50];
+
+const PHONE_RE = /^[\d\s\-+()]+$/;
+const EMAIL_RE = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
+
+/* ── shared field chrome ──────────────────────────────────────────────────── */
+
+const inputCls =
+  'w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition ' +
+  'placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 ' +
+  'disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400';
+
+function Field({
+  label, required, error, hint, children,
+}: {
+  label: string;
+  required?: boolean;
+  error?: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <label className="mb-1.5 flex items-center gap-1 text-xs font-semibold text-slate-700">
+        {label}
+        {required && <span className="text-rose-500">*</span>}
+      </label>
+      {children}
+      {hint && !error && <p className="mt-1 text-xs text-slate-400">{hint}</p>}
+      {error && (
+        <p className="mt-1 flex items-center gap-1 text-xs font-medium text-rose-600">
+          <AlertCircle className="size-3 shrink-0" />
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+const TenantOnboardingWizard: React.FC<TenantOnboardingWizardProps> = ({ onClose, onSuccess }) => {
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
 
   const {
-    register,
-    handleSubmit,
-    formState: { errors, touchedFields, isSubmitted },
-    trigger,
-    getValues,
-    setValue,
-    watch,
+    register, handleSubmit, formState: { errors }, trigger, setValue, watch,
   } = useForm<TenantOnboardingData>({
-    mode: 'onTouched', // Only validate after user has interacted with fields
+    mode: 'onTouched',
     defaultValues: {
       tenantType: 'corporate',
-      storageLimit: 2, // Default 2GB
-      // Ensure billing fields start empty
+      storageLimit: 2,
       billingFirstName: '',
       billingMiddleName: '',
       billingLastName: '',
@@ -91,65 +144,35 @@ const TenantOnboardingWizard: React.FC<TenantOnboardingWizardProps> = ({
     },
   });
 
-  const watchedTenantType = watch('tenantType');
-
-  const steps = [
-    { id: 1, title: 'Organization Profile', icon: Building2 },
-    { id: 2, title: 'Primary Contact', icon: User },
-    { id: 3, title: 'Billing & Quota', icon: CreditCard },
-  ];
-
-  const countries = [
-    'United States',
-    'United Kingdom',
-    'Canada',
-    'Australia',
-    'India',
-    'Germany',
-    'France',
-    'Other',
-  ];
-
-  const organizationRoles = [
-    'HR Head',
-    'CEO',
-    'CTO',
-    'Learning & Development Manager',
-    'Training Manager',
-    'Operations Manager',
-    'Other',
-  ];
+  const v = watch();
+  const tenantType = v.tenantType;
 
   const validateStep = async (step: number): Promise<boolean> => {
-    let fields: (keyof TenantOnboardingData)[] = [];
-
-    switch (step) {
-      case 1:
-        fields = ['orgName', 'fullAddress', 'country', 'officialPhone', 'officialEmail'];
-        break;
-      case 2:
-        fields = ['firstName', 'lastName', 'phone', 'email', 'roleInOrganization'];
-        break;
-      case 3:
-        fields = ['billingFirstName', 'billingLastName', 'billingAddress'];
-        break;
-    }
-
-    const result = await trigger(fields);
-    return result;
+    const fields: Record<number, (keyof TenantOnboardingData)[]> = {
+      1: ['orgName', 'fullAddress', 'country', 'officialPhone', 'officialEmail'],
+      2: ['firstName', 'lastName', 'phone', 'email', 'roleInOrganization'],
+      3: ['billingFirstName', 'billingLastName', 'billingAddress'],
+    };
+    return trigger(fields[step] ?? []);
   };
 
   const handleNext = async () => {
-    const isValid = await validateStep(currentStep);
-    if (isValid) {
-      setCurrentStep((prev) => Math.min(prev + 1, 3));
+    if (await validateStep(currentStep)) {
+      setCurrentStep((p) => Math.min(p + 1, 3));
       setError(null);
     }
   };
 
   const handleBack = () => {
-    setCurrentStep((prev) => Math.max(prev - 1, 1));
+    setCurrentStep((p) => Math.max(p - 1, 1));
     setError(null);
+  };
+
+  const copyFromContact = () => {
+    setValue('billingFirstName', v.firstName || '');
+    setValue('billingMiddleName', v.middleName || '');
+    setValue('billingLastName', v.lastName || '');
+    setValue('billingAddress', v.fullAddress || '');
   };
 
   const onSubmit = async (data: TenantOnboardingData) => {
@@ -157,60 +180,46 @@ const TenantOnboardingWizard: React.FC<TenantOnboardingWizardProps> = ({
     setError(null);
     setProgress(0);
 
-    let progressInterval: NodeJS.Timeout | null = null;
-
+    let timer: NodeJS.Timeout | null = null;
     try {
-      // Simulate progress updates
-      progressInterval = setInterval(() => {
-        setProgress((prev) => {
-          if (prev >= 90) {
-            if (progressInterval) clearInterval(progressInterval);
+      timer = setInterval(() => {
+        setProgress((p) => {
+          if (p >= 90) {
+            if (timer) clearInterval(timer);
             return 90;
           }
-          return prev + 10;
+          return p + 10;
         });
       }, 500);
 
-      // Auto-prepend https:// to website if it's missing protocol
-      const processedData = { ...data };
-      if (processedData.website && processedData.website.trim() && !processedData.website.match(/^https?:\/\//i)) {
-        processedData.website = `https://${processedData.website.trim()}`;
+      // Auto-prepend https:// so an operator typing `acme.com` is not rejected
+      // by the schema's url() check.
+      const payload = { ...data };
+      if (payload.website?.trim() && !/^https?:\/\//i.test(payload.website)) {
+        payload.website = `https://${payload.website.trim()}`;
       }
 
-      // The response is deliberately not read — the wizard only signals success.
-      // (It carries a plaintext `adminTempPassword`; the tenants page reloads its
-      // list rather than surfacing it here.)
+      // The response carries a plaintext `adminTempPassword`; deliberately not
+      // surfaced here — the tenants page reloads its list instead.
       await api.post('/tenants/onboard', {
-        ...processedData,
-        tenantType: processedData.tenantType || 'corporate',
-        storageLimit: processedData.storageLimit || 2,
+        ...payload,
+        tenantType: payload.tenantType || 'corporate',
+        storageLimit: payload.storageLimit || 2,
       });
 
-      if (progressInterval) clearInterval(progressInterval);
+      if (timer) clearInterval(timer);
       setProgress(100);
-
-      // Wait a moment to show 100% progress
-      setTimeout(() => {
-        onSuccess();
-      }, 1000);
+      setDone(true);
+      setTimeout(() => onSuccess(), 1200);
     } catch (err: unknown) {
-      // Clear progress interval if it exists
-      if (progressInterval) {
-        clearInterval(progressInterval);
-      }
+      if (timer) clearInterval(timer);
       setIsSubmitting(false);
       setProgress(0);
 
-      // The fetch client throws the parsed error BODY itself, so what axios
-      // exposed at `err.response.data` is simply `err` here — one level shallower
-      // at every branch below.
-      //
-      // The `errors` key is checked first, as in the original, even though this
-      // app never emits it: the legacy filter attached `errors` only for this
-      // endpoint's ZodError mapping, and `lib/http.ts` emits `validationErrors`
-      // instead (GAP_REPORT §3.1, deviation 2). The `||` fallback is what makes
-      // the field-by-field display keep working — which is exactly why it is
-      // preserved rather than simplified.
+      // The fetch client throws the parsed error BODY, so what axios exposed at
+      // `err.response.data` is simply `err` here. `errors` is checked before
+      // `validationErrors` because the legacy filter used the former; keeping
+      // both is what makes the field-by-field display work against either.
       const e = err as {
         errors?: { field: string; message: string }[];
         validationErrors?: { field: string; message: string }[];
@@ -219,574 +228,513 @@ const TenantOnboardingWizard: React.FC<TenantOnboardingWizardProps> = ({
       };
 
       if (e?.errors || e?.validationErrors) {
-        const validationErrors = (e.errors || e.validationErrors || [])
+        const list = (e.errors || e.validationErrors || [])
           .map((x) => `• ${x.field}: ${x.message}`)
           .join('\n');
-        setError(`Validation failed:\n${validationErrors}`);
+        setError(`Validation failed:\n${list}`);
       } else if (e?.message) {
-        // Use the detailed message from backend
         setError(e.message);
       } else {
-        setError(
-          e?.error ||
-            'Failed to onboard tenant. Please check all fields and try again.',
-        );
+        setError(e?.error || 'Failed to onboard tenant. Please check all fields and try again.');
       }
     }
   };
 
-  const renderStepContent = () => {
-    switch (currentStep) {
-      case 1:
-        return (
-          <div className="space-y-6">
-            {/* Tenant Type Selection */}
-            <div>
-              <label className="label-field">
-                Organization Type <span className="text-red-500">*</span>
-              </label>
-              <div className="grid grid-cols-2 gap-4 mt-2">
-                <button
-                  type="button"
-                  onClick={() => setValue('tenantType', 'corporate')}
-                  disabled={isSubmitting}
-                  className={`relative flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all duration-200 ${
-                    watchedTenantType === 'corporate'
-                      ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-200'
-                      : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  <Briefcase className={`w-8 h-8 ${watchedTenantType === 'corporate' ? 'text-indigo-600' : 'text-gray-400'}`} />
-                  <div className="text-center">
-                    <p className={`font-semibold ${watchedTenantType === 'corporate' ? 'text-indigo-700' : 'text-gray-700'}`}>Corporate</p>
-                    <p className="text-xs text-gray-500 mt-1">Employee training, compliance, SCORM</p>
-                  </div>
-                  {watchedTenantType === 'corporate' && (
-                    <div className="absolute top-3 right-3 w-5 h-5 bg-indigo-500 rounded-full flex items-center justify-center">
-                      <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
-                    </div>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setValue('tenantType', 'school')}
-                  disabled={isSubmitting}
-                  className={`relative flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all duration-200 ${
-                    watchedTenantType === 'school'
-                      ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-200'
-                      : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  <GraduationCap className={`w-8 h-8 ${watchedTenantType === 'school' ? 'text-emerald-600' : 'text-gray-400'}`} />
-                  <div className="text-center">
-                    <p className={`font-semibold ${watchedTenantType === 'school' ? 'text-emerald-700' : 'text-gray-700'}`}>School</p>
-                    <p className="text-xs text-gray-500 mt-1">Batches, attendance, homework, credits</p>
-                  </div>
-                  {watchedTenantType === 'school' && (
-                    <div className="absolute top-3 right-3 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center">
-                      <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
-                    </div>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            <div>
-              <label className="label-field">
-                Organization Name <span className="text-red-500">*</span>
-              </label>
-              <input
-                {...register('orgName', { required: 'Organization name is required' })}
-                className="input-field"
-                placeholder="Acme Corporation"
-                disabled={isSubmitting}
-              />
-              {errors.orgName && (
-                <p className="error-message">{errors.orgName.message}</p>
-              )}
-            </div>
-
-            <div>
-              <label className="label-field">
-                Full Address <span className="text-red-500">*</span>
-              </label>
-              <textarea
-                {...register('fullAddress', { required: 'Address is required' })}
-                className="input-field"
-                rows={3}
-                placeholder="123 Business Street, Suite 100, City, State, ZIP"
-                disabled={isSubmitting}
-              />
-              {errors.fullAddress && (
-                <p className="error-message">{errors.fullAddress.message}</p>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="label-field">
-                  Country <span className="text-red-500">*</span>
-                </label>
-                <select
-                  {...register('country', { required: 'Country is required' })}
-                  className="input-field"
-                  disabled={isSubmitting}
-                >
-                  <option value="">Select Country</option>
-                  {countries.map((country) => (
-                    <option key={country} value={country}>
-                      {country}
-                    </option>
-                  ))}
-                </select>
-                {errors.country && (
-                  <p className="error-message">{errors.country.message}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="label-field">
-                  Official Phone <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="tel"
-                  {...register('officialPhone', {
-                    required: 'Phone number is required',
-                    pattern: {
-                      value: /^[\d\s\-\+\(\)]+$/,
-                      message: 'Invalid phone number format',
-                    },
-                  })}
-                  className="input-field"
-                  placeholder="+1 (555) 123-4567"
-                  disabled={isSubmitting}
-                />
-                {errors.officialPhone && (
-                  <p className="error-message">{errors.officialPhone.message}</p>
-                )}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="label-field">
-                  Website
-                </label>
-                <input
-                  type="url"
-                  {...register('website', {
-                    pattern: {
-                      value: /^https?:\/\/.+/,
-                      message: 'Please enter a valid URL (e.g., https://example.com)',
-                    },
-                  })}
-                  className="input-field"
-                  placeholder="https://example.com"
-                  disabled={isSubmitting}
-                />
-                {errors.website && (
-                  <p className="error-message">{errors.website.message}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="label-field">
-                  Official Email <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="email"
-                  {...register('officialEmail', {
-                    required: 'Official email is required',
-                    pattern: {
-                      value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-                      message: 'Invalid email address',
-                    },
-                  })}
-                  className="input-field"
-                  placeholder="contact@example.com"
-                  disabled={isSubmitting}
-                />
-                {errors.officialEmail && (
-                  <p className="error-message">{errors.officialEmail.message}</p>
-                )}
-              </div>
-            </div>
+  /* ── success ───────────────────────────────────────────────────────────── */
+  if (done) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
+        <div className="w-full max-w-md rounded-3xl bg-white p-10 text-center shadow-2xl">
+          <div className="mx-auto grid size-16 place-items-center rounded-2xl bg-emerald-50">
+            <Check className="size-8 text-emerald-600" />
           </div>
-        );
+          <h2 className="mt-6 text-xl font-bold text-slate-900">{v.orgName} is live</h2>
+          <p className="mt-2 text-sm leading-relaxed text-slate-500">
+            The organisation and its admin account were created. Invitation details have been sent to{' '}
+            <span className="font-semibold text-slate-700">{v.email}</span>.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
-      case 2:
-        return (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="label-field">
-                  First Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  {...register('firstName', { required: 'First name is required' })}
-                  className="input-field"
-                  placeholder="John"
-                  disabled={isSubmitting}
-                />
-                {errors.firstName && (
-                  <p className="error-message">{errors.firstName.message}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="label-field">Middle Name</label>
-                <input
-                  {...register('middleName')}
-                  className="input-field"
-                  placeholder="Michael"
-                  disabled={isSubmitting}
-                />
-              </div>
-
-              <div>
-                <label className="label-field">
-                  Last Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  {...register('lastName', { required: 'Last name is required' })}
-                  className="input-field"
-                  placeholder="Doe"
-                  disabled={isSubmitting}
-                />
-                {errors.lastName && (
-                  <p className="error-message">{errors.lastName.message}</p>
-                )}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="label-field">
-                  Phone <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="tel"
-                  {...register('phone', {
-                    required: 'Phone number is required',
-                    pattern: {
-                      value: /^[\d\s\-\+\(\)]+$/,
-                      message: 'Invalid phone number format',
-                    },
-                  })}
-                  className="input-field"
-                  placeholder="+1 (555) 123-4567"
-                  disabled={isSubmitting}
-                />
-                {errors.phone && (
-                  <p className="error-message">{errors.phone.message}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="label-field">
-                  Email <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="email"
-                  {...register('email', {
-                    required: 'Email is required',
-                    pattern: {
-                      value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-                      message: 'Invalid email address',
-                    },
-                  })}
-                  className="input-field"
-                  placeholder="john.doe@example.com"
-                  disabled={isSubmitting}
-                />
-                {errors.email && (
-                  <p className="error-message">{errors.email.message}</p>
-                )}
-              </div>
-            </div>
-
-            <div>
-              <label className="label-field">
-                Role in Organization <span className="text-red-500">*</span>
-              </label>
-              <select
-                {...register('roleInOrganization', {
-                  required: 'Role is required',
-                })}
-                className="input-field"
-                disabled={isSubmitting}
-              >
-                <option value="">Select Role</option>
-                {organizationRoles.map((role) => (
-                  <option key={role} value={role}>
-                    {role}
-                  </option>
-                ))}
-              </select>
-              {errors.roleInOrganization && (
-                <p className="error-message">{errors.roleInOrganization.message}</p>
-              )}
-            </div>
-          </div>
-        );
-
-      case 3:
-        return (
-          <div className="space-y-6">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-              <p className="text-sm text-blue-800">
-                <strong>Base Plan:</strong> Default storage limit is set to 2GB. This can be
-                upgraded later.
-              </p>
-            </div>
-
-            {/* Optional: Copy from Primary Contact */}
-            <div className="mb-4">
-              <button
-                type="button"
-                onClick={() => {
-                  const primaryContact = getValues();
-                  // Copy primary contact details to billing
-                  setValue('billingFirstName', primaryContact.firstName || '');
-                  setValue('billingMiddleName', primaryContact.middleName || '');
-                  setValue('billingLastName', primaryContact.lastName || '');
-                  // Use organization address as default billing address
-                  setValue('billingAddress', primaryContact.fullAddress || '');
-                }}
-                className="text-sm text-primary-600 hover:text-primary-700 font-medium underline"
-                disabled={isSubmitting}
-              >
-                Copy from Primary Contact
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="label-field">
-                  Billing First Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  {...register('billingFirstName', {
-                    required: 'Billing first name is required',
-                  })}
-                  className="input-field"
-                  placeholder="John"
-                  autoComplete="billing given-name"
-                  disabled={isSubmitting}
-                />
-                {errors.billingFirstName && (touchedFields.billingFirstName || isSubmitted) && (
-                  <p className="error-message">{errors.billingFirstName.message}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="label-field">Billing Middle Name</label>
-                <input
-                  {...register('billingMiddleName')}
-                  className="input-field"
-                  placeholder="Michael"
-                  autoComplete="billing additional-name"
-                  disabled={isSubmitting}
-                />
-              </div>
-
-              <div>
-                <label className="label-field">
-                  Billing Last Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  {...register('billingLastName', {
-                    required: 'Billing last name is required',
-                  })}
-                  className="input-field"
-                  placeholder="Doe"
-                  autoComplete="billing family-name"
-                  disabled={isSubmitting}
-                />
-                {errors.billingLastName && (touchedFields.billingLastName || isSubmitted) && (
-                  <p className="error-message">{errors.billingLastName.message}</p>
-                )}
-              </div>
-            </div>
-
-            <div>
-              <label className="label-field">
-                Billing Address <span className="text-red-500">*</span>
-              </label>
-              <textarea
-                {...register('billingAddress', {
-                  required: 'Billing address is required',
-                })}
-                className="input-field"
-                rows={3}
-                placeholder="123 Billing Street, Suite 200, City, State, ZIP"
-                autoComplete="billing street-address"
-                disabled={isSubmitting}
-              />
-              {errors.billingAddress && (touchedFields.billingAddress || isSubmitted) && (
-                <p className="error-message">{errors.billingAddress.message}</p>
-              )}
-            </div>
-
-            <div>
-              <label className="label-field">Storage Limit (GB)</label>
-              <input
-                type="number"
-                {...register('storageLimit', {
-                  min: { value: 1, message: 'Minimum 1GB required' },
-                  max: { value: 1000, message: 'Maximum 1000GB allowed' },
-                  valueAsNumber: true,
-                })}
-                className="input-field"
-                placeholder="2"
-                disabled={isSubmitting}
-              />
-              {errors.storageLimit && (
-                <p className="error-message">{errors.storageLimit.message}</p>
-              )}
-              <p className="text-xs text-gray-500 mt-1">
-                Default: 2GB (Base Plan)
-              </p>
-            </div>
-          </div>
-        );
-
-      default:
-        return null;
-    }
-  };
-
+  /* ── wizard ────────────────────────────────────────────────────────────── */
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900">Onboard New Tenant</h2>
-            <p className="text-sm text-gray-600 mt-1">
-              Step {currentStep} of {steps.length}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
+      <div className="flex h-[92vh] w-full max-w-5xl overflow-hidden rounded-3xl bg-white shadow-2xl">
+        {/* Left rail — always visible, so progress never scrolls out of view */}
+        <aside className="relative hidden w-72 shrink-0 flex-col justify-between overflow-hidden bg-gradient-to-b from-indigo-600 via-violet-600 to-indigo-700 p-8 md:flex">
+          <div aria-hidden className="pointer-events-none absolute inset-0 opacity-20">
+            <div className="absolute -right-16 top-10 size-56 rounded-full bg-white/20 blur-3xl" />
+          </div>
+
+          <div className="relative">
+            <div className="flex items-center gap-2.5">
+              <span className="grid size-9 place-items-center rounded-xl bg-white/15 backdrop-blur">
+                <Sparkles className="size-4 text-white" />
+              </span>
+              <div>
+                <p className="text-sm font-bold text-white">New tenant</p>
+                <p className="text-[11px] text-indigo-200">Step {currentStep} of 3</p>
+              </div>
+            </div>
+
+            <ol className="mt-10 space-y-1">
+              {STEPS.map((s) => {
+                const Icon = s.icon;
+                const state = s.id < currentStep ? 'done' : s.id === currentStep ? 'active' : 'todo';
+                return (
+                  <li key={s.id}>
+                    <div
+                      className={`flex items-start gap-3 rounded-2xl px-3 py-3 transition-colors ${
+                        state === 'active' ? 'bg-white/15' : ''
+                      }`}
+                    >
+                      <span
+                        className={`mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg text-[11px] font-bold ${
+                          state === 'done'
+                            ? 'bg-white text-indigo-600'
+                            : state === 'active'
+                              ? 'bg-white/25 text-white'
+                              : 'bg-white/10 text-indigo-200'
+                        }`}
+                      >
+                        {state === 'done' ? <Check className="size-3.5" /> : <Icon className="size-3.5" />}
+                      </span>
+                      <div className="min-w-0">
+                        <p className={`text-sm font-semibold ${state === 'todo' ? 'text-indigo-200' : 'text-white'}`}>
+                          {s.title}
+                        </p>
+                        <p className="text-[11px] text-indigo-200/80">{s.blurb}</p>
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+
+          <div className="relative rounded-2xl bg-white/10 p-4 backdrop-blur">
+            <p className="text-[11px] leading-relaxed text-indigo-100">
+              This creates the organisation <em>and</em> its first admin user. The admin receives
+              sign-in details by email.
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
-            disabled={isSubmitting}
-          >
-            <X className="w-6 h-6" />
-          </button>
-        </div>
+        </aside>
 
-        {/* Progress Steps */}
-        <div className="px-6 py-4 border-b border-gray-200">
-          <div className="flex items-center justify-between">
-            {steps.map((step, index) => {
-              const Icon = step.icon;
-              const isActive = currentStep === step.id;
-              const isCompleted = currentStep > step.id;
-
-              return (
-                <div key={step.id} className="flex items-center flex-1">
-                  <div className="flex flex-col items-center flex-1">
-                    <div
-                      className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-colors ${
-                        isActive
-                          ? 'bg-primary-600 border-primary-600 text-white'
-                          : isCompleted
-                          ? 'bg-green-500 border-green-500 text-white'
-                          : 'bg-gray-100 border-gray-300 text-gray-400'
-                      }`}
-                    >
-                      <Icon className="w-5 h-5" />
-                    </div>
-                    <span
-                      className={`text-xs mt-2 ${
-                        isActive ? 'text-primary-600 font-medium' : 'text-gray-500'
-                      }`}
-                    >
-                      {step.title}
-                    </span>
-                  </div>
-                  {index < steps.length - 1 && (
-                    <div
-                      className={`h-0.5 flex-1 mx-2 ${
-                        isCompleted ? 'bg-green-500' : 'bg-gray-200'
-                      }`}
-                    />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Form Content */}
-        <form onSubmit={handleSubmit(onSubmit)} className="p-6">
-          {renderStepContent()}
-
-          {error && (
-            <div className="mt-6 bg-red-50 border border-red-200 rounded-lg p-4">
-              <p className="text-red-800 text-sm font-semibold mb-2">Validation Errors:</p>
-              <div className="text-red-700 text-sm whitespace-pre-line">
-                {error.split('\n').map((line, index) => (
-                  <p key={index} className="mb-1">{line}</p>
-                ))}
-              </div>
+        {/* Right — form */}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-8 py-6">
+            <div className="min-w-0">
+              <h2 className="text-xl font-bold tracking-tight text-slate-900">
+                {STEPS[currentStep - 1].title}
+              </h2>
+              <p className="mt-0.5 text-sm text-slate-500">
+                {currentStep === 1 && 'Where the organisation is and how to reach it.'}
+                {currentStep === 2 && 'The person who will administer this tenant.'}
+                {currentStep === 3 && 'Who gets invoiced, and how much storage they get.'}
+              </p>
             </div>
-          )}
-
-          {/* Progress Bar (when submitting) */}
-          {isSubmitting && (
-            <div className="mt-6 space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-600">Setting up Environment...</span>
-                <span className="text-gray-900 font-medium">{progress}%</span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-2.5">
-                <div
-                  className="bg-primary-600 h-2.5 rounded-full transition-all duration-300"
-                  style={{ width: `${progress}%` }}
-                ></div>
-              </div>
-            </div>
-          )}
-
-          {/* Navigation Buttons */}
-          <div className="flex items-center justify-between mt-8 pt-6 border-t border-gray-200">
             <button
               type="button"
-              onClick={handleBack}
-              disabled={currentStep === 1 || isSubmitting}
-              className="btn-secondary inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={onClose}
+              disabled={isSubmitting}
+              aria-label="Close"
+              className="grid size-9 shrink-0 place-items-center rounded-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40"
             >
-              <ChevronLeft className="w-4 h-4" />
-              Back
+              <X className="size-5" />
             </button>
+          </header>
 
-            {currentStep < 3 ? (
-              <button
-                type="button"
-                onClick={handleNext}
-                disabled={isSubmitting}
-                className="btn-primary inline-flex items-center gap-2"
-              >
-                Next
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            ) : (
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="btn-primary inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isSubmitting ? 'Submitting...' : 'Submit & Launch'}
-              </button>
-            )}
+          {/* Mobile step pips — the rail is hidden under md */}
+          <div className="flex shrink-0 gap-1.5 px-8 pt-4 md:hidden">
+            {STEPS.map((s) => (
+              <span
+                key={s.id}
+                className={`h-1 flex-1 rounded-full ${s.id <= currentStep ? 'bg-indigo-600' : 'bg-slate-200'}`}
+              />
+            ))}
           </div>
-        </form>
+
+          <form onSubmit={handleSubmit(onSubmit)} className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 overflow-y-auto px-8 py-6">
+              {error && (
+                <div className="mb-6 flex gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                  <AlertCircle className="mt-0.5 size-4 shrink-0 text-rose-600" />
+                  <p className="whitespace-pre-line text-sm text-rose-800">{error}</p>
+                </div>
+              )}
+
+              {/* ── Step 1 ─────────────────────────────────────────────── */}
+              {currentStep === 1 && (
+                <div className="space-y-6">
+                  <div>
+                    <label className="mb-2 flex items-center gap-1 text-xs font-semibold text-slate-700">
+                      Organization type <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {([
+                        {
+                          key: 'corporate' as const,
+                          icon: Briefcase,
+                          name: 'Corporate',
+                          blurb: 'Employee training, compliance windows, SCORM',
+                        },
+                        {
+                          key: 'school' as const,
+                          icon: GraduationCap,
+                          name: 'School',
+                          blurb: 'Batches, attendance, homework, parent access',
+                        },
+                      ]).map((o) => {
+                        const Icon = o.icon;
+                        const on = tenantType === o.key;
+                        return (
+                          <button
+                            key={o.key}
+                            type="button"
+                            onClick={() => setValue('tenantType', o.key)}
+                            disabled={isSubmitting}
+                            aria-pressed={on}
+                            className={`relative rounded-2xl border-2 p-5 text-left transition ${
+                              on
+                                ? 'border-indigo-500 bg-indigo-50/60 ring-4 ring-indigo-500/10'
+                                : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                            }`}
+                          >
+                            {on && (
+                              <span className="absolute right-3 top-3 grid size-5 place-items-center rounded-full bg-indigo-600">
+                                <Check className="size-3 text-white" />
+                              </span>
+                            )}
+                            <Icon className={`size-6 ${on ? 'text-indigo-600' : 'text-slate-400'}`} />
+                            <p className={`mt-3 text-sm font-bold ${on ? 'text-indigo-900' : 'text-slate-800'}`}>
+                              {o.name}
+                            </p>
+                            <p className="mt-1 text-xs leading-relaxed text-slate-500">{o.blurb}</p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="mt-2 text-xs text-slate-400">
+                      Sets the vocabulary and which modules this tenant sees. Changeable later.
+                    </p>
+                  </div>
+
+                  <Field label="Organization name" required error={errors.orgName?.message}>
+                    <input
+                      {...register('orgName', { required: 'Organization name is required' })}
+                      className={inputCls}
+                      placeholder="Acme Corporation"
+                      disabled={isSubmitting}
+                    />
+                  </Field>
+
+                  <Field label="Full address" required error={errors.fullAddress?.message}>
+                    <textarea
+                      {...register('fullAddress', { required: 'Address is required' })}
+                      className={inputCls}
+                      rows={3}
+                      placeholder="123 Business Street, Suite 100, City, State, ZIP"
+                      disabled={isSubmitting}
+                    />
+                  </Field>
+
+                  <div className="grid gap-5 sm:grid-cols-2">
+                    <Field label="Country" required error={errors.country?.message}>
+                      <select
+                        {...register('country', { required: 'Country is required' })}
+                        className={inputCls}
+                        disabled={isSubmitting}
+                        defaultValue=""
+                      >
+                        <option value="" disabled>Select a country</option>
+                        {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </Field>
+
+                    <Field label="Official phone" required error={errors.officialPhone?.message}>
+                      <input
+                        {...register('officialPhone', {
+                          required: 'Phone number is required',
+                          pattern: { value: PHONE_RE, message: 'Invalid phone number format' },
+                        })}
+                        className={inputCls}
+                        placeholder="+1 (555) 123-4567"
+                        disabled={isSubmitting}
+                      />
+                    </Field>
+                  </div>
+
+                  <div className="grid gap-5 sm:grid-cols-2">
+                    <Field
+                      label="Website"
+                      error={errors.website?.message}
+                      hint="https:// is added automatically"
+                    >
+                      <input
+                        {...register('website')}
+                        className={inputCls}
+                        placeholder="https://example.com"
+                        disabled={isSubmitting}
+                      />
+                    </Field>
+
+                    <Field label="Official email" required error={errors.officialEmail?.message}>
+                      <input
+                        {...register('officialEmail', {
+                          required: 'Official email is required',
+                          pattern: { value: EMAIL_RE, message: 'Invalid email address' },
+                        })}
+                        className={inputCls}
+                        placeholder="contact@example.com"
+                        disabled={isSubmitting}
+                      />
+                    </Field>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Step 2 ─────────────────────────────────────────────── */}
+              {currentStep === 2 && (
+                <div className="space-y-6">
+                  <div className="flex gap-3 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4">
+                    <User className="mt-0.5 size-4 shrink-0 text-indigo-600" />
+                    <p className="text-xs leading-relaxed text-indigo-900">
+                      This person becomes the tenant&apos;s first administrator. They receive sign-in
+                      details by email and can invite everyone else.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-5 sm:grid-cols-3">
+                    <Field label="First name" required error={errors.firstName?.message}>
+                      <input
+                        {...register('firstName', { required: 'First name is required' })}
+                        className={inputCls} placeholder="John" disabled={isSubmitting}
+                      />
+                    </Field>
+                    <Field label="Middle name" error={errors.middleName?.message}>
+                      <input
+                        {...register('middleName')} className={inputCls}
+                        placeholder="Michael" disabled={isSubmitting}
+                      />
+                    </Field>
+                    <Field label="Last name" required error={errors.lastName?.message}>
+                      <input
+                        {...register('lastName', { required: 'Last name is required' })}
+                        className={inputCls} placeholder="Doe" disabled={isSubmitting}
+                      />
+                    </Field>
+                  </div>
+
+                  <div className="grid gap-5 sm:grid-cols-2">
+                    <Field label="Phone" required error={errors.phone?.message}>
+                      <input
+                        {...register('phone', {
+                          required: 'Phone number is required',
+                          pattern: { value: PHONE_RE, message: 'Invalid phone number format' },
+                        })}
+                        className={inputCls} placeholder="+1 (555) 123-4567" disabled={isSubmitting}
+                      />
+                    </Field>
+                    <Field
+                      label="Email"
+                      required
+                      error={errors.email?.message}
+                      hint="Sign-in address for the admin account"
+                    >
+                      <input
+                        {...register('email', {
+                          required: 'Email is required',
+                          pattern: { value: EMAIL_RE, message: 'Invalid email address' },
+                        })}
+                        className={inputCls} placeholder="john.doe@example.com" disabled={isSubmitting}
+                      />
+                    </Field>
+                  </div>
+
+                  <Field label="Role in organization" required error={errors.roleInOrganization?.message}>
+                    <select
+                      {...register('roleInOrganization', { required: 'Role is required' })}
+                      className={inputCls} disabled={isSubmitting} defaultValue=""
+                    >
+                      <option value="" disabled>Select a role</option>
+                      {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                  </Field>
+                </div>
+              )}
+
+              {/* ── Step 3 ─────────────────────────────────────────────── */}
+              {currentStep === 3 && (
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-xs leading-relaxed text-slate-600">
+                      Billing contact is often the same person as the admin.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={copyFromContact}
+                      disabled={isSubmitting}
+                      className="shrink-0 rounded-xl bg-white px-3.5 py-2 text-xs font-semibold text-indigo-600 shadow-sm ring-1 ring-slate-200 transition hover:bg-indigo-50 disabled:opacity-50"
+                    >
+                      Copy from Primary Contact
+                    </button>
+                  </div>
+
+                  <div className="grid gap-5 sm:grid-cols-3">
+                    <Field label="Billing first name" required error={errors.billingFirstName?.message}>
+                      <input
+                        {...register('billingFirstName', { required: 'Billing first name is required' })}
+                        className={inputCls} placeholder="John" disabled={isSubmitting}
+                      />
+                    </Field>
+                    <Field label="Billing middle name" error={errors.billingMiddleName?.message}>
+                      <input
+                        {...register('billingMiddleName')} className={inputCls}
+                        placeholder="Michael" disabled={isSubmitting}
+                      />
+                    </Field>
+                    <Field label="Billing last name" required error={errors.billingLastName?.message}>
+                      <input
+                        {...register('billingLastName', { required: 'Billing last name is required' })}
+                        className={inputCls} placeholder="Doe" disabled={isSubmitting}
+                      />
+                    </Field>
+                  </div>
+
+                  <Field label="Billing address" required error={errors.billingAddress?.message}>
+                    <textarea
+                      {...register('billingAddress', { required: 'Billing address is required' })}
+                      className={inputCls} rows={3}
+                      placeholder="123 Billing Street, Suite 200, City, State, ZIP"
+                      disabled={isSubmitting}
+                    />
+                  </Field>
+
+                  <Field
+                    label="Storage quota (GB)"
+                    error={errors.storageLimit?.message}
+                    hint="Applies to uploaded course media, SCORM packages and submissions."
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      {STORAGE_PRESETS.map((g) => {
+                        const on = Number(v.storageLimit) === g;
+                        return (
+                          <button
+                            key={g}
+                            type="button"
+                            onClick={() => setValue('storageLimit', g)}
+                            disabled={isSubmitting}
+                            className={`rounded-xl px-3.5 py-2 text-xs font-bold transition ${
+                              on
+                                ? 'bg-indigo-600 text-white shadow-sm'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                          >
+                            {g} GB
+                          </button>
+                        );
+                      })}
+                      <span className="ml-1 flex items-center gap-2">
+                        <HardDrive className="size-3.5 text-slate-400" />
+                        <input
+                          type="number"
+                          min={1}
+                          {...register('storageLimit', { valueAsNumber: true })}
+                          className={`${inputCls} w-24 py-2`}
+                          placeholder="2"
+                          disabled={isSubmitting}
+                        />
+                      </span>
+                    </div>
+                  </Field>
+
+                  {/* Review — this commits an org AND an admin user, so show the
+                      operator what they are about to create before they do. */}
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                    <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-500">
+                      <ClipboardCheck className="size-3.5" />
+                      Review
+                    </p>
+                    <dl className="mt-4 grid gap-x-6 gap-y-3 sm:grid-cols-2">
+                      {[
+                        ['Organization', v.orgName],
+                        ['Type', tenantType === 'school' ? 'School' : 'Corporate'],
+                        ['Country', v.country],
+                        ['Official email', v.officialEmail],
+                        ['Admin', [v.firstName, v.lastName].filter(Boolean).join(' ')],
+                        ['Admin email', v.email],
+                        ['Storage', v.storageLimit ? `${v.storageLimit} GB` : '2 GB'],
+                      ].map(([k, val]) => (
+                        <div key={k as string} className="min-w-0">
+                          <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{k}</dt>
+                          <dd className="truncate text-sm font-medium text-slate-800">
+                            {val || <span className="text-slate-300">—</span>}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="shrink-0 border-t border-slate-200 bg-white px-8 py-5">
+              {isSubmitting && (
+                <div className="mb-4">
+                  <div className="mb-1.5 flex items-center justify-between text-xs">
+                    <span className="font-medium text-slate-600">Creating tenant…</span>
+                    <span className="font-bold tabular-nums text-slate-900">{progress}%</span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-[width] duration-500"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={handleBack}
+                  disabled={currentStep === 1 || isSubmitting}
+                  className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronLeft className="size-4" />
+                  Back
+                </button>
+
+                {currentStep < 3 ? (
+                  <button
+                    type="button"
+                    onClick={handleNext}
+                    disabled={isSubmitting}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-50"
+                  >
+                    Next
+                    <ChevronRight className="size-4" />
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 active:scale-[0.98] disabled:opacity-60"
+                  >
+                    {isSubmitting ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+                    Submit &amp; Launch
+                  </button>
+                )}
+              </div>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   );
 };
 
 export default TenantOnboardingWizard;
-

@@ -14,6 +14,12 @@ vi.mock('@/lib/prisma', () => ({
     lmsTenant: { findUnique: h.tenantFindUnique },
   },
 }));
+// `lib/auth/context` imports the central entitlement gate, which transitively
+// pulls in `@quikit/database` and constructs a real PrismaClient at module load
+// (no DATABASE_URL in the test env → constructor throws before any test runs).
+// `getAuthContext` itself does NOT call the gate — only `requireAuth` does — so
+// stubbing it here purely severs that import chain.
+vi.mock('@/lib/auth/central-access', () => ({ hasCentralAppAccess: vi.fn().mockResolvedValue(true) }));
 
 import { getAuthContext } from '@/lib/auth/context';
 

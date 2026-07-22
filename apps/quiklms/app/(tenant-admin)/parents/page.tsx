@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Users, Search, Plus, X, ToggleLeft, ToggleRight, UserPlus, Link2, Upload, Edit3 } from 'lucide-react';
 import { api } from '@/lib/api';
-import { useBranding } from '@/app/providers';
+import { useBranding, useCurrentUser } from '@/app/providers';
 import BulkUploadModal from '@/components/BulkUploadModal';
 import toast, { Toaster } from 'react-hot-toast';
 
@@ -45,6 +45,9 @@ const ParentsPage = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showInactive, setShowInactive] = useState(false);
   const { branding } = useBranding();
+  // Source of truth for the signed-in actor (GET /api/me), replacing a
+  // sessionStorage read that was only populated after async hydration.
+  const { user: currentUser } = useCurrentUser();
 
   // Modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -127,15 +130,15 @@ const ParentsPage = () => {
     setError(null);
 
     try {
-      const userStr = sessionStorage.getItem('user');
-      const currentUser = userStr ? JSON.parse(userStr) : null;
+      // orgId is resolved SERVER-side from the session for every non-super-admin
+      // (`app/api/auth/register/route.ts` uses `actor.orgId` and ignores
+      // `body.orgId` unless the caller is a SUPER_ADMIN). This used to read it
+      // from `sessionStorage('user')` and HARD-BAIL when absent — but that key is
+      // only populated asynchronously by `refreshUser()` in providers, so opening
+      // a roster page and submitting before hydration finished blocked the
+      // invitation with "Tenant ID not found" for a request the server would have
+      // scoped correctly on its own. Kept as a hint for the super-admin case only.
       const orgId = currentUser?.orgId;
-
-      if (!orgId) {
-        setError('Tenant ID not found. Please log out and log in again.');
-        setCreating(false);
-        return;
-      }
 
       if (!formData.email || !formData.firstName || !formData.lastName) {
         setError('First Name, Last Name and Email are required.');

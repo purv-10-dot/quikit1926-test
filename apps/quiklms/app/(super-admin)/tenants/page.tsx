@@ -10,6 +10,14 @@ import { api } from '@/lib/api';
 import TenantOnboardingWizard from '@/components/TenantOnboardingWizard';
 import WelcomeKitEditor from '@/components/WelcomeKitEditor';
 
+/**
+ * The tenant portal entry point. Previously read from `tenant.loginUrl`, a
+ * per-row copy of this same string that every tenant stored identically and
+ * that went stale whenever the deployment URL changed. Derived from the app's
+ * canonical origin instead.
+ */
+const TENANT_LOGIN_URL = `${(process.env.NEXT_PUBLIC_QUIKLMS_URL ?? '').replace(/\/+$/, '')}/login`;
+
 interface Tenant {
   _id: string;
   orgName: string;
@@ -32,7 +40,6 @@ interface Tenant {
   billingAddress: string;
   storageLimit: number;
   createdAt: string;
-  loginUrl?: string;
   logoUrl?: string;
   featureConfig?: {
     approvalWorkflowEnabled?: boolean;
@@ -397,9 +404,9 @@ export default function TenantsPage() {
                   {tenant.status === 'Active' ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                   {tenant.status === 'Active' ? 'Suspend' : 'Activate'}
                 </button>
-                {tenant.loginUrl && (
+                {TENANT_LOGIN_URL && (
                   <a
-                    href={tenant.loginUrl}
+                    href={TENANT_LOGIN_URL}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="col-span-2 flex items-center justify-center gap-2 px-4 py-4 rounded-[1.25rem] text-sm font-black transition-all duration-300 bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-200 active:scale-95"

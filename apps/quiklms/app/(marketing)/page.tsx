@@ -40,16 +40,38 @@ const LANDING: Record<string, string> = {
   LEARNER: '/learner/dashboard',
 };
 
-export default async function LandingPage() {
+export default async function LandingPage({
+  searchParams,
+}: {
+  searchParams?: { reason?: string | string[] };
+}) {
   const session = await getServerSession(authOptions);
 
-  if (session?.user?.id) {
+  const rawReason = searchParams?.reason;
+  const reason = Array.isArray(rawReason) ? rawReason[0] : rawReason;
+  // Bounced here by the central entitlement gate (lib/auth/page-guard). This
+  // visitor IS authenticated, so the redirect below would send them straight
+  // back to the dashboard that just refused them — an infinite loop. Render the
+  // landing page with an explanation instead.
+  const deniedAppAccess = reason === 'no_app_access';
+
+  if (session?.user?.id && !deniedAppAccess) {
     const role = await resolveLmsRole(session.user);
     redirect(LANDING[role] ?? '/learner/dashboard');
   }
 
   return (
     <div className="bg-[#0b1020]">
+      {deniedAppAccess && (
+        <div
+          role="status"
+          className="border-b border-amber-400/30 bg-amber-400/10 px-4 py-3 text-center text-sm text-amber-100"
+        >
+          Your organisation does not currently have access to QuikSkill, or your
+          access has been removed. Contact your administrator if you think this
+          is a mistake.
+        </div>
+      )}
       <Nav />
       <main>
         <Hero />

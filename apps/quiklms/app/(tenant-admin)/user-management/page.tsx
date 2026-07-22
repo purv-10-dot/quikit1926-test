@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import toast, { Toaster } from 'react-hot-toast';
-import { useBranding } from '@/app/providers';
+import { useBranding, useCurrentUser } from '@/app/providers';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui';
 import { Badge } from '@/components/ui';
@@ -63,6 +63,9 @@ type ViewMode = 'table' | 'card';
 
 const UserManagementPage = () => {
   const { branding } = useBranding();
+  // Signed-in actor from GET /api/me — replaces a sessionStorage read that
+  // was only populated after async hydration.
+  const { user: currentUser } = useCurrentUser();
   const { primaryColor, secondaryColor } = branding ?? {};
   const [users, setUsers] = useState<User[]>([]);
   const [managers, setManagers] = useState<Manager[]>([]);
@@ -191,15 +194,9 @@ const UserManagementPage = () => {
         );
       }
 
-      const userStr = sessionStorage.getItem('user');
-      const currentUser = userStr ? JSON.parse(userStr) : null;
+      // orgId is resolved SERVER-side from the session for non-super-admins;
+      // the old sessionStorage read hard-bailed before hydration finished.
       const orgId = currentUser?.orgId;
-
-      if (!orgId) {
-        toast.error('Tenant ID not found. Please log out and log in again.');
-        setUploading(false);
-        return;
-      }
 
       const managerEmailMap: Record<string, string> = {};
       managers.forEach((m) => {
@@ -262,15 +259,9 @@ const UserManagementPage = () => {
     setCreating(true);
 
     try {
-      const userStr = sessionStorage.getItem('user');
-      const currentUser = userStr ? JSON.parse(userStr) : null;
+      // orgId is resolved SERVER-side from the session for non-super-admins;
+      // the old sessionStorage read hard-bailed before hydration finished.
       const orgId = currentUser?.orgId;
-
-      if (!orgId) {
-        toast.error('Tenant ID not found. Please log out and log in again.');
-        setCreating(false);
-        return;
-      }
 
       const payload: any = {
         ...data,

@@ -7,7 +7,17 @@ import { randomUUID } from 'crypto';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { Conflict, NotFound } from '@/lib/http';
+import { toOrgStatus, toTenantStatus, type TenantStatus } from '@/lib/tenant-status';
 import { provisionOrgForTenant, provisionLmsUser } from './identity-service';
+
+/**
+ * The tenant-facing login entry point.
+ *
+ * This used to be denormalised into `LmsTenant.loginUrl` at onboarding time —
+ * every row storing the identical `${BASE_URL}/login` string, which then went
+ * stale the moment the deployment URL changed. Derived once here instead.
+ */
+const TENANT_LOGIN_URL = `${(process.env.BASE_URL || process.env.FRONTEND_URL || 'http://localhost:3020').replace(/\/$/, '')}/login`;
 
 const SCHOOL_FEATURES = {
   enableCourses: false, enableScorm: false, enableCompliance: false, enableManagerReports: false, enableSelfEnrollment: false,
@@ -46,6 +56,13 @@ export interface OnboardInput {
    * guess. Leave unset and the backfill (subdomain↔slug) links it later.
    */
   orgId?: string;
+  /**
+   * Platform `User.id` of the operator running the onboard. Recorded on the
+   * created `Org.createdBy` / `OrgAppAccess.updatedBy` so a provisioned tenant
+   * is traceable to whoever provisioned it. Optional — a backfill or script has
+   * no actor.
+   */
+  createdByUserId?: string;
 }
 
 async function uniqueSubdomain(orgName: string): Promise<string> {
@@ -74,7 +91,16 @@ export async function onboardTenant(dto: OnboardInput) {
 
   // 1) Provision the platform Org (+ enable QuikLMS). Its id IS the LMS Tenant id
   //    (orgId-native), and it's what lets the tenant admin SSO-log-in.
-  const orgId = dto.orgId ?? (await provisionOrgForTenant({ name: dto.orgName, billingEmail: dto.officialEmail }));
+  const orgId =
+    dto.orgId ??
+    (await provisionOrgForTenant({
+      name: dto.orgName,
+      billingEmail: dto.officialEmail,
+      createdByUserId: dto.createdByUserId,
+      // Operator-onboarded tenants are sold, not self-serve trials → no per-app
+      // trial window. Explicit rather than implied; see ProvisionOrgInput.
+      trialDays: null,
+    }));
 
   const tenant = await prisma.lmsTenant.create({
     data: {
@@ -102,7 +128,6 @@ export async function onboardTenant(dto: OnboardInput) {
       billingAddress: dto.billingAddress,
       storageLimit: Math.round(dto.storageLimit || 2),
       featureConfig: tenantType === 'school' ? SCHOOL_FEATURES : CORPORATE_FEATURES,
-      loginUrl: `${process.env.BASE_URL || process.env.FRONTEND_URL || 'http://localhost:3020'}/login`,
     },
   });
 
@@ -167,7 +192,6 @@ function generateTenantKey(): string {
 export interface CreateTenantInput {
   name: string;
   gstNumber: string;
-  dbConnectionString?: string;
   tenantType?: 'corporate' | 'school';
   // Schema-required (tenant.schema.ts `required: true`) — not in CreateTenantDto.
   orgName: string;
@@ -270,17 +294,16 @@ export async function createTenantAdminForTenant(
       success: true,
       email: contactEmail,
       password: 'Already exists',
-      loginUrl: tenant.loginUrl,
+      loginUrl: TENANT_LOGIN_URL,
       message: 'User already exists',
     };
   }
 
   const admin = await provisionLmsUser({
     email: contactEmail,
-    // `Tenant.id === orgId` is the orgId-native invariant recorded on the schema
-    // column itself, so `id` is the correct fallback for a tenant whose orgId
-    // link has not been back-filled yet.
-    orgId: tenant.orgId ?? tenant.id,
+    // `orgId` is NOT NULL now and always equals `id` — the one unlinked row was
+    // removed when the constraint landed — so no fallback is needed.
+    orgId: tenant.orgId,
     firstName: tenant.contactFirstName || 'Tenant',
     lastName: tenant.contactLastName || 'Admin',
     lmsRole: 'TENANT_ADMIN',
@@ -328,14 +351,33 @@ export async function createTenantAdminsForAllTenants(): Promise<{
   return { success: true, results };
 }
 
+/**
+ * `status` is no longer a column on LmsTenant — it is derived from the platform
+ * `Org.status`, which is the value the platform actually enforces (baseline §3).
+ * `LmsTenant.id === Org.id` (orgId-native), so the lookup is a PK hit.
+ *
+ * The shape callers receive is unchanged: they still get `status: 'Active' |
+ * 'Paused'`, so the super-admin screens need no edit.
+ */
 export async function findAllTenants() {
-  return prisma.lmsTenant.findMany({ orderBy: { createdAt: 'desc' } });
+  const tenants = await prisma.lmsTenant.findMany({ orderBy: { createdAt: 'desc' } });
+  if (tenants.length === 0) return [];
+
+  const orgs = await prisma.org.findMany({
+    where: { id: { in: tenants.map((t) => t.id) } },
+    select: { id: true, status: true },
+  });
+  const orgStatusById = new Map(orgs.map((o) => [o.id, o.status]));
+
+  return tenants.map((t) => ({ ...t, status: toTenantStatus(orgStatusById.get(t.id)) }));
 }
 
 export async function findTenant(id: string) {
   const tenant = await prisma.lmsTenant.findUnique({ where: { id } });
   if (!tenant) throw NotFound('Tenant not found');
-  return tenant;
+
+  const org = await prisma.org.findUnique({ where: { id }, select: { status: true } });
+  return { ...tenant, status: toTenantStatus(org?.status) };
 }
 
 /**
@@ -358,7 +400,7 @@ export async function updateTenant(
   data: Record<string, unknown> & { featureConfig?: Record<string, unknown> },
 ) {
   const existing = await findTenant(id);
-  const { featureConfig, ...rest } = data;
+  const { featureConfig, status, ...rest } = data;
 
   const setFields: Record<string, unknown> = {};
   for (const [key, val] of Object.entries(rest)) {
@@ -370,10 +412,27 @@ export async function updateTenant(
     setFields.featureConfig = { ...current, ...featureConfig };
   }
 
-  return prisma.lmsTenant.update({
+  // `status` is NOT an LmsTenant column any more. Pausing a tenant now writes
+  // the platform `Org.status`, so it actually takes effect — the old column was
+  // never consulted by any gate, which meant "Paused" suspended nothing.
+  if (status !== undefined) {
+    await prisma.org.update({
+      where: { id },
+      data: { status: toOrgStatus(status as TenantStatus) },
+    });
+  }
+
+  // Always issued, even when `setFields` is empty — the previous behaviour, and
+  // what keeps `updatedAt` moving on a status-only PATCH.
+  const updated = await prisma.lmsTenant.update({
     where: { id },
     data: setFields as Prisma.LmsTenantUpdateInput,
   });
+
+  // Re-read the (possibly just-changed) platform status so the response is
+  // consistent with what was written.
+  const org = await prisma.org.findUnique({ where: { id }, select: { status: true } });
+  return { ...updated, status: toTenantStatus(org?.status) };
 }
 
 export async function removeTenant(id: string) {

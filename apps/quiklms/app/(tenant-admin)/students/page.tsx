@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { GraduationCap, Search, CreditCard, BookOpen, Plus, X, ToggleLeft, ToggleRight, Upload, Edit3 } from 'lucide-react';
 import { api } from '@/lib/api';
 import BulkUploadModal from '@/components/BulkUploadModal';
-import { useBranding } from '@/app/providers';
+import { useBranding, useCurrentUser } from '@/app/providers';
 
 interface Student {
   _id: string;
@@ -46,6 +46,9 @@ const SECTION_OPTIONS = ['A', 'B', 'C', 'D', 'E', 'F'];
 
 const StudentsPage = () => {
   const { branding } = useBranding();
+  // Source of truth for the signed-in actor (GET /api/me), replacing a
+  // sessionStorage read that was only populated after async hydration.
+  const { user: currentUser } = useCurrentUser();
   const [students, setStudents] = useState<Student[]>([]);
   const [parents, setParents] = useState<Parent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -155,15 +158,15 @@ const StudentsPage = () => {
     setError(null);
 
     try {
-      const userStr = sessionStorage.getItem('user');
-      const currentUser = userStr ? JSON.parse(userStr) : null;
+      // orgId is resolved SERVER-side from the session for every non-super-admin
+      // (`app/api/auth/register/route.ts` uses `actor.orgId` and ignores
+      // `body.orgId` unless the caller is a SUPER_ADMIN). This used to read it
+      // from `sessionStorage('user')` and HARD-BAIL when absent — but that key is
+      // only populated asynchronously by `refreshUser()` in providers, so opening
+      // a roster page and submitting before hydration finished blocked the
+      // invitation with "Tenant ID not found" for a request the server would have
+      // scoped correctly on its own. Kept as a hint for the super-admin case only.
       const orgId = currentUser?.orgId;
-
-      if (!orgId) {
-        setError('Tenant ID not found. Please log out and log in again.');
-        setCreating(false);
-        return;
-      }
 
       if (!formData.firstName || !formData.lastName) {
         setError('First Name and Last Name are required.');

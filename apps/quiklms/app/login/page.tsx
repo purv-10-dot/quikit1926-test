@@ -9,7 +9,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
  * SSO entry point. Replaces the old dev `/role-select` picker: unauthenticated
  * users are sent straight to the QuikIT IdP via the "quikit" OAuth provider;
  * authenticated users are routed to the app root, which redirects to their role
- * landing (see app/page.tsx).
+ * landing (see app/(marketing)/page.tsx).
  *
  * INVITE-LINK GUARD: invitation emails link here with `?email=<invitee>`. If a
  * DIFFERENT user is already signed in — e.g. the super admin who sent the invite
@@ -62,9 +62,11 @@ function LoginInner() {
     // than the landing page) is the one difference that matters here: the
     // effect above sees the signed-out state and starts a fresh SSO login as
     // the INVITED user, which is the whole point of "wrong account".
-    await globalSignOut(
-      `${window.location.origin}/login?email=${encodeURIComponent(invitedEmail)}`,
-    );
+    // Canonical origin, not the live one — the signout hosts allow-list the
+    // canonical host only, and fall back to their own root otherwise (which is
+    // how sign-out from a deployment URL ended up on the QuikIT launcher).
+    const base = (process.env.NEXT_PUBLIC_QUIKLMS_URL ?? '').replace(/\/+$/, '') || window.location.origin;
+    await globalSignOut(`${base}/login?email=${encodeURIComponent(invitedEmail)}`);
   }
 
   if (mismatch) {

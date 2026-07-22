@@ -113,7 +113,12 @@ async function main() {
     for (const m of docs) {
       try {
         await px.user.create({ data: {
-          id: uid(m._id), email: String(m.email).toLowerCase().trim(), password: m.password ?? null,
+          // NOTE: the source Mongo docs carry password / mustChangePassword /
+          // passwordSetupToken(+Expiry) / provider / providerId /
+          // activeSessionId. Those columns no longer exist on LmsUser — under
+          // centralized auth credentials belong to `auth.User` and sessions to
+          // the shared Redis session id — so they are intentionally NOT copied.
+          id: uid(m._id), email: String(m.email).toLowerCase().trim(),
           firstName: m.firstName, lastName: m.lastName, role: m.role ?? 'LEARNER', secondaryRole: m.secondaryRole ?? null,
           tenantId: m.tenantId ? refId(m.tenantId) : null, managerId: m.managerId ? refId(m.managerId) : null, isActive: m.isActive ?? true,
           parentEmail: m.parentEmail ?? null, guardianContact: m.guardianContact ?? null, phone: m.phone ?? null, guardianRelation: m.guardianRelation ?? null,
@@ -123,9 +128,8 @@ async function main() {
           maxSlotsPerWeek: m.maxSlotsPerWeek ?? 0, tutoringEnabled: m.tutoringEnabled ?? false, tutoringCreditCost: m.tutoringCreditCost ?? null,
           classesCompleted: m.classesCompleted ?? 0, classesMissed: m.classesMissed ?? 0, classesCancelled: m.classesCancelled ?? 0,
           classesRescheduledAndCompleted: m.classesRescheduledAndCompleted ?? 0, punctualityScore: m.punctualityScore ?? 0,
-          provider: m.provider ?? null, providerId: m.providerId ?? null, profilePicture: m.profilePicture ?? null, aiApiKey: m.aiApiKey ?? null,
-          mustChangePassword: m.mustChangePassword ?? true, passwordSetupToken: m.passwordSetupToken ?? null, passwordSetupTokenExpiry: d(m.passwordSetupTokenExpiry),
-          activeSessionId: m.activeSessionId ?? null, currentStreak: m.currentStreak ?? 0, totalPoints: m.totalPoints ?? 0, lastActivityDate: d(m.lastActivityDate),
+          profilePicture: m.profilePicture ?? null, aiApiKey: m.aiApiKey ?? null,
+          currentStreak: m.currentStreak ?? 0, totalPoints: m.totalPoints ?? 0, lastActivityDate: d(m.lastActivityDate),
           preferredLanguage: m.preferredLanguage ?? 'en', timezone: m.timezone ?? null, notificationPreferences: m.notificationPreferences ?? null,
           createdAt: dReq(m.createdAt), updatedAt: dReq(m.updatedAt),
           availableSlots: { create: arr<{ dayOfWeek: number; startTime: string; endTime: string }>(m.availableSlots).map((s) => ({ dayOfWeek: s.dayOfWeek, startTime: s.startTime, endTime: s.endTime })) },

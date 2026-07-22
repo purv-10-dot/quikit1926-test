@@ -1,5 +1,5 @@
 'use client';
-const PUBLIC_PATHS = ['/login', '/role-select', '/verify-certificate', '/design'];
+const PUBLIC_PATHS = ['/login', '/verify-certificate', '/design'];
 
 export interface ApiError {
   statusCode: number;

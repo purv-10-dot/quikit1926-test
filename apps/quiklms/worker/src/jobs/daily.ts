@@ -75,9 +75,14 @@ export async function runTeacherLatenessScan(): Promise<void> {
   }
 }
 
-/** TTL cleanup — replaces Mongo TTL indexes on otps + analytics-cache. */
+/**
+ * TTL cleanup — replaces the Mongo TTL index on analytics-cache.
+ *
+ * The `otps` sweep was removed with the table: local email-OTP login was
+ * retired by centralized auth (the platform's registration OTP is Redis-backed
+ * and owned by apps/auth), the table held no rows, and nothing wrote to it.
+ */
 export async function runTtlCleanup(): Promise<void> {
   const now = new Date();
-  await prisma.lmsOtp.deleteMany({ where: { expiresAt: { lt: now } } }).catch(() => {});
   await prisma.lmsAnalyticsCache.deleteMany({ where: { expiresAt: { lt: now } } }).catch(() => {});
 }

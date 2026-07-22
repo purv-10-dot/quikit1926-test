@@ -15727,13 +15727,11 @@ enum LmsTenantType {
   @@schema("app_quiklms")
 }
 
-enum LmsTenantStatus {
-  Active
-  Paused
-  Trial
-  @@map("TenantStatus")
-  @@schema("app_quiklms")
-}
+// LmsTenantStatus (Active | Paused | Trial) was removed with LmsTenant.status.
+// Tenant status is now the platform `quikit.Org.status` (active | suspended),
+// translated at the edge by apps/quiklms/lib/tenant-status.ts. `Trial` had no
+// Org equivalent — a trial is Subscription.status + OrgAppAccess.trialEndsAt —
+// and no row ever used it. See migration 20260722160000_quiklms_tenant_collapse.
 
 // User.rateType & TeacherPayout.rateType
 enum LmsRateType {
@@ -16318,15 +16316,32 @@ enum LmsTenantActionType {
 // ════════════════════════════════════════════════════════════════════════════
 
 model LmsTenant {
-  id                 String       @id @default(uuid())
-  name               String       @unique
-  subdomain          String       @unique
-  tenantType         LmsTenantType   @default(corporate)
-  gstNumber          String?      @unique // nullable @unique = sparse (Postgres treats NULLs as distinct)
-  dbConnectionString String?
-  status             LmsTenantStatus @default(Active)
-  tenantKey          String       @unique
-  orgId              String?      @unique // platform Org id (orgId-native fold); Tenant.id === orgId
+  id         String        @id @default(uuid())
+  name       String        @unique
+  subdomain  String        @unique
+  tenantType LmsTenantType @default(corporate)
+  gstNumber  String?       @unique // nullable @unique = sparse (Postgres treats NULLs as distinct)
+  tenantKey  String        @unique
+  /// Platform Org id. NOT NULL and always equal to `id` — this table is a
+  /// per-tenant LMS profile hanging off `quikit.Org`, not a second tenant
+  /// registry. It was nullable while the orgId fold was in flight, which left
+  /// the "Tenant.id === orgId" invariant unenforceable; the one unlinked row
+  /// has since been removed.
+  orgId      String        @unique
+  //
+  // REMOVED in migration 20260722160000_quiklms_tenant_collapse:
+  //   dbConnectionString  — per-tenant DB connection string, a leftover from the
+  //                         pre-fold design; every tenant is in the one shared
+  //                         database now, and it stored a credential in a plain
+  //                         column. No row ever held a value.
+  //   status              — a SECOND org status, independent of Org.status and
+  //                         consulted by no gate, so "Paused" suspended nothing.
+  //                         Now derived from / written to quikit.Org.status.
+  //                         See apps/quiklms/lib/tenant-status.ts.
+  //   auth0OrganizationId — residue of a third identity system, retired.
+  //   auth0UserId         — ditto.
+  //   loginUrl            — always `${BASE_URL}/login`; derived at the edge now
+  //                         rather than denormalised per tenant.
 
   // Organization profile
   orgName       String
@@ -16374,25 +16389,40 @@ model LmsTenant {
   primaryColor   String  @default("#3B82F6")
   secondaryColor String  @default("#1E40AF")
 
-  // Auth0 integration
-  auth0OrganizationId String?
-  auth0UserId         String?
-  loginUrl            String?
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantType, status])
+  @@index([tenantType])
   @@map("tenants")
   @@schema("app_quiklms")
 }
 
 model LmsUser {
-  id            String    @id @default(uuid())
-  email         String // lowercased/trimmed in app layer
-  password      String? // null for OAuth users
-  firstName     String
-  lastName      String
+  id String @id @default(uuid())
+
+  /// Central `auth.User.id` this LMS person is bridged to — the same pattern as
+  /// `Employee.authUserId` in app_quikhrms (baseline §9).
+  ///
+  /// PHASE 1 OF THE BRIDGE. Today `id` still carries the central User id for
+  /// every centrally-provisioned row, and this column mirrors it, so nothing
+  /// behaves differently yet. What it buys now is that the link becomes
+  /// EXPLICIT and enforceable rather than a naming convention nothing checks.
+  ///
+  /// NULL means "no central identity" — a legitimate state, not missing data.
+  /// It covers people who exist only in the LMS (legacy/demo rows, and later,
+  /// roster entries created without provisioning a login). HRMS relies on the
+  /// same nullability for its manually-created employees.
+  ///
+  /// The unique below is what makes multi-org POSSIBLE later: one LMS row per
+  /// central user PER ORG. Reaching it needs `id` to stop doubling as the
+  /// central id — see the phased plan; that flip is deliberately NOT part of
+  /// this change, because ~35 tables reference users by bare scalar with no
+  /// foreign key, so a partial migration would orphan rows silently.
+  authUserId String?
+
+  email     String // lowercased/trimmed in app layer
+  firstName String
+  lastName  String
   role          LmsUserRole  @default(LEARNER)
   secondaryRole LmsUserRole?
   orgId      String? // scalar — global super-admins have no tenant
@@ -16432,15 +16462,15 @@ model LmsUser {
   classesRescheduledAndCompleted Int?   @default(0)
   punctualityScore               Float? @default(0)
 
-  // Authentication
-  provider                 String?
-  providerId               String?
-  profilePicture           String?
-  aiApiKey                 String? // encrypted (lib/crypto)
-  mustChangePassword       Boolean   @default(true)
-  passwordSetupToken       String?
-  passwordSetupTokenExpiry DateTime?
-  activeSessionId          String? // single-session enforcement
+  // Profile. The credential + session columns that used to live here
+  // (password, mustChangePassword, passwordSetupToken/Expiry, provider,
+  // providerId, activeSessionId) were dropped: they duplicated `auth.User` and
+  // the shared Redis session id, were never read at runtime under centralized
+  // auth, and constituted a second, unsynchronised identity store. Credentials
+  // are owned solely by the QuikIT auth service; session revocation is the
+  // shared `sessionId`. See migration 20260722140000_quiklms_drop_vestigial_auth.
+  profilePicture String?
+  aiApiKey       String? // encrypted (lib/crypto)
 
   // Gamification
   currentStreak    Int       @default(0)
@@ -16459,12 +16489,29 @@ model LmsUser {
   children LmsUserParent[] @relation("UserChildren") // rows where this user is the parent
   parents  LmsUserParent[] @relation("UserParents") // rows where this user is the child
 
+  // Per-app RBAC (see the QuikLMS RBAC block at the end of this schema).
+  appRoles         LmsUserAppRole[]
+  permissionExtras LmsUserPermissionExtra[]
+
+  // Email is unique per tenant. It was previously unconstrained — only indexed
+  // — while every other identity-ish column on this model was constrained, so
+  // duplicate rows for one address inside an org were possible. Scoped to the
+  // org (not global) to match the siblings below and stay forward-compatible
+  // with the multi-org bridge; NULL orgId keeps it sparse, as Postgres treats
+  // NULLs as distinct.
+  // One LMS row per central user, per org. Sparse: rows with a NULL
+  // `authUserId` (no central identity) are exempt, as Postgres treats NULLs as
+  // distinct — same behaviour the three sparse uniques below rely on, and the
+  // same shape as `@@unique([orgId, authUserId])` on the HRMS Employee.
+  @@unique([orgId, authUserId])
+  @@unique([orgId, email])
   @@unique([orgId, studentId]) // sparse per-tenant unique (NULL-distinct)
   @@unique([orgId, employeeId])
   @@unique([orgId, parentCode])
   @@index([orgId, role])
   @@index([orgId, grade])
-  @@index([orgId, email])
+  // No plain @@index([orgId, email]) — the unique above already serves those
+  // lookups; keeping both would only cost writes.
   @@index([orgId, totalPoints(sort: Desc)])
   @@index([orgId, currentStreak(sort: Desc)])
   @@index([orgId, parentEmail])
@@ -16507,21 +16554,11 @@ model LmsUserParent {
   @@schema("app_quiklms")
 }
 
-model LmsOtp {
-  id        String   @id @default(uuid())
-  email     String // lowercased/trimmed
-  otp       String // 4-digit
-  expiresAt DateTime // TTL 600s — purged by worker cron
-  isUsed    Boolean  @default(false)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([email])
-  @@index([expiresAt])
-  @@map("otps")
-  @@schema("app_quiklms")
-}
+// LmsOtp was removed alongside the vestigial credential columns. It backed a
+// local email-OTP login that centralized auth retired: the platform's
+// registration OTP is Redis-backed and owned by apps/auth (baseline §8A). The
+// table held zero rows and nothing wrote to it — only a worker cron deleting
+// expired entries. See migration 20260722140000_quiklms_drop_vestigial_auth.
 
 model LmsCounter {
   id       String @id @default(uuid())
@@ -18228,6 +18265,182 @@ model LmsPrivacyAuditLog {
   @@index([orgId, createdAt(sort: Desc)])
   @@index([userId, createdAt(sort: Desc)])
   @@map("privacy_audit_logs")
+  @@schema("app_quiklms")
+}
+
+// ─── QuikLMS RBAC ───────────────────────────────────────────────────────────
+// The per-app RBAC shape every product app repeats (AppRole + RolePermission +
+// RoleNavigation + UserAppRole + UserPermissionExtra), namespaced `Lms*`.
+// QuikLMS was the only app missing it entirely: authorization was a hardcoded
+// `LmsUserRole` enum on LmsUser.role, so a tenant could not define a custom
+// role, grant or deny a single permission, or time-box an assignment — and
+// `assignAppRoles()` in packages/auth had no tables to write into, which is why
+// a central invitation carrying inviteAppIds could never seed an LMS role.
+//
+// Mirrors the HrmsAppRole family field-for-field, including `expiresAt` on the
+// assignment and GRANT/DENY on the per-user override. Keyed on LmsUser, whose
+// id IS the central auth.User id under the orgId-native fold — so these rows
+// resolve for the same person the platform knows.
+//
+// The coarse `LmsUser.role` enum is intentionally left in place: ~335 files read
+// it through `getAuthContext`. These tables are additive, and nothing reads them
+// yet. Adopting them at the call sites is a separate migration of behaviour.
+
+model LmsAppRole {
+  id          String   @id @default(cuid())
+  orgId       String
+  appId       String
+  name        String
+  description String?
+  isSystem    Boolean  @default(false)
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String?
+
+  permissions LmsRolePermission[]
+  navigations LmsRoleNavigation[]
+  members     LmsUserAppRole[]
+
+  @@unique([orgId, appId, name])
+  @@index([orgId, appId])
+  @@map("AppRole")
+  @@schema("app_quiklms")
+}
+
+model LmsRolePermission {
+  id       String @id @default(cuid())
+  roleId   String
+  resource String
+  action   String
+
+  role LmsAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, resource, action])
+  @@index([roleId])
+  @@map("RolePermission")
+  @@schema("app_quiklms")
+}
+
+model LmsRoleNavigation {
+  id     String @id @default(cuid())
+  roleId String
+  navKey String
+
+  role LmsAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, navKey])
+  @@index([roleId])
+  @@map("RoleNavigation")
+  @@schema("app_quiklms")
+}
+
+model LmsUserAppRole {
+  id         String    @id @default(cuid())
+  userId     String
+  orgId      String
+  roleId     String
+  assignedAt DateTime  @default(now())
+  assignedBy String?
+  expiresAt  DateTime?
+
+  role LmsAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user LmsUser    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId, roleId])
+  @@index([roleId])
+  @@index([userId, orgId])
+  @@index([expiresAt])
+  @@map("UserAppRole")
+  @@schema("app_quiklms")
+}
+
+enum LmsPermissionGrantKind {
+  GRANT
+  DENY
+
+  @@schema("app_quiklms")
+}
+
+model LmsUserPermissionExtra {
+  id        String                 @id @default(cuid())
+  orgId     String
+  userId    String
+  resource  String
+  action    String
+  kind      LmsPermissionGrantKind @default(GRANT)
+  grantedBy String?
+  createdAt DateTime               @default(now())
+
+  user LmsUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId, resource, action])
+  @@index([userId, orgId])
+  @@map("UserPermissionExtra")
+  @@schema("app_quiklms")
+}
+
+// ─── QuikLMS invitations ────────────────────────────────────────────────────
+// A local record of every invitation the LMS has sent, mirroring
+// app_quikhrms.Invitation. QuikLMS previously had NO such table: invitations
+// were fire-and-forget, so there was no list UI, no revoke, no expiry surface,
+// and no record that an invitation had ever been sent — a tenant admin could not
+// answer "did this teacher get invited, and when?".
+//
+// This is a SHADOW of the authoritative record, not the record itself. The
+// membership lifecycle lives on quikit.OrgMember (status / invitationToken /
+// invitedAt / acceptedAt) and the central accept endpoint is what activates it.
+// These rows exist so the LMS can render and audit that lifecycle without
+// querying the platform tables on every list render.
+//
+// DIVERGENCE FROM HRMS, deliberate: HrmsInvitation carries `centralInviteToken`
+// — the RAW central OrgMember.invitationToken — so a resend can rebuild the
+// accept link. We do not copy that. The raw token already lives on
+// quikit.OrgMember (it has to; the accept endpoint looks it up by value), so
+// duplicating it here would put a second live credential in a second table for
+// no gain. A resend re-reads it from OrgMember, which is the source of truth.
+// `token` holds only a SHA-256 hash — enough to correlate an emailed link with
+// its audit row, useless to anyone who reads this table.
+
+enum LmsInvitationStatus {
+  Pending
+  Accepted
+  Expired
+  Revoked
+
+  @@schema("app_quiklms")
+}
+
+model LmsInvitation {
+  id    String @id @default(cuid())
+  orgId String
+
+  // Invitee details, as sent.
+  email     String
+  firstName String?
+  lastName  String?
+  /// The LMS role the invite was issued for (LmsUserRole value).
+  role      String
+
+  // Token & lifecycle. `token` is a SHA-256 hash of the emailed central token —
+  // never the raw value. See the note above.
+  token     String              @unique
+  expiresAt DateTime
+  status    LmsInvitationStatus @default(Pending)
+
+  // Tracking
+  invitedBy  String? // central User.id of the admin who sent it
+  acceptedAt DateTime?
+  lmsUserId  String? // the LMS user row this invite provisioned
+
+  // Audit
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // soft delete == revoked
+
+  @@index([orgId, status])
+  @@index([orgId, email])
+  @@map("invitations")
   @@schema("app_quiklms")
 }
 

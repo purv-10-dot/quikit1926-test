@@ -212,7 +212,7 @@ const CertificatesPage = () => {
       if (err?.statusCode === 401) {
         setError('Session expired. Please login again.');
         sessionStorage.removeItem('user');
-        setTimeout(() => router.push('/role-select'), 2000);
+        setTimeout(() => router.push('/login'), 2000);
         return;
       }
 

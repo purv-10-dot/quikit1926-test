@@ -53,6 +53,11 @@ const DEFAULT_ALLOWED_ORIGINS = [
   "https://people.quikit.ai",
   "https://support.quikit.ai",
   "https://asset.quikit.ai",
+  // QuikLMS / QuikSkill. Its `globalSignOut` targets these origins, so without
+  // them the final hop failed the allow-list and dumped a signed-out LMS user
+  // on this host's own root instead of the QuikSkill landing page.
+  "https://quikskill.vercel.app",
+  "https://quikskills.quikit.ai",
   // UAT custom domains (uat<app>.quikit.ai) — added alongside prod.
   "https://uatapps.quikit.ai",
   "https://uatscale.quikit.ai",

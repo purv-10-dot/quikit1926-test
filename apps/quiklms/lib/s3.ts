@@ -159,6 +159,28 @@ function parseStorageUrl(parsed: URL): { bucket: string; key: string } | null {
 }
 
 /**
+ * Is this value a URL pointing at one of OUR buckets (either host layout)?
+ *
+ * The read paths presign a stored URL only when it is one of ours, passing
+ * external URLs (a YouTube link, a tenant's own CDN logo) through untouched.
+ * That gate used to be a literal `value.includes('amazonaws.com')` check
+ * repeated at four call sites — correct while every row held an S3 URL, but it
+ * silently stopped matching once objects moved to GCS, so newly-written rows
+ * were returned UNSIGNED and 403'd from the private bucket.
+ *
+ * Both hosts match on purpose: legacy rows still hold `…amazonaws.com` URLs and
+ * `presignFromUrlOrKey` re-signs those against GCS under the same bucket name.
+ */
+export function isManagedStorageUrl(value: unknown): value is string {
+  if (typeof value !== 'string' || !value.startsWith('http')) return false;
+  try {
+    return parseStorageUrl(new URL(value)) !== null;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Presign a GET from either a full storage URL (permanent or already-presigned)
  * or a bare key. Port of `S3PresignedService.generatePresignedUrl`
  * (`src/utils/s3-presigned.service.ts:31-65`).

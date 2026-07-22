@@ -183,7 +183,7 @@ const CourseStatusTrackingPage = () => {
         <p className="text-gray-800 mb-4">{error}</p>
         <button
           type="button"
-          onClick={() => router.push('/role-select')}
+          onClick={() => router.push('/login')}
           className="text-indigo-600 font-medium hover:underline"
         >
           Login

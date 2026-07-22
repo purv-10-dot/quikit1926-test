@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Home, ArrowLeft, Compass } from 'lucide-react';
 import { useCurrentUser } from './providers';
 
-// Role → landing route (mirrors app/role-select/page.tsx).
+// Role → landing route (mirrors the LANDING map in app/(marketing)/page.tsx).
 const ROLE_LANDING: Record<string, string> = {
   SUPER_ADMIN: '/dashboard',
   TENANT_ADMIN: '/tenant-dashboard',
@@ -21,7 +21,7 @@ export default function NotFound() {
   const { user } = useCurrentUser();
 
   const dashboard =
-    (user?.role && ROLE_LANDING[user.role]) || '/role-select';
+    (user?.role && ROLE_LANDING[user.role]) || '/login';
 
   return (
     <div className="min-h-screen bg-canvas flex items-center justify-center p-6">

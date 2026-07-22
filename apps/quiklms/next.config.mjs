@@ -36,7 +36,7 @@ const nextConfig = {
   // call to the central /api/verify-token), so the webpack `@prisma/client` alias
   // below (which points every `@prisma/client` import at the LMS client) leaves the
   // idle @quikit/database client harmless. The real client swap is Phase 3.
-  transpilePackages: ["@quikit/auth", "@quikit/shared", "@quikit/database"],
+  transpilePackages: ["@quikit/auth", "@quikit/shared", "@quikit/database", "@quikit/ui"],
   // The LMS now uses the SHARED `@quikit/database` client directly (post-fold),
   // exactly like quikscale/quikcrm/quiktrack — no `@prisma/client` alias to an
   // isolated LMS client. `@prisma/client` resolves to the workspace client whose
@@ -55,7 +55,10 @@ const nextConfig = {
   // Add more provider/CDN hosts here as new integrations need them.
   images: {
     remotePatterns: [
-      // S3 / branding + course assets
+      // Object storage: branding + course assets.
+      // GCS is the live backend; the amazonaws hosts stay for pre-migration rows.
+      { protocol: 'https', hostname: 'storage.googleapis.com' },
+      { protocol: 'https', hostname: '**.storage.googleapis.com' },
       { protocol: 'https', hostname: 'amazonaws.com' },
       { protocol: 'https', hostname: '**.amazonaws.com' },
       // Google account avatars (OAuth profile photos)

@@ -56,6 +56,9 @@ export const POST = route(async (req) => {
       lastName,
       orgId,
       lmsRole,
+      // Session-derived, never from the body — it is an audit field and the
+      // `grantedBy` on the resulting app-access grant.
+      createdByUserId: actor.id,
     });
 
     return json(

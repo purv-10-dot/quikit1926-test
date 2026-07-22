@@ -9,7 +9,8 @@
  *     is verified, not sampled.
  *  2. `/login` is verified for an ALREADY-AUTHENTICATED user, which is the case
  *     that actually happens in this app (session expiry, "Switch account", the
- *     API 401 handler and `/role-select` all funnel here). The app's own
+ *     API 401 handler and the learner session-expiry paths all funnel here).
+ *     The app's own
  *     role-aware landing lives at `/`, but middleware never asks it.
  *  3. `/verify-certificate/[id]` is verified by where its XHR goes, not by what
  *     it prints — it prints "Certificate Not Found" either way, which is exactly
@@ -30,7 +31,9 @@ test.describe("Phase 36 — (shared) pages", () => {
   const SHARED: Array<{ path: string; role: RoleKey; h1: string; copy: RegExp }> = [
     { path: "/profile",        role: "learner", h1: "Profile Settings", copy: /Manage your account settings and preferences/i },
     { path: "/messages",       role: "learner", h1: "Messages",         copy: /Connect and communicate with your team/i },
-    { path: "/reset-password", role: "learner", h1: "Reset Password",   copy: /Verify your current password before saving a new password/i },
+    // No longer a form: passwords are owned by the central auth service, so the
+    // page explains that and links out. See app/(shared)/reset-password/page.tsx.
+    { path: "/reset-password", role: "learner", h1: "Reset Password",   copy: /managed by your QuikIT account/i },
     { path: `/video/${m.meetingId}`, role: "teacher", h1: "E2E Meeting", copy: /Video class session/i },
   ];
 
@@ -206,11 +209,7 @@ test.describe("Phase 36 — /login for an already-authenticated user", () => {
     });
   }
 
-  test("/role-select forwards into the same flow", async ({ page }) => {
-    // app/role-select/page.tsx is a server redirect to /login, so it inherits
-    // whatever /login does. Recorded so the two are not investigated twice.
-    const res = await page.request.get(`${BASE}/role-select`, { maxRedirects: 0 });
-    console.log(`[ROLE-SELECT] ${res.status()} → ${res.headers()["location"] ?? "(none)"}`);
-    expect([307, 308]).toContain(res.status());
-  });
+  // The `/role-select` shim was removed — it was a retired dev role-picker kept
+  // only as a redirect to /login, and every caller now links to /login directly.
+  // Its forwarding test went with it; /login is covered above.
 });

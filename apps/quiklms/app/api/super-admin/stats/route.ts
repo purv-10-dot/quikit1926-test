@@ -6,9 +6,15 @@ export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['SUPER_ADMIN']);
 
+  // Tenant status lives on the platform `Org` now (see lib/tenant-status), not
+  // on a column of this table, so the status counts are Org counts scoped to
+  // the orgs that actually have a tenant row. `LmsTenant.id === Org.id`.
+  const tenantIds = (await prisma.lmsTenant.findMany({ select: { id: true } })).map((t) => t.id);
+  const scopedToTenants = { id: { in: tenantIds } };
+
   const [
     tenantTotal, tenantCorporate, tenantSchool,
-    tenantActive, tenantTrial, tenantPaused,
+    tenantActive, tenantPaused,
     recentTenants,
     userTotal, roleGroups, recentUsers,
     courseTotal, coursePublished, courseDraft,
@@ -17,13 +23,12 @@ export const GET = route(async (req) => {
     prisma.lmsTenant.count(),
     prisma.lmsTenant.count({ where: { tenantType: 'corporate' } }),
     prisma.lmsTenant.count({ where: { tenantType: 'school' } }),
-    prisma.lmsTenant.count({ where: { status: 'Active' } }),
-    prisma.lmsTenant.count({ where: { status: 'Trial' } }),
-    prisma.lmsTenant.count({ where: { status: 'Paused' } }),
+    prisma.org.count({ where: { ...scopedToTenants, status: 'active' } }),
+    prisma.org.count({ where: { ...scopedToTenants, status: { not: 'active' } } }),
     prisma.lmsTenant.findMany({
       orderBy: { createdAt: 'desc' },
       take: 10,
-      select: { id: true, name: true, subdomain: true, tenantType: true, status: true, officialEmail: true, createdAt: true },
+      select: { id: true, name: true, subdomain: true, tenantType: true, officialEmail: true, createdAt: true },
     }),
     prisma.lmsUser.count({ where: { role: { not: 'SUPER_ADMIN' } } }),
     prisma.lmsUser.groupBy({
@@ -56,7 +61,11 @@ export const GET = route(async (req) => {
         corporate: tenantCorporate,
         school: tenantSchool,
         active: tenantActive,
-        trial: tenantTrial,
+        // `Trial` is no longer a tenant state: a trial is expressed by
+        // Subscription.status / OrgAppAccess.trialEndsAt, not by the org being
+        // in a third state, and no tenant ever used the value. Reported as 0 so
+        // the dashboard's response shape stays stable.
+        trial: 0,
         paused: tenantPaused,
         recent: recentTenants,
       },

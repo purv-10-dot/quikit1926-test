@@ -18,6 +18,16 @@ interface SwitchableApp {
   current: boolean;
 }
 
+/** Wire shape returned by `GET /api/apps/switcher` (platform-canonical). */
+interface SwitcherApp {
+  id: string;
+  name: string;
+  slug: string;
+  baseUrl: string;
+  iconUrl: string | null;
+  current: boolean;
+}
+
 // Role display labels shown in the header badge / switcher.
 const ROLE_LABELS: Record<string, string> = {
   SUPER_ADMIN:  'Super Admin',
@@ -109,9 +119,24 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
   useEffect(() => {
     if (!appsOpen || apps !== null || appsLoading) return;
     setAppsLoading(true);
+    // `/apps/switcher` is the platform-canonical endpoint every sibling app
+    // exposes; it replaced the bespoke `/me/apps`, which applied only one of
+    // the launcher's five visibility clauses. The response is the shared shape
+    // (`data[]` with `baseUrl`), so map it onto the local `url` field here.
     api
-      .get<{ data: { apps: SwitchableApp[] } }>('/me/apps')
-      .then((r) => setApps(r?.data?.apps ?? []))
+      .get<{ data: SwitcherApp[] }>('/apps/switcher')
+      .then((r) =>
+        setApps(
+          (r?.data ?? []).map((a) => ({
+            id: a.id,
+            name: a.name,
+            slug: a.slug,
+            url: a.baseUrl,
+            iconUrl: a.iconUrl ?? null,
+            current: a.current,
+          })),
+        ),
+      )
       .catch(() => setApps([]))
       .finally(() => setAppsLoading(false));
   }, [appsOpen, apps, appsLoading]);

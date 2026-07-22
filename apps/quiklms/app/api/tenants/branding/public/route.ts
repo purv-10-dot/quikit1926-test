@@ -1,6 +1,6 @@
 import { route, json } from '@/lib/http';
 import { prisma } from '@/lib/prisma';
-import { presignFromUrlOrKey } from '@/lib/s3';
+import { presignFromUrlOrKey, isManagedStorageUrl } from '@/lib/s3';
 
 function hostSubdomain(host: string | null): string | null {
   if (!host) return null;
@@ -42,10 +42,9 @@ export const GET = route(async (req) => {
     // Legacy presigned the logo only when it was an S3 URL, passing anything else
     // through untouched (`tenants.controller.ts:73-76`). Without this the logo
     // 403s from a private bucket.
-    const logoPresigned =
-      tenant.logoUrl && tenant.logoUrl.includes('amazonaws.com')
-        ? await presignFromUrlOrKey(tenant.logoUrl)
-        : tenant.logoUrl;
+    const logoPresigned = isManagedStorageUrl(tenant.logoUrl)
+      ? await presignFromUrlOrKey(tenant.logoUrl)
+      : tenant.logoUrl;
 
     return json({
       success: true,

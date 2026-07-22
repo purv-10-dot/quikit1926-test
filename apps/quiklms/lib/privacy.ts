@@ -28,6 +28,14 @@ const SENSITIVE_FIELDS = [
   'guardianRelation',
   'parentIds',
   'dateOfBirth',
+  // These five no longer exist on LmsUser (dropped with the vestigial
+  // credential columns — see migration 20260722140000), but they STAY in this
+  // list. `stripSensitiveFields` matches by field NAME, recursively, across
+  // whatever payload it is handed — and other models in this app carry the same
+  // names: `meeting.password`, `meeting.provider`, `recording.provider`,
+  // `videoConfig.provider`. Removing them would start leaking meeting passwords
+  // and provider details into teacher-facing responses. A redaction list costs
+  // nothing when a field is absent.
   'password',
   'passwordSetupToken',
   'passwordSetupTokenExpiry',

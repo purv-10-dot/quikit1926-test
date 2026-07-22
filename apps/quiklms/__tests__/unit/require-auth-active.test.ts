@@ -4,6 +4,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 const h = vi.hoisted(() => ({
   getServerSession: vi.fn(),
   userFindUnique: vi.fn(),
+  hasCentralAppAccess: vi.fn(),
 }));
 
 vi.mock('next-auth', () => ({ getServerSession: h.getServerSession }));
@@ -11,6 +12,12 @@ vi.mock('@/lib/auth', () => ({ authOptions: {} }));
 vi.mock('@/lib/prisma', () => ({
   prisma: { lmsUser: { findUnique: h.userFindUnique } },
 }));
+// The central entitlement gate is stubbed rather than exercised: the real one
+// pulls in `@quikit/database` (a real PrismaClient at module load, which the
+// test env has no DATABASE_URL for). Its own rule is the shared
+// `createGetOrgId` factory, covered by `packages/auth`'s tests — what matters
+// HERE is that `requireAuth` honours its verdict, asserted below.
+vi.mock('@/lib/auth/central-access', () => ({ hasCentralAppAccess: h.hasCentralAppAccess }));
 
 import { requireAuth } from '@/lib/auth/context';
 
@@ -29,6 +36,10 @@ const session = {
 beforeEach(() => {
   h.getServerSession.mockReset();
   h.userFindUnique.mockReset();
+  h.hasCentralAppAccess.mockReset();
+  // Default to entitled so the pre-existing isActive assertions below keep
+  // testing what they were written to test.
+  h.hasCentralAppAccess.mockResolvedValue(true);
 });
 
 describe('requireAuth — isActive enforcement', () => {
@@ -61,5 +72,49 @@ describe('requireAuth — isActive enforcement', () => {
     h.getServerSession.mockResolvedValue(null);
 
     await expect(requireAuth()).rejects.toMatchObject({ statusCode: 401 });
+  });
+});
+
+describe('requireAuth — central entitlement gate', () => {
+  beforeEach(() => {
+    h.getServerSession.mockResolvedValue(session);
+    h.userFindUnique.mockResolvedValue({ role: 'LEARNER', secondaryRole: null, isActive: true });
+  });
+
+  it('rejects a user with no QuikLMS entitlement, even with a valid session', async () => {
+    h.hasCentralAppAccess.mockResolvedValue(false);
+
+    await expect(requireAuth()).rejects.toMatchObject({ statusCode: 403 });
+  });
+
+  it('rejects with 403 and NOT 401 — a 401 makes lib/api hard-navigate to /login, which re-runs SSO and loops', async () => {
+    h.hasCentralAppAccess.mockResolvedValue(false);
+
+    await expect(requireAuth()).rejects.not.toMatchObject({ statusCode: 401 });
+  });
+
+  it('passes the session identity to the gate so it can resolve org + super-admin', async () => {
+    await requireAuth();
+
+    expect(h.hasCentralAppAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'u1', orgId: 'org1', isSuperAdmin: false }),
+    );
+  });
+
+  it('checks isActive BEFORE entitlement — a deactivated user gets the account message', async () => {
+    h.userFindUnique.mockResolvedValue({ role: 'LEARNER', secondaryRole: null, isActive: false });
+    h.hasCentralAppAccess.mockResolvedValue(false);
+
+    await expect(requireAuth()).rejects.toMatchObject({
+      statusCode: 403,
+      message: expect.stringContaining('deactivated'),
+    });
+  });
+
+  it('admits an entitled, active user', async () => {
+    h.hasCentralAppAccess.mockResolvedValue(true);
+
+    const user = await requireAuth();
+    expect(user.id).toBe('u1');
   });
 });

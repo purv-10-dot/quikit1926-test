@@ -7,12 +7,19 @@
  */
 import { randomUUID } from 'crypto';
 import { presignPut, presignGet, S3_BUCKET } from '@/lib/s3';
-import { optionalEnv } from '@/lib/env';
 
-const REGION = optionalEnv('AWS_REGION') || 'ap-south-1';
-
+/**
+ * Canonical permanent URL for a stored object.
+ *
+ * This used to emit `https://{bucket}.s3.{region}.amazonaws.com/{key}` — a
+ * leftover from the S3 era. The GCS migration updated the other two URL
+ * builders (`scorm-service.ts`, `certificates-service.ts`) but missed this one,
+ * so every course resource, thumbnail, homework file and welcome kit was stored
+ * with a URL pointing at a bucket that does not exist. Keep this in the same
+ * form those two use.
+ */
 function publicUrl(key: string): string {
-  return `https://${S3_BUCKET}.s3.${REGION}.amazonaws.com/${key}`;
+  return `https://storage.googleapis.com/${S3_BUCKET}/${key}`;
 }
 
 function safeName(fileName: string): string {

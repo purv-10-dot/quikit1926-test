@@ -34,6 +34,7 @@ export const POST = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['SUPER_ADMIN']);
   const dto = await parseBody(req, schema);
-  const tenant = await onboardTenant(dto as OnboardInput);
+  // Actor comes from the session, never the body — it is an audit field.
+  const tenant = await onboardTenant({ ...dto, createdByUserId: actor.id } as OnboardInput);
   return json({ success: true, data: tenant, message: 'Tenant onboarded successfully. Welcome kit email sent.' }, 201);
 });

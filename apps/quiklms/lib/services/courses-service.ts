@@ -12,15 +12,19 @@
 import type { Prisma, LmsLessonType as LessonType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { NotFound } from '@/lib/http';
-import { presignFromUrlOrKey } from '@/lib/s3';
+import { presignFromUrlOrKey, isManagedStorageUrl } from '@/lib/s3';
 
 /** Keys inside `subModule.resourceData` the legacy enricher presigned. */
 const RESOURCE_DATA_URL_KEYS = ['url', 'fileUrl', 'contentUrl', 'videoUrl'] as const;
 
-/** Presign a value in place only when it looks like an S3 URL, never blanking it. */
+/**
+ * Presign a value in place only when it points at one of our buckets, never
+ * blanking it. The host check is `isManagedStorageUrl`, not a literal
+ * `amazonaws.com` match — see its doc comment.
+ */
 async function signIfS3(holder: AnyRec, key: string): Promise<void> {
   const val = holder[key];
-  if (typeof val === 'string' && val.includes('amazonaws.com')) {
+  if (isManagedStorageUrl(val)) {
     holder[key] = (await presignFromUrlOrKey(val)) || val;
   }
 }

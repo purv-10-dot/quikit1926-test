@@ -46,14 +46,21 @@ const SCH_FEAT = {
   enableMessaging: true, enableCertificates: true, enableAnalytics: true,
 };
 
+/**
+ * `hash` is accepted but no longer stored: LmsUser's credential columns
+ * (password / mustChangePassword / passwordSetup* / provider* / activeSessionId)
+ * were dropped — credentials live only on `auth.User`, owned by the central
+ * auth service. The parameter is kept so the ~30 call sites below need no edit;
+ * seeded users sign in through SSO, not through this row.
+ */
 async function upsertUser(
   id: string, email: string, role: UserRole, orgId: string | null,
-  first: string, last: string, hash: string, extra: Record<string, unknown> = {},
+  first: string, last: string, _hash: string, extra: Record<string, unknown> = {},
 ) {
   await prisma.lmsUser.upsert({
     where: { id },
-    create: { id, email, password: hash, firstName: first, lastName: last, role, orgId, isActive: true, mustChangePassword: false, ...extra },
-    update: { email, password: hash, role, orgId, firstName: first, lastName: last, ...extra },
+    create: { id, email, firstName: first, lastName: last, role, orgId, isActive: true, ...extra },
+    update: { email, role, orgId, firstName: first, lastName: last, ...extra },
   });
 }
 

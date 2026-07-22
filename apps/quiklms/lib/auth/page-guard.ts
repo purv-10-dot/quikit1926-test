@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth';
 // to `UserRole` (see lib/auth/resolve-role.ts).
 import type { LmsUserRole as UserRole } from '@prisma/client';
 import { authOptions } from '@/lib/auth';
+import { hasCentralAppAccess } from '@/lib/auth/central-access';
 import { resolveLmsRole } from '@/lib/auth/resolve-role';
 
 /**
@@ -44,6 +45,22 @@ const LANDING: Record<string, string> = {
 export async function requirePageRoles(allowed: UserRole[]): Promise<UserRole> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) redirect('/login');
+
+  // Central entitlement + membership gate, BEFORE the role gate — "may you open
+  // QuikLMS at all" is a strictly coarser question than "which dashboard is
+  // yours", and answering them in the other order would send a user with no
+  // entitlement to a role landing page they equally cannot use.
+  //
+  // The bounce carries `reason=no_app_access`, which the landing page checks so
+  // it does NOT redirect an authenticated visitor onward (see
+  // app/(marketing)/page.tsx). Without that flag this redirect and the landing
+  // page's own role redirect would ping-pong forever.
+  const entitled = await hasCentralAppAccess({
+    id: session.user.id,
+    orgId: session.user.orgId,
+    isSuperAdmin: session.user.isSuperAdmin,
+  });
+  if (!entitled) redirect('/?reason=no_app_access');
 
   const role = await resolveLmsRole(session.user);
   if (role === 'SUPER_ADMIN' || allowed.includes(role)) return role;

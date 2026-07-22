@@ -15,7 +15,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const h = vi.hoisted(() => ({ presign: vi.fn() }));
 
 vi.mock('@/lib/env', () => ({ optionalEnv: () => 'ap-south-1', env: { ENCRYPTION_KEY: 'k'.repeat(32) } }));
-vi.mock('@/lib/s3', () => ({ presignFromUrlOrKey: h.presign, s3: { send: vi.fn() }, S3_BUCKET: 'b' }));
+// See courses-presign.test.ts — the host gate is mirrored, not stubbed, so the
+// "leaves non-S3 urls untouched" case still means something.
+vi.mock('@/lib/s3', () => ({
+  presignFromUrlOrKey: h.presign,
+  isManagedStorageUrl: (v: unknown) =>
+    typeof v === 'string' && (/\.amazonaws\.com/.test(v) || v.includes('storage.googleapis.com')),
+  s3: { send: vi.fn() },
+  S3_BUCKET: 'b',
+}));
 vi.mock('@/lib/prisma', () => ({ prisma: {} }));
 // master-course-service imports the auth context for `userHasRole` (its actor
 // predicates). That module pulls in NextAuth + a real PrismaClient at import

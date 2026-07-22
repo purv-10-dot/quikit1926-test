@@ -56,7 +56,11 @@ function resolveClientSecret(envName: string, devFallback: string): string {
 // Dev fallbacks MUST match `next dev -p <port>` in each app's package.json:
 //   quikit → 3000   auth → 3001   admin → 3002   quikscale → 3003
 //   quiktrack → 3004   quikvc → 3005   quikinfra → 3006   quiksocial → 3007
-//   quikcrm → 3008   quikhrms → 3009
+//   quikcrm → 3008   quikhrms → 3009   quiksupport → 3010  quikasset → 3012
+//   quikfinance → 3013   quiklms → 3020
+// quiklms sits outside the contiguous 3000-3013 block; the gap is historical
+// (it was folded in from the standalone quikskill_lms app, which already used
+// 3020) and `apps/quiklms/package.json` is the source of truth.
 // In production these URLs MUST be passed via env vars (resolveAppUrl throws
 // when NODE_ENV=production and the env var is unset).
 const ADMIN_BASE = resolveAppUrl("ADMIN_URL", "http://localhost:3002"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl

@@ -6,19 +6,24 @@
  * real sign-out must clear cookies on three hosts: this app, the auth host, and
  * the launcher.
  *
- * WHY THIS IS A LOCAL COPY. Every other app imports `globalSignOut` from
- * `@quikit/ui`. quiklms does not depend on that package, and `@quikit/ui` has
- * no subpath export for this helper — importing it means importing the whole
- * `index.ts` barrel, which drags in tiptap, framer-motion and canvas-confetti
- * for a 40-line function. So the behaviour is duplicated deliberately, and
- * these tests pin it against the shared implementation so the two cannot drift
- * silently.
+ * NO LONGER A LOCAL COPY. `lib/global-signout.ts` is now a thin adapter over
+ * `@quikit/ui/global-signout` — the chain itself comes from the shared package.
+ * These tests are kept unchanged on purpose: they were written against the
+ * forked implementation, so they now serve as the contract proving the swap is
+ * behaviour-preserving. If the adapter ever drifts from what the fork did,
+ * these fail.
  *
- * One deliberate DIVERGENCE from `@quikit/ui`: when `NEXT_PUBLIC_QUIKIT_URL` is
- * absent, the shared version falls back to `window.location.origin` and still
- * attempts a launcher hop — which on quiklms would hit
- * `/api/auth/signout-global`, a route this app does not have, and 404 mid
- * sign-out. This version skips the hop instead.
+ * Two behaviours remain the ADAPTER's own, both asserted below:
+ *
+ *  1. The final hop is this app's CANONICAL origin (NEXT_PUBLIC_QUIKLMS_URL),
+ *     not `window.location.origin` — the signout endpoints allow-list the
+ *     canonical host only.
+ *
+ *  2. When `NEXT_PUBLIC_QUIKIT_URL` is absent the shared helper would fall back
+ *     to `window.location.origin` and aim a launcher hop at `/api/auth/
+ *     signout-global`, a route this app does not have, 404ing mid sign-out. The
+ *     adapter collapses the chain onto the auth host instead, and skips it
+ *     entirely when neither host is configured.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
@@ -134,5 +139,59 @@ describe('resilience', () => {
     await globalSignOut();
     expect(href).not.toContain('//api/auth');
     expect(href.startsWith(`${AUTH}/api/auth/signout-global`)).toBe(true);
+  });
+});
+
+describe('the destination is the CANONICAL origin, not wherever the browser is', () => {
+  // Both signout-global endpoints allow-list `quikskill.vercel.app` and fall
+  // back to their OWN root for anything else. Signing out from a per-deployment
+  // host therefore landed the user on the QuikIT launcher. Verified live: that
+  // callbackUrl returns `-> https://qukit-launcher.vercel.app/`.
+  const DEPLOY_ORIGIN = 'https://quikskill-macck3n1x-rajkumar13.vercel.app';
+
+  const onDeploymentHost = () => {
+    vi.stubGlobal('window', {
+      location: {
+        get origin() { return DEPLOY_ORIGIN; },
+        set href(x: string) { href = x; },
+        get href() { return href; },
+      },
+      localStorage: { clear: vi.fn() },
+      sessionStorage: { clear: vi.fn() },
+    });
+  };
+
+  const finalHop = () => {
+    const launcher = decodeURIComponent(href.split('callbackUrl=')[1]);
+    return decodeURIComponent(launcher.split('callbackUrl=')[1]);
+  };
+
+  it('uses the canonical url even when served from a deployment host', async () => {
+    onDeploymentHost();
+    vi.stubEnv('NEXT_PUBLIC_QUIKLMS_URL', ORIGIN);
+    await globalSignOut();
+    expect(finalHop()).toBe(`${ORIGIN}/`);
+    expect(finalHop()).not.toContain('macck3n1x');
+  });
+
+  it('falls back to the live origin when no canonical url is configured (local dev)', async () => {
+    onDeploymentHost();
+    vi.stubEnv('NEXT_PUBLIC_QUIKLMS_URL', '');
+    await globalSignOut();
+    expect(finalHop()).toBe(`${DEPLOY_ORIGIN}/`);
+  });
+
+  it('tolerates a trailing slash on the canonical url', async () => {
+    onDeploymentHost();
+    vi.stubEnv('NEXT_PUBLIC_QUIKLMS_URL', `${ORIGIN}/`);
+    await globalSignOut();
+    expect(finalHop()).toBe(`${ORIGIN}/`);
+  });
+
+  it('an explicit destination still wins', async () => {
+    onDeploymentHost();
+    vi.stubEnv('NEXT_PUBLIC_QUIKLMS_URL', ORIGIN);
+    await globalSignOut(`${ORIGIN}/login?email=a%40b.test`);
+    expect(finalHop()).toBe(`${ORIGIN}/login?email=a%40b.test`);
   });
 });

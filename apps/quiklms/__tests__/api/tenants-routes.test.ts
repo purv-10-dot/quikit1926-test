@@ -9,6 +9,9 @@ const h = vi.hoisted(() => ({
   update: vi.fn(),
   create: vi.fn(),
   presignFromUrlOrKey: vi.fn(),
+  orgFindUnique: vi.fn(),
+  orgFindMany: vi.fn(),
+  orgUpdate: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/context', () => ({
@@ -16,13 +19,23 @@ vi.mock('@/lib/auth/context', () => ({
   requireRoles: h.requireRoles,
   assertTenantMatch: h.assertTenantMatch,
 }));
+// `org` is mocked because tenant STATUS now lives on the platform Org, not on a
+// column of `tenants` — the service reads it back on every tenant read and
+// writes it on a status PATCH. See lib/tenant-status.ts.
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     lmsTenant: { findUnique: h.findUnique, findFirst: h.findFirst, update: h.update, create: h.create },
+    org: { findUnique: h.orgFindUnique, findMany: h.orgFindMany, update: h.orgUpdate },
   },
 }));
 vi.mock('@/lib/env', () => ({ optionalEnv: () => 'ap-south-1', env: { ENCRYPTION_KEY: 'k'.repeat(32) } }));
-vi.mock('@/lib/s3', () => ({ presignFromUrlOrKey: h.presignFromUrlOrKey }));
+// The branding route presigns a logo only when it is one of our bucket URLs;
+// mirror that gate so the "non-S3 logo passes through" case still holds.
+vi.mock('@/lib/s3', () => ({
+  presignFromUrlOrKey: h.presignFromUrlOrKey,
+  isManagedStorageUrl: (v: unknown) =>
+    typeof v === 'string' && (/\.amazonaws\.com/.test(v) || v.includes('storage.googleapis.com')),
+}));
 // identity-service pulls in bcrypt/prisma; tenants-service only needs it for
 // provisioning, which these tests do not exercise.
 vi.mock('@/lib/services/identity-service', () => ({
@@ -60,6 +73,10 @@ beforeEach(() => {
   h.requireAuth.mockResolvedValue(actor);
   h.requireRoles.mockReturnValue(undefined);
   h.assertTenantMatch.mockReturnValue(undefined);
+  // Tenant status is derived from the platform Org on every read.
+  h.orgFindUnique.mockResolvedValue({ status: 'active' });
+  h.orgFindMany.mockResolvedValue([]);
+  h.orgUpdate.mockResolvedValue({});
 });
 
 describe('PATCH /api/tenants/:id/video-config — merge, not replace', () => {

@@ -38,7 +38,10 @@ const createSchema = z
     // CreateTenantDto
     name: z.string().min(1),
     gstNumber: z.string().min(1).regex(GST_REGEX, 'Invalid GST Number format'),
-    dbConnectionString: z.string().optional(),
+    // `dbConnectionString` was removed. It was a leftover from the per-tenant
+    // database design the platform fold retired — every tenant now lives in the
+    // one shared multiSchema database — and it accepted a connection string
+    // (a credential) into a plain column. No row ever held a value.
     tenantType: z.enum(['corporate', 'school']).optional(),
     // Schema-required
     orgName: z.string().min(1),

@@ -20,6 +20,32 @@ export function roleDisplayName(role: string): string {
   return ROLE_NAMES[role] || role;
 }
 
+/**
+ * Role labels that read correctly for a SCHOOL tenant.
+ *
+ * A school's administrator is not a "Tenant Administrator", their learners are
+ * students and their managers are coordinators. The invitation was previously
+ * type-agnostic, so a school head and a corporate L&D lead received identical
+ * wording — which is what made a school invite look like it had gone out as a
+ * corporate one.
+ *
+ * Only labels that genuinely differ are overridden; anything absent falls back
+ * to the shared name above.
+ */
+const SCHOOL_ROLE_NAMES: Record<string, string> = {
+  TENANT_ADMIN: 'School Administrator',
+  SUB_ADMIN: 'School Sub Admin',
+  MANAGER: 'Coordinator',
+  LEARNER: 'Student',
+};
+
+export type TenantKind = 'school' | 'corporate';
+
+export function roleDisplayNameFor(role: string, tenantType?: TenantKind | null): string {
+  if (tenantType === 'school' && SCHOOL_ROLE_NAMES[role]) return SCHOOL_ROLE_NAMES[role];
+  return roleDisplayName(role);
+}
+
 const escapeHtml = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -72,10 +98,31 @@ export function invitationEmail(params: {
   orgName?: string;
   tempPassword: string | null;
   loginUrl: string;
+  /**
+   * Central single-use invitation-accept link
+   * (`<auth>/invitations/accept?token=…`). When present it becomes the CTA, so
+   * the invitee lands on the platform Set-Password screen and their membership
+   * is activated through the canonical accept flow rather than being dropped on
+   * a login form. Absent for an already-active member, who has nothing to accept.
+   */
+  acceptUrl?: string | null;
+  /**
+   * School vs corporate. Selects the role vocabulary so a school head is
+   * invited as a "School Administrator" and their learners as "Students",
+   * rather than everyone receiving corporate wording.
+   */
+  tenantType?: TenantKind | null;
 }): { subject: string; html: string } {
-  const { firstName, email, role, orgName, tempPassword, loginUrl } = params;
+  const { firstName, email, role, orgName, tempPassword, loginUrl, acceptUrl, tenantType } = params;
+  const roleLabel = roleDisplayNameFor(role, tenantType);
   const org = orgName ? escapeHtml(orgName) : 'your organization';
-  const loginHref = `${loginUrl}?email=${encodeURIComponent(email)}`;
+  // The accept link already carries `?token=…`, so the email param has to be
+  // joined with the right separator — a hardcoded `?` produced
+  // `…/accept?token=X?email=Y`, which parses `token` as `X?email=Y` and made
+  // every token look invalid.
+  const ctaTarget = acceptUrl || loginUrl;
+  const loginHref = `${ctaTarget}${ctaTarget.includes('?') ? '&' : '?'}email=${encodeURIComponent(email)}`;
+  const ctaLabel = acceptUrl ? 'Set up my account' : 'Log in to QuikSkill';
 
   const credentialsBlock = tempPassword
     ? `<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:12px;padding:24px;margin:24px 0;">
@@ -88,13 +135,13 @@ export function invitationEmail(params: {
 
   const inner = `
 <p style="color:#374151;font-size:16px;line-height:1.6;">Hello <strong>${escapeHtml(firstName || 'there')}</strong>,</p>
-<p style="color:#374151;font-size:16px;line-height:1.6;">You've been invited to <strong>${org}</strong> on QuikSkill LMS as <strong>${roleDisplayName(role)}</strong>.</p>
+<p style="color:#374151;font-size:16px;line-height:1.6;">You've been invited to <strong>${org}</strong> on QuikSkill LMS as <strong>${roleLabel}</strong>.</p>
 ${credentialsBlock}
-<div style="text-align:center;margin:28px 0 8px;"><a href="${loginHref}" style="display:inline-block;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:600;font-size:16px;">Log in to QuikSkill</a></div>
+<div style="text-align:center;margin:28px 0 8px;"><a href="${loginHref}" style="display:inline-block;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:600;font-size:16px;">${ctaLabel}</a></div>
 <p style="text-align:center;margin:12px 0;"><a href="${loginHref}" style="color:#667eea;font-size:13px;word-break:break-all;text-decoration:none;">${loginHref}</a></p>`;
   return {
     subject: `You've been invited to ${orgName ? orgName + ' on ' : ''}QuikSkill LMS`,
-    html: shell('Welcome to QuikSkill!', `You've been invited as ${roleDisplayName(role)}`, inner),
+    html: shell('Welcome to QuikSkill!', `You've been invited as ${roleLabel}`, inner),
   };
 }
 

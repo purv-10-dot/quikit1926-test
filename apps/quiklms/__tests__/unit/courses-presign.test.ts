@@ -16,7 +16,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const h = vi.hoisted(() => ({ presign: vi.fn() }));
 
 vi.mock('@/lib/env', () => ({ optionalEnv: () => 'ap-south-1', env: { ENCRYPTION_KEY: 'k'.repeat(32) } }));
-vi.mock('@/lib/s3', () => ({ presignFromUrlOrKey: h.presign, s3: { send: vi.fn() }, S3_BUCKET: 'b' }));
+// `isManagedStorageUrl` is the host gate the enricher uses to decide what to
+// presign. Mirrored here rather than stubbed true/false so these tests still
+// exercise the real "ours vs external URL" decision. Defined inside the factory
+// because vi.mock is hoisted above any module-scope const.
+vi.mock('@/lib/s3', () => ({
+  presignFromUrlOrKey: h.presign,
+  isManagedStorageUrl: (v: unknown) =>
+    typeof v === 'string' && (/\.amazonaws\.com/.test(v) || v.includes('storage.googleapis.com')),
+  s3: { send: vi.fn() },
+  S3_BUCKET: 'b',
+}));
 vi.mock('@/lib/prisma', () => ({ prisma: {} }));
 
 import { enrichCourseWithPresignedUrls, enrichCoursesWithPresignedUrls } from '@/lib/services/courses-service';

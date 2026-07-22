@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form';
 import { ShieldCheck, Plus, Search, Edit, ToggleLeft, ToggleRight, X, Mail, User, Eye, EyeOff, RefreshCw } from 'lucide-react';
 import { api } from '@/lib/api';
 import toast, { Toaster } from 'react-hot-toast';
-import { useBranding } from '@/app/providers';
+import { useBranding, useCurrentUser } from '@/app/providers';
 import { Button, Card, Badge, Input, Skeleton } from '@/components/ui';
 import { DashboardScaffold, StatCard } from '@/components/DashboardScaffold';
 
@@ -36,6 +36,9 @@ interface EditFormData {
 
 const SubAdminsPage = () => {
   const { branding } = useBranding();
+  // Source of truth for the signed-in actor (GET /api/me), replacing a
+  // sessionStorage read that was only populated after async hydration.
+  const { user: currentUser } = useCurrentUser();
   const [subAdmins, setSubAdmins] = useState<SubAdmin[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -66,14 +69,15 @@ const SubAdminsPage = () => {
   const handleCreate = async (data: CreateFormData) => {
     setCreating(true);
     try {
-      const userStr = sessionStorage.getItem('user');
-      const currentUser = userStr ? JSON.parse(userStr) : null;
+      // orgId is resolved SERVER-side from the session for every non-super-admin
+      // (`app/api/auth/register/route.ts` uses `actor.orgId` and ignores
+      // `body.orgId` unless the caller is a SUPER_ADMIN). This used to read it
+      // from `sessionStorage('user')` and HARD-BAIL when absent — but that key is
+      // only populated asynchronously by `refreshUser()` in providers, so opening
+      // a roster page and submitting before hydration finished blocked the
+      // invitation with "Tenant ID not found" for a request the server would have
+      // scoped correctly on its own. Kept as a hint for the super-admin case only.
       const orgId = currentUser?.orgId;
-      if (!orgId) {
-        toast.error('Tenant ID not found. Please log out and log in again.');
-        setCreating(false);
-        return;
-      }
       const payload = {
         email: data.email,
         password: data.password,

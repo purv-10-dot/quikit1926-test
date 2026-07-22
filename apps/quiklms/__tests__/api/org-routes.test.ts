@@ -128,7 +128,14 @@ describe('POST /api/org/invitations', () => {
     const res = await invitationsPOST(req('http://t/api/org/invitations', { membershipId: 'm1', action: 'decline' }), {} as never);
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ success: true, data: { status: 'declined' } });
-    expect(h.memberUpdate).toHaveBeenCalledWith({ where: { id: 'm1' }, data: { status: 'inactive' } });
+    // The single-use token is cleared on DECLINE too. The inline version this
+    // route replaced only cleared it on accept, so a declined invitation's
+    // token stayed live and remained redeemable via the central accept
+    // endpoint. Now handled by @quikit/auth/accept-invitation.
+    expect(h.memberUpdate).toHaveBeenCalledWith({
+      where: { id: 'm1' },
+      data: { status: 'inactive', invitationToken: null },
+    });
     expect(h.uaaCreateMany).not.toHaveBeenCalled();
   });
 

@@ -17,10 +17,11 @@ import type { NextRequest } from 'next/server';
 import { getServerSession } from 'next-auth';
 import type { LmsUserRole as UserRole } from '@prisma/client';
 import { authOptions } from '@/lib/auth';
+import { hasCentralAppAccess } from '@/lib/auth/central-access';
 import { mapPlatformRoleToLmsRole } from '@/lib/auth/role-resolution';
 import { prisma } from '@/lib/prisma';
 import { Forbidden, Unauthorized } from '@/lib/http';
-import type { FeatureSet } from '@/lib/features';
+import { isFeatureEnabled, type FeatureSet } from '@/lib/features';
 
 export interface AuthUser {
   id: string;
@@ -33,6 +34,13 @@ export interface AuthUser {
   firstName: string;
   lastName: string;
   isActive: boolean;
+  /**
+   * Platform super-admin flag, carried straight from the session claim. Needed
+   * by the central entitlement gate in `requireAuth` (see lib/auth/central-access)
+   * — the coarse `role` field can't stand in for it, because a platform super
+   * admin who also has an LMS row resolves to that row's fine-grained role.
+   */
+  isSuperAdmin: boolean;
 }
 
 /**
@@ -101,6 +109,7 @@ export async function getAuthContext(_req?: NextRequest): Promise<AuthUser | nul
     firstName: u.firstName ?? '',
     lastName: u.lastName ?? '',
     isActive,
+    isSuperAdmin: u.isSuperAdmin === true,
   };
 }
 
@@ -113,6 +122,20 @@ export async function requireAuth(req?: NextRequest): Promise<AuthUser> {
   // no LMS row (e.g. org admins who never went through the roster), so this
   // only rejects rows explicitly deactivated in the LMS.
   if (!user.isActive) throw Forbidden('Your account has been deactivated.');
+
+  // Central entitlement + membership gate (baseline §3/§4). This is the ONLY
+  // place the ~346 API routes get it: `middleware.ts` returns early for `/api`,
+  // so the remote-session validation that catches suspended orgs and expired
+  // trials never reaches them.
+  //
+  // 403, never 401. `lib/api.ts` treats a 401 as "session expired" and hard-
+  // navigates to `/login`, which re-initiates SSO and lands the same user back
+  // here — an infinite login loop. A 403 surfaces as a normal API error the
+  // caller can render.
+  if (!(await hasCentralAppAccess(user))) {
+    throw Forbidden('You do not have access to QuikLMS in this organization.');
+  }
+
   return user;
 }
 
@@ -125,8 +148,54 @@ export function requireRoles(user: AuthUser, roles: UserRole[]): void {
   if (!ok) throw Forbidden(`Access denied. Required: ${roles.join(' or ')}. Current role: ${user.role}`);
 }
 
-export async function requireFeature(user: AuthUser, _feature: keyof FeatureSet) {
-  return { id: user.orgId, tenantType: user.tenantType } as never;
+/**
+ * Refuse the request when `feature` is switched off for the caller's tenant.
+ *
+ * This was a no-op stub — `return { … } as never` — so a guard named
+ * `requireFeature` silently permitted everything. Nothing called it, which is
+ * the only reason that never became a hole, but an exported guard that always
+ * says yes is a trap for the next person who reaches for it.
+ *
+ * SCOPE, deliberately the LMS layer. `keyof FeatureSet` denotes an LMS tenant
+ * feature (`showBatches`, `showPayouts`, …) resolved from
+ * `LmsTenant.featureConfig` + `tenantType` by `lib/features.ts`. It is NOT a
+ * platform module key: QuikLMS has no entry in `@quikit/shared`'s
+ * MODULE_REGISTRY, so the central `AppModuleFlag` gate
+ * (`@quikit/auth/feature-gate`) has nothing to resolve for this app and would
+ * fail open on every call. Wiring that up means registering the app's module
+ * tree first — a separate piece of work. The platform's app-level hard gate
+ * (`OrgAppAccess.enabled`) is already enforced upstream by `requireAuth` via
+ * `lib/auth/central-access`.
+ *
+ * FAILS OPEN, in two cases, both intentional:
+ *   - No `LmsTenant` row for the org — the operator org has none, and a newly
+ *     linked org may not have one yet. Neither should 403.
+ *   - The lookup itself errors — a transient DB fault must not black out
+ *     features tenant-wide. Same posture as `getAuthContext`'s settled reads
+ *     and `packages/auth/feature-gate`'s catch blocks.
+ */
+export async function requireFeature(
+  user: AuthUser,
+  feature: keyof FeatureSet,
+): Promise<{ id: string; tenantType: 'corporate' | 'school' } | null> {
+  // Cross-tenant support role; its org has no tenant row to read a config from.
+  if (user.role === 'SUPER_ADMIN' || !user.orgId) return null;
+
+  let tenant: { id: string; tenantType: 'corporate' | 'school'; featureConfig: unknown } | null = null;
+  try {
+    tenant = await prisma.lmsTenant.findUnique({
+      where: { id: user.orgId },
+      select: { id: true, tenantType: true, featureConfig: true },
+    });
+  } catch {
+    return null; // fail open — see above
+  }
+  if (!tenant) return null;
+
+  if (!isFeatureEnabled(tenant as Parameters<typeof isFeatureEnabled>[0], feature)) {
+    throw Forbidden(`This feature is not enabled for your organization.`);
+  }
+  return { id: tenant.id, tenantType: tenant.tenantType };
 }
 
 export function tenantWhere<T extends Record<string, unknown>>(

@@ -28,9 +28,11 @@ export const GET = route(async (req, { params }) => {
 const updateSchema = z
   .object({
     name: z.string().optional(),
-    dbConnectionString: z.string().optional(),
-    // Legacy `TenantStatus` (tenant.schema.ts) === Prisma `LmsTenantStatus`.
-    status: z.enum(['Active', 'Paused', 'Trial']).optional(),
+    // `status` is applied to the platform `quikit.Org`, not to a column on this
+    // table — see lib/tenant-status. `Trial` was dropped from the accepted
+    // values: it had no Org equivalent (a trial is `Subscription.status` +
+    // `OrgAppAccess.trialEndsAt`, not an org state) and no tenant ever used it.
+    status: z.enum(['Active', 'Paused']).optional(),
     tenantType: z.enum(['corporate', 'school']).optional(),
     // Organization profile
     orgName: z.string().optional(),

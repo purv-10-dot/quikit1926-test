@@ -10,6 +10,8 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Check,
+  HardDrive,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
@@ -80,24 +82,31 @@ const STEP_META = [
   {
     title: 'Organization Profile',
     subtitle: 'Tell us about the organization being onboarded.',
+    rail: 'Who they are',
     icon: Building2,
   },
   {
     title: 'Contact Person',
     subtitle: 'Who is the primary point of contact?',
+    rail: 'Who runs it',
     icon: User,
   },
   {
     title: 'Billing & Quota',
     subtitle: 'Set billing details and storage allocation.',
+    rail: 'Invoicing and limits',
     icon: CreditCard,
   },
   {
     title: 'Review & Create',
     subtitle: 'Confirm all details before creating the tenant.',
+    rail: 'Confirm and launch',
     icon: CheckCircle2,
   },
 ];
+
+/** Storage presets — a bare number field gave no clue what a sensible value was. */
+const STORAGE_PRESETS = [2, 5, 10, 25, 50, 100];
 
 const TOTAL_STEPS = 4;
 
@@ -148,37 +157,83 @@ function FieldError({ msg }: { msg?: string }) {
 // Step indicator
 // ---------------------------------------------------------------------------
 
-function StepIndicator({ current }: { current: number }) {
+/**
+ * Persistent step rail.
+ *
+ * Replaces a row of bare numbered pips. The pips said "4 steps" and nothing
+ * else — no names, no sense of what was still to come, and on a wide screen
+ * they sat marooned above a narrow column with the rest of the viewport empty.
+ * This lists the steps by name, marks completed ones, and stays put while the
+ * form scrolls.
+ */
+function StepRail({ current, form }: { current: number; form: FormData }) {
   return (
-    <div className="flex items-center justify-center gap-2 mb-8">
-      {STEP_META.map((s, i) => {
-        const stepNum = i + 1;
-        const active = stepNum === current;
-        const done = stepNum < current;
-        return (
-          <div key={i} className="flex items-center gap-2">
-            <div
-              className="flex items-center justify-center rounded-full text-xs font-semibold transition-all duration-200"
-              style={{
-                width: active ? 32 : 24,
-                height: active ? 32 : 24,
-                background: active || done ? 'var(--brand-primary)' : 'rgb(var(--line-strong))',
-                color: active || done ? '#fff' : 'rgb(var(--fg-muted))',
-              }}
-            >
-              {done ? '✓' : stepNum}
-            </div>
-            {i < STEP_META.length - 1 && (
-              <div
-                className="h-px w-10"
-                style={{
-                  background: done ? 'var(--brand-primary)' : 'rgb(var(--line))',
-                }}
-              />
-            )}
-          </div>
-        );
-      })}
+    <div className="lg:sticky lg:top-6">
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-indigo-600 via-violet-600 to-indigo-700 p-6">
+        <div aria-hidden className="pointer-events-none absolute -right-12 -top-10 size-44 rounded-full bg-white/20 blur-3xl" />
+
+        <div className="relative">
+          <p className="text-sm font-bold text-white">New tenant</p>
+          <p className="mt-0.5 text-[11px] text-indigo-200">Step {current} of {TOTAL_STEPS}</p>
+
+          <ol className="mt-7 space-y-1">
+            {STEP_META.map((s, i) => {
+              const n = i + 1;
+              const done = n < current;
+              const active = n === current;
+              const Icon = s.icon;
+              return (
+                <li
+                  key={s.title}
+                  className={`flex items-start gap-3 rounded-xl px-3 py-2.5 transition-colors ${active ? 'bg-white/15' : ''}`}
+                >
+                  <span
+                    className={`mt-0.5 grid size-6 shrink-0 place-items-center rounded-lg text-[10px] font-bold ${
+                      done
+                        ? 'bg-white text-indigo-600'
+                        : active
+                          ? 'bg-white/25 text-white'
+                          : 'bg-white/10 text-indigo-200'
+                    }`}
+                  >
+                    {done ? <Check className="size-3" /> : <Icon className="size-3" />}
+                  </span>
+                  <div className="min-w-0">
+                    <p className={`text-[13px] font-semibold leading-tight ${active || done ? 'text-white' : 'text-indigo-200'}`}>
+                      {s.title}
+                    </p>
+                    <p className="mt-0.5 text-[11px] leading-tight text-indigo-200/75">{s.rail}</p>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      </div>
+
+      {/* Live summary — what has actually been captured so far. Previously the
+          operator could not see any earlier step's values without navigating
+          back to it. */}
+      {(form.orgName || form.email) && (
+        <div className="mt-4 rounded-2xl border border-line bg-surface p-5">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-fg-subtle">So far</p>
+          <dl className="mt-3 space-y-2.5">
+            {[
+              ['Organization', form.orgName],
+              ['Type', form.tenantType === 'school' ? 'School' : 'Corporate'],
+              ['Admin', [form.firstName, form.lastName].filter(Boolean).join(' ')],
+              ['Admin email', form.email],
+            ]
+              .filter(([, v]) => v)
+              .map(([k, v]) => (
+                <div key={k as string}>
+                  <dt className="text-[10px] font-semibold uppercase tracking-wide text-fg-subtle">{k}</dt>
+                  <dd className="truncate text-[13px] font-medium text-fg">{v}</dd>
+                </div>
+              ))}
+          </dl>
+        </div>
+      )}
     </div>
   );
 }
@@ -436,18 +491,32 @@ export default function TenantOnboardingPage() {
   // -------------------------------------------------------------------------
 
   return (
-    <div className="min-h-screen bg-canvas px-4 py-10">
-      <div className="mx-auto w-full max-w-2xl">
-        {/* Header */}
-        <div className="mb-6 text-center">
-          <h1 className="text-2xl font-semibold text-fg">Tenant Onboarding</h1>
+    <div className="min-h-screen bg-canvas px-4 py-8">
+      <div className="mx-auto w-full max-w-6xl">
+        {/* Header — left-aligned; a centred title over a left-aligned form
+            pulled the eye to the wrong place. */}
+        <div className="mb-7">
+          <h1 className="text-2xl font-bold tracking-tight text-fg">Onboard a tenant</h1>
           <p className="mt-1 text-sm text-fg-muted">
-            Complete all steps to create a new tenant account.
+            Creates the organization and its first administrator, who receives sign-in details by email.
           </p>
         </div>
 
-        {/* Step indicator */}
-        <StepIndicator current={step} />
+        <div className="grid gap-6 lg:grid-cols-[19rem_minmax(0,1fr)]">
+          {/* Rail */}
+          <StepRail current={step} form={form} />
+
+          {/* Form column */}
+          <div>
+            {/* Mobile progress — the rail collapses under lg */}
+            <div className="mb-4 flex gap-1.5 lg:hidden">
+              {STEP_META.map((s, i) => (
+                <span
+                  key={s.title}
+                  className={`h-1 flex-1 rounded-full ${i + 1 <= step ? 'bg-[var(--brand-primary)]' : 'bg-line'}`}
+                />
+              ))}
+            </div>
 
         {/* Step card */}
         <Card>
@@ -455,7 +524,7 @@ export default function TenantOnboardingPage() {
             {/* Step heading */}
             <div className="flex items-center gap-3 mb-6">
               <div
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
                 style={{ background: 'var(--brand-primary)' }}
               >
                 <StepIcon className="h-5 w-5 text-white" />
@@ -497,7 +566,7 @@ export default function TenantOnboardingPage() {
             {/* API error */}
             {apiError && (
               <div
-                className="mt-4 rounded-lg border px-4 py-3 text-sm"
+                className="mt-4 rounded-xl border px-4 py-3 text-sm"
                 style={{
                   background: 'rgb(var(--danger-soft))',
                   borderColor: 'rgb(var(--danger))',
@@ -533,6 +602,8 @@ export default function TenantOnboardingPage() {
             )}
           </div>
         </Card>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -557,35 +628,66 @@ function Step1({
 }) {
   return (
     <div className="space-y-5">
-      {/* Tenant type cards */}
+      {/* Tenant type cards.
+          Previously two icon-and-word tiles that filled solid brand colour when
+          selected — which said WHICH was picked but never what the choice
+          meant. It drives the tenant's whole vocabulary and module set, so it
+          now says so, and the selected state is a ring + tick rather than a
+          colour flood that swallowed the description text. */}
       <div>
         <FieldLabel required>Organization Type</FieldLabel>
-        <div className="grid grid-cols-2 gap-3 mt-1">
+        <div className="mt-1 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {(
             [
-              { value: 'school', label: 'School', icon: GraduationCap },
-              { value: 'corporate', label: 'Corporate', icon: Building2 },
-            ] as { value: TenantType; label: string; icon: React.ElementType }[]
-          ).map(({ value, label, icon: Icon }) => {
+              {
+                value: 'school',
+                label: 'School',
+                blurb: 'Batches, attendance, homework, parent access',
+                icon: GraduationCap,
+              },
+              {
+                value: 'corporate',
+                label: 'Corporate',
+                blurb: 'Course assignments, compliance windows, SCORM',
+                icon: Building2,
+              },
+            ] as { value: TenantType; label: string; blurb: string; icon: React.ElementType }[]
+          ).map(({ value, label, blurb, icon: Icon }) => {
             const active = form.tenantType === value;
             return (
               <button
                 key={value}
                 type="button"
                 onClick={() => setTenantType(value)}
-                className="flex flex-col items-center justify-center gap-2 rounded-xl border p-5 text-sm font-medium transition-all duration-150 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2"
+                aria-pressed={active}
+                className="relative rounded-xl border-2 p-4 text-left transition-all duration-150 active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-offset-2"
                 style={{
-                  borderColor: active ? 'var(--brand-primary)' : 'rgb(var(--line-strong))',
-                  background: active ? 'var(--brand-primary)' : 'rgb(var(--surface))',
-                  color: active ? '#fff' : 'rgb(var(--fg))',
+                  borderColor: active ? 'var(--brand-primary)' : 'rgb(var(--line))',
+                  background: 'rgb(var(--surface))',
+                  boxShadow: active ? '0 0 0 4px color-mix(in srgb, var(--brand-primary) 12%, transparent)' : undefined,
                 }}
               >
-                <Icon className="h-6 w-6" />
-                {label}
+                {active && (
+                  <span
+                    className="absolute right-3 top-3 grid size-5 place-items-center rounded-full"
+                    style={{ background: 'var(--brand-primary)' }}
+                  >
+                    <Check className="size-3 text-white" />
+                  </span>
+                )}
+                <Icon
+                  className="h-6 w-6"
+                  style={{ color: active ? 'var(--brand-primary)' : 'rgb(var(--fg-subtle))' }}
+                />
+                <p className="mt-2.5 text-sm font-semibold text-fg">{label}</p>
+                <p className="mt-1 text-xs leading-relaxed text-fg-muted">{blurb}</p>
               </button>
             );
           })}
         </div>
+        <p className="mt-2 text-xs text-fg-subtle">
+          Sets the vocabulary and which modules this tenant sees.
+        </p>
       </div>
 
       <Input
@@ -815,22 +917,49 @@ function Step3({
         <FieldError msg={errors.billingAddress} />
       </div>
 
+      {/* Storage — presets plus a custom box. A lone number input gave the
+          operator no sense of what a normal allocation looks like. */}
       <div>
         <FieldLabel>Storage Limit (GB)</FieldLabel>
-        <div className="flex items-center gap-3">
-          <input
-            type="number"
-            min={1}
-            max={1000}
-            className="h-11 w-36 rounded-md border bg-surface px-3 text-sm text-fg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
-            style={{
-              borderColor: errors.storageLimit ? 'rgb(var(--danger))' : 'rgb(var(--line-strong))',
-            }}
-            value={form.storageLimit}
-            onChange={(e) => setField('storageLimit', Number(e.target.value))}
-          />
-          <span className="text-sm text-fg-muted">GB (default: 2 GB, max: 1000 GB)</span>
+        <div className="flex flex-wrap items-center gap-2">
+          {STORAGE_PRESETS.map((g) => {
+            const active = form.storageLimit === g;
+            return (
+              <button
+                key={g}
+                type="button"
+                onClick={() => setField('storageLimit', g)}
+                aria-pressed={active}
+                className="rounded-lg px-3.5 py-2 text-xs font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
+                style={{
+                  background: active ? 'var(--brand-primary)' : 'rgb(var(--surface-muted))',
+                  color: active ? '#fff' : 'rgb(var(--fg-muted))',
+                }}
+              >
+                {g} GB
+              </button>
+            );
+          })}
+
+          <span className="ml-1 flex items-center gap-2">
+            <HardDrive className="size-3.5 text-fg-subtle" />
+            <input
+              type="number"
+              min={1}
+              max={1000}
+              aria-label="Custom storage limit in GB"
+              className="h-10 w-24 rounded-lg border bg-surface px-3 text-sm text-fg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
+              style={{
+                borderColor: errors.storageLimit ? 'rgb(var(--danger))' : 'rgb(var(--line-strong))',
+              }}
+              value={form.storageLimit}
+              onChange={(e) => setField('storageLimit', Number(e.target.value))}
+            />
+          </span>
         </div>
+        <p className="mt-1.5 text-xs text-fg-subtle">
+          Applies to course media, SCORM packages and submissions. Default 2 GB, max 1000 GB.
+        </p>
         <FieldError msg={errors.storageLimit} />
       </div>
     </div>

@@ -5,7 +5,6 @@
  * email: the invitation/welcome email is dispatched centrally by
  * createCentralIdentity (see identity-service), which owns the temp password.
  */
-import { randomBytes } from 'crypto';
 import { prisma } from '@/lib/prisma';
 
 export interface RegisterUserInput {
@@ -45,15 +44,26 @@ export async function registerUser(input: RegisterUserInput): Promise<{ data: { 
   const existing = await prisma.lmsUser.findFirst({ where: { email: email.toLowerCase() } });
   if (existing) throw new Error(`User with email ${email} already exists`);
 
-  const pwd = input.password ?? randomBytes(16).toString('hex');
-
   const user = await prisma.lmsUser.create({
     data: {
       // Share the central User id when provided so SSO `session.user.id` maps
       // to this LMS row (see identity-service). Otherwise auto-generate.
-      ...(id ? { id } : {}),
+      //
+      // `authUserId` records the SAME central id explicitly. Today it mirrors
+      // `id`, which is redundant by design — it makes the bridge a real,
+      // constrained column (@@unique([orgId, authUserId])) instead of a naming
+      // convention, and it is what a later phase will read once `id` stops
+      // doubling as the central id. Written here, at the one place LMS rows are
+      // created, so the column cannot drift out of date.
+      //
+      // Absent when no `id` was passed: that row has no central identity, and
+      // NULL is the correct value for it — not a placeholder.
+      ...(id ? { id, authUserId: id } : {}),
       email: email.toLowerCase(),
-      password: `stub:${pwd}`,
+      // No password is written. `LmsUser.password` used to be filled with a
+      // throwaway `stub:<random>` value purely to satisfy the column; the
+      // column is now gone. Credentials live only on `auth.User`, owned by the
+      // central auth service.
       firstName,
       lastName,
       role: role as never,

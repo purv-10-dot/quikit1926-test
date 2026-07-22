@@ -309,7 +309,7 @@ const LearnerDashboardPage = () => {
             setError('Session expired. Please login again.');
             sessionStorage.removeItem('access_token');
             sessionStorage.removeItem('user');
-            setTimeout(() => router.push('/role-select'), 2000);
+            setTimeout(() => router.push('/login'), 2000);
           } else if (error?.code === 'ERR_NETWORK' || error?.message?.includes('Network Error')) {
             setError('Unable to connect to server. Please check your connection.');
           } else {

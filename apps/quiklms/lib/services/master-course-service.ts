@@ -15,7 +15,7 @@ import { Prisma } from '@prisma/client';
 import type { LmsMasterCourse as MasterCourse, LmsMasterCourseStatus as MasterCourseStatus, LmsCourseLevel as CourseLevel } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { BadRequest, NotFound } from '@/lib/http';
-import { presignFromUrlOrKey } from '@/lib/s3';
+import { presignFromUrlOrKey, isManagedStorageUrl } from '@/lib/s3';
 import { userHasRole, type AuthUser } from '@/lib/auth/context';
 
 type AnyRec = Record<string, unknown>;
@@ -32,8 +32,9 @@ const RESOURCE_DATA_URL_KEYS = ['url', 'fileUrl', 'contentUrl', 'videoUrl'] as c
  *  - `thumbnailUrl` → adds a SIBLING `thumbnailUrlPresigned` field, leaving the
  *    original in place, and does so with NO `amazonaws.com` check.
  *  - `subModules[].resources[].url` and `subModules[].resourceData[{url,fileUrl,
- *    contentUrl,videoUrl}]` → rewritten IN PLACE, and only when the value
- *    contains `amazonaws.com`. Non-S3 URLs pass through untouched.
+ *    contentUrl,videoUrl}]` → rewritten IN PLACE, and only when the value points
+ *    at one of our buckets. URLs we don't own pass through untouched. (Legacy
+ *    checked for `amazonaws.com` specifically; that missed every GCS URL.)
  *  - A presign failure falls back to the original value (`|| res.url`), so this
  *    can never blank a URL.
  *
@@ -56,7 +57,7 @@ export async function enrichCourseWithPresignedUrls<T extends AnyRec>(course: T)
     for (const sub of ((mod?.subModules as AnyRec[]) || [])) {
       for (const res of ((sub?.resources as AnyRec[]) || [])) {
         const url = res?.url as string | undefined;
-        if (url && url.includes('amazonaws.com')) {
+        if (isManagedStorageUrl(url)) {
           res.url = (await presignFromUrlOrKey(url)) || url;
         }
       }
@@ -64,7 +65,7 @@ export async function enrichCourseWithPresignedUrls<T extends AnyRec>(course: T)
       if (resourceData) {
         for (const key of RESOURCE_DATA_URL_KEYS) {
           const val = resourceData[key] as string | undefined;
-          if (val && val.includes('amazonaws.com')) {
+          if (isManagedStorageUrl(val)) {
             resourceData[key] = (await presignFromUrlOrKey(val)) || val;
           }
         }
