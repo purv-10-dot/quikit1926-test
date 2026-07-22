@@ -139,7 +139,7 @@ export default function QualityPage() {
         options: ["Concrete", "Steel", "MEP", "General", "Other"],
         sortable: true,
         render: (row) => (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-50 text-orange-700">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-accent-50 text-accent-700">
             {row.category ?? "—"}
           </span>
         ),

@@ -95,7 +95,7 @@ function DocumentPreviewModal({
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
           <div className="min-w-0 pr-4">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-orange-600">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-accent-600">
               Document Preview
             </div>
             <div className="text-sm font-semibold text-gray-900 truncate">{label}</div>
@@ -109,7 +109,7 @@ function DocumentPreviewModal({
                 href={url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-orange-700 bg-orange-50 rounded-lg hover:bg-orange-100"
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-accent-700 bg-accent-50 rounded-lg hover:bg-accent-100"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
                 Open
@@ -153,7 +153,7 @@ function DocumentPreviewModal({
                 href={url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-orange-600 rounded-lg hover:bg-orange-700"
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-accent-600 rounded-lg hover:bg-accent-700"
               >
                 <Download className="w-4 h-4" />
                 Download file
@@ -318,7 +318,7 @@ export default function DocumentsPage() {
             onClick={() => hasFile && setPreviewRow(row)}
             className={`inline-flex items-center gap-2 min-w-0 max-w-full text-left ${
               hasFile
-                ? "text-orange-700 hover:text-orange-800 hover:underline cursor-pointer"
+                ? "text-accent-700 hover:text-accent-800 hover:underline cursor-pointer"
                 : "text-gray-700 cursor-default"
             }`}
             title={hasFile ? "Preview file" : display}

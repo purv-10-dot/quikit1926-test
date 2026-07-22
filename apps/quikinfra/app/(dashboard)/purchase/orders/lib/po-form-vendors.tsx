@@ -118,7 +118,7 @@ export function buildVendorsSection(deps: PoFormConfigDeps): QuickCreateConfig["
                 className={`w-full inline-flex items-center justify-between gap-2 px-2 py-1.5 rounded border text-xs ${
                   pickerItems.length === 0
                     ? "border-gray-200 text-gray-400 bg-gray-50 cursor-not-allowed"
-                    : "border-gray-300 hover:border-orange-400 hover:bg-orange-50 text-gray-700"
+                    : "border-gray-300 hover:border-accent-400 hover:bg-accent-50 text-gray-700"
                 }`}
               >
                 <span className="inline-flex items-center gap-1.5 truncate">

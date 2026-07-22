@@ -141,7 +141,7 @@ function StockPinCell({
           setOpen(next);
           if (next && !data && !loading) await load();
         }}
-        className="p-1 rounded hover:bg-orange-50 text-gray-500 hover:text-orange-700"
+        className="p-1 rounded hover:bg-accent-50 text-gray-500 hover:text-accent-700"
         aria-label="Show stock by location"
         title="Show stock by location"
       >
@@ -343,7 +343,7 @@ export default function ItemsPage() {
       return (
         <span className="inline-flex flex-wrap gap-1">
           {codes.map((c) => (
-            <span key={c} className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-orange-50 text-orange-700 text-xs font-medium border border-orange-200">{c}</span>
+            <span key={c} className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-accent-50 text-accent-700 text-xs font-medium border border-accent-200">{c}</span>
           ))}
         </span>
       );

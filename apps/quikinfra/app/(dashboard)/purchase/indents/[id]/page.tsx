@@ -206,7 +206,7 @@ export default function IndentDetailPage() {
                   label="Source PR"
                   value={
                     indent.sourceMrNumber ? (
-                      <span className="text-xs text-orange-600">
+                      <span className="text-xs text-accent-600">
                         {indent.sourceMrNumber}
                       </span>
                     ) : (
@@ -318,13 +318,13 @@ export default function IndentDetailPage() {
                 onClick={() =>
                   router.push(`/purchase/requisitions/${indent.sourceMrId}`)
                 }
-                className="w-full text-left bg-white rounded-xl border border-gray-200 shadow-sm p-4 hover:border-orange-300 hover:bg-orange-50/30 transition-colors"
+                className="w-full text-left bg-white rounded-xl border border-gray-200 shadow-sm p-4 hover:border-accent-300 hover:bg-accent-50 transition-colors"
               >
                 <h3 className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">
                   Purchase Requisition Details
                 </h3>
                 <div className="flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center shrink-0">
+                  <div className="w-9 h-9 rounded-lg bg-accent-50 text-accent-600 flex items-center justify-center shrink-0">
                     <FileText className="w-4 h-4" />
                   </div>
                   <div className="min-w-0 flex-1">
@@ -336,7 +336,7 @@ export default function IndentDetailPage() {
                         Indent raised: {indent.indentDate}
                       </div>
                     )}
-                    <div className="text-[11px] text-orange-600 underline mt-1">
+                    <div className="text-[11px] text-accent-600 underline mt-1">
                       View full details →
                     </div>
                   </div>

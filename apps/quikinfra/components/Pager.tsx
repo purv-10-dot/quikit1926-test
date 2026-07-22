@@ -33,7 +33,7 @@ export function Pager({
         <select
           value={pageSize}
           onChange={(e) => onPageSizeChange(Number(e.target.value))}
-          className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400 hover:border-slate-300 transition-colors"
+          className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400 hover:border-slate-300 transition-colors"
         >
           {PAGE_SIZES.map((s) => (
             <option key={s} value={s}>
@@ -57,7 +57,7 @@ export function Pager({
             type="button"
             onClick={() => goPage(target)}
             disabled={page === 1}
-            className="rounded-lg w-7 h-7 text-xs text-slate-500 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-orange-50 hover:text-orange-700 transition-colors flex items-center justify-center"
+            className="rounded-lg w-7 h-7 text-xs text-slate-500 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-accent-50 hover:text-accent-700 transition-colors flex items-center justify-center"
           >
             {l}
           </button>
@@ -71,7 +71,7 @@ export function Pager({
             type="button"
             onClick={() => goPage(target)}
             disabled={page === totalPages}
-            className="rounded-lg w-7 h-7 text-xs text-slate-500 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-orange-50 hover:text-orange-700 transition-colors flex items-center justify-center"
+            className="rounded-lg w-7 h-7 text-xs text-slate-500 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-accent-50 hover:text-accent-700 transition-colors flex items-center justify-center"
           >
             {l}
           </button>

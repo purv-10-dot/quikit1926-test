@@ -25,7 +25,6 @@ import {
   Clock,
   Ban,
   Search,
-  Filter as FilterIcon,
   Download,
   ChevronRight,
   ChevronLeft,
@@ -42,9 +41,11 @@ import {
 } from "lucide-react";
 import { PageHeader, PageContainer } from "@/components/PageShell";
 import { Pager } from "@/components/Pager";
+import { FilterPopoverButton } from "@/components/FilterPopoverButton";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { WorkflowConfirmDialog } from "@/components/WorkflowConfirmDialog";
 import { useDPRs, useDPRStats, useDeleteDPR } from "@/hooks/use-projects";
+import { useProjects } from "@/hooks/use-masters";
 import { usePermissions, useMenuActions } from "@/hooks/use-permissions";
 import { useWorkflowConfirm } from "@/hooks/use-workflow-confirm";
 import { useQueryClient } from "@tanstack/react-query";
@@ -71,11 +72,28 @@ const STATUS_COLORS: Record<string, string> = {
   rejected:    "bg-rose-50 text-rose-700 border-rose-200",
 };
 
+// Status options for the Filter popover. Values map 1:1 to the DB status the
+// list route matches on (`where.status = status`); "all" clears the filter.
+const STATUS_FILTERS: Array<{ value: string; label: string }> = [
+  { value: "all", label: "All statuses" },
+  { value: "draft", label: "Draft" },
+  { value: "submitted", label: "Submitted" },
+  { value: "approved", label: "Approved" },
+  { value: "rejected", label: "Rejected" },
+];
+
 export default function DPRPage() {
   const router = useRouter();
   const qc = useQueryClient();
   const { canAdd } = useMenuActions("/projects/dpr");
   const [search, setSearch] = useState("");
+  // Server-side filters (Filter popover). Status/project apply in both table
+  // and calendar view; the date range applies only in table view (calendar
+  // already scopes by the visible month).
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [projectFilter, setProjectFilter] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [viewMode, setViewMode] = useState<"table" | "calendar">("table");
   // Calendar always opens on the current month; users navigate with the
   // prev/next/today buttons. Stored as the *first* of the visible month.
@@ -99,10 +117,46 @@ export default function DPRPage() {
   const [pageSize, setPageSize] = useState(25);
   const isCalendar = viewMode === "calendar";
 
-  // Reset to first page when the search term or view changes.
+  // Reset to first page when the search term, filters, or view change.
   useEffect(() => {
     setPage(1);
-  }, [search, viewMode, pageSize]);
+  }, [search, statusFilter, projectFilter, fromDate, toDate, viewMode, pageSize]);
+
+  // Projects for the Filter popover's project dropdown.
+  const { data: projectsResult } = useProjects();
+  const projectOptions = useMemo(
+    () => (projectsResult?.data ?? []) as Array<{ id: string; name?: string }>,
+    [projectsResult],
+  );
+  const activeFilterCount =
+    (statusFilter !== "all" ? 1 : 0) +
+    (projectFilter ? 1 : 0) +
+    (fromDate ? 1 : 0) +
+    (toDate ? 1 : 0);
+  const clearFilters = () => {
+    setStatusFilter("all");
+    setProjectFilter("");
+    setFromDate("");
+    setToDate("");
+  };
+
+  // Server-side export — hands the current filters to /export, which builds
+  // the same WHERE and streams an .xlsx. Anchor-click so the attachment
+  // downloads without opening a blank tab.
+  const handleExport = () => {
+    const qs = new URLSearchParams();
+    if (search) qs.set("search", search);
+    if (statusFilter !== "all") qs.set("status", statusFilter);
+    if (projectFilter) qs.set("projectId", projectFilter);
+    if (fromDate) qs.set("fromDate", fromDate);
+    if (toDate) qs.set("toDate", toDate);
+    const q = qs.toString();
+    const a = document.createElement("a");
+    a.href = `/api/projects/dpr/export${q ? `?${q}` : ""}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
 
   // Calendar view fetches one month at a time (date-scoped, unpaged);
   // table view fetches a page at a time.
@@ -112,13 +166,29 @@ export default function DPRPage() {
 
   const { data: result, isLoading } = useDPRs(
     isCalendar
-      ? { search, fromDate: monthFrom, toDate: monthTo }
-      : { search, page, pageSize },
+      ? {
+          search,
+          status: statusFilter,
+          projectId: projectFilter,
+          fromDate: monthFrom,
+          toDate: monthTo,
+        }
+      : {
+          search,
+          status: statusFilter,
+          projectId: projectFilter,
+          fromDate,
+          toDate,
+          page,
+          pageSize,
+        },
   );
   const total = (result as { total?: number } | undefined)?.total ?? 0;
   // KPI tiles come from a server-side groupBy (scope-wide, search-aware),
-  // so they stay correct regardless of pagination or calendar month.
-  const { data: statsResult } = useDPRStats({ search });
+  // so they stay correct regardless of pagination or calendar month. The
+  // project filter narrows them too; status/date are intentionally ignored
+  // so the tiles keep reflecting the full status breakdown.
+  const { data: statsResult } = useDPRStats({ search, projectId: projectFilter });
   const deleteMutation = useDeleteDPR();
 
   // RBAC — mirrors the Work Order gate.
@@ -187,7 +257,7 @@ export default function DPRPage() {
             <button
               type="button"
               onClick={() => setAddDrawerOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold text-white bg-gradient-to-b from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 shadow-brand active:translate-y-[1px] transition-all"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold text-white bg-gradient-to-b from-accent-500 to-accent-600 hover:from-accent-600 hover:to-accent-700 shadow-brand active:translate-y-[1px] transition-all"
             >
               <Plus className="w-4 h-4" /> New DPR
             </button>
@@ -235,21 +305,80 @@ export default function DPRPage() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search DPRs…"
-                  className="w-full text-sm pl-9 pr-3 py-2 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400 transition-shadow"
+                  className="w-full text-sm pl-9 pr-3 py-2 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400 transition-shadow"
                 />
               </div>
             </div>
+            <FilterPopoverButton activeCount={activeFilterCount} onClear={clearFilters}>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                  Status
+                </label>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400"
+                >
+                  {STATUS_FILTERS.map((s) => (
+                    <option key={s.value} value={s.value}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                  Project
+                </label>
+                <select
+                  value={projectFilter}
+                  onChange={(e) => setProjectFilter(e.target.value)}
+                  className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400"
+                >
+                  <option value="">All projects</option>
+                  {projectOptions.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name ?? p.id}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {!isCalendar && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      From
+                    </label>
+                    <input
+                      type="date"
+                      value={fromDate}
+                      max={toDate || undefined}
+                      onChange={(e) => setFromDate(e.target.value)}
+                      className="w-full text-sm px-2 py-2 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      To
+                    </label>
+                    <input
+                      type="date"
+                      value={toDate}
+                      min={fromDate || undefined}
+                      onChange={(e) => setToDate(e.target.value)}
+                      className="w-full text-sm px-2 py-2 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400"
+                    />
+                  </div>
+                </div>
+              )}
+            </FilterPopoverButton>
             <button
               type="button"
-              className="p-2 text-slate-400 hover:text-orange-700 hover:bg-orange-50 rounded-lg border border-transparent hover:border-orange-200 transition-colors"
-              title="Filters"
-            >
-              <FilterIcon className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              className="p-2 text-slate-400 hover:text-orange-700 hover:bg-orange-50 rounded-lg border border-transparent hover:border-orange-200 transition-colors"
-              title="Export"
+              onClick={handleExport}
+              className="p-2 text-slate-400 hover:text-accent-700 hover:bg-accent-50 rounded-lg border border-transparent hover:border-accent-200 transition-colors"
+              title="Export to Excel"
             >
               <Download className="w-4 h-4" />
             </button>
@@ -293,14 +422,14 @@ export default function DPRPage() {
                 ) : rows.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-4 py-16 text-center">
-                      <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-orange-50 text-orange-500 mb-3 ring-4 ring-orange-50/60">
+                      <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-accent-50 text-accent-500 mb-3 ring-4 ring-accent-100">
                         <ClipboardList className="w-6 h-6" />
                       </div>
                       <div className="text-sm font-semibold text-slate-800">
                         No DPRs yet
                       </div>
                       <p className="text-xs text-slate-500 mt-1">
-                        Click <b className="text-orange-700">New DPR</b> to record today&apos;s progress.
+                        Click <b className="text-accent-700">New DPR</b> to record today&apos;s progress.
                       </p>
                     </td>
                   </tr>
@@ -398,8 +527,8 @@ function ViewToggle({
   const cls = (active: boolean) =>
     `flex items-center justify-center w-8 h-8 transition-colors ${
       active
-        ? "bg-orange-500 text-white shadow-inner"
-        : "text-slate-500 hover:text-orange-700 hover:bg-orange-50"
+        ? "bg-accent-500 text-white shadow-inner"
+        : "text-slate-500 hover:text-accent-700 hover:bg-accent-50"
     }`;
   return (
     <div className="ml-1 inline-flex rounded-lg border border-slate-200 overflow-hidden bg-white">
@@ -523,12 +652,12 @@ function DPRCalendar({
   return (
     <div>
       {/* Month strip — bigger month label, brand-tinted gradient, status legend on the right */}
-      <div className="flex items-center gap-3 px-5 py-3.5 border-b border-slate-200 bg-gradient-to-r from-orange-50/60 via-white to-slate-50">
+      <div className="flex items-center gap-3 px-5 py-3.5 border-b border-slate-200 bg-accent-50">
         <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={goPrev}
-            className="p-1.5 rounded-lg text-slate-500 hover:text-orange-700 hover:bg-white hover:shadow-sm border border-transparent hover:border-orange-200 transition-all"
+            className="p-1.5 rounded-lg text-slate-500 hover:text-accent-700 hover:bg-white hover:shadow-sm border border-transparent hover:border-accent-200 transition-all"
             title="Previous month"
           >
             <ChevronLeft className="w-4 h-4" />
@@ -539,7 +668,7 @@ function DPRCalendar({
           <button
             type="button"
             onClick={goNext}
-            className="p-1.5 rounded-lg text-slate-500 hover:text-orange-700 hover:bg-white hover:shadow-sm border border-transparent hover:border-orange-200 transition-all"
+            className="p-1.5 rounded-lg text-slate-500 hover:text-accent-700 hover:bg-white hover:shadow-sm border border-transparent hover:border-accent-200 transition-all"
             title="Next month"
           >
             <ChevronRight className="w-4 h-4" />
@@ -548,7 +677,7 @@ function DPRCalendar({
         <button
           type="button"
           onClick={goToday}
-          className="px-3 py-1.5 rounded-md text-[11px] font-bold uppercase tracking-wider text-orange-700 bg-white border border-orange-200 shadow-sm hover:bg-orange-50 hover:border-orange-300 transition-all"
+          className="px-3 py-1.5 rounded-md text-[11px] font-bold uppercase tracking-wider text-accent-700 bg-white border border-accent-200 shadow-sm hover:bg-accent-50 hover:border-accent-300 transition-all"
         >
           Today
         </button>
@@ -615,7 +744,7 @@ function DPRCalendar({
             const bg = !inMonth
               ? "bg-slate-50/60"
               : isToday
-                ? "bg-orange-50/70"
+                ? "bg-accent-50"
                 : isWeekend
                   ? "bg-slate-50/40"
                   : "bg-white";
@@ -627,9 +756,9 @@ function DPRCalendar({
                 className={`group relative min-h-[128px] p-2 flex flex-col gap-1.5 ${
                   !isLastCol ? "border-r" : ""
                 } ${!isLastRow ? "border-b" : ""} border-slate-100 ${bg} ${
-                  isToday ? "ring-1 ring-inset ring-orange-300/70" : ""
+                  isToday ? "ring-1 ring-inset ring-accent-300" : ""
                 } ${
-                  inMonth && empty ? "cursor-pointer hover:bg-orange-50/40" : ""
+                  inMonth && empty ? "cursor-pointer hover:bg-accent-50" : ""
                 } transition-colors`}
               >
                 {/* Date row — number + per-day count chip */}
@@ -637,7 +766,7 @@ function DPRCalendar({
                   <span
                     className={`inline-flex items-center justify-center min-w-[26px] h-[26px] px-1.5 rounded-full text-[12px] font-bold tabular-nums leading-none ${
                       isToday
-                        ? "bg-gradient-to-br from-orange-500 to-orange-600 text-white shadow-md ring-2 ring-orange-200"
+                        ? "bg-gradient-to-br from-accent-500 to-accent-600 text-white shadow-md ring-2 ring-accent-200"
                         : inMonth
                           ? isWeekend
                             ? "text-orange-600/80"
@@ -648,8 +777,8 @@ function DPRCalendar({
                     {d.getDate()}
                   </span>
                   {dprList.length > 0 && (
-                    <span className="inline-flex items-center gap-1 text-[9px] font-bold text-orange-700 bg-white border border-orange-200 rounded-full pl-1.5 pr-1.5 py-0.5 shadow-sm">
-                      <span className="w-1.5 h-1.5 rounded-full bg-orange-500" aria-hidden />
+                    <span className="inline-flex items-center gap-1 text-[9px] font-bold text-accent-700 bg-white border border-accent-200 rounded-full pl-1.5 pr-1.5 py-0.5 shadow-sm">
+                      <span className="w-1.5 h-1.5 rounded-full bg-accent-500" aria-hidden />
                       {dprList.length}
                     </span>
                   )}
@@ -693,7 +822,7 @@ function DPRCalendar({
                         // each subsequent one (or use the table view to see all).
                         onOpen(dprList[2]);
                       }}
-                      className="w-full text-left text-[10px] font-semibold text-orange-700 hover:bg-orange-50 rounded px-1.5 py-1 transition border border-dashed border-transparent hover:border-orange-200"
+                      className="w-full text-left text-[10px] font-semibold text-accent-700 hover:bg-accent-50 rounded px-1.5 py-1 transition border border-dashed border-transparent hover:border-accent-200"
                     >
                       + {dprList.length - 2} more
                     </button>
@@ -703,7 +832,7 @@ function DPRCalendar({
                 {/* Empty current-month cell — show a faint "+ Add" cue on hover */}
                 {inMonth && empty && (
                   <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">
-                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-orange-700 bg-white border border-orange-200 rounded-full px-2 py-0.5 shadow-sm">
+                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-accent-700 bg-white border border-accent-200 rounded-full px-2 py-0.5 shadow-sm">
                       <Plus className="w-3 h-3" /> New DPR
                     </span>
                   </div>
@@ -731,13 +860,13 @@ function KPICard({
   // All tones map to the unified construction-ERP semantic palette so
   // the four DPR KPI tiles read as one design system, not four colors.
   const toneClasses = {
-    indigo: "bg-orange-50 text-orange-600 ring-orange-100",      // Primary metric → brand
+    indigo: "bg-accent-50 text-accent-600 ring-accent-100",      // Primary metric → brand
     green:  "bg-emerald-50 text-emerald-600 ring-emerald-100",   // Success
     amber:  "bg-amber-50 text-amber-600 ring-amber-100",         // Warn / pending
     red:    "bg-rose-50 text-rose-600 ring-rose-100",            // Danger
   }[tone];
   const stripe = {
-    indigo: "from-orange-400 to-orange-600",
+    indigo: "from-accent-400 to-accent-600",
     green:  "from-emerald-400 to-emerald-600",
     amber:  "from-sky-400 to-sky-600",
     red:    "from-rose-400 to-rose-600",
@@ -801,15 +930,15 @@ function DPRRow({
   const itemCount = Number(row.workItemCount ?? 0);
 
   return (
-    <tr className="border-t border-slate-100 hover:bg-orange-50/40 transition-colors">
+    <tr className="border-t border-slate-100 hover:bg-accent-50 transition-colors">
       {/* Date calendar chip */}
       <td className="px-4 py-3">
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-lg bg-gradient-to-br from-orange-50 to-orange-100 border border-orange-200 flex flex-col items-center justify-center shrink-0">
-            <div className="text-[9px] font-bold text-orange-600 uppercase leading-none">
+          <div className="w-11 h-11 rounded-lg bg-accent-50 border border-accent-200 flex flex-col items-center justify-center shrink-0">
+            <div className="text-[9px] font-bold text-accent-600 uppercase leading-none">
               {d ? d.toLocaleDateString("en-GB", { month: "short" }) : ""}
             </div>
-            <div className="text-sm font-bold text-orange-900 leading-none mt-0.5">
+            <div className="text-sm font-bold text-accent-900 leading-none mt-0.5">
               {day}
             </div>
           </div>
@@ -839,7 +968,7 @@ function DPRRow({
 
       {/* Items Reported */}
       <td className="px-4 py-3">
-        <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-1 rounded bg-orange-50 text-orange-700 border border-orange-200">
+        <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-1 rounded bg-accent-50 text-accent-700 border border-accent-200">
           <FileText className="w-3 h-3" />
           {itemCount} {itemCount === 1 ? "Activity" : "Activities"}
         </span>
@@ -869,7 +998,7 @@ function DPRRow({
               className={`p-1.5 rounded-lg transition-colors ${
                 baseLocked
                   ? "text-slate-300 cursor-not-allowed"
-                  : "text-slate-500 hover:bg-orange-50 hover:text-orange-700"
+                  : "text-slate-500 hover:bg-accent-50 hover:text-accent-700"
               }`}
               title={baseLocked ? lockReason : "Edit"}
             >
@@ -957,7 +1086,7 @@ function DPRRow({
               e.stopPropagation();
               window.open(`/api/projects/dpr/${row.id}/pdf`, "_blank", "noopener");
             }}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-orange-700 hover:bg-orange-50 transition-colors"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-accent-700 hover:bg-accent-50 transition-colors"
             title="View PDF"
           >
             <FileText className="w-4 h-4" />
@@ -966,7 +1095,7 @@ function DPRRow({
           <button
             type="button"
             onClick={onOpen}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-orange-700 hover:bg-orange-50 transition-colors"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-accent-700 hover:bg-accent-50 transition-colors"
             title="Open"
           >
             <ChevronRight className="w-4 h-4" />

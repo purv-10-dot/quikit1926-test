@@ -133,11 +133,12 @@ export default function GRNPage() {
     title: "Record GRN",
     subtitle: "Receive and inspect goods against a purchase order",
     apiEndpoint: "/api/purchase/grn",
-    onSuccess: (created: unknown) => {
+    submitLabel: "Create (Draft)",
+    onSuccess: () => {
+      // Stay on the GRN list after create (draft) — just refresh the
+      // table, matching the Purchase Indent flow. The user can open the
+      // new draft from the row when ready.
       qc.invalidateQueries({ queryKey: ["grns"] });
-      const c = created as { id?: string; data?: { id?: string } } | null;
-      const newId = c?.id ?? c?.data?.id;
-      if (newId) router.push(`/store/grn/${newId}`);
     },
     // Shared field list — see `buildGrnFields` for the canonical
     // shape. The only thing that differs between the two GRN entry
@@ -342,7 +343,7 @@ export default function GRNPage() {
     {
       key: "grnNumber", label: "GRN No", sortable: true, searchable: true,
       render: (row) => (
-        <span className="text-orange-600 cursor-pointer hover:underline font-medium"
+        <span className="text-accent-600 cursor-pointer hover:underline font-medium"
               onClick={() => router.push(`/store/grn/${row.id}`)}>
           {row.grnNumber}
         </span>
@@ -389,7 +390,7 @@ export default function GRNPage() {
                 "noopener",
               );
             }}
-            className="p-1.5 rounded hover:bg-orange-50 text-gray-500 hover:text-orange-600"
+            className="p-1.5 rounded hover:bg-accent-50 text-gray-500 hover:text-accent-600"
             title="View PDF"
           >
             <FileText className="w-4 h-4" />

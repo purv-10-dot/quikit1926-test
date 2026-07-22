@@ -25,7 +25,7 @@ export function PhotoGalleryModal({
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <div className="min-w-0">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-orange-600">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-accent-600">
               Site Photos
             </div>
             <div className="text-sm font-semibold text-gray-900 truncate">
@@ -80,29 +80,29 @@ export function PhotoGalleryModal({
             ))}
 
             <label
-              className="aspect-square rounded-lg border-2 border-dashed border-gray-300 text-gray-500 hover:border-orange-400 hover:text-orange-600 hover:bg-orange-50/40 cursor-pointer transition-colors flex flex-col items-center justify-center gap-1"
+              className="aspect-square rounded-lg border-2 border-dashed border-gray-300 text-gray-500 hover:border-accent-400 hover:text-accent-600 hover:bg-accent-50 cursor-pointer transition-colors flex flex-col items-center justify-center gap-1"
               title="Upload more photos (click or drag images here)"
               onDragOver={(e) => {
                 e.preventDefault();
                 e.currentTarget.classList.add(
-                  "border-orange-400",
-                  "text-orange-600",
-                  "bg-orange-50/60",
+                  "border-accent-400",
+                  "text-accent-600",
+                  "bg-accent-50",
                 );
               }}
               onDragLeave={(e) => {
                 e.currentTarget.classList.remove(
-                  "border-orange-400",
-                  "text-orange-600",
-                  "bg-orange-50/60",
+                  "border-accent-400",
+                  "text-accent-600",
+                  "bg-accent-50",
                 );
               }}
               onDrop={(e) => {
                 e.preventDefault();
                 e.currentTarget.classList.remove(
-                  "border-orange-400",
-                  "text-orange-600",
-                  "bg-orange-50/60",
+                  "border-accent-400",
+                  "text-accent-600",
+                  "bg-accent-50",
                 );
                 if (e.dataTransfer.files?.length) {
                   onAdd(e.dataTransfer.files);

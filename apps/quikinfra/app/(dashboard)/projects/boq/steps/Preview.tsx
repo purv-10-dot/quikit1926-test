@@ -35,7 +35,7 @@ export function Preview({
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="text-xs text-orange-600 hover:text-orange-700 font-medium flex items-center gap-1"
+                  className="text-xs text-accent-600 hover:text-accent-700 font-medium flex items-center gap-1"
                   disabled={stage === "confirming"}
                 >
                   <RefreshCw className="w-3 h-3" /> Replace file
@@ -171,7 +171,7 @@ export function Preview({
                   type="checkbox"
                   checked={replaceExisting}
                   onChange={(e) => setReplaceExisting(e.target.checked)}
-                  className="w-4 h-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                  className="w-4 h-4 rounded border-gray-300 text-accent-600 focus:ring-accent-500"
                   disabled={stage === "confirming"}
                 />
                 <span className="text-xs text-gray-700">

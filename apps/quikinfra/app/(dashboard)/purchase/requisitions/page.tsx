@@ -111,7 +111,7 @@ export default function PurchaseRequisitionsPage() {
     {
       key: "prNumber", label: "PR Number", sortable: true, searchable: true,
       render: (row) => (
-        <span className="text-orange-600 cursor-pointer hover:underline font-medium"
+        <span className="text-accent-600 cursor-pointer hover:underline font-medium"
               onClick={() => router.push(`/purchase/requisitions/${row.id}`)}>
           {row.prNumber}
         </span>
@@ -160,7 +160,7 @@ export default function PurchaseRequisitionsPage() {
                   router.push(`/purchase/orders/${po.id}`);
                 }}
                 title={`${po.poNumber} — Status: ${poStatusLabel(po.status)} · click to open`}
-                className="inline-flex items-center px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 text-[11px] font-medium whitespace-nowrap hover:bg-orange-100 transition-colors"
+                className="inline-flex items-center px-2 py-0.5 rounded-md bg-accent-50 text-accent-700 text-[11px] font-medium whitespace-nowrap hover:bg-accent-100 transition-colors"
               >
                 {po.poNumber}
               </button>

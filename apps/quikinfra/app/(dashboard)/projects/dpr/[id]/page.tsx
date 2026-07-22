@@ -34,7 +34,7 @@ import {
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { formatDateTimeIST } from "@/lib/format/datetime";
 import { WorkflowConfirmDialog } from "@/components/WorkflowConfirmDialog";
-import { useDPR, useDeleteDPR, useBOQ } from "@/hooks/use-projects";
+import { useDPR, useDeleteDPR, useBOQ, useWorkOrders } from "@/hooks/use-projects";
 import { groupWorkItemsByBoq } from "@/lib/projects/boq-work-groups";
 import { useContractors } from "@/hooks/use-masters";
 import { usePermissions } from "@/hooks/use-permissions";
@@ -81,7 +81,7 @@ const HEADER_PILL =
 
 const PILL_TONE = {
   gray: "bg-gray-50 text-gray-700 border-gray-200",
-  blue: "bg-orange-50 text-orange-700 border-orange-200",
+  blue: "bg-accent-50 text-accent-700 border-accent-200",
   orange: "bg-orange-50 text-orange-700 border-orange-200",
   emerald: "bg-emerald-50 text-emerald-700 border-emerald-200",
   rose: "bg-rose-50 text-rose-700 border-rose-200",
@@ -190,6 +190,24 @@ export default function DPRDetailPage() {
   const contractorNameById = useMemo(
     () => new Map((contractorsResult?.data ?? []).map((c) => [c.id, c.name])),
     [contractorsResult],
+  );
+
+  // Work Done rows store `woId`; resolve it to a readable Contractor / WO
+  // label so the detail table matches the DPR form's Contractor/WO column.
+  const { data: workOrdersResult } = useWorkOrders(
+    dpr?.projectId ? { projectId: dpr.projectId } : undefined,
+  );
+  const woLabelById = useMemo(
+    () =>
+      new Map(
+        (workOrdersResult?.data ?? []).map((wo) => [
+          wo.id,
+          wo.woNumber
+            ? `${wo.woNumber}${wo.contractorName ? ` · ${wo.contractorName}` : ""}`
+            : wo.contractorName ?? "",
+        ]),
+      ),
+    [workOrdersResult],
   );
 
   // ── Over-allotment check (for the approver) ──────────────────────
@@ -346,7 +364,7 @@ export default function DPRDetailPage() {
                 className={`${HEADER_PILL} ${
                   baseLocked
                     ? `${PILL_TONE.disabled} cursor-not-allowed`
-                    : `${PILL_TONE.blue} hover:bg-orange-100`
+                    : `${PILL_TONE.blue} hover:bg-accent-100`
                 }`}
                 title={baseLocked ? "Locked — DPR is approved" : "Edit DPR"}
               >
@@ -484,15 +502,27 @@ export default function DPRDetailPage() {
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
                     <thead className="bg-gray-50 text-[10px] uppercase text-gray-500 tracking-wider border-b border-gray-200">
-                      <tr>
+                      <tr className="whitespace-nowrap">
                         <th className="px-4 py-3 text-left font-bold w-10">
                           #
                         </th>
                         <th className="px-4 py-3 text-left font-bold">
                           BOQ Ref
                         </th>
-                        <th className="px-4 py-3 text-left font-bold">
+                        <th className="px-4 py-3 text-left font-bold min-w-[240px]">
                           Description
+                        </th>
+                        <th className="px-4 py-3 text-left font-bold">
+                          Unit
+                        </th>
+                        <th className="px-4 py-3 text-right font-bold">
+                          Total Target
+                        </th>
+                        <th className="px-4 py-3 text-left font-bold min-w-[150px]">
+                          Contractor / WO
+                        </th>
+                        <th className="px-4 py-3 text-right font-bold">
+                          Prev Qty
                         </th>
                         <th className="px-4 py-3 text-right font-bold">
                           Today's Qty
@@ -500,8 +530,17 @@ export default function DPRDetailPage() {
                         <th className="px-4 py-3 text-right font-bold">
                           Cumulative
                         </th>
-                        <th className="px-4 py-3 text-left font-bold">
+                        <th className="px-4 py-3 text-right font-bold">
+                          % Completed
+                        </th>
+                        <th className="px-4 py-3 text-left font-bold min-w-[130px]">
+                          Location / Chainage
+                        </th>
+                        <th className="px-4 py-3 text-left font-bold min-w-[130px]">
                           Remarks
+                        </th>
+                        <th className="px-4 py-3 text-left font-bold">
+                          Photos
                         </th>
                       </tr>
                     </thead>
@@ -509,10 +548,10 @@ export default function DPRDetailPage() {
                       {groupedWorkItems.map((group) => (
                         <Fragment key={group.key}>
                           {group.topNo && (
-                            <tr className="bg-orange-50/60 border-t border-orange-100">
-                              <td colSpan={6} className="px-4 py-2">
+                            <tr className="bg-accent-50 border-t border-accent-100">
+                              <td colSpan={13} className="px-4 py-2">
                                 <div className="flex items-center gap-2 min-w-0">
-                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold text-orange-700 bg-orange-100/70">
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold text-accent-700 bg-accent-100">
                                     {group.topNo}
                                   </span>
                                   {group.topName && (
@@ -528,10 +567,10 @@ export default function DPRDetailPage() {
                             node.kind === "subgroup" ? (
                               <tr
                                 key={`sub-${group.key}-${node.no}`}
-                                className="bg-orange-50/30"
+                                className="bg-accent-50"
                               >
                                 <td
-                                  colSpan={6}
+                                  colSpan={13}
                                   className="py-1.5"
                                   style={{
                                     paddingLeft: `${node.depth * 16 + 16}px`,
@@ -539,8 +578,8 @@ export default function DPRDetailPage() {
                                   }}
                                 >
                                   <div className="flex items-center gap-2 min-w-0">
-                                    <span className="text-orange-300 shrink-0">└</span>
-                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold text-orange-700 bg-orange-100/60">
+                                    <span className="text-accent-300 shrink-0">└</span>
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold text-accent-700 bg-accent-100">
                                       {node.no}
                                     </span>
                                     {node.name && (
@@ -554,13 +593,13 @@ export default function DPRDetailPage() {
                             ) : (
                               <tr
                                 key={`it-${group.key}-${node.idx}`}
-                                className="hover:bg-orange-50/20 transition-colors"
+                                className="hover:bg-accent-50 transition-colors align-top"
                               >
                                 <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">
                                   {String(node.idx + 1).padStart(2, "0")}
                                 </td>
                                 <td
-                                  className="px-4 py-3 text-xs text-orange-700 font-bold"
+                                  className="px-4 py-3 text-xs text-accent-700 font-bold"
                                   style={
                                     node.depth > 1
                                       ? { paddingLeft: `${node.depth * 16 + 16}px` }
@@ -570,7 +609,27 @@ export default function DPRDetailPage() {
                                   {node.w.boqNo ?? node.w.boqItemId ?? "—"}
                                 </td>
                                 <td className="px-4 py-3 text-gray-900">
-                                  {node.w.description ?? "—"}
+                                  <div
+                                    className="truncate max-w-[260px]"
+                                    title={node.w.description ?? undefined}
+                                  >
+                                    {node.w.description ?? "—"}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 text-gray-700 text-xs">
+                                  {node.w.unit || "—"}
+                                </td>
+                                <td className="px-4 py-3 text-right tabular-nums text-gray-900">
+                                  {fmtQty(node.w.totalTarget)}
+                                </td>
+                                <td className="px-4 py-3 text-gray-700 text-xs">
+                                  {node.w.workOrderId
+                                    ? woLabelById.get(node.w.workOrderId) ||
+                                      node.w.workOrderId
+                                    : "Self Work"}
+                                </td>
+                                <td className="px-4 py-3 text-right tabular-nums text-gray-900">
+                                  {fmtQty(node.w.prevQty)}
                                 </td>
                                 <td className="px-4 py-3 text-right tabular-nums text-gray-900">
                                   {fmtQty(node.w.todayQty)}
@@ -578,8 +637,45 @@ export default function DPRDetailPage() {
                                 <td className="px-4 py-3 text-right tabular-nums text-gray-900">
                                   {fmtQty(node.w.cumulativeQty)}
                                 </td>
+                                <td className="px-4 py-3 text-right tabular-nums text-gray-900">
+                                  {(() => {
+                                    const target = Number(node.w.totalTarget ?? 0);
+                                    const cum = Number(node.w.cumulativeQty ?? 0);
+                                    if (!(target > 0)) return "—";
+                                    return `${Math.min(100, (cum / target) * 100).toFixed(1)}%`;
+                                  })()}
+                                </td>
+                                <td className="px-4 py-3 text-gray-700 text-xs">
+                                  {node.w.location || "—"}
+                                </td>
                                 <td className="px-4 py-3 text-gray-700 text-xs">
                                   {node.w.remarks ?? "—"}
+                                </td>
+                                <td className="px-4 py-3">
+                                  {Array.isArray(node.w.images) &&
+                                  node.w.images.length > 0 ? (
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      {node.w.images.map((src, j) => (
+                                        <a
+                                          key={j}
+                                          href={src}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          title="Open full size"
+                                          className="block w-10 h-10 rounded-md overflow-hidden border border-gray-200 bg-gray-50 hover:ring-2 hover:ring-accent-300 transition"
+                                        >
+                                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                                          <img
+                                            src={src}
+                                            alt="Site photo"
+                                            className="w-full h-full object-cover"
+                                          />
+                                        </a>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <span className="text-gray-300 text-xs">—</span>
+                                  )}
                                 </td>
                               </tr>
                             ),
@@ -650,7 +746,7 @@ export default function DPRDetailPage() {
                         <tr
                           key={idx}
                           className={`transition-colors ${
-                            over ? "bg-red-50/60 hover:bg-red-50" : "hover:bg-orange-50/20"
+                            over ? "bg-red-50/60 hover:bg-red-50" : "hover:bg-accent-50"
                           }`}
                         >
                           <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">
@@ -734,7 +830,7 @@ export default function DPRDetailPage() {
                           mp.operator,
                         ].reduce<number>((sum, v) => sum + (Number(v) || 0), 0);
                         return (
-                        <tr key={idx} className="hover:bg-orange-50/20 transition-colors">
+                        <tr key={idx} className="hover:bg-accent-50 transition-colors">
                           <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">
                             {String(idx + 1).padStart(2, "0")}
                           </td>
@@ -771,7 +867,7 @@ export default function DPRDetailPage() {
                           <td className="px-4 py-3 text-right tabular-nums text-gray-900">
                             {fmtQty(mp.operator)}
                           </td>
-                          <td className="px-4 py-3 text-right tabular-nums font-semibold text-orange-600">
+                          <td className="px-4 py-3 text-right tabular-nums font-semibold text-accent-600">
                             {Number.isInteger(rowTotal) ? rowTotal : rowTotal.toFixed(2)}
                           </td>
                         </tr>
@@ -809,7 +905,7 @@ export default function DPRDetailPage() {
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {staff.map((s: StaffRow, idx: number) => (
-                        <tr key={idx} className="hover:bg-orange-50/20 transition-colors">
+                        <tr key={idx} className="hover:bg-accent-50 transition-colors">
                           <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">
                             {String(idx + 1).padStart(2, "0")}
                           </td>
@@ -866,7 +962,7 @@ export default function DPRDetailPage() {
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {machinery.map((mc: MachineryRow, idx: number) => (
-                        <tr key={idx} className="hover:bg-orange-50/20 transition-colors">
+                        <tr key={idx} className="hover:bg-accent-50 transition-colors">
                           <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">
                             {String(idx + 1).padStart(2, "0")}
                           </td>

@@ -369,7 +369,7 @@ export default function EquipmentLogBookPage() {
                 onClick={() => setStatusFilter(f.key)}
                 className={`px-4 py-2 text-sm font-medium transition-colors ${
                   statusFilter === f.key
-                    ? "bg-orange-500 text-white"
+                    ? "bg-accent-500 text-white"
                     : "bg-white text-gray-600 hover:bg-gray-50"
                 }`}
               >

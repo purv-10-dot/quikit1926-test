@@ -50,7 +50,7 @@ export function ColumnMapping({
                     setUniFieldToCol({});
                     setStage("pick");
                   }}
-                  className="text-xs text-orange-600 hover:text-orange-700 font-medium flex items-center gap-1"
+                  className="text-xs text-accent-600 hover:text-accent-700 font-medium flex items-center gap-1"
                 >
                   <Upload className="w-3 h-3" /> Replace file
                 </button>

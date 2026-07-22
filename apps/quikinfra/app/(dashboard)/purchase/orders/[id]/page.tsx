@@ -207,7 +207,7 @@ export default function PODetailPage() {
                           : `/purchase/indents/${po.sourceIndentId}`,
                       )
                     }
-                    className="w-9 h-9 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center shrink-0 hover:bg-orange-100"
+                    className="w-9 h-9 rounded-lg bg-accent-50 text-accent-600 flex items-center justify-center shrink-0 hover:bg-accent-100"
                     title="Open source document"
                   >
                     <FileText className="w-4 h-4" />
@@ -222,7 +222,7 @@ export default function PODetailPage() {
                             : `/purchase/indents/${po.sourceIndentId}`,
                         )
                       }
-                      className="text-sm font-semibold text-gray-900 truncate hover:text-orange-700 text-left"
+                      className="text-sm font-semibold text-gray-900 truncate hover:text-accent-700 text-left"
                     >
                       {po.sourceRfqNumber ?? po.sourceIndentNumber ?? "—"}
                     </button>

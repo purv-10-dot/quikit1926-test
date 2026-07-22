@@ -44,7 +44,7 @@ export default function AuditLogPage() {
         <>
         <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-accent-50 text-xs text-gray-600"><tr>
+            <thead className="bg-slate-50 text-xs text-gray-600"><tr>
               <th className="text-left px-3 py-2">When</th><th className="text-left px-3 py-2">User</th>
               <th className="text-left px-3 py-2">Action</th><th className="text-left px-3 py-2">Entity</th>
               <th className="text-left px-3 py-2">Ref / Id</th><th className="text-left px-3 py-2">Diff</th>

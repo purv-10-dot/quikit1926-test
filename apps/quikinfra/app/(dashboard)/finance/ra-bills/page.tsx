@@ -138,7 +138,7 @@ export default function RABillsPage() {
             <button
               onClick={() => openAction("submit", row)}
               title="Submit for approval"
-              className="flex items-center gap-1 text-xs text-orange-700 hover:underline"
+              className="flex items-center gap-1 text-xs text-accent-700 hover:underline"
             >
               <Send size={14} /> Submit
             </button>

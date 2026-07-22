@@ -134,7 +134,7 @@ export function InviteResultDialog({
         <div className="flex items-center justify-end gap-2 px-6 py-4 bg-gray-50">
           <button
             onClick={onClose}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-lg"
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-accent-600 hover:bg-accent-700 rounded-lg"
           >
             Done
           </button>

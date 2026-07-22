@@ -369,7 +369,7 @@ export default function PRDetailPage() {
             <div className="bg-white rounded-2xl border border-slate-200 shadow-soft overflow-hidden">
               <div className="px-5 py-4 border-b border-slate-200 bg-gradient-to-r from-slate-50 to-white flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
-                  <span className="w-1 h-4 rounded-full bg-gradient-to-b from-orange-500 to-orange-600" />
+                  <span className="w-1 h-4 rounded-full bg-gradient-to-b from-accent-500 to-accent-600" />
                   Line Items
                 </h3>
                 <span className="text-xs font-semibold text-slate-500 bg-white border border-slate-200 rounded-full px-2 py-0.5">
@@ -407,7 +407,7 @@ export default function PRDetailPage() {
                         const stock = String(line.stockCheckStatus ?? "").toUpperCase();
                         const availStock = Number(line.availableStock ?? line.currentStock ?? 0);
                         return (
-                          <tr key={line.id ?? line.lineId ?? i} className="border-t border-slate-100 hover:bg-orange-50/40 transition-colors">
+                          <tr key={line.id ?? line.lineId ?? i} className="border-t border-slate-100 hover:bg-accent-50 transition-colors">
                             <td className="px-4 py-3 text-xs text-slate-400 font-semibold">{i + 1}</td>
                             <td className="px-4 py-3 text-sm font-semibold text-slate-900">
                               {line.itemName ?? line.itemId ?? "—"}
@@ -463,11 +463,11 @@ export default function PRDetailPage() {
                       })}
                     </tbody>
                     <tfoot>
-                      <tr className="border-t border-slate-200 bg-orange-50/50">
+                      <tr className="border-t border-slate-200 bg-accent-50">
                         <td colSpan={5} className="px-4 py-3 text-sm font-bold text-slate-700 text-right uppercase tracking-wider text-[11px]">
                           Total
                         </td>
-                        <td className="px-4 py-3 text-sm font-bold text-orange-700 text-right tabular-nums">
+                        <td className="px-4 py-3 text-sm font-bold text-accent-700 text-right tabular-nums">
                           ₹ {estimatedTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                         </td>
                         <td colSpan={4}></td>
@@ -484,7 +484,7 @@ export default function PRDetailPage() {
             {/* Stock Summary */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-soft p-5">
               <div className="flex items-center gap-2 mb-3">
-                <span className="w-7 h-7 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center ring-1 ring-orange-100">
+                <span className="w-7 h-7 rounded-lg bg-accent-50 text-accent-600 flex items-center justify-center ring-1 ring-accent-100">
                   <Warehouse className="w-4 h-4" />
                 </span>
                 <h3 className="text-sm font-semibold text-slate-900">Stock Availability</h3>
@@ -566,7 +566,7 @@ export default function PRDetailPage() {
             {/* Approval Timeline */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-soft p-5">
               <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                <span className="w-1 h-4 rounded-full bg-gradient-to-b from-orange-500 to-orange-600" />
+                <span className="w-1 h-4 rounded-full bg-gradient-to-b from-accent-500 to-accent-600" />
                 Approval Timeline
               </h3>
               {pr.status === "draft" ? (
@@ -633,7 +633,7 @@ export default function PRDetailPage() {
             {/* Audit */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-soft p-5">
               <h3 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
-                <span className="w-1 h-4 rounded-full bg-gradient-to-b from-orange-500 to-orange-600" />
+                <span className="w-1 h-4 rounded-full bg-gradient-to-b from-accent-500 to-accent-600" />
                 Audit
               </h3>
               <div className="space-y-2">
@@ -701,7 +701,7 @@ function InfoField({
       </p>
       <div
         className={`text-sm mt-0.5 ${
-          highlight ? "font-bold text-orange-700 tabular-nums" : "text-slate-800"
+          highlight ? "font-bold text-accent-700 tabular-nums" : "text-slate-800"
         }`}
       >
         {value ?? "—"}

@@ -26,7 +26,7 @@ export function Staff({
         <button
           type="button"
           onClick={onAdd}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-orange-700 bg-orange-50 hover:bg-orange-100 border border-orange-200 hover:border-orange-300 rounded-lg transition-colors"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-accent-700 bg-accent-50 hover:bg-accent-100 border border-accent-200 hover:border-accent-300 rounded-lg transition-colors"
         >
           <Plus className="w-3.5 h-3.5" /> Add
         </button>
@@ -59,7 +59,7 @@ export function Staff({
                       value={s.name}
                       onChange={(e) => onUpdate(idx, "name", e.target.value)}
                       placeholder="Name"
-                      className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400"
+                      className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent-300 focus:border-accent-400"
                     />
                   </td>
                   <td className="px-3 py-2">
@@ -67,7 +67,7 @@ export function Staff({
                       value={s.designation}
                       onChange={(e) => onUpdate(idx, "designation", e.target.value)}
                       placeholder="Designation"
-                      className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400"
+                      className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent-300 focus:border-accent-400"
                     />
                   </td>
                   <td className="px-3 py-2 text-center">
@@ -75,7 +75,7 @@ export function Staff({
                       type="checkbox"
                       checked={s.present}
                       onChange={(e) => onUpdate(idx, "present", e.target.checked)}
-                      className="w-4 h-4 rounded border-slate-300 accent-orange-600 text-orange-600 focus:ring-orange-300 focus:border-orange-400"
+                      className="w-4 h-4 rounded border-slate-300 accent-accent-600 text-accent-600 focus:ring-accent-300 focus:border-accent-400"
                     />
                   </td>
                   <td className="px-3 py-2">
@@ -84,7 +84,7 @@ export function Staff({
                       disabled={s.present}
                       onChange={(e) => onUpdate(idx, "reason", e.target.value)}
                       placeholder={s.present ? "—" : "Reason"}
-                      className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded disabled:bg-gray-50 disabled:text-gray-400 focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400"
+                      className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded disabled:bg-gray-50 disabled:text-gray-400 focus:outline-none focus:ring-1 focus:ring-accent-300 focus:border-accent-400"
                     />
                   </td>
                   <td className="px-3 py-2 text-right">

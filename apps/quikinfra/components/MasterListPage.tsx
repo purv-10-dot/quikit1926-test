@@ -467,7 +467,7 @@ export function MasterListPage<T extends { id: string; status?: string }>({
                 onClick={() => setStatusView(tab.key)}
                 className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                   statusView === tab.key
-                    ? "bg-white text-orange-700 shadow-sm"
+                    ? "bg-white text-accent-700 shadow-sm"
                     : "text-slate-600 hover:text-slate-900"
                 }`}
               >

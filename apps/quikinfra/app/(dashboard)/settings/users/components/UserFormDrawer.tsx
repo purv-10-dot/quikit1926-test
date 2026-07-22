@@ -109,7 +109,7 @@ export function UserFormDrawer({
                   <button
                     type="button"
                     onClick={clearLink}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-orange-700 hover:text-orange-900 px-2 py-0.5 rounded bg-white border border-orange-200"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-accent-700 hover:text-accent-900 px-2 py-0.5 rounded bg-white border border-accent-200"
                     title="Clear and create a new user instead"
                   >
                     Clear
@@ -123,7 +123,7 @@ export function UserFormDrawer({
                     <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
                       <span>Existing members in this org</span>
                       {emailSearching && (
-                        <span className="text-orange-500 normal-case font-medium">
+                        <span className="text-accent-500 normal-case font-medium">
                           Searching…
                         </span>
                       )}
@@ -157,7 +157,7 @@ export function UserFormDrawer({
                           className={`w-full flex items-center gap-3 px-3 py-2 text-left ${
                             disabled
                               ? "opacity-60 cursor-not-allowed"
-                              : "hover:bg-orange-50"
+                              : "hover:bg-accent-50"
                           }`}
                         >
                           <div
@@ -180,7 +180,7 @@ export function UserFormDrawer({
                               Already in QuikInfra
                             </span>
                           ) : (
-                            <span className="text-[10px] font-semibold text-orange-600 flex-shrink-0">
+                            <span className="text-[10px] font-semibold text-accent-600 flex-shrink-0">
                               Add to QuikInfra
                             </span>
                           )}
@@ -192,7 +192,7 @@ export function UserFormDrawer({
                 )}
               </div>
               {form.linkExistingUserId ? (
-                <div className="mt-2 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 text-[11px] text-orange-800 leading-snug">
+                <div className="mt-2 bg-accent-50 border border-accent-200 rounded-lg px-3 py-2 text-[11px] text-accent-800 leading-snug">
                   <strong className="font-semibold">Granting QuikInfra access</strong>{" "}
                   to existing user{" "}
                   <span className="font-medium">
@@ -253,13 +253,13 @@ export function UserFormDrawer({
                 onClick={() => set("invitationMethod", "native")}
                 className={`text-left rounded-lg border px-4 py-3 transition-colors ${
                   form.invitationMethod === "native"
-                    ? "border-orange-500 bg-orange-50 ring-2 ring-orange-200"
+                    ? "border-accent-500 bg-accent-50 ring-2 ring-accent-200"
                     : "border-gray-200 bg-white hover:border-gray-300"
                 }`}
               >
                 <div
                   className={`text-sm font-semibold ${
-                    form.invitationMethod === "native" ? "text-orange-700" : "text-gray-900"
+                    form.invitationMethod === "native" ? "text-accent-700" : "text-gray-900"
                   }`}
                 >
                   Native (Email + Password)
@@ -275,13 +275,13 @@ export function UserFormDrawer({
                 onClick={() => set("invitationMethod", "sso")}
                 className={`text-left rounded-lg border px-4 py-3 transition-colors ${
                   form.invitationMethod === "sso"
-                    ? "border-orange-500 bg-orange-50 ring-2 ring-orange-200"
+                    ? "border-accent-500 bg-accent-50 ring-2 ring-accent-200"
                     : "border-gray-200 bg-white hover:border-gray-300"
                 }`}
               >
                 <div
                   className={`text-sm font-semibold ${
-                    form.invitationMethod === "sso" ? "text-orange-700" : "text-gray-900"
+                    form.invitationMethod === "sso" ? "text-accent-700" : "text-gray-900"
                   }`}
                 >
                   SSO (Google / Microsoft)
@@ -360,7 +360,7 @@ export function UserFormDrawer({
               <label className="flex items-center gap-2 cursor-pointer select-none rounded-lg border border-gray-200 px-3 py-2 bg-white hover:bg-gray-50">
                 <input
                   type="checkbox"
-                  className="h-4 w-4 accent-orange-600"
+                  className="h-4 w-4 accent-accent-600"
                   checked={form.enableSettings}
                   onChange={(e) => set("enableSettings", e.target.checked)}
                 />
@@ -407,7 +407,7 @@ export function UserFormDrawer({
                         type="checkbox"
                         checked={checked}
                         onChange={() => toggleProject(p.id)}
-                        className="w-3.5 h-3.5 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                        className="w-3.5 h-3.5 rounded border-gray-300 text-accent-600 focus:ring-accent-500"
                       />
                       <span className="text-sm text-gray-700 flex-1">{p.name}</span>
                       {p.code && (
@@ -451,7 +451,7 @@ export function UserFormDrawer({
                         onChange={() => {
                           if (!isAdminAllModules) toggleModule(m.key);
                         }}
-                        className="w-3.5 h-3.5 rounded border-gray-300 text-orange-600 focus:ring-orange-500 disabled:opacity-100"
+                        className="w-3.5 h-3.5 rounded border-gray-300 text-accent-600 focus:ring-accent-500 disabled:opacity-100"
                       />
                       <span className="text-sm text-gray-700">{m.label}</span>
                     </label>

@@ -55,7 +55,7 @@ export function SelfFill({
                           onChange={(e) =>
                             updateParent(parent.id, { boqNoOverride: e.target.value })
                           }
-                          className="w-12 text-[11px] font-bold text-orange-700 bg-orange-100 border border-orange-200 rounded px-1.5 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-orange-400 placeholder-orange-300"
+                          className="w-12 text-[11px] font-bold text-accent-700 bg-accent-100 border border-accent-200 rounded px-1.5 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-accent-400 placeholder-accent-300"
                           title="BOQ No (leave blank to auto-number)"
                         />
                         <input
@@ -98,7 +98,7 @@ export function SelfFill({
                                     boqNoOverride: e.target.value,
                                   })
                                 }
-                                className="w-10 text-[10px] text-gray-700 bg-white border border-gray-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-orange-300 placeholder-gray-400"
+                                className="w-10 text-[10px] text-gray-700 bg-white border border-gray-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-accent-300 placeholder-gray-400"
                                 title="BOQ No suffix (e.g. 6 → 2.6). Leave blank to auto-number."
                               />
                               <input
@@ -128,7 +128,7 @@ export function SelfFill({
                                         unit: e.target.value,
                                       })
                                     }
-                                    className="w-16 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-300"
+                                    className="w-16 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-accent-300"
                                   />
                                   <input
                                     type="number"
@@ -140,7 +140,7 @@ export function SelfFill({
                                         tenderQty: e.target.value,
                                       })
                                     }
-                                    className="w-20 text-xs border border-gray-200 rounded px-2 py-1 text-right focus:outline-none focus:ring-1 focus:ring-orange-300"
+                                    className="w-20 text-xs border border-gray-200 rounded px-2 py-1 text-right focus:outline-none focus:ring-1 focus:ring-accent-300"
                                   />
                                   <input
                                     type="number"
@@ -152,7 +152,7 @@ export function SelfFill({
                                         rate: e.target.value,
                                       })
                                     }
-                                    className="w-20 text-xs border border-gray-200 rounded px-2 py-1 text-right focus:outline-none focus:ring-1 focus:ring-orange-300"
+                                    className="w-20 text-xs border border-gray-200 rounded px-2 py-1 text-right focus:outline-none focus:ring-1 focus:ring-accent-300"
                                   />
                                 </>
                               )}
@@ -166,7 +166,7 @@ export function SelfFill({
                                   }
                                   className={`px-1.5 py-0.5 ${
                                     child.mode === "leaf"
-                                      ? "bg-orange-500 text-white"
+                                      ? "bg-accent-500 text-white"
                                       : "bg-white text-gray-500 hover:bg-gray-50"
                                   }`}
                                   title="Child holds qty/rate directly (no sub-items)"
@@ -180,7 +180,7 @@ export function SelfFill({
                                   }
                                   className={`px-1.5 py-0.5 border-l border-gray-200 ${
                                     child.mode === "group"
-                                      ? "bg-orange-500 text-white"
+                                      ? "bg-accent-500 text-white"
                                       : "bg-white text-gray-500 hover:bg-gray-50"
                                   }`}
                                   title="Child is a group with line items beneath"
@@ -216,7 +216,7 @@ export function SelfFill({
                                           boqNoOverride: e.target.value,
                                         })
                                       }
-                                      className="w-10 text-[10px] text-gray-600 bg-white border border-gray-200 rounded px-1 py-0.5 text-center shrink-0 focus:outline-none focus:ring-1 focus:ring-orange-300 placeholder-gray-400"
+                                      className="w-10 text-[10px] text-gray-600 bg-white border border-gray-200 rounded px-1 py-0.5 text-center shrink-0 focus:outline-none focus:ring-1 focus:ring-accent-300 placeholder-gray-400"
                                       title="BOQ No suffix. Leave blank to auto-number."
                                     />
                                     <input
@@ -228,7 +228,7 @@ export function SelfFill({
                                           displayName: e.target.value,
                                         })
                                       }
-                                      className="flex-1 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-300 min-w-0"
+                                      className="flex-1 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-accent-300 min-w-0"
                                     />
                                     <input
                                       type="text"
@@ -239,7 +239,7 @@ export function SelfFill({
                                           unit: e.target.value,
                                         })
                                       }
-                                      className="w-16 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-300"
+                                      className="w-16 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-accent-300"
                                     />
                                     <input
                                       type="number"
@@ -251,7 +251,7 @@ export function SelfFill({
                                           tenderQty: e.target.value,
                                         })
                                       }
-                                      className="w-20 text-xs border border-gray-200 rounded px-2 py-1 text-right focus:outline-none focus:ring-1 focus:ring-orange-300"
+                                      className="w-20 text-xs border border-gray-200 rounded px-2 py-1 text-right focus:outline-none focus:ring-1 focus:ring-accent-300"
                                     />
                                     <input
                                       type="number"
@@ -263,7 +263,7 @@ export function SelfFill({
                                           rate: e.target.value,
                                         })
                                       }
-                                      className="w-20 text-xs border border-gray-200 rounded px-2 py-1 text-right focus:outline-none focus:ring-1 focus:ring-orange-300"
+                                      className="w-20 text-xs border border-gray-200 rounded px-2 py-1 text-right focus:outline-none focus:ring-1 focus:ring-accent-300"
                                     />
                                     <button
                                       onClick={() =>
@@ -279,7 +279,7 @@ export function SelfFill({
                                 ))}
                                 <button
                                   onClick={() => addLineItem(parent.id, child.id)}
-                                  className="text-[11px] text-orange-600 hover:text-orange-700 font-medium flex items-center gap-1 ml-12"
+                                  className="text-[11px] text-accent-600 hover:text-accent-700 font-medium flex items-center gap-1 ml-12"
                                 >
                                   <Plus className="w-3 h-3" /> Add line item
                                 </button>
@@ -290,7 +290,7 @@ export function SelfFill({
                         <div className="flex items-center gap-2 pt-1">
                           <button
                             onClick={() => addChild(parent.id, "leaf")}
-                            className="text-[11px] text-orange-600 hover:text-orange-700 hover:bg-orange-50 border border-dashed border-orange-300 rounded px-2 py-1 font-medium flex items-center gap-1"
+                            className="text-[11px] text-accent-600 hover:text-accent-700 hover:bg-accent-50 border border-dashed border-accent-300 rounded px-2 py-1 font-medium flex items-center gap-1"
                             title="Add a leaf child (holds qty/rate directly, e.g. 1.2)"
                           >
                             <FileText className="w-3 h-3" />
@@ -312,7 +312,7 @@ export function SelfFill({
 
                 <button
                   onClick={addParent}
-                  className="w-full border-2 border-dashed border-gray-300 rounded-lg py-2.5 text-xs font-medium text-gray-600 hover:border-orange-300 hover:bg-orange-50/30 hover:text-orange-700 flex items-center justify-center gap-1.5"
+                  className="w-full border-2 border-dashed border-gray-300 rounded-lg py-2.5 text-xs font-medium text-gray-600 hover:border-accent-300 hover:bg-accent-50 hover:text-accent-700 flex items-center justify-center gap-1.5"
                 >
                   <Plus className="w-3.5 h-3.5" /> Add parent group
                 </button>
@@ -381,7 +381,7 @@ export function SelfFill({
                                     </span>
                                   </div>
                                 </td>
-                                <td className="px-2 py-1.5 align-top border-b border-gray-100 text-center text-orange-600 font-medium">
+                                <td className="px-2 py-1.5 align-top border-b border-gray-100 text-center text-accent-600 font-medium">
                                   {isLeaf ? r.unit ?? "" : ""}
                                 </td>
                                 <td className="px-2 py-1.5 align-top border-b border-gray-100 text-right">
@@ -431,7 +431,7 @@ export function SelfFill({
                     type="checkbox"
                     checked={replaceExisting}
                     onChange={(e) => setReplaceExisting(e.target.checked)}
-                    className="w-4 h-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                    className="w-4 h-4 rounded border-gray-300 text-accent-600 focus:ring-accent-500"
                   />
                   <span className="text-xs text-gray-700">
                     Replace existing BOQ for this project

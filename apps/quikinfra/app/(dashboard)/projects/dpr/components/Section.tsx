@@ -69,13 +69,13 @@ export function Section({
           type="button"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
-          className="flex items-center gap-2.5 flex-1 min-w-0 text-left rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
+          className="flex items-center gap-2.5 flex-1 min-w-0 text-left rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-300"
         >
           <span
             className={`inline-flex items-center justify-center w-8 h-8 rounded-lg ring-1 transition-colors shrink-0 ${
               hasData
                 ? "bg-emerald-100 text-emerald-700 ring-emerald-200"
-                : "bg-orange-50 text-orange-600 ring-orange-100"
+                : "bg-accent-50 text-accent-600 ring-accent-100"
             }`}
           >
             {hasData ? <CheckCircle2 className="w-4 h-4" /> : icon}

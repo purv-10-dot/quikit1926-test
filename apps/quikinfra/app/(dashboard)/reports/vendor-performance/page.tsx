@@ -41,7 +41,7 @@ export default function VendorPerformance() {
       <p className="text-xs text-gray-500 mb-4">On-time delivery and quality acceptance based on posted GRNs.</p>
       <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-accent-50 text-xs text-gray-600"><tr>
+          <thead className="bg-slate-50 text-xs text-gray-600"><tr>
             <th className="text-left px-3 py-2">Vendor</th><th className="text-right px-3 py-2">Rating</th>
             <th className="text-right px-3 py-2">POs</th><th className="text-right px-3 py-2">GRNs</th>
             <th className="text-right px-3 py-2">PO ₹</th><th className="text-right px-3 py-2">GRN ₹</th>

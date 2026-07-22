@@ -32,7 +32,7 @@ export function NumCell({
         className={`w-full text-xs px-2 py-1 border rounded text-right tabular-nums focus:outline-none focus:ring-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
           over
             ? "border-red-400 bg-red-50/40 focus:ring-red-300 focus:border-red-400"
-            : "border-gray-300 focus:ring-orange-300 focus:border-orange-400"
+            : "border-gray-300 focus:ring-accent-300 focus:border-accent-400"
         }`}
         placeholder="0"
       />

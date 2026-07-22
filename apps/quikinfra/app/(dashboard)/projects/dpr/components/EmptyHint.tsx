@@ -24,11 +24,11 @@ export function EmptyHint({
       type={onAdd ? "button" : undefined}
       onClick={onAdd}
       className={`group w-full flex items-center gap-3 px-4 py-3 rounded-lg border border-dashed border-slate-200 bg-slate-50/40 text-left transition-colors ${
-        onAdd ? "hover:bg-orange-50/40 hover:border-orange-300 cursor-pointer" : ""
+        onAdd ? "hover:bg-accent-50 hover:border-accent-300 cursor-pointer" : ""
       }`}
     >
       {icon && (
-        <span className="inline-flex items-center justify-center w-7 h-7 rounded-md bg-white text-slate-400 ring-1 ring-slate-200 group-hover:text-orange-600 group-hover:ring-orange-200 transition-colors shrink-0">
+        <span className="inline-flex items-center justify-center w-7 h-7 rounded-md bg-white text-slate-400 ring-1 ring-slate-200 group-hover:text-accent-600 group-hover:ring-accent-200 transition-colors shrink-0">
           {icon}
         </span>
       )}
@@ -36,7 +36,7 @@ export function EmptyHint({
         {text}
       </span>
       {onAdd && (
-        <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-orange-700 opacity-70 group-hover:opacity-100 transition-opacity">
+        <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-accent-700 opacity-70 group-hover:opacity-100 transition-opacity">
           <Plus className="w-3 h-3" /> {addLabel}
         </span>
       )}

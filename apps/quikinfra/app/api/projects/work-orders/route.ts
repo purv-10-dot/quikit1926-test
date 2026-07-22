@@ -41,7 +41,8 @@ function enrichWO(
     lineDate: l.lineDate?.toISOString?.().slice(0, 10) ?? "",
     activityName: l.activityName ?? "",
     workCategoryId: l.workCategoryId ?? "",
-    labourCounts: (l as { labourCounts?: unknown }).labourCounts ?? [],
+    labourCategoryId: (l as { labourCategoryId?: string | null }).labourCategoryId ?? "",
+    labourCount: (l as { labourCount?: { toString?: () => string } | null }).labourCount?.toString?.() ?? "",
   }));
   return {
     id: row.id,
@@ -84,6 +85,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status") ?? "";
   const projectId = searchParams.get("projectId") ?? "";
+  const contractorId = searchParams.get("contractorId") ?? "";
   const search = searchParams.get("search")?.toLowerCase() ?? "";
 
   const ctxOrResp = await requireProjectsFinanceAction("construction.wo", "view");
@@ -103,6 +105,7 @@ export async function GET(req: NextRequest) {
   where.status = { not: "inactive" };
   if (status && status !== "all") where.status = status;
   if (projectId) where.projectId = projectId;
+  if (contractorId) where.contractorId = contractorId;
   // Search pushed into the DB so it stays correct under pagination (the old
   // in-memory filter ran AFTER take/skip, so it only searched one page).
   if (search) {
@@ -291,7 +294,8 @@ export async function POST(req: NextRequest) {
       lineDate?: string | null;
       activityName?: string | null;
       workCategoryId?: string | null;
-      labourCounts?: { type: string; count: number }[] | null;
+      labourCategoryId?: string | null;
+      labourCount?: number | string | null;
     }>;
   };
   try {
@@ -381,9 +385,8 @@ export async function POST(req: NextRequest) {
             lineDate: it.lineDate ? new Date(it.lineDate) : null,
             activityName: it.activityName ?? null,
             workCategoryId: it.workCategoryId ?? null,
-            labourCounts: Array.isArray(it.labourCounts)
-              ? (it.labourCounts as Prisma.InputJsonValue)
-              : undefined,
+            labourCategoryId: it.labourCategoryId ?? null,
+            labourCount: it.labourCount != null ? String(it.labourCount) : null,
           })),
         },
       }),

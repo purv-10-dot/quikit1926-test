@@ -361,7 +361,7 @@ export default function EstimationPage() {
                 className={`inline-flex items-center justify-center w-7 h-7 rounded-md transition ${
                   baseLocked
                     ? "text-gray-300 cursor-not-allowed"
-                    : "text-orange-600 hover:bg-orange-50 hover:text-orange-700"
+                    : "text-accent-600 hover:bg-accent-50 hover:text-accent-700"
                 }`}
                 title={baseLocked ? lockReason : "Edit"}
                 aria-label="Edit"

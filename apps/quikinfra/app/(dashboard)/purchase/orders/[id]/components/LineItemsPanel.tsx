@@ -206,11 +206,11 @@ export function LineItemsPanel({
                         </span>
                       </div>
                     )}
-                    <div className="px-5 py-4 bg-gradient-to-r from-orange-50/50 to-transparent border-t border-gray-100 flex items-center justify-between">
-                      <span className="text-sm font-bold text-orange-700 uppercase tracking-wider">
+                    <div className="px-5 py-4 bg-accent-50 border-t border-gray-100 flex items-center justify-between">
+                      <span className="text-sm font-bold text-accent-700 uppercase tracking-wider">
                         Total Amount
                       </span>
-                      <span className="text-xl font-extrabold tabular-nums text-orange-700">
+                      <span className="text-xl font-extrabold tabular-nums text-accent-700">
                         {fmtINR(grand)}
                       </span>
                     </div>
@@ -232,7 +232,7 @@ export function LineItemsPanel({
               </div>
               <div className="p-5">
                 <div className="flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center shrink-0">
+                  <div className="w-9 h-9 rounded-lg bg-accent-50 text-accent-600 flex items-center justify-center shrink-0">
                     <Package className="w-4 h-4" />
                   </div>
                   <div className="min-w-0 flex-1">

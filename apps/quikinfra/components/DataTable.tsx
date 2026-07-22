@@ -678,7 +678,7 @@ function QuickFilterPanel<T extends Record<string, unknown>>({
             <div className="text-xs text-slate-400 italic">No active filters</div>
           ) : recentFilters.map((rf, i) => (
             <button key={i} onClick={() => onToggle(rf.colKey, rf.val)}
-              className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg hover:bg-orange-50 text-sm mb-0.5 bg-orange-50/70 border border-orange-100">
+              className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg hover:bg-accent-50 text-sm mb-0.5 bg-accent-50 border border-accent-100">
               <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${chipColors[i % chipColors.length]}`} />
               <span className="truncate text-xs text-slate-700">{rf.colLabel}: {rf.val}</span>
               <span className="ml-auto text-[10px] text-slate-400">{getCount(rf.colKey, rf.val)}</span>
@@ -698,7 +698,7 @@ function QuickFilterPanel<T extends Record<string, unknown>>({
                   const count = getCount(col.key, val);
                   return (
                     <button key={val} onClick={() => onToggle(col.key, val)}
-                      className={`flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg text-xs mb-0.5 transition-colors ${active ? 'bg-orange-50 border border-orange-200 text-orange-700' : 'hover:bg-slate-50 text-slate-700'}`}>
+                      className={`flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg text-xs mb-0.5 transition-colors ${active ? 'bg-accent-50 border border-accent-200 text-accent-700' : 'hover:bg-slate-50 text-slate-700'}`}>
                       <span className={`w-2 h-2 rounded-full shrink-0 ${chipColors[ci % chipColors.length]}`} />
                       <span className="truncate flex-1">{val}</span>
                       <span className="text-[10px] text-slate-400 shrink-0">{count}</span>
@@ -720,7 +720,7 @@ function QuickFilterPanel<T extends Record<string, unknown>>({
 
       {/* Footer */}
       <div className="border-t px-5 py-3 flex items-center justify-between">
-        <button onClick={onSwitchAdvanced} className="text-xs text-orange-600 hover:text-orange-700 font-semibold hover:underline">
+        <button onClick={onSwitchAdvanced} className="text-xs text-accent-600 hover:text-accent-700 font-semibold hover:underline">
           Switch to advanced filters →
         </button>
       </div>
@@ -761,8 +761,8 @@ function AdvancedFilterPanel<T extends Record<string, unknown>>({
     return Array.from(s).sort();
   };
 
-  const sel = 'rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400';
-  const inp = 'rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400';
+  const sel = 'rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400';
+  const inp = 'rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400';
 
   return (
     <div className="w-full rounded-2xl border border-slate-200 bg-white shadow-2xl">
@@ -795,7 +795,7 @@ function AdvancedFilterPanel<T extends Record<string, unknown>>({
               <span className="text-sm font-medium text-slate-500 w-12 text-right shrink-0">
                 {idx === 0 ? 'Where' : (
                   <select value={cond.logic} onChange={e => update(cond.id, { logic: e.target.value as 'AND' | 'OR' })}
-                    className="text-xs font-semibold text-orange-600 bg-transparent border-none focus:outline-none cursor-pointer">
+                    className="text-xs font-semibold text-accent-600 bg-transparent border-none focus:outline-none cursor-pointer">
                     <option value="AND">And</option>
                     <option value="OR">Or</option>
                   </select>
@@ -816,8 +816,8 @@ function AdvancedFilterPanel<T extends Record<string, unknown>>({
                 col?.type === 'select' || col?.options ? (
                   <div className="flex items-center gap-1 flex-wrap min-w-[160px] rounded-xl border px-2 py-1.5 bg-white">
                     {cond.value && cond.value.split(',').filter(Boolean).map(v => (
-                      <span key={v} className="inline-flex items-center gap-1 rounded-full bg-orange-100 text-orange-700 px-2 py-0.5 text-xs">
-                        <span className="w-1.5 h-1.5 rounded-full bg-orange-500" />
+                      <span key={v} className="inline-flex items-center gap-1 rounded-full bg-accent-100 text-accent-700 px-2 py-0.5 text-xs">
+                        <span className="w-1.5 h-1.5 rounded-full bg-accent-500" />
                         {v}
                         <button onClick={() => update(cond.id, { value: cond.value.split(',').filter(x => x !== v).join(',') })} className="hover:text-rose-500">×</button>
                       </span>
@@ -844,7 +844,7 @@ function AdvancedFilterPanel<T extends Record<string, unknown>>({
             </div>
           );
         })}
-        <button onClick={addCond} className="text-sm text-orange-600 hover:text-orange-700 font-semibold flex items-center gap-1 mt-2">
+        <button onClick={addCond} className="text-sm text-accent-600 hover:text-accent-700 font-semibold flex items-center gap-1 mt-2">
           + Add new filter
         </button>
       </div>
@@ -857,7 +857,7 @@ function AdvancedFilterPanel<T extends Record<string, unknown>>({
 
       {/* Footer */}
       <div className="border-t px-5 py-3">
-        <button onClick={onSwitchQuick} className="text-xs text-orange-600 hover:text-orange-700 font-semibold hover:underline">
+        <button onClick={onSwitchQuick} className="text-xs text-accent-600 hover:text-accent-700 font-semibold hover:underline">
           Switch to quick filters →
         </button>
       </div>
@@ -897,7 +897,7 @@ function SortControls<T extends Record<string, unknown>>({
       </div>
       {sortable.length > sorts.length && (
         <button onClick={() => onChange([...sorts, { key: sortable[0].key, dir: 'asc' }])}
-          className="mt-2 text-sm text-orange-600 hover:text-orange-700 font-semibold hover:underline">+ Add sort</button>
+          className="mt-2 text-sm text-accent-600 hover:text-accent-700 font-semibold hover:underline">+ Add sort</button>
       )}
       {sorts.length > 0 && (
         <button onClick={() => onChange([])} className="mt-1 block text-xs text-slate-400 hover:text-rose-500">Clear all sorts</button>
@@ -918,7 +918,7 @@ function GroupByPanel<T extends Record<string, unknown>>({
         <button onClick={onClose} className="text-slate-400 hover:text-slate-600">×</button>
       </div>
       <select value={groupBy ?? ''} onChange={e => onChange(e.target.value || null)}
-        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400">
+        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400">
         <option value="">No grouping</option>
         {columns.filter(c => c.type === 'select' || c.options).map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
       </select>
@@ -954,7 +954,7 @@ function ColPanel<T extends Record<string, unknown>>({
           </label>
           {col.freezable !== false && (
             <button onClick={() => onToggleFreeze(col.key)} title="Freeze"
-              className={`text-xs px-2 py-0.5 rounded-lg border transition-colors ${frozen.has(col.key) ? 'bg-orange-100 text-orange-700 border-orange-200' : 'text-slate-400 border-transparent hover:border-slate-200 hover:text-orange-600'}`}>
+              className={`text-xs px-2 py-0.5 rounded-lg border transition-colors ${frozen.has(col.key) ? 'bg-accent-100 text-accent-700 border-accent-200' : 'text-slate-400 border-transparent hover:border-slate-200 hover:text-accent-600'}`}>
               📌
             </button>
           )}
@@ -1160,7 +1160,7 @@ export function DataTable<T extends Record<string, unknown>>({
   const renderRows = (rows: T[]) => rows.map((row, i) => (
     <tr
       key={i}
-      className="relative border-t border-slate-100 even:bg-slate-50/40 hover:bg-orange-50/60 hover:shadow-[inset_3px_0_0_0_rgb(249,115,22)] transition-all duration-150 group"
+      className="relative border-t border-slate-100 even:bg-slate-50/40 hover:bg-accent-50 hover:shadow-[inset_3px_0_0_0_var(--accent-500)] transition-all duration-150 group"
     >
       {allCols.map(col => {
         const left = frozenLeft(col.key);
@@ -1169,8 +1169,8 @@ export function DataTable<T extends Record<string, unknown>>({
           <td key={col.key}
             className={
               col.key === '__history'
-                ? 'w-12 min-w-[48px] max-w-[48px] bg-inherit px-1.5 py-3 align-middle text-center text-sm text-slate-700 group-hover:bg-orange-50/60'
-                : `px-4 py-3 text-sm text-slate-700 ${frozen ? 'sticky z-10 bg-white group-hover:bg-orange-50/60 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]' : ''}`
+                ? 'w-12 min-w-[48px] max-w-[48px] bg-inherit px-1.5 py-3 align-middle text-center text-sm text-slate-700 group-hover:bg-accent-50'
+                : `px-4 py-3 text-sm text-slate-700 ${frozen ? 'sticky z-10 bg-white group-hover:bg-accent-50 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]' : ''}`
             }
             style={col.key === '__history' ? undefined : { left: frozen ? left : undefined }}>
             {col.render
@@ -1212,7 +1212,7 @@ export function DataTable<T extends Record<string, unknown>>({
                 setGlobalQ(e.target.value);
                 setPage(1);
               }}
-              className="w-full rounded-xl border border-slate-200 py-2 pl-9 pr-3 text-sm placeholder:text-slate-400 transition-shadow focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
+              className="w-full rounded-xl border border-slate-200 py-2 pl-9 pr-3 text-sm placeholder:text-slate-400 transition-shadow focus:border-accent-400 focus:outline-none focus:ring-2 focus:ring-accent-200"
             />
           </div>
 
@@ -1223,14 +1223,14 @@ export function DataTable<T extends Record<string, unknown>>({
                 onClick={() => setShowFilter((s) => !s)}
                 className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
                   showFilter || filterCount > 0
-                    ? "border-orange-300 bg-orange-50 text-orange-700"
-                    : "border-slate-200 text-slate-600 hover:border-orange-200 hover:bg-orange-50/60 hover:text-orange-700"
+                    ? "border-accent-300 bg-accent-50 text-accent-700"
+                    : "border-slate-200 text-slate-600 hover:border-accent-200 hover:bg-accent-50 hover:text-accent-700"
                 }`}
               >
                 <Filter className="h-4 w-4 shrink-0" />
                 Filter
                 {filterCount > 0 && (
-                  <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-orange-600 px-1 text-[10px] font-bold text-white">
+                  <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-accent-600 px-1 text-[10px] font-bold text-white">
                     {filterCount}
                   </span>
                 )}
@@ -1263,7 +1263,7 @@ export function DataTable<T extends Record<string, unknown>>({
               className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
                 groupBy
                   ? "border-amber-300 bg-amber-50 text-amber-700"
-                  : "border-slate-200 text-slate-600 hover:border-orange-200 hover:bg-orange-50/60 hover:text-orange-700"
+                  : "border-slate-200 text-slate-600 hover:border-accent-200 hover:bg-accent-50 hover:text-accent-700"
               }`}
             >
               <LayoutGrid className="h-4 w-4 shrink-0" />
@@ -1285,7 +1285,7 @@ export function DataTable<T extends Record<string, unknown>>({
               className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
                 showColPanel
                   ? "border-slate-400 bg-slate-100 text-slate-800"
-                  : "border-slate-200 text-slate-600 hover:border-orange-200 hover:bg-orange-50/60 hover:text-orange-700"
+                  : "border-slate-200 text-slate-600 hover:border-accent-200 hover:bg-accent-50 hover:text-accent-700"
               }`}
             >
               <Columns className="h-4 w-4 shrink-0" />
@@ -1300,7 +1300,7 @@ export function DataTable<T extends Record<string, unknown>>({
               <button
                 type="button"
                 onClick={onAdd}
-                className="flex items-center gap-1.5 rounded-xl bg-gradient-to-b from-[#FFAF55] to-[#ea580c] px-4 py-2 text-sm font-semibold text-white shadow-brand transition-all hover:from-[#f5a245] hover:to-[#c2410c] active:translate-y-[1px]"
+                className="flex items-center gap-1.5 rounded-xl bg-gradient-to-b from-accent-300 to-accent-600 px-4 py-2 text-sm font-semibold text-white shadow-brand transition-all hover:from-accent-400 hover:to-accent-700 active:translate-y-[1px]"
               >
                 <span className="text-base leading-none">+</span> {addLabel}
               </button>
@@ -1314,7 +1314,7 @@ export function DataTable<T extends Record<string, unknown>>({
             {Object.entries(quickFilters).flatMap(([k, vals]) => {
               const col = columns.find(c => c.key === k);
               return vals.map(v => (
-                <span key={`${k}-${v}`} className="inline-flex items-center gap-1.5 rounded-full bg-orange-50 border border-orange-200 px-2.5 py-0.5 text-xs text-orange-700">
+                <span key={`${k}-${v}`} className="inline-flex items-center gap-1.5 rounded-full bg-accent-50 border border-accent-200 px-2.5 py-0.5 text-xs text-accent-700">
                   <strong>{col?.label}</strong> is <span className="font-medium">{v}</span>
                   <button onClick={() => toggleQF(k, v)} className="hover:text-rose-500 font-bold ml-0.5">×</button>
                 </span>
@@ -1365,9 +1365,9 @@ export function DataTable<T extends Record<string, unknown>>({
                           } else {
                             setSorts([{ key: col.key, dir: 'asc' }, ...sorts.slice(0, 2)]);
                           }
-                        }} className={`flex items-center gap-1.5 transition-colors group ${btnAlignCls} ${isSorted ? 'text-orange-700' : 'hover:text-orange-700'}`}>
+                        }} className={`flex items-center gap-1.5 transition-colors group ${btnAlignCls} ${isSorted ? 'text-accent-700' : 'hover:text-accent-700'}`}>
                           {col.label}
-                          <span className={`inline-flex items-center justify-center w-4 h-4 rounded transition-all ${isSorted ? 'opacity-100 text-orange-600 bg-orange-100' : 'opacity-30 group-hover:opacity-70 text-slate-400'}`}>
+                          <span className={`inline-flex items-center justify-center w-4 h-4 rounded transition-all ${isSorted ? 'opacity-100 text-accent-600 bg-accent-100' : 'opacity-30 group-hover:opacity-70 text-slate-400'}`}>
                             {isSorted
                               ? (isSorted.dir === 'asc' ? <ChevronUp className="h-3 w-3" strokeWidth={2.5} /> : <ChevronDown className="h-3 w-3" strokeWidth={2.5} />)
                               : <ChevronsUpDown className="h-3 w-3" strokeWidth={2} />}
@@ -1398,7 +1398,7 @@ export function DataTable<T extends Record<string, unknown>>({
                 <tr>
                   <td colSpan={allCols.length} className="px-4 py-24 text-center bg-gradient-to-b from-white to-slate-50/40">
                     <div className="flex flex-col items-center justify-center">
-                      <div className="w-8 h-8 rounded-full border-2 border-orange-200 border-t-orange-500 animate-spin mb-3" />
+                      <div className="w-8 h-8 rounded-full border-2 border-accent-200 border-t-accent-500 animate-spin mb-3" />
                       <div className="text-sm font-medium text-slate-500">Loading…</div>
                     </div>
                   </td>
@@ -1426,7 +1426,7 @@ export function DataTable<T extends Record<string, unknown>>({
                         {onAdd && (
                           <button
                             onClick={onAdd}
-                            className="mt-5 inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-b from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 px-4 py-2 text-sm font-semibold text-white shadow-brand active:translate-y-[1px] transition-all"
+                            className="mt-5 inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-b from-accent-500 to-accent-600 hover:from-accent-600 hover:to-accent-700 px-4 py-2 text-sm font-semibold text-white shadow-brand active:translate-y-[1px] transition-all"
                           >
                             <span className="text-base leading-none">+</span> {addLabel}
                           </button>
@@ -1443,7 +1443,7 @@ export function DataTable<T extends Record<string, unknown>>({
                               if (filterCount > 0) clearFilters();
                               if (globalQ) setGlobalQ('');
                             }}
-                            className="mt-3 inline-flex items-center gap-1 text-orange-600 hover:text-orange-700 hover:bg-orange-50 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+                            className="mt-3 inline-flex items-center gap-1 text-accent-600 hover:text-accent-700 hover:bg-accent-50 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
                           >
                             Clear {filterCount > 0 && globalQ ? 'filters & search' : filterCount > 0 ? 'all filters' : 'search'}
                           </button>
@@ -1478,7 +1478,7 @@ export function DataTable<T extends Record<string, unknown>>({
               <div className="flex items-center gap-2 text-slate-500 text-xs">
                 <span className="font-medium">Rows per page:</span>
                 <select value={effPageSize} onChange={e => changeSize(Number(e.target.value))}
-                  className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400 hover:border-slate-300 transition-colors">
+                  className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400 hover:border-slate-300 transition-colors">
                   {PAGE_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
                 <span className="text-slate-400">·</span>
@@ -1488,13 +1488,13 @@ export function DataTable<T extends Record<string, unknown>>({
               </div>
               <div className="flex items-center gap-1 bg-white rounded-xl ring-1 ring-slate-200 p-1 shadow-sm">
                 {([['«', 1], ['‹', effPage - 1]] as const).map(([l, target]) => (
-                  <button key={l} onClick={() => goPage(target)} disabled={effPage === 1} className="rounded-lg w-7 h-7 text-xs text-slate-500 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-orange-50 hover:text-orange-700 transition-colors flex items-center justify-center">{l}</button>
+                  <button key={l} onClick={() => goPage(target)} disabled={effPage === 1} className="rounded-lg w-7 h-7 text-xs text-slate-500 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-accent-50 hover:text-accent-700 transition-colors flex items-center justify-center">{l}</button>
                 ))}
                 <span className="px-3 h-7 inline-flex items-center text-xs font-bold rounded-lg bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-sm">
                   {effPage} <span className="opacity-60 mx-1">/</span> {effTotalPages}
                 </span>
                 {([['›', effPage + 1], ['»', effTotalPages]] as const).map(([l, target]) => (
-                  <button key={l} onClick={() => goPage(target)} disabled={effPage === effTotalPages} className="rounded-lg w-7 h-7 text-xs text-slate-500 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-orange-50 hover:text-orange-700 transition-colors flex items-center justify-center">{l}</button>
+                  <button key={l} onClick={() => goPage(target)} disabled={effPage === effTotalPages} className="rounded-lg w-7 h-7 text-xs text-slate-500 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-accent-50 hover:text-accent-700 transition-colors flex items-center justify-center">{l}</button>
                 ))}
               </div>
             </div>

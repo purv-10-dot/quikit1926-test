@@ -359,7 +359,7 @@ export default function VendorsPage() {
               onClick={() => setStatusFilter("all")}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${
                 statusFilter === "all"
-                  ? "bg-orange-50 text-orange-700 border-orange-200"
+                  ? "bg-accent-50 text-accent-700 border-accent-200"
                   : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
               }`}
             >
@@ -370,7 +370,7 @@ export default function VendorsPage() {
               onClick={() => setStatusFilter("inactive")}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${
                 statusFilter === "inactive"
-                  ? "bg-orange-50 text-orange-700 border-orange-200"
+                  ? "bg-accent-50 text-accent-700 border-accent-200"
                   : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
               }`}
             >

@@ -464,7 +464,7 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
                     <>
                       <input type="date" value={requiredDate} onChange={e => setRequiredDate(e.target.value)}
                         min={fmt(earliest)}
-                        className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
+                        className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500" />
                       <p className="text-[10px] text-gray-400 mt-1">
                         Minimum 7-day lead time. Earliest pick: {earliest.toLocaleDateString("en-IN", { day: "numeric", month: "short" })}.
                       </p>
@@ -505,14 +505,14 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Purpose / Reason</label>
               <input type="text" value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="e.g. Foundation work phase 2"
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500" />
             </div>
 
             {/* Urgent */}
             <div className={`p-3 rounded-lg border ${isUrgent ? "bg-amber-50 border-amber-200" : "bg-white border-gray-200"}`}>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" checked={isUrgent} onChange={e => setIsUrgent(e.target.checked)}
-                  className="w-4 h-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500" />
+                  className="w-4 h-4 rounded border-gray-300 text-accent-600 focus:ring-accent-500" />
                 <span className="text-sm font-medium text-gray-700">Mark as URGENT</span>
               </label>
               {isUrgent && (
@@ -592,7 +592,7 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
             <div className="bg-white border border-gray-200 rounded-xl">
               <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-200 rounded-t-xl">
                 <div className="flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-orange-600" />
+                  <FileText className="w-4 h-4 text-accent-600" />
                   <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider">
                     Material Estimation
                   </h3>
@@ -742,7 +742,7 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
           <div>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Material Lines ({lines.length})</h3>
-              <button onClick={addLine} className="text-xs text-orange-600 hover:text-orange-700 font-semibold flex items-center gap-1">
+              <button onClick={addLine} className="text-xs text-accent-600 hover:text-accent-700 font-semibold flex items-center gap-1">
                 <Plus className="w-3.5 h-3.5" /> Add Line
               </button>
             </div>
@@ -851,7 +851,7 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
                               className={`w-full px-2.5 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 ${
                                 isOverBudget
                                   ? "border-rose-400 bg-rose-50 focus:ring-rose-300"
-                                  : "border-gray-300 focus:ring-orange-500"
+                                  : "border-gray-300 focus:ring-accent-500"
                               }`} />
                           </div>
                           <div>
@@ -876,7 +876,7 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
                               <input type="number" step="0.01" min="0" value={line.estimatedRate}
                                 onChange={e => updateLine(i, "estimatedRate", e.target.value)}
                                 placeholder="0.00"
-                                className="w-full px-2.5 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
+                                className="w-full px-2.5 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500" />
                             </div>
                           )}
                           {!isFieldUser && (
@@ -894,7 +894,7 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
                           <label className="block text-[10px] font-medium text-gray-500 mb-1">Specification / Grade</label>
                           <input type="text" value={line.specification} onChange={e => updateLine(i, "specification", e.target.value)}
                             placeholder="Grade, brand, size..."
-                            className="w-full px-2.5 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
+                            className="w-full px-2.5 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500" />
                         </div>
                       </div>
 
@@ -909,7 +909,7 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
             </div>
 
             <button onClick={addLine}
-              className="w-full mt-3 py-2.5 border-2 border-dashed border-gray-300 rounded-xl text-sm text-gray-500 hover:text-orange-600 hover:border-orange-300 transition-colors flex items-center justify-center gap-1.5 font-medium">
+              className="w-full mt-3 py-2.5 border-2 border-dashed border-gray-300 rounded-xl text-sm text-gray-500 hover:text-accent-600 hover:border-accent-300 transition-colors flex items-center justify-center gap-1.5 font-medium">
               <Plus className="w-4 h-4" /> Add Another Material
             </button>
           </div>
@@ -917,7 +917,7 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
           {/* Total — hidden for field users (USER role) since the
               estimate sums commercial info they aren't shown above. */}
           {!isFieldUser ? (
-            <div className="bg-orange-50 border border-orange-200 rounded-xl p-5">
+            <div className="bg-accent-50 border border-accent-200 rounded-xl p-5">
               <div className="flex items-center justify-between">
                 <div>
                   <span className="text-sm text-gray-600">{lines.filter(l => l.itemId).length} items</span>

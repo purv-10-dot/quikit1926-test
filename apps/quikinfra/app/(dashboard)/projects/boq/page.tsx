@@ -292,7 +292,7 @@ export default function BOQPage() {
       const valColor = isGrp ? "text-indigo-700" : "";
 
       result.push(
-        <tr key={node.id ?? node.boqNo} className={`border-b border-gray-200/60 hover:bg-orange-50/40 ${grpBg} ${neg ? "bg-red-50/40" : ""}`}>
+        <tr key={node.id ?? node.boqNo} className={`border-b border-gray-200/60 hover:bg-accent-50 ${grpBg} ${neg ? "bg-red-50/40" : ""}`}>
           {/* BOQ No */}
           <td className="px-2 py-1.5 text-[11px] text-gray-500 whitespace-nowrap border-r border-gray-100">{node.boqNo}</td>
 
@@ -432,7 +432,7 @@ export default function BOQPage() {
             {/* Category tabs */}
             {categoryTabs.map(tab => (
               <button key={tab.key} onClick={() => setCategoryFilter(tab.key)}
-                className={`px-2 py-1 text-[11px] font-medium rounded-md ${categoryFilter === tab.key ? "bg-orange-100 text-orange-700" : "text-gray-500 hover:bg-gray-100"}`}>
+                className={`px-2 py-1 text-[11px] font-medium rounded-md ${categoryFilter === tab.key ? "bg-accent-100 text-accent-700" : "text-gray-500 hover:bg-gray-100"}`}>
                 {tab.label} ({tab.count})
               </button>
             ))}
@@ -442,7 +442,7 @@ export default function BOQPage() {
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
               <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Search BOQ items..." className="pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg w-52 focus:outline-none focus:ring-2 focus:ring-orange-500" />
+                placeholder="Search BOQ items..." className="pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg w-52 focus:outline-none focus:ring-2 focus:ring-accent-500" />
             </div>
             {/* Upload Revision */}
             <PrimaryButton onClick={() => selectedProject ? setImportDrawerOpen(true) : toast.warning("Select a project first")}

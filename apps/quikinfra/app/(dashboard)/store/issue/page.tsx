@@ -573,7 +573,7 @@ export default function MaterialIssuePage() {
                 value={line.reqQty ?? ""}
                 onChange={(e) => update({ reqQty: e.target.value })}
                 placeholder="0"
-                className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-orange-500"
+                className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-accent-500"
               />
             </div>
             <div>
@@ -587,7 +587,7 @@ export default function MaterialIssuePage() {
                 value={line.quantity ?? ""}
                 onChange={(e) => update({ quantity: e.target.value })}
                 placeholder="0"
-                className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-orange-500"
+                className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-accent-500"
               />
             </div>
             <div>
@@ -599,7 +599,7 @@ export default function MaterialIssuePage() {
                 value={line.batchNo ?? ""}
                 onChange={(e) => update({ batchNo: e.target.value })}
                 placeholder="Batch"
-                className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
               />
             </div>
             <div>
@@ -611,7 +611,7 @@ export default function MaterialIssuePage() {
                 value={line.equipmentNo ?? ""}
                 onChange={(e) => update({ equipmentNo: e.target.value })}
                 placeholder="Eqpt No."
-                className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
               />
             </div>
           </div>
@@ -626,7 +626,7 @@ export default function MaterialIssuePage() {
               value={line.remarks ?? ""}
               onChange={(e) => update({ remarks: e.target.value })}
               placeholder="Line-level notes"
-              className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+              className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
             />
           </div>
         </div>

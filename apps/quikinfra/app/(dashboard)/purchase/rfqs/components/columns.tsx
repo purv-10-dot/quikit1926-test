@@ -34,7 +34,7 @@ export function buildRfqColumns({
       searchable: true,
       render: (row) => (
         <span
-          className="text-orange-600 cursor-pointer hover:underline font-medium"
+          className="text-accent-600 cursor-pointer hover:underline font-medium"
           onClick={() => router.push(`/purchase/rfqs/${row.id}`)}
         >
           {row.rfqNumber}
@@ -54,7 +54,7 @@ export function buildRfqColumns({
               e.stopPropagation();
               setPeekTarget({ type: "indent", id: row.sourceIndentId ?? "" });
             }}
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 text-[11px] font-medium hover:bg-orange-100 transition-colors"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-accent-50 text-accent-700 text-[11px] font-medium hover:bg-accent-100 transition-colors"
             title="View Indent details"
           >
             {row.sourceIndentNumber}
@@ -170,7 +170,7 @@ export function buildRfqColumns({
                             initialVendorRowId: v.id,
                           });
                         }}
-                        className="text-[11px] text-orange-600 hover:text-orange-700 hover:underline font-medium shrink-0"
+                        className="text-[11px] text-accent-600 hover:text-accent-700 hover:underline font-medium shrink-0"
                       >
                         Add Quote
                       </button>
@@ -237,7 +237,7 @@ export function buildRfqColumns({
                     lines: Array.isArray(row.lines) ? row.lines : [],
                   });
                 }}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-orange-700 bg-orange-50 border border-orange-200 hover:bg-orange-100"
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-accent-700 bg-accent-50 border border-accent-200 hover:bg-accent-100"
                 title="Compare vendor quotes"
               >
                 <GitCompare className="w-3.5 h-3.5" />
@@ -263,7 +263,7 @@ export function buildRfqColumns({
                   "noopener",
                 );
               }}
-              className="p-1.5 rounded hover:bg-orange-50 text-gray-500 hover:text-orange-600"
+              className="p-1.5 rounded hover:bg-accent-50 text-gray-500 hover:text-accent-600"
               title="View PDF"
             >
               <FileText className="w-4 h-4" />

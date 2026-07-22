@@ -475,7 +475,6 @@ export interface GRNLine {
   amount: string; // Decimal
   qualityStatus: QualityStatus;
   batchNo?: string;
-  heatNo?: string;
   condition?: string;
   testCertRef?: string;
   shortDeliveryNote?: string;

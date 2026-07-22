@@ -253,9 +253,9 @@ export function AddQuoteModal({
       />
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 px-6 pt-5 pb-4 border-b border-gray-100 shrink-0 bg-gradient-to-b from-orange-50/40 to-white">
+        <div className="flex items-start justify-between gap-4 px-6 pt-5 pb-4 border-b border-gray-100 shrink-0 bg-accent-50">
           <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-orange-500 text-white flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-accent-500 text-white flex items-center justify-center shrink-0">
               <FileText className="w-5 h-5" />
             </div>
             <div>
@@ -332,14 +332,14 @@ export function AddQuoteModal({
                         }
                         className={
                           active
-                            ? "w-full text-left px-4 py-2.5 border-b border-gray-100 flex items-center gap-2 text-xs bg-white border-l-2 border-l-orange-500"
+                            ? "w-full text-left px-4 py-2.5 border-b border-gray-100 flex items-center gap-2 text-xs bg-white border-l-2 border-l-accent-500"
                             : "w-full text-left px-4 py-2.5 border-b border-gray-100 flex items-center gap-2 text-xs hover:bg-white/80 border-l-2 border-l-transparent"
                         }
                       >
                         <span
                           className={
                             active
-                              ? "shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-md bg-orange-500 text-white text-[10px] font-bold"
+                              ? "shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-md bg-accent-500 text-white text-[10px] font-bold"
                               : q
                                 ? "shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-md bg-emerald-100 text-emerald-600"
                                 : "shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-md bg-gray-200 text-gray-600 text-[10px] font-bold"
@@ -395,8 +395,8 @@ export function AddQuoteModal({
                 {selectedVendor && (
                   <>
                     {/* Context chip */}
-                    <div className="flex items-center gap-3 rounded-xl bg-gradient-to-r from-orange-50 to-transparent px-4 py-3 border border-orange-100">
-                      <span className="shrink-0 inline-flex items-center justify-center w-10 h-10 rounded-lg bg-orange-500 text-white text-sm font-semibold">
+                    <div className="flex items-center gap-3 rounded-xl bg-accent-50 px-4 py-3 border border-accent-100">
+                      <span className="shrink-0 inline-flex items-center justify-center w-10 h-10 rounded-lg bg-accent-500 text-white text-sm font-semibold">
                         {initialOf(selectedVendor.vendorName)}
                       </span>
                       <div className="min-w-0 flex-1">
@@ -410,7 +410,7 @@ export function AddQuoteModal({
                           </div>
                         )}
                       </div>
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-orange-600 shrink-0">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-accent-600 shrink-0">
                         Quote {currentIdx + 1} / {unquotedVendors.length}
                       </span>
                     </div>
@@ -474,7 +474,7 @@ export function AddQuoteModal({
                                           }))
                                         }
                                         placeholder="0.00"
-                                        className="w-28 px-2 py-1.5 rounded border border-gray-300 text-sm text-right focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                        className="w-28 px-2 py-1.5 rounded border border-gray-300 text-sm text-right focus:outline-none focus:ring-2 focus:ring-accent-500"
                                       />
                                     </td>
                                   </tr>
@@ -497,7 +497,7 @@ export function AddQuoteModal({
                         onChange={(e) => setRemarks(e.target.value)}
                         rows={2}
                         placeholder="Any specific terms or remarks from the vendor&#8230;"
-                        className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none"
+                        className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500 resize-none"
                       />
                     </section>
 
@@ -532,8 +532,8 @@ export function AddQuoteModal({
                         }}
                         className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border-2 border-dashed text-sm cursor-pointer transition-colors ${
                           fileDragActive
-                            ? "border-orange-400 bg-orange-50/60"
-                            : "border-gray-300 hover:border-orange-400 hover:bg-orange-50/30"
+                            ? "border-accent-400 bg-accent-50"
+                            : "border-gray-300 hover:border-accent-400 hover:bg-accent-50"
                         }`}
                       >
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-indigo-50 text-indigo-700 text-xs font-medium shrink-0">
@@ -574,7 +574,7 @@ export function AddQuoteModal({
                       type="button"
                       onClick={() => handleSave(true)}
                       disabled={saving || !selectedVendor}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium text-orange-700 bg-orange-50 border border-orange-200 hover:bg-orange-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium text-accent-700 bg-accent-50 border border-accent-200 hover:bg-accent-100 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Save &amp; next
                       <ArrowRight className="w-3.5 h-3.5" />

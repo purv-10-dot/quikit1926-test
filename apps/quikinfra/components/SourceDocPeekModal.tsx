@@ -145,7 +145,7 @@ export function SourceDocPeekModal({ open, initial, onClose }: Props) {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0 rounded-t-2xl">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center shrink-0">
+            <div className="w-9 h-9 rounded-lg bg-accent-50 text-accent-600 flex items-center justify-center shrink-0">
               <FileText className="w-4 h-4" />
             </div>
             <div className="min-w-0">
@@ -213,10 +213,10 @@ export function SourceDocPeekModal({ open, initial, onClose }: Props) {
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                         placeholder="Search items…"
-                        className="text-xs pl-7 pr-2 py-1.5 border border-gray-200 rounded-lg bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 w-40"
+                        className="text-xs pl-7 pr-2 py-1.5 border border-gray-200 rounded-lg bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-accent-500 w-40"
                       />
                     </div>
-                    <span className="inline-flex items-center text-[10px] font-semibold px-2 py-1 rounded-full bg-orange-50 text-orange-700 border border-orange-100">
+                    <span className="inline-flex items-center text-[10px] font-semibold px-2 py-1 rounded-full bg-accent-50 text-accent-700 border border-accent-100">
                       {lines.length} {lines.length === 1 ? "Item" : "Items"}
                     </span>
                   </div>

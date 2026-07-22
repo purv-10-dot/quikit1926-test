@@ -635,7 +635,7 @@ export default function GatePassPage() {
         if (ref && refLabel) {
           return (
             <div className="leading-tight">
-              <div className="text-sm font-medium text-orange-600">{ref}</div>
+              <div className="text-sm font-medium text-accent-600">{ref}</div>
               <div className="text-[11px] text-gray-500">{refLabel}</div>
             </div>
           );
@@ -647,7 +647,7 @@ export default function GatePassPage() {
         }
         if (ref) {
           return (
-            <span className="text-sm font-medium text-orange-600">{ref}</span>
+            <span className="text-sm font-medium text-accent-600">{ref}</span>
           );
         }
         return <span className="text-gray-400">—</span>;

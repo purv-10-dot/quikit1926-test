@@ -17,7 +17,6 @@ export interface GRNLineInput {
   acceptedQty?: string | number | null;
   rejectedQty?: string | number | null;
   batchNo?: string | null;
-  heatNo?: string | null;
   condition?: string | null;
   testCertRef?: string | null;
   remarks?: string | null;
@@ -91,7 +90,6 @@ interface GrnLineRow {
   amount?: Numericish;
   qualityStatus?: string | null;
   batchNo?: string | null;
-  heatNo?: string | null;
   condition?: string | null;
   testCertRef?: string | null;
   remarks?: string | null;
@@ -109,6 +107,10 @@ interface GrnPoRel {
   id?: string | null;
   poNumber?: string | null;
 }
+interface GrnLocationRel {
+  name?: string | null;
+  code?: string | null;
+}
 interface GrnRow {
   id: string;
   orgId: string;
@@ -120,6 +122,7 @@ interface GrnRow {
   project?: GrnProjectRel | null;
   vendor?: GrnVendorRel | null;
   po?: GrnPoRel | null;
+  location?: GrnLocationRel | null;
   grnDate?: Date | string | null;
   locationId?: string | null;
   storageLocationId?: string | null;
@@ -185,7 +188,6 @@ function enrichLine(row: GrnLineRow, itemById: Map<string, ItemLookup>, uomById:
     amount: String(row.amount ?? "0"),
     qualityStatus: row.qualityStatus ?? "pending",
     batchNo: row.batchNo ?? "",
-    heatNo: row.heatNo ?? "",
     condition: row.condition ?? "Good",
     testCertRef: row.testCertRef ?? "",
     remarks: row.remarks ?? "",
@@ -197,6 +199,7 @@ function enrichGRN(row: GrnRow, itemById: Map<string, ItemLookup>, uomById: Map<
   const project = row.project ?? null;
   const vendor = row.vendor ?? null;
   const po = row.po ?? null;
+  const location = row.location ?? null;
   const grnTotalExGST = lines.reduce(
     (s, l) => s + (parseFloat(l.amount) || 0),
     0,
@@ -216,6 +219,7 @@ function enrichGRN(row: GrnRow, itemById: Map<string, ItemLookup>, uomById: Map<
     grnDate: isoDate(row.grnDate),
     locationId: row.locationId ?? null,
     storageLocationId: row.storageLocationId ?? null,
+    storageLocationName: location?.name ?? "",
     supplierInvoiceNo: row.supplierInvoiceNo ?? "",
     vendorInvoiceNo: row.supplierInvoiceNo ?? "",
     supplierInvoiceDate: isoDate(row.supplierInvoiceDate),
@@ -363,6 +367,7 @@ export async function findGRNById(
       vendor: {
         select: { id: true, name: true, companyName: true, gstin: true },
       },
+      location: { select: { id: true, name: true, code: true } },
     },
   });
   if (!row) return null;
@@ -457,7 +462,6 @@ export async function createGRN(input: CreateGRNInput): Promise<EnrichedGRN> {
           : "rejected"
         : "accepted",
     batchNo: l.batchNo ?? null,
-    heatNo: l.heatNo ?? null,
     condition: l.condition ?? "Good",
     testCertRef: l.testCertRef ?? null,
     remarks: l.remarks ?? null,

@@ -287,7 +287,7 @@ export function ImportDataDrawer({
       <div className={RIGHT_DRAWER_BACKDROP} onClick={onClose} />
       <div className={RIGHT_DRAWER_FRAME}>
         <div className={`${RIGHT_DRAWER_PANEL} max-w-3xl`}>
-        <div className="flex shrink-0 items-center justify-between border-b border-gray-200 bg-orange-50/40 px-6 py-4 sm:px-8">
+        <div className="flex shrink-0 items-center justify-between border-b border-gray-200 bg-accent-50 px-6 py-4 sm:px-8">
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Import Data</h2>
             <p className="text-sm text-gray-500 mt-0.5">Upload &amp; map your data</p>
@@ -306,7 +306,7 @@ export function ImportDataDrawer({
                 onDragOver={onDragOver}
                 onDrop={onDrop}
                 className={`block rounded-2xl border-2 border-dashed py-16 px-6 text-center cursor-pointer transition-colors ${
-                  isDragging ? "border-orange-400 bg-orange-50/60" : "border-gray-300 bg-white hover:bg-gray-50"
+                  isDragging ? "border-accent-400 bg-accent-50" : "border-gray-300 bg-white hover:bg-gray-50"
                 }`}
               >
                 <input
@@ -316,7 +316,7 @@ export function ImportDataDrawer({
                   className="hidden"
                   onChange={(e) => acceptFile(e.target.files?.[0] ?? null)}
                 />
-                <div className="w-14 h-14 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center mx-auto mb-3">
+                <div className="w-14 h-14 rounded-xl bg-accent-50 text-accent-500 flex items-center justify-center mx-auto mb-3">
                   <UploadCloud className="w-6 h-6" />
                 </div>
                 <p className="text-sm text-gray-700">
@@ -348,7 +348,7 @@ export function ImportDataDrawer({
 
           {stage === "map" && (
             <>
-              <div className="flex items-center gap-3 mb-4 px-3 py-2 rounded-lg bg-orange-50/60 border border-orange-100 text-xs text-orange-800">
+              <div className="flex items-center gap-3 mb-4 px-3 py-2 rounded-lg bg-accent-50 border border-accent-100 text-xs text-accent-800">
                 <FileSpreadsheet className="w-4 h-4 shrink-0" />
                 <span>
                   Detected <span className="font-semibold">{rows.length}</span> rows in{" "}
@@ -434,13 +434,13 @@ export function ImportDataDrawer({
 
           {stage === "running" && (
             <div className="py-16 flex flex-col items-center justify-center gap-3 text-gray-600">
-              <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+              <Loader2 className="w-8 h-8 animate-spin text-accent-500" />
               <p className="text-sm font-medium">
                 Importing {progress.done} / {progress.total}…
               </p>
               <div className="w-72 h-2 bg-gray-100 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-orange-500 transition-all"
+                  className="h-full bg-accent-500 transition-all"
                   style={{
                     width: progress.total > 0 ? `${(progress.done / progress.total) * 100}%` : "0%",
                   }}

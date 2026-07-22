@@ -83,7 +83,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
       {/* Page header — hidden in embedded (drawer) mode because the
           drawer chrome supplies its own title + close. */}
       {!embedded && (
-      <div className="px-6 py-5">
+      <div className="px-6 pt-5 pb-2">
         <h1 className="text-lg font-bold text-gray-900">Daily Progress Report</h1>
         <p className="text-xs text-gray-500">
           Track daily site activities, material consumption, and labor.
@@ -98,7 +98,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
           wrapper anywhere in this tree — that would create a new scroll
           context and the sticky footer below would stop sticking to the
           actual scrolling ancestor. */}
-      <div className={embedded ? "" : "p-6 max-w-[1600px] mx-auto"}>
+      <div className={embedded ? "" : "px-6 pb-6 max-w-[1600px] mx-auto"}>
         <div>
           {/* Sticky header block — wraps the context strip (date / project
               / project meta card) AND the section nav so they pin to the
@@ -114,7 +114,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                 <div className="flex items-center gap-3 mr-auto">
                   <Link
                     href="/projects/dpr"
-                    className="mt-5 p-2 rounded-lg hover:bg-slate-100 hover:text-orange-700 text-slate-500 border border-transparent hover:border-orange-200 transition-all"
+                    className="mt-5 p-2 rounded-lg hover:bg-slate-100 hover:text-accent-700 text-slate-500 border border-transparent hover:border-accent-200 transition-all"
                     title="Back to DPR list"
                   >
                     <ArrowLeft className="w-4 h-4" />
@@ -143,7 +143,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                       type="date"
                       value={reportDate}
                       onChange={(e) => setReportDate(e.target.value)}
-                      className="text-sm pl-8 pr-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400 transition-shadow"
+                      className="text-sm pl-8 pr-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400 transition-shadow"
                     />
                   </div>
                 </div>
@@ -165,8 +165,8 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                 the user has a persistent visual anchor for *which* project
                 this DPR belongs to as they scroll the form. */}
             {selectedProject && (
-              <div className="mt-3 flex items-center gap-3 px-3 py-2 rounded-lg bg-white border border-orange-100 ring-1 ring-orange-50">
-                <div className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-orange-50 text-orange-600 ring-1 ring-orange-100 shrink-0">
+              <div className="mt-3 flex items-center gap-3 px-3 py-2 rounded-lg bg-white border border-accent-100 ring-1 ring-accent-50">
+                <div className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-accent-50 text-accent-600 ring-1 ring-accent-100 shrink-0">
                   <Building2 className="w-4 h-4" />
                 </div>
                 <div className="min-w-0 flex-1">
@@ -358,7 +358,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
               type="button"
               onClick={() => handleSave("draft")}
               disabled={saving !== null}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-slate-700 bg-white border border-slate-300 hover:border-orange-300 hover:text-orange-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-slate-700 bg-white border border-slate-300 hover:border-accent-300 hover:text-accent-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
               {saving === "draft" ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -371,7 +371,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
               type="button"
               onClick={() => handleSave("submit")}
               disabled={saving !== null}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-gradient-to-b from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed shadow-brand active:translate-y-[1px] transition-all"
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-gradient-to-b from-accent-500 to-accent-600 hover:from-accent-600 hover:to-accent-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed shadow-brand active:translate-y-[1px] transition-all"
             >
               {saving === "submit" ? (
                 <Loader2 className="w-4 h-4 animate-spin" />

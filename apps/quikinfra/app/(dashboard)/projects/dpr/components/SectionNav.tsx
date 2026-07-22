@@ -49,12 +49,12 @@ export function SectionNav({
               className={`group inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-semibold whitespace-nowrap transition-colors ${
                 filled
                   ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-300"
-                  : "border-slate-200 bg-white text-slate-600 hover:border-orange-300 hover:text-orange-700"
+                  : "border-slate-200 bg-white text-slate-600 hover:border-accent-300 hover:text-accent-700"
               }`}
             >
               <span
                 className={`inline-flex items-center justify-center w-4 h-4 rounded-full ${
-                  filled ? "text-emerald-600" : "text-slate-400 group-hover:text-orange-600"
+                  filled ? "text-emerald-600" : "text-slate-400 group-hover:text-accent-600"
                 }`}
               >
                 {filled ? <CheckCircle2 className="w-3.5 h-3.5" /> : s.icon}

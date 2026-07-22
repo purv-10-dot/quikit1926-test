@@ -308,19 +308,10 @@ export function validateGRNLines(grnLines: GrnLineInput[], poLines: POForGRN["li
   }
 }
 
-export function validateGRNChallan(body: PurchaseRequestBody): void {
-  // P0 Fix #11: Challan mandatory before submit
-  if (!body.challanNo?.trim()) {
-    throw new PurchaseValidationError(ERR.MISSING_REQUIRED_ATTACHMENT, "Challan number is mandatory for GRN submission.");
-  }
-  if (!body.challanDate?.trim()) {
-    throw new PurchaseValidationError(ERR.MISSING_REQUIRED_ATTACHMENT, "Challan date is mandatory for GRN submission.");
-  }
-  // Attachment check — in demo mode we check for a reference string
-  // In production this checks file metadata table
-  if (!body.challanAttachment && !body.challanAttachmentId) {
-    throw new PurchaseValidationError(ERR.MISSING_REQUIRED_ATTACHMENT, "Challan attachment (scan/photo) is mandatory for GRN submission. Attach the delivery challan before submitting.");
-  }
+export function validateGRNChallan(_body: PurchaseRequestBody): void {
+  // Challan number, date, and attachment are all optional for GRN
+  // submission. Retained as a no-op hook in case challan validation is
+  // reintroduced.
 }
 
 // ─── PO Amendment Validation (P0 Fix #10) ───────────────────────────

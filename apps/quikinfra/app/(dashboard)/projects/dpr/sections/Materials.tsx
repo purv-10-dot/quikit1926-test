@@ -39,7 +39,7 @@ export function Materials({
         <button
           type="button"
           onClick={onAdd}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-orange-700 bg-orange-50 hover:bg-orange-100 border border-orange-200 hover:border-orange-300 rounded-lg transition-colors"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-accent-700 bg-accent-50 hover:bg-accent-100 border border-accent-200 hover:border-accent-300 rounded-lg transition-colors"
         >
           <Plus className="w-3.5 h-3.5" /> Add
         </button>
@@ -145,7 +145,7 @@ export function Materials({
                           onUpdate(idx, "remarks", e.target.value)
                         }
                         placeholder="Optional note"
-                        className="w-full text-xs px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400"
+                        className="w-full text-xs px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent-300 focus:border-accent-400"
                       />
                     </td>
                     <td className="px-2 py-1.5 text-right">

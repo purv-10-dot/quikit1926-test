@@ -50,8 +50,8 @@ export default function ReportsPage() {
         subtitle="Construction operations intelligence"
         actions={
           <div className="flex items-center gap-2">
-            <CalendarCheck className="w-4 h-4 text-orange-600" />
-            <label className="text-xs font-semibold text-orange-700">Financial Year</label>
+            <CalendarCheck className="w-4 h-4 text-accent-600" />
+            <label className="text-xs font-semibold text-accent-700">Financial Year</label>
             <div className="min-w-[180px]">
               <SelectInput
                 value={selectedFy.id}
@@ -109,7 +109,7 @@ function ReportMenu({ onSelect, fy }: { onSelect: (r: ReportType) => void; fy: F
   ];
 
   const cardClass =
-    "flex flex-col p-4 rounded-xl bg-white border border-gray-200 shadow-sm hover:shadow-md hover:border-orange-200 transition-all text-left";
+    "flex flex-col p-4 rounded-xl bg-white border border-gray-200 shadow-sm hover:shadow-md hover:border-accent-200 transition-all text-left";
 
   return (
     <div className="space-y-6">
@@ -124,13 +124,13 @@ function ReportMenu({ onSelect, fy }: { onSelect: (r: ReportType) => void; fy: F
             {section.items.map((report) =>
               report.href ? (
                 <Link key={report.href} href={report.href} className={cardClass}>
-                  <report.icon className="w-5 h-5 text-orange-600 mb-2" />
+                  <report.icon className="w-5 h-5 text-accent-600 mb-2" />
                   <p className="text-sm font-medium text-gray-900">{report.label}</p>
                   <p className="text-xs text-gray-500 mt-0.5">{report.desc}</p>
                 </Link>
               ) : (
                 <button key={report.key} onClick={() => report.key && onSelect(report.key)} className={cardClass}>
-                  <report.icon className="w-5 h-5 text-orange-600 mb-2" />
+                  <report.icon className="w-5 h-5 text-accent-600 mb-2" />
                   <p className="text-sm font-medium text-gray-900">{report.label}</p>
                   <p className="text-xs text-gray-500 mt-0.5">{report.desc}</p>
                 </button>
@@ -296,7 +296,7 @@ function ReportViewer({ type, fy, onBack }: { type: ReportType; fy: FYOption; on
             ← Back to Reports
           </button>
           <h2 className="text-lg font-semibold text-gray-900">{config.title}</h2>
-          <span className="text-xs font-bold text-orange-700 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full">
+          <span className="text-xs font-bold text-accent-700 bg-accent-50 border border-accent-200 px-2 py-0.5 rounded-full">
             {fy.label}
           </span>
           <span className="text-sm text-gray-500">({rows.length} records)</span>

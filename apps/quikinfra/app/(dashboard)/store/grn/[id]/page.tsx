@@ -167,6 +167,10 @@ export default function GRNDetailPage() {
                 <InfoField label="Project" value={projectName} />
                 <InfoField label="Vendor" value={vendorName} />
                 <InfoField
+                  label="Storage Location"
+                  value={grn.storageLocationName || "—"}
+                />
+                <InfoField
                   label="Status"
                   value={<StatusChip status={grn.status ?? ""} />}
                 />
@@ -291,6 +295,9 @@ export default function GRNDetailPage() {
                         <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase">
                           Batch
                         </th>
+                        <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase">
+                          Remarks
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
@@ -325,6 +332,9 @@ export default function GRNDetailPage() {
                           </td>
                           <td className="px-3 py-2.5 text-xs text-gray-500">
                             {line.batchNo ?? "—"}
+                          </td>
+                          <td className="px-3 py-2.5 text-xs text-gray-600 whitespace-pre-line">
+                            {line.remarks ? line.remarks : "—"}
                           </td>
                         </tr>
                       ))}

@@ -267,7 +267,7 @@ export default function UserPermissionMatrixPage() {
               the page doesn't reflow when data arrives. */}
           <div className="bg-white rounded-lg border border-gray-200 px-3 py-2 mb-3 animate-pulse">
             <div className="flex items-center gap-3">
-              <div className="h-8 w-8 shrink-0 rounded-full bg-orange-200" />
+              <div className="h-8 w-8 shrink-0 rounded-full bg-accent-200" />
               <div className="h-4 w-32 rounded bg-gray-200" />
               <div className="h-3 w-16 rounded bg-gray-100" />
               <div className="h-4 w-24 rounded bg-gray-100" />
@@ -323,7 +323,7 @@ export default function UserPermissionMatrixPage() {
             aria-live="polite"
             className="mt-4 flex items-center justify-center gap-2 text-xs text-gray-500"
           >
-            <Loader2 className="w-3.5 h-3.5 animate-spin text-orange-500" />
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-accent-500" />
             Loading user permissions…
           </div>
         </div>
@@ -381,7 +381,7 @@ export default function UserPermissionMatrixPage() {
             on desktop, wraps gracefully on narrow viewports. */}
         <div className="bg-white rounded-lg border border-gray-200 px-3 py-2 mb-3 shrink-0">
           <div className="flex items-center gap-3 flex-wrap">
-            <div className="h-8 w-8 shrink-0 rounded-full bg-orange-500 text-white text-[11px] font-semibold flex items-center justify-center">
+            <div className="h-8 w-8 shrink-0 rounded-full bg-accent-500 text-white text-[11px] font-semibold flex items-center justify-center">
               {initials(user.fullName)}
             </div>
             <div className="min-w-0 flex items-center gap-2 flex-wrap">
@@ -403,7 +403,7 @@ export default function UserPermissionMatrixPage() {
                 </span>
               )}
               {assignedModuleCount > 0 && (
-                <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-orange-50 text-orange-700">
+                <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-accent-50 text-accent-700">
                   <Layers className="w-3 h-3" />
                   {assignedModuleCount} module{assignedModuleCount === 1 ? "" : "s"}
                 </span>
@@ -713,7 +713,7 @@ function ModuleGroup({
         return (
           <tr
             key={item.key}
-            className={`${zebra} border-t border-gray-100 hover:bg-orange-50/30 transition-colors`}
+            className={`${zebra} border-t border-gray-100 hover:bg-accent-50 transition-colors`}
           >
             <td className="px-4 py-2.5 pl-11">
               <div className="flex items-center gap-2">
@@ -725,7 +725,7 @@ function ModuleGroup({
                 {item.url ? (
                   <Link
                     href={item.url}
-                    className="text-sm text-gray-800 hover:text-orange-600 hover:underline decoration-dotted underline-offset-2 transition-colors"
+                    className="text-sm text-gray-800 hover:text-accent-600 hover:underline decoration-dotted underline-offset-2 transition-colors"
                     title={`Open ${item.label}`}
                   >
                     {item.label}
@@ -758,7 +758,7 @@ function ModuleGroup({
                       checked={checked}
                       disabled={locked || !supported}
                       onChange={() => onToggleCell(item.key, a)}
-                      className="w-4 h-4 rounded border-gray-300 text-orange-600 focus:ring-2 focus:ring-orange-500 disabled:cursor-not-allowed"
+                      className="w-4 h-4 rounded border-gray-300 text-accent-600 focus:ring-2 focus:ring-accent-500 disabled:cursor-not-allowed"
                     />
                   </label>
                 </td>

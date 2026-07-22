@@ -43,6 +43,7 @@ interface DprWorkItemRow {
   todayQty?: Numericish;
   cumulativeQty?: Numericish;
   uomId?: string | null;
+  location?: string | null;
   remarks?: string | null;
 }
 interface DprLabourRow {
@@ -109,12 +110,15 @@ interface DprRow {
 interface DprBodyWorkItem {
   boqItemId?: string;
   boqNo?: string;
+  // Contractor/WO selector: the form sends `workOrderId`; accept `woId` too.
+  workOrderId?: string | null;
   woId?: string | null;
   description?: string;
   todayQty?: number | string;
   qty?: number | string;
   cumulativeQty?: number | string;
   uomId?: string;
+  location?: string | null;
   remarks?: string | null;
   images?: unknown;
   imageKeys?: unknown;
@@ -198,6 +202,7 @@ function enrichDPR(
     todayQty: w.todayQty?.toString?.() ?? "0",
     cumulativeQty: w.cumulativeQty?.toString?.() ?? "0",
     uomId: w.uomId ?? "",
+    location: w.location ?? "",
     remarks: w.remarks ?? "",
   }));
   const labour = (row.labourEntries ?? []).map((l: DprLabourRow) => ({
@@ -295,7 +300,7 @@ export async function GET(req: NextRequest) {
   if (q) {
     where.OR = [
       { dprNumber: { contains: q, mode: "insensitive" } },
-      { siteRemarks: { contains: q, mode: "insensitive" } },
+      { remarks: { contains: q, mode: "insensitive" } },
       { project: { is: { name: { contains: q, mode: "insensitive" } } } },
     ];
   }
@@ -519,11 +524,12 @@ export async function POST(req: NextRequest) {
         workItems: {
           create: workItems.map((w: DprBodyWorkItem, i: number) => ({
             boqItemId: String(w.boqItemId ?? w.boqNo ?? ""),
-            woId: w.woId ?? null,
+            woId: w.workOrderId ?? w.woId ?? null,
             description: String(w.description ?? ""),
             todayQty: String(Number(w.todayQty ?? w.qty ?? 0)),
             cumulativeQty: String(Number(w.cumulativeQty ?? w.todayQty ?? w.qty ?? 0)),
             uomId: String(w.uomId ?? ""),
+            location: w.location ?? null,
             remarks: w.remarks ?? null,
             images: workItemImageKeys[i] ?? [],
           })),

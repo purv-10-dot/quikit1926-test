@@ -651,7 +651,7 @@ export function EstimationDrawer({
               <button
                 type="button"
                 onClick={addLine}
-                className="inline-flex items-center gap-1 text-xs font-semibold text-orange-700 hover:text-orange-800 border border-orange-200 bg-orange-50 hover:bg-orange-100 px-3 py-1.5 rounded-lg"
+                className="inline-flex items-center gap-1 text-xs font-semibold text-accent-700 hover:text-accent-800 border border-accent-200 bg-accent-50 hover:bg-accent-100 px-3 py-1.5 rounded-lg"
               >
                 <Plus className="w-3.5 h-3.5" /> Add Material
               </button>

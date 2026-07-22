@@ -310,7 +310,7 @@ export default function IndentsPage() {
       searchable: true,
       render: (row) => (
         <span
-          className="text-orange-600 cursor-pointer hover:underline font-medium"
+          className="text-accent-600 cursor-pointer hover:underline font-medium"
           onClick={() => router.push(`/purchase/indents/${row.id}`)}
         >
           {row.indentNumber}
@@ -330,7 +330,7 @@ export default function IndentsPage() {
               e.stopPropagation();
               setPeekTarget({ type: "pr", id: row.sourceMrId ?? "" });
             }}
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 text-[11px] font-medium hover:bg-orange-100 transition-colors"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-accent-50 text-accent-700 text-[11px] font-medium hover:bg-accent-100 transition-colors"
             title="View PR details"
           >
             {row.sourceMrNumber}

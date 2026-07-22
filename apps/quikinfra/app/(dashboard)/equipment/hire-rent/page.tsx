@@ -373,7 +373,7 @@ export default function HireRentPage() {
               onClick={() => setTab(t.key)}
               className={`pb-3 text-sm font-medium border-b-2 transition-colors ${
                 tab === t.key
-                  ? "border-orange-500 text-orange-600"
+                  ? "border-accent-500 text-accent-600"
                   : "border-transparent text-slate-500 hover:text-slate-700"
               }`}
             >

@@ -138,14 +138,14 @@ export function BOQImportDrawer({ open, onClose, projectId }: Props) {
                     onClick={() => handleModeChange(m)}
                     className={`text-left p-3 rounded-lg border transition-colors ${
                       mode === m
-                        ? "bg-orange-50 border-orange-300 ring-1 ring-orange-200"
+                        ? "bg-accent-50 border-accent-300 ring-1 ring-accent-200"
                         : "bg-white border-gray-200 hover:border-gray-300"
                     }`}
                   >
                     <div className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
-                      {m === "SELF_FILL" && <PencilLine className="w-3.5 h-3.5 text-orange-500" />}
-                      {m === "UNIVERSAL" && <FileSpreadsheet className="w-3.5 h-3.5 text-orange-500" />}
-                      {m === "ALPHABETIC_SOR" && <Folder className="w-3.5 h-3.5 text-orange-500" />}
+                      {m === "SELF_FILL" && <PencilLine className="w-3.5 h-3.5 text-accent-500" />}
+                      {m === "UNIVERSAL" && <FileSpreadsheet className="w-3.5 h-3.5 text-accent-500" />}
+                      {m === "ALPHABETIC_SOR" && <Folder className="w-3.5 h-3.5 text-accent-500" />}
                       {MODE_LABEL[m]}
                     </div>
                     <div className="text-[10px] text-gray-500 mt-1 leading-relaxed">{MODE_HINT[m]}</div>
@@ -203,7 +203,7 @@ export function BOQImportDrawer({ open, onClose, projectId }: Props) {
             <div
               onDrop={onDrop}
               onDragOver={(e) => e.preventDefault()}
-              className="border-2 border-dashed border-gray-300 rounded-xl p-10 text-center hover:border-orange-400 hover:bg-orange-50/30 cursor-pointer transition-colors"
+              className="border-2 border-dashed border-gray-300 rounded-xl p-10 text-center hover:border-accent-400 hover:bg-accent-50 cursor-pointer transition-colors"
               onClick={() => fileInputRef.current?.click()}
             >
               <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />

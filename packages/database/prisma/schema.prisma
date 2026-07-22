@@ -155,7 +155,6 @@ model Org {
   cnLabourCategories       CnLabourCategory[]
   cnLabourRates            CnLabourRate[]
   cnWorkmen                CnWorkman[]
-  cnMusterRolls            CnMusterRoll[]
   cnLocations              CnLocation[]
   cnMachinery              CnMachinery[]
   cnEquipmentLogs          CnEquipmentLog[]
@@ -2604,64 +2603,6 @@ model CnWorkman {
   @@schema("app_quikinfra")
 }
 
-// ============================================================================
-// MUSTER ROLL (Section 2) — daily attendance sheet + lines.
-// Lean model: attendance/cost is derived from APPROVED musters (no separate
-// attendance ledger). Reversal = docStatus REVERSED (excluded from the
-// one-per-key rule, which is enforced in the repository, not a DB unique,
-// so a corrected sheet can reuse the same key).
-// ============================================================================
-
-model CnMusterRoll {
-  id             String   @id @default(cuid())
-  orgId          String
-  musterNo       String
-  projectId      String
-  musterDate     DateTime @db.Date
-  engagementType String // CONTRACTOR | DEPARTMENTAL
-  contractorId   String? // required for CONTRACTOR
-  workOrderId    String? // labour WO this gang works under
-  shift          String   @default("DAY") // DAY | NIGHT
-  docStatus      String   @default("DRAFT") // DRAFT | SUBMITTED | APPROVED | REJECTED | REVERSED
-  remarks        String?
-  approvalId     String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  createdBy      String
-  updatedBy      String
-
-  lines CnMusterRollLine[]
-
-  // --- grafted: cross-schema relations (Org/User) ---
-  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  @@index([orgId])
-  @@index([orgId, projectId, musterDate])
-  @@index([orgId, contractorId, musterDate])
-  @@map("Muster_rolls")
-  @@schema("app_quikinfra")
-}
-
-model CnMusterRollLine {
-  id               String   @id @default(cuid())
-  musterRollId     String
-  workmanId        String
-  labourCategoryId String // snapshot from workman at entry time
-  attendance       Decimal  @db.Decimal(18, 4) // 0, 0.25, 0.5, 0.75, 1.0
-  otHours          Decimal? @db.Decimal(18, 4)
-  wageRateApplied  Decimal? @db.Decimal(18, 2) // departmental snapshot; null for contractor gangs
-  boqItemId        String?
-  remarks          String?
-
-  musterRoll CnMusterRoll @relation(fields: [musterRollId], references: [id], onDelete: Cascade)
-
-  @@unique([musterRollId, workmanId])
-  @@index([musterRollId])
-  @@index([workmanId])
-  @@map("Muster_roll_lines")
-  @@schema("app_quikinfra")
-}
-
 model CnItemGroup {
   id             String   @id @default(cuid())
   orgId          String
@@ -2947,7 +2888,6 @@ model CnProject {
   costCenters                CnCostCenter[]
   machinery                  CnMachinery[]
   assets                     CnAsset[]
-  boqItems                   CnBOQItem[]
   purchaseReqs               CnPurchaseRequisition[]
   indents                    CnPurchaseIndent[]
   pos                        CnPurchaseOrder[]
@@ -3596,7 +3536,6 @@ model CnGRNLine {
   amount            Decimal @db.Decimal(18, 2)
   qualityStatus     String  @default("pending") // pending | accepted | rejected | conditional
   batchNo           String?
-  heatNo            String?
   condition         String?
   testCertRef       String?
   shortDeliveryNote String?
@@ -4126,43 +4065,6 @@ model CnDieselLog {
   @@schema("app_quikinfra")
 }
 
-model CnBOQItem {
-  id              String   @id @default(cuid())
-  orgId           String
-  projectId       String
-  parentId        String?
-  depth           Int      @default(0)
-  sortOrder       Int      @default(0)
-  isLeaf          Boolean  @default(true)
-  category        String? // Civil | Electrical | Road | Non-SOR
-  itemCode        String?
-  description     String
-  uomId           String?
-  quantity        Decimal? @db.Decimal(18, 4)
-  contractRate    Decimal? @db.Decimal(18, 2)
-  workingRate     Decimal? @db.Decimal(18, 2)
-  contractAmount  Decimal? @db.Decimal(18, 2)
-  workingAmount   Decimal? @db.Decimal(18, 2)
-  executedQty     Decimal  @default(0) @db.Decimal(18, 4)
-  executedAmount  Decimal  @default(0) @db.Decimal(18, 2)
-  progressPercent Decimal  @default(0) @db.Decimal(5, 2)
-  status          String   @default("active")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  createdBy       String
-  updatedBy       String
-
-  project  CnProject   @relation(fields: [projectId], references: [id])
-  parent   CnBOQItem?  @relation("BOQHierarchy", fields: [parentId], references: [id])
-  children CnBOQItem[] @relation("BOQHierarchy")
-
-  @@index([orgId])
-  @@index([projectId])
-  @@index([parentId])
-  @@map("Boq_items")
-  @@schema("app_quikinfra")
-}
-
 model CnHindrance {
   id                   String    @id @default(cuid())
   orgId                String
@@ -4250,11 +4152,8 @@ model CnWorkOrderLine {
   lineDate         DateTime?
   activityName     String?
   workCategoryId   String?
-  labourCategoryId String? // FK CnLabourCategory — LABOUR_CATEGORY day-rate lines
-
-  // Labour-only manpower counts — array of { type, count }, one per selected
-  // trade. JSON so new trades never require a schema change.
-  labourCounts Json?
+  labourCategoryId String? // FK CnLabourCategory — labour day-rate lines
+  labourCount      Decimal? @db.Decimal(18, 4) // workers on this line; amount = count × days(quantity) × rate
 
   workOrder CnWorkOrder @relation(fields: [woId], references: [id], onDelete: Cascade)
 
@@ -4762,6 +4661,7 @@ model CnDPRWorkItem {
   todayQty      Decimal  @db.Decimal(18, 4)
   cumulativeQty Decimal  @db.Decimal(18, 4)
   uomId         String
+  location      String?
   remarks       String?
   images        String[] @default([])
 

@@ -35,7 +35,7 @@ export function buildOrderColumns(deps: {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            className="font-semibold text-orange-600 hover:text-orange-700 hover:underline"
+            className="font-semibold text-accent-600 hover:text-accent-700 hover:underline"
             onClick={() => router.push(`/purchase/orders/${row.id}`)}
           >
             {row.poNumber}
@@ -66,7 +66,7 @@ export function buildOrderColumns(deps: {
                 e.stopPropagation();
                 setPeekTarget({ type: "rfq", id: row.sourceRfqId ?? "" });
               }}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 text-[11px] font-medium hover:bg-orange-100 transition-colors"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-accent-50 text-accent-700 text-[11px] font-medium hover:bg-accent-100 transition-colors"
               title="View RFQ details"
             >
               <span className="">{row.sourceRfqNumber}</span>
@@ -189,7 +189,7 @@ export function buildOrderColumns(deps: {
                 "noopener",
               )
             }
-            className="p-1.5 rounded hover:bg-orange-50 text-gray-500 hover:text-orange-600 transition-colors"
+            className="p-1.5 rounded hover:bg-accent-50 text-gray-500 hover:text-accent-600 transition-colors"
             title="View PDF"
           >
             <FileText className="w-4 h-4" />

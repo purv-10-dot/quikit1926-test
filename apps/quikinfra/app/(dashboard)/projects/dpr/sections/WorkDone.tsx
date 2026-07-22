@@ -56,7 +56,7 @@ export function WorkDone({
         <button
           type="button"
           onClick={onOpenBoqModal}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-orange-700 bg-orange-50 hover:bg-orange-100 border border-orange-200 hover:border-orange-300 rounded-lg transition-colors"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-accent-700 bg-accent-50 hover:bg-accent-100 border border-accent-200 hover:border-accent-300 rounded-lg transition-colors"
         >
           <Plus className="w-3.5 h-3.5" /> Add Activity from BOQ
         </button>
@@ -66,9 +66,9 @@ export function WorkDone({
         <button
           type="button"
           onClick={onOpenBoqModal}
-          className="w-full border-2 border-dashed border-orange-200 rounded-xl px-5 py-6 text-left hover:border-orange-400 hover:bg-orange-50/40 transition-colors flex items-center gap-4 group"
+          className="w-full border-2 border-dashed border-accent-200 rounded-xl px-5 py-6 text-left hover:border-accent-400 hover:bg-accent-50 transition-colors flex items-center gap-4 group"
         >
-          <div className="inline-flex items-center justify-center w-11 h-11 rounded-xl bg-orange-100 text-orange-600 ring-4 ring-orange-50/60 shrink-0 group-hover:scale-105 transition-transform">
+          <div className="inline-flex items-center justify-center w-11 h-11 rounded-xl bg-accent-100 text-accent-600 ring-4 ring-accent-100 shrink-0 group-hover:scale-105 transition-transform">
             <Plus className="w-5 h-5" />
           </div>
           <div className="min-w-0 flex-1">
@@ -79,7 +79,7 @@ export function WorkDone({
               Select items from the Bill of Quantities to report progress
             </p>
           </div>
-          <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-orange-50 text-orange-700 text-[11px] font-bold border border-orange-200">
+          <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-accent-50 text-accent-700 text-[11px] font-bold border border-accent-200">
             <Plus className="w-3 h-3" /> Add Activity
           </span>
         </button>
@@ -107,14 +107,14 @@ export function WorkDone({
               {grouped.map((group) => (
                 <Fragment key={group.key}>
                   {group.topNo && (
-                    <tr className="bg-gradient-to-r from-orange-50 to-transparent">
+                    <tr className="bg-accent-50">
                       <td
                         colSpan={13}
-                        className="px-3 py-2 border-t border-orange-100"
+                        className="px-3 py-2 border-t border-accent-100"
                       >
                         <div className="flex items-center gap-2 min-w-0">
-                          <Layers className="w-3.5 h-3.5 text-orange-500 shrink-0" />
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold text-orange-800 bg-orange-100/80 shrink-0">
+                          <Layers className="w-3.5 h-3.5 text-accent-500 shrink-0" />
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold text-accent-800 bg-accent-100 shrink-0">
                             {group.topNo}
                           </span>
                           {group.topName && (
@@ -125,7 +125,7 @@ export function WorkDone({
                               {group.topName}
                             </span>
                           )}
-                          <span className="ml-auto pl-3 text-[10px] font-semibold text-orange-700/70 tabular-nums whitespace-nowrap shrink-0">
+                          <span className="ml-auto pl-3 text-[10px] font-semibold text-accent-700 tabular-nums whitespace-nowrap shrink-0">
                             {group.leafCount} item
                             {group.leafCount === 1 ? "" : "s"}
                           </span>
@@ -138,19 +138,19 @@ export function WorkDone({
                   return (
                     <tr
                       key={`sub-${entry.no}`}
-                      className="bg-orange-50/40"
+                      className="bg-accent-50"
                     >
                       <td
                         colSpan={13}
-                        className="py-1.5 border-t border-orange-100/70"
+                        className="py-1.5 border-t border-accent-100"
                         style={{
                           paddingLeft: `${entry.depth * 16 + 12}px`,
                           paddingRight: "12px",
                         }}
                       >
                         <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-orange-300 shrink-0">└</span>
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold text-orange-700 bg-orange-100/60 shrink-0">
+                          <span className="text-accent-300 shrink-0">└</span>
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold text-accent-700 bg-accent-100 shrink-0">
                             {entry.no}
                           </span>
                           {entry.name && (
@@ -176,8 +176,8 @@ export function WorkDone({
                 return (
                   <tr key={`${w.boqItemId}-${idx}`}>
                     <td
-                      className={`px-3 py-2 text-xs text-orange-700 font-bold ${
-                        depth > 0 ? "border-l-2 border-orange-200" : ""
+                      className={`px-3 py-2 text-xs text-accent-700 font-bold ${
+                        depth > 0 ? "border-l-2 border-accent-200" : ""
                       }`}
                       style={
                         depth > 0
@@ -237,11 +237,11 @@ export function WorkDone({
                         onChange={(e) =>
                           onUpdate(idx, "todayQty", e.target.value)
                         }
-                        className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-accent-300 focus:border-accent-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         placeholder="0.00"
                       />
                     </td>
-                    <td className="px-3 py-2 text-right text-xs font-semibold text-orange-700 tabular-nums">
+                    <td className="px-3 py-2 text-right text-xs font-semibold text-accent-700 tabular-nums">
                       {totalTillDate.toLocaleString("en-IN", {
                         maximumFractionDigits: 2,
                       })}
@@ -266,7 +266,7 @@ export function WorkDone({
                         onChange={(e) =>
                           onUpdate(idx, "location", e.target.value)
                         }
-                        className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400"
+                        className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent-300 focus:border-accent-400"
                         placeholder="e.g. CH 100-200"
                       />
                     </td>
@@ -277,7 +277,7 @@ export function WorkDone({
                         onChange={(e) =>
                           onUpdate(idx, "remarks", e.target.value)
                         }
-                        className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400"
+                        className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent-300 focus:border-accent-400"
                         placeholder="Optional notes"
                       />
                     </td>
@@ -290,7 +290,7 @@ export function WorkDone({
                           <button
                             type="button"
                             onClick={() => onOpenGallery(idx)}
-                            className="relative w-12 h-12 rounded-md overflow-hidden border border-gray-200 bg-gray-50 hover:ring-2 hover:ring-orange-300 transition-shadow"
+                            className="relative w-12 h-12 rounded-md overflow-hidden border border-gray-200 bg-gray-50 hover:ring-2 hover:ring-accent-300 transition-shadow"
                             title={`View ${w.images.length} photo${w.images.length === 1 ? "" : "s"}`}
                           >
                             <img
@@ -306,29 +306,29 @@ export function WorkDone({
                           </button>
                         ) : null}
                         <label
-                          className="inline-flex flex-col items-center justify-center w-12 h-12 rounded-md border border-dashed border-gray-300 text-gray-500 hover:border-orange-400 hover:text-orange-600 hover:bg-orange-50/40 cursor-pointer transition-colors shrink-0"
+                          className="inline-flex flex-col items-center justify-center w-12 h-12 rounded-md border border-dashed border-gray-300 text-gray-500 hover:border-accent-400 hover:text-accent-600 hover:bg-accent-50 cursor-pointer transition-colors shrink-0"
                           title="Upload photo (click or drag image here)"
                           onDragOver={(e) => {
                             e.preventDefault();
                             e.currentTarget.classList.add(
-                              "border-orange-400",
-                              "text-orange-600",
-                              "bg-orange-50/60",
+                              "border-accent-400",
+                              "text-accent-600",
+                              "bg-accent-50",
                             );
                           }}
                           onDragLeave={(e) => {
                             e.currentTarget.classList.remove(
-                              "border-orange-400",
-                              "text-orange-600",
-                              "bg-orange-50/60",
+                              "border-accent-400",
+                              "text-accent-600",
+                              "bg-accent-50",
                             );
                           }}
                           onDrop={(e) => {
                             e.preventDefault();
                             e.currentTarget.classList.remove(
-                              "border-orange-400",
-                              "text-orange-600",
-                              "bg-orange-50/60",
+                              "border-accent-400",
+                              "text-accent-600",
+                              "bg-accent-50",
                             );
                             if (e.dataTransfer.files?.length) {
                               onAddImages(idx, e.dataTransfer.files);

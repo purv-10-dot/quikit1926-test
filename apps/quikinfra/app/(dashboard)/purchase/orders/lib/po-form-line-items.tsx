@@ -139,7 +139,7 @@ export function buildLineItems(deps: PoFormConfigDeps): QuickCreateConfig["lineI
                     update({ poQty: raw });
                   }}
                   placeholder="0"
-                  className={`mt-1 w-full px-3 py-2 rounded-lg border text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-orange-500 ${
+                  className={`mt-1 w-full px-3 py-2 rounded-lg border text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-accent-500 ${
                     !Number.isNaN(maxQtyNum) &&
                     maxQtyNum > 0 &&
                     parseFloat(String(line.poQty ?? "0")) > maxQtyNum
@@ -172,7 +172,7 @@ export function buildLineItems(deps: PoFormConfigDeps): QuickCreateConfig["lineI
                   value={line.unitRate ?? ""}
                   onChange={(e) => update({ unitRate: e.target.value })}
                   placeholder="0.00"
-                  className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-accent-500"
                 />
               </div>
               <div>
@@ -187,7 +187,7 @@ export function buildLineItems(deps: PoFormConfigDeps): QuickCreateConfig["lineI
                   value={line.discount ?? ""}
                   onChange={(e) => update({ discount: e.target.value })}
                   placeholder="0"
-                  className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-accent-500"
                 />
               </div>
             </div>
@@ -213,14 +213,14 @@ export function buildLineItems(deps: PoFormConfigDeps): QuickCreateConfig["lineI
                   value={line.gstRate ?? ""}
                   onChange={(e) => update({ gstRate: e.target.value })}
                   placeholder="18"
-                  className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-accent-500"
                 />
               </div>
               <div>
                 <label className="block text-[11px] font-semibold text-gray-700 mb-1">
                   Net ({RUPEE})
                 </label>
-                <div className="mt-1 h-[38px] px-2 flex items-center justify-end rounded-lg border border-orange-200 bg-white text-[13px] font-bold tabular-nums text-orange-700 whitespace-nowrap overflow-hidden">
+                <div className="mt-1 h-[38px] px-2 flex items-center justify-end rounded-lg border border-accent-200 bg-white text-[13px] font-bold tabular-nums text-accent-700 whitespace-nowrap overflow-hidden">
                   {fmt(net)}
                 </div>
               </div>
@@ -236,7 +236,7 @@ export function buildLineItems(deps: PoFormConfigDeps): QuickCreateConfig["lineI
                 value={line.specification ?? ""}
                 onChange={(e) => update({ specification: e.target.value })}
                 placeholder="Grade, brand, size…"
-                className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
               />
             </div>
           </div>

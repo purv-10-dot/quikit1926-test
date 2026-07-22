@@ -486,7 +486,7 @@ export default function StockTransferDetailPage() {
             {/* Overview card */}
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-6 py-5">
               <div className="flex items-center gap-3 mb-5">
-                <span className="w-9 h-9 rounded-md flex items-center justify-center bg-orange-50 text-orange-600 border border-orange-200">
+                <span className="w-9 h-9 rounded-md flex items-center justify-center bg-accent-50 text-accent-600 border border-accent-200">
                   <Truck className="w-5 h-5" />
                 </span>
                 <div>

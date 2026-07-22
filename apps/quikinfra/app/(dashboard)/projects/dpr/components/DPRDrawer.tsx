@@ -62,14 +62,14 @@ export function DPRDrawer({
           {/* Brand accent strip */}
           <div
             aria-hidden
-            className="h-1 w-full bg-gradient-to-r from-orange-400 via-orange-500 to-orange-600"
+            className="h-1 w-full bg-gradient-to-r from-accent-400 via-accent-500 to-accent-600"
           />
 
           {/* Drawer title row — now part of the scroll flow. The X
               close button is rendered separately above and floats
               over this row. */}
           <div className="flex items-center gap-3 px-6 py-4 pr-14 border-b border-slate-200 bg-white">
-            <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-orange-50 to-orange-100 text-orange-600 ring-1 ring-orange-200/60 shrink-0">
+            <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-accent-50 text-accent-600 ring-1 ring-accent-200 shrink-0">
               <ClipboardList className="w-5 h-5" />
             </div>
             <div className="min-w-0">

@@ -192,11 +192,13 @@ export function buildMaterialGroupBuckets(
     if (meta && (meta.status === "inactive" || meta.status === "deleted")) {
       return false;
     }
-    // Master-backed groups always show (even with 0 items). The synthetic
-    // "Others" bucket and any unknown-group bucket only show when they
-    // actually hold items.
-    if (meta) return true;
-    return b.items.length > 0;
+    // Show a group only when it actually holds materials. `itemCount` is the
+    // server-provided active-item count (available even in lazy mode, where
+    // items aren't loaded); fall back to the loaded items for eager callers.
+    // Empty groups and the synthetic "Others" bucket stay hidden until they
+    // hold items.
+    const count = b.itemCount ?? b.items.length;
+    return count > 0;
   });
   groupRows.sort((a, b) => {
     const ao = a.id === OTHERS_GROUP_ID ? 1 : 0;
@@ -396,7 +398,7 @@ export function GroupedMaterialSelect({
       trigger: sm
         ? "px-2 py-1.5 text-xs rounded border border-gray-300"
         : "px-2.5 py-2 text-sm rounded-lg border border-gray-300",
-      triggerFocus: "focus:outline-none focus:ring-2 focus:ring-orange-500",
+      triggerFocus: "focus:outline-none focus:ring-2 focus:ring-accent-500",
       popover: sm ? "rounded border border-gray-200" : "rounded-lg border border-gray-200",
       optionPad: sm ? "px-2 py-1.5" : "px-2.5 py-2",
       optionTitle: sm ? "text-xs" : "text-sm",
@@ -540,7 +542,7 @@ export function GroupedMaterialSelect({
                     onClick={() => enterGroup(g.id)}
                     onMouseEnter={() => setActiveIndex(i)}
                     className={`w-full text-left ${ui.optionPad} flex items-center gap-2 ${
-                      active ? "bg-orange-50" : "hover:bg-orange-50"
+                      active ? "bg-accent-50" : "hover:bg-accent-50"
                     }`}
                   >
                     <div className="flex-1 min-w-0">
@@ -566,7 +568,7 @@ export function GroupedMaterialSelect({
                     type="button"
                     onClick={() => pickItem(it.id)}
                     onMouseEnter={() => setActiveIndex(i)}
-                    className={`w-full text-left ${ui.optionPad} flex items-center gap-2 ${active ? "bg-orange-50" : "hover:bg-orange-50"}`}
+                    className={`w-full text-left ${ui.optionPad} flex items-center gap-2 ${active ? "bg-accent-50" : "hover:bg-accent-50"}`}
                   >
                     <div className="flex-1 min-w-0">
                       <div className={`${ui.optionTitle} text-gray-900 truncate`}>{it.name ?? it.code ?? it.id}</div>
@@ -577,7 +579,7 @@ export function GroupedMaterialSelect({
                         {it.uomCode}
                       </span>
                     ) : null}
-                    {isSelected ? <Check className="w-3.5 h-3.5 text-orange-600 shrink-0" /> : null}
+                    {isSelected ? <Check className="w-3.5 h-3.5 text-accent-600 shrink-0" /> : null}
                   </button>
                 );
               })
@@ -807,14 +809,14 @@ export function GroupedMaterialMultiSelect({
         {values.map((v) => (
           <span
             key={v}
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 text-xs font-medium border border-orange-200"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-accent-50 text-accent-700 text-xs font-medium border border-accent-200"
           >
             {labelOf(v)}
             {!disabled && (
               <button
                 type="button"
                 onClick={() => toggleItem(v)}
-                className="hover:text-orange-900 leading-none"
+                className="hover:text-accent-900 leading-none"
                 aria-label={`Remove ${labelOf(v)}`}
               >
                 <X className="w-3 h-3" />
@@ -934,7 +936,7 @@ export function GroupedMaterialMultiSelect({
                     onClick={() => enterGroup(g.id)}
                     onMouseEnter={() => setActiveIndex(i)}
                     className={`w-full text-left px-2.5 py-2 flex items-center gap-2 ${
-                      active ? "bg-orange-50" : "hover:bg-orange-50"
+                      active ? "bg-accent-50" : "hover:bg-accent-50"
                     }`}
                   >
                     <div className="flex-1 min-w-0">
@@ -965,12 +967,12 @@ export function GroupedMaterialMultiSelect({
                     onClick={() => toggleItem(it.id)}
                     onMouseEnter={() => setActiveIndex(i)}
                     className={`w-full text-left px-3 py-1.5 text-sm flex items-center gap-2 transition-colors ${
-                      active ? "bg-orange-50" : "hover:bg-gray-100"
-                    } ${selected ? "text-orange-800" : "text-gray-700"}`}
+                      active ? "bg-accent-50" : "hover:bg-gray-100"
+                    } ${selected ? "text-accent-800" : "text-gray-700"}`}
                   >
                     <span
                       className={`inline-flex items-center justify-center w-4 h-4 rounded border shrink-0 ${
-                        selected ? "bg-orange-600 border-orange-600 text-white" : "border-gray-300 bg-white"
+                        selected ? "bg-accent-600 border-accent-600 text-white" : "border-gray-300 bg-white"
                       }`}
                       aria-hidden="true"
                     >

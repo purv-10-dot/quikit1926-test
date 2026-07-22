@@ -13,6 +13,7 @@ import { useDisabledModules } from "@/hooks/useDisabledModules";
 import { isModuleEnabled } from "@quikit/shared/moduleRegistry";
 import { UserAvatar } from "@/components/PageShell";
 import { AppSwitcher, UserMenu } from "@quikit/ui";
+import { AccentThemeApplier } from "@/components/AccentThemeApplier";
 import {
   LayoutDashboard, Database, ShoppingCart, Warehouse,
   FolderKanban, CheckCircle2, FileBarChart2, Settings,
@@ -176,7 +177,6 @@ const CONSTRUCTION_NAV: NavItem[] = [
       { label: "Material Estimation",  href: "/projects/estimation",  iconComponent: Calculator,      requiredPermission: "boq.read", featureKey: "projectMgmt.estimation" },
       { label: "Work Orders",          href: "/projects/work-orders", iconComponent: Hammer,          requiredPermission: "wo.read",  featureKey: "projectMgmt.workOrders" },
       { label: "Daily Progress (DPR)", href: "/projects/dpr",         iconComponent: CalendarCheck,   requiredPermission: "dpr.read", featureKey: "projectMgmt.dpr" },
-      { label: "Muster Roll",          href: "/labour/muster",        iconComponent: Users,           requiredPermission: "dpr.read", featureKey: "projectMgmt.muster" },
       { label: "Gantt View",           href: "/projects/gantt",       iconComponent: GanttChart,      requiredPermission: "boq.read", featureKey: "projectMgmt.gantt" },
       { label: "Hindrance Register",   href: "/projects/hindrance",   iconComponent: AlertTriangle,   requiredPermission: "dpr.read", featureKey: "projectMgmt.hindrance" },
       { label: "Documents",            href: "/projects/documents",   iconComponent: FileText,        requiredPermission: "boq.read", featureKey: "projectMgmt.documents" },
@@ -826,6 +826,7 @@ export function QuikInfraShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex h-screen min-h-0 bg-gray-100">
+      <AccentThemeApplier />
       <aside
         className={`hidden lg:flex shrink-0 flex-col overflow-hidden transition-all duration-200 ease-out ${
           sidebarOpen ? "w-[17rem] py-4 pl-4" : "w-[5rem] py-4 pl-4"

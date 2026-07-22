@@ -132,7 +132,7 @@ export function buildUserColumns(deps: {
                     e.stopPropagation();
                     handleResendInvite(row);
                   }}
-                  className="inline-flex items-center gap-1 text-[10px] font-medium text-orange-700 hover:text-orange-900 hover:underline disabled:text-gray-400 disabled:cursor-not-allowed disabled:no-underline"
+                  className="inline-flex items-center gap-1 text-[10px] font-medium text-accent-700 hover:text-accent-900 hover:underline disabled:text-gray-400 disabled:cursor-not-allowed disabled:no-underline"
                   title="Send a fresh invite email"
                 >
                   <Send className="w-3 h-3" />
@@ -191,7 +191,7 @@ export function buildUserColumns(deps: {
               e.stopPropagation();
               router.push(`/settings/users/${row.id}/permissions`);
             }}
-            className="inline-flex items-center gap-1 text-xs font-medium text-orange-700 hover:text-orange-900 hover:underline"
+            className="inline-flex items-center gap-1 text-xs font-medium text-accent-700 hover:text-accent-900 hover:underline"
             title="Configure per-menu Add/Edit/Delete/View permissions"
           >
             <ShieldCheck className="w-3.5 h-3.5" /> Permissions

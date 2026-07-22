@@ -241,7 +241,7 @@ export function RfqFormPanel({ open, onClose, onSaved }: Props) {
             </table>
           </div>
           <button type="button" onClick={() => setLines([...lines, blankLine()])}
-            className="mt-2 flex items-center gap-1.5 text-xs text-accent-700 hover:text-accent-800 font-medium">
+            className="mt-2 flex items-center gap-1.5 text-xs text-slate-700 hover:text-slate-800 font-medium">
             <Plus className="h-3.5 w-3.5" /> Add Line
           </button>
         </FormSection>

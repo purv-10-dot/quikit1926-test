@@ -37,6 +37,7 @@ interface DprWorkItemRow {
   todayQty?: Numericish;
   cumulativeQty?: Numericish;
   uomId?: string | null;
+  location?: string | null;
   remarks?: string | null;
   images?: unknown;
 }
@@ -112,12 +113,15 @@ interface DprRow {
 interface DprBodyWorkItem {
   boqItemId?: string;
   boqNo?: string;
+  // Contractor/WO selector: the form sends `workOrderId`; accept `woId` too.
+  workOrderId?: string | null;
   woId?: string | null;
   description?: string;
   todayQty?: number | string;
   qty?: number | string;
   cumulativeQty?: number | string;
   uomId?: string;
+  location?: string | null;
   remarks?: string | null;
   images?: unknown;
   imageKeys?: unknown;
@@ -236,6 +240,7 @@ async function enrichDPR(row: DprRow, project?: DprProject) {
         todayQty: w.todayQty?.toString?.() ?? "0",
         cumulativeQty: w.cumulativeQty?.toString?.() ?? "0",
         uomId: w.uomId ?? "",
+        location: w.location ?? "",
         remarks: w.remarks ?? "",
         // Stored S3 keys + aligned signed URLs for display. The edit form
         // sends `imageKeys` back so existing photos aren't re-uploaded.
@@ -517,11 +522,12 @@ export async function PUT(req: NextRequest, ctx: { params: { id: string } }) {
             data: items.map((w: DprBodyWorkItem, i: number) => ({
               dprId: ctx.params.id,
               boqItemId: String(w.boqItemId ?? w.boqNo ?? ""),
-              woId: w.woId ?? null,
+              woId: w.workOrderId ?? w.woId ?? null,
               description: String(w.description ?? ""),
               todayQty: String(Number(w.todayQty ?? w.qty ?? 0)),
               cumulativeQty: String(Number(w.cumulativeQty ?? w.todayQty ?? w.qty ?? 0)),
               uomId: String(w.uomId ?? ""),
+              location: w.location ?? null,
               remarks: w.remarks ?? null,
               images: workItemImageKeys[i] ?? [],
             })),

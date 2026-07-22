@@ -418,13 +418,13 @@ export function EditWorkflowDrawer({ open, onClose, workflow }: Props) {
                     {pickedUsers.map((u) => (
                       <span
                         key={u.id}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-50 border border-orange-200 text-[11px] text-orange-700"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent-50 border border-accent-200 text-[11px] text-accent-700"
                       >
                         {u.fullName || u.email}
                         <button
                           type="button"
                           onClick={() => removeUser(u.id)}
-                          className="text-orange-400 hover:text-orange-700"
+                          className="text-accent-400 hover:text-accent-700"
                           aria-label={`Remove ${u.fullName || u.email}`}
                         >
                           <X className="w-3 h-3" />
@@ -459,7 +459,7 @@ export function EditWorkflowDrawer({ open, onClose, workflow }: Props) {
         <button
           type="button"
           onClick={addStep}
-          className="mt-2 text-xs text-orange-600 font-semibold inline-flex items-center gap-1"
+          className="mt-2 text-xs text-accent-600 font-semibold inline-flex items-center gap-1"
         >
           <Plus className="w-3.5 h-3.5" /> Add Step
         </button>

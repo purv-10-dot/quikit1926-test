@@ -133,7 +133,7 @@ export function GeneralInfo({
           onChange={(e) => onSiteRemarksChange(e.target.value)}
           placeholder="General observations, visitor log, instructions received…"
           rows={3}
-          className="w-full text-sm px-3.5 py-2.5 border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400 resize-none placeholder:text-slate-400 transition-shadow"
+          className="w-full text-sm px-3.5 py-2.5 border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400 resize-none placeholder:text-slate-400 transition-shadow"
         />
       </div>
     </Section>

@@ -263,7 +263,7 @@ export default function DeploymentPage() {
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1.5 capitalize font-medium text-orange-600 hover:text-orange-700 hover:underline"
+            className="inline-flex items-center gap-1.5 capitalize font-medium text-accent-600 hover:text-accent-700 hover:underline"
             title="Open document in new tab"
           >
             {row.docType.replace("_", " ")}
@@ -360,7 +360,7 @@ export default function DeploymentPage() {
               onClick={() => setTab(t.key)}
               className={`pb-3 text-sm font-medium border-b-2 transition-colors ${
                 tab === t.key
-                  ? "border-orange-500 text-orange-600"
+                  ? "border-accent-500 text-accent-600"
                   : "border-transparent text-gray-500 hover:text-gray-700"
               }`}
             >

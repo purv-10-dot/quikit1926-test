@@ -319,7 +319,7 @@ function LabourTabs({
       {(["categories", "rates"] as const).map((t) => (
         <button key={t} type="button" onClick={() => onChange(t)}
           className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-            tab === t ? "bg-white text-orange-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
+            tab === t ? "bg-white text-accent-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
           }`}>
           {t === "categories" ? "Categories" : "Rates"}
         </button>
@@ -336,7 +336,7 @@ function StatusPills({
       {(["active", "inactive", "all"] as const).map((s) => (
         <button key={s} type="button" onClick={() => onChange(s)}
           className={`rounded-md px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
-            value === s ? "bg-white text-orange-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
+            value === s ? "bg-white text-accent-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
           }`}>
           {s}
         </button>

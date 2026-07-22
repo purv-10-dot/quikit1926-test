@@ -298,6 +298,10 @@ export interface QuickCreateConfig<TLine = DynamicLine, TSec = DynamicLine> {
       so callers can read the newly-created entity (e.g. to route to a
       detail page via its id). */
   onSuccess?: (result: unknown) => void;
+  /** Override the primary submit button label. Defaults to "Create".
+      GRN uses "Create (Draft)" to signal the record is saved as a
+      draft and the user is then taken to its detail page. */
+  submitLabel?: string;
 }
 
 // ─── Component ──────────────────────────────────────────────────────
@@ -644,15 +648,15 @@ export function QuickCreateDrawer<TLine = DynamicLine, TSec = DynamicLine>({
               over the drawer. Click-through disabled to keep the drop
               event bubbling to the body. */}
           {drawerDragActive && primaryFileField && (
-            <div className="pointer-events-none absolute inset-0 z-30 m-4 rounded-2xl border-2 border-dashed border-orange-400 bg-orange-50/80 backdrop-blur-sm flex items-center justify-center">
+            <div className="pointer-events-none absolute inset-0 z-30 m-4 rounded-2xl border-2 border-dashed border-accent-400 bg-accent-50 backdrop-blur-sm flex items-center justify-center">
               <div className="text-center">
-                <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-orange-500 text-white shadow-md ring-[6px] ring-orange-100 mb-3">
+                <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-accent-500 text-white shadow-md ring-[6px] ring-accent-100 mb-3">
                   <FileText className="w-7 h-7" />
                 </div>
-                <div className="text-sm font-bold text-orange-700">
+                <div className="text-sm font-bold text-accent-700">
                   Drop to upload
                 </div>
-                <div className="text-xs text-orange-600/80 mt-0.5">
+                <div className="text-xs text-accent-600 mt-0.5">
                   File will be attached to <b>{primaryFileField.label}</b>
                 </div>
               </div>
@@ -679,7 +683,7 @@ export function QuickCreateDrawer<TLine = DynamicLine, TSec = DynamicLine>({
               const baseCls = "w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2";
               const stateCls = fieldError
                 ? "border-red-400 bg-red-50 focus:ring-red-500"
-                : "border-gray-300 focus:ring-orange-500";
+                : "border-gray-300 focus:ring-accent-500";
               const onChangeValue = (raw: string) => {
                 const v = field.transform ? field.transform(raw) : raw;
                 set(field.key, v);
@@ -754,7 +758,7 @@ export function QuickCreateDrawer<TLine = DynamicLine, TSec = DynamicLine>({
                         onChange={(e) =>
                           onChangeValue(e.target.checked ? "true" : "")
                         }
-                        className="mt-0.5 w-4 h-4 accent-orange-500"
+                        className="mt-0.5 w-4 h-4 accent-accent-500"
                       />
                       <span className="text-sm text-gray-700">
                         {field.label}
@@ -939,29 +943,29 @@ export function QuickCreateDrawer<TLine = DynamicLine, TSec = DynamicLine>({
                             className={`flex items-center gap-3 px-3 py-2 rounded-lg border border-dashed text-sm transition-colors ${
                               isDisabled || uploading
                                 ? "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed"
-                                : "border-gray-300 hover:border-orange-400 hover:bg-orange-50/30 cursor-pointer"
+                                : "border-gray-300 hover:border-accent-400 hover:bg-accent-50 cursor-pointer"
                             }`}
                             onDragOver={(e) => {
                               if (!canDrop) return;
                               e.preventDefault();
                               e.currentTarget.classList.add(
-                                "border-orange-400",
-                                "bg-orange-50/60",
+                                "border-accent-400",
+                                "bg-accent-50",
                               );
                             }}
                             onDragLeave={(e) => {
                               if (!canDrop) return;
                               e.currentTarget.classList.remove(
-                                "border-orange-400",
-                                "bg-orange-50/60",
+                                "border-accent-400",
+                                "bg-accent-50",
                               );
                             }}
                             onDrop={(e) => {
                               if (!canDrop) return;
                               e.preventDefault();
                               e.currentTarget.classList.remove(
-                                "border-orange-400",
-                                "bg-orange-50/60",
+                                "border-accent-400",
+                                "bg-accent-50",
                               );
                               const dropped = Array.from(
                                 e.dataTransfer.files ?? [],
@@ -1022,7 +1026,7 @@ export function QuickCreateDrawer<TLine = DynamicLine, TSec = DynamicLine>({
                                       href={f.url}
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      className="flex-1 min-w-0 text-xs text-gray-700 hover:text-orange-600 truncate"
+                                      className="flex-1 min-w-0 text-xs text-gray-700 hover:text-accent-600 truncate"
                                       title={f.name}
                                     >
                                       {f.name}
@@ -1084,7 +1088,7 @@ export function QuickCreateDrawer<TLine = DynamicLine, TSec = DynamicLine>({
                 {!config.lineItems.hideAddLine && (
                   <button
                     onClick={() => setLines(prev => [...prev, {}])}
-                    className="text-xs text-orange-600 font-semibold flex items-center gap-1"
+                    className="text-xs text-accent-600 font-semibold flex items-center gap-1"
                   >
                     <Plus className="w-3.5 h-3.5" /> Add Line
                   </button>
@@ -1251,7 +1255,7 @@ export function QuickCreateDrawer<TLine = DynamicLine, TSec = DynamicLine>({
                 ) && (
                   <button
                     onClick={() => setSecondaryLines(prev => [...prev, {}])}
-                    className="text-xs text-orange-600 font-semibold flex items-center gap-1"
+                    className="text-xs text-accent-600 font-semibold flex items-center gap-1"
                   >
                     <Plus className="w-3.5 h-3.5" />{" "}
                     {config.secondaryLineItems.addLabel ?? "Add Line"}
@@ -1344,7 +1348,7 @@ export function QuickCreateDrawer<TLine = DynamicLine, TSec = DynamicLine>({
                 </h3>
                 <button
                   onClick={() => setTertiaryLines(prev => [...prev, {}])}
-                  className="text-xs text-orange-600 font-semibold flex items-center gap-1"
+                  className="text-xs text-accent-600 font-semibold flex items-center gap-1"
                 >
                   <Plus className="w-3.5 h-3.5" />{" "}
                   {config.tertiaryLineItems.addLabel ?? "Add Line"}
@@ -1431,7 +1435,7 @@ export function QuickCreateDrawer<TLine = DynamicLine, TSec = DynamicLine>({
         <div className="flex shrink-0 justify-end gap-3 bg-white px-6 py-5 sm:px-8">
           <SecondaryButton onClick={onClose}>Cancel</SecondaryButton>
           <PrimaryButton onClick={handleSubmit} disabled={saving}>
-            {saving ? "Saving..." : "Create"}
+            {saving ? "Saving..." : (config.submitLabel ?? "Create")}
           </PrimaryButton>
         </div>
         </div>
