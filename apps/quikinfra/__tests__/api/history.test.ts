@@ -108,6 +108,32 @@ describe("GET /api/history — happy path", () => {
     });
   });
 
+  it("synthesizes create/update events for a labour rate from its master row", async () => {
+    // Labour rates don't write CnAuditLog or go through the approval engine,
+    // so the timeline relies on the master-row fallback (MASTER_MODEL_MAP →
+    // cnLabourRate). Before this mapping existed the drawer showed
+    // "No activity yet".
+    db.cnLabourRate.findFirst.mockResolvedValue({
+      createdAt: new Date("2026-07-14T09:00:00Z"),
+      updatedAt: new Date("2026-07-22T16:00:00Z"),
+      createdBy: "u-admin",
+      updatedBy: "u-admin",
+    });
+    db.user.findMany.mockResolvedValue([
+      { id: "u-admin", email: "admin@test.io", firstName: "Ash", lastName: "Singone" },
+    ]);
+
+    const res = await GET(reqGET("entityType=labour-rate&entityId=lr1"));
+    const body = await res.json();
+    expect(body.data).toHaveLength(2);
+    expect(body.data[0]).toMatchObject({ kind: "create", label: "Record created", byName: "Ash Singone" });
+    expect(body.data[1]).toMatchObject({ kind: "update", label: "Last updated", byName: "Ash Singone" });
+
+    // fallback query is org- and entity-scoped
+    const where = db.cnLabourRate.findFirst.mock.calls[0][0].where;
+    expect(where).toEqual({ id: "lr1", orgId: TEST_TENANT });
+  });
+
   it("merges audit-log events with a field-level change diff", async () => {
     db.cnAuditLog.findMany.mockResolvedValue([
       {

@@ -126,6 +126,13 @@ export interface MasterListPageProps<T extends { id: string; status?: string }> 
    */
   historyEntityType?: string;
   /**
+   * Custom subtitle for the Approval Timeline drawer. Rows whose descriptive
+   * field isn't a standard `name` / `code` / `*Number` column (e.g. labour
+   * rates, which are identified by category + type + window) would otherwise
+   * fall back to the raw row id. Return a human label instead.
+   */
+  getHistoryRowLabel?: (row: T) => string;
+  /**
    * Sidebar URL of this page (e.g. "/masters/companies"). When set, the
    * shell consults the current user's permission matrix and silently
    * suppresses Add / Edit / Delete affordances the user is not granted.
@@ -179,6 +186,7 @@ export function MasterListPage<T extends { id: string; status?: string }>({
   showStatusTabs = false,
   externalStatusFilter = false,
   historyEntityType,
+  getHistoryRowLabel,
   permissionUrl,
 }: MasterListPageProps<T>) {
   // ── Server-driven (infinite) state ──────────────────────────────────
@@ -507,6 +515,7 @@ export function MasterListPage<T extends { id: string; status?: string }>({
             onAdd={effectiveOnAdd}
             addLabel={`Add ${entityName}`}
             historyEntityType={historyEntityType}
+            getHistoryRowLabel={getHistoryRowLabel}
             loading={infinite ? !!isLoading : undefined}
             serverMode={!!infinite}
             serverTotal={infinite ? total : undefined}

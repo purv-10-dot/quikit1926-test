@@ -249,6 +249,11 @@ function RatesTab({ tabs, statusView }: { tabs: ReactNode; statusView: StatusVie
           filters: { status: statusView },
         }}
         historyEntityType="labour-rate"
+        getHistoryRowLabel={(r) =>
+          [r.categoryName ?? "Labour rate", RATE_TYPE_LABEL[r.rateType] ?? r.rateType]
+            .filter(Boolean)
+            .join(" — ")
+        }
         onAdd={() => { setForm(emptyRate); setErrors({}); setEditingId(null); setOpen(true); }}
         onEdit={(item) => {
           setForm({
@@ -315,11 +320,13 @@ function LabourTabs({
   tab, onChange,
 }: { tab: "categories" | "rates"; onChange: (t: "categories" | "rates") => void }) {
   return (
-    <div className="inline-flex items-center gap-1 rounded-lg bg-slate-100 p-1">
+    <div className="inline-flex items-center gap-0.5 rounded-lg border border-gray-200 bg-gray-50 p-0.5 shadow-inner">
       {(["categories", "rates"] as const).map((t) => (
         <button key={t} type="button" onClick={() => onChange(t)}
-          className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-            tab === t ? "bg-white text-accent-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
+          className={`rounded-md px-3 py-1 text-xs font-medium whitespace-nowrap transition-all ${
+            tab === t
+              ? "bg-white text-accent-700 shadow-sm ring-1 ring-gray-200"
+              : "text-gray-500 hover:text-gray-800"
           }`}>
           {t === "categories" ? "Categories" : "Rates"}
         </button>
@@ -332,11 +339,13 @@ function StatusPills({
   value, onChange,
 }: { value: StatusView; onChange: (v: StatusView) => void }) {
   return (
-    <div className="inline-flex items-center gap-1 rounded-lg bg-slate-100 p-1">
+    <div className="inline-flex items-center gap-0.5 rounded-lg border border-gray-200 bg-gray-50 p-0.5 shadow-inner">
       {(["active", "inactive", "all"] as const).map((s) => (
         <button key={s} type="button" onClick={() => onChange(s)}
-          className={`rounded-md px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
-            value === s ? "bg-white text-accent-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
+          className={`rounded-md px-3 py-1 text-xs font-medium capitalize whitespace-nowrap transition-all ${
+            value === s
+              ? "bg-white text-accent-700 shadow-sm ring-1 ring-gray-200"
+              : "text-gray-500 hover:text-gray-800"
           }`}>
           {s}
         </button>

@@ -42,11 +42,10 @@ import {
   useWorkOrder,
   useUpdateWorkOrder,
 } from "@/hooks/use-projects";
-import { useWorkCategories } from "@/hooks/use-masters";
+import { useWorkCategories, useLabourCategories } from "@/hooks/use-masters";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useWorkflowConfirm } from "@/hooks/use-workflow-confirm";
-import { isLabourWorkType, labourLineFromWoItem, sumLabourQty } from "@/lib/projects/labour-scope";
-import { LABOUR_TYPE_OPTIONS } from "@/lib/projects/labour-types";
+import { isLabourWorkType, labourLineAmount, labourLineFromWoItem } from "@/lib/projects/labour-scope";
 
 const MENU_KEY = "pm.work_orders";
 
@@ -153,11 +152,14 @@ export default function WorkOrderDetailPage() {
     }
     return map;
   }, [workCategoriesResult]);
-  const labourTypeLabel = useMemo(() => {
+  const { data: labourCategoriesResult } = useLabourCategories({ status: "active" });
+  const labourCategoryNameById = useMemo(() => {
     const map = new Map<string, string>();
-    for (const o of LABOUR_TYPE_OPTIONS) map.set(o.value, o.label);
-    return (v: string) => map.get(v) ?? v;
-  }, []);
+    for (const c of labourCategoriesResult?.data ?? []) {
+      map.set(c.id, c.code ? `${c.name} (${c.code})` : c.name);
+    }
+    return map;
+  }, [labourCategoriesResult]);
   const labourLines = useMemo(
     () => (isLabourOnly ? boqItems.map((it) => labourLineFromWoItem(it)) : []),
     [boqItems, isLabourOnly],
@@ -482,7 +484,7 @@ export default function WorkOrderDetailPage() {
                         <th className="px-4 py-3 text-left font-bold">Activity Name</th>
                         <th className="px-4 py-3 text-left font-bold">Description</th>
                         <th className="px-4 py-3 text-left font-bold">Group</th>
-                        <th className="px-4 py-3 text-left font-bold">Labour Type &amp; Count</th>
+                        <th className="px-4 py-3 text-left font-bold">Labour Category &amp; Count</th>
                         <th className="px-4 py-3 text-right font-bold">Total</th>
                       </tr>
                     </thead>
@@ -503,19 +505,12 @@ export default function WorkOrderDetailPage() {
                             {workCategoryNameById.get(line.workCategoryId) ?? "—"}
                           </td>
                           <td className="px-4 py-3 text-gray-700">
-                            {line.labourTypes.length
-                              ? line.labourTypes
-                                  .map(
-                                    (lt) =>
-                                      `${labourTypeLabel(lt.type)} (${
-                                        fmtQty(lt.count) || 0
-                                      })`,
-                                  )
-                                  .join(", ")
+                            {line.labourCategoryId
+                              ? `${labourCategoryNameById.get(line.labourCategoryId) ?? "—"} (${fmtQty(line.count) || 0})`
                               : "—"}
                           </td>
                           <td className="px-4 py-3 text-right tabular-nums text-gray-900">
-                            {sumLabourQty(line.labourTypes)}
+                            {fmtInr(labourLineAmount(line))}
                           </td>
                         </tr>
                       ))}
