@@ -19,11 +19,11 @@ Directory shape:
 ```
 app/(dashboard)/  → authenticated pages (route group, no /dashboard prefix)
 app/api/          → route handlers
-src/lib/          → server libs (auth, rbac, boq, purchase, store, projects, http, ...)
-src/components/   → client UI (FormDrawer, QuickCreateDrawer, ImportDataDrawer, ...)
-src/hooks/        → React Query wrappers (use-masters, use-projects, ...)
+lib/              → server libs (auth, rbac, boq, purchase, store, projects, http, ...)
+components/       → client UI (FormDrawer, QuickCreateDrawer, ImportDataDrawer, ...)
+hooks/            → React Query wrappers (use-masters, use-projects, ...)
 prisma/           → schema (74 models, all `Cn` prefixed) + seed
-tests/            → api + e2e (Playwright)
+__tests__/        → api + components + unit (Vitest)
 ```
 
 ---
@@ -32,10 +32,10 @@ tests/            → api + e2e (Playwright)
 
 ### Routes
 - Every API route: `await requirePermission("construction.<domain>.<action>")` first. Returns `TenantContext` or a NextResponse — handle both.
-- Wrap mutations in `withMutationRoute` ([src/lib/http/route-wrappers.ts](src/lib/http/route-wrappers.ts)) — gives auto envelope, body parsing, Prisma error mapping.
-- Response envelope: `{ ok, data | error: { code, message }, requestId }` via `ok()` / `err()` ([src/lib/http/envelope.ts](src/lib/http/envelope.ts)).
+- Wrap mutations in `withMutationRoute` ([lib/http/route-wrappers.ts](lib/http/route-wrappers.ts)) — gives auto envelope, body parsing, Prisma error mapping.
+- Response envelope: `{ ok, data | error: { code, message }, requestId }` via `ok()` / `err()` ([lib/http/envelope.ts](lib/http/envelope.ts)).
 - Logging: `logger.info({ msg: "snake_case_event", ...structuredFields })`. Never interpolate values into the `msg` key.
-- For retry-able mutations (approvals, financial txns) wrap in `idempotencyGuard` ([src/lib/workflow/idempotency.ts](src/lib/workflow/idempotency.ts)).
+- For retry-able mutations (approvals, financial txns) wrap in `idempotencyGuard` ([lib/workflow/idempotency.ts](lib/workflow/idempotency.ts)).
 
 ### Database
 - Models prefixed `Cn` (historical — "construction"). Don't rename.
@@ -52,9 +52,9 @@ tests/            → api + e2e (Playwright)
 - Don't write planning / decision / summary `.md` files unless the user explicitly asks.
 
 ### Auth in tests / dev
-- `AUTH_DEMO_MODE=true` (default in dev) bypasses NextAuth.
-- Switch persona via `x-test-role: <role_key>` header — gated on `NODE_ENV !== production`.
-- Roles: `platform_super_admin`, `tenant_admin`, `project_manager`, `site_admin`, `accountant`, `user`. Permission keys: `construction.<domain>.<action>`.
+- All auth resolves through one function — `getTenantContext()` in `@/lib/auth/context`. Every route gate (`requirePermission`, `withListRoute` / `withMutationRoute`, `requireMastersAction` / `requirePurchaseAction` / `requireStoreAction`) funnels through it. There is no `AUTH_DEMO_MODE` bypass and no `x-test-role` header in this app.
+- In tests, mock that single module and set the caller with `setContext(makeAdminCtx())` / `setContext(makeUserCtx([...perms]))` from [__tests__/setup.ts](__tests__/setup.ts).
+- Roles (5 backing keys — match `cn_users.roleKey`, defined in [lib/rbac/roles.ts](lib/rbac/roles.ts)): `super_admin` (Platform Super Admin), `admin`, `ho_user` (HO User), `site_admin`, `user`. Permission keys: `construction.<domain>.<action>`.
 
 ---
 
@@ -62,17 +62,17 @@ tests/            → api + e2e (Playwright)
 
 Pipeline: `RawSheet[] → detect → adapter → normalize → resolveHierarchy → validate → PipelineResult`
 
-Three adapters in [src/lib/boq/import/](src/lib/boq/import/):
+Three adapters in [lib/boq/import/](lib/boq/import/):
 
 | Adapter | When |
 |---------|------|
-| **STRICT_TEMPLATE** ([strict-adapter.ts](src/lib/boq/import/strict-adapter.ts)) | 6 fixed columns: BOQ No / SOR No / Description / Unit / Rate / Op. Undone Qty |
-| **GENERIC_SOR** ([generic-adapter.ts](src/lib/boq/import/generic-adapter.ts)) | Aakar / govt SOR — header roles detected by alias matching. **Most real imports go through here.** |
-| **UNIVERSAL** ([universal-adapter.ts](src/lib/boq/import/universal-adapter.ts)) | Manual user mapping (via `/detect-columns` → form → resubmit). Vendor quotes / arbitrary layouts. |
+| **STRICT_TEMPLATE** ([strict-adapter.ts](lib/boq/import/strict-adapter.ts)) | 6 fixed columns: BOQ No / SOR No / Description / Unit / Rate / Op. Undone Qty |
+| **GENERIC_SOR** ([generic-adapter.ts](lib/boq/import/generic-adapter.ts)) | Aakar / govt SOR — header roles detected by alias matching. **Most real imports go through here.** |
+| **UNIVERSAL** ([universal-adapter.ts](lib/boq/import/universal-adapter.ts)) | Manual user mapping (via `/detect-columns` → form → resubmit). Vendor quotes / arbitrary layouts. |
 
-Hierarchy resolution ([hierarchy.ts](src/lib/boq/import/hierarchy.ts)) is **prefix-first, stack-fallback**: try `prefixParent(ref)` against the same-category ref index; if absent, walk the parent stack and pick the first ancestor whose code is a true prefix of the current ref.
+Hierarchy resolution ([hierarchy.ts](lib/boq/import/hierarchy.ts)) is **prefix-first, stack-fallback**: try `prefixParent(ref)` against the same-category ref index; if absent, walk the parent stack and pick the first ancestor whose code is a true prefix of the current ref.
 
-Dedup ([validator.ts](src/lib/boq/import/validator.ts)): duplicate `(category, boqNo)` is auto-suffixed `_2`, `_3`, … with a non-blocking warning. Real BOQs reuse short refs across sections.
+Dedup ([validator.ts](lib/boq/import/validator.ts)): duplicate `(category, boqNo)` is auto-suffixed `_2`, `_3`, … with a non-blocking warning. Real BOQs reuse short refs across sections.
 
 Entry points:
 - `POST /api/projects/[projectId]/boq/preview-upload` — dry-run pipeline, returns sample + full normalized rows.
@@ -93,14 +93,14 @@ After import, items lost their hierarchy: letter-only rows ended up flat under t
 
 ### Files changed
 
-**[src/lib/boq/import/generic-adapter.ts](src/lib/boq/import/generic-adapter.ts)**
+**[lib/boq/import/generic-adapter.ts](lib/boq/import/generic-adapter.ts)**
 - Line 64 — added `"SOR"`, `"SOR Code"`, `"SOR Ref"` to `ROLE_ALIASES.sorItem` so the bare `SOR` header resolves.
 - Lines 213–220 — new `lastDottedParent` carry-forward state.
 - Lines 280–290 — when current ref matches `/^[a-zA-Z]{1,3}$/` and `lastDottedParent` is set, synthesize `boqNo = lastDottedParent + "." + ref`. Track the synthesis with `wasSynthesized`.
 - Line 379 — `rawBoqNo: rawRef` preserves the original cell value as audit trail.
 - Lines 412–419 — after classification, update `lastDottedParent` only when row is a group with a dotted ref AND wasn't itself synthesized. (Prevents leaf `A.2.1.1` from shadowing the real parent `A.2.1`.)
 
-**[src/lib/boq/import/universal-adapter.ts](src/lib/boq/import/universal-adapter.ts)**
+**[lib/boq/import/universal-adapter.ts](lib/boq/import/universal-adapter.ts)**
 - Line 150 — added `/^sor$/i`, `/sorcode/i`, `/sorref/i` to the `boq_number` auto-suggest patterns.
 - Line 343 — new `lastDottedParent` state.
 - Lines 398–417 — same carry-forward logic, gated on `type === "SECTION_HEADER"`.
@@ -131,7 +131,7 @@ Re-upload the same Excel after these changes. Pick **AUTO** mode (or **GENERIC_S
 
 ## Pre-existing test failures (don't chase)
 
-`tests/api/boq-import-pipeline.spec.ts` has **8 failures unrelated to the BOQ format fix**. They were failing before this session and stay failing after. Confirmed via `git stash` round-trip.
+`__tests__/api/boq-import-pipeline.spec.ts` has **8 failures unrelated to the BOQ format fix**. They were failing before this session and stay failing after. Confirmed via `git stash` round-trip.
 
 Most are strict-template adapter assertions and a depth-cap test that expects `depth: 5` while the generic adapter caps at 3. Either the test expectations or the adapter cap need updating — out of scope for the BOQ format work but worth flagging if the user asks about test pass rates.
 
@@ -154,7 +154,7 @@ depth handling › deep refs cap at depth 5 with warning
 - Wire reject / return flows into DPR + RAB approval routes.
 - Add `/api/audit` endpoint (referenced in tests but not yet implemented).
 - Migrate any remaining purchase routes from in-memory `globalThis` to DB + approval-service (Phase-2b).
-- Consider Zod schemas for request validation in critical routes (currently hand-rolled in `src/lib/validators.ts`).
+- Consider Zod schemas for request validation in critical routes (currently hand-rolled in `lib/validators.ts`).
 
 ---
 
@@ -167,7 +167,7 @@ ORG SCOPE         Always include orgId in every Prisma where clause
 LEDGER PATTERN    Append-only — reversal = compensating row, never UPDATE
 DOC NUMBER        nextDocNumber(ctx, projectId, "PO") → "PO-PROJ-FY-####"
 IDEMPOTENCY       idempotencyGuard(req, ctx, "approve-po") for replays
-DEMO MODE         AUTH_DEMO_MODE=true + x-test-role header (NEVER prod)
+TEST AUTH         Mock `getTenantContext()`; setContext(makeAdminCtx()/makeUserCtx([perms]))
 LOG               logger.info({ msg: "snake_case_event", ...fields })
 DECIMAL           Money 18,2 — Quantity 18,4 — Never Float
 SOFT DELETE       status = 'inactive' on masters

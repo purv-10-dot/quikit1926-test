@@ -196,7 +196,7 @@ export function ComplianceDocumentForm({ embedded = false, onSaved, onCancel }: 
       <Field label="Document File" error={errors.fileUrl}>
         {form.fileUrl ? (
           <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5">
-            <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-orange-50 text-orange-600">
+            <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-50 text-accent-600">
               <FileText className="h-4 w-4" />
             </span>
             <div className="min-w-0 flex-1">
@@ -213,7 +213,7 @@ export function ComplianceDocumentForm({ embedded = false, onSaved, onCancel }: 
               href={form.fileUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-orange-600 hover:bg-orange-50"
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-accent-600 hover:bg-accent-50"
             >
               <ExternalLink className="h-3.5 w-3.5" /> View
             </a>
@@ -230,8 +230,8 @@ export function ComplianceDocumentForm({ embedded = false, onSaved, onCancel }: 
           <label
             className={`flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed px-4 py-6 text-center transition-colors ${
               uploading
-                ? "border-orange-300 bg-orange-50/40"
-                : "border-gray-300 hover:border-orange-300 hover:bg-orange-50/30"
+                ? "border-accent-300 bg-accent-50"
+                : "border-gray-300 hover:border-accent-300 hover:bg-accent-50"
             }`}
           >
             <input
@@ -247,7 +247,7 @@ export function ComplianceDocumentForm({ embedded = false, onSaved, onCancel }: 
             />
             {uploading ? (
               <>
-                <Loader2 className="h-5 w-5 animate-spin text-orange-500" />
+                <Loader2 className="h-5 w-5 animate-spin text-accent-500" />
                 <span className="text-sm text-gray-600">Uploading…</span>
               </>
             ) : (

@@ -6,6 +6,7 @@ import {
   createDocument,
   listDocuments,
 } from "@/lib/equipment/deployment-service";
+import { parsePagination } from "@/lib/http/pagination";
 import { NextRequest, NextResponse } from "next/server";
 
 function mapError(err: unknown) {
@@ -37,6 +38,7 @@ export async function GET(req: NextRequest) {
       Array.isArray(ctx.projectIds) && ctx.projectIds.length > 0
         ? ctx.projectIds
         : undefined,
+    pagination: parsePagination(req),
   });
 
   return NextResponse.json(result);

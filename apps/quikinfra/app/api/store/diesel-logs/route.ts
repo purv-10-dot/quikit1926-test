@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
-import { parsePagination } from "@/lib/http/pagination";
+import { parsePagination, parseSort } from "@/lib/http/pagination";
 
 /**
  * Diesel / Fuel Log Book — list + create.
@@ -86,6 +86,7 @@ export async function GET(req: NextRequest) {
   const machineryId = searchParams.get("machineryId") ?? "";
   const fromDate = searchParams.get("fromDate") ?? "";
   const toDate = searchParams.get("toDate") ?? "";
+  const search = (searchParams.get("search") ?? "").trim();
 
   const where: Record<string, unknown> = { orgId: ctx.orgId };
 
@@ -102,8 +103,21 @@ export async function GET(req: NextRequest) {
     if (toDate) range.lte = new Date(toDate);
     where.logDate = range;
   }
+  if (search) {
+    where.OR = [
+      { operatorName: { contains: search, mode: "insensitive" } },
+      { remarks: { contains: search, mode: "insensitive" } },
+      { machinery: { name: { contains: search, mode: "insensitive" } } },
+      { machinery: { code: { contains: search, mode: "insensitive" } } },
+      { project: { name: { contains: search, mode: "insensitive" } } },
+    ];
+  }
 
   const p = parsePagination(req);
+  const sort = parseSort(req, ["logDate", "quantityIssued", "createdAt"], {
+    field: "logDate",
+    order: "desc",
+  });
   const [rows, total] = await Promise.all([
     db.cnDieselLog.findMany({
       where,
@@ -111,7 +125,7 @@ export async function GET(req: NextRequest) {
         project: { select: { id: true, name: true } },
         machinery: { select: { id: true, name: true, code: true } },
       },
-      orderBy: [{ logDate: "desc" }, { createdAt: "desc" }],
+      orderBy: sort.orderBy,
       ...(p.paginated ? { take: p.take, skip: p.skip } : {}),
     }),
     db.cnDieselLog.count({ where }),

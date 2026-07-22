@@ -369,7 +369,7 @@ export function ApprovalActionBar(props: Props) {
                 className={`w-full px-3 py-2.5 rounded-lg border text-sm focus:outline-none focus:ring-2 resize-none transition-colors ${
                   error
                     ? "border-rose-300 focus:ring-rose-200 focus:border-rose-400"
-                    : "border-gray-300 focus:ring-orange-200 focus:border-orange-400"
+                    : "border-gray-300 focus:ring-accent-200 focus:border-accent-400"
                 }`}
               />
               <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px]">

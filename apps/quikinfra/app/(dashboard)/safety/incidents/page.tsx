@@ -6,6 +6,7 @@ import { PageHeader, PageContainer, StatusChip, TabBar } from "@/components/Page
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { QuickCreateDrawer } from "@/components/QuickCreateDrawer";
 import { useMenuActions } from "@/hooks/use-permissions";
+import { useProjects } from "@/hooks/use-masters";
 
 const STATUS_TABS = [
   { key: "all", label: "All" },
@@ -13,8 +14,6 @@ const STATUS_TABS = [
   { key: "Investigating", label: "Investigating" },
   { key: "Closed", label: "Closed" },
 ];
-
-const PROJECT_OPTIONS: { value: string; label: string }[] = [];
 
 const TYPE_OPTIONS = [
   { value: "Near Miss", label: "Near Miss" },
@@ -46,6 +45,8 @@ export default function IncidentsPage() {
   const [activeTab, setActiveTab] = useState("all");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { canAdd } = useMenuActions("/safety/incidents");
+  const { data: projectsResult } = useProjects();
+  const projectOptions = (projectsResult?.data ?? []).map((p) => ({ value: p.id, label: p.name }));
 
   const { data: result, isLoading } = useQuery({
     queryKey: ["safety-incidents"],
@@ -62,7 +63,7 @@ export default function IncidentsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["safety-incidents"] }),
     fields: [
       { key: "date", label: "Incident Date", type: "date" as const, required: true },
-      { key: "projectId", label: "Project", type: "select" as const, required: true, options: PROJECT_OPTIONS, placeholder: "Select project" },
+      { key: "projectId", label: "Project", type: "select" as const, required: true, options: projectOptions, placeholder: "Select project" },
       { key: "type", label: "Incident Type", type: "select" as const, required: true, options: TYPE_OPTIONS, placeholder: "Select type" },
       { key: "severity", label: "Severity", type: "select" as const, required: true, options: SEVERITY_OPTIONS, placeholder: "Select severity" },
       { key: "description", label: "Description", type: "textarea" as const, required: true, placeholder: "Describe what happened...", span: 2 as const },

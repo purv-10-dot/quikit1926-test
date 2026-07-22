@@ -93,10 +93,8 @@ describe("POST /api/purchase/grn", () => {
     expect((await res.json()).code).toBe("PO_NOT_FOUND");
   });
 
-  it("returns 400 when the challan number is missing (MISSING_REQUIRED_ATTACHMENT)", async () => {
+  it("creates a GRN when challan number, date, and attachment are all omitted (all optional)", async () => {
     setContext(makeAdminCtx());
-    db.cnItem.findMany.mockResolvedValue([]); // findPOById → loadLineLookups
-    db.cnUOM.findMany.mockResolvedValue([]);
     db.cnPurchaseOrder.findFirst.mockResolvedValue({
       id: "po1",
       orgId: TEST_TENANT,
@@ -104,15 +102,33 @@ describe("POST /api/purchase/grn", () => {
       poNumber: "PO-SITE-26-0001",
       projectId: "proj1",
       vendorId: "v1",
+      projectCode: "SITE",
+      deliveryLocationId: "loc1",
       freightCharges: "0",
       closedAt: null,
       lines: [
         { id: "pol1", itemId: "i1", orderedQty: "10", receivedQty: "0", pendingQty: "10", unitRate: "100" },
       ],
     });
+    db.cnGoodsReceiptNote.findMany.mockResolvedValue([]);
+    db.cnItem.findMany.mockResolvedValue([]);
+    db.cnUOM.findMany.mockResolvedValue([]);
+    db.cnGoodsReceiptNote.create.mockResolvedValue({
+      id: "grn2",
+      orgId: TEST_TENANT,
+      grnNumber: "GRN-SITE-26-0001",
+      poId: "po1",
+      projectId: "proj1",
+      vendorId: "v1",
+      status: "draft",
+      lines: [],
+      createdBy: TEST_USER,
+      updatedBy: TEST_USER,
+    });
+
     const res = await POST(buildPOST({ poId: "po1", lines: [] }));
-    expect(res.status).toBe(400);
-    expect((await res.json()).code).toBe("MISSING_REQUIRED_ATTACHMENT");
+    expect(res.status).toBe(201);
+    expect((await res.json()).id).toBe("grn2");
   });
 
   it("creates a GRN from an eligible PO and returns 201", async () => {

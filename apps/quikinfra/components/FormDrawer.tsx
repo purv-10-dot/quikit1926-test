@@ -91,7 +91,7 @@ export function FormSection({ title, children }: { title: string; children: Reac
   return (
     <div className="mb-6">
       <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 pb-2 border-b border-gray-100 flex items-center gap-2">
-        <span className="inline-block w-1 h-3.5 bg-orange-500 rounded-sm" />
+        <span className="inline-block w-1 h-3.5 bg-accent-500 rounded-sm" />
         {title}
       </h3>
       <div className="space-y-4">{children}</div>
@@ -114,7 +114,7 @@ interface FieldProps {
 
 const BASE_INPUT =
   "w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500";
-const INPUT_OK = "border-gray-300 focus:ring-orange-500";
+const INPUT_OK = "border-gray-300 focus:ring-accent-500";
 const INPUT_ERR = "border-red-400 bg-red-50 focus:ring-red-500";
 
 export function Field({ label, required, error, children, span, hint }: FieldProps) {
@@ -412,7 +412,7 @@ export function SelectInput({
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="Search…"
-                    className="w-full pl-8 pr-2 py-1.5 text-sm rounded-md border border-gray-200 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                    className="w-full pl-8 pr-2 py-1.5 text-sm rounded-md border border-gray-200 focus:outline-none focus:border-accent-400 focus:ring-2 focus:ring-accent-100"
                   />
                 </div>
               </div>
@@ -425,11 +425,11 @@ export function SelectInput({
                   onClick={() => choose("")}
                   onMouseEnter={() => setHighlight(-1)}
                   className={`w-full text-left px-3 py-1.5 text-sm flex items-center gap-2 ${
-                    value === "" ? "text-gray-900 bg-orange-50" : "text-gray-400 hover:bg-gray-50"
+                    value === "" ? "text-gray-900 bg-accent-50" : "text-gray-400 hover:bg-gray-50"
                   }`}
                 >
                   <span className="flex-1 truncate">{placeholder}</span>
-                  {value === "" && <Check className="w-3.5 h-3.5 text-orange-600" />}
+                  {value === "" && <Check className="w-3.5 h-3.5 text-accent-600" />}
                 </button>
               )}
               {filtered.length === 0 ? (
@@ -453,7 +453,7 @@ export function SelectInput({
                         isDisabled
                           ? "text-gray-300 cursor-not-allowed"
                           : isSelected
-                            ? "bg-orange-50 text-orange-700 font-medium"
+                            ? "bg-accent-50 text-accent-700 font-medium"
                             : isHighlighted
                               ? "bg-gray-100 text-gray-900"
                               : "text-gray-700"
@@ -467,7 +467,7 @@ export function SelectInput({
                           </span>
                         )}
                       </span>
-                      {isSelected && !isDisabled && <Check className="w-3.5 h-3.5 shrink-0 text-orange-600" />}
+                      {isSelected && !isDisabled && <Check className="w-3.5 h-3.5 shrink-0 text-accent-600" />}
                     </button>
                   );
                 })
@@ -731,13 +731,13 @@ export function MultiSelectInput({
                     onClick={() => toggle(o.value)}
                     className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors ${
                       selected
-                        ? "bg-orange-50 text-orange-800 hover:bg-orange-100"
+                        ? "bg-accent-50 text-accent-800 hover:bg-accent-100"
                         : "text-gray-700 hover:bg-gray-100"
                     }`}
                   >
                     <span
                       className={`inline-flex items-center justify-center w-4 h-4 rounded border shrink-0 ${
-                        selected ? "bg-orange-600 border-orange-600 text-white" : "border-gray-300 bg-white"
+                        selected ? "bg-accent-600 border-accent-600 text-white" : "border-gray-300 bg-white"
                       }`}
                       aria-hidden="true"
                     >
@@ -757,13 +757,13 @@ export function MultiSelectInput({
     <div ref={wrapRef} className="relative">
       <div ref={triggerBoxRef} className={`${BASE_INPUT} ${invalid ? INPUT_ERR : INPUT_OK} flex flex-wrap items-center gap-1.5 min-h-[38px] py-1.5 pr-8`}>
         {values.map((v) => (
-          <span key={v} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 text-xs font-medium border border-orange-200">
+          <span key={v} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-accent-50 text-accent-700 text-xs font-medium border border-accent-200">
             {labelOf(v)}
             {!disabled && (
               <button
                 type="button"
                 onClick={() => remove(v)}
-                className="hover:text-orange-900 leading-none"
+                className="hover:text-accent-900 leading-none"
                 aria-label={`Remove ${labelOf(v)}`}
               >
                 <X className="w-3 h-3" />
@@ -796,7 +796,7 @@ export function CheckboxInput({
   return (
     <label className="flex items-center gap-2 cursor-pointer">
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} disabled={disabled}
-        className="w-4 h-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500" />
+        className="w-4 h-4 rounded border-gray-300 text-accent-600 focus:ring-accent-500" />
       <span className="text-sm text-gray-700">{label}</span>
     </label>
   );

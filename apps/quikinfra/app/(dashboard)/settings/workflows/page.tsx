@@ -352,7 +352,7 @@ export default function WorkflowsPage() {
           </div>
           <div className="flex-1 min-w-[300px] bg-white rounded-xl border border-gray-200 flex items-center justify-between gap-3 px-4 py-3">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center shrink-0">
+              <div className="w-9 h-9 rounded-lg bg-accent-50 text-accent-600 flex items-center justify-center shrink-0">
                 <Layers className="w-4 h-4" />
               </div>
               <div className="min-w-0">
@@ -384,8 +384,8 @@ export default function WorkflowsPage() {
         {projects.length === 0 ? (
           <div className="bg-white rounded-xl border border-dashed border-gray-300 p-8 flex flex-col items-center text-center">
             <div className="relative inline-flex items-center justify-center w-20 h-20 mb-4">
-              <div className="absolute inset-0 rounded-full bg-gradient-to-br from-orange-100 via-amber-100 to-orange-50 blur-xl opacity-70" />
-              <div className="relative inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-200/60 ring-[6px] ring-orange-50">
+              <div className="absolute inset-0 rounded-full bg-accent-50 blur-xl opacity-70" />
+              <div className="relative inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-gradient-to-br from-accent-500 to-amber-500 text-white shadow-lg shadow-accent-200 ring-[6px] ring-accent-50">
                 <Workflow className="w-9 h-9" strokeWidth={1.8} />
               </div>
             </div>
@@ -399,7 +399,7 @@ export default function WorkflowsPage() {
             </p>
             <Link
               href="/masters/projects"
-              className="mt-5 inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-b from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 px-4 py-2 text-sm font-semibold text-white shadow-brand active:translate-y-[1px] transition-all"
+              className="mt-5 inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-b from-accent-500 to-accent-600 hover:from-accent-600 hover:to-accent-700 px-4 py-2 text-sm font-semibold text-white shadow-brand active:translate-y-[1px] transition-all"
             >
               Go to Projects
               <ArrowRight className="w-4 h-4" />
@@ -549,7 +549,7 @@ export default function WorkflowsPage() {
                             <button
                               type="button"
                               onClick={() => handleEdit(entity, mod)}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-semibold text-orange-700 bg-white hover:bg-orange-50 border border-orange-200 transition-colors"
+                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-semibold text-accent-700 bg-white hover:bg-accent-50 border border-accent-200 transition-colors"
                             >
                               <Pencil className="w-3 h-3" /> Edit
                             </button>
@@ -557,7 +557,7 @@ export default function WorkflowsPage() {
                             <button
                               type="button"
                               onClick={() => handleConfigure(entity, mod)}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-orange-600 hover:bg-orange-700 transition-colors"
+                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-accent-600 hover:bg-accent-700 transition-colors"
                             >
                               <Plus className="w-3 h-3" /> Configure
                             </button>
@@ -733,12 +733,12 @@ function ProjectScopeDropdown({
           bare
             ? `w-full flex items-center justify-between gap-3 px-4 py-3 transition-colors text-left ${
                 open
-                  ? "bg-orange-50/30 ring-1 ring-inset ring-orange-200"
+                  ? "bg-accent-50 ring-1 ring-inset ring-accent-200"
                   : "hover:bg-gray-50/60"
               } disabled:opacity-60 disabled:cursor-not-allowed`
             : `w-full flex items-center justify-between gap-3 bg-white rounded-xl border px-4 py-3 transition-colors ${
                 open
-                  ? "border-orange-300 ring-2 ring-orange-100"
+                  ? "border-accent-300 ring-2 ring-accent-100"
                   : "border-gray-200 hover:border-gray-300"
               } disabled:opacity-60 disabled:cursor-not-allowed`
         }
@@ -746,7 +746,7 @@ function ProjectScopeDropdown({
         aria-expanded={open}
       >
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 bg-orange-50 text-orange-600">
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 bg-accent-50 text-accent-600">
             <FolderKanban className="w-4 h-4" />
           </div>
           <div className="min-w-0 text-left">
@@ -758,7 +758,7 @@ function ProjectScopeDropdown({
                 {triggerLabel}
               </span>
               {active && active.overrides > 0 && (
-                <span className="inline-flex items-center justify-center text-[10px] font-bold min-w-[18px] h-[18px] px-1 rounded-full bg-orange-100 text-orange-700">
+                <span className="inline-flex items-center justify-center text-[10px] font-bold min-w-[18px] h-[18px] px-1 rounded-full bg-accent-100 text-accent-700">
                   {active.overrides}
                 </span>
               )}
@@ -817,13 +817,13 @@ function ProjectScopeDropdown({
                       setOpen(false);
                     }}
                     className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-colors ${
-                      isActive ? "bg-orange-50" : "hover:bg-gray-50"
+                      isActive ? "bg-accent-50" : "hover:bg-gray-50"
                     }`}
                   >
                     <span
                       className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${
                         isActive
-                          ? "bg-orange-100 text-orange-700"
+                          ? "bg-accent-100 text-accent-700"
                           : "bg-gray-100 text-gray-500"
                       }`}
                     >
@@ -832,7 +832,7 @@ function ProjectScopeDropdown({
                     <span className="flex flex-col leading-tight min-w-0 flex-1">
                       <span
                         className={`text-sm font-semibold truncate ${
-                          isActive ? "text-orange-700" : "text-gray-900"
+                          isActive ? "text-accent-700" : "text-gray-900"
                         }`}
                       >
                         {p.label}
@@ -844,12 +844,12 @@ function ProjectScopeDropdown({
                       </span>
                     </span>
                     {p.overrides > 0 && (
-                      <span className="inline-flex items-center justify-center text-[10px] font-bold min-w-[18px] h-[18px] px-1 rounded-full bg-orange-100 text-orange-700 shrink-0">
+                      <span className="inline-flex items-center justify-center text-[10px] font-bold min-w-[18px] h-[18px] px-1 rounded-full bg-accent-100 text-accent-700 shrink-0">
                         {p.overrides}
                       </span>
                     )}
                     {isActive && (
-                      <CheckCircle2 className="w-4 h-4 text-orange-600 shrink-0" />
+                      <CheckCircle2 className="w-4 h-4 text-accent-600 shrink-0" />
                     )}
                   </button>
                 );

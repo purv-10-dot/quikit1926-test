@@ -37,12 +37,22 @@ export function useEquipmentLogs(params?: {
   status?: string;
   fromDate?: string;
   toDate?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
 }) {
   const qs = new URLSearchParams();
   if (params?.projectId) qs.set("projectId", params.projectId);
   if (params?.status && params.status !== "all") qs.set("status", params.status);
   if (params?.fromDate) qs.set("fromDate", params.fromDate);
   if (params?.toDate) qs.set("toDate", params.toDate);
+  if (params?.search) qs.set("search", params.search);
+  if (params?.page) qs.set("page", String(params.page));
+  if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+  if (params?.sortBy) qs.set("sortBy", params.sortBy);
+  if (params?.sortOrder) qs.set("sortOrder", params.sortOrder);
   const query = qs.toString();
 
   return useQuery({
@@ -51,6 +61,7 @@ export function useEquipmentLogs(params?: {
       fetchApi<{ data: EquipmentLogRecord[]; total: number }>(
         `/api/equipment/logs${query ? `?${query}` : ""}`,
       ),
+    placeholderData: (prev) => prev,
     ...equipmentQueryOptions,
   });
 }
@@ -116,10 +127,23 @@ export interface JobCardSummary {
   maintenanceCost: number;
 }
 
-export function useJobCards(params?: { projectId?: string; status?: string }) {
+export function useJobCards(params?: {
+  projectId?: string;
+  status?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+}) {
   const qs = new URLSearchParams();
   if (params?.projectId) qs.set("projectId", params.projectId);
   if (params?.status && params.status !== "all") qs.set("status", params.status);
+  if (params?.search) qs.set("search", params.search);
+  if (params?.page) qs.set("page", String(params.page));
+  if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+  if (params?.sortBy) qs.set("sortBy", params.sortBy);
+  if (params?.sortOrder) qs.set("sortOrder", params.sortOrder);
   const query = qs.toString();
 
   return useQuery({
@@ -128,6 +152,7 @@ export function useJobCards(params?: { projectId?: string; status?: string }) {
       fetchApi<{ data: JobCardRecord[]; total: number }>(
         `/api/equipment/job-cards${query ? `?${query}` : ""}`,
       ),
+    placeholderData: (prev) => prev,
     ...equipmentQueryOptions,
   });
 }
@@ -196,9 +221,21 @@ export function usePatchJobCard() {
   });
 }
 
-export function useEquipmentTransfers(params?: { status?: string }) {
+export function useEquipmentTransfers(params?: {
+  status?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+}) {
   const qs = new URLSearchParams();
   if (params?.status && params.status !== "all") qs.set("status", params.status);
+  if (params?.search) qs.set("search", params.search);
+  if (params?.page) qs.set("page", String(params.page));
+  if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+  if (params?.sortBy) qs.set("sortBy", params.sortBy);
+  if (params?.sortOrder) qs.set("sortOrder", params.sortOrder);
   const query = qs.toString();
 
   return useQuery({
@@ -207,6 +244,7 @@ export function useEquipmentTransfers(params?: { status?: string }) {
       fetchApi<{ data: EquipmentTransferRecord[]; total: number }>(
         `/api/equipment/transfers${query ? `?${query}` : ""}`,
       ),
+    placeholderData: (prev) => prev,
     ...equipmentQueryOptions,
   });
 }
@@ -364,11 +402,23 @@ export function useHireRentSummary() {
   });
 }
 
-export function useHireRates(params?: { direction?: string }) {
+export function useHireRates(params?: {
+  direction?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+}) {
   const qs = new URLSearchParams();
   if (params?.direction && params.direction !== "all") {
     qs.set("direction", params.direction);
   }
+  if (params?.search) qs.set("search", params.search);
+  if (params?.page) qs.set("page", String(params.page));
+  if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+  if (params?.sortBy) qs.set("sortBy", params.sortBy);
+  if (params?.sortOrder) qs.set("sortOrder", params.sortOrder);
   const query = qs.toString();
 
   return useQuery({
@@ -377,17 +427,33 @@ export function useHireRates(params?: { direction?: string }) {
       fetchApi<{ data: HireRateRecord[]; total: number }>(
         `/api/equipment/hire-rates${query ? `?${query}` : ""}`,
       ),
+    placeholderData: (prev) => prev,
     ...equipmentQueryOptions,
   });
 }
 
-export function useHireInVerifications() {
+export function useHireInVerifications(params?: {
+  search?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+}) {
+  const qs = new URLSearchParams();
+  if (params?.search) qs.set("search", params.search);
+  if (params?.page) qs.set("page", String(params.page));
+  if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+  if (params?.sortBy) qs.set("sortBy", params.sortBy);
+  if (params?.sortOrder) qs.set("sortOrder", params.sortOrder);
+  const query = qs.toString();
+
   return useQuery({
-    queryKey: ["hire-in-verifications"],
+    queryKey: ["hire-in-verifications", query],
     queryFn: () =>
       fetchApi<{ data: HireInVerificationRecord[]; total: number }>(
-        "/api/equipment/hire-in-verifications",
+        `/api/equipment/hire-in-verifications${query ? `?${query}` : ""}`,
       ),
+    placeholderData: (prev) => prev,
     ...equipmentQueryOptions,
   });
 }
@@ -404,13 +470,28 @@ export function useHireInVerification(id: string | null | undefined) {
   });
 }
 
-export function useRentOutBills() {
+export function useRentOutBills(params?: {
+  search?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+}) {
+  const qs = new URLSearchParams();
+  if (params?.search) qs.set("search", params.search);
+  if (params?.page) qs.set("page", String(params.page));
+  if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+  if (params?.sortBy) qs.set("sortBy", params.sortBy);
+  if (params?.sortOrder) qs.set("sortOrder", params.sortOrder);
+  const query = qs.toString();
+
   return useQuery({
-    queryKey: ["rent-out-bills"],
+    queryKey: ["rent-out-bills", query],
     queryFn: () =>
       fetchApi<{ data: RentOutBillRecord[]; total: number }>(
-        "/api/equipment/rent-out-bills",
+        `/api/equipment/rent-out-bills${query ? `?${query}` : ""}`,
       ),
+    placeholderData: (prev) => prev,
     ...equipmentQueryOptions,
   });
 }

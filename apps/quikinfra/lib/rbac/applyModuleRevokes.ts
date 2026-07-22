@@ -172,18 +172,27 @@ export function modulesFromRevokes(
   for (const moduleKey of ALL_MODULE_KEYS) {
     const resourceList = MODULE_TO_RESOURCES[moduleKey] ?? [];
     if (resourceList.length === 0) continue;
-    const pairs = modulePermissionPairs(moduleKey);
-    // A module stays "ticked" (visible/assigned) as long as the user keeps
-    // ANY access inside it. Only when EVERY pair in the module is revoked is
-    // the module fully dropped. Using `some()` here was the bug: a single
-    // unchecked Add/Edit/Delete/View box revoked one pair, which dropped the
-    // whole module from `modulesAssigned`, and the Permissions page then
-    // renders every page in an unassigned module as blank — so unchecking one
-    // box made the entire module clear on reload.
-    const allRevoked =
-      pairs.length > 0 &&
-      pairs.every((p) => revokeSet.has(`${p.resource}:${p.action}`));
-    if (!allRevoked) ticked.push(moduleKey);
+    // A module stays "ticked" (visible/assigned) as long as the user can
+    // VIEW at least one of its resources. Basing this on the `view` action
+    // — not the full pair set — is deliberate and fixes a real bug:
+    //
+    //   The Permissions matrix only writes revokes for the actions it can
+    //   express (view/create/edit/delete + the ones those columns govern).
+    //   Some resources carry actions the matrix CANNOT revoke — e.g.
+    //   construction.diesel has a tree-level `delete` but the Diesel page is
+    //   write-only (no delete column). So even after the admin turned every
+    //   page in a module off, `every(pair revoked)` was never true (the
+    //   un-revocable pair lingered), and the whole module stayed "assigned"
+    //   forever — the "grant only X, reopen, the rest are still selected"
+    //   report. `view` is the honest signal: no view anywhere → the user
+    //   can't reach any page in the module → it's not assigned.
+    //
+    // Revoking a single non-view action still keeps the module ticked (the
+    // user retains the rest of it), preserving the earlier single-box fix.
+    const anyViewable = resourceList.some(
+      (resource) => !revokeSet.has(`${resource}:view`),
+    );
+    if (anyViewable) ticked.push(moduleKey);
   }
   return ticked;
 }

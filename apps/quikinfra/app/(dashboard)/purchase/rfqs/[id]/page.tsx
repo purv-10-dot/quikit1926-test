@@ -214,7 +214,7 @@ export default function RFQDetailPage() {
                   label="Source Indent"
                   value={
                     rfq.sourceIndentNumber ? (
-                      <span className="text-xs text-orange-600">
+                      <span className="text-xs text-accent-600">
                         {rfq.sourceIndentNumber}
                       </span>
                     ) : (
@@ -303,7 +303,7 @@ export default function RFQDetailPage() {
                     return (
                       <li key={v.id ?? v.vendorId ?? i} className="px-5 py-4">
                         <div className="flex items-start gap-3">
-                          <div className="w-9 h-9 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center shrink-0">
+                          <div className="w-9 h-9 rounded-lg bg-accent-50 text-accent-600 flex items-center justify-center shrink-0">
                             <Building2 className="w-4 h-4" />
                           </div>
                           <div className="min-w-0 flex-1">
@@ -347,7 +347,7 @@ export default function RFQDetailPage() {
                                     href={`/api/purchase/rfqs/${id}/preview/pdf?vendorId=${encodeURIComponent(v.vendorId)}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1 text-xs text-orange-600 hover:text-orange-700 hover:underline"
+                                    className="inline-flex items-center gap-1 text-xs text-accent-600 hover:text-accent-700 hover:underline"
                                     title="Open the PDF that is attached to this vendor's email"
                                   >
                                     <Eye className="w-3 h-3" />
@@ -407,7 +407,7 @@ export default function RFQDetailPage() {
                     onClick={() =>
                       router.push(`/purchase/indents/${rfq.sourceIndentId}`)
                     }
-                    className="w-9 h-9 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center shrink-0 hover:bg-orange-100"
+                    className="w-9 h-9 rounded-lg bg-accent-50 text-accent-600 flex items-center justify-center shrink-0 hover:bg-accent-100"
                     title="Open Indent details"
                   >
                     <FileText className="w-4 h-4" />
@@ -418,7 +418,7 @@ export default function RFQDetailPage() {
                       onClick={() =>
                         router.push(`/purchase/indents/${rfq.sourceIndentId}`)
                       }
-                      className="text-sm font-semibold text-gray-900 font-mono truncate hover:text-orange-700 text-left"
+                      className="text-sm font-semibold text-gray-900 truncate hover:text-accent-700 text-left"
                     >
                       {rfq.sourceIndentNumber ?? rfq.sourceIndentId}
                     </button>

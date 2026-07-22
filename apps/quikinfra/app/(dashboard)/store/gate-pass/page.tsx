@@ -1,7 +1,7 @@
 "use client";
 
 import { toErrorMessage } from "@/lib/api/errors";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowRight, ArrowLeft, Truck, Send, Check, X as XIcon,
@@ -11,19 +11,18 @@ import { PageHeader, PageContainer, StatusChip, TabBar } from "@/components/Page
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { WorkflowConfirmDialog } from "@/components/WorkflowConfirmDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { useGatePasses } from "@/hooks/use-store";
+import { useGatePasses, useGatePassCounts } from "@/hooks/use-store";
 import { QuickCreateDrawer, type QuickCreateConfig } from "@/components/QuickCreateDrawer";
 import { GroupedMaterialSelect, type GroupedMaterialSelectItem } from "@/components/GroupedMaterialSelect";
 import {
   useProjects,
   useLocations,
-  useItems,
   useItemGroups,
   useUOMs,
 } from "@/hooks/use-masters";
 import { usePermissions, useMenuActions } from "@/hooks/use-permissions";
 import { useQueryClient } from "@tanstack/react-query";
-import { buildTabCounts, filterByTab, type TabSpec } from "@/lib/tab-counts";
+import { type TabSpec } from "@/lib/tab-counts";
 import { toast } from "@/lib/toast";
 
 const MENU_KEY = "store.gate_pass";
@@ -217,27 +216,54 @@ export default function GatePassPage() {
     }
   };
 
-  const { data: result } = useGatePasses({ status: "all" });
-  const allRows = result?.data ?? [];
-  const tabs = useMemo(() => buildTabCounts(allRows, TABS), [allRows]);
-  const data = useMemo(() => filterByTab(allRows, activeTab, TABS), [allRows, activeTab]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("gatePassDate");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
+  useEffect(() => {
+    setPage(1);
+  }, [activeTab, search, sortBy, sortOrder, pageSize]);
+
+  const { data: result, isLoading } = useGatePasses({
+    status: activeTab,
+    search: search || undefined,
+    page,
+    pageSize,
+    sortBy,
+    sortOrder,
+  });
+  const data = result?.data ?? [];
+  const total = result?.total ?? 0;
+
+  // Tab badges come from a separate per-status count query so they show
+  // full totals even though the list itself is paged.
+  const { data: counts } = useGatePassCounts();
+  const tabs = useMemo(
+    () =>
+      TABS.map((t) => ({
+        key: t.key,
+        label: t.label,
+        count:
+          t.key === "all"
+            ? counts?.total ?? 0
+            : counts?.byStatus?.[t.key] ?? 0,
+      })),
+    [counts],
+  );
 
   const { data: projectsData } = useProjects();
   const { data: locationsData } = useLocations();
-  const { data: itemsData } = useItems();
   const { data: itemGroupsData } = useItemGroups();
   const { data: uomsData } = useUOMs();
 
   const projectOptions = (projectsData?.data ?? []).map((p) => ({ value: p.id, label: p.name }));
   const locationOptions = (locationsData?.data ?? []).filter((l) => l?.status === "active").map((l) => ({ value: l.id, label: l.name }));
 
-  const items = (itemsData?.data ?? []) as unknown as GroupedMaterialSelectItem[];
+  // Lazy picker fetches items per-group; onSelect supplies the picked item.
+  const items: GroupedMaterialSelectItem[] = [];
   const itemGroups = itemGroupsData?.data ?? [];
-  const itemById = useMemo(() => {
-    const m = new Map<string, GroupedMaterialSelectItem>();
-    for (const i of items) m.set(i.id, i);
-    return m;
-  }, [items]);
   const uomOptions = (uomsData?.data ?? []).filter((u) => u?.status === "active").map((u) => ({
     value: u.code,
     label: u.code,
@@ -490,19 +516,18 @@ export default function GatePassPage() {
           width: "wide",
           render: (line, update: (patch: Record<string, unknown>) => void) => (
             <GroupedMaterialSelect
+              lazy
               value={line.itemId ?? ""}
               onChange={(v) => {
-                const item = v ? itemById.get(v) : null;
-                if (!item) {
-                  update({
-                    itemId: v,
-                    materialDescription: "",
-                    uomCode: "",
-                  });
+                if (!v) {
+                  update({ itemId: "", materialDescription: "", uomCode: "" });
                   return;
                 }
+                update({ itemId: v });
+              }}
+              onSelect={(item) => {
+                if (!item) return;
                 update({
-                  itemId: v,
                   materialDescription: `${item.code} — ${item.name}`,
                   uomCode: item.uomCode ?? "",
                 });
@@ -512,10 +537,9 @@ export default function GatePassPage() {
                 id: g.id,
                 name: g.name,
                 status: g.status,
+                itemCount: g.itemCount,
               }))}
-              placeholder={
-                items.length === 0 ? "No items in master" : "Select material…"
-              }
+              placeholder="Select material…"
               size="sm"
             />
           ),
@@ -611,7 +635,7 @@ export default function GatePassPage() {
         if (ref && refLabel) {
           return (
             <div className="leading-tight">
-              <div className="text-sm font-medium text-orange-600">{ref}</div>
+              <div className="text-sm font-medium text-accent-600">{ref}</div>
               <div className="text-[11px] text-gray-500">{refLabel}</div>
             </div>
           );
@@ -623,7 +647,7 @@ export default function GatePassPage() {
         }
         if (ref) {
           return (
-            <span className="text-sm font-medium text-orange-600">{ref}</span>
+            <span className="text-sm font-medium text-accent-600">{ref}</span>
           );
         }
         return <span className="text-gray-400">—</span>;
@@ -689,6 +713,7 @@ export default function GatePassPage() {
       key: "_actions",
       label: "Actions",
       width: "140px",
+      sortable: false,
       // Icon-only row to match the requested look (View eye + a single
       // status-driven action icon). The action icon is colour-coded by
       // intent (orange Submit / green Approve / red Reject / green
@@ -783,6 +808,18 @@ export default function GatePassPage() {
           id="store-gate-pass"
           columns={columns}
           data={data as unknown as GatePassRow[]}
+          loading={isLoading}
+          serverMode
+          serverTotal={total}
+          serverPage={page}
+          serverPageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          onSearchChange={setSearch}
+          onSortChange={(key, dir) => {
+            setSortBy(key);
+            setSortOrder(dir);
+          }}
           onAdd={canAdd ? () => setDrawerOpen(true) : undefined}
           addLabel="New Gate Pass"
           historyEntityType="gate_pass"

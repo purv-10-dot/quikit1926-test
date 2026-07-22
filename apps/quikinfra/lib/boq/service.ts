@@ -735,7 +735,7 @@ export class BOQService {
     boqNo: string,
     qty: number,
     workType: "sub_contractor" | "self",
-    opts?: { dprId?: string; dprLineId?: string; overrideFlag?: boolean; overrideReason?: string }
+    opts?: { dprId?: string; dprLineId?: string; workOrderId?: string; overrideFlag?: boolean; overrideReason?: string }
   ): Promise<void> {
     try {
       await postProgressEntry(tx, ctx, {
@@ -746,6 +746,7 @@ export class BOQService {
         direction: 1,
         dprId: opts?.dprId,
         dprLineId: opts?.dprLineId,
+        workOrderId: opts?.workOrderId,
         overrideFlag: opts?.overrideFlag,
         overrideReason: opts?.overrideReason,
       });

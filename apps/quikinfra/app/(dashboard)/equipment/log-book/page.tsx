@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Plus,
@@ -125,11 +125,21 @@ export default function EquipmentLogBookPage() {
 
   const [projectId, setProjectId] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("logDate");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
+  // Reset to first page whenever a server-side filter/sort changes.
+  useEffect(() => {
+    setPage(1);
+  }, [projectId, statusFilter, search, sortBy, sortOrder, pageSize]);
 
   const { data: projectsData } = useProjects();
   const projects = projectsData?.data ?? [];
 
-  const logParams = useMemo(
+  const summaryParams = useMemo(
     () => ({
       projectId: projectId || undefined,
       status: statusFilter,
@@ -137,16 +147,30 @@ export default function EquipmentLogBookPage() {
     [projectId, statusFilter],
   );
 
+  const logParams = useMemo(
+    () => ({
+      ...summaryParams,
+      search: search || undefined,
+      page,
+      pageSize,
+      sortBy,
+      sortOrder,
+    }),
+    [summaryParams, search, page, pageSize, sortBy, sortOrder],
+  );
+
   const { data: logsResult, isLoading: logsLoading } = useEquipmentLogs(logParams);
-  const { data: summary } = useEquipmentLogSummary(logParams);
+  const { data: summary } = useEquipmentLogSummary(summaryParams);
 
   const rows: LogRow[] = logsResult?.data ?? [];
+  const total = logsResult?.total ?? 0;
 
   const columns: ColDef<LogRow>[] = [
     { key: "logDate", label: "Date", width: "110px" },
     {
       key: "equipment",
       label: "Equipment",
+      sortable: false,
       render: (row) => (
         <div>
           <div className="font-medium text-gray-900">{row.equipmentCode}</div>
@@ -159,6 +183,7 @@ export default function EquipmentLogBookPage() {
       key: "meter",
       label: "Open → Close",
       width: "110px",
+      sortable: false,
       render: (row) => (
         <span className="tabular-nums text-sm">
           {row.openingMeter ?? "—"} → {row.closingMeter ?? "—"}
@@ -344,7 +369,7 @@ export default function EquipmentLogBookPage() {
                 onClick={() => setStatusFilter(f.key)}
                 className={`px-4 py-2 text-sm font-medium transition-colors ${
                   statusFilter === f.key
-                    ? "bg-orange-500 text-white"
+                    ? "bg-accent-500 text-white"
                     : "bg-white text-gray-600 hover:bg-gray-50"
                 }`}
               >
@@ -393,6 +418,17 @@ export default function EquipmentLogBookPage() {
           data={rows}
           loading={logsLoading}
           fitToContent
+          serverMode
+          serverTotal={total}
+          serverPage={page}
+          serverPageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          onSearchChange={setSearch}
+          onSortChange={(key, dir) => {
+            setSortBy(key);
+            setSortOrder(dir);
+          }}
           historyEntityType="equipment_logs"
           getHistoryRowLabel={(row) => `${row.equipmentCode} · ${row.logDate}`}
           emptyTitle="No log entries yet"

@@ -186,25 +186,35 @@ export interface ListItemsOptions {
   createdBy: string;
   search?: string;
   groupId?: string;
-  includeInactive?: boolean;
+  /**
+   * Status view. Defaults to "active".
+   *   active   → hide inactive + deleted (pickers, default list)
+   *   inactive → only soft-deleted ("inactive") rows (the Inactive tab)
+   *   all      → active + inactive, never hard-deleted
+   */
+  status?: "active" | "inactive" | "all";
   /** Pagination — passed straight through to Prisma findMany. */
   take?: number;
   skip?: number;
+  /** Server-side sort (from `parseSort`). Defaults to newest-first. */
+  orderBy?: Array<Record<string, "asc" | "desc">>;
+}
+
+function statusWhere(status: ListItemsOptions["status"]): Record<string, unknown> {
+  // Delete sets status "deleted" (see deleteItem) — those rows leave the UI
+  // entirely in every mode.
+  if (status === "inactive") return { status: "inactive" };
+  if (status === "all") return { status: { not: "deleted" } };
+  return { status: { notIn: ["inactive", "deleted"] } };
 }
 
 function buildItemsWhere(
-  opts: Pick<ListItemsOptions, "orgId" | "search" | "groupId" | "includeInactive">,
+  opts: Pick<ListItemsOptions, "orgId" | "search" | "groupId" | "status">,
 ): Record<string, unknown> {
   const q = (opts.search ?? "").trim();
   return {
     orgId: opts.orgId,
-    // Delete sets status "deleted" (see deleteItem) — those rows leave the UI
-    // entirely. "inactive" rows are hidden from pickers by default but the
-    // master list opts in with includeInactive to show them under its Inactive
-    // tab. Deleted rows are excluded in BOTH modes.
-    ...(opts.includeInactive
-      ? { status: { not: "deleted" } }
-      : { status: { notIn: ["inactive", "deleted"] } }),
+    ...statusWhere(opts.status),
     ...(opts.groupId ? { groupId: opts.groupId } : {}),
     ...(q
       ? {
@@ -224,7 +234,7 @@ export async function listItems(opts: ListItemsOptions): Promise<ItemRecord[]> {
       group: { select: { id: true, name: true } },
       uom: { select: { id: true, code: true, name: true } },
     },
-    orderBy: { createdAt: "desc" },
+    orderBy: opts.orderBy ?? { createdAt: "desc" },
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
   });
@@ -238,7 +248,7 @@ export async function listItems(opts: ListItemsOptions): Promise<ItemRecord[]> {
 }
 
 export async function countItems(
-  opts: Pick<ListItemsOptions, "orgId" | "search" | "includeInactive">,
+  opts: Pick<ListItemsOptions, "orgId" | "search" | "groupId" | "status">,
 ): Promise<number> {
   return db.cnItem.count({ where: buildItemsWhere(opts) });
 }

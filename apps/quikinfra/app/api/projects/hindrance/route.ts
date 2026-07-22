@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextRequest, NextResponse } from "next/server";
+import { parsePagination, parseSort } from "@/lib/http/pagination";
 import { db } from "@/lib/db";
 import { hasMatrixAction, tenantCreate } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
@@ -38,29 +39,49 @@ export async function GET(req: NextRequest) {
   const ctx = ctxOrResp;
 
   const { searchParams } = new URL(req.url);
-  const search = searchParams.get("search")?.toLowerCase() ?? "";
+  const search = (searchParams.get("search") ?? "").trim();
+  const status = searchParams.get("status") ?? "";
 
   const where: Prisma.CnHindranceWhereInput = { orgId: ctx.orgId };
   if (ctx.projectIds !== undefined) {
     where.projectId = { in: ctx.projectIds };
   }
-
-  const rows = await db.cnHindrance.findMany({
-    where,
-    include: { project: { select: { name: true } } },
-    orderBy: [{ dateFrom: "desc" }, { createdAt: "desc" }],
-  });
-
-  let data = rows.map(serialize);
+  if (status && status !== "all") where.status = status;
   if (search) {
-    data = data.filter(
-      (r) =>
-        r.hindranceNo.toLowerCase().includes(search) ||
-        r.category.toLowerCase().includes(search) ||
-        r.description.toLowerCase().includes(search),
-    );
+    where.OR = [
+      { hindranceNo: { contains: search, mode: "insensitive" } },
+      { category: { contains: search, mode: "insensitive" } },
+      { description: { contains: search, mode: "insensitive" } },
+    ];
   }
-  return NextResponse.json({ data, total: data.length });
+
+  const p = parsePagination(req);
+  const sort = parseSort(
+    searchParams,
+    ["hindranceNo", "dateFrom", "dateTo", "daysLost", "category", "status", "createdAt"],
+    { field: "dateFrom", order: "desc" },
+  );
+  const [rows, total] = await Promise.all([
+    db.cnHindrance.findMany({
+      where,
+      include: { project: { select: { name: true } } },
+      orderBy: sort.orderBy,
+      ...(p.paginated ? { take: p.take, skip: p.skip } : {}),
+    }),
+    db.cnHindrance.count({ where }),
+  ]);
+
+  const data = rows.map(serialize);
+  if (p.paginated) {
+    return NextResponse.json({
+      data,
+      total,
+      page: p.page,
+      pageSize: p.pageSize,
+      hasMore: p.skip + data.length < total,
+    });
+  }
+  return NextResponse.json({ data, total });
 }
 
 export async function POST(req: NextRequest) {

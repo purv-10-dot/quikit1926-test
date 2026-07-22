@@ -6,8 +6,8 @@ import { GET } from "@/app/api/dashboard/route";
 const db = mockDb as any;
 
 // The dashboard fans out ~14 count/findMany calls in one Promise.all, then a
-// second findMany (top projects) and a conditional groupBy. Stub them all to
-// benign zeros/empties so the happy path computes without NPEs.
+// second findMany (top projects) and a conditional BOQ-leaf findMany. Stub them
+// all to benign zeros/empties so the happy path computes without NPEs.
 function stubAllZero() {
   db.cnProject.count.mockResolvedValue(0);
   db.cnProject.findMany.mockResolvedValue([]); // top-3 projects
@@ -21,7 +21,7 @@ function stubAllZero() {
   db.cnStockBalance.findMany.mockResolvedValue([]);
   db.cnPurchaseRequisition.findMany.mockResolvedValue([]);
   db.cnPurchaseOrder.findMany.mockResolvedValue([]);
-  db.cnBOQItem.groupBy.mockResolvedValue([]);
+  db.cnBOQItemV2.findMany.mockResolvedValue([]);
 }
 
 beforeEach(() => {
@@ -121,15 +121,20 @@ describe("GET /api/dashboard — happy path", () => {
     });
   });
 
-  it("computes projectProgress bands from BOQ aggregates", async () => {
+  it("computes value-weighted projectProgress bands from v2 BOQ leaves", async () => {
     stubAllZero();
     db.cnProject.count.mockResolvedValue(1);
     db.cnProject.findMany.mockResolvedValue([{ id: "p1", name: "Tower A" }]);
-    db.cnBOQItem.groupBy.mockResolvedValue([
+    // estimate = 1000; executed = (40+30)*10 = 700 (70%); billed = 50*10 = 500 (50%).
+    db.cnBOQItemV2.findMany.mockResolvedValue([
       {
         projectId: "p1",
-        _avg: { progressPercent: 70 },
-        _sum: { contractAmount: 1000, executedAmount: 500 },
+        tenderQty: 100,
+        rate: 10,
+        estimateAmt: 1000,
+        subDoneQty: 40,
+        selfDoneQty: 30,
+        billedQty: 50,
       },
     ]);
 
@@ -139,8 +144,11 @@ describe("GET /api/dashboard — happy path", () => {
     expect(body.projectProgress[0]).toMatchObject({
       id: "p1", name: "Tower A", physicalPct: 70, budgetPct: 50, band: "on_track",
     });
-    // BOQ aggregate is org-scoped.
-    expect(db.cnBOQItem.groupBy.mock.calls[0][0].where.orgId).toBe(TEST_TENANT);
+    // BOQ leaf query is org-scoped and excludes groups + soft-deleted rows.
+    const where = db.cnBOQItemV2.findMany.mock.calls[0][0].where;
+    expect(where.orgId).toBe(TEST_TENANT);
+    expect(where.isGroup).toBe(false);
+    expect(where.deletedAt).toBe(null);
   });
 });
 
