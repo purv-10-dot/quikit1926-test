@@ -50,15 +50,6 @@ export function IssueCreatedToast() {
     setTimeout(() => setCopied(false), 1500);
   }
 
-  function openIssue() {
-    if (!issue) return;
-    // Best-effort cross-view open: dispatch an "open issue" event that any
-    // mounted view can listen for to pop its modal. Falls back to nothing.
-    window.dispatchEvent(
-      new CustomEvent("quiktrack:open-issue", { detail: { id: issue.id } }),
-    );
-  }
-
   return (
     <div className="fixed bottom-4 left-4 z-[100] w-[300px] bg-white border border-gray-200 rounded-md shadow-lg p-3 text-xs">
       <div className="flex items-start gap-2">
@@ -78,14 +69,6 @@ export function IssueCreatedToast() {
             </button>
           </div>
           <div className="mt-1.5 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={openIssue}
-              className="text-blue-600 hover:underline"
-            >
-              View
-            </button>
-            <span className="text-gray-300">·</span>
             <button
               type="button"
               onClick={copyLink}

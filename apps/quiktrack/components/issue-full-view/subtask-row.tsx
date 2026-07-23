@@ -104,7 +104,9 @@ export function SubtaskRow({
       >
         <ListTree className="h-3.5 w-3.5 shrink-0 text-gray-500" />
         <span className="font-medium text-blue-600 hover:underline shrink-0">{s.key}</span>
-        <span className="text-gray-800 truncate">{s.title}</span>
+        <span className="text-gray-800 truncate" title={s.title}>
+          {s.title}
+        </span>
       </Link>
 
       <div className="px-3 py-2 relative" ref={priorityRef}>

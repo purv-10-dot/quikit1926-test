@@ -40,24 +40,34 @@ export interface ListTermsOptions {
   search?: string;
   applicableTo?: string;
   includeInactive?: boolean;
+  /** Status view (takes precedence over includeInactive when set). */
+  status?: "active" | "inactive" | "all";
   /** Pagination — passed straight through to Prisma findMany. */
   take?: number;
   skip?: number;
+  /** Server-side sort (from `parseSort`). Defaults to newest-first. */
+  orderBy?: Array<Record<string, "asc" | "desc">>;
 }
 
 function buildTermsWhere(
   opts: Pick<
     ListTermsOptions,
-    "orgId" | "search" | "applicableTo" | "includeInactive"
+    "orgId" | "search" | "applicableTo" | "includeInactive" | "status"
   >,
 ): Record<string, unknown> {
   const q = (opts.search ?? "").trim();
   return {
     orgId: opts.orgId,
     ...(opts.applicableTo ? { applicableTo: opts.applicableTo } : {}),
-    ...(opts.includeInactive
-      ? { status: { not: "deleted" } }
-      : { status: { notIn: ["inactive", "deleted"] } }),
+    ...(opts.status
+      ? (opts.status === "inactive"
+          ? { status: "inactive" }
+          : opts.status === "all"
+            ? { status: { not: "deleted" } }
+            : { status: { notIn: ["inactive", "deleted"] } })
+      : opts.includeInactive
+        ? { status: { not: "deleted" } }
+        : { status: { notIn: ["inactive", "deleted"] } }),
     ...(q
       ? {
           OR: [
@@ -74,7 +84,7 @@ export async function listTermsConditions(
 ): Promise<TermsConditionRecord[]> {
   const rows = await db.cnTermsCondition.findMany({
     where: buildTermsWhere(opts),
-    orderBy: { createdAt: "desc" },
+    orderBy: opts.orderBy ?? { createdAt: "desc" },
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
   });
@@ -84,7 +94,7 @@ export async function listTermsConditions(
 export async function countTermsConditions(
   opts: Pick<
     ListTermsOptions,
-    "orgId" | "search" | "applicableTo" | "includeInactive"
+    "orgId" | "search" | "applicableTo" | "includeInactive" | "status"
   >,
 ): Promise<number> {
   return db.cnTermsCondition.count({ where: buildTermsWhere(opts) });

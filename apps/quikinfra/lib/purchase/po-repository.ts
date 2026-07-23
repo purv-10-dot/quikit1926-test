@@ -19,68 +19,8 @@
 import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { db } from "@/lib/db";
 import { Prisma } from "@quikit/database";
-
-export interface POLineInput {
-  indentLineId?: string | null;
-  itemId: string;
-  itemCode?: string | null;
-  itemName?: string | null;
-  uomId?: string | null;
-  uomCode?: string | null;
-  hsnCode?: string | null;
-  specification?: string | null;
-  poQty: string | number;
-  unitRate: string | number;
-  discount?: string | number | null;
-  gstRate?: string | number | null;
-  gstType?: string | null;
-  igstAmount?: string | number | null;
-  cgstAmount?: string | number | null;
-  sgstAmount?: string | number | null;
-  amount?: string | number | null;
-  taxAmount?: string | number | null;
-  totalAmount?: string | number | null;
-  deliveryDate?: string | Date | null;
-  remarks?: string | null;
-  isRCM?: boolean;
-}
-
-export interface CreatePOInput {
-  orgId: string;
-  createdBy: string;
-  poNumber: string;
-  projectId: string;
-  vendorId: string;
-  indentId?: string | null;
-  rfqId?: string | null;
-  poDate: Date;
-  deliveryDate?: Date | null;
-  deliveryLocationId?: string | null;
-  deliveryAddress?: string | null;
-  paymentTermsDays?: number | null;
-  termsConditionId?: string | null;
-  termsAndConditions?: string | null;
-  remarks?: string | null;
-  isUrgentLocal?: boolean;
-  urgentLocalReason?: string | null;
-  /** Subject / "Supply For" printed on the PDF. */
-  purpose?: string | null;
-  /** Extra header-level charges (non-freight). */
-  otherCharges?: string | number | null;
-  /** Buyer-side contact(s). Comma-separated string (already joined
-      upstream from the multi-row contacts section). */
-  contactPerson?: string | null;
-  contactMobile?: string | null;
-  subtotal: string | number;
-  freightCharges?: string | number | null;
-  taxAmount: string | number;
-  totalIGST?: string | number | null;
-  totalCGST?: string | number | null;
-  totalSGST?: string | number | null;
-  totalAmount: string | number;
-  status?: string;
-  lines: POLineInput[];
-}
+import type { POLineInput, CreatePOInput } from "./po-repo-types";
+export type { POLineInput, CreatePOInput };
 
 function dec(n: string | number | null | undefined): string | null {
   if (n === null || n === undefined || n === "") return null;
@@ -537,9 +477,17 @@ export interface ListPOsOptions {
   /** When both set (YYYY-MM-DD), restricts `poDate` to that inclusive FY window. */
   fyStart?: string;
   fyEnd?: string;
+  /** Pagination — passed straight through to Prisma findMany. */
+  take?: number;
+  skip?: number;
+  /** Server-side sort (from `parseSort`). Defaults to newest poDate first. */
+  orderBy?: Array<Record<string, "asc" | "desc">>;
 }
 
-export async function listPOs(opts: ListPOsOptions): Promise<EnrichedPO[]> {
+/** Shared where-builder so `listPOs` and `countPOs` filter identically. */
+function buildPOsWhere(
+  opts: Pick<ListPOsOptions, "orgId" | "projectIds" | "status" | "projectId" | "search" | "fyStart" | "fyEnd">,
+): Record<string, unknown> {
   const where: Record<string, unknown> = { orgId: opts.orgId };
   if (opts.status && opts.status !== "all") where.status = opts.status;
   if (opts.projectId) where.projectId = opts.projectId;
@@ -561,9 +509,37 @@ export async function listPOs(opts: ListPOsOptions): Promise<EnrichedPO[]> {
   if (fyRange) {
     where.poDate = { gte: fyRange.gte, lte: fyRange.lte };
   }
+  return where;
+}
+
+export async function countPOs(
+  opts: Pick<ListPOsOptions, "orgId" | "projectIds" | "status" | "projectId" | "search" | "fyStart" | "fyEnd">,
+): Promise<number> {
+  return db.cnPurchaseOrder.count({ where: buildPOsWhere(opts) });
+}
+
+/** Per-status row counts for the list tab badges (one groupBy over the same
+ *  filters, ignoring the status filter itself). */
+export async function poStatusCounts(
+  opts: Pick<ListPOsOptions, "orgId" | "projectIds" | "projectId" | "search" | "fyStart" | "fyEnd">,
+): Promise<Record<string, number>> {
+  const groups = await db.cnPurchaseOrder.groupBy({
+    by: ["status"],
+    where: buildPOsWhere({ ...opts, status: undefined }),
+    _count: { _all: true },
+  });
+  const out: Record<string, number> = {};
+  for (const g of groups) out[String(g.status)] = g._count._all;
+  return out;
+}
+
+export async function listPOs(opts: ListPOsOptions): Promise<EnrichedPO[]> {
+  const where = buildPOsWhere(opts);
 
   const rows = await db.cnPurchaseOrder.findMany({
     where,
+    ...(typeof opts.take === "number" ? { take: opts.take } : {}),
+    ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
     include: {
       lines: true,
       project: { select: { id: true, name: true, code: true } },
@@ -582,7 +558,7 @@ export async function listPOs(opts: ListPOsOptions): Promise<EnrichedPO[]> {
     // same poDate still order by when they were actually created — without
     // it, same-date POs fall back to arbitrary insertion order and a
     // freshly-created PO can land below older ones.
-    orderBy: [{ poDate: "desc" }, { createdAt: "desc" }],
+    orderBy: opts.orderBy ?? [{ poDate: "desc" }, { createdAt: "desc" }],
   });
   await augmentPOsWithDriftFields(rows);
   await hydrateCloseFields(rows);

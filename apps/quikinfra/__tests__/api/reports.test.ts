@@ -9,9 +9,6 @@ import { NextRequest, NextResponse } from "next/server";
 // with a faithful passthrough: 401 when no auth ctx, handler invoked
 // with { session, userId, orgId }, try/catch → 500 envelope. (Module /
 // RBAC gating is upstream of this surface and not exercised here.)
-//
-// ap-aging, ar-aging, project-pnl are static stubs that take NO auth —
-// they return { success: true, data: [] } unconditionally.
 // ───────────────────────────────────────────────────────────────────
 const _auth: { ctx: { orgId: string; userId: string } | null } = { ctx: null };
 function setAuth(ctx: { orgId: string; userId: string } | null) {
@@ -49,10 +46,6 @@ vi.mock("@/lib/api/withOrgAuth", () => {
 const db = mockDb as any;
 
 // Import AFTER mocks are registered.
-const apAging = await import("@/app/api/reports/ap-aging/route");
-const arAging = await import("@/app/api/reports/ar-aging/route");
-const projectPnl = await import("@/app/api/reports/project-pnl/route");
-const stockVal = await import("@/app/api/reports/stock-valuation/route");
 const vendorPerf = await import("@/app/api/reports/vendor-performance/route");
 
 function reqGET(path: string, qs = ""): NextRequest {
@@ -62,108 +55,6 @@ function reqGET(path: string, qs = ""): NextRequest {
 beforeEach(() => {
   resetMockDb();
   setAuth(null);
-});
-
-// ═══════════════════════════════════════════════
-// Stubbed finance reports — ap-aging, ar-aging, project-pnl
-// ═══════════════════════════════════════════════
-
-describe("GET /api/reports/ap-aging (stub)", () => {
-  it("returns an empty data envelope unconditionally", async () => {
-    const res = await apAging.GET();
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.data).toEqual([]);
-  });
-});
-
-describe("GET /api/reports/ar-aging (stub)", () => {
-  it("returns an empty data envelope unconditionally", async () => {
-    const res = await arAging.GET();
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.data).toEqual([]);
-  });
-});
-
-describe("GET /api/reports/project-pnl (stub)", () => {
-  it("returns an empty data envelope unconditionally", async () => {
-    const res = await projectPnl.GET();
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.data).toEqual([]);
-  });
-});
-
-// ═══════════════════════════════════════════════
-// GET /api/reports/stock-valuation
-// ═══════════════════════════════════════════════
-
-describe("GET /api/reports/stock-valuation", () => {
-  it("returns 401 when unauthenticated", async () => {
-    const res = await stockVal.GET(reqGET("/api/reports/stock-valuation"), { params: {} });
-    expect(res.status).toBe(401);
-  });
-
-  it("aggregates qty = ΣqtyIn − ΣqtyOut with a moving-avg value, scoped to the org", async () => {
-    setAuth({ orgId: TEST_TENANT, userId: TEST_USER });
-    // First groupBy: per project/location/item/uom net movement.
-    db.cnStockLedger.groupBy
-      .mockResolvedValueOnce([
-        {
-          projectId: "p1", locationId: "l1", itemId: "i1", uomId: "u1",
-          _sum: { qtyIn: 100, qtyOut: 40, amount: 1000 },
-        },
-      ])
-      // Second groupBy: inbound-only for moving-avg rate (qtyIn 100, amount 1000 → rate 10).
-      .mockResolvedValueOnce([
-        { projectId: "p1", locationId: "l1", itemId: "i1", _sum: { qtyIn: 100, amount: 1000 } },
-      ]);
-    db.cnProject.findMany.mockResolvedValue([{ id: "p1", code: "PRJ-1", name: "Tower A" }]);
-    db.cnLocation.findMany.mockResolvedValue([{ id: "l1", code: "LOC-1", name: "Main Store" }]);
-    db.cnItem.findMany.mockResolvedValue([{ id: "i1", code: "ITM-1", name: "Cement" }]);
-    db.cnUOM.findMany.mockResolvedValue([{ id: "u1", code: "BAG" }]);
-
-    const res = await stockVal.GET(reqGET("/api/reports/stock-valuation"), { params: {} });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.data).toHaveLength(1);
-    const row = body.data[0];
-    expect(row.projectName).toBe("Tower A");
-    expect(row.itemName).toBe("Cement");
-    expect(row.qty).toBe(60); // 100 - 40
-    expect(row.rate).toBe(10); // 1000 / 100
-    expect(row.value).toBe(600); // 60 * 10
-
-    // org scope rides on BOTH groupBy where clauses.
-    expect(db.cnStockLedger.groupBy.mock.calls[0][0].where.orgId).toBe(TEST_TENANT);
-    expect(db.cnStockLedger.groupBy.mock.calls[1][0].where.orgId).toBe(TEST_TENANT);
-    expect(db.cnStockLedger.groupBy.mock.calls[1][0].where.qtyIn).toEqual({ gt: 0 });
-  });
-
-  it("filters out rows whose net qty is ~zero", async () => {
-    setAuth({ orgId: TEST_TENANT, userId: TEST_USER });
-    db.cnStockLedger.groupBy
-      .mockResolvedValueOnce([
-        {
-          projectId: "p1", locationId: "l1", itemId: "i1", uomId: "u1",
-          _sum: { qtyIn: 50, qtyOut: 50, amount: 500 },
-        },
-      ])
-      .mockResolvedValueOnce([]);
-    db.cnProject.findMany.mockResolvedValue([]);
-    db.cnLocation.findMany.mockResolvedValue([]);
-    db.cnItem.findMany.mockResolvedValue([]);
-    db.cnUOM.findMany.mockResolvedValue([]);
-
-    const res = await stockVal.GET(reqGET("/api/reports/stock-valuation"), { params: {} });
-    const body = await res.json();
-    expect(body.data).toEqual([]);
-  });
 });
 
 // ═══════════════════════════════════════════════

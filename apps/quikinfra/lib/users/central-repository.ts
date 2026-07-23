@@ -144,19 +144,29 @@ function buildRecord(row: CentralRow, orgId: string): CentralUserRecord {
   };
 }
 
+export interface ListUsersCentralOptions {
+  /** Case-insensitive contains against email / firstName / lastName. */
+  search?: string;
+  /** Membership status view. Omit (or "all") to include active + inactive. */
+  status?: "active" | "inactive" | "all";
+  /** Server sort — whitelisted by the caller. */
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+  /** Pagination — pushed down to Prisma. */
+  take?: number;
+  skip?: number;
+}
+
 /**
- * List every member of an org, composed entirely from central + v2
- * tables. Optional `search` filters by email, firstName, lastName, or
- * department (case-insensitive contains).
- *
- * Includes BOTH active and inactive memberships — the Users page has
- * its own Active / Inactive / All filter.
+ * Shared `where` for {@link listUsersCentral} + {@link countUsersCentral}.
+ * Returns null when the QuikInfra App registry row is missing so both
+ * callers fail closed (empty list / zero count) instead of exposing every
+ * org member.
  */
-export async function listUsersCentral(
+async function buildUsersCentralWhere(
   orgId: string,
-  search = "",
-): Promise<CentralUserRecord[]> {
-  const q = search.trim();
+  opts: Pick<ListUsersCentralOptions, "search" | "status">,
+): Promise<Record<string, unknown> | null> {
   // List ONLY users with an EXPLICIT QuikInfra grant — a quikit.UserAppAccess
   // row for the QuikInfra app. This is the per-user, per-app grant written by
   // the Admin Portal's "App Access" toggle and by the QuikInfra invite flow.
@@ -166,22 +176,21 @@ export async function listUsersCentral(
   // Deliberately NOT included:
   //   • org-admin / super-admin membership — an org admin can OPEN any app via
   //     the access-gate bypass, but that is NOT an explicit grant, so they do
-  //     not surface here unless they were also granted the app directly. (Same
-  //     as QuikScale/QuikTrack, whose lists have no admin-tier door.)
+  //     not surface here unless they were also granted the app directly.
   //   • a bare CnUserAppRole — an app-role assignment is not an access grant;
   //     the gate ignores it, so a stray/orphaned Cn-role must not list a user.
-  //
-  // If the QuikInfra App registry row is missing (appId null) we FAIL CLOSED —
-  // an empty list — rather than exposing every org member. Matches QuikScale
-  // (apps/quikscale/app/api/org/users/route.ts) and QuikTrack.
   const appId = await getQuikInfraAppId();
-  if (!appId) return [];
+  if (!appId) return null;
+  const q = (opts.search ?? "").trim();
   const where: Record<string, unknown> = {
     orgId,
     user: { appAccess: { some: { orgId, appId } } },
   };
+  if (opts.status === "active") where.status = "active";
+  else if (opts.status === "inactive") where.status = "inactive";
+  // "all" / undefined → no status filter (both active + inactive).
   if (q) {
-    // ANDed with the access OR above (Prisma combines top-level keys with AND).
+    // ANDed with the access filter above (Prisma combines top-level keys with AND).
     where.AND = [
       {
         OR: [
@@ -192,6 +201,46 @@ export async function listUsersCentral(
       },
     ];
   }
+  return where;
+}
+
+/**
+ * Translate a whitelisted sort column into a Prisma `orderBy` on the
+ * OrgMember query. Name/email live on the related auth.User; status +
+ * createdAt live on OrgMember itself. Anything unknown falls back to the
+ * legacy created-ascending order.
+ */
+function buildUsersCentralOrderBy(
+  sortBy?: string,
+  sortOrder: "asc" | "desc" = "asc",
+): Array<Record<string, unknown>> {
+  const dir = sortOrder === "desc" ? "desc" : "asc";
+  switch (sortBy) {
+    case "email":
+      return [{ user: { email: dir } }];
+    case "fullName":
+      return [{ user: { firstName: dir } }, { user: { lastName: dir } }];
+    case "status":
+      return [{ status: dir }];
+    case "createdAt":
+      return [{ createdAt: dir }];
+    default:
+      return [{ createdAt: "asc" }];
+  }
+}
+
+/**
+ * List members of an org, composed entirely from central + v2 tables.
+ * Supports server-side search, status filter, sort, and pagination
+ * (take/skip) — pushed down to Postgres. Pair with
+ * {@link countUsersCentral} for the total.
+ */
+export async function listUsersCentral(
+  orgId: string,
+  opts: ListUsersCentralOptions = {},
+): Promise<CentralUserRecord[]> {
+  const where = await buildUsersCentralWhere(orgId, opts);
+  if (!where) return [];
   const memberships = await dbCentral.orgMember.findMany({
     where,
     include: {
@@ -207,7 +256,9 @@ export async function listUsersCentral(
         },
       },
     },
-    orderBy: { createdAt: "asc" },
+    orderBy: buildUsersCentralOrderBy(opts.sortBy, opts.sortOrder),
+    ...(typeof opts.take === "number" ? { take: opts.take } : {}),
+    ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
   }) as Array<{
     status: string;
     role: string;
@@ -290,6 +341,20 @@ export async function listUsersCentral(
       orgId,
     ),
   );
+}
+
+/**
+ * Total members matching the same filters as {@link listUsersCentral} —
+ * for the paginated list envelope. Fails closed (0) when the App registry
+ * row is missing.
+ */
+export async function countUsersCentral(
+  orgId: string,
+  opts: Pick<ListUsersCentralOptions, "search" | "status"> = {},
+): Promise<number> {
+  const where = await buildUsersCentralWhere(orgId, opts);
+  if (!where) return 0;
+  return dbCentral.orgMember.count({ where });
 }
 
 /**

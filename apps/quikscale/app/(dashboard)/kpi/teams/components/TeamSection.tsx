@@ -7,6 +7,7 @@ import { useCanManageTeamKPI } from "@/lib/hooks/useCanManageTeamKPI";
 import { progressColor, fmtCompactBy, type NumberFormat } from "@/lib/utils/kpiHelpers";
 import { KPITable } from "../../components/KPITable";
 import { KPIModal } from "../../components/KPIModal";
+import { TEAM_HIDDEN_COLS } from "../../hooks/useTableColumns";
 
 interface Props {
   team: Team;
@@ -118,7 +119,7 @@ export function TeamSection({ team, kpis, year, quarter, onRefresh, defaultExpan
                 onPageChange={() => {}}
                 onSort={() => {}}
                 onRefresh={onRefresh}
-                hideColumns={["owner"]}
+                hideColumns={TEAM_HIDDEN_COLS}
                 readOnly={!canManage}
                 onHiddenColsChange={(cols) => onHiddenColsChange?.(team.id, cols)}
                 showColTrigger={showColTrigger}

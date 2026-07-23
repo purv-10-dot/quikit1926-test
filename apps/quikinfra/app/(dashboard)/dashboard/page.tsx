@@ -29,7 +29,7 @@ function AccentTitle({ children }: { children: ReactNode }) {
     <h2 className="text-base font-bold text-slate-900 tracking-tight flex items-center gap-2.5">
       <span
         aria-hidden
-        className="inline-block w-1 h-5 rounded-full bg-gradient-to-b from-[#FFAF55] to-[#ea580c] shrink-0"
+        className="inline-block w-1 h-5 rounded-full bg-gradient-to-b from-accent-300 to-accent-600 shrink-0"
       />
       {children}
     </h2>
@@ -306,7 +306,7 @@ export default function DashboardPage() {
           <button
             type="button"
             onClick={() => router.push("/purchase/requisitions")}
-            className="group text-sm font-semibold text-orange-600 hover:text-orange-700 flex items-center gap-1"
+            className="group text-sm font-semibold text-accent-600 hover:text-accent-700 flex items-center gap-1"
           >
             View all <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
           </button>
@@ -354,7 +354,7 @@ export default function DashboardPage() {
           <button
             type="button"
             onClick={() => router.push("/purchase/orders")}
-            className="group text-sm font-semibold text-orange-600 hover:text-orange-700 flex items-center gap-1"
+            className="group text-sm font-semibold text-accent-600 hover:text-accent-700 flex items-center gap-1"
           >
             View all <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
           </button>
@@ -519,7 +519,7 @@ export default function DashboardPage() {
                   <div className="flex min-w-0 items-start gap-3">
                     <span
                       aria-hidden
-                      className="mt-0.5 h-10 w-1 shrink-0 rounded-full bg-gradient-to-b from-[#FFAF55] to-[#ea580c] shadow-[0_2px_8px_rgba(234,88,12,0.35)]"
+                      className="mt-0.5 h-10 w-1 shrink-0 rounded-full bg-gradient-to-b from-accent-300 to-accent-600 shadow-md"
                     />
                     <div className="min-w-0">
                       <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Dashboard</p>

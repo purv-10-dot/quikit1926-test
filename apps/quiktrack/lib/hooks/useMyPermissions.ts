@@ -13,6 +13,7 @@ interface MyPermissionsResponse {
   success: boolean;
   data: {
     isAdmin: boolean;
+    isSpaceAdmin: boolean;
     roleId: string | null;
     roleName: string | null;
     permissions: string[]; // `resource:action`
@@ -23,6 +24,7 @@ interface MyPermissionsResponse {
 
 const EMPTY: MyPermissionsResponse["data"] = {
   isAdmin: false,
+  isSpaceAdmin: false,
   roleId: null,
   roleName: null,
   permissions: [],
@@ -40,6 +42,8 @@ async function fetchMyPermissions(): Promise<MyPermissionsResponse["data"]> {
 
 export interface MyPermissionsApi {
   isAdmin: boolean;
+  /** Space Admin of at least one project (per-project role, not the org role). */
+  isSpaceAdmin: boolean;
   roleName: string | null;
   has(resource: string, action: string): boolean;
   hasNav(navKey: string): boolean;
@@ -61,6 +65,7 @@ export function useMyPermissions(): MyPermissionsApi {
 
   return {
     isAdmin: !!data?.isAdmin,
+    isSpaceAdmin: !!data?.isSpaceAdmin,
     roleName: data?.roleName ?? null,
     has: (resource, action) => permSet.has(`${resource}:${action}`),
     hasNav: (navKey) => navSet.has(navKey),

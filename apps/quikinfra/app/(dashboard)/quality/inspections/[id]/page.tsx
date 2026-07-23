@@ -68,7 +68,7 @@ export default function InspectionDetail() {
       {items.length === 0 ? <div className="text-xs text-gray-500">No checklist items recorded.</div> : (
         <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-accent-50 text-xs text-gray-600"><tr>
+            <thead className="bg-slate-50 text-xs text-gray-600"><tr>
               <th className="text-left px-3 py-2">Check Item</th>
               <th className="text-left px-3 py-2">Acceptance Criteria</th>
             </tr></thead>

@@ -4,7 +4,7 @@ import { toErrorMessage } from "@/lib/api/errors";
 import { useState } from "react";
 import { HardHat } from "lucide-react";
 import { MasterListPage, type MasterColumnDef } from "@/components/MasterListPage";
-import { useContractors, useCreateContractor, useUpdateContractor, useDeleteContractor } from "@/hooks/use-masters";
+import { useCreateContractor, useUpdateContractor, useDeleteContractor } from "@/hooks/use-masters";
 import {
   FormDrawer, FormSection, FormRow, Field,
   TextInput, SelectInput, InactiveStatusNotice,
@@ -117,7 +117,6 @@ const rules: ValidationRules<typeof emptyForm> = {
 };
 
 export default function ContractorsPage() {
-  const { data: result, isLoading } = useContractors();
   const createMutation = useCreateContractor();
   const updateMutation = useUpdateContractor();
   const deleteMutation = useDeleteContractor();
@@ -187,9 +186,13 @@ export default function ContractorsPage() {
         entityName="Contractor"
         permissionUrl="/masters/contractors"
         columns={columns}
-        data={(result?.data ?? []) as ContractorRow[]}
-        total={result?.data?.length ?? 0}
-        isLoading={isLoading}
+        infinite={{
+          queryKey: "contractors-infinite",
+          endpoint: "/api/masters/contractors",
+          pageSize: 25,
+          defaultSortBy: "createdAt",
+          defaultSortOrder: "desc",
+        }}
         showStatusTabs
         historyEntityType="contractor"
         canImport canExport

@@ -8,7 +8,7 @@ import { useSession, signOut } from "next-auth/react";
 import { useTheme } from "next-themes";
 import { HelpCircle, Settings, Plus, PanelLeft, ListChecks } from "lucide-react";
 import { UserMenu, globalSignOut } from "@quikit/ui";
-import { CreateIssueModal } from "@/components/create-issue-modal";
+import { CreateIdeaModal } from "@/app/(dashboard)/spaces/[id]/ideas/_components/create-idea-modal";
 import { ChecklistDrawer } from "@/components/checklist/checklist-drawer";
 import { NotificationsPopover } from "@/components/shell/notifications-popover";
 import { HelpPanel } from "@/components/help-panel";
@@ -30,7 +30,10 @@ export function Header({ onToggleSidebar, sidebarOpen = true }: HeaderProps) {
   const { data: session } = useSession();
   const params = useParams();
   const pathname = usePathname() ?? "";
-  const currentProjectId = typeof params?.id === "string" ? params.id : undefined;
+  // The Header lives in the dashboard shell (above the /spaces/[id] segment), so
+  // useParams() has no `id` here — derive the current project id from the path.
+  const spaceMatch = pathname.match(/\/spaces\/([^/?#]+)/);
+  const currentProjectId = (typeof params?.id === "string" ? params.id : undefined) ?? spaceMatch?.[1];
   // Hide the global search + Create button on tenant-level admin pages where
   // they aren't relevant (user management / migration / general settings).
   const hideSearchAndCreate =
@@ -193,11 +196,18 @@ export function Header({ onToggleSidebar, sidebarOpen = true }: HeaderProps) {
           </div>
         </div>
       </header>
-      <CreateIssueModal
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        initialProjectId={currentProjectId}
-      />
+      {/* One entry point everywhere: the smart Create dispatcher defaults the
+          Space to the current project and shows the idea form for discovery
+          projects or the Create Task form otherwise; the Space picker switches
+          between them. */}
+      {createOpen && (
+        <CreateIdeaModal
+          projectId={currentProjectId ?? ""}
+          projectName="this space"
+          onCreated={() => window.dispatchEvent(new CustomEvent("qt:idea-created"))}
+          onClose={() => setCreateOpen(false)}
+        />
+      )}
       <HelpPanel open={helpOpen} onClose={() => setHelpOpen(false)} />
       <ChecklistDrawer open={checklistOpen} onClose={() => setChecklistOpen(false)} />
     </div>

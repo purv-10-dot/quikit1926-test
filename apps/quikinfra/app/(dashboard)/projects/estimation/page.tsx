@@ -1,11 +1,11 @@
 "use client";
 
 import { toErrorMessage } from "@/lib/api/errors";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Calculator, Check, Eye, Pencil, Send, Trash2, X as XIcon } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { PageHeader, PageContainer, StatusChip, KPICard } from "@/components/PageShell";
+import { PageHeader, PageContainer, StatusChip } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { useEstimations, useUpdateEstimation } from "@/hooks/use-projects";
 import { useProjects } from "@/hooks/use-masters";
@@ -54,10 +54,32 @@ export default function EstimationPage() {
   const [workflowError, setWorkflowError] = useState<string | null>(null);
 
   const { data: projects } = useProjects();
-  const { data: result, isLoading } = useEstimations(null);
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("createdAt");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, sortBy, sortOrder, pageSize]);
+
+  // `excludeInactive` hides soft-deleted rows server-side so the pager's
+  // totals and pages are accurate (the old client filter would leave short
+  // pages). PR drawer / consumption callers use the unpaged path instead.
+  const { data: result, isLoading } = useEstimations(null, {
+    search: search || undefined,
+    page,
+    pageSize,
+    sortBy,
+    sortOrder,
+    excludeInactive: true,
+  });
   const updateMutation = useUpdateEstimation();
   const qc = useQueryClient();
   const data = useMemo(() => result?.data ?? [], [result]);
+  const total = result?.total ?? 0;
 
   // RBAC gating — hide New/Edit/Delete controls when the user's
   // permission matrix doesn't grant the action on `pm.estimation`.
@@ -169,12 +191,8 @@ export default function EstimationPage() {
     }
   };
 
-  // Hide soft-deleted rows. "Show deleted" toggle could be added
-  // later — same pattern as MasterListPage.
-  const visibleData = useMemo(
-    () => data.filter((r) => r.status !== "inactive"),
-    [data]
-  );
+  // Soft-deleted (inactive) rows are excluded server-side via
+  // `excludeInactive` above, so `data` is already the visible set.
 
   const openCreate = () => {
     setEditRow(null);
@@ -216,7 +234,7 @@ export default function EstimationPage() {
       sortable: true,
       searchable: true,
       render: (row) => (
-        <span className="font-mono text-xs font-semibold text-gray-700">
+        <span className="text-xs font-semibold text-gray-700">
           {row.boqNo ?? "—"}
         </span>
       ),
@@ -224,11 +242,17 @@ export default function EstimationPage() {
     {
       key: "boqDescription",
       label: "BOQ Item",
-      sortable: true,
+      sortable: false,
       searchable: true,
-      render: (row) => (
-        <span className="text-gray-900">{row.boqDescription ?? "—"}</span>
-      ),
+      render: (row) => {
+        const desc = row.boqDescription ?? "—";
+        const sliced = desc.length > 60 ? `${desc.slice(0, 60).trimEnd()}…` : desc;
+        return (
+          <span className="text-gray-900" title={desc}>
+            {sliced}
+          </span>
+        );
+      },
     },
     {
       key: "projectName",
@@ -240,7 +264,7 @@ export default function EstimationPage() {
       key: "boqQuantity",
       label: "BOQ Qty",
       type: "number",
-      sortable: true,
+      sortable: false,
       render: (row) =>
         row.boqQuantity
           ? `${Number(row.boqQuantity).toLocaleString("en-IN")} ${row.boqUnit ?? ""}`
@@ -257,6 +281,7 @@ export default function EstimationPage() {
       label: "Materials",
       type: "number",
       width: "90px",
+      sortable: false,
       render: (row) => row.materialCount ?? row.materials?.length ?? 0,
     },
     {
@@ -265,14 +290,18 @@ export default function EstimationPage() {
       type: "number",
       sortable: true,
       render: (row) =>
-        row.totalCost
-          ? `₹ ${Number(row.totalCost).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`
-          : "—",
+        row.totalCost ? (
+          <span className="whitespace-nowrap tabular-nums">
+            ₹ {Number(row.totalCost).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+          </span>
+        ) : (
+          "—"
+        ),
     },
     {
       key: "status",
       label: "Status",
-      width: "160px",
+      width: "120px",
       sortable: true,
       render: (row) => <StatusChip status={row.status ?? "draft"} />,
     },
@@ -282,8 +311,9 @@ export default function EstimationPage() {
       // View/Edit/Delete are icon-only; Submit/Approve/Reject render as
       // labeled pills (matches the Work Orders list), so the column
       // needs enough room for the icons plus "Approve" + "Reject" to sit
-      // on one line without wrapping.
-      width: "250px",
+      // on one line without wrapping. Right-aligned so the controls sit at
+      // the end of the row, grouped next to the history icon.
+      width: "240px",
       sortable: false,
       searchable: false,
       hideable: false,
@@ -331,7 +361,7 @@ export default function EstimationPage() {
                 className={`inline-flex items-center justify-center w-7 h-7 rounded-md transition ${
                   baseLocked
                     ? "text-gray-300 cursor-not-allowed"
-                    : "text-orange-600 hover:bg-orange-50 hover:text-orange-700"
+                    : "text-accent-600 hover:bg-accent-50 hover:text-accent-700"
                 }`}
                 title={baseLocked ? lockReason : "Edit"}
                 aria-label="Edit"
@@ -416,20 +446,33 @@ export default function EstimationPage() {
       />
 
       <PageContainer>
-        <div className="mb-6 w-full max-w-[240px]">
-          <KPICard
-            title="Material Estimations"
-            value={isLoading ? "—" : visibleData.length}
-            subtitle="Total estimations"
-            icon={<Calculator className="w-5 h-5" />}
-            color="info"
-          />
+        <div className="mb-4 inline-flex items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-3.5 py-2 shadow-sm">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-slate-500 to-slate-700 text-white">
+            <Calculator className="h-4 w-4" />
+          </span>
+          <span className="text-xl font-bold tabular-nums leading-none text-slate-900">
+            {isLoading ? "—" : total}
+          </span>
+          <span className="text-sm font-medium text-slate-500">
+            Total estimations
+          </span>
         </div>
         <DataTable
           id="projects-estimation"
           columns={columns}
-          data={visibleData as unknown as EstimationRow[]}
+          data={data as unknown as EstimationRow[]}
           loading={isLoading}
+          serverMode
+          serverTotal={total}
+          serverPage={page}
+          serverPageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          onSearchChange={setSearch}
+          onSortChange={(key, dir) => {
+            setSortBy(key);
+            setSortOrder(dir);
+          }}
           // RBAC: `onAdd` is only wired when the user's matrix grants
           // the "add" action on `pm.estimation`. Passing `undefined`
           // causes the DataTable to hide its "+ New" button entirely.

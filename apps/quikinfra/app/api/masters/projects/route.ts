@@ -14,7 +14,7 @@ import {
   validateRequired,
 } from "@/lib/validators";
 import { cachedJson } from "@/lib/http/cache";
-import { parsePagination, paginateDb } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
 
 /**
  * Projects master — Postgres-backed.
@@ -37,14 +37,31 @@ export async function GET(req: NextRequest) {
   }
   const { searchParams } = new URL(req.url);
   const search = searchParams.get("search") ?? "";
+  // The Masters list drives 3 status tabs (active | inactive | all) via the
+  // `status` param. Legacy callers pass includeInactive=true instead; pickers
+  // omit both and get active-only.
+  const includeInactive = searchParams.get("includeInactive") === "true";
+  const statusParam = searchParams.get("status");
+  const status: "active" | "inactive" | "all" =
+    statusParam === "inactive"
+      ? "inactive"
+      : statusParam === "all" || includeInactive
+        ? "all"
+        : "active";
+  const { orderBy } = parseSort(
+    searchParams,
+    ["code", "name", "city", "state", "status", "createdAt"],
+    { field: "createdAt", order: "desc" },
+  );
   const baseOpts = {
     orgId: ctx.orgId,
     search,
+    status,
     projectIds: ctx.projectIds,
   };
   const result = await paginateDb(
     parsePagination(req),
-    (paging) => listProjects({ ...baseOpts, ...paging }),
+    (paging) => listProjects({ ...baseOpts, ...paging, orderBy }),
     () => countProjects(baseOpts),
   );
   return cachedJson(result, "medium");

@@ -9,7 +9,7 @@ import {
   createLocation,
 } from "@/lib/masters/locations-repository";
 import { cachedJson } from "@/lib/http/cache";
-import { parsePagination, paginateDb } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
 
 /**
  * Locations list.
@@ -25,16 +25,28 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const search = searchParams.get("search") ?? "";
   const projectId = searchParams.get("projectId") ?? "";
+  const statusParam = (searchParams.get("status") ?? "").toLowerCase();
+  const status: "active" | "inactive" | "all" | undefined =
+    statusParam === "active" ? "active"
+    : statusParam === "inactive" ? "inactive"
+    : statusParam === "all" ? "all"
+    : undefined;
 
   const baseOpts = {
     orgId: ctx.orgId,
     createdBy: ctx.userId,
     search,
     projectId: projectId || undefined,
+    status,
   };
+  const { orderBy } = parseSort(
+    searchParams,
+    ["code", "name", "type", "city", "state", "inCharge", "status", "createdAt"],
+    { field: "createdAt", order: "desc" },
+  );
   const result = await paginateDb(
     parsePagination(req),
-    (paging) => listLocations({ ...baseOpts, ...paging }),
+    (paging) => listLocations({ ...baseOpts, ...paging, orderBy }),
     () => countLocations(baseOpts),
   );
   return cachedJson(result, "medium");

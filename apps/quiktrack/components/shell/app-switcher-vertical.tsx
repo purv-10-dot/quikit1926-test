@@ -47,6 +47,8 @@ const BRAND_ICONS: Record<string, string> = {
  *  badge for dark UI). In dark theme the popover surface is dark, so we swap
  *  these to their `-light.svg` variant to keep the badge visible. */
 const THEMED_ICON_SLUGS = new Set([
+  "admin",
+  "quikasset",
   "quikscale",
   "quikcrm",
   "quikchat",

@@ -38,7 +38,12 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
   const clientId = sp.get("clientId") || undefined;
   // Optional: narrow to one member (the Members page "Name" filter).
   const memberId = sp.get("memberId") || undefined;
-  const { sortBy, sortOrder, orderBy } = parseSort(request, MEMBER_SORT_WHITELIST, mapMemberSort);
+  const { sortBy, sortOrder, orderBy: sortedOrderBy } = parseSort(request, MEMBER_SORT_WHITELIST, mapMemberSort);
+  // Manual (drag-to-reorder) mode when no column sort is chosen.
+  const orderBy: Prisma.ClientMemberOrderByWithRelationInput | Prisma.ClientMemberOrderByWithRelationInput[] =
+    sortBy === "__default"
+      ? [{ position: { sort: "asc", nulls: "first" } }, { createdAt: "desc" }]
+      : sortedOrderBy;
   const { page, limit, skip, take } = parsePagination(request);
 
   // Global search: name/email, created-by/updated-by names (resolved to ids),

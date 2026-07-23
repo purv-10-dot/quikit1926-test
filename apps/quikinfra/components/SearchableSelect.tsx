@@ -130,7 +130,7 @@ export function SearchableSelect({
   const triggerCls =
     size === "sm"
       ? "w-full px-2 py-1.5 rounded border border-gray-300 text-xs bg-white"
-      : "w-full px-3 py-2 rounded-lg border border-gray-300 text-sm bg-white focus-within:ring-2 focus-within:ring-orange-500";
+      : "w-full px-3 py-2 rounded-lg border border-gray-300 text-sm bg-white focus-within:ring-2 focus-within:ring-accent-500";
   const triggerDisabled = disabled
     ? "bg-gray-100 text-gray-500 cursor-not-allowed"
     : "";
@@ -168,7 +168,7 @@ export function SearchableSelect({
       {open && (
         <div className="absolute z-50 mt-1 w-full rounded-lg border border-gray-200 bg-white shadow-lg">
           <div className="px-2 py-2 border-b border-gray-100">
-            <div className="flex items-center gap-2 px-2 py-1.5 rounded-md border border-gray-200 bg-gray-50 focus-within:bg-white focus-within:ring-2 focus-within:ring-orange-500">
+            <div className="flex items-center gap-2 px-2 py-1.5 rounded-md border border-gray-200 bg-gray-50 focus-within:bg-white focus-within:ring-2 focus-within:ring-accent-500">
               <Search className="w-3.5 h-3.5 text-gray-400 shrink-0" />
               <input
                 ref={inputRef}
@@ -196,7 +196,7 @@ export function SearchableSelect({
                     onClick={() => commit(o.value)}
                     onMouseEnter={() => setHighlight(idx)}
                     className={`w-full text-left px-3 py-1.5 text-sm flex items-center gap-2 ${
-                      isActive ? "bg-orange-50 text-orange-900" : "hover:bg-gray-50 text-gray-800"
+                      isActive ? "bg-accent-50 text-accent-900" : "hover:bg-gray-50 text-gray-800"
                     } ${isSelected ? "font-semibold" : ""}`}
                   >
                     <span className="truncate">{o.label}</span>

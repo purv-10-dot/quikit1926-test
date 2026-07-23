@@ -8,7 +8,7 @@ import {
   countTDSCodes,
   createTDSCode,
 } from "@/lib/masters/tds-codes-repository";
-import { parsePagination, paginateDb } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
 
 export async function GET(req: NextRequest) {
   const ctxOrResp = await requireMastersAction("view");
@@ -17,15 +17,27 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const search = searchParams.get("search") ?? "";
+  const statusParam = (searchParams.get("status") ?? "").toLowerCase();
+  const status: "active" | "inactive" | "all" | undefined =
+    statusParam === "active" ? "active"
+    : statusParam === "inactive" ? "inactive"
+    : statusParam === "all" ? "all"
+    : undefined;
   const baseOpts = {
     orgId: ctx.orgId,
     createdBy: ctx.userId,
     search,
+    status,
   };
 
+  const { orderBy } = parseSort(
+    searchParams,
+    ["code", "name", "status", "createdAt"],
+    { field: "createdAt", order: "desc" },
+  );
   const result = await paginateDb(
     parsePagination(req),
-    (paging) => listTDSCodes({ ...baseOpts, ...paging }),
+    (paging) => listTDSCodes({ ...baseOpts, ...paging, orderBy }),
     () => countTDSCodes(baseOpts),
   );
   return NextResponse.json(result);

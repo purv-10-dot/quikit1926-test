@@ -49,7 +49,13 @@ export const GET = auth.view(async ({ orgId }, request) => {
   const search = (sp.get("search") ?? "").trim();
   const statusFilter = sp.get("status") || undefined; // "active" | "inactive"
   const clientId = sp.get("clientId") || undefined;
-  const { sortBy, sortOrder, orderBy } = parseSort(request, CLIENT_SORT_WHITELIST, mapClientSort);
+  const { sortBy, sortOrder, orderBy: sortedOrderBy } = parseSort(request, CLIENT_SORT_WHITELIST, mapClientSort);
+  // Manual (drag-to-reorder) mode when no column sort is chosen: order by the
+  // shared `position` rank (nulls first so new rows stay on top until dragged).
+  const orderBy: Prisma.ClientOrderByWithRelationInput | Prisma.ClientOrderByWithRelationInput[] =
+    sortBy === "__default"
+      ? [{ position: { sort: "asc", nulls: "first" } }, { createdAt: "desc" }]
+      : sortedOrderBy;
   const { page, limit, skip, take } = parsePagination(request);
 
   // Global search across every visible column: name/description, team-member

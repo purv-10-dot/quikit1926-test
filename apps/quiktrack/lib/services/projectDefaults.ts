@@ -283,3 +283,30 @@ export async function getDefaultStatusId(
   });
   return s?.id ?? null;
 }
+
+/**
+ * Next work-item key ("PROJ-N") for a project. We derive N from the MAX existing
+ * key suffix — NOT `count()+1`, which collides once any issue has been deleted or
+ * a key was skipped (count < max ⇒ regenerates an existing key ⇒ unique-key
+ * violation on QtIssue). We scan ALL keys (including soft-deleted) so a reused
+ * number can never resurrect a deleted item's key. Caller should still wrap the
+ * create in a small retry loop to survive a concurrent insert race.
+ */
+export async function nextIssueKey(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  projectKey: string,
+): Promise<string> {
+  const rows = await tx.qtIssue.findMany({
+    where: { projectId },
+    select: { key: true },
+  });
+  const prefix = `${projectKey}-`;
+  let max = 0;
+  for (const { key } of rows) {
+    if (!key.startsWith(prefix)) continue;
+    const n = Number.parseInt(key.slice(prefix.length), 10);
+    if (Number.isFinite(n) && n > max) max = n;
+  }
+  return `${projectKey}-${max + 1}`;
+}

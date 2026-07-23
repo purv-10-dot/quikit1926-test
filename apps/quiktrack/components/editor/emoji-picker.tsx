@@ -9,6 +9,11 @@ interface Props {
   onClose: () => void;
   /** Anchor coordinates (page-relative) — picker positions itself just below. */
   anchor: { left: number; top: number } | null;
+  /** Emoji-mart sizing (optional — defaults keep the standard, larger picker).
+   *  Pass smaller values for a compact picker (e.g. the option style editor). */
+  perLine?: number;
+  emojiSize?: number;
+  emojiButtonSize?: number;
 }
 
 interface PickedEmoji {
@@ -16,7 +21,7 @@ interface PickedEmoji {
   shortcodes?: string;
 }
 
-export function EmojiPicker({ onSelect, onClose, anchor }: Props) {
+export function EmojiPicker({ onSelect, onClose, anchor, perLine, emojiSize, emojiButtonSize }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -44,6 +49,9 @@ export function EmojiPicker({ onSelect, onClose, anchor }: Props) {
         theme="light"
         previewPosition="none"
         skinTonePosition="search"
+        {...(perLine ? { perLine } : {})}
+        {...(emojiSize ? { emojiSize } : {})}
+        {...(emojiButtonSize ? { emojiButtonSize } : {})}
       />
     </div>
   );

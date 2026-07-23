@@ -108,14 +108,12 @@ export function buildGrnFields({
       key: "challanNo",
       label: "Delivery Challan No.",
       type: "text" as const,
-      required: true,
       placeholder: "Challan number",
     },
     {
       key: "challanDate",
       label: "Challan Date",
       type: "date" as const,
-      required: true,
     },
     {
       key: "vehicleNo",
@@ -148,15 +146,13 @@ export function buildGrnFields({
       placeholder: "Weighbridge slip",
     },
     {
-      // Mandatory per backend `validateGRNChallan` — filenames are
-      // stashed in `challanAttachment` so the validator sees the field
-      // populated. Actual blob storage endpoint can be wired later.
+      // Optional — filenames are stashed in `challanAttachment` when
+      // provided. Actual blob storage endpoint can be wired later.
       key: "challanAttachment",
       label: "Delivery Challan / Photo Attachment",
       type: "file" as const,
       accept: "image/*,application/pdf",
       multiple: true,
-      required: true,
     },
     {
       key: "invoiceValue",

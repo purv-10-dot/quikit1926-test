@@ -2,12 +2,20 @@ import { toErrorMessage } from "@/lib/api/errors";
 import { requireEquipmentAction } from "@/lib/auth/requireEquipmentAction";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
+import { parsePagination, parseSort } from "@/lib/http/pagination";
 import {
   createTransfer,
   getDeploymentSummary,
   listTransfers,
 } from "@/lib/equipment/deployment-service";
 import { NextRequest, NextResponse } from "next/server";
+
+const TRANSFER_SORT_COLUMNS = [
+  "transferDate",
+  "status",
+  "transferType",
+  "createdAt",
+] as const;
 
 function mapError(err: unknown) {
   const msg = err instanceof Error ? err.message : String(err);
@@ -42,6 +50,7 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status") ?? "all";
+  const search = searchParams.get("search") ?? "";
   const summaryOnly = searchParams.get("summary") === "true";
 
   const baseOpts = {
@@ -58,7 +67,26 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(summary);
   }
 
-  const result = await listTransfers(baseOpts);
+  const p = parsePagination(req);
+  const sort = parseSort(req, TRANSFER_SORT_COLUMNS, {
+    field: "transferDate",
+    order: "desc",
+  });
+  const result = await listTransfers({
+    ...baseOpts,
+    search: search || undefined,
+    orderBy: sort.orderBy as never,
+    ...(p.paginated ? { take: p.take, skip: p.skip } : {}),
+  });
+
+  if (p.paginated) {
+    return NextResponse.json({
+      ...result,
+      page: p.page,
+      pageSize: p.pageSize,
+      hasMore: p.skip + result.data.length < result.total,
+    });
+  }
   return NextResponse.json(result);
 }
 

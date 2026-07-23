@@ -1,16 +1,14 @@
 "use client"
 
 import { useState } from "react"
-import { X, ChevronDown } from "lucide-react"
+import { X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { Assignment } from "@/types/assignment"
-
-const CONDITIONS = ["Excellent", "Good", "Fair", "Poor", "Damaged"]
 
 interface Props {
   assignment: Assignment
   onClose: () => void
-  onSave: (data: { condition: string; expectedReturn: string; notes: string }) => Promise<void>
+  onSave: (data: { expectedReturn: string; notes: string }) => Promise<void>
 }
 
 function Field({ label, required, error, children }: {
@@ -29,27 +27,16 @@ function Field({ label, required, error, children }: {
 
 export default function EditAssignmentModal({ assignment, onClose, onSave }: Props) {
   const [form, setForm] = useState({
-    condition:      assignment.condition ?? "",
     expectedReturn: assignment.expectedReturn ?? "",
     notes:          assignment.notes ?? "",
   })
-  const [errors, setErrors] = useState<Partial<Record<keyof typeof form, string>>>({})
   const [saving, setSaving] = useState(false)
 
   function set(field: keyof typeof form, value: string) {
     setForm((f) => ({ ...f, [field]: value }))
-    setErrors((e) => ({ ...e, [field]: "" }))
-  }
-
-  function validate() {
-    const e: typeof errors = {}
-    if (!form.condition) e.condition = "Required"
-    setErrors(e)
-    return Object.keys(e).length === 0
   }
 
   async function handleSubmit() {
-    if (!validate()) return
     setSaving(true)
     await onSave(form)
     setSaving(false)
@@ -98,25 +85,6 @@ export default function EditAssignmentModal({ assignment, onClose, onSave }: Pro
               <p className="text-xs text-gray-700">{assignment.user?.department ?? "—"}</p>
             </div>
           </div>
-
-          {/* Condition */}
-          <Field label="Condition" required error={errors.condition}>
-            <div className="relative">
-              <select
-                value={form.condition}
-                onChange={(e) => set("condition", e.target.value)}
-                className={cn(
-                  "w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent-400 bg-white appearance-none",
-                  errors.condition ? "border-red-300" : "border-gray-200",
-                  !form.condition ? "text-gray-400" : "text-gray-800"
-                )}
-              >
-                <option value="">Select Condition</option>
-                {CONDITIONS.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-              <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
-            </div>
-          </Field>
 
           {/* Expected Return */}
           <Field label="Expected Return Date">

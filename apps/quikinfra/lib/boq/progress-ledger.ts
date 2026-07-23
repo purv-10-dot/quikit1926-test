@@ -47,6 +47,7 @@ export interface ProgressPosting {
   direction: 1 | -1;
   dprId?: string;
   dprLineId?: string;
+  workOrderId?: string;
   overrideFlag?: boolean;
   overrideReason?: string;
 }
@@ -128,6 +129,7 @@ export async function postProgressEntry(
       qty: p.qty,
       direction: p.direction,
       workType: p.workType,
+      workOrderId: p.workOrderId ?? null,
       dprId: p.dprId ?? null,
       dprLineId: p.dprLineId ?? null,
       overrideFlag: p.overrideFlag ?? false,

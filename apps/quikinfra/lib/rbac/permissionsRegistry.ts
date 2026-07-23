@@ -451,11 +451,19 @@ export const MODULE_TO_RESOURCES: Readonly<Record<string, readonly string[]>> = 
     "construction.gantt",
     "construction.hindrance",
     "construction.documents",
-    "construction.rab",
   ],
   quality_safety: ["construction.quality_safety"],
   machinery_equipment: ["construction.equipment_log", "construction.equipment_maintenance", "construction.equipment_deployment", "construction.equipment_fleet", "construction.equipment_hire_rent", "construction.equipment_fixed_assets"],
-  finance: ["construction.finance"],
+  // FINANCE's only real page today is RA Bills (construction.rab); the other
+  // finance links (vendor payments, client billing, …) are placeholders not
+  // yet in MENU_CATALOG. Keying the module to construction.rab — the resource
+  // the permission matrix actually manages (finance.rab → construction.rab) —
+  // is what lets the matrix turn Finance off. It used to point at
+  // construction.finance, which no menu page maps to, so the matrix could
+  // never revoke it and Finance stayed "assigned" forever. RA Bills moved out
+  // of PROJECT MGMT to here, so construction.rab is dropped from project_mgmt
+  // above (it lives under the FINANCE menu group, not Project Mgmt).
+  finance: ["construction.rab"],
 } as const;
 
 /**

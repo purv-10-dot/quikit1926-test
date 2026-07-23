@@ -62,7 +62,7 @@ export function ConfirmDialog({
   const confirmBtnClass =
     tone === "danger"
       ? "bg-red-600 hover:bg-red-700 text-white disabled:bg-red-400"
-      : "bg-orange-600 hover:bg-orange-700 text-white disabled:bg-orange-400";
+      : "bg-accent-600 hover:bg-accent-700 text-white disabled:bg-accent-400";
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
@@ -77,7 +77,7 @@ export function ConfirmDialog({
         <div className="flex items-start gap-4 px-6 py-5 border-b border-gray-100">
           <div
             className={`shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${
-              tone === "danger" ? "bg-red-50 text-red-600" : "bg-orange-50 text-orange-600"
+              tone === "danger" ? "bg-red-50 text-red-600" : "bg-accent-50 text-accent-600"
             }`}
           >
             <AlertTriangle className="w-5 h-5" />

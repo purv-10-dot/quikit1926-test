@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
-import { hasAdminAccess } from "@/lib/api/permissions";
+import { hasAdminAccess, spaceAdminProjectIds } from "@/lib/api/permissions";
 
 /**
  * Users who hold a "Space Admin" project role across the projects the caller
@@ -15,15 +15,11 @@ import { hasAdminAccess } from "@/lib/api/permissions";
 const ROLE_NAMES = ["Space Admin", "Project Admin", "PM"];
 
 export const GET = withOrgAuth(async ({ orgId, userId }, _req) => {
-  // Admins see all org projects; everyone else only their memberships.
+  // Admins see all org projects; non-admins only the projects they Space Admin.
   const isAdmin = await hasAdminAccess(userId, orgId);
   let projectIds: string[] | null = null;
   if (!isAdmin) {
-    const memberships = await db.qtProjectMember.findMany({
-      where: { userId, isDeleted: false },
-      select: { projectId: true },
-    });
-    projectIds = memberships.map((m) => m.projectId);
+    projectIds = await spaceAdminProjectIds(userId, orgId);
     if (projectIds.length === 0) {
       return NextResponse.json({ success: true, data: [] });
     }

@@ -12,9 +12,9 @@ import {
 import { getTenantContext, hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { findPOById } from "@/lib/purchase/po-repository";
-import { listGRNs, createGRN } from "@/lib/purchase/grn-repository";
+import { listGRNs, countGRNs, grnStatusCounts, createGRN } from "@/lib/purchase/grn-repository";
 import { db } from "@/lib/db";
-import { parsePagination } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
 
 /**
  * GRN API — Postgres-backed.
@@ -35,24 +35,28 @@ export async function GET(req: NextRequest) {
   const status = searchParams.get("status") ?? "";
   const search = searchParams.get("search") ?? "";
 
-  const p = parsePagination(req);
-  const data = await listGRNs({
+  const baseOpts = {
     orgId: ctx.orgId,
     projectIds: ctx.projectIds ?? null,
     status,
     search,
-    ...(p.paginated ? { take: p.take, skip: p.skip } : {}),
-  });
-  if (p.paginated) {
-    return NextResponse.json({
-      data,
-      total: data.length,
-      page: p.page,
-      pageSize: p.pageSize,
-      hasMore: data.length === p.pageSize,
-    });
+  };
+  if (searchParams.get("counts") === "1") {
+    const counts = await grnStatusCounts(baseOpts);
+    return NextResponse.json({ counts });
   }
-  return NextResponse.json({ data, total: data.length });
+  const p = parsePagination(req);
+  const { orderBy } = parseSort(
+    searchParams,
+    ["grnNumber", "grnDate", "status", "supplierInvoiceNo", "createdAt"],
+    { field: "grnDate", order: "desc" },
+  );
+  const result = await paginateDb(
+    p,
+    (paging) => listGRNs({ ...baseOpts, ...paging, orderBy }),
+    () => countGRNs(baseOpts),
+  );
+  return NextResponse.json(result);
 }
 
 /** Loose view of a source-PO line — the route reads several legacy

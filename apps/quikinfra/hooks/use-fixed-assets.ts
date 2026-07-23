@@ -26,24 +26,46 @@ export function useFixedAssetDashboard() {
   });
 }
 
-export function useFixedAssetIssuances() {
+type ListParams = {
+  search?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+};
+
+function listQuery(params?: ListParams) {
+  const qs = new URLSearchParams();
+  if (params?.search) qs.set("search", params.search);
+  if (params?.page) qs.set("page", String(params.page));
+  if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+  if (params?.sortBy) qs.set("sortBy", params.sortBy);
+  if (params?.sortOrder) qs.set("sortOrder", params.sortOrder);
+  return qs.toString();
+}
+
+export function useFixedAssetIssuances(params?: ListParams) {
+  const query = listQuery(params);
   return useQuery({
-    queryKey: ["fixed-asset-issuances"],
+    queryKey: ["fixed-asset-issuances", query],
     queryFn: () =>
       fetchApi<{ data: FixedAssetIssuanceRecord[]; total: number }>(
-        "/api/equipment/fixed-assets/issuances",
+        `/api/equipment/fixed-assets/issuances${query ? `?${query}` : ""}`,
       ),
+    placeholderData: (prev) => prev,
     ...equipmentQueryOptions,
   });
 }
 
-export function useFixedAssetTransfers() {
+export function useFixedAssetTransfers(params?: ListParams) {
+  const query = listQuery(params);
   return useQuery({
-    queryKey: ["fixed-asset-transfers"],
+    queryKey: ["fixed-asset-transfers", query],
     queryFn: () =>
       fetchApi<{ data: FixedAssetTransferRecord[]; total: number }>(
-        "/api/equipment/fixed-assets/transfers",
+        `/api/equipment/fixed-assets/transfers${query ? `?${query}` : ""}`,
       ),
+    placeholderData: (prev) => prev,
     ...equipmentQueryOptions,
   });
 }

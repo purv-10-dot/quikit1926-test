@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
-import { hasAdminAccess } from "@/lib/api/permissions";
+import { hasAdminAccess, spaceAdminProjectIds } from "@/lib/api/permissions";
 
 /**
  * Project Reports CSV export — server-side so it covers EVERY matching row, not
@@ -39,16 +39,13 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     }
 
     // Resolve which projects the caller can see — same rule as the report
-    // endpoint: global admins see all, everyone else their memberships.
+    // endpoint: global admins see ALL; non-admins see ONLY their Space Admin
+    // projects (none → empty export).
     const isAdmin = await hasAdminAccess(userId, orgId);
     let projectIds: string[] | null = null;
     if (!isAdmin) {
-      const memberships = await db.qtProjectMember.findMany({
-        where: { userId, isDeleted: false },
-        select: { projectId: true },
-      });
-      projectIds = memberships.map((m) => m.projectId);
-      if (projectId && !projectIds.includes(projectId)) {
+      projectIds = await spaceAdminProjectIds(userId, orgId);
+      if (projectIds.length === 0 || (projectId && !projectIds.includes(projectId))) {
         return csvResponse(["S.No,Key,Task,Project,Assignee,Create Date,Status,Est (h),Actual (h)"], month);
       }
     }

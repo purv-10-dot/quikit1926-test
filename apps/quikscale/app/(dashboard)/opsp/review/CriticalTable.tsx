@@ -27,6 +27,7 @@
 
 import { useState } from "react";
 import { Clock } from "lucide-react";
+import { ColMenu } from "@quikit/ui";
 import { cn } from "@/lib/utils";
 import { CRIT_BULLET_COLORS, CRIT_BULLET_LABELS } from "./helpers";
 import {
@@ -53,7 +54,20 @@ export interface CriticalTableProps {
   onOpenEdit: () => void;
   /** Clicked when the user opens the audit-log drawer for this card. */
   onOpenLogs?: () => void;
+  /** Column keys currently hidden (shared across both cards via table prefs).
+   *  Only `title` / `achieved` / `comment` are hideable — the rail (#/log/☐)
+   *  and Projected tiers are always shown. */
+  hiddenCols?: string[];
+  /** Hide a column from the card header's ⋮ menu. Omit to disable hiding. */
+  onHideCol?: (key: string) => void;
 }
+
+/** Columns the user may hide on a Critical card. */
+export const CRITICAL_HIDEABLE_COLUMNS: { key: string; label: string }[] = [
+  { key: "title", label: "Critical Title" },
+  { key: "achieved", label: "Achieved" },
+  { key: "comment", label: "Comment" },
+];
 
 export function CriticalTable({
   label,
@@ -62,8 +76,11 @@ export function CriticalTable({
   entry,
   onOpenEdit,
   onOpenLogs,
+  hiddenCols = [],
+  onHideCol,
 }: CriticalTableProps) {
   const [checked, setChecked] = useState(false);
+  const isHidden = (key: string) => hiddenCols.includes(key);
 
   // Hide the whole card when it has no title AND every bullet is empty.
   const isEmpty =
@@ -92,10 +109,10 @@ export function CriticalTable({
           <col className="w-10" />
           <col className="w-10" />
           <col className="w-12" />
-          <col className="w-[180px]" />
+          {!isHidden("title") && <col className="w-[180px]" />}
           <col className="w-[300px]" />
-          <col className="w-[110px]" />
-          <col className="w-[260px]" />
+          {!isHidden("achieved") && <col className="w-[110px]" />}
+          {!isHidden("comment") && <col className="w-[260px]" />}
         </colgroup>
         <thead className="bg-accent-50 text-xs font-semibold text-gray-600">
           <tr>
@@ -109,16 +126,31 @@ export function CriticalTable({
             </th>
             <th className="px-2 py-2.5 border-b border-gray-200" />
             <th className="px-2 py-2.5 border-b border-gray-200 text-center">#</th>
-            <th className="text-left px-4 py-2.5 border-b border-gray-200">
-              Critical Title
-            </th>
+            {!isHidden("title") && (
+              <th className="group relative text-left px-4 py-2.5 border-b border-gray-200">
+                <span className="inline-flex items-center gap-1 pr-4">
+                  Critical Title
+                  {onHideCol && <HideMenu colKey="title" onHide={() => onHideCol("title")} />}
+                </span>
+              </th>
+            )}
             <th className="text-left px-4 py-2.5 border-b border-gray-200">Projected</th>
-            <th className="text-center px-4 py-2.5 border-b border-gray-200">
-              Achieved
-            </th>
-            <th className="text-left px-4 py-2.5 border-b border-gray-200">
-              Comment
-            </th>
+            {!isHidden("achieved") && (
+              <th className="group relative text-center px-4 py-2.5 border-b border-gray-200">
+                <span className="inline-flex items-center gap-1 pr-4">
+                  Achieved
+                  {onHideCol && <HideMenu colKey="achieved" onHide={() => onHideCol("achieved")} />}
+                </span>
+              </th>
+            )}
+            {!isHidden("comment") && (
+              <th className="group relative text-left px-4 py-2.5 border-b border-gray-200">
+                <span className="inline-flex items-center gap-1 pr-4">
+                  Comment
+                  {onHideCol && <HideMenu colKey="comment" onHide={() => onHideCol("comment")} />}
+                </span>
+              </th>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -166,12 +198,14 @@ export function CriticalTable({
                       {index}
                     </button>
                   </td>
-                  <td
-                    rowSpan={4}
-                    className="align-middle px-4 py-3 border-r border-gray-100 font-medium text-gray-800"
-                  >
-                    {card.title.trim() || <span className="text-gray-400">—</span>}
-                  </td>
+                  {!isHidden("title") && (
+                    <td
+                      rowSpan={4}
+                      className="align-middle px-4 py-3 border-r border-gray-100 font-medium text-gray-800"
+                    >
+                      {card.title.trim() || <span className="text-gray-400">—</span>}
+                    </td>
+                  )}
                 </>
               ) : null}
 
@@ -186,37 +220,41 @@ export function CriticalTable({
               {/* Achieved + Comment — single cell each, rowSpan=4 from row 0 */}
               {bulletIdx === 0 ? (
                 <>
-                  <td
-                    rowSpan={4}
-                    className="align-middle px-3 py-3 border-r border-gray-100 text-center"
-                  >
-                    {achievedIsNumeric ? (
-                      <span
-                        className={cn(
-                          "inline-flex items-center justify-center min-w-[64px] py-1.5 px-3 text-sm rounded-md font-semibold tabular-nums",
-                          tierCellCls,
-                        )}
-                      >
-                        {achievedNum!.toLocaleString()}
-                      </span>
-                    ) : (
-                      <span className="text-gray-400">—</span>
-                    )}
-                  </td>
-                  <td
-                    rowSpan={4}
-                    className="align-middle px-4 py-3 text-sm text-gray-600"
-                  >
-                    {entry?.comment?.trim() ? (
-                      // Cap height at ~6 lines and scroll if longer so a
-                      // chatty comment doesn't stretch the card vertically.
-                      <div className="leading-snug whitespace-normal break-words max-h-[7.5em] overflow-y-auto pr-1">
-                        {entry.comment}
-                      </div>
-                    ) : (
-                      <span className="text-gray-400">—</span>
-                    )}
-                  </td>
+                  {!isHidden("achieved") && (
+                    <td
+                      rowSpan={4}
+                      className="align-middle px-3 py-3 border-r border-gray-100 text-center"
+                    >
+                      {achievedIsNumeric ? (
+                        <span
+                          className={cn(
+                            "inline-flex items-center justify-center min-w-[64px] py-1.5 px-3 text-sm rounded-md font-semibold tabular-nums",
+                            tierCellCls,
+                          )}
+                        >
+                          {achievedNum!.toLocaleString()}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </td>
+                  )}
+                  {!isHidden("comment") && (
+                    <td
+                      rowSpan={4}
+                      className="align-middle px-4 py-3 text-sm text-gray-600"
+                    >
+                      {entry?.comment?.trim() ? (
+                        // Cap height at ~6 lines and scroll if longer so a
+                        // chatty comment doesn't stretch the card vertically.
+                        <div className="leading-snug whitespace-normal break-words max-h-[7.5em] overflow-y-auto pr-1">
+                          {entry.comment}
+                        </div>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </td>
+                  )}
                 </>
               ) : null}
             </tr>
@@ -224,6 +262,26 @@ export function CriticalTable({
         </tbody>
       </table>
     </div>
+  );
+}
+
+/* ───────────────────────── Header hide menu ───────────────────────── */
+
+/**
+ * Hover-revealed ⋮ menu on a hideable Critical-card column header. Reuses the
+ * shared `ColMenu` with only the Hide action (no sort/freeze — a card layout
+ * doesn't support those). The parent `<th>` must carry `group relative` so the
+ * trigger reveals on hover, matching every other grid header.
+ */
+function HideMenu({ colKey, onHide }: { colKey: string; onHide: () => void }) {
+  return (
+    <ColMenu
+      colKey={colKey}
+      showSort={false}
+      showFreeze={false}
+      showHide
+      onHide={onHide}
+    />
   );
 }
 

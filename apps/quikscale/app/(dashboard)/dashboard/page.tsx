@@ -1645,12 +1645,10 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Global More pill — Export/Trash/Manage Cols across sections */}
+          {/* Global More pill — Trash/Manage Cols across sections.
+              (Export Data was removed from the dashboard per product request;
+              per-module export still lives on the individual module pages.) */}
           <DashboardMoreActions
-            kpis={kpis as any}
-            priorities={priorities as any}
-            wwws={wwwItems as any}
-            fiscalLabel={`FY${year}-${quarter}`}
             trashSections={dashTrashSections}
             onChangeTrashSections={setDashTrashSections}
           />

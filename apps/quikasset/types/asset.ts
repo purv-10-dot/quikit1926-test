@@ -36,6 +36,10 @@ export type Asset = {
   condition: string;
   warrantyEndDate?: string | null;
   description: string;
+  invoiceFileKey?: string | null;
+  invoiceFileName?: string | null;
+  invoiceFileType?: string | null;
+  invoiceFileSize?: number | null;
   assetStatus: AssetStatus;
   baseCategory?: BaseCategory | null;
   category?: Category | null;

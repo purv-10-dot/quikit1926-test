@@ -20,6 +20,7 @@ export function RequirePerm({
   resource,
   action,
   adminOnly,
+  adminOrSpaceAdmin,
   children,
   /** Optional — bounce to this href instead of rendering the deny panel. */
   redirectTo,
@@ -28,16 +29,21 @@ export function RequirePerm({
   action?: string;
   /** Pass `true` to require app-wide admin role (overrides resource/action). */
   adminOnly?: boolean;
+  /** Pass `true` to allow app-wide admins OR Space Admins of any project
+   *  (used by the Reports pages). Overrides resource/action. */
+  adminOrSpaceAdmin?: boolean;
   children: React.ReactNode;
   redirectTo?: string;
 }) {
   const perms = useMyPermissions();
   const router = useRouter();
-  const allowed = adminOnly
-    ? perms.isAdmin
-    : resource && action
-      ? perms.has(resource, action)
-      : false;
+  const allowed = adminOrSpaceAdmin
+    ? perms.isAdmin || perms.isSpaceAdmin
+    : adminOnly
+      ? perms.isAdmin
+      : resource && action
+        ? perms.has(resource, action)
+        : false;
 
   useEffect(() => {
     if (!perms.loading && !allowed && redirectTo) {
@@ -63,7 +69,13 @@ export function RequirePerm({
           You don&apos;t have access to this page
         </h2>
         <p className="mt-1 text-sm text-gray-500 max-w-md">
-          {adminOnly ? (
+          {adminOrSpaceAdmin ? (
+            <>
+              This page is available to organisation{" "}
+              <span className="font-medium text-gray-700">admins</span> and{" "}
+              <span className="font-medium text-gray-700">Space Admins</span> only.
+            </>
+          ) : adminOnly ? (
             <>
               This page is available to organisation{" "}
               <span className="font-medium text-gray-700">admins</span> only.

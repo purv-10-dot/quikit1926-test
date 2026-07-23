@@ -65,17 +65,25 @@ export interface ListGSTOptions {
   /** Pagination — passed straight through to Prisma findMany. */
   take?: number;
   skip?: number;
+  /** Status view. Omit for legacy picker behavior (all non-deleted). */
+  status?: "active" | "inactive" | "all";
+  /** Server-side sort (from `parseSort`). Defaults to the repo default. */
+  orderBy?: Array<Record<string, "asc" | "desc">>;
 }
 
 function buildGSTCodesWhere(
-  opts: Pick<ListGSTOptions, "orgId" | "search">,
+  opts: Pick<ListGSTOptions, "orgId" | "search" | "status">,
 ): Record<string, unknown> {
   const q = (opts.search ?? "").trim();
   return {
     orgId: opts.orgId,
     // "deleted" rows are removed from the UI entirely; "inactive" rows are
     // still returned so they can show under the Inactive tab.
-    status: { not: "deleted" },
+    ...(opts.status === "inactive"
+      ? { status: "inactive" }
+      : opts.status === "active"
+        ? { status: { notIn: ["inactive", "deleted"] } }
+        : { status: { not: "deleted" } }),
     ...(q
       ? {
           OR: [
@@ -91,7 +99,7 @@ function buildGSTCodesWhere(
 export async function listGSTCodes(opts: ListGSTOptions): Promise<GSTCodeRecord[]> {
   const rows = await db.cnGSTCode.findMany({
     where: buildGSTCodesWhere(opts),
-    orderBy: { createdAt: "desc" },
+    orderBy: opts.orderBy ?? { createdAt: "desc" },
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
   });
@@ -99,7 +107,7 @@ export async function listGSTCodes(opts: ListGSTOptions): Promise<GSTCodeRecord[
 }
 
 export async function countGSTCodes(
-  opts: Pick<ListGSTOptions, "orgId" | "search">,
+  opts: Pick<ListGSTOptions, "orgId" | "search" | "status">,
 ): Promise<number> {
   return db.cnGSTCode.count({ where: buildGSTCodesWhere(opts) });
 }

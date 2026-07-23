@@ -1,13 +1,15 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo, type UIEvent } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback, type UIEvent } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { KPIRow, WeeklyValue } from "@/lib/types/kpi";
+import { invalidateEntity } from "@/lib/hooks/dashboardInvalidation";
 import { weeksArray, weekDateLabel } from "@/lib/utils/fiscal";
 import { progressColor, weekCellColors, fmt, formatScaledKpiValue, getProgressBadgeColors, getLatestWeeklyNote, type NumberFormat } from "@/lib/utils/kpiHelpers";
 import { getColorByPercentage } from "@/lib/utils/colorLogic";
 import { UserAuditCell, DateAuditCell } from "@/components/table/AuditCells";
 import { computeQtd, weeklyGoalFor } from "./kpiStats";
-import { useTableColumns, ALL_STATIC_COLS, COL_LABELS, SORT_KEYS } from "../hooks/useTableColumns";
+import { useTableColumns, COL_LABELS, SORT_KEYS } from "../hooks/useTableColumns";
 import { useStickyOffsets } from "@/lib/hooks/useStickyOffsets";
 import { FreezeIcon } from "@/components/ui/FreezeIcon";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
@@ -24,8 +26,12 @@ import { NameTooltip } from "./NameTooltip";
 import { ColMenu } from "@/components/table/ColMenu";
 import { SortIndicator } from "@/components/table/SortIndicator";
 import { X } from "lucide-react";
-import { Pagination } from "@quikit/ui";
+import { Pagination, useConfirm } from "@quikit/ui";
 import { notify } from "@/lib/utils/notify";
+import { useColumnDnD, DragHandle } from "@/lib/hooks/useColumnDnD";
+import { confirmFreezeChange } from "@/lib/utils/freezeConfirm";
+import { useRowDnD } from "@/lib/hooks/useRowDnD";
+import { rowNeighbors } from "@/lib/utils/rowOrder";
 export { HiddenColsMenu } from "./HiddenColsMenu";
 
 // ── Resize handle ────────────────────────────────────────────────────────────
@@ -100,6 +106,10 @@ interface Props {
 
 export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, onPageChange, onPageSizeChange, onSort, onClearSort, onRefresh, onSelectionChange, clearSelectionTrigger, onHiddenColsChange, showColTrigger, hideColumns, maxRows, readOnly, fillWidth, canDelete = true, canUpdate = true, sortBy, sortOrder, maxBodyHeight, hasMore, isFetchingMore, onLoadMore, numberFormat = "standard" }: Props) {
   const kpis = maxRows != null ? kpisAll.slice(0, maxRows) : kpisAll;
+  // Shared by the Individual/Team KPI pages AND the Dashboard, so this table's
+  // own direct write (row reorder) must bust the Dashboard's `["kpi-infinite"]`
+  // + `["dashboard"]` caches, not just the parent surface's onRefresh().
+  const queryClient = useQueryClient();
   // Goal/value formatter. For a Currency KPI with a chosen scale it renders the
   // currency + scaled unit (₹4 Cr / $9 M); otherwise it's the plain compact
   // number honoring the caller's format (Indian on dashboard, standard else).
@@ -127,8 +137,9 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
   const effPage = page ?? 1;
   const effPageSize = pageSize ?? (kpisAll.length || 1);
   const weekCount = useQuarterWeekCount(year, quarter);
-  const allCols = [...ALL_STATIC_COLS, ...weeksArray(weekCount).map(w => `week${w}`)];
+  const weekCols = useMemo(() => weeksArray(weekCount).map(w => `week${w}`), [weekCount]);
   const headerRowRef = useRef<HTMLTableRowElement>(null);
+  const tbodyRef = useRef<HTMLTableSectionElement>(null);
   const [logKPI, setLogKPI] = useState<KPIRow | null>(null);
   const [logInitialTab, setLogInitialTab] = useState<"updates" | "edit" | "stats">("updates");
   const [auditKPI, setAuditKPI] = useState<KPIRow | null>(null);
@@ -152,9 +163,76 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
     getColWidth, isFrozen, startResize,
     handleFreezeCol, handleHideCol, handleShowCol,
     toggleSelect, toggleAll, clearSelection,
-  } = useTableColumns(allCols, kpis.map(k => k.id));
+    orderedStaticCols, computeStaticReorder, applyStaticOrder,
+  } = useTableColumns(weekCols, kpis.map(k => k.id));
 
   const { getStickyLeft } = useStickyOffsets(headerRowRef, frozenUpTo, hiddenCols, colWidths);
+
+  // ── Drag-to-reorder columns ─────────────────────────────────────────────
+  // Rail columns (checkbox/log/id) and week columns are not reorderable. When a
+  // drop would move a currently-frozen column past the freeze boundary (i.e.
+  // unfreeze it), confirm before committing — otherwise apply immediately.
+  const confirm = useConfirm();
+  // Reordering persists to the shared "kpi" preference row, so it's only
+  // enabled on the full module page. Dashboard/embedded previews opt out via
+  // their layout flags (readOnly / fillWidth / maxRows / maxBodyHeight) so a
+  // preview can't silently rewrite the user's saved order. NOTE: `hideColumns`
+  // is NOT a preview signal — the real module page uses it to default-hide
+  // togglable columns, so it must not gate reordering.
+  const reorderDisabled = !!readOnly || !!fillWidth || maxRows != null || maxBodyHeight != null;
+  const canReorderCol = useCallback(
+    (col: string) => !reorderDisabled && orderedStaticCols.includes(col),
+    [reorderDisabled, orderedStaticCols],
+  );
+  const handleColDrop = useCallback(
+    async (fromKey: string, toKey: string, side: "before" | "after") => {
+      const { nextStatic, unfrozen, frozen } = computeStaticReorder(fromKey, toKey, side);
+      if (!(await confirmFreezeChange(confirm, unfrozen, frozen))) return;
+      applyStaticOrder(nextStatic);
+    },
+    [computeStaticReorder, applyStaticOrder, confirm],
+  );
+  const dnd = useColumnDnD({
+    getHeaderRow: () => headerRowRef.current,
+    onDrop: handleColDrop,
+    canReorder: canReorderCol,
+  });
+
+  // ── Drag-to-reorder ROWS (org-shared manual order) ───────────────────────
+  // Enabled only in manual mode (no active column sort) and never in previews.
+  const rowReorderEnabled = !reorderDisabled && !sortBy;
+  const orderedRowIds = useMemo(() => kpis.map(k => k.id), [kpis]);
+  const handleRowDrop = useCallback(
+    async (fromId: string, toId: string, side: "before" | "after") => {
+      const n = rowNeighbors(orderedRowIds, fromId, toId, side);
+      if (!n) return;
+      try {
+        const res = await fetch("/api/kpi/reorder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: fromId, beforeId: n.beforeId, afterId: n.afterId }),
+        });
+        if (!res.ok) throw new Error("reorder failed");
+        invalidateEntity(queryClient, "kpi");
+        onRefresh();
+      } catch {
+        notify.error("Failed to reorder row");
+        onRefresh();
+      }
+    },
+    [orderedRowIds, onRefresh, queryClient],
+  );
+  const rowDnd = useRowDnD({
+    getRowsContainer: () => tbodyRef.current,
+    onDrop: handleRowDrop,
+    canDrag: () => rowReorderEnabled,
+  });
+  function rowDropClass(id: string) {
+    if (rowDnd.overId !== id || !rowDnd.dropSide) return "";
+    return rowDnd.dropSide === "before"
+      ? "shadow-[inset_0_2px_0_0_var(--tw-shadow-color)] shadow-blue-500"
+      : "shadow-[inset_0_-2px_0_0_var(--tw-shadow-color)] shadow-blue-500";
+  }
 
   // Notify parent when selection changes
   useEffect(() => { onSelectionChange?.(selectedIds); }, [selectedIds, onSelectionChange]);
@@ -180,8 +258,17 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
   const hideId = localHideSet.has("_id");
 
   const totalPages = Math.ceil((total ?? kpisAll.length) / effPageSize);
-  const visibleStaticCols = ALL_STATIC_COLS.filter(c => !localHideSet.has(c));
+  const visibleStaticCols = orderedStaticCols.filter(c => !localHideSet.has(c));
   const visibleWeekCols = weeksArray(weekCount).filter(w => !localHideSet.has(`week${w}`));
+
+  // Tailwind classes for the live drop indicator on the header cell currently
+  // under the drag pointer (left/right edge line).
+  function dropIndicatorClass(col: string) {
+    if (dnd.overKey !== col || !dnd.dropSide) return "";
+    return dnd.dropSide === "before"
+      ? "shadow-[inset_2px_0_0_0_var(--tw-shadow-color)] shadow-blue-500"
+      : "shadow-[inset_-2px_0_0_0_var(--tw-shadow-color)] shadow-blue-500";
+  }
 
   // Per-row derived data hoisted out of the render .map. Previously this heavy
   // compute (Standalone QTD re-derive, weekMap build, badge colors) re-ran for
@@ -228,7 +315,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
       });
     }
     return map;
-  }, [kpis, currentWeek]);
+  }, [kpis, qtdWeek, weekCount]);
 
   function thClass(col: string) {
     const sticky = isFrozen(col);
@@ -309,16 +396,23 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                 const w = getColWidth(col);
                 const sortable = !!SORT_KEYS[col];
                 const isSorted = sortable && sortBy === SORT_KEYS[col];
+                const isDragging = dnd.draggingKey === col;
                 return (
-                  <th key={col} data-col-key={col} className={thClass(col)} style={stickyStyle(col, w)}>
+                  <th key={col} data-col-key={col}
+                    className={`${thClass(col)} ${dropIndicatorClass(col)} ${isDragging ? "opacity-40" : ""}`}
+                    style={stickyStyle(col, w)}>
                     <div className="flex items-center gap-1 px-3 py-2 pr-2">
                       {frozenUpTo === col && <FreezeIcon />}
+                      {!reorderDisabled && <DragHandle onStart={(e) => dnd.startDrag(col, e)} />}
                       {/* `title` surfaces the full label as a native tooltip when
                           the column is narrow enough to ellipsize (common on
-                          Dashboard previews where cells are constrained). */}
+                          Dashboard previews where cells are constrained).
+                          The label itself is a drag handle — grabbing the column
+                          title reorders (matches user expectation). */}
                       <span
                         title={COL_LABELS[col]}
-                        className={`flex-1 truncate min-w-0 ${isSorted ? "text-accent-700" : ""}`}
+                        onPointerDown={reorderDisabled ? undefined : (e) => dnd.startDrag(col, e)}
+                        className={`flex-1 truncate min-w-0 ${isSorted ? "text-accent-700" : ""} ${reorderDisabled ? "" : "cursor-grab active:cursor-grabbing touch-none"}`}
                       >
                         {COL_LABELS[col]}
                       </span>
@@ -364,7 +458,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
             </tr>
           </thead>
 
-          <tbody>
+          <tbody ref={tbodyRef}>
             {kpis.length === 0 ? (
               <tr>
                 <td colSpan={3 + visibleStaticCols.length + visibleWeekCols.length}
@@ -392,8 +486,238 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
               const { progressDivisionType, progressPct, ownerName, weekMap, progressBarBg, progressTextColor } =
                 rowDerived.get(kpi.id)!;
 
+              // Render a single static column cell by key. Driven by the
+              // user's drag order (`visibleStaticCols`) so header and body
+              // stay in lockstep. Cell styling/colors are byte-identical to the
+              // previous hardcoded blocks — only the render order is dynamic.
+              // Note: qtdGoal / qtdAchieved now render independently (each
+              // recomputes QTD) so they can be reordered separately; output is
+              // unchanged from the old coupled block.
+              const renderStatic = (col: string) => {
+                switch (col) {
+                  case "progress":
+                    return (
+                      <td key={col} className={tdClass("progress")} style={stickyStyle("progress", getColWidth("progress"))}>
+                        <div className="flex items-center gap-2">
+                          <span className={`font-medium w-10 flex-shrink-0 ${progressTextColor}`}>{progressPct.toFixed(0)}%</span>
+                          <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden min-w-[40px]">
+                            <div className={`h-2 rounded-full transition-all ${progressBarBg}`} style={{ width: `${Math.min(progressPct, 100)}%` }} />
+                          </div>
+                        </div>
+                      </td>
+                    );
+                  case "owner":
+                    return (
+                      <td key={col} className={tdClass("owner", "whitespace-nowrap")} style={stickyStyle("owner", getColWidth("owner"))}>{ownerName}</td>
+                    );
+                  case "kpiName":
+                    return (
+                      <td key={col} className={tdClass("kpiName")} style={stickyStyle("kpiName", getColWidth("kpiName"))}>
+                        <NameTooltip name={kpi.name}>
+                          <div
+                            className="max-h-[3.25rem] overflow-y-auto leading-snug break-all cursor-default pr-1"
+                            style={{ scrollbarWidth: "thin" }}
+                          >
+                            {kpi.name}
+                            {kpi.parentKPI && (
+                              <span
+                                title={`Linked to Team KPI: ${kpi.parentKPI.name}`}
+                                className="ml-1 inline-block px-1.5 py-px text-[9px] font-semibold rounded bg-gray-100 text-gray-600 align-middle"
+                              >
+                                Linked
+                              </span>
+                            )}
+                          </div>
+                        </NameTooltip>
+                      </td>
+                    );
+                  case "team":
+                    return (
+                      <td key={col} className={tdClass("team", "whitespace-nowrap")} style={stickyStyle("team", getColWidth("team"))}>
+                        {kpi.team?.name ? (
+                          <span className="text-gray-700 truncate block">{kpi.team.name}</span>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </td>
+                    );
+                  case "teamHead":
+                    return (
+                      <td key={col} className={tdClass("teamHead", "whitespace-nowrap")} style={stickyStyle("teamHead", getColWidth("teamHead"))}>
+                        {kpi.team?.head ? (
+                          <span className="text-gray-700 truncate block">
+                            {kpi.team.head.firstName} {kpi.team.head.lastName}
+                          </span>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </td>
+                    );
+                  case "kpiOwner":
+                    return (
+                      <td key={col} className={tdClass("kpiOwner")} style={stickyStyle("kpiOwner", getColWidth("kpiOwner"))}>
+                        {kpi.owners && kpi.owners.length > 0 ? (
+                          <div className="flex flex-col gap-0.5">
+                            {kpi.owners.slice(0, 3).map(u => {
+                              const pct = (kpi.ownerContributions as Record<string, number> | undefined)?.[u.id];
+                              return (
+                                <div key={u.id} className="text-[11px] text-gray-700 truncate leading-tight">
+                                  {u.firstName} {u.lastName}
+                                  {typeof pct === "number" && (
+                                    <span className="text-gray-400 ml-1">({pct.toFixed(0)}%)</span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                            {kpi.owners.length > 3 && (
+                              <div className="text-[10px] text-gray-400">+{kpi.owners.length - 3} more</div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </td>
+                    );
+                  case "measurementUnit":
+                    return (
+                      <td key={col} className={tdClass("measurementUnit", "whitespace-nowrap")} style={stickyStyle("measurementUnit", getColWidth("measurementUnit"))}>{kpi.measurementUnit}</td>
+                    );
+                  case "kpiType":
+                    return (
+                      <td key={col} className={tdClass("kpiType", "whitespace-nowrap")} style={stickyStyle("kpiType", getColWidth("kpiType"))}>
+                        {kpi.kpiType && kpi.kpiType !== "NA" ? kpi.kpiType : <span className="text-gray-300">—</span>}
+                      </td>
+                    );
+                  case "divisionType":
+                    return (
+                      <td key={col} className={tdClass("divisionType", "whitespace-nowrap")} style={stickyStyle("divisionType", getColWidth("divisionType"))}>
+                        {kpi.divisionType ? kpi.divisionType : <span className="text-gray-300">—</span>}
+                      </td>
+                    );
+                  case "targetValue":
+                    return (
+                      <td key={col} className={tdClass("targetValue")} style={stickyStyle("targetValue", getColWidth("targetValue"))}>{fmtN(kpi, kpi.target ?? null)}</td>
+                    );
+                  case "quarterlyGoal":
+                    return (
+                      <td key={col} className={tdClass("quarterlyGoal")} style={stickyStyle("quarterlyGoal", getColWidth("quarterlyGoal"))}>{fmtN(kpi, kpi.quarterlyGoal ?? null)}</td>
+                    );
+                  case "qtdGoal": {
+                    const { qtdGoal } = computeQtd(kpi, qtdWeek, progressDivisionType, weekCount);
+                    return (
+                      <td key={col} className={tdClass("qtdGoal")} style={stickyStyle("qtdGoal", getColWidth("qtdGoal"))}>
+                        {qtdGoal != null ? fmtN(kpi, qtdGoal) : "—"}
+                      </td>
+                    );
+                  }
+                  case "qtdAchieved": {
+                    // Same semantic traffic-light palette as the weekly cells
+                    // (≥120 blue, ≥100 green, ≥80 yellow, <80+updated red, else
+                    // neutral). RED gated on ≥1 weekly value entered.
+                    const { qtdGoal, qtdAchieved } = computeQtd(kpi, qtdWeek, progressDivisionType, weekCount);
+                    const hasAnyWeeklyValue = Object.values(weekMap).some(wv => wv?.value != null);
+                    const color = qtdAchieved != null
+                      ? getColorByPercentage(qtdAchieved, qtdGoal ?? kpi.target ?? 0, hasAnyWeeklyValue, kpi.reverseColor ?? false)
+                      : null;
+                    const sticky = isFrozen("qtdAchieved");
+                    const boundary = "qtdAchieved" === frozenUpTo;
+                    return (
+                      <td key={col}
+                        className={[
+                          "px-3 py-2 text-xs border-b border-r border-gray-100 overflow-hidden align-top text-center font-semibold",
+                          color?.bg || (sticky ? "bg-white" : ""),
+                          color?.text ?? "text-gray-700",
+                          sticky ? `sticky z-[15]${boundary ? " shadow-[2px_0_4px_rgba(0,0,0,0.04)]" : ""}` : "",
+                        ].filter(Boolean).join(" ")}
+                        style={stickyStyle("qtdAchieved", getColWidth("qtdAchieved"))}
+                      >
+                        {qtdAchieved != null ? fmtN(kpi, qtdAchieved) : "—"}
+                      </td>
+                    );
+                  }
+                  case "weeklyGoal":
+                    return (
+                      <td key={col} className={tdClass("weeklyGoal")} style={stickyStyle("weeklyGoal", getColWidth("weeklyGoal"))}>
+                        {(() => {
+                          const wg = weeklyGoalFor(kpi, currentWeek ?? 1, weekCount);
+                          return wg > 0 ? fmtN(kpi, wg) : "—";
+                        })()}
+                      </td>
+                    );
+                  case "description":
+                    return (
+                      <td key={col} className={tdClass("description")} style={stickyStyle("description", getColWidth("description"))}>
+                        <DescTooltip description={kpi.description} lastNotes={kpi.lastNotes} lastNotesAt={kpi.lastNotesAt}>
+                          <span className="line-clamp-2 text-gray-500 leading-snug cursor-default">
+                            {kpi.description ? kpi.description.slice(0, 60) + (kpi.description.length > 60 ? "…" : "") : "—"}
+                          </span>
+                        </DescTooltip>
+                      </td>
+                    );
+                  case "lastNotes": {
+                    const latest = getLatestWeeklyNote(kpi);
+                    return (
+                      <td key={col} className={tdClass("lastNotes")} style={stickyStyle("lastNotes", getColWidth("lastNotes"))}>
+                        {latest ? (
+                          <div
+                            className="max-h-[3.25rem] overflow-y-auto leading-snug break-all text-gray-500 cursor-default pr-1"
+                            style={{ scrollbarWidth: "thin" }}
+                            title={latest.note}
+                          >
+                            {latest.weekNumber != null && (
+                              <span className="text-gray-400 mr-1">W{latest.weekNumber}:</span>
+                            )}
+                            {latest.note}
+                          </div>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </td>
+                    );
+                  }
+                  case "importedFromOpsp":
+                    return (
+                      <td key={col} className={tdClass("importedFromOpsp")} style={stickyStyle("importedFromOpsp", getColWidth("importedFromOpsp"))}>
+                        {kpi.importedFromOpsp ? (
+                          <span className="text-gray-700 font-medium">Yes</span>
+                        ) : (
+                          <span className="text-gray-300">No</span>
+                        )}
+                      </td>
+                    );
+                  case "createdBy":
+                    return (
+                      <td key={col} className={tdClass("createdBy")} style={stickyStyle("createdBy", getColWidth("createdBy"))}>
+                        <UserAuditCell name={kpi.createdByName} initials={kpi.createdByInitials} />
+                      </td>
+                    );
+                  case "updatedBy":
+                    return (
+                      <td key={col} className={tdClass("updatedBy")} style={stickyStyle("updatedBy", getColWidth("updatedBy"))}>
+                        <UserAuditCell name={kpi.updatedByName} initials={kpi.updatedByInitials} />
+                      </td>
+                    );
+                  case "createdAt":
+                    return (
+                      <td key={col} className={tdClass("createdAt")} style={stickyStyle("createdAt", getColWidth("createdAt"))}>
+                        <DateAuditCell iso={kpi.createdAt} />
+                      </td>
+                    );
+                  case "updatedAt":
+                    return (
+                      <td key={col} className={tdClass("updatedAt")} style={stickyStyle("updatedAt", getColWidth("updatedAt"))}>
+                        <DateAuditCell iso={kpi.updatedAt} />
+                      </td>
+                    );
+                  default:
+                    return null;
+                }
+              };
+
               return (
-                <tr key={kpi.id} className="hover:bg-blue-50/30 transition-colors">
+                <tr key={kpi.id} data-row-id={kpi.id} data-row-label={kpi.name}
+                  onPointerDown={rowReorderEnabled ? (e) => rowDnd.startDrag(kpi.id, e) : undefined}
+                  className={`group hover:bg-blue-50/30 transition-colors ${rowReorderEnabled ? "cursor-grab active:cursor-grabbing" : ""} ${rowDropClass(kpi.id)} ${rowDnd.draggingId === kpi.id ? "opacity-40" : ""}`}>
                   {/* Fixed: Checkbox (hidable) */}
                   {!hideCheckbox && (
                     <td className="sticky z-[15] bg-white px-2 py-2 border-b border-r border-gray-100"
@@ -422,262 +746,19 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                   )}
                   {/* Fixed: ID (hidable) */}
                   {!hideId && (
-                    <td className="sticky z-[15] bg-white px-1 py-2 border-b border-r border-gray-100 text-center"
+                    <td data-no-drag className="sticky z-[15] bg-white px-1 py-2 border-b border-r border-gray-100 text-center"
                       style={{ left: (hideCheckbox ? 0 : 40) + (hideLog ? 0 : 40), width: 40, minWidth: 40, maxWidth: 40 }}>
                       <button onClick={() => openEdit(kpi)} disabled={readOnly}
-                        className={`font-medium ${readOnly ? "text-gray-400 cursor-not-allowed" : "text-gray-900 hover:underline"}`}>
+                        className={`absolute inset-0 flex items-center justify-center font-medium ${readOnly ? "text-gray-400 cursor-not-allowed" : "text-gray-900 hover:underline"}`}>
                         {idx + 1 + (effPage - 1) * effPageSize}
                       </button>
                     </td>
                   )}
 
-                  {/* Progress — percentage + text + bar all consistent now.
-                      Computed from qtdAchieved/qtdGoal (same denominator as
-                      the cards), colored via `getColorByPercentage` so the
-                      thresholds documented in `colorLogic.ts` are honored. */}
-                  {!localHideSet.has("progress") && (
-                    <td className={tdClass("progress")} style={stickyStyle("progress", getColWidth("progress"))}>
-                      <div className="flex items-center gap-2">
-                        <span className={`font-medium w-10 flex-shrink-0 ${progressTextColor}`}>{progressPct.toFixed(0)}%</span>
-                        <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden min-w-[40px]">
-                          <div className={`h-2 rounded-full transition-all ${progressBarBg}`} style={{ width: `${Math.min(progressPct, 100)}%` }} />
-                        </div>
-                      </div>
-                    </td>
-                  )}
-                  {/* Owner */}
-                  {!localHideSet.has("owner") && (
-                    <td className={tdClass("owner", "whitespace-nowrap")} style={stickyStyle("owner", getColWidth("owner"))}>{ownerName}</td>
-                  )}
-                  {/* KPI Name — caps at 3 visible lines; long names scroll
-                      vertically inside the cell. `break-all` lets the cell
-                      break a single very-long unbroken string (e.g. a paste
-                      with no spaces) so it can't blow out the column width. */}
-                  {!localHideSet.has("kpiName") && (
-                    <td className={tdClass("kpiName")} style={stickyStyle("kpiName", getColWidth("kpiName"))}>
-                      <NameTooltip name={kpi.name}>
-                        <div
-                          className="max-h-[3.25rem] overflow-y-auto leading-snug break-all cursor-default pr-1"
-                          style={{ scrollbarWidth: "thin" }}
-                        >
-                          {kpi.name}
-                          {kpi.parentKPI && (
-                            <span
-                              title={`Linked to Team KPI: ${kpi.parentKPI.name}`}
-                              className="ml-1 inline-block px-1.5 py-px text-[9px] font-semibold rounded bg-gray-100 text-gray-600 align-middle"
-                            >
-                              Linked
-                            </span>
-                          )}
-                        </div>
-                      </NameTooltip>
-                    </td>
-                  )}
-                  {/* Team Name */}
-                  {!localHideSet.has("team") && (
-                    <td className={tdClass("team", "whitespace-nowrap")} style={stickyStyle("team", getColWidth("team"))}>
-                      {kpi.team?.name ? (
-                        <span className="text-gray-700 truncate block">{kpi.team.name}</span>
-                      ) : (
-                        <span className="text-gray-300">—</span>
-                      )}
-                    </td>
-                  )}
-                  {/* Team Head (team KPI only) */}
-                  {!localHideSet.has("teamHead") && (
-                    <td className={tdClass("teamHead", "whitespace-nowrap")} style={stickyStyle("teamHead", getColWidth("teamHead"))}>
-                      {kpi.team?.head ? (
-                        <span className="text-gray-700 truncate block">
-                          {kpi.team.head.firstName} {kpi.team.head.lastName}
-                        </span>
-                      ) : (
-                        <span className="text-gray-300">—</span>
-                      )}
-                    </td>
-                  )}
-                  {/* KPI Owners (multi) */}
-                  {!localHideSet.has("kpiOwner") && (
-                    <td className={tdClass("kpiOwner")} style={stickyStyle("kpiOwner", getColWidth("kpiOwner"))}>
-                      {kpi.owners && kpi.owners.length > 0 ? (
-                        <div className="flex flex-col gap-0.5">
-                          {kpi.owners.slice(0, 3).map(u => {
-                            const pct = (kpi.ownerContributions as Record<string, number> | undefined)?.[u.id];
-                            return (
-                              <div key={u.id} className="text-[11px] text-gray-700 truncate leading-tight">
-                                {u.firstName} {u.lastName}
-                                {typeof pct === "number" && (
-                                  <span className="text-gray-400 ml-1">({pct.toFixed(0)}%)</span>
-                                )}
-                              </div>
-                            );
-                          })}
-                          {kpi.owners.length > 3 && (
-                            <div className="text-[10px] text-gray-400">+{kpi.owners.length - 3} more</div>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-gray-300">—</span>
-                      )}
-                    </td>
-                  )}
-                  {/* Measurement Unit */}
-                  {!localHideSet.has("measurementUnit") && (
-                    <td className={tdClass("measurementUnit", "whitespace-nowrap")} style={stickyStyle("measurementUnit", getColWidth("measurementUnit"))}>{kpi.measurementUnit}</td>
-                  )}
-                  {/* Target Value */}
-                  {!localHideSet.has("targetValue") && (
-                    <td className={tdClass("targetValue")} style={stickyStyle("targetValue", getColWidth("targetValue"))}>{fmtN(kpi, kpi.target ?? null)}</td>
-                  )}
-                  {/* Quarterly Goal */}
-                  {!localHideSet.has("quarterlyGoal") && (
-                    <td className={tdClass("quarterlyGoal")} style={stickyStyle("quarterlyGoal", getColWidth("quarterlyGoal"))}>{fmtN(kpi, kpi.quarterlyGoal ?? null)}</td>
-                  )}
-                  {/* QTD Goal — Σ weeklyTargets[1..currentWeek-1].
-                      Falls back to kpi.qtdGoal when currentWeek is unresolvable. */}
-                  {!localHideSet.has("qtdGoal") && (() => {
-                    const { qtdGoal, qtdAchieved } = computeQtd(kpi, qtdWeek, progressDivisionType, weekCount);
-                    return (
-                      <>
-                        <td className={tdClass("qtdGoal")} style={stickyStyle("qtdGoal", getColWidth("qtdGoal"))}>
-                          {qtdGoal != null ? fmtN(kpi, qtdGoal) : "—"}
-                        </td>
-                        {!localHideSet.has("qtdAchieved") && (() => {
-                          // QTD Achieved uses the same semantic traffic-light
-                          // palette as the weekly cells (≥120 blue, ≥100 green,
-                          // ≥80 yellow, <80+updated red, else neutral). RED is
-                          // gated on at least one weekly value being entered —
-                          // mirrors `weekCellColors` semantics so brand-new
-                          // KPIs at 0% don't paint red on first render.
-                          const hasAnyWeeklyValue = Object.values(weekMap).some(
-                            wv => wv?.value != null,
-                          );
-                          const color = qtdAchieved != null
-                            ? getColorByPercentage(qtdAchieved, qtdGoal ?? kpi.target ?? 0, hasAnyWeeklyValue, kpi.reverseColor ?? false)
-                            : null;
-                          const sticky = isFrozen("qtdAchieved");
-                          const boundary = "qtdAchieved" === frozenUpTo;
-                          return (
-                            <td
-                              className={[
-                                "px-3 py-2 text-xs border-b border-r border-gray-100 overflow-hidden align-top text-center font-semibold",
-                                color?.bg || (sticky ? "bg-white" : ""),
-                                color?.text ?? "text-gray-700",
-                                sticky ? `sticky z-[15]${boundary ? " shadow-[2px_0_4px_rgba(0,0,0,0.04)]" : ""}` : "",
-                              ].filter(Boolean).join(" ")}
-                              style={stickyStyle("qtdAchieved", getColWidth("qtdAchieved"))}
-                            >
-                              {qtdAchieved != null ? fmtN(kpi, qtdAchieved) : "—"}
-                            </td>
-                          );
-                        })()}
-                      </>
-                    );
-                  })()}
-                  {/* If qtdGoal column is hidden but qtdAchieved is shown, render it standalone.
-                      Use computeQtd so Standalone KPIs render the avg (not the server-stamped SUM). */}
-                  {localHideSet.has("qtdGoal") && !localHideSet.has("qtdAchieved") && (() => {
-                    const { qtdGoal: dQtdGoal, qtdAchieved: dQtdAchieved } =
-                      computeQtd(kpi, qtdWeek, progressDivisionType, weekCount);
-                    const hasAnyWeeklyValue = Object.values(weekMap).some(
-                      wv => wv?.value != null,
-                    );
-                    const color = dQtdAchieved != null
-                      ? getColorByPercentage(dQtdAchieved, dQtdGoal ?? kpi.target ?? 0, hasAnyWeeklyValue, kpi.reverseColor ?? false)
-                      : null;
-                    const sticky = isFrozen("qtdAchieved");
-                    const boundary = "qtdAchieved" === frozenUpTo;
-                    return (
-                      <td
-                        className={[
-                          "px-3 py-2 text-xs border-b border-r border-gray-100 overflow-hidden align-top text-center font-semibold",
-                          color?.bg || (sticky ? "bg-white" : ""),
-                          color?.text ?? "text-gray-700",
-                          sticky ? `sticky z-[15]${boundary ? " shadow-[2px_0_4px_rgba(0,0,0,0.04)]" : ""}` : "",
-                        ].filter(Boolean).join(" ")}
-                        style={stickyStyle("qtdAchieved", getColWidth("qtdAchieved"))}
-                      >
-                        {dQtdAchieved != null ? fmtN(kpi, dQtdAchieved) : "—"}
-                      </td>
-                    );
-                  })()}
-                  {/* Weekly Goal — current week's target (from weeklyTargets), falling
-                      back to flat target/13 when no per-week breakdown is set. */}
-                  {!localHideSet.has("weeklyGoal") && (
-                    <td className={tdClass("weeklyGoal")} style={stickyStyle("weeklyGoal", getColWidth("weeklyGoal"))}>
-                      {(() => {
-                        const wg = weeklyGoalFor(kpi, currentWeek ?? 1, weekCount);
-                        return wg > 0 ? fmtN(kpi, wg) : "—";
-                      })()}
-                    </td>
-                  )}
-                  {/* Description */}
-                  {!localHideSet.has("description") && (
-                    <td className={tdClass("description")} style={stickyStyle("description", getColWidth("description"))}>
-                      <DescTooltip description={kpi.description} lastNotes={kpi.lastNotes} lastNotesAt={kpi.lastNotesAt}>
-                        <span className="line-clamp-2 text-gray-500 leading-snug cursor-default">
-                          {kpi.description ? kpi.description.slice(0, 60) + (kpi.description.length > 60 ? "…" : "") : "—"}
-                        </span>
-                      </DescTooltip>
-                    </td>
-                  )}
-                  {/* Last Notes — prefers the most recent weekly note from
-                      `KPIWeeklyValue.notes`, falls back to `kpi.lastNotes`
-                      (general note). See `getLatestWeeklyNote` for why both
-                      sources are consulted. */}
-                  {!localHideSet.has("lastNotes") && (() => {
-                    const latest = getLatestWeeklyNote(kpi);
-                    return (
-                      <td className={tdClass("lastNotes")} style={stickyStyle("lastNotes", getColWidth("lastNotes"))}>
-                        {latest ? (
-                          <div
-                            className="max-h-[3.25rem] overflow-y-auto leading-snug break-all text-gray-500 cursor-default pr-1"
-                            style={{ scrollbarWidth: "thin" }}
-                            title={latest.note}
-                          >
-                            {latest.weekNumber != null && (
-                              <span className="text-gray-400 mr-1">W{latest.weekNumber}:</span>
-                            )}
-                            {latest.note}
-                          </div>
-                        ) : (
-                          <span className="text-gray-300">—</span>
-                        )}
-                      </td>
-                    );
-                  })()}
-                  {/* Imported from OPSP — Yes when this KPI was created via the
-                      OPSP "Export → Create KPIs" flow. Neutral styling (locked table). */}
-                  {!localHideSet.has("importedFromOpsp") && (
-                    <td className={tdClass("importedFromOpsp")} style={stickyStyle("importedFromOpsp", getColWidth("importedFromOpsp"))}>
-                      {kpi.importedFromOpsp ? (
-                        <span className="text-gray-700 font-medium">Yes</span>
-                      ) : (
-                        <span className="text-gray-300">No</span>
-                      )}
-                    </td>
-                  )}
-                  {/* Audit columns — Created By / Updated By / Created Date / Updated Date.
-                      Populated by GET /api/kpi (see lib/api/auditUsers.ts). */}
-                  {!localHideSet.has("createdBy") && (
-                    <td className={tdClass("createdBy")} style={stickyStyle("createdBy", getColWidth("createdBy"))}>
-                      <UserAuditCell name={kpi.createdByName} initials={kpi.createdByInitials} />
-                    </td>
-                  )}
-                  {!localHideSet.has("updatedBy") && (
-                    <td className={tdClass("updatedBy")} style={stickyStyle("updatedBy", getColWidth("updatedBy"))}>
-                      <UserAuditCell name={kpi.updatedByName} initials={kpi.updatedByInitials} />
-                    </td>
-                  )}
-                  {!localHideSet.has("createdAt") && (
-                    <td className={tdClass("createdAt")} style={stickyStyle("createdAt", getColWidth("createdAt"))}>
-                      <DateAuditCell iso={kpi.createdAt} />
-                    </td>
-                  )}
-                  {!localHideSet.has("updatedAt") && (
-                    <td className={tdClass("updatedAt")} style={stickyStyle("updatedAt", getColWidth("updatedAt"))}>
-                      <DateAuditCell iso={kpi.updatedAt} />
-                    </td>
-                  )}
+                  {/* Static columns — rendered in the user's drag-and-drop
+                      order. Each cell's styling/colors are unchanged from the
+                      previous hardcoded blocks (see `renderStatic`). */}
+                  {visibleStaticCols.map(renderStatic)}
 
                   {/* Week columns */}
                   {visibleWeekCols.map(w => {
@@ -768,6 +849,9 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
           </tbody>
         </table>
       </HorizontalScroller>
+
+      {/* Floating "lifted" card that follows the cursor while dragging a row. */}
+      {rowDnd.dragGhost}
 
       {infiniteMode && isFetchingMore && (
         <div className="flex items-center justify-center gap-2 py-2.5 text-xs text-gray-400 border-t border-gray-100 bg-gray-50">

@@ -923,7 +923,15 @@ export const SignInComponent = ({
         {/* ─── Right auth panel ─── */}
         <section className="auth-main">
           <header className="auth-main-top fade-in-up d1">
-            <a href="/" className="auth-logo" aria-label={brandName}>{brandName}</a>
+            <a href="/" className="auth-logo" aria-label={brandName}>
+              {/* Theme-aware QuikIT lockup: dark UI → light (white) logo, light UI → dark logo. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={theme === "dark" ? "/brand/quikit-wordmark-light.svg" : "/brand/quikit-wordmark-dark.svg"}
+                alt={brandName}
+                style={{ height: 24, width: "auto", display: "block" }}
+              />
+            </a>
             <button type="button" className="auth-theme"
               onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
               aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}>

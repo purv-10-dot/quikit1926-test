@@ -5,10 +5,12 @@ import {
   getCurrentFiscalWeekFromStart,
   qtdReferenceWeek,
   resolveQuarterForDate,
+  resolveQuarterPosition,
   generateMeetingDayWeeks,
   meetingDayIndex,
   DEFAULT_WEEKS_PER_QUARTER,
   MAX_WEEKS_PER_QUARTER,
+  type QuarterPosition,
 } from "@/lib/utils/fiscal";
 import { useCustomQuarterSettings, useWeeklyMeetingDay } from "@/lib/hooks/useFeatureFlags";
 
@@ -87,6 +89,37 @@ export function useCurrentWeek(year: number | null | undefined, quarter: string 
   }, [year, quarter, meetingDay]);
 
   return week;
+}
+
+/**
+ * Where a given (year, quarter) sits relative to today: "past" | "current" |
+ * "future", resolved from the tenant's real quarter start/end dates. Returns
+ * `null` while the quarter rows are still loading. Feed this to
+ * `weekEditState` so per-week edit gating is quarter/year-aware (a past
+ * quarter's last week and a future quarter's first week no longer slip through
+ * the clamped `useCurrentWeek` value).
+ */
+export function useQuarterPosition(
+  year: number | null | undefined,
+  quarter: string | null | undefined,
+): QuarterPosition | null {
+  const [position, setPosition] = useState<QuarterPosition | null>(null);
+
+  useEffect(() => {
+    if (!year || !quarter) {
+      setPosition(null);
+      return;
+    }
+    (async () => {
+      await ensureLoaded();
+      const match = cache?.find((q) => q.fiscalYear === year && q.quarter === quarter);
+      // No row for this quarter → treat as current so gating falls back to the
+      // week-number window rather than locking everything.
+      setPosition(match ? resolveQuarterPosition(match.startDate, match.endDate) : "current");
+    })();
+  }, [year, quarter]);
+
+  return position;
 }
 
 /**

@@ -12,6 +12,8 @@ export interface EntryDetail {
   entryDate: string;
   projectId?: string;
   issue: { id: string; key: string; title: string; projectId?: string } | null;
+  /** The entry's owner (whose time this is) — not necessarily the viewer. */
+  user?: { firstName: string | null; lastName: string | null; email: string } | null;
 }
 
 interface IssueOption { id: string; key: string; title: string; type: string }
@@ -45,8 +47,9 @@ export function WorklogPopover({
   onChanged,
 }: Props) {
   const { data: session } = useSession();
-  const userName = session?.user?.name || session?.user?.email || "You";
-  const initial = (userName || "U").trim().charAt(0).toUpperCase();
+  // Fallback name for entries that don't carry an owner yet (e.g. an optimistic
+  // row before reload). Real rows use the entry's own `user` — see below.
+  const sessionName = session?.user?.name || session?.user?.email || "You";
   const [entries, setEntries] = useState<EntryDetail[]>([]);
   const [issuesByProject, setIssuesByProject] = useState<Record<string, IssueOption[]>>({});
   const [loading, setLoading] = useState(true);
@@ -212,6 +215,11 @@ export function WorklogPopover({
                   : issues;
               const d = new Date(e.entryDate);
               const dateLabel = `${d.toLocaleDateString(undefined, { month: "short" })} ${d.getDate()}...`;
+              // Show the ENTRY's owner, not the viewer.
+              const ownerName = e.user
+                ? `${e.user.firstName ?? ""} ${e.user.lastName ?? ""}`.trim() || e.user.email
+                : sessionName;
+              const ownerInitial = (ownerName || "U").trim().charAt(0).toUpperCase();
               return (
                 <div
                   key={e.id}
@@ -220,9 +228,9 @@ export function WorklogPopover({
                   <div className="text-gray-700 text-xs">{dateLabel}</div>
                   <div className="flex items-center gap-2">
                     <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-blue-600 text-white text-[10px] font-semibold">
-                      {initial}
+                      {ownerInitial}
                     </span>
-                    <span className="text-gray-800 text-xs truncate">{userName}</span>
+                    <span className="text-gray-800 text-xs truncate">{ownerName}</span>
                   </div>
                   <div>
                     {e.issue || issueOptions.length > 0 ? (

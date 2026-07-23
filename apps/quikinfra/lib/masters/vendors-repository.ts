@@ -168,20 +168,39 @@ export interface ListVendorsOptions {
   orgId: string;
   createdBy: string;
   search?: string;
+  /**
+   * Status view (from the Vendors list tabs). Omit for the legacy picker
+   * behavior (all non-deleted).
+   *   all         → active + blacklisted (non-inactive)
+   *   inactive    → soft-deleted ("inactive") only
+   *   blacklisted → blacklisted only
+   */
+  status?: "all" | "inactive" | "blacklisted";
   /** Pagination — passed straight through to Prisma findMany. */
   take?: number;
   skip?: number;
+  /** Server-side sort (from `parseSort`). Defaults to newest-first. */
+  orderBy?: Array<Record<string, "asc" | "desc">>;
+}
+
+function vendorStatusWhere(status: ListVendorsOptions["status"]): Record<string, unknown> {
+  if (status === "inactive") return { status: "inactive" };
+  if (status === "blacklisted") return { status: "blacklisted" };
+  // "all" tab excludes inactive (they have their own tab); pickers (no status)
+  // keep the legacy "everything except hard-deleted" behavior.
+  if (status === "all") return { status: { notIn: ["inactive", "deleted"] } };
+  return { status: { not: "deleted" } };
 }
 
 function buildVendorsWhere(
-  opts: Pick<ListVendorsOptions, "orgId" | "search">,
+  opts: Pick<ListVendorsOptions, "orgId" | "search" | "status">,
 ): Record<string, unknown> {
   const q = (opts.search ?? "").trim();
   return {
     orgId: opts.orgId,
     // "deleted" rows are removed from the UI entirely; "inactive" rows are
     // still returned so they can show under the Inactive tab.
-    status: { not: "deleted" },
+    ...vendorStatusWhere(opts.status),
     ...(q
       ? {
           OR: [
@@ -199,7 +218,7 @@ function buildVendorsWhere(
 export async function listVendors(opts: ListVendorsOptions): Promise<VendorRecord[]> {
   const rows = await db.cnVendor.findMany({
     where: buildVendorsWhere(opts),
-    orderBy: { createdAt: "desc" },
+    orderBy: opts.orderBy ?? { createdAt: "desc" },
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
   });
@@ -207,7 +226,7 @@ export async function listVendors(opts: ListVendorsOptions): Promise<VendorRecor
 }
 
 export async function countVendors(
-  opts: Pick<ListVendorsOptions, "orgId" | "search">,
+  opts: Pick<ListVendorsOptions, "orgId" | "search" | "status">,
 ): Promise<number> {
   return db.cnVendor.count({ where: buildVendorsWhere(opts) });
 }

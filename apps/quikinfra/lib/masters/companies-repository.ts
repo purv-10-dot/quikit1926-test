@@ -84,6 +84,8 @@ export interface ListCompaniesOptions {
   /** Pagination — passed straight through to Prisma findMany. */
   take?: number;
   skip?: number;
+  /** Server-side sort (from `parseSort`). Defaults to newest-first. */
+  orderBy?: Array<Record<string, "asc" | "desc">>;
 }
 
 function buildCompaniesWhere(opts: Pick<ListCompaniesOptions, "orgId" | "search">): Record<string, unknown> {
@@ -107,7 +109,7 @@ function buildCompaniesWhere(opts: Pick<ListCompaniesOptions, "orgId" | "search"
 export async function listCompanies(opts: ListCompaniesOptions): Promise<CompanyRecord[]> {
   const rows = await db.cnCompany.findMany({
     where: buildCompaniesWhere(opts),
-    orderBy: { createdAt: "desc" },
+    orderBy: opts.orderBy ?? { createdAt: "desc" },
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
   });
