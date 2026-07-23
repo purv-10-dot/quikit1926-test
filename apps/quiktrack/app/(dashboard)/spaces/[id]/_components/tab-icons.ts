@@ -10,6 +10,7 @@ import {
   Clock,
   FileText,
   Lightbulb,
+  BarChart3,
 } from "lucide-react";
 
 /**
@@ -26,6 +27,7 @@ export const TAB_ICONS: Record<string, typeof Globe> = {
   "grouped-kanban": LayoutGrid,
   list: ListChecks,
   "task-table": ListTree,
+  reports: BarChart3,
   timesheet: Clock,
   docs: FileText,
   ideas: Lightbulb,

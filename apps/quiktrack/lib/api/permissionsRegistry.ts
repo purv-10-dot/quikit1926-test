@@ -149,6 +149,7 @@ export const PERMISSION_TREE: PermissionModule[] = [
     leaves: [
       { resource: "ProjectSummary", label: "Summary tab", actions: ["view"] },
       { resource: "ProjectTimeline", label: "Timeline tab", actions: ["view"] },
+      { resource: "ProjectReports", label: "Reports tab", actions: ["view"] },
       { resource: "ProjectBacklog", label: "Backlog tab", actions: ["view"] },
       { resource: "ProjectList", label: "List tab", actions: ["view"] },
       { resource: "ProjectTaskTable", label: "Task Table tab", actions: ["view"] },

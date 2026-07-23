@@ -223,6 +223,7 @@ model Org {
   QtInvitation             QtInvitation[]
   qtIssues                 QtIssue[]
   qtProjects               QtProject[]
+  qtSprintSnapshots        QtSprintSnapshot[]
   qtTeams                  QtTeam[]
   qtCustomFields           QtCustomField[]
   qtIssueFieldValues       QtIssueFieldValue[]
@@ -6152,6 +6153,7 @@ model QtProject {
   members          QtProjectMember[]
   teams            QtProjectTeam[]
   sprints          QtSprint[]
+  sprintSnapshots  QtSprintSnapshot[]
   projectRoles     QtProjectRole[]
   projectUserRoles QtProjectUserRole[]
   customFields     QtCustomField[]
@@ -6457,8 +6459,49 @@ model QtSprint {
   updatedBy   String?
   issues      QtIssue[]
   project     QtProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  snapshot    QtSprintSnapshot?
 
   @@index([projectId, status])
+  @@schema("app_quiktrack")
+}
+
+/// Velocity report support. One row per sprint, capturing the sprint's
+/// "committed" scope at START (PLANNING → ACTIVE) and its "completed" scope at
+/// COMPLETE. Needed because completing a sprint moves unfinished issues OUT of
+/// it, so a closed sprint no longer knows what it originally committed to —
+/// the velocity chart reads committed vs completed from this frozen snapshot.
+///
+/// Scope rule (matches the velocity calc in lib/reports/velocity.ts): only
+/// estimable leaf work counts — EPIC, SUBTASK and BUG types are excluded.
+/// Points sum QtIssue.storyPoints (null → 0). `committedIssueIds` freezes the
+/// exact issue set at start so `completed*` can be computed against that same
+/// set at close, immune to items added/removed mid-sprint.
+model QtSprintSnapshot {
+  id                String    @id @default(cuid())
+  orgId             String
+  projectId         String
+  sprintId          String    @unique
+  /// Σ storyPoints of committed (non-EPIC/SUBTASK/BUG) issues at sprint start.
+  committedPoints   Int       @default(0)
+  /// Count of committed issues at sprint start.
+  committedCount    Int       @default(0)
+  /// Frozen list of QtIssue ids committed at start (the velocity "scope").
+  committedIssueIds Json      @default("[]")
+  /// Σ storyPoints of committed issues that ended in a DONE status at close.
+  /// Null until the sprint is completed.
+  completedPoints   Int?
+  /// Count of committed issues Done at close. Null until completed.
+  completedCount    Int?
+  capturedAt        DateTime  @default(now())
+  completedAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  org               Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  project           QtProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sprint            QtSprint  @relation(fields: [sprintId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([orgId])
   @@schema("app_quiktrack")
 }
 

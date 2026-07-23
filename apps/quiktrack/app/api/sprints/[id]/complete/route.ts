@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { hasAdminAccess, userCanInProject } from "@/lib/api/permissions";
+import { recordCompletedSnapshot } from "@/lib/reports/sprint-snapshot";
 
 export const POST = withOrgAuth<{ id: string }>(
   async ({ orgId, userId }, req, { params }) => {
@@ -46,6 +47,11 @@ export const POST = withOrgAuth<{ id: string }>(
         select: { id: true },
       });
       const doneIds = doneStatuses.map((s) => s.id);
+
+      // Record the velocity "completed" tally against the frozen committed set
+      // BEFORE we move unfinished issues out below — once they're moved, the
+      // committed set can no longer be resolved from the sprint.
+      await recordCompletedSnapshot(tx, params.id);
 
       let destinationSprintId: string | null = null;
       if (moveOpenTo === "new") {

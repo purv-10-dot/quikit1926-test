@@ -28,6 +28,7 @@ export const PROJECT_TABS: ProjectTab[] = [
   { path: "grouped-kanban", label: "Grouped Kanban", perm: { resource: "GroupedKanban", action: "view" } },
   { path: "list", label: "List", perm: { resource: "ProjectList", action: "view" } },
   { path: "task-table", label: "Task Table", perm: { resource: "ProjectTaskTable", action: "view" } },
+  { path: "reports", label: "Reports", perm: { resource: "ProjectReports", action: "view" } },
   { path: "timesheet", label: "Timesheet", perm: { resource: "Timesheet", action: "view" } },
   { path: "docs", label: "Docs", perm: { resource: "Doc", action: "view" } },
   // Product Discovery only — the "All ideas" surface. Excluded from the
