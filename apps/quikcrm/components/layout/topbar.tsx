@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   Target,
   User,
+  UserPlus,
   Users,
   Workflow,
   X,
@@ -87,6 +88,12 @@ const SETTINGS_MENU = [
         icon: Gauge,
         label: "Leads",
         description: "Scoring rules, fields, stages, and sources",
+      },
+      {
+        href: "/settings/prospects",
+        icon: UserPlus,
+        label: "Prospects",
+        description: "LinkedIn profiles saved from the browser extension",
       },
       {
         href: "/settings/call-dispositions",

@@ -7899,6 +7899,46 @@ model CrmLeadSource {
   @@schema("app_quikcrm")
 }
 
+// Prospects captured by the LinkedIn Chrome extension ("Save to CRM"). This is
+// a standalone capture table — it is intentionally NOT a CrmLead. The extension
+// authenticates with a Bearer JWT and posts the extracted profile to
+// /api/leads/from-linkedin, which upserts one row here per (orgId, linkedinUrl).
+model CrmProspect {
+  id             String   @id @default(cuid())
+  orgId          String
+  name           String
+  email          String?
+  phone          String?
+  title          String?
+  company        String?
+  linkedinUrl    String?
+  shortSummary   String?
+  about          String?
+  profilePicture String?
+  // Raw extracted blobs (posts, company data, experiences) kept verbatim for
+  // later enrichment — shape is owned by the extension, so stored as Json.
+  posts          Json?
+  companyData    Json?
+  experiences    Json?
+  savedById      String?
+  savedByName    String?
+  // Conversion state. "New" until the prospect is converted into a CrmLead via
+  // the Prospects page; then "Converted" with a pointer to the created lead.
+  status         String    @default("New")
+  convertedLeadId String?
+  convertedAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // One prospect per LinkedIn profile per org — re-saving the same profile
+  // updates the existing row instead of creating duplicates.
+  @@unique([orgId, linkedinUrl], name: "prospect_org_linkedin_uk")
+  @@index([orgId])
+  @@index([orgId, createdAt])
+  @@index([orgId, status])
+  @@schema("app_quikcrm")
+}
+
 model CrmOpportunity {
   id                  String                          @id @default(cuid())
   orgId               String

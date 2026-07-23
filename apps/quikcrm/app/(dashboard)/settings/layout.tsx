@@ -59,6 +59,7 @@ const ALL_NAV_ITEMS = [
   { href: "/settings/fields", label: "Lead Fields" },
   { href: "/settings/stages", label: "Lead Stages" },
   { href: "/settings/sources", label: "Lead Sources" },
+  { href: "/settings/prospects", label: "Prospects" },
   { href: "/settings/call-dispositions", label: "Call Dispositions" },
   { href: "/settings/product-categories", label: "Categories & Brands" },
   { href: "/settings/product-fields", label: "Product Fields" },

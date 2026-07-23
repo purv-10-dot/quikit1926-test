@@ -160,36 +160,65 @@ function renderTasks(tasks: TaskDetail[], total: number): string {
   );
 }
 
-/** Compact per-user count summary footer. */
+/** Compact per-user vertical key-value summary. */
 function renderUserSummary(u: UserActivityDetail): string {
   const totalActivities = u.callsTotal + u.emailsTotal + u.meetingsTotal + u.tasksTotal;
-  const chip = (label: string, n: number) =>
-    `<td style="padding:6px 12px;font-size:12px;color:#475569;font-family:${FONT_STACK};border:1px solid #e2e8f0;background:#f8fafc;">${escHtml(label)}: <strong style="color:#0f172a;">${n}</strong></td>`;
-  return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:10px 0 4px;border-collapse:separate;border-spacing:6px 0;">
-    <tr>
-      ${chip("Calls", u.callsTotal)}
-      ${chip("Emails", u.emailsTotal)}
-      ${chip("Meetings", u.meetingsTotal)}
-      ${chip("Tasks", u.tasksTotal)}
-      <td style="padding:6px 12px;font-size:12px;color:#1e40af;font-family:${FONT_STACK};border:1px solid #bfdbfe;background:#eff6ff;">Total Activities: <strong>${totalActivities}</strong></td>
-    </tr>
+  // Vertical key : value rows. Label column is fixed-width so the colons line
+  // up; a monospace stack keeps the alignment stable across email clients.
+  const row = (label: string, n: number, emphasize = false) =>
+    `<tr>
+      <td style="padding:3px 12px 3px 0;font-size:13px;color:${emphasize ? "#1e40af" : "#475569"};font-family:${FONT_STACK};white-space:nowrap;">${escHtml(label)}</td>
+      <td style="padding:3px 0;font-size:13px;color:${emphasize ? "#1e40af" : "#475569"};font-family:${FONT_STACK};">:</td>
+      <td style="padding:3px 0 3px 10px;font-size:13px;font-family:${FONT_STACK};"><strong style="color:${emphasize ? "#1e40af" : "#0f172a"};">${n}</strong></td>
+    </tr>`;
+  return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 4px;border-collapse:collapse;">
+    ${row("Calls", u.callsTotal)}
+    ${row("Emails", u.emailsTotal)}
+    ${row("Meetings", u.meetingsTotal)}
+    ${row("Tasks", u.tasksTotal)}
+    ${row("Total Activities", totalActivities, true)}
   </table>`;
 }
 
-/** One complete per-user block (header + 4 sections + summary + divider). */
-function renderUserBlock(u: UserActivityDetail): string {
-  return `<tr><td style="padding:8px 28px 4px;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+/** Blue user-name banner reused by both the summary and detail sections. */
+function renderUserBanner(u: UserActivityDetail): string {
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"
            style="background:#1e40af;border-radius:8px;">
       <tr><td style="padding:10px 14px;font-size:16px;font-weight:700;color:#ffffff;font-family:${FONT_STACK};">
         👤 ${escHtml(u.userName)}
       </td></tr>
+    </table>`;
+}
+
+/** Section band heading (e.g. "Team Member Summary" / "Detailed Activity Report"). */
+function renderSectionHeading(text: string): string {
+  return `<tr><td style="padding:20px 28px 4px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+           style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;">
+      <tr><td align="center" style="padding:12px 14px;font-size:15px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#1e40af;font-family:${FONT_STACK};">
+        ${escHtml(text)}
+      </td></tr>
     </table>
+  </td></tr>`;
+}
+
+/** Per-user summary-only block (banner + count summary + divider). */
+function renderUserSummaryBlock(u: UserActivityDetail): string {
+  return `<tr><td style="padding:8px 28px 4px;">
+    ${renderUserBanner(u)}
+    ${renderUserSummary(u)}
+  </td></tr>
+  <tr><td style="padding:0 28px;"><div style="border-top:1px solid #e2e8f0;margin:12px 0;"></div></td></tr>`;
+}
+
+/** One complete per-user detail block (banner + 4 sections + divider). */
+function renderUserBlock(u: UserActivityDetail): string {
+  return `<tr><td style="padding:8px 28px 4px;">
+    ${renderUserBanner(u)}
     ${renderCalls(u.calls, u.callsTotal)}
     ${renderEmails(u.emails, u.emailsTotal)}
     ${renderMeetings(u.meetings, u.meetingsTotal)}
     ${renderTasks(u.tasks, u.tasksTotal)}
-    ${renderUserSummary(u)}
   </td></tr>
   <tr><td style="padding:0 28px;"><div style="border-top:2px solid #e2e8f0;margin:14px 0;"></div></td></tr>`;
 }
@@ -244,13 +273,24 @@ function renderDemoBanner(d: AssembledDigest): string {
 }
 
 // ── All per-user blocks (or an honest empty state) ────────────────────────────
+// Layout: a "Team Member Summary" section (summaries only, every user) followed
+// by a "Detailed Activity Report" section (full per-user tables, every user).
 function renderUserSections(d: AssembledDigest): string {
   if (d.userDetails.length === 0) {
     return `<tr><td style="padding:20px 28px;font-size:14px;color:#94a3b8;font-family:${FONT_STACK};">
       No rep activity in scope for this period.
     </td></tr>`;
   }
-  return d.userDetails.map(renderUserBlock).join("");
+
+  const summarySection =
+    renderSectionHeading("Team Member Summary") +
+    d.userDetails.map(renderUserSummaryBlock).join("");
+
+  const detailSection =
+    renderSectionHeading("Detailed Activity Report") +
+    d.userDetails.map(renderUserBlock).join("");
+
+  return summarySection + detailSection;
 }
 
 // ── Plain-text fallback (per-user counts) ─────────────────────────────────────
