@@ -54,12 +54,6 @@ export default function LoginPage() {
       initialError={initialError}
       initialStep={initialStep}
       signUpUrl="/register"
-      // Back button on THIS login page returns to the external marketing/
-      // landing site, configured per-environment via NEXT_PUBLIC_LANDING_URL
-      // (no hardcoded URL — set it in each env's .env). Scoped to this page
-      // only — the forgot-password and invitation pages leave backUrl unset,
-      // so their Back button keeps its default "/" behavior.
-      backUrl={requireProdEnv("NEXT_PUBLIC_LANDING_URL").replace(/\/+$/, "")}
       hardNavigate
     />
   );
