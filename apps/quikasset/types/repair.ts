@@ -24,4 +24,7 @@ export type Repair = {
   notes?: string | null;
   status: RepairStatus;
   asset?: Asset | null;
+  /** Platform User.id of who logged/sent the repair; `sentByName` is resolved. */
+  createdByUserId?: string | null;
+  sentByName?: string | null;
 };

@@ -2,8 +2,12 @@
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import {
   buildDocImageKey,
+  buildDocFileKey,
   isAllowedImageType,
+  isAllowedFileType,
   MAX_IMAGE_BYTES,
+  MAX_FILE_BYTES,
+  ALLOWED_FILE_LABEL,
   putObject,
 } from "@/lib/storage";
 
@@ -53,28 +57,57 @@ export const POST = withOrgAuth(async (ctx, req) => {
   if (!isBlobLike(file)) {
     return NextResponse.json({ success: false, error: "file required" }, { status: 400 });
   }
-  if (!isAllowedImageType(file.type)) {
+
+  // Two accepted shapes: an inline image (existing behaviour, 8 MB cap) or a
+  // downloadable attachment (PDF/CSV/Office/ZIP, 25 MB cap). Anything else 415s.
+  const type = file.type;
+  const fileName = (file.name && String(file.name).trim()) || "file";
+  const isImage = isAllowedImageType(type);
+  const isFile = isAllowedFileType(type);
+  if (!isImage && !isFile) {
     return NextResponse.json(
-      { success: false, error: `Unsupported image type: ${file.type}` },
+      {
+        success: false,
+        error: `Unsupported file type${type ? `: ${type}` : ""}. Allowed: ${ALLOWED_FILE_LABEL}.`,
+      },
       { status: 415 },
     );
   }
-  if (file.size > MAX_IMAGE_BYTES) {
+  const cap = isImage ? MAX_IMAGE_BYTES : MAX_FILE_BYTES;
+  if (file.size > cap) {
     return NextResponse.json(
-      { success: false, error: `File too large (max ${MAX_IMAGE_BYTES / 1024 / 1024} MB)` },
+      { success: false, error: `File too large (max ${cap / 1024 / 1024} MB).` },
       { status: 413 },
     );
   }
 
   const buf = Buffer.from(await file.arrayBuffer());
-  const key = buildDocImageKey(ctx.orgId, projectId, file.type);
+  const key = isImage
+    ? buildDocImageKey(ctx.orgId, projectId, type)
+    : buildDocFileKey(ctx.orgId, projectId, fileName);
   try {
-    await putObject(key, buf, file.type);
+    await putObject(key, buf, type);
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Upload failed";
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    const raw = error instanceof Error ? error.message : "Upload failed";
+    // The GCS client surfaces cryptic auth/network errors (e.g. "Premature
+    // close" when the OAuth token fetch to googleapis.com is dropped — usually
+    // a proxy/firewall or a wrong system clock breaking TLS cert validation).
+    // Map those to something actionable; keep the raw message for genuine
+    // storage errors.
+    const networky = /premature close|oauth2\/v4\/token|ENOTFOUND|ECONNRESET|ETIMEDOUT|getaddrinfo|certificate|self.signed|socket hang up/i.test(
+      raw,
+    );
+    const friendly = /GCS not configured/i.test(raw)
+      ? raw
+      : networky
+        ? "Couldn't reach file storage. Check the connection to Google Cloud Storage (proxy/firewall) and that the system clock is set to the correct date."
+        : raw;
+    return NextResponse.json({ success: false, error: friendly }, { status: 502 });
   }
 
   const url = `/api/docs/asset?key=${encodeURIComponent(key)}`;
-  return NextResponse.json({ success: true, data: { key, url } }, { status: 201 });
+  return NextResponse.json(
+    { success: true, data: { key, url, fileName, mimeType: type, size: file.size } },
+    { status: 201 },
+  );
 });

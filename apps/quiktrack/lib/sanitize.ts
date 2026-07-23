@@ -44,7 +44,12 @@ const RICH_TEXT_OPTIONS: sanitizeHtml.IOptions = {
   ],
   allowedAttributes: {
     "*": ["style", "class", "align", "valign"],
-    a: ["href", "name", "target", "rel"],
+    // `download` + `data-file-*` let the editor's file-attachment chip survive
+    // sanitization on render (otherwise it degrades to a bare link).
+    a: [
+      "href", "name", "target", "rel", "title",
+      "download", "data-file-name", "data-file-mime", "data-file-size", "data-file-uploaded",
+    ],
     img: ["src", "alt", "width", "height", "style"],
     table: TABLE_ATTRS,
     tr: TABLE_ATTRS,

@@ -112,7 +112,10 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
       quarter: kpi?.quarter ?? defaultQuarter ?? "Q1",
       year: String(kpi?.year ?? defaultYear ?? CURRENT_YEAR),
       measurementUnit,
-      target: displayTarget > 0 ? String(displayTarget) : "",
+      // Show the saved target — including exactly 0 (a valid zero goal). Only a
+      // fresh create (no kpi) or a genuinely unset target starts blank. A bare
+      // `> 0` check here blanked the edit form for zero-target KPIs.
+      target: kpi?.target != null ? String(displayTarget) : "",
       status: kpi?.status ?? "active",
       currency,
       targetScale: savedScale,
@@ -597,8 +600,12 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
     if (!form.frequency) errs.frequency = "Please choose a frequency.";
 
     const targetNum = parseFloat(form.target);
-    if (form.target === "" || isNaN(targetNum) || targetNum <= 0) {
-      errs.target = "Please enter a target value greater than 0.";
+    // Target is required but may be 0 (e.g. a "zero defects" KPI). Only empty,
+    // non-numeric, or negative values are rejected. The whole breakdown/calc
+    // stack (buildBreakdown, checkBreakdownBalance, colorLogic) already treats
+    // target ≤ 0 safely, so 0 flows through without special-casing here.
+    if (form.target === "" || isNaN(targetNum) || targetNum < 0) {
+      errs.target = "Please enter a target value of 0 or greater.";
     }
     if (!form.divisionType) errs.divisionType = "Please choose a division type.";
     if (form.reverseColor === undefined || form.reverseColor === null) {
@@ -747,6 +754,12 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
   const scaledTarget = isCurrency
     ? (parseFloat(form.target) || 0) * getMultiplier(form.currency, form.targetScale)
     : parseFloat(form.target) || 0;
+
+  // Show the weekly Target-Breakdown grid whenever a VALID non-negative target
+  // is entered — including exactly 0 (a zero goal spreads 0 across every week).
+  // Still hidden while the field is empty/invalid so a fresh form stays clean.
+  const targetEntered = form.target.trim() !== "" && !isNaN(parseFloat(form.target));
+  const showBreakdown = targetEntered && scaledTarget >= 0;
 
   // Scaled-display: when the toggle is on for a Currency KPI with a scale, the
   // weekly breakdown cells SHOW + ACCEPT values in the scale unit (e.g. Cr)
@@ -1273,7 +1286,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
           </div>
 
           {/* Target Breakdown (editable weekly) */}
-          {scaledTarget > 0 && (
+          {showBreakdown && (
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-2">
                 Target Breakdown (Weekly)

@@ -51,6 +51,32 @@ describe("GET /api/org/users/search", () => {
     expect(json.data[0].hasQuikAssetAccess).toBe(true);
   });
 
+  it("excludes soft-removed users from results (matches the list GET's removedUserIds filter)", async () => {
+    asAdmin();
+    mockDb.orgMember.findMany.mockResolvedValue([
+      { user: { id: "u1", email: "a@x.com", firstName: "Al", lastName: "Ice", avatar: null } },
+      { user: { id: "u2", email: "b@x.com", firstName: "Bo", lastName: "Bee", avatar: null } },
+    ] as never);
+    mockDb.app.findUnique.mockResolvedValue({ id: "app" } as never);
+    // u2 is soft-removed from QuikAsset.
+    mockDb.astUserRemoval.findMany.mockResolvedValue([{ userId: "u2" }] as never);
+    // Both still hold a UserAppAccess row (soft-delete never removes it) — the bug
+    // was u2 surfacing as "has access". Only u1 should come back now.
+    mockDb.userAppAccess.findMany.mockResolvedValue([{ userId: "u1" }] as never);
+
+    const res = await GET(makeReq("/api/org/users/search?q=x"));
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.data.map((u: { userId: string }) => u.userId)).toEqual(["u1"]);
+    // The removal lookup is org-scoped over the matched candidates.
+    const rmCall = mockDb.astUserRemoval.findMany.mock.calls[0]?.[0] as {
+      where: { orgId: string; userId: { in: string[] } };
+    };
+    expect(rmCall.where.orgId).toBe("org1");
+    expect(rmCall.where.userId.in).toEqual(["u1", "u2"]);
+  });
+
   it("scopes the member search to the caller's org", async () => {
     asAdmin("org-A");
     mockDb.orgMember.findMany.mockResolvedValue([] as never);

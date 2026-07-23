@@ -4,7 +4,7 @@ import { requireAppAccess } from "@quikit/auth/app-access";
 import { authOptions } from "@/lib/auth";
 import { getOrgId } from "@/lib/api/getOrgId";
 import { ADMIN_TIER_ROLES } from "@quikit/shared";
-import { seedAllDefaultRoles, ensureUserOnRole } from "@/lib/api/seedAppRoles";
+import { seedAllDefaultRoles, ensureDefaultRoleIfNone } from "@/lib/api/seedAppRoles";
 import { loadMyPermissions } from "@/lib/api/permissions";
 import { DashboardShell } from "@/components/dashboard-shell";
 
@@ -47,7 +47,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const isAdminTier =
     session.user.isSuperAdmin === true ||
     ADMIN_TIER_ROLES.has(String(session.user.membershipRole ?? ""));
-  await ensureUserOnRole(session.user.id, orgId, isAdminTier ? adminRoleId : memberRoleId);
+  // First-time bootstrap ONLY: assign a default role when the user has no
+  // QuikAsset role yet. Must NOT override/duplicate a role a manager already
+  // assigned (previously this re-added Member every load for non-admin-tier
+  // users, reverting explicit promotions — the role-reversion bug).
+  await ensureDefaultRoleIfNone(session.user.id, orgId, isAdminTier ? adminRoleId : memberRoleId);
 
   const perms = await loadMyPermissions(session.user.id, orgId);
 

@@ -98,6 +98,7 @@ export const POST = auth.create(async ({ orgId, userId, userEmail }, req) => {
           warrantyEndDate: shared.warrantyEndDate ?? null,
           description: shared.description ?? "",
           assetStatus: "Available",
+          createdByUserId: userId,
         },
         include: { baseCategory: true, category: true },
       }),

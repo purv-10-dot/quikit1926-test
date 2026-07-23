@@ -15,4 +15,7 @@ export type Assignment = {
   returnedAt?: string | null;
   asset?: Asset | null;
   user?: User | null;
+  /** Platform User.id of who performed the assignment; `assignedByName` resolved. */
+  assignedByUserId?: string | null;
+  assignedByName?: string | null;
 };

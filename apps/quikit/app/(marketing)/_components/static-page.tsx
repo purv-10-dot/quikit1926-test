@@ -11,6 +11,7 @@ export type StaticPageData = {
   scripts: string[];
 };
 
+
 /**
  * Launcher login URL. Marketing is auth-less; its "Log in" CTA redirects
  * to the central auth app (`NEXT_PUBLIC_AUTH_URL/login`) carrying a

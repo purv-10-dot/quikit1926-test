@@ -7,7 +7,7 @@ import { requireAdmin } from "@/lib/api/requireAdmin";
 import { getQuikAssetAppId } from "@/lib/api/permissions";
 import { seedAllDefaultRoles, ensureUserOnRole } from "@/lib/api/seedAppRoles";
 import { ensureLinkedEmployee } from "@/lib/api/employeeLink";
-import { removedUserIds } from "@/lib/api/removal";
+import { removedUserIds, isRemovedFromQuikAsset } from "@/lib/api/removal";
 import {
   INVITE_METHOD,
   renderInvitationEmail,
@@ -403,6 +403,10 @@ export async function POST(req: NextRequest) {
     /** True when path C ran (brand-new User row created). Helps the UI decide
      *  whether to refresh the list or just toast "Granted access". */
     let newUserCreated = false;
+    /** True when this add re-activated a soft-removed member (marker cleared).
+     *  The user keeps their existing login, so we skip the onboarding email and
+     *  temp-password display — same as granting access to an existing member. */
+    let isReAdd = false;
 
     if (linkExistingUserId) {
       // Path A — verify the target is already a member of this org.
@@ -416,6 +420,9 @@ export async function POST(req: NextRequest) {
           { status: 404 },
         );
       }
+      // Granting access to a member also lifts any prior QuikAsset soft-removal,
+      // so the restore is complete regardless of entry path. No-op when absent.
+      await db.astUserRemoval.deleteMany({ where: { orgId, userId: linkExistingUserId } });
       newUserId = linkExistingUserId;
     } else {
       const existingUser = await db.user.findUnique({ where: { email: normalisedEmail } });
@@ -426,29 +433,42 @@ export async function POST(req: NextRequest) {
           where: { orgId_userId: { orgId, userId: existingUser.id } },
         });
         if (existingMembership) {
-          return NextResponse.json(
-            {
-              success: false,
-              error:
-                "This user is already a member of the organisation. Pick them from the email dropdown to grant QuikAsset access.",
+          // A soft-removed member is re-addable. Soft-delete only records an
+          // AstUserRemoval marker — OrgMember/access/role/employee are all kept —
+          // so re-adding just clears the marker and re-ensures access below.
+          // Only a genuinely-active member is a true duplicate → 409. Without
+          // this a removed user is a dead end: the "@" dropdown excludes them
+          // AND this path rejected them.
+          if (await isRemovedFromQuikAsset(existingUser.id, orgId)) {
+            await db.astUserRemoval.deleteMany({ where: { orgId, userId: existingUser.id } });
+            isReAdd = true;
+            newUserId = existingUser.id;
+          } else {
+            return NextResponse.json(
+              {
+                success: false,
+                error:
+                  "This user is already a member of the organisation. Pick them from the email dropdown to grant QuikAsset access.",
+              },
+              { status: 409 },
+            );
+          }
+        } else {
+          await db.orgMember.create({
+            data: {
+              orgId,
+              userId: existingUser.id,
+              role,
+              status: "active",
+              createdBy: actorId,
+              inviteMethod: invitationMethod,
+              inviteProvider: ssoProvider,
+              invitationToken: crypto.randomUUID(),
+              invitedAt: new Date(),
             },
-            { status: 409 },
-          );
+          });
+          newUserId = existingUser.id;
         }
-        await db.orgMember.create({
-          data: {
-            orgId,
-            userId: existingUser.id,
-            role,
-            status: "active",
-            createdBy: actorId,
-            inviteMethod: invitationMethod,
-            inviteProvider: ssoProvider,
-            invitationToken: crypto.randomUUID(),
-            invitedAt: new Date(),
-          },
-        });
-        newUserId = existingUser.id;
       } else {
         // Path C — create the User row.
         //
@@ -570,7 +590,7 @@ export async function POST(req: NextRequest) {
     // Native: "Here's your temporary password" + link to /login
     // SSO:    "Sign in with Google/Microsoft" — never includes a password.
     // Only sent for brand-new / newly-added members (not the link-existing path).
-    if (!linkExistingUserId && membership?.invitationToken) {
+    if (!linkExistingUserId && !isReAdd && membership?.invitationToken) {
       try {
         const [org, inviter] = await Promise.all([
           db.org.findUnique({
@@ -621,10 +641,11 @@ export async function POST(req: NextRequest) {
         data: {
           ...buildUserResponse(membership!, appRole, employee),
           // Plaintext temp password — shown ONCE in the admin UI when the server
-          // generated one (Native + no admin-supplied pw).
-          tempPassword: generatedTempPassword ?? undefined,
+          // generated one (Native + no admin-supplied pw). Never for a re-add:
+          // the user keeps their existing credentials.
+          tempPassword: isReAdd ? undefined : (generatedTempPassword ?? undefined),
         },
-        meta: { usedDefaultPassword, newUserCreated },
+        meta: { usedDefaultPassword: isReAdd ? false : usedDefaultPassword, newUserCreated },
       },
       { status: 201 },
     );

@@ -231,6 +231,7 @@ model Org {
   QtUserActivity           QtUserActivity[]
   QtUserViewPref           QtUserViewPref[]
   QtReportView             QtReportView[]
+  QtSavedFilter            QtSavedFilter[]
   UserAppRole              QtUserAppRole[]
   UserPermissionExtra      QtUserPermissionExtra[]
   qsAppRoles               QsAppRole[]
@@ -6903,6 +6904,34 @@ model QtReportView {
   Org         Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId, userId, kind])
+  @@schema("app_quiktrack")
+}
+
+/// A user-saved work-item filter for the global Filters surface (the Jira-style
+/// "Save filter" flow). `criteria` is the opaque toolbar state blob the UI
+/// persists (search + built-in filters + customFilters) — shape owned by the
+/// client. Reuses the app's existing saved-view conventions (owner userId,
+/// JSON blob, `visibility` "private"|"shared" like QtIdeaView, `starred` like
+/// QtDashboard) rather than a bespoke viewer/editor sharing matrix.
+model QtSavedFilter {
+  id          String   @id @default(cuid())
+  orgId       String
+  userId      String
+  name        String
+  description String?
+  criteria    Json
+  visibility  String   @default("private") // "private" | "org" | "space" | "user"
+  // For "space": project ids whose members may see it. For "user": user ids.
+  // Empty for "private"/"org".
+  viewerIds   String[] @default([])
+  starred     Boolean  @default(false)
+  isDeleted   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  Org         Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, userId])
+  @@index([orgId, visibility])
   @@schema("app_quiktrack")
 }
 
@@ -18466,6 +18495,10 @@ model AstAsset {
   invoiceFileType      String?
   invoiceFileSize      Int?
   assetStatus          AstAssetStatus   @default(Available)
+  // Platform User.id of whoever added this asset ("Added by"). Plain string, no
+  // FK — same convention as AstAssetRequest.requesterUserId; full history lives
+  // in AstAuditLog.
+  createdByUserId      String?
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
   assignments          AstAssignment[]
@@ -18502,6 +18535,8 @@ model AstRepair {
   returnedDate     String?
   status           AstRepairStatus  @default(Pending)
   notes            String?
+  // Platform User.id of whoever logged/sent this repair ("Sent to repair by").
+  createdByUserId  String?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
   replacements     AstReplacement[]
@@ -18576,6 +18611,9 @@ model AstAssignment {
   condition      String
   expectedReturn String?
   notes          String?
+  // Platform User.id of whoever performed this assignment ("Assigned by").
+  // Distinct from `userId`, which is the AstEmployee the asset is assigned TO.
+  assignedByUserId String?
   status         AstAssignmentStatus @default(Active)
   assignedAt     DateTime            @default(now())
   returnedAt     DateTime?

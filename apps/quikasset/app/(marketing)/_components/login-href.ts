@@ -6,7 +6,9 @@ import { buildLoginUrl } from "@quikit/shared/login-url";
  */
 export const LOGIN_HREF = buildLoginUrl({
   appUrl: process.env.NEXT_PUBLIC_QUIKASSET_URL ?? "http://localhost:3012",
-  postLoginPath: "/dashboard",
+  // Land on "/", whose server redirect routes by permission (admins →
+  // /dashboard, plain Members → /employee-view). /dashboard 403s for Members.
+  postLoginPath: "/",
 });
 
 /**

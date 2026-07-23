@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
     maxAge: 7 * 24 * 60 * 60,
   });
 
-  const safeTo = sanitizeRedirect(payload.to ?? "/dashboard");
+  const safeTo = sanitizeRedirect(payload.to ?? "/");
   const response = NextResponse.redirect(new URL(safeTo, origin));
 
   const cookieName =
@@ -98,10 +98,12 @@ export async function GET(request: NextRequest) {
   return response;
 }
 
-/** Reject absolute URLs / protocol-relative URLs / cross-host redirects. */
+/** Reject absolute URLs / protocol-relative URLs / cross-host redirects. Falls
+ *  back to "/", whose server redirect routes by permission (never /dashboard,
+ *  which 403s for Members). */
 function sanitizeRedirect(to: string): string {
-  if (!to || typeof to !== "string") return "/dashboard";
-  if (!to.startsWith("/")) return "/dashboard";
-  if (to.startsWith("//")) return "/dashboard";
+  if (!to || typeof to !== "string") return "/";
+  if (!to.startsWith("/")) return "/";
+  if (to.startsWith("//")) return "/";
   return to;
 }
