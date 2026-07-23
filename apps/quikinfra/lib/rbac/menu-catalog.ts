@@ -75,6 +75,8 @@ export const MENU_CATALOG: MenuItem[] = [
   { key: "master.machinery",    label: "Machinery",         url: "/masters/machinery",    module: "MASTERS", supports: allFour },
   { key: "master.asset",        label: "Assets / Tools",    url: "/masters/assets",       module: "MASTERS", supports: allFour },
   { key: "master.cost_center",  label: "Cost Centers",      url: "/masters/cost-centers", module: "MASTERS", supports: allFour },
+  { key: "master.labour",       label: "Labour Master",     url: "/masters/labour",       module: "MASTERS", supports: allFour },
+  { key: "master.workman",      label: "Workmen",           url: "/masters/workmen",      module: "MASTERS", supports: allFour },
 
   // ─── PURCHASE ────────────────────────────────────────────────────
   { key: "purchase.mr",     label: "Purchase Requisitions", url: "/purchase/requisitions", module: "PURCHASE", supports: allFour },

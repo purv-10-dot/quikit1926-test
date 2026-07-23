@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { generateDocNumber } from "@/lib/db/doc-number";
-import { parsePagination } from "@/lib/http/pagination";
+import { parsePagination, parseSort } from "@/lib/http/pagination";
 
 /**
  * Stock Reconciliation — list + create.
@@ -49,10 +49,28 @@ export async function GET(req: NextRequest) {
       : { in: ctx.projectIds };
   }
 
+  if (searchParams.get("counts") === "1") {
+    const countsWhere = { ...where };
+    delete countsWhere.status;
+    const groups = await db.cnStockReconciliation.groupBy({
+      by: ["status"],
+      where: countsWhere,
+      _count: { _all: true },
+    });
+    const counts: Record<string, number> = {};
+    for (const g of groups) counts[String(g.status)] = g._count._all;
+    return NextResponse.json({ counts });
+  }
+
+  const { orderBy } = parseSort(
+    searchParams,
+    ["reconciliationNumber", "reconciliationDate", "status", "createdAt"],
+    { field: "reconciliationDate", order: "desc" },
+  );
   const p = parsePagination(req);
   const rows = await db.cnStockReconciliation.findMany({
     where,
-    orderBy: { reconciliationDate: "desc" },
+    orderBy,
     select: {
       id: true,
       reconciliationNumber: true,
@@ -103,12 +121,13 @@ export async function GET(req: NextRequest) {
   }));
 
   if (p.paginated) {
+    const total = await db.cnStockReconciliation.count({ where });
     return NextResponse.json({
       data,
-      total: data.length,
+      total,
       page: p.page,
       pageSize: p.pageSize,
-      hasMore: data.length === p.pageSize,
+      hasMore: p.skip + data.length < total,
     });
   }
   return NextResponse.json({ data, total: data.length });

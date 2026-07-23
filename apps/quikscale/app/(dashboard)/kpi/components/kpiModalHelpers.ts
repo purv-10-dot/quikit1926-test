@@ -48,6 +48,31 @@ export const TARGET_LOCK_TIP =
   "Target Value is locked because Add Past Week Data is disabled. Enable it in Settings → Configurations to edit.";
 
 /**
+ * Whether a single Standalone weekly Target-Breakdown cell should render as an
+ * editable `<select>` (0 / target) instead of a locked `<input>`.
+ *
+ * Standalone semantics: each week independently carries the full target, and
+ * the user may skip any week (pick 0) or hit the full target. That choice is
+ * always available for the CURRENT and FUTURE weeks — the "Add Past Week Data"
+ * (`pastWeekAllowed`) toggle only governs PAST weeks:
+ *
+ *   - current / future week (`weekIsPast === false`) → always editable
+ *   - past week (`weekIsPast === true`) → editable only when `pastWeekAllowed`
+ *
+ * Defaults come from {@link buildBreakdown} (past → 0, current/future → target).
+ * Cumulative always returns `false` (never a dropdown). Single source of truth
+ * for both create (KPIModal) and edit (LogModal) modes, and both the Individual
+ * row and the Team per-owner rows.
+ */
+export function isStandaloneCellEditable(
+  divisionType: DivisionType,
+  weekIsPast: boolean,
+  pastWeekAllowed: boolean,
+): boolean {
+  return divisionType === "Standalone" && (!weekIsPast || pastWeekAllowed);
+}
+
+/**
  * Format a single weekly breakdown value for display.
  * - Number unit: rounded to nearest integer
  * - All other units: 2 decimal places
@@ -112,8 +137,9 @@ export function onePerWeekBreakdown(
  *   Defaults to 1 (all weeks editable). Standalone mode ignores this — all
  *   weeks get the full target since they're independent.
  *
- * Returns an empty-string map when `target <= 0` (so form fields stay
- * placeholder-visible).
+ * Returns an all-zero map (`"0"`/`"0.00"`) when `target === 0` — a valid
+ * "zero" goal where every week's target is 0. A negative target returns an
+ * empty-string map (so form fields stay placeholder-visible mid-typing).
  */
 export function buildBreakdown(
   divisionType: DivisionType,
@@ -124,9 +150,21 @@ export function buildBreakdown(
 ): WeeklyBreakdown {
   const weeks = weeksArray(weeksPerQuarter);
   const map: WeeklyBreakdown = {};
-  if (targetNum <= 0) {
+  // Negative target is invalid (rejected by validation). Leave cells empty so a
+  // transient "-"/mid-typing value doesn't populate the grid.
+  if (targetNum < 0) {
     weeks.forEach((w) => {
       map[w] = "";
+    });
+    return map;
+  }
+  // A target of exactly 0 is a valid "zero" goal (e.g. a zero-defects KPI):
+  // every week carries a 0 target, so the whole breakdown is 0. Both Cumulative
+  // and Standalone reduce to the same all-zero distribution.
+  if (targetNum === 0) {
+    const zeroVal = fmtBreakdown(0, measurementUnit);
+    weeks.forEach((w) => {
+      map[w] = zeroVal;
     });
     return map;
   }
@@ -255,7 +293,8 @@ export function applyWeeklyEdit(
  * @param firstEditableWeek Weeks before this are blocked and get "0".
  *   Defaults to 1 (all weeks editable).
  *
- * Returns an empty-string map when the owner sub-target is <= 0.
+ * Returns an all-zero map when the owner sub-target is exactly 0, and an
+ * empty-string map when it is negative.
  */
 export function buildOwnerBreakdown(
   ownerContributionPct: number,
@@ -267,8 +306,15 @@ export function buildOwnerBreakdown(
 ): WeeklyBreakdown {
   const weeks = weeksArray(weeksPerQuarter);
   const ownerSubTarget = totalTarget * (ownerContributionPct / 100);
-  if (ownerSubTarget <= 0) {
+  // Negative sub-target is invalid — leave cells empty.
+  if (ownerSubTarget < 0) {
     return Object.fromEntries(weeks.map((w) => [w, ""])) as WeeklyBreakdown;
+  }
+  // Zero sub-target (whole-KPI target of 0, or a 0% owner) → every week is 0,
+  // mirroring buildBreakdown's zero-target behavior so the two stay in sync.
+  if (ownerSubTarget === 0) {
+    const zeroVal = unit === "Number" ? "0" : "0.00";
+    return Object.fromEntries(weeks.map((w) => [w, zeroVal])) as WeeklyBreakdown;
   }
 
   // Standalone: each week independently = full owner sub-target.

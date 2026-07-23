@@ -4,9 +4,8 @@
  * import from `@/components/masters/MasterListPage`; this file makes that
  * path resolve without forcing a sweep across every consumer.
  *
- * Also re-declares `FieldConfig` here. Consumers (store/material-issue,
- * store/stock-transfer, etc.) import this type alongside MasterListPage to
- * type the header-field arrays they hand to MultiLineDocForm. The shape is
+ * Also re-declares `FieldConfig` here. Some consumers import this type
+ * alongside MasterListPage to type their header-field arrays. The shape is
  * intentionally permissive so the existing pages compile without edits.
  */
 

@@ -21,12 +21,16 @@ export interface IndentSeedLine {
 /** Item-master resolution for one indent line, produced by the caller. */
 export interface ResolvedSeedItem {
   itemId: string;
+  /** Denormalized item name so the (lazy) picker shows the label without
+   * loading the whole item master. */
+  itemName: string;
   prefillGroupId: string;
   uomCode: string;
 }
 
 export interface SeededRfqLine {
   itemId: string;
+  itemName: string;
   prefillGroupId: string;
   quantity: string;
   uomCode: string;
@@ -42,6 +46,7 @@ export function buildRfqLinesFromIndent<T extends IndentSeedLine>(
     const r = resolve(l);
     return {
       itemId: r.itemId,
+      itemName: r.itemName ?? "",
       prefillGroupId: r.prefillGroupId,
       quantity: String(l.qtyRequested ?? l.indentedQty ?? l.quantity ?? ""),
       uomCode: l.uomCode ?? r.uomCode ?? "",

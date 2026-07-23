@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   parsePagination,
+  parseSort,
   paginatedResponse,
   paginateInMemory,
   paginateDb,
@@ -82,6 +83,46 @@ describe("paginateInMemory", () => {
     expect(res.data).toEqual([3, 4, 5]);
     expect(res.total).toBe(10);
     expect(res.hasMore).toBe(true);
+  });
+});
+
+describe("parseSort", () => {
+  const allowed = ["name", "createdAt", "status"] as const;
+  const fallback = { field: "createdAt", order: "desc" as const };
+
+  it("falls back when no sort params are present", () => {
+    const s = parseSort(url(""), allowed, fallback);
+    expect(s.sortBy).toBe("createdAt");
+    expect(s.sortOrder).toBe("desc");
+    expect(s.orderBy).toEqual([{ createdAt: "desc" }, { id: "asc" }]);
+  });
+
+  it("applies a whitelisted column + direction", () => {
+    const s = parseSort(url("?sortBy=name&sortOrder=asc"), allowed, fallback);
+    expect(s.sortBy).toBe("name");
+    expect(s.sortOrder).toBe("asc");
+    expect(s.orderBy).toEqual([{ name: "asc" }, { id: "asc" }]);
+  });
+
+  it("rejects a non-whitelisted column and uses the fallback", () => {
+    const s = parseSort(url("?sortBy=passwordHash&sortOrder=asc"), allowed, fallback);
+    expect(s.sortBy).toBe("createdAt");
+    expect(s.orderBy).toEqual([{ createdAt: "asc" }, { id: "asc" }]);
+  });
+
+  it("defaults an invalid direction to the fallback order", () => {
+    const s = parseSort(url("?sortBy=name&sortOrder=sideways"), allowed, fallback);
+    expect(s.sortOrder).toBe("desc");
+  });
+
+  it("does not append an id tie-break when sorting by id", () => {
+    const s = parseSort(url("?sortBy=id&sortOrder=asc"), ["id"], { field: "id" });
+    expect(s.orderBy).toEqual([{ id: "asc" }]);
+  });
+
+  it("accepts a NextRequest-like { url } and a URLSearchParams", () => {
+    expect(parseSort({ url: "http://x/?sortBy=name" }, allowed, fallback).sortBy).toBe("name");
+    expect(parseSort(new URLSearchParams("sortBy=status"), allowed, fallback).sortBy).toBe("status");
   });
 });
 

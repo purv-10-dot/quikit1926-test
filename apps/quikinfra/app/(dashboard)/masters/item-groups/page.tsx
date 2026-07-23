@@ -185,10 +185,10 @@ export default function ItemGroupsPage() {
         <span
           className={`text-xs font-medium px-1.5 py-0.5 rounded ${
             row.depth === 0
-              ? "bg-orange-50 text-orange-700"
+              ? "bg-accent-50 text-accent-700"
               : row.depth === 1
               ? "bg-green-50 text-green-700"
-              : "bg-orange-50 text-orange-700"
+              : "bg-accent-50 text-accent-700"
           }`}
         >
           L{(row.depth ?? 0) + 1}

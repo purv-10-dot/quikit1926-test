@@ -44,17 +44,25 @@ export interface ListUOMsOptions {
   /** Pagination — passed straight through to Prisma findMany. */
   take?: number;
   skip?: number;
+  /** Status view. Omit for legacy picker behavior (all non-deleted). */
+  status?: "active" | "inactive" | "all";
+  /** Server-side sort (from `parseSort`). Defaults to the repo default. */
+  orderBy?: Array<Record<string, "asc" | "desc">>;
 }
 
 function buildUOMsWhere(
-  opts: Pick<ListUOMsOptions, "orgId" | "search">,
+  opts: Pick<ListUOMsOptions, "orgId" | "search" | "status">,
 ): Record<string, unknown> {
   const q = (opts.search ?? "").trim();
   return {
     orgId: opts.orgId,
     // "deleted" rows are removed from the UI entirely; "inactive" rows are
     // still returned so they can show under the Inactive tab.
-    status: { not: "deleted" },
+    ...(opts.status === "inactive"
+      ? { status: "inactive" }
+      : opts.status === "active"
+        ? { status: { notIn: ["inactive", "deleted"] } }
+        : { status: { not: "deleted" } }),
     ...(q
       ? {
           OR: [
@@ -70,7 +78,7 @@ function buildUOMsWhere(
 export async function listUOMs(opts: ListUOMsOptions): Promise<UOMRecord[]> {
   const rows = await db.cnUOM.findMany({
     where: buildUOMsWhere(opts),
-    orderBy: { code: "asc" },
+    orderBy: opts.orderBy ?? { code: "asc" },
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
   });
@@ -78,7 +86,7 @@ export async function listUOMs(opts: ListUOMsOptions): Promise<UOMRecord[]> {
 }
 
 export async function countUOMs(
-  opts: Pick<ListUOMsOptions, "orgId" | "search">,
+  opts: Pick<ListUOMsOptions, "orgId" | "search" | "status">,
 ): Promise<number> {
   return db.cnUOM.count({ where: buildUOMsWhere(opts) });
 }

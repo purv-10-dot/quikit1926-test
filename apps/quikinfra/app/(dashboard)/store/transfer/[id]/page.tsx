@@ -35,7 +35,7 @@ import {
 import { ApprovalActionBar } from "@/components/ApprovalActionBar";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useStockTransfer } from "@/hooks/use-store";
-import { useItems, useAssets } from "@/hooks/use-masters";
+import { useAssets } from "@/hooks/use-masters";
 import { usePermissions, type MeResponse } from "@/hooks/use-permissions";
 import { USER_TYPE_CATALOG } from "@/lib/rbac/user-types";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
@@ -249,18 +249,8 @@ export default function StockTransferDetailPage() {
   const router = useRouter();
   const qc = useQueryClient();
   const { data: st, isLoading } = useStockTransfer(id);
-  const { data: itemsData } = useItems();
   const { data: assetsData } = useAssets();
   const { me } = usePermissions();
-
-  // Look-up table from the items master so line rows whose itemName
-  // wasn't denormalised at save-time (older records) still render the
-  // real material name / code / uom instead of "—".
-  const itemById = useMemo(() => {
-    const m = new Map<string, ItemMaster>();
-    for (const i of (itemsData?.data ?? []) as ItemMaster[]) m.set(i.id, i);
-    return m;
-  }, [itemsData]);
 
   const assetById = useMemo(() => {
     const m = new Map<string, AssetMaster>();
@@ -496,11 +486,11 @@ export default function StockTransferDetailPage() {
             {/* Overview card */}
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-6 py-5">
               <div className="flex items-center gap-3 mb-5">
-                <span className="w-9 h-9 rounded-md flex items-center justify-center bg-orange-50 text-orange-600 border border-orange-200">
+                <span className="w-9 h-9 rounded-md flex items-center justify-center bg-accent-50 text-accent-600 border border-accent-200">
                   <Truck className="w-5 h-5" />
                 </span>
                 <div>
-                  <div className="text-sm font-mono font-semibold text-gray-900">
+                  <div className="text-sm font-semibold text-gray-900">
                     {st.transferNumber ?? "—"}
                   </div>
                   <div className="mt-0.5 text-[11px] text-gray-500">
@@ -611,7 +601,7 @@ export default function StockTransferDetailPage() {
                 <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
                   <AlertTriangle className="w-3 h-3" /> E-Way Bill
                 </span>
-                <span className="font-mono">{st.ewayBillNo}</span>
+                <span className="">{st.ewayBillNo}</span>
                 {st.interstateTransfer && (
                   <span className="ml-auto text-[10px] text-gray-500">
                     Interstate transfer
@@ -657,25 +647,18 @@ export default function StockTransferDetailPage() {
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {lines.map((l: TransferLine, idx: number) => {
-                        // Fallback chain: prefer values stored on the
-                        // line, otherwise look up the item master. Keeps
-                        // older records (saved before itemName was
-                        // denormalised) rendering correctly.
-                        const masterItem = l.itemId
-                          ? itemById.get(l.itemId)
-                          : null;
-                        const itemName =
-                          l.itemName ?? masterItem?.name ?? "—";
-                        const itemCode =
-                          l.itemCode ?? masterItem?.code ?? "";
-                        const uomCode =
-                          l.uomCode ?? masterItem?.uomCode ?? "";
+                        // Line fields are denormalized at save-time; no item
+                        // master load needed (older pre-denormalization
+                        // records fall back to the id / blank).
+                        const itemName = l.itemName ?? "—";
+                        const itemCode = l.itemCode ?? "";
+                        const uomCode = l.uomCode ?? "";
                         return (
                         <tr
                           key={l.id ?? l.itemId ?? idx}
                           className="hover:bg-indigo-50/20 transition-colors"
                         >
-                          <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
+                          <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">
                             {String(idx + 1).padStart(2, "0")}
                           </td>
                           <td className="px-4 py-3">
@@ -683,7 +666,7 @@ export default function StockTransferDetailPage() {
                               {itemName}
                             </div>
                             {itemCode && (
-                              <div className="text-[10px] text-gray-400 font-mono mt-0.5">
+                              <div className="text-[10px] text-gray-400 mt-0.5">
                                 {itemCode}
                               </div>
                             )}
@@ -775,7 +758,7 @@ export default function StockTransferDetailPage() {
                             key={l.id ?? l.assetId ?? idx}
                             className="hover:bg-indigo-50/20 transition-colors"
                           >
-                            <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
+                            <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">
                               {String(idx + 1).padStart(2, "0")}
                             </td>
                             <td className="px-4 py-3">
@@ -783,7 +766,7 @@ export default function StockTransferDetailPage() {
                                 {assetName}
                               </div>
                               {assetCode && (
-                                <div className="text-[10px] text-gray-400 font-mono mt-0.5">
+                                <div className="text-[10px] text-gray-400 mt-0.5">
                                   {assetCode}
                                 </div>
                               )}
@@ -991,7 +974,7 @@ function Stat({
         {label}
       </div>
       <div
-        className={`mt-1 text-sm text-gray-900 truncate ${mono ? "font-mono text-xs" : ""} ${
+        className={`mt-1 text-sm text-gray-900 truncate ${mono ? "text-xs" : ""} ${
           strong ? "font-semibold" : ""
         }`}
       >

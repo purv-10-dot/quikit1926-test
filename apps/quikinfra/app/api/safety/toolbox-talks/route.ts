@@ -29,7 +29,9 @@ export async function GET(req: NextRequest) {
   }
 
   if (search) filtered = filtered.filter(r => r.topic.toLowerCase().includes(search) || r.conductedBy.toLowerCase().includes(search));
-  return NextResponse.json({ data: filtered, total: filtered.length });
+  // Newest-first: the backing array is append-ordered, so reverse a copy
+  // (never mutate `data`) to surface the most recently added row at the top.
+  return NextResponse.json({ data: [...filtered].reverse(), total: filtered.length });
 }
 
 export async function POST(req: NextRequest) {

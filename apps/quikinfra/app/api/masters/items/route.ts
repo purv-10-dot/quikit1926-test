@@ -5,7 +5,7 @@ import {
   createItem,
 } from "@/lib/masters/items-repository";
 import { cachedJson } from "@/lib/http/cache";
-import { paginateDb } from "@/lib/http/pagination";
+import { paginateDb, parseSort } from "@/lib/http/pagination";
 import { withListRoute, withMutationRoute, DomainError } from "@/lib/http";
 
 /**
@@ -30,20 +30,28 @@ export async function GET(req: NextRequest) {
     { entityLabel: "item" },
     async ({ ctx, searchParams, pagination }) => {
       // `status=all` / `status=inactive` (sent by the master list to power
-      // its "Show inactive" toggle) opts into soft-deleted rows. Every other
-      // caller omits status and gets active-only.
+      // its Active / Inactive / All tabs). Every other caller omits status
+      // and gets active-only.
       const statusParam = (searchParams.get("status") ?? "").toLowerCase();
-      const includeInactive = statusParam === "all" || statusParam === "inactive";
+      const status: "active" | "inactive" | "all" =
+        statusParam === "all" ? "all" : statusParam === "inactive" ? "inactive" : "active";
       const baseOpts = {
         orgId: ctx.orgId,
         createdBy: ctx.userId,
         search: searchParams.get("search") ?? "",
         groupId: searchParams.get("groupId") || undefined,
-        includeInactive,
+        status,
       };
+      const { orderBy } = parseSort(
+        searchParams,
+        // Scalar cnItem columns only — `category`/`uom` are relations and
+        // `currentStock` is computed, so those stay client-unsortable.
+        ["code", "name", "itemType", "hsnCode", "standardRate", "gstRate", "minStockLevel", "status", "createdAt"],
+        { field: "createdAt", order: "desc" },
+      );
       const result = await paginateDb(
         pagination,
-        (paging) => listItems({ ...baseOpts, ...paging }),
+        (paging) => listItems({ ...baseOpts, ...paging, orderBy }),
         () => countItems(baseOpts),
       );
       // Items master changes infrequently — return the cached envelope

@@ -12,7 +12,7 @@ import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, ArrowLeft } from "lucide-react";
 import { PageContainer } from "@/components/PageShell";
 import { ShimmerBlock } from "@/components/Shimmer";
-import { DPRForm } from "../../new/DPRForm";
+import { DPRForm } from "../../components/DPRForm";
 
 async function fetchDPR(id: string) {
   const res = await fetch(`/api/projects/dpr/${id}`);

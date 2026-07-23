@@ -5,6 +5,7 @@ import { parsePagination, paginateDb } from "@/lib/http/pagination";
 import {
   listInspections,
   countInspections,
+  inspectionResultCounts,
   createInspection,
 } from "@/lib/quality/inspections-repository";
 
@@ -34,6 +35,14 @@ export async function GET(req: NextRequest) {
     projectId: effectiveProjectId,
     projectIds: allowed,
   };
+
+  // KPI tiles (Total / Passed / Failed / Pending) grouped server-side so they
+  // stay correct regardless of pagination.
+  if (searchParams.get("stats") === "1") {
+    const stats = await inspectionResultCounts(baseOpts);
+    return NextResponse.json({ stats });
+  }
+
   const result = await paginateDb(
     parsePagination(req),
     (paging) => listInspections({ ...baseOpts, ...paging }),

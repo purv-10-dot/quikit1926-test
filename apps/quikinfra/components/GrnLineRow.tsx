@@ -108,7 +108,7 @@ export function renderGrnLine(
             value={line.receivedQty ?? ""}
             onChange={(e) => update({ receivedQty: e.target.value })}
             placeholder="0"
-            className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-orange-500"
+            className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-accent-500"
           />
         </div>
         <div>
@@ -122,7 +122,7 @@ export function renderGrnLine(
             value={line.rejectedQty ?? ""}
             onChange={(e) => update({ rejectedQty: e.target.value })}
             placeholder="0"
-            className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-orange-500"
+            className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-accent-500"
           />
         </div>
         <div>
@@ -146,7 +146,7 @@ export function renderGrnLine(
             value={line.batchNo ?? ""}
             onChange={(e) => update({ batchNo: e.target.value })}
             placeholder="Batch / Heat No."
-            className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+            className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
           />
         </div>
         <div>
@@ -156,7 +156,7 @@ export function renderGrnLine(
           <select
             value={line.condition ?? "Good"}
             onChange={(e) => update({ condition: e.target.value })}
-            className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+            className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-accent-500"
           >
             <option value="Good">Good</option>
             <option value="Damaged">Damaged</option>
@@ -172,7 +172,7 @@ export function renderGrnLine(
             value={line.testCertRef ?? ""}
             onChange={(e) => update({ testCertRef: e.target.value })}
             placeholder="Certificate / report reference"
-            className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+            className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
           />
         </div>
       </div>
@@ -187,7 +187,7 @@ export function renderGrnLine(
           value={line.remarks ?? ""}
           onChange={(e) => update({ remarks: e.target.value })}
           placeholder="Inspection notes, deviations, damage details…"
-          className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+          className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
         />
       </div>
     </div>

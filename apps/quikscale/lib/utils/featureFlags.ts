@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { resolveQuarterPosition, type QuarterPosition } from "@/lib/utils/fiscal";
 
 /**
  * Server-side feature flag lookup for past-week data rules.
@@ -78,4 +79,41 @@ export async function getCurrentFiscalWeekFromDB(
   const elapsedMs = now.getTime() - q.startDate.getTime();
   const week = Math.floor(elapsedMs / (7 * 24 * 60 * 60 * 1000)) + 1;
   return Math.min(total, Math.max(1, week));
+}
+
+/**
+ * Week-gate context for a (year, quarter): the clamped `currentWeek` PLUS the
+ * quarter's position (past/current/future) relative to today, from the
+ * QuarterSetting record. Feed both into `weekEditState` so the server rejects
+ * past-quarter and future-quarter/future-week writes correctly — the clamped
+ * `currentWeek` alone can't tell a past quarter's last week from an in-progress
+ * one (both read as `weekCount`). One DB read for both values.
+ */
+export async function getWeekGateFromDB(
+  orgId: string,
+  year: number,
+  quarter: string,
+): Promise<{ currentWeek: number; quarterPosition: QuarterPosition }> {
+  const q = await db.quarterSetting.findFirst({
+    where: { orgId, fiscalYear: year, quarter },
+    select: { startDate: true, endDate: true, weekCount: true },
+  });
+
+  // No quarter record yet → treat as the current quarter, week 1 (the gate then
+  // falls back to the week-number window rather than blocking everything).
+  if (!q) return { currentWeek: 1, quarterPosition: "current" };
+
+  const total = q.weekCount ?? 13;
+  const now = new Date();
+  const quarterPosition = resolveQuarterPosition(q.startDate, q.endDate, now);
+
+  let currentWeek: number;
+  if (now < q.startDate) currentWeek = 1;
+  else if (now > q.endDate) currentWeek = total;
+  else {
+    const week = Math.floor((now.getTime() - q.startDate.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1;
+    currentWeek = Math.min(total, Math.max(1, week));
+  }
+
+  return { currentWeek, quarterPosition };
 }

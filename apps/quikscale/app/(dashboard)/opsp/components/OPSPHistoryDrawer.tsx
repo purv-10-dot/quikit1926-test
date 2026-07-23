@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { RightPanel } from "@quikit/ui";
 import { ChevronDown, ChevronRight, Clock, FileText, Pencil, Check, X, Eye } from "lucide-react";
+import type { HistoryScope } from "@/lib/utils/opspEditHighlight";
 
 interface EditLogEntry {
   id: string;
@@ -45,6 +46,7 @@ export function OPSPHistoryDrawer({
   onApplyValue,
   onEditNote,
   fields,
+  actorScope,
   ackFooter,
 }: {
   open: boolean;
@@ -55,6 +57,10 @@ export function OPSPHistoryDrawer({
    *  — when set, only those fields' changes are shown. Used by OPSP Review to
    *  scope the history to its own tables; omit to show every field (editor). */
   fields?: string[];
+  /** Optional "cumulative up to a user" scope — when set, only edits (by anyone)
+   *  made at or before `untilTs` are shown. Used by the per-user change stepper
+   *  so a later editor's history also surfaces the earlier edits they built on. */
+  actorScope?: HistoryScope | null;
   /** When true, EditFinalize users can edit values + notes from the drawer. */
   canEdit?: boolean;
   currentValue?: (field: string) => string;
@@ -106,12 +112,17 @@ export function OPSPHistoryDrawer({
     }
   }, [open, load]);
 
-  // Optional scope: only show changes to the given top-level fields (OPSP Review
-  // passes its own tables; the editor omits it to show everything).
-  const visible = useMemo(
-    () => (fields ? entries.filter((e) => fields.includes(e.field.split(".")[0])) : entries),
-    [entries, fields],
-  );
+  // Optional scope, two independent filters:
+  //  - `fields`: only changes to the given top-level fields (OPSP Review passes
+  //    its own tables; the editor omits it to show everything).
+  //  - `actorScope`: only edits made at or before a user's latest change — the
+  //    "cumulative up to this user" view from the change stepper.
+  const visible = useMemo(() => {
+    let out = entries;
+    if (fields) out = out.filter((e) => fields.includes(e.field.split(".")[0]));
+    if (actorScope) out = out.filter((e) => Date.parse(e.createdAt) <= actorScope.untilTs);
+    return out;
+  }, [entries, fields, actorScope]);
 
   // Group entries by field, preserving newest-first order from the API.
   const groups = useMemo(() => {
@@ -163,7 +174,11 @@ export function OPSPHistoryDrawer({
       open={open}
       onClose={onClose}
       title="OPSP edit history"
-      subtitle={`Changes after finalize · ${quarter} ${year}`}
+      subtitle={
+        actorScope
+          ? `Up to ${actorScope.actorName}'s latest change · ${quarter} ${year}`
+          : `Changes after finalize · ${quarter} ${year}`
+      }
       size="md"
       footer={
         ackFooter ? (

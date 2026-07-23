@@ -54,6 +54,7 @@ export const KPI_FIELD_LABELS: Record<string, string> = {
   targetScale: "Target Scale",
   reverseColor: "Reverse Color",
   frequency: "Frequency",
+  kpiType: "KPI Type",
   lastNotes: "Last Notes",
 };
 

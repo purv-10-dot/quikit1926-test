@@ -13,6 +13,7 @@ import { useDisabledModules } from "@/hooks/useDisabledModules";
 import { isModuleEnabled } from "@quikit/shared/moduleRegistry";
 import { UserAvatar } from "@/components/PageShell";
 import { AppSwitcher, UserMenu } from "@quikit/ui";
+import { AccentThemeApplier } from "@/components/AccentThemeApplier";
 import {
   LayoutDashboard, Database, ShoppingCart, Warehouse,
   FolderKanban, CheckCircle2, FileBarChart2, Settings,
@@ -155,6 +156,8 @@ const CONSTRUCTION_NAV: NavItem[] = [
       { label: "Machinery",         href: "/masters/machinery",    iconComponent: Hammer,       requiredPermission: "masters.read", featureKey: "masters.machinery" },
       { label: "Assets / Tools",    href: "/masters/assets",       iconComponent: Wrench,       requiredPermission: "masters.read", featureKey: "masters.assets" },
       { label: "Cost Centers",      href: "/masters/cost-centers", iconComponent: BarChart3,    requiredPermission: "masters.read", featureKey: "masters.costCenters" },
+      { label: "Labour Master",     href: "/masters/labour",       iconComponent: UserCog,      requiredPermission: "masters.read", featureKey: "masters.labour" },
+      { label: "Workmen",           href: "/masters/workmen",      iconComponent: Users,        requiredPermission: "masters.read", featureKey: "masters.workmen" },
     ],
   },
   // Order: Masters → Projects → Procurement → Inventory.
@@ -823,6 +826,7 @@ export function QuikInfraShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex h-screen min-h-0 bg-gray-100">
+      <AccentThemeApplier />
       <aside
         className={`hidden lg:flex shrink-0 flex-col overflow-hidden transition-all duration-200 ease-out ${
           sidebarOpen ? "w-[17rem] py-4 pl-4" : "w-[5rem] py-4 pl-4"

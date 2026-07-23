@@ -172,6 +172,13 @@ export async function submitForApproval(
     }
   }
 
+  // Timestamp approval-history rows app-side (UTC) rather than via the DB
+  // `@default(now())`. The Postgres server clock writes into a tz-naive
+  // column and drifts by the session offset when the DB isn't on UTC,
+  // desyncing these times from the app-written createdAt/updatedAt. A single
+  // `now` keeps every auto-recorded step on the same instant.
+  const now = new Date();
+
   return await db.$transaction(async (tx) => {
     if (!startStep) {
       // Every step is filled by the raiser. The instance jumps to the
@@ -209,6 +216,7 @@ export async function submitForApproval(
             stepOrder: s.stepOrder,
             action: "approve",
             actionById: ctx.userId,
+            actionAt: now,
             comments:
               autoApprovedInstanceStatus === "approved"
                 ? COMMENT_AUTO_APPROVED
@@ -244,6 +252,7 @@ export async function submitForApproval(
           stepOrder: s.stepOrder,
           action: "approve",
           actionById: ctx.userId,
+          actionAt: now,
           comments: COMMENT_AUTO_SKIPPED,
         })),
       });

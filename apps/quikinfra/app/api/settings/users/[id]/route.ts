@@ -31,10 +31,9 @@ import {
 const auth = withOrgAuthForResource("construction.users");
 
 // The 4 permission pairs that unlock Settings (Users / Roles / Workflows).
-// Mirrors the dedicated role-swap route (/api/org/users/[id]/role) and the
-// invite flow so "Grant Settings access" behaves identically no matter which
-// screen the admin saved from. Written as additive grants (revoke=false) so
-// they survive the sub-admin settings-strip in getTenantContext.
+// Mirrors the invite flow so "Grant Settings access" behaves identically no
+// matter which screen the admin saved from. Written as additive grants
+// (revoke=false) so they survive the sub-admin settings-strip in getTenantContext.
 const SETTINGS_PERMS = [
   { resource: "construction.settings", action: "manage" },
   { resource: "construction.users", action: "manage" },

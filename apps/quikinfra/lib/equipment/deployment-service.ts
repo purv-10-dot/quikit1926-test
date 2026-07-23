@@ -3,6 +3,7 @@
  */
 
 import { db } from "@/lib/db";
+import { paginateInMemory, type PaginationParams } from "@/lib/http/pagination";
 import { Prisma } from "@quikit/database";
 import { deriveDocComplianceState } from "@/lib/equipment/equipment-calculations";
 import {
@@ -102,6 +103,10 @@ export interface ListTransfersOptions {
   orgId: string;
   status?: string;
   projectIds?: string[];
+  search?: string;
+  orderBy?: Prisma.CnEquipmentDeploymentOrderByWithRelationInput[];
+  take?: number;
+  skip?: number;
 }
 
 export async function listTransfers(opts: ListTransfersOptions) {
@@ -110,18 +115,39 @@ export async function listTransfers(opts: ListTransfersOptions) {
     recordType: DEPLOY_TRANSFER,
   };
   if (opts.status && opts.status !== "all") where.status = opts.status;
+  const and: Prisma.CnEquipmentDeploymentWhereInput[] = [];
   if (Array.isArray(opts.projectIds) && opts.projectIds.length > 0) {
-    where.OR = [
-      { sourceProjectId: { in: opts.projectIds } },
-      { destinationProjectId: { in: opts.projectIds } },
-    ];
+    and.push({
+      OR: [
+        { sourceProjectId: { in: opts.projectIds } },
+        { destinationProjectId: { in: opts.projectIds } },
+      ],
+    });
   }
-  const rows = await db.cnEquipmentDeployment.findMany({
-    where,
-    include: transferInclude,
-    orderBy: [{ transferDate: "desc" }, { createdAt: "desc" }],
-  });
-  return { data: rows.map(toTransferRecord), total: rows.length };
+  const search = opts.search?.trim();
+  if (search) {
+    and.push({
+      OR: [
+        { referenceNumber: { contains: search, mode: "insensitive" } },
+        { gatePassNo: { contains: search, mode: "insensitive" } },
+        { reason: { contains: search, mode: "insensitive" } },
+        { remarks: { contains: search, mode: "insensitive" } },
+        { equipment: { code: { contains: search, mode: "insensitive" } } },
+        { equipment: { name: { contains: search, mode: "insensitive" } } },
+      ],
+    });
+  }
+  if (and.length > 0) where.AND = and;
+  const [rows, total] = await Promise.all([
+    db.cnEquipmentDeployment.findMany({
+      where,
+      include: transferInclude,
+      orderBy: opts.orderBy ?? [{ transferDate: "desc" }, { createdAt: "desc" }],
+      ...(opts.take != null ? { take: opts.take, skip: opts.skip ?? 0 } : {}),
+    }),
+    db.cnEquipmentDeployment.count({ where }),
+  ]);
+  return { data: rows.map(toTransferRecord), total };
 }
 
 export interface CreateTransferInput {
@@ -245,6 +271,7 @@ export interface ListDocumentsOptions {
   orgId: string;
   equipmentId?: string;
   projectIds?: string[];
+  pagination?: PaginationParams;
 }
 
 export async function listDocuments(opts: ListDocumentsOptions) {
@@ -274,7 +301,7 @@ export async function listDocuments(opts: ListDocumentsOptions) {
     data = data.filter((d) => equipmentIds.has(d.equipmentId));
   }
 
-  return { data, total: data.length };
+  return opts.pagination ? paginateInMemory(data, opts.pagination) : { data, total: data.length };
 }
 
 export interface CreateDocumentInput {

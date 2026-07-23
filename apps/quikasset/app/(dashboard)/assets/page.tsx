@@ -13,6 +13,7 @@ import type { Asset } from "@/types/asset"
 import * as XLSX from "xlsx"
 import type { LucideIcon } from "lucide-react"
 
+
 const ICON_MAP: { keywords: string[]; icon: LucideIcon; color: string }[] = [
   { keywords: ["laptop", "notebook", "macbook"],               icon: Laptop,       color: "bg-blue-100 text-blue-600"    },
   { keywords: ["phone", "mobile", "iphone", "android"],        icon: Smartphone,   color: "bg-green-100 text-green-600"  },

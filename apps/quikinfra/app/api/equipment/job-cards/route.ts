@@ -2,13 +2,22 @@ import { toErrorMessage } from "@/lib/api/errors";
 import { requireEquipmentAction } from "@/lib/auth/requireEquipmentAction";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
-import { parsePagination } from "@/lib/http/pagination";
+import { parsePagination, parseSort } from "@/lib/http/pagination";
 import {
   createJobCard,
   getJobCardSummary,
   listJobCards,
 } from "@/lib/equipment/maintenance-service";
 import { NextRequest, NextResponse } from "next/server";
+
+const JOB_CARD_SORT_COLUMNS = [
+  "serviceDate",
+  "jobNumber",
+  "jobType",
+  "status",
+  "downtimeHours",
+  "createdAt",
+] as const;
 
 function mapError(err: unknown) {
   const msg = err instanceof Error ? err.message : String(err);
@@ -35,6 +44,7 @@ export async function GET(req: NextRequest) {
   const projectId = searchParams.get("projectId") ?? "";
   const equipmentId = searchParams.get("equipmentId") ?? "";
   const status = searchParams.get("status") ?? "all";
+  const search = searchParams.get("search") ?? "";
   const summaryOnly = searchParams.get("summary") === "true";
 
   const baseOpts = {
@@ -42,6 +52,7 @@ export async function GET(req: NextRequest) {
     projectId: projectId || undefined,
     equipmentId: equipmentId || undefined,
     status: status || undefined,
+    search: search || undefined,
     projectIds:
       Array.isArray(ctx.projectIds) && ctx.projectIds.length > 0
         ? ctx.projectIds
@@ -54,8 +65,13 @@ export async function GET(req: NextRequest) {
   }
 
   const p = parsePagination(req);
+  const sort = parseSort(req, JOB_CARD_SORT_COLUMNS, {
+    field: "serviceDate",
+    order: "desc",
+  });
   const result = await listJobCards({
     ...baseOpts,
+    orderBy: sort.orderBy as never,
     ...(p.paginated ? { take: p.take, skip: p.skip } : {}),
   });
 

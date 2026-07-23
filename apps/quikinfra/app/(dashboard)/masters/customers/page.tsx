@@ -4,7 +4,7 @@ import { toErrorMessage } from "@/lib/api/errors";
 import { useState } from "react";
 import { Building2 } from "lucide-react";
 import { MasterListPage, type MasterColumnDef } from "@/components/MasterListPage";
-import { useCustomers, useCreateCustomer, useUpdateCustomer, useDeleteCustomer } from "@/hooks/use-masters";
+import { useCreateCustomer, useUpdateCustomer, useDeleteCustomer } from "@/hooks/use-masters";
 import {
   FormDrawer, FormSection, FormRow, Field,
   TextInput, NumberInput, SelectInput, TextAreaInput, InactiveStatusNotice,
@@ -84,7 +84,6 @@ const rules: ValidationRules<typeof emptyForm> = {
 };
 
 export default function CustomersPage() {
-  const { data: result, isLoading } = useCustomers();
   const createMutation = useCreateCustomer();
   const updateMutation = useUpdateCustomer();
   const deleteMutation = useDeleteCustomer();
@@ -148,7 +147,13 @@ export default function CustomersPage() {
     <>
       <MasterListPage title="Customers / Clients" entityName="Customer" permissionUrl="/masters/customers" columns={columns}
         showStatusTabs
-        data={(result?.data ?? []) as CustomerRow[]} total={result?.total ?? 0} isLoading={isLoading}
+        infinite={{
+          queryKey: "customers-infinite",
+          endpoint: "/api/masters/customers",
+          pageSize: 25,
+          defaultSortBy: "createdAt",
+          defaultSortOrder: "desc",
+        }}
         canImport canExport
         historyEntityType="customer"
         onImport={() => setImportOpen(true)}

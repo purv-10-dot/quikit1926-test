@@ -320,14 +320,14 @@ export function GenerateRABillForm({
               <button
                 type="button"
                 onClick={() => setSource("dpr")}
-                className={`flex items-center gap-2 px-4 py-2 text-sm ${source === "dpr" ? "bg-orange-600 text-white" : "bg-gray-50 text-gray-700"}`}
+                className={`flex items-center gap-2 px-4 py-2 text-sm ${source === "dpr" ? "bg-accent-600 text-white" : "bg-gray-50 text-gray-700"}`}
               >
                 <CalendarDays size={15} /> From DPRs (period)
               </button>
               <button
                 type="button"
                 onClick={() => setSource("boq")}
-                className={`flex items-center gap-2 px-4 py-2 text-sm ${source === "boq" ? "bg-orange-600 text-white" : "bg-gray-50 text-gray-700"}`}
+                className={`flex items-center gap-2 px-4 py-2 text-sm ${source === "boq" ? "bg-accent-600 text-white" : "bg-gray-50 text-gray-700"}`}
               >
                 From BOQ (cumulative)
               </button>
@@ -336,7 +336,7 @@ export function GenerateRABillForm({
               type="button"
               onClick={handlePull}
               disabled={!projectId || pulling}
-              className="flex items-center gap-2 rounded-lg border border-orange-600 px-4 py-2 text-sm font-medium text-orange-700 hover:bg-orange-50 disabled:opacity-50"
+              className="flex items-center gap-2 rounded-lg border border-accent-600 px-4 py-2 text-sm font-medium text-accent-700 hover:bg-accent-50 disabled:opacity-50"
             >
               <Download size={15} />
               {pulling ? "Pulling…" : source === "dpr" ? "Pull from approved DPRs" : "Pull from BOQ"}
@@ -361,7 +361,7 @@ export function GenerateRABillForm({
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-gray-500">Source DPRs:</span>
             {sources.map((s) => (
-              <span key={s.id} className="rounded-full bg-orange-100 px-2.5 py-0.5 text-xs text-orange-700">
+              <span key={s.id} className="rounded-full bg-accent-100 px-2.5 py-0.5 text-xs text-accent-700">
                 {s.dprNumber} · {s.reportDate}
               </span>
             ))}
@@ -373,13 +373,13 @@ export function GenerateRABillForm({
           <div className="overflow-hidden rounded-xl border border-gray-200">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-orange-50 text-left text-[11px] uppercase tracking-wide text-gray-600">
+                <tr className="bg-accent-50 text-left text-[11px] uppercase tracking-wide text-gray-600">
                   <th className="px-3 py-2.5">
                     <input
                       type="checkbox"
                       checked={allSelected}
                       onChange={(e) => toggleAll(e.target.checked)}
-                      className="h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                      className="h-4 w-4 rounded border-gray-300 text-accent-600 focus:ring-accent-500"
                       aria-label="Select all lines"
                     />
                   </th>
@@ -401,7 +401,7 @@ export function GenerateRABillForm({
                         type="checkbox"
                         checked={l.selected}
                         onChange={(e) => toggleLine(l.boqItemId, e.target.checked)}
-                        className="mt-0.5 h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                        className="mt-0.5 h-4 w-4 rounded border-gray-300 text-accent-600 focus:ring-accent-500"
                         aria-label={`Include ${l.boqNo}`}
                       />
                     </td>
@@ -484,7 +484,7 @@ export function GenerateRABillForm({
           {computed.totalDeductions > 0 && <Row label="Less: Deductions (retention, TDS, etc.)" value={`− ${inr(computed.totalDeductions)}`} />}
           <div className="mt-2 flex items-center justify-between border-t border-gray-200 pt-2 text-base font-semibold">
             <span>Net Payable</span>
-            <span className="text-orange-700">{inr(computed.netPayable)}</span>
+            <span className="text-accent-700">{inr(computed.netPayable)}</span>
           </div>
         </div>
       </div>
