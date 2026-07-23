@@ -85,10 +85,14 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
   // fully-past quarter correctly reflects its FINAL week instead of dropping it
   // — the clamped display week used to point one week too early. See weeklyGoalTile.
   const weeklyTile = weeklyGoalTile(kpi, qtdWeek, weekCount);
+  // Zero-target KPI: every week's goal is a real 0, so show "0" rather than "—".
+  const isZeroTargetKPI = target === 0;
   const weeklyGoalDisplay = (() => {
     if (weeklyTile == null) return "—";
     const valueStr = weeklyTile.value != null ? fmtStat(weeklyTile.value) : "—";
-    const targetStr = weeklyTile.target > 0 ? fmtStat(weeklyTile.target) : "—";
+    const targetStr = weeklyTile.target > 0
+      ? fmtStat(weeklyTile.target)
+      : isZeroTargetKPI ? fmtStat(0) : "—";
     if (valueStr === "—" && targetStr === "—") return "—";
     return `${valueStr} / ${targetStr}`;
   })();
