@@ -4,7 +4,8 @@ import { toErrorMessage } from "@/lib/api/errors";
 import { useMemo, useState } from "react";
 import { MapPin } from "lucide-react";
 import { MasterListPage, type MasterColumnDef } from "@/components/MasterListPage";
-import { useLocations, useCreateLocation, useUpdateLocation, useProjects, useItems, useItemGroups, useDeleteLocation } from "@/hooks/use-masters";
+import { useCreateLocation, useUpdateLocation, useProjects, useItemGroups, useDeleteLocation } from "@/hooks/use-masters";
+import type { GroupedMaterialSelectItem } from "@/components/GroupedMaterialSelect";
 import {
   FormDrawer, FormSection, FormRow, Field,
   TextInput, SelectInput, NumberInput, InactiveStatusNotice,
@@ -40,11 +41,20 @@ const STATUS_OPTIONS = [
   { value: "inactive", label: "Inactive" },
 ];
 
+/** Denormalized item metadata returned by the locations API (read-time join). */
+interface LocationItemMeta {
+  id: string;
+  code: string;
+  name: string;
+  uomCode?: string | null;
+}
+
 interface LocationRow {
   id: string; code: string; name: string; type: string; projectName?: string;
   city?: string; state?: string; inCharge?: string; status: string;
   itemIds?: string[];
   itemQtyByItemId?: Record<string, string> | null;
+  itemsMeta?: LocationItemMeta[];
 }
 
 /** Full location record consumed by Edit — superset of the list row. */
@@ -55,6 +65,7 @@ interface LocationEditRow {
   capacity?: number | string | null; status?: string;
   itemIds?: string[];
   itemQtyByItemId?: unknown;
+  itemsMeta?: LocationItemMeta[];
 }
 
 const TYPE_LABELS: Record<string, string> = { site: "Site", warehouse: "Warehouse", head_office: "Head Office", yard: "Yard" };
@@ -90,7 +101,6 @@ const rules: ValidationRules<typeof emptyForm> = {
 };
 
 export default function LocationsPage() {
-  const { data: result, isLoading } = useLocations();
   const { data: projectsResult } = useProjects();
   const createMutation = useCreateLocation();
   const updateMutation = useUpdateLocation();
@@ -108,27 +118,33 @@ export default function LocationsPage() {
   const projects = projectsResult?.data ?? [];
   const projectOptions = projects.map((p) => ({ value: p.id, label: p.name }));
 
-  const { data: itemsResult } = useItems();
   const { data: itemGroupsResult } = useItemGroups();
-  const items = itemsResult?.data ?? [];
-  const itemById = new Map(items.map((it) => [it.id, it]));
   const itemGroups = useMemo(() => {
     const raw = itemGroupsResult?.data ?? [];
     return raw.filter((g) => (g?.status ?? "active").toLowerCase() !== "inactive");
   }, [itemGroupsResult?.data]);
-  const groupedMaterialItems = useMemo(
-    () =>
-      (itemsResult?.data ?? []).map((it) => ({
+
+  // Metadata (code/name/uom) for the items selected in the OPEN form drawer.
+  // Seeded from the edited row's denormalized `itemsMeta` and topped up as the
+  // user picks materials — so the lazy multi-select, chips, and qty editor can
+  // label items WITHOUT bulk-loading the whole item master.
+  const [formItemMeta, setFormItemMeta] = useState<Record<string, LocationItemMeta>>({});
+  const rememberItemMeta = (it: GroupedMaterialSelectItem) => {
+    setFormItemMeta((prev) => ({
+      ...prev,
+      [it.id]: {
         id: it.id,
-        name: it.name,
-        code: it.code,
-        uomCode: it.uomCode ?? (Array.isArray(it.uomCodes) ? it.uomCodes[0] : null),
-        hsnCode: it.hsnCode ?? null,
-        groupId: it.groupId,
-        groupName: it.groupName,
-      })),
-    [itemsResult?.data],
-  );
+        code: it.code ?? "",
+        name: it.name ?? "",
+        uomCode: it.uomCode ?? null,
+      },
+    }));
+  };
+  const chipLabelById = (id: string) => {
+    const m = formItemMeta[id];
+    if (!m) return null;
+    return m.code ? `${m.code} — ${m.name}` : m.name || id;
+  };
 
   const columns: MasterColumnDef<LocationRow>[] = [
     { key: "code", label: "Code", width: "100px" },
@@ -145,9 +161,10 @@ export default function LocationsPage() {
       render: (row) => {
         const ids = Array.isArray(row.itemIds) ? row.itemIds : [];
         if (ids.length === 0) return "—";
+        const metaById = new Map((row.itemsMeta ?? []).map((m) => [m.id, m]));
         const names = ids
-          .map((id) => itemById.get(id))
-          .map((it) => (it?.code ? `${it.code}` : it?.name))
+          .map((id) => metaById.get(id))
+          .map((m) => (m?.code ? `${m.code}` : m?.name))
           .filter(Boolean) as string[];
         if (names.length === 0) return `${ids.length} item${ids.length === 1 ? "" : "s"}`;
         const shown = names.slice(0, 2);
@@ -247,6 +264,16 @@ export default function LocationsPage() {
       itemIds,
       itemQtyByItemId: qty,
     });
+    // Seed the picker/chip/qty labels from the row's denormalized meta so the
+    // form never has to load the full item master to show what's selected.
+    setFormItemMeta(
+      Object.fromEntries(
+        (item.itemsMeta ?? []).map((m) => [
+          m.id,
+          { id: m.id, code: m.code ?? "", name: m.name ?? "", uomCode: m.uomCode ?? null },
+        ]),
+      ),
+    );
     setErrors({});
     setEditingId(item.id);
   };
@@ -255,6 +282,7 @@ export default function LocationsPage() {
     setDrawerOpen(false);
     setEditingId(null);
     setForm(emptyForm);
+    setFormItemMeta({});
     setErrors({});
   };
 
@@ -288,10 +316,16 @@ export default function LocationsPage() {
   return (
     <>
       <MasterListPage title="Locations / Sites / Warehouses" entityName="Location" permissionUrl="/masters/locations" columns={columns}
-        data={(result?.data ?? []) as LocationRow[]} total={result?.data?.length ?? 0} isLoading={isLoading}
+        infinite={{
+          queryKey: "locations-infinite",
+          endpoint: "/api/masters/locations",
+          pageSize: 25,
+          defaultSortBy: "createdAt",
+          defaultSortOrder: "desc",
+        }}
         canImport
         onImport={() => setImportOpen(true)}
-        onAdd={() => { setForm(emptyForm); setErrors({}); setEditingId(null); setDrawerOpen(true); }}
+        onAdd={() => { setForm(emptyForm); setFormItemMeta({}); setErrors({}); setEditingId(null); setDrawerOpen(true); }}
         onEdit={(item) => {
           loadFormFromRow(item);
           setDrawerOpen(true);
@@ -400,7 +434,10 @@ export default function LocationsPage() {
                   return next;
                 });
               }}
-              items={groupedMaterialItems}
+              lazy
+              items={[]}
+              onToggleItem={rememberItemMeta}
+              chipLabelById={chipLabelById}
               groups={itemGroups}
               placeholder="Select material(s)"
             />
@@ -408,8 +445,8 @@ export default function LocationsPage() {
           {form.itemIds.length > 0 ? (
             <div className="mt-2 space-y-2">
               {form.itemIds.map((id) => {
-                const it = itemById.get(id) as { code?: string; name?: string; uomCode?: string; uomCodes?: string[] } | undefined;
-                const uom = it?.uomCode || (Array.isArray(it?.uomCodes) ? it.uomCodes[0] : "") || "—";
+                const it = formItemMeta[id];
+                const uom = it?.uomCode || "—";
                 const label = it?.code ? `${it.code} — ${it.name}` : (it?.name ?? id);
                 return (
                   <div key={id} className="flex items-start gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2">

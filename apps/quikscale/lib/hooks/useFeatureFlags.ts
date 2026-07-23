@@ -30,6 +30,19 @@ let cache: {
 let version = 0;
 const listeners = new Set<() => void>();
 
+// De-dup guards. Without these, the ~dozen flag-hook instances that mount in the
+// same tick on a data-grid page each fire their own /api/settings/configurations
+// request (the `cache` alone can't help — it's still null when they all start).
+//   • `pending` collapses all concurrent callers onto ONE in-flight request.
+//   • `lastFetched` + FLAGS_TTL_MS skips refetching when the cache is still fresh,
+//     so navigating between modules within the TTL reuses it (mirrors the app's
+//     React Query `staleTime: 60_000`). A Settings save calls
+//     `invalidateFeatureFlagsCache()`, which force-refetches, so live edits are
+//     unaffected.
+let pending: Promise<void> | null = null;
+let lastFetched = 0;
+const FLAGS_TTL_MS = 60_000;
+
 function notifyListeners() {
   listeners.forEach((l) => l());
 }
@@ -46,7 +59,7 @@ function emptyFlags(): NonNullable<typeof cache> {
   };
 }
 
-async function fetchFlags() {
+async function doFetch() {
   try {
     const res = await fetch("/api/settings/configurations", { cache: "no-store" });
     const json = await res.json();
@@ -69,8 +82,27 @@ async function fetchFlags() {
   } catch {
     cache = emptyFlags();
   }
+  lastFetched = Date.now();
   version++;
   notifyListeners();
+}
+
+/**
+ * Fetch org config flags with de-dup. Concurrent callers share one request;
+ * callers arriving while the cache is still fresh (< FLAGS_TTL_MS) reuse it.
+ * Pass `force` to bypass the freshness gate (used by invalidation after a save).
+ */
+function fetchFlags(force = false) {
+  // A request is already in flight — everyone joins it (collapses the mount storm).
+  if (pending) return pending;
+  // Cache is fresh enough — no network needed.
+  if (!force && cache !== null && Date.now() - lastFetched < FLAGS_TTL_MS) {
+    return Promise.resolve();
+  }
+  pending = doFetch().finally(() => {
+    pending = null;
+  });
+  return pending;
 }
 
 /**
@@ -186,5 +218,6 @@ export function useWeeklyMeetingDay(): string | null {
 /** Force-refresh the cached flags (call after Settings page saves changes). */
 export function invalidateFeatureFlagsCache() {
   cache = null;
-  fetchFlags(); // Re-fetch immediately and notify listeners
+  lastFetched = 0;
+  fetchFlags(true); // Force an immediate re-fetch (bypass the freshness gate) and notify listeners
 }

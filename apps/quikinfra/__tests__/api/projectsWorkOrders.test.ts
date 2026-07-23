@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
+import * as XLSX from "xlsx";
 import { mockDb, resetMockDb } from "../helpers/mockDb";
 import { setContext, makeAdminCtx, makeUserCtx, TEST_TENANT, TEST_USER } from "../setup";
 import { NextRequest } from "next/server";
 import { GET, POST } from "@/app/api/projects/work-orders/route";
+import { GET as EXPORT } from "@/app/api/projects/work-orders/export/route";
 
 const db = mockDb as any;
 
@@ -10,6 +12,12 @@ function buildGET(qs = ""): NextRequest {
   return new NextRequest(`http://localhost/api/projects/work-orders${qs ? "?" + qs : ""}`, {
     method: "GET",
   });
+}
+function buildExportGET(qs = ""): NextRequest {
+  return new NextRequest(
+    `http://localhost/api/projects/work-orders/export${qs ? "?" + qs : ""}`,
+    { method: "GET" },
+  );
 }
 function buildPOST(body: unknown): NextRequest {
   return new NextRequest("http://localhost/api/projects/work-orders", {
@@ -64,6 +72,78 @@ describe("GET /api/projects/work-orders", () => {
     expect(body.data).toHaveLength(1);
     expect(body.data[0].woNumber).toBe("WO-SITE-460");
     expect(db.cnWorkOrder.findMany.mock.calls[0][0].where.orgId).toBe(TEST_TENANT);
+  });
+
+  it("pushes status + contractor filters into the where clause", async () => {
+    setContext(makeAdminCtx());
+    await GET(buildGET("status=approved&contractorId=c1"));
+    const where = db.cnWorkOrder.findMany.mock.calls[0][0].where;
+    expect(where.status).toBe("approved");
+    expect(where.contractorId).toBe("c1");
+  });
+});
+
+// ═══════════════════════════════════════════════
+// GET /api/projects/work-orders/export  (gate: construction.wo.view)
+// ═══════════════════════════════════════════════
+
+describe("GET /api/projects/work-orders/export", () => {
+  it("returns 401 when unauthenticated", async () => {
+    expect((await EXPORT(buildExportGET())).status).toBe(401);
+  });
+
+  it("returns 403 when the user lacks construction.wo.view", async () => {
+    setContext(makeUserCtx([]));
+    expect((await EXPORT(buildExportGET())).status).toBe(403);
+  });
+
+  it("streams a multi-sheet xlsx scoped to the org with the filters applied", async () => {
+    setContext(makeAdminCtx());
+    db.cnUOM.findMany.mockResolvedValue([]);
+    db.cnWorkOrder.findMany.mockResolvedValue([
+      {
+        woNumber: "WO-SITE-460",
+        status: "approved",
+        workType: "labour",
+        startDate: new Date("2026-07-31"),
+        endDate: new Date("2026-08-05"),
+        totalAmount: "36",
+        project: { name: "Bridge" },
+        contractor: { name: "dgdfg" },
+        lines: [
+          {
+            lineType: "boq",
+            boqItemId: null,
+            activityName: "Excavation",
+            description: "Dig",
+            uomId: "u1",
+            quantity: "3",
+            negotiatedRate: "12",
+            amount: "36",
+            lineDate: new Date("2026-07-31"),
+          },
+        ],
+      },
+    ]);
+
+    const res = await EXPORT(buildExportGET("status=approved&contractorId=c1"));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("spreadsheetml.sheet");
+    expect(res.headers.get("content-disposition")).toMatch(/attachment; filename=/);
+    const where = db.cnWorkOrder.findMany.mock.calls[0][0].where;
+    expect(where.orgId).toBe(TEST_TENANT);
+    expect(where.status).toBe("approved");
+    expect(where.contractorId).toBe("c1");
+
+    const wb = XLSX.read(Buffer.from(await res.arrayBuffer()), { type: "buffer" });
+    expect(wb.SheetNames).toEqual(["Work Orders", "WO Lines"]);
+    const lines = XLSX.utils.sheet_to_json(wb.Sheets["WO Lines"], {
+      header: 1,
+    }) as unknown[][];
+    // header + one line row
+    expect(lines.length).toBe(2);
+    expect(lines[1]).toContain("Excavation");
+    expect(lines[1]).toContain("WO-SITE-460");
   });
 });
 

@@ -1,5 +1,6 @@
 import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextRequest, NextResponse } from "next/server";
+import { parsePagination, parseSort } from "@/lib/http/pagination";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { db } from "@/lib/db";
 import { err as envelopeErr } from "@/lib/http/envelope";
@@ -69,16 +70,35 @@ export async function GET(req: NextRequest) {
     ];
   }
 
-  const rows = await db.cnProjectDocument.findMany({
-    where,
-    include: {
-      project: { select: { code: true, name: true } },
-    },
-    orderBy: [{ createdAt: "desc" }],
-  });
+  const p = parsePagination(req);
+  const sort = parseSort(
+    searchParams,
+    ["documentName", "category", "createdAt"],
+    { field: "createdAt", order: "desc" },
+  );
+  const [rows, total] = await Promise.all([
+    db.cnProjectDocument.findMany({
+      where,
+      include: {
+        project: { select: { code: true, name: true } },
+      },
+      orderBy: sort.orderBy,
+      ...(p.paginated ? { take: p.take, skip: p.skip } : {}),
+    }),
+    db.cnProjectDocument.count({ where }),
+  ]);
 
   const data = rows.map(toListItem);
-  return NextResponse.json({ data, total: data.length });
+  if (p.paginated) {
+    return NextResponse.json({
+      data,
+      total,
+      page: p.page,
+      pageSize: p.pageSize,
+      hasMore: p.skip + data.length < total,
+    });
+  }
+  return NextResponse.json({ data, total });
 }
 
 export async function POST(req: NextRequest) {

@@ -1,26 +1,60 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+import { cacheGet, cacheSet } from "@quikit/redis";
 const withOrgAuth = withOrgAuthForModule("analytics.trends");
+
+// Short TTL: trends are expensive to compute but tolerate ~1min of staleness.
+const TRENDS_TTL_SECONDS = 60;
 
 export const GET = withOrgAuth(async ({ orgId }) => {
   const currentYear = new Date().getFullYear();
-  const years = [currentYear - 1, currentYear];
+  const prevYear = currentYear - 1;
+  const years = [prevYear, currentYear];
   const quarters = ["Q1", "Q2", "Q3", "Q4"];
 
-  const kpis = await db.kPI.findMany({ where: { orgId } });
-  const priorities = await db.priority.findMany({
-    where: { orgId },
-    include: { weeklyStatuses: true },
-  });
+  // Weekly KPI trend is scoped to the current quarter.
+  const currentQuarter = Math.ceil((new Date().getMonth() + 1) / 3);
+  const qLabel = `Q${currentQuarter}`;
+
+  // Tenant-scoped cache key. Includes the year window + quarter so a rollover
+  // (new year / new quarter) naturally misses the previous key.
+  const cacheKey = `trends:${orgId}:${prevYear}-${currentYear}:${qLabel}`;
+  const cached = await cacheGet(cacheKey);
+  if (cached) {
+    return NextResponse.json({ success: true, data: JSON.parse(cached) });
+  }
+
+  // All four reads are independent → dispatch concurrently. Narrow `select`s
+  // (no `include`) keep the payloads small: the aggregate reads only need the
+  // scalar fields they group on; the current-quarter read only needs the
+  // weekly values it charts.
+  const [aggregateKpis, currentQKpis, priorities, qSetting] = await Promise.all([
+    db.kPI.findMany({
+      where: { orgId, year: { in: years } },
+      select: { year: true, quarter: true, progressPercent: true },
+    }),
+    db.kPI.findMany({
+      where: { orgId, year: currentYear, quarter: qLabel },
+      select: { weeklyValues: { select: { weekNumber: true, value: true } } },
+    }),
+    db.priority.findMany({
+      where: { orgId, year: { in: years } },
+      select: { year: true, quarter: true, overallStatus: true },
+    }),
+    db.quarterSetting.findFirst({
+      where: { orgId, fiscalYear: currentYear, quarter: qLabel },
+      select: { weekCount: true },
+    }),
+  ]);
 
   const quarterlyData = years.flatMap((year) =>
     quarters.map((quarter) => {
-      const qKpis = kpis.filter((k) => k.year === year && k.quarter === quarter);
+      const qKpis = aggregateKpis.filter((k) => k.year === year && k.quarter === quarter);
       const qPriorities = priorities.filter(
         (p) => p.year === year && p.quarter === quarter,
       );
-      const kpiAtt =
+      const kpiAttainment =
         qKpis.length > 0
           ? Math.round(
               qKpis.reduce((s, k) => s + (k.progressPercent || 0), 0) /
@@ -38,7 +72,7 @@ export const GET = withOrgAuth(async ({ orgId }) => {
         year,
         quarter,
         label: `${quarter} ${year}`,
-        kpiAttainment: kpiAtt,
+        kpiAttainment,
         priorityRate,
         kpiCount: qKpis.length,
         priorityCount: qPriorities.length,
@@ -46,21 +80,8 @@ export const GET = withOrgAuth(async ({ orgId }) => {
     }),
   );
 
-  // Weekly KPI trend for current quarter
-  const currentQuarter = Math.ceil((new Date().getMonth() + 1) / 3);
-  const qLabel = `Q${currentQuarter}`;
-  const currentQKpis = await db.kPI.findMany({
-    where: { orgId, year: currentYear, quarter: qLabel },
-    include: { weeklyValues: true },
-  });
-
   // Custom Quarter Settings: size the weekly trend to the quarter's week count.
-  const qSetting = await db.quarterSetting.findFirst({
-    where: { orgId, fiscalYear: currentYear, quarter: qLabel },
-    select: { weekCount: true },
-  });
   const trendWeeks = qSetting?.weekCount ?? 13;
-
   const weeklyTrend = Array.from({ length: trendWeeks }, (_, i) => {
     const week = i + 1;
     const values = currentQKpis.flatMap((k) =>
@@ -78,8 +99,10 @@ export const GET = withOrgAuth(async ({ orgId }) => {
     };
   });
 
-  return NextResponse.json({
-    success: true,
-    data: { quarterlyData, weeklyTrend },
-  });
+  const data = { quarterlyData, weeklyTrend };
+
+  // Best-effort write-back; degrades to a no-op when Redis is unavailable.
+  await cacheSet(cacheKey, JSON.stringify(data), TRENDS_TTL_SECONDS);
+
+  return NextResponse.json({ success: true, data });
 });

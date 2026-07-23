@@ -1,15 +1,24 @@
 import { describe, it, expect, beforeEach } from "vitest";
+import * as XLSX from "xlsx";
 import { mockDb, resetMockDb } from "../helpers/mockDb";
 import { setContext, makeAdminCtx, makeUserCtx, TEST_TENANT, TEST_USER } from "../setup";
 import { NextRequest } from "next/server";
 import { GET, POST } from "@/app/api/projects/dpr/route";
 import { GET as WEATHER } from "@/app/api/projects/dpr/weather/route";
+import { GET as EXPORT } from "@/app/api/projects/dpr/export/route";
 
 const db = mockDb as any;
 
 function buildGET(qs = ""): NextRequest {
   return new NextRequest(
     `http://localhost/api/projects/dpr${qs ? "?" + qs : ""}`,
+    { method: "GET" },
+  );
+}
+
+function buildExportGET(qs = ""): NextRequest {
+  return new NextRequest(
+    `http://localhost/api/projects/dpr/export${qs ? "?" + qs : ""}`,
     { method: "GET" },
   );
 }
@@ -91,6 +100,148 @@ describe("GET /api/projects/dpr", () => {
     await GET(buildGET("status=submitted"));
     const where = db.cnDailyProgressReport.findMany.mock.calls[0][0].where;
     expect(where.status).toBe("submitted");
+  });
+
+  // Regression: the search OR-clause referenced `siteRemarks`, which is not a
+  // field on CnDailyProgressReport (the column is `remarks`). Prisma rejected
+  // the whole query → every ?search= request 500'd. Guard the correct field.
+  it("builds the search filter on real model fields (remarks, not siteRemarks)", async () => {
+    setContext(makeAdminCtx());
+    await GET(buildGET("search=bridge&page=1&pageSize=25"));
+    const where = db.cnDailyProgressReport.findMany.mock.calls[0][0].where;
+    const orFields = (where.OR as Array<Record<string, unknown>>).flatMap((c) =>
+      Object.keys(c),
+    );
+    expect(orFields).toContain("remarks");
+    expect(orFields).not.toContain("siteRemarks");
+    expect(orFields).toContain("dprNumber");
+  });
+});
+
+// ═══════════════════════════════════════════════
+// GET /api/projects/dpr/export  (gate: construction.dpr.view)
+// ═══════════════════════════════════════════════
+
+describe("GET /api/projects/dpr/export", () => {
+  it("returns 401 when unauthenticated", async () => {
+    expect((await EXPORT(buildExportGET())).status).toBe(401);
+  });
+
+  it("returns 403 when the user lacks construction.dpr.view", async () => {
+    setContext(makeUserCtx([]));
+    expect((await EXPORT(buildExportGET())).status).toBe(403);
+  });
+
+  it("streams an xlsx scoped to the org and applies the status filter", async () => {
+    setContext(makeAdminCtx());
+    db.cnDailyProgressReport.findMany.mockResolvedValue([
+      {
+        dprNumber: "DPR-SITE-20260601-001",
+        reportDate: new Date("2026-06-01"),
+        status: "approved",
+        weatherCondition: "Clear",
+        remarks: "",
+        project: { name: "Bridge", code: "BRG" },
+        workItems: [],
+        materialEntries: [],
+        labourEntries: [],
+        staffEntries: [],
+        machineryEntries: [],
+      },
+    ]);
+    const res = await EXPORT(buildExportGET("status=approved"));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain(
+      "spreadsheetml.sheet",
+    );
+    expect(res.headers.get("content-disposition")).toMatch(/attachment; filename=/);
+    const where = db.cnDailyProgressReport.findMany.mock.calls[0][0].where;
+    expect(where.orgId).toBe(TEST_TENANT);
+    expect(where.status).toBe("approved");
+    // Export covers the full filtered set — never paginated.
+    expect(db.cnDailyProgressReport.findMany.mock.calls[0][0].skip).toBeUndefined();
+  });
+
+  it("builds the search filter on remarks (not siteRemarks)", async () => {
+    setContext(makeAdminCtx());
+    db.cnDailyProgressReport.findMany.mockResolvedValue([]);
+    await EXPORT(buildExportGET("search=bridge"));
+    const where = db.cnDailyProgressReport.findMany.mock.calls[0][0].where;
+    const orFields = (where.OR as Array<Record<string, unknown>>).flatMap((c) =>
+      Object.keys(c),
+    );
+    expect(orFields).toContain("remarks");
+    expect(orFields).not.toContain("siteRemarks");
+  });
+
+  it("produces a sheet per section with the filled-in detail rows", async () => {
+    setContext(makeAdminCtx());
+    db.cnItem.findMany.mockResolvedValue([]);
+    db.cnUOM.findMany.mockResolvedValue([]);
+    db.cnWorkOrder.findMany.mockResolvedValue([]);
+    db.cnContractor.findMany.mockResolvedValue([]);
+    db.cnDailyProgressReport.findMany.mockResolvedValue([
+      {
+        dprNumber: "DPR-X-001",
+        reportDate: new Date("2026-06-01"),
+        status: "draft",
+        weatherCondition: "Clear",
+        remarks: "site remark",
+        project: { name: "Bridge" },
+        workItems: [
+          {
+            boqItemId: "b1",
+            uomId: "u1",
+            woId: null,
+            description: "Excavation",
+            todayQty: "5",
+            cumulativeQty: "5",
+            location: "CH 100",
+            remarks: "wr",
+          },
+        ],
+        materialEntries: [
+          { itemId: "i1", uomId: "u1", consumedQty: "10", remarks: "mr" },
+        ],
+        labourEntries: [
+          { category: "Mason", count: 4, workingArea: "Zone A", contractorId: null },
+        ],
+        staffEntries: [
+          { name: "John", designation: "Engineer", present: true, reason: "" },
+        ],
+        machineryEntries: [
+          { description: "Excavator", condition: "Good", requiredQty: 1, actualQty: 1, remarks: "" },
+        ],
+      },
+    ]);
+
+    const res = await EXPORT(buildExportGET());
+    expect(res.status).toBe(200);
+    const wb = XLSX.read(Buffer.from(await res.arrayBuffer()), { type: "buffer" });
+    expect(wb.SheetNames).toEqual([
+      "DPRs",
+      "Work Done",
+      "Materials",
+      "Manpower",
+      "Staff",
+      "Machinery",
+    ]);
+    const work = XLSX.utils.sheet_to_json(wb.Sheets["Work Done"], {
+      header: 1,
+    }) as unknown[][];
+    // header row + one data row for the single work item
+    expect(work.length).toBe(2);
+    expect(work[1]).toContain("Excavation");
+    expect(work[1]).toContain("CH 100");
+    expect(work[1]).toContain("Self Work");
+    const materials = XLSX.utils.sheet_to_json(wb.Sheets["Materials"], {
+      header: 1,
+    }) as unknown[][];
+    expect(materials.length).toBe(2);
+    const staff = XLSX.utils.sheet_to_json(wb.Sheets["Staff"], {
+      header: 1,
+    }) as unknown[][];
+    expect(staff[1]).toContain("John");
   });
 });
 

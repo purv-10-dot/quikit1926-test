@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Clock, ArrowRight, AlertTriangle } from "lucide-react";
+import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 
 /* ────────────── Payload types (mirror /api/opsp/deadline) ────────────── */
 
@@ -105,6 +106,7 @@ function urgencyColors(daysLeft: number): ColorScheme {
  */
 export function OPSPDeadlineBanner() {
   const router = useRouter();
+  const { isAdmin } = useMyPermissions();
   const [data, setData] = useState<DeadlineResponse | null>(null);
   const [autoFinalized, setAutoFinalized] = useState<AutoFinalizedNotice | null>(null);
 
@@ -161,7 +163,9 @@ export function OPSPDeadlineBanner() {
 
   return (
     <>
-      {finalize && <FinalizeSubBanner data={finalize} onClick={() => router.push("/opsp")} />}
+      {finalize && (
+        <FinalizeSubBanner data={finalize} isAdmin={isAdmin} onClick={() => router.push("/opsp")} />
+      )}
       {review && <ReviewSubBanner data={review} onClick={() => router.push("/opsp/review")} />}
     </>
   );
@@ -200,9 +204,11 @@ function AutoFinalizedNoticeBar({ message, onView }: { message: string; onView: 
 
 function FinalizeSubBanner({
   data,
+  isAdmin,
   onClick,
 }: {
   data: FinalizePayload;
+  isAdmin: boolean;
   onClick: () => void;
 }) {
   const { mode, daysLeft, message, period } = data;
@@ -242,9 +248,11 @@ function FinalizeSubBanner({
           <div className="min-w-0">
             <p className={`text-xs font-semibold ${colors.title} leading-tight`}>{title}</p>
             <p className={`text-[11px] ${colors.desc} leading-tight mt-0.5`}>
-              {mode === "A"
-                ? "Complete and review your One-Page Strategic Plan before the deadline."
-                : "Quarter closes soon — finalize to lock the plan."}
+              {!isAdmin
+                ? "Make sure Your Accountability and Quarterly Priorities are filled in before it's locked."
+                : mode === "A"
+                  ? "Complete and review your One-Page Strategic Plan before the deadline."
+                  : "Quarter closes soon — finalize to lock the plan."}
             </p>
           </div>
         </div>

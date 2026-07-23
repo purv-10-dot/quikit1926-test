@@ -11,6 +11,7 @@ export interface GrnLine {
   rejectedQty?: number | string | null;
   qualityStatus?: string | null;
   batchNo?: string | null;
+  remarks?: string | null;
 }
 
 export interface GrnDetail {
@@ -24,6 +25,8 @@ export interface GrnDetail {
   po?: { id?: string | null; poNumber?: string | null } | null;
   vendorName?: string | null;
   vendor?: { name?: string | null } | null;
+  storageLocationId?: string | null;
+  storageLocationName?: string | null;
   grnNumber?: string | null;
   grnDate?: string | null;
   challanNo?: string | null;

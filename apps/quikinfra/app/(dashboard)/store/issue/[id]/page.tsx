@@ -455,7 +455,7 @@ export default function MaterialIssueDetailPage() {
               <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
                 <AlertTriangle className="w-3 h-3" /> E-Way Bill
               </span>
-              <span className="font-mono">{issue.ewayBillNo}</span>
+              <span className="">{issue.ewayBillNo}</span>
               {issue.intercityTransfer && (
                 <span className="ml-auto text-[10px] text-gray-500">
                   Intercity — exempt threshold
@@ -507,7 +507,7 @@ export default function MaterialIssueDetailPage() {
                         key={l.id ?? l.itemId ?? idx}
                         className="hover:bg-indigo-50/20 transition-colors"
                       >
-                        <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
+                        <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">
                           {String(idx + 1).padStart(2, "0")}
                         </td>
                         <td className="px-4 py-3">
@@ -522,7 +522,7 @@ export default function MaterialIssueDetailPage() {
                             )}
                           </div>
                           {l.itemCode && (
-                            <div className="text-[10px] text-gray-400 font-mono mt-0.5">
+                            <div className="text-[10px] text-gray-400 mt-0.5">
                               {l.itemCode}
                             </div>
                           )}
@@ -539,10 +539,10 @@ export default function MaterialIssueDetailPage() {
                         <td className="px-4 py-3 text-right tabular-nums text-gray-600">
                           {fmtQty(l.availableStock)}
                         </td>
-                        <td className="px-4 py-3 font-mono text-xs text-gray-700">
+                        <td className="px-4 py-3 text-xs text-gray-700">
                           {l.batchNo ?? "—"}
                         </td>
-                        <td className="px-4 py-3 font-mono text-xs text-gray-700">
+                        <td className="px-4 py-3 text-xs text-gray-700">
                           {l.equipmentNo ?? "—"}
                         </td>
                         <td className="px-6 py-3 text-xs text-gray-500">
@@ -677,7 +677,7 @@ function Stat({
         {label}
       </div>
       <div
-        className={`mt-1 text-sm text-gray-900 truncate ${mono ? "font-mono text-xs" : ""} ${
+        className={`mt-1 text-sm text-gray-900 truncate ${mono ? "text-xs" : ""} ${
           strong ? "font-semibold" : ""
         }`}
       >

@@ -348,21 +348,23 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
   const appId = await getQuikScaleAppId();
   let appRole: { id: string; name: string } | null = null;
   if (appId) {
-    const existingAccess = await db.userAppAccess.findFirst({
-      where: { orgId, appId, userId: newUserId },
-      select: { id: true },
+    // Atomic upsert on @@unique([userId, orgId, appId]). Replaces a
+    // findFirst-then-create that raced to P2002 when the same invite/add was
+    // submitted twice concurrently (double-click). `update: {}` — if access
+    // already exists we leave the existing grant (role/grantedBy) untouched.
+    await db.userAppAccess.upsert({
+      where: {
+        userId_orgId_appId: { userId: newUserId, orgId, appId },
+      },
+      update: {},
+      create: {
+        userId: newUserId,
+        orgId,
+        appId,
+        role: "member",
+        grantedBy: userId,
+      },
     });
-    if (!existingAccess) {
-      await db.userAppAccess.create({
-        data: {
-          userId: newUserId,
-          orgId,
-          appId,
-          role: "member",
-          grantedBy: userId,
-        },
-      });
-    }
 
     const { adminRoleId, userRoleId } = await seedAllDefaultRoles(orgId);
 

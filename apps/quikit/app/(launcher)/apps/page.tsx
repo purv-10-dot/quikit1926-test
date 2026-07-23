@@ -65,10 +65,10 @@ const SANS = "'Gilroy', 'Helvetica Neue', Arial, system-ui, -apple-system, sans-
    iconUrl so the launcher always renders the current brand logos.
    This page renders on a dark surface (see PAPER), so per the brand rule we
    serve the LIGHT monogram (white badge) for every tile — the dark badge
-   blends into the near-black backdrop. `admin` has only its branded gold
-   badge (no theme pair), which reads fine on dark, so it keeps that icon. */
+   blends into the near-black backdrop. */
 const LAUNCHER_ICONS: Record<string, string> = {
-  admin: "/app-icons/admin.svg",
+  admin: "/app-icons/admin-light.svg",
+  quikasset: "/app-icons/quikasset-light.svg",
   quikchat: "/app-icons/quikchat-light.svg",
   quikcrm: "/app-icons/quikcrm-light.svg",
   quikfinance: "/app-icons/quikfinance-light.svg",
@@ -257,11 +257,21 @@ export default function AppLauncherPage() {
     const launcherUrl =
       process.env.NEXT_PUBLIC_QUIKIT_URL?.replace(/\/+$/, "") ??
       (typeof window !== "undefined" ? window.location.origin : "");
+    // After logout, land on the public marketing site instead of the launcher
+    // root — but only on the UAT launcher (uatapps.quikit.ai → uat.quikit.ai).
+    // Every other environment (incl. prod apps.quikit.ai) keeps landing on the
+    // launcher root. Decided at runtime from the browser host so no build-arg /
+    // Dockerfile wiring is needed. NOTE: the target origin must be in the
+    // launcher's /api/auth/signout-global allow-list or that hop rejects it.
+    const host =
+      typeof window !== "undefined" ? window.location.hostname : "";
+    const postLogoutRedirect =
+      host === "uatapps.quikit.ai" ? "https://uat.quikit.ai" : `${launcherUrl}/`;
     await globalSignOut({
       authUrl: process.env.NEXT_PUBLIC_AUTH_URL,
       quikitUrl: launcherUrl,
       localSignOut: () => signOut({ redirect: false }),
-      postLogoutRedirect: `${launcherUrl}/`,
+      postLogoutRedirect,
     });
   }
 
@@ -701,7 +711,7 @@ export default function AppLauncherPage() {
             <div className="flex items-center gap-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src="/brand/quikit.svg"
+                src="/brand/quikit-light.svg"
                 alt="QuikIT"
                 width={36}
                 height={36}
@@ -724,11 +734,6 @@ export default function AppLauncherPage() {
                 >
                   QuikIT
                 </h1>
-                <p style={{ fontSize: 12, color: MUTED }}>
-                  {session?.user?.name
-                    ? `Welcome, ${session.user.name.split(" ")[0]}`
-                    : "Your platform"}
-                </p>
               </div>
             </div>
 

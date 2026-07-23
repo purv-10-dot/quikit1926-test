@@ -39,6 +39,13 @@ export function reconcileActionsWithGoals(
   actionsQtr: ActionRow[],
   maxRows: number,
   prevGoalCats: ReadonlyArray<string> = [],
+  /**
+   * Overlapping-row indices whose category auto-fill must be SKIPPED — used to
+   * defer a synchronized-category rename to the confirmation flow while still
+   * applying the grow-only length sync + every other row's auto-fill. Empty by
+   * default (fully-automatic legacy behavior).
+   */
+  skipIndices: ReadonlySet<number> = new Set(),
 ): ActionRow[] {
   const goalLen = goalRows.length;
   const actLen = actionsQtr.length;
@@ -53,17 +60,32 @@ export function reconcileActionsWithGoals(
     ];
   }
 
-  // 2) Change-driven category auto-fill for the overlapping (Goal-backed) rows.
+  // 2) Index-aligned AUTO reflection for the overlapping (Goal-backed) rows:
+  //    only first-fill an EMPTY Action row, or CLEAR one that mirrored the old
+  //    Goal value. Overwriting an OCCUPIED Action row with a different category
+  //    is a "reflect" that needs confirmation — those indices are in
+  //    `skipIndices` (gated rename) or blocked (duplicate) and handled by the
+  //    caller, so they're skipped here and never silently clobbered.
   const overlap = Math.min(goalLen, next.length);
+  const trim = (s: string | undefined) => (s ?? "").trim();
   for (let i = 0; i < overlap; i++) {
-    const goalCat = goalRows[i].category;
-    const wasGoalCat = prevGoalCats[i] ?? "";
-    // Only propagate when the Goal category actually changed this cycle.
-    if (goalCat !== wasGoalCat && next[i].category !== goalCat) {
+    if (skipIndices.has(i)) continue;
+    const goalCat = trim(goalRows[i].category);
+    const actCat = trim(next[i].category);
+    const wasGoalCat = trim(prevGoalCats[i]);
+    if (goalCat === actCat) continue; // already reflected
+    // First-fill is DUPLICATE-SAFE: never fill a value already present at another
+    // Action row (idempotent every run, so an unchanged Goal whose value collides
+    // downstream can't be resurrected into a new duplicate on a later cascade).
+    const dupElsewhere =
+      goalCat !== "" && next.some((r, j) => j !== i && trim(r.category) === goalCat);
+    const isFirstFill = actCat === "" && goalCat !== "" && !dupElsewhere;
+    const isSyncedClear = goalCat === "" && actCat !== "" && actCat === wasGoalCat;
+    if (isFirstFill || isSyncedClear) {
       if (next === actionsQtr) next = [...next]; // clone-on-first-write
       next[i] = {
         ...next[i],
-        category: goalCat,
+        category: goalRows[i].category,
         projected: "",
         m1: "",
         m2: "",

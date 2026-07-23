@@ -7,10 +7,11 @@
  */
 
 import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Plus, Download, Upload, Trash2, Pencil, RotateCcw } from "lucide-react";
 import { PageHeader, PageContainer, PrimaryButton, SecondaryButton, EmptyState } from "./PageShell";
 import { DataTable, type ColDef } from "./DataTable";
+import { useServerList } from "@/hooks/use-server-list";
 import { exportCSV } from "./QuickCreateDrawer";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { TableShimmer } from "./Shimmer";
@@ -36,9 +37,40 @@ export interface MasterListPageProps<T extends { id: string; status?: string }> 
   entityName: string;
   breadcrumbs?: Array<{ label: string; href?: string }>;
   columns: MasterColumnDef<T>[];
-  data: T[];
-  total: number;
+  /**
+   * Full client-side dataset. Required for the classic (default) mode.
+   * In {@link infinite} mode this is ignored — rows come from the server
+   * one page at a time — so callers may omit it.
+   */
+  data?: T[];
+  total?: number;
   isLoading?: boolean;
+  /**
+   * Opt into server-side pagination. When set, the page stops loading the
+   * whole table: MasterListPage drives `useServerList` (search, sort, the
+   * status tabs, and page/pageSize all become server query params) and the
+   * DataTable shows a server-driven numbered pager. Leave undefined for the
+   * classic client-paged behavior.
+   */
+  infinite?: {
+    /** Stable React Query key prefix, e.g. "items-infinite". */
+    queryKey: string;
+    /** List endpoint, e.g. "/api/masters/items". */
+    endpoint: string;
+    /** Rows per request (default 50). */
+    pageSize?: number;
+    /** Extra static server filters (groupId, projectId, …). */
+    filters?: Record<string, string | undefined>;
+    /** Initial sort column / direction. */
+    defaultSortBy?: string;
+    defaultSortOrder?: "asc" | "desc";
+  };
+  /**
+   * Called (in infinite mode) whenever the accumulated loaded rows change,
+   * so a page can run side-effects over the visible set — e.g. Items fetches
+   * per-row stock for exactly the rows on screen.
+   */
+  onRowsChange?: (rows: T[]) => void;
   onAdd?: () => void;
   onEdit?: (item: T) => void;
   /**
@@ -94,6 +126,13 @@ export interface MasterListPageProps<T extends { id: string; status?: string }> 
    */
   historyEntityType?: string;
   /**
+   * Custom subtitle for the Approval Timeline drawer. Rows whose descriptive
+   * field isn't a standard `name` / `code` / `*Number` column (e.g. labour
+   * rates, which are identified by category + type + window) would otherwise
+   * fall back to the raw row id. Return a human label instead.
+   */
+  getHistoryRowLabel?: (row: T) => string;
+  /**
    * Sidebar URL of this page (e.g. "/masters/companies"). When set, the
    * shell consults the current user's permission matrix and silently
    * suppresses Add / Edit / Delete affordances the user is not granted.
@@ -136,7 +175,9 @@ function StatusBadge({ value }: { value: string }) {
 // ─── Component ──────────────────────────────────────────────────────
 
 export function MasterListPage<T extends { id: string; status?: string }>({
-  title, subtitle, entityName, breadcrumbs, columns, data, total, isLoading,
+  title, subtitle, entityName, breadcrumbs, columns,
+  data: dataProp, total: totalProp, isLoading: isLoadingProp,
+  infinite, onRowsChange,
   onAdd, onEdit, onDelete, onRestore, deleteConfirmTitle, deleteConfirmMessage,
   onImport, onExport,
   canCreate = true, canImport = false, canExport = false,
@@ -145,8 +186,17 @@ export function MasterListPage<T extends { id: string; status?: string }>({
   showStatusTabs = false,
   externalStatusFilter = false,
   historyEntityType,
+  getHistoryRowLabel,
   permissionUrl,
 }: MasterListPageProps<T>) {
+  // ── Server-driven (infinite) state ──────────────────────────────────
+  // Search + sort are emitted by the DataTable in infinite mode; status
+  // comes from the tabs below. All three become server query params.
+  const [serverSearch, setServerSearch] = useState("");
+  const [serverSort, setServerSort] = useState<{ by?: string; order?: "asc" | "desc" }>({
+    by: infinite?.defaultSortBy,
+    order: infinite?.defaultSortOrder,
+  });
   // Permission matrix gating: if the caller supplied a `permissionUrl`,
   // we silently drop the action callbacks the user isn't granted so the
   // shell never even renders the buttons.
@@ -170,12 +220,55 @@ export function MasterListPage<T extends { id: string; status?: string }>({
   const [statusView, setStatusView] = useState<"active" | "inactive" | "all">(
     "active",
   );
+
+  // Map the status view to the server `status` param (infinite mode only).
+  //   active   → "active"   (backend hides inactive)
+  //   inactive → "inactive" · all → "all"
+  // Pages with their own filter UI (externalStatusFilter, e.g. Vendors) send
+  // status through infinite.filters instead, so we emit nothing here.
+  const serverStatus: string | undefined =
+    !infinite || externalStatusFilter
+      ? undefined
+      : !showStatusTabs
+        ? "active"
+        : statusView === "inactive"
+          ? "inactive"
+          : statusView === "all"
+            ? "all"
+            : "active";
+
+  const srv = useServerList<T>(
+    infinite?.queryKey ?? "__ml_disabled__",
+    infinite?.endpoint ?? "",
+    {
+      search: serverSearch,
+      sortBy: serverSort.by,
+      sortOrder: serverSort.order,
+      initialPageSize: infinite?.pageSize,
+      filters: { ...(infinite?.filters ?? {}), ...(serverStatus ? { status: serverStatus } : {}) },
+    },
+    { enabled: !!infinite },
+  );
+
+  // Effective data source: server page (server-driven) or the client dataset.
+  const data: T[] = infinite ? srv.items : (dataProp ?? []);
+  const total = infinite ? srv.total : (totalProp ?? 0);
+  const isLoading = infinite ? srv.isLoading : isLoadingProp;
+
+  // Let the page react to the loaded rows (e.g. Items fetches per-row stock).
+  useEffect(() => {
+    if (infinite && onRowsChange) onRowsChange(srv.items);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [infinite, onRowsChange, srv.items]);
+
   const inactiveCount = useMemo(
     () => data.filter((r) => (r as { status?: string })?.status === "inactive").length,
     [data],
   );
   const visibleData = useMemo(
     () => {
+      // Infinite mode: the server already applied the status filter.
+      if (infinite) return data;
       // Page owns the status filter (e.g. Vendors) — render data verbatim.
       if (externalStatusFilter) return data;
       if (!showStatusTabs) {
@@ -187,7 +280,7 @@ export function MasterListPage<T extends { id: string; status?: string }>({
       }
       return data.filter((r) => (r as { status?: string })?.status !== "inactive");
     },
-    [data, statusView, showStatusTabs, externalStatusFilter],
+    [data, statusView, showStatusTabs, externalStatusFilter, infinite],
   );
 
   // Export always reflects the live master list — soft-deleted (inactive)
@@ -370,7 +463,9 @@ export function MasterListPage<T extends { id: string; status?: string }>({
             {(
               [
                 { key: "active", label: "Active" },
-                { key: "inactive", label: `Inactive · ${inactiveCount}` },
+                // In infinite mode `data` is only the loaded pages, so the
+                // client-side inactive count would be wrong — omit it.
+                { key: "inactive", label: infinite ? "Inactive" : `Inactive · ${inactiveCount}` },
                 { key: "all", label: "All" },
               ] as const
             ).map((tab) => (
@@ -380,7 +475,7 @@ export function MasterListPage<T extends { id: string; status?: string }>({
                 onClick={() => setStatusView(tab.key)}
                 className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                   statusView === tab.key
-                    ? "bg-white text-orange-700 shadow-sm"
+                    ? "bg-white text-accent-700 shadow-sm"
                     : "text-slate-600 hover:text-slate-900"
                 }`}
               >
@@ -394,9 +489,12 @@ export function MasterListPage<T extends { id: string; status?: string }>({
             {filters}
           </div>
         ) : null}
-        {isLoading ? (
+        {(isLoading && visibleData.length === 0) ? (
           <TableShimmer rows={8} columns={Math.min(Math.max(columns.length, 3), 8)} />
-        ) : visibleData.length === 0 ? (
+        ) : (!infinite && !isLoading && visibleData.length === 0) ? (
+          // Classic mode "nothing here yet" state. In infinite mode the
+          // DataTable owns the empty state so the search box stays visible
+          // (a search with no matches should not read as an empty master).
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm py-16">
             <EmptyState
               title={`No ${entityName.toLowerCase()}s yet`}
@@ -417,6 +515,16 @@ export function MasterListPage<T extends { id: string; status?: string }>({
             onAdd={effectiveOnAdd}
             addLabel={`Add ${entityName}`}
             historyEntityType={historyEntityType}
+            getHistoryRowLabel={getHistoryRowLabel}
+            loading={infinite ? !!isLoading : undefined}
+            serverMode={!!infinite}
+            serverTotal={infinite ? total : undefined}
+            serverPage={infinite ? srv.page : undefined}
+            serverPageSize={infinite ? srv.pageSize : undefined}
+            onPageChange={infinite ? srv.setPage : undefined}
+            onPageSizeChange={infinite ? srv.setPageSize : undefined}
+            onSearchChange={infinite ? setServerSearch : undefined}
+            onSortChange={infinite ? (k, d) => setServerSort({ by: k, order: d }) : undefined}
           />
         )}
       </PageContainer>

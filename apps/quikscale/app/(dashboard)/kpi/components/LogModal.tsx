@@ -6,15 +6,15 @@ import { useUpdateKPI, useUpdateWeeklyValuesBatch, useNotes, useAddNote } from "
 import { useUsers } from "@/lib/hooks/useUsers";
 import { HistoryButton } from "@/components/audit/HistoryButton";
 import type { KPIRow, WeeklyValue, User } from "@/lib/types/kpi";
-import { fiscalYearLabel, weekDateLabel, weeksArray, MAX_WEEKS_PER_QUARTER } from "@/lib/utils/fiscal";
+import { fiscalYearLabel, weekDateLabel, weeksArray, MAX_WEEKS_PER_QUARTER, KPI_TYPES } from "@/lib/utils/fiscal";
 import { progressColor, fmt } from "@/lib/utils/kpiHelpers";
-import { UserPicker } from "@quikit/ui";
+import { UserPicker, DropdownPicker } from "@quikit/ui";
 import { CURRENCIES, getScales, getMultiplier, formatActual, shortScaleLabel, scaleDownForDisplay, scaleUpFromInput } from "@/lib/utils/currency";
 import { WeeklyScroller } from "./WeeklyScroller";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
-import { weeklyInputLockState, isWeekBeforeEditableWindow } from "@/lib/utils/weekLock";
+import { weekEditState, isWeekInPast } from "@/lib/utils/weekLock";
 import { UnitSelect } from "./UnitSelect";
-import { useCurrentWeek, useWeekLabels, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useWeekLabels, useQuarterWeekCount, useQuarterPosition } from "@/lib/hooks/useCurrentWeek";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 import { humanizeApiError } from "@/lib/utils/humanizeError";
 import {
@@ -26,10 +26,12 @@ import {
   sumBreakdown,
   checkBreakdownBalance,
   isTargetValueLocked,
+  isStandaloneCellEditable,
   TARGET_LOCK_TIP,
 } from "./kpiModalHelpers";
 import { WeekRow } from "./WeekRow";
 import { StatsTab } from "./StatsTab";
+import { QuarterField } from "./QuarterField";
 import { User as UserIcon, Calendar, CalendarDays } from "lucide-react";
 
 interface Props {
@@ -58,6 +60,7 @@ type EditFormState = {
   unit: string;
   scaledDisplay: boolean;
   reverseColor: boolean;
+  kpiType: "NA" | "Leading" | "Lagging";
   // Team-KPI multi-owner state (mirrors KPIModal's create form so the Edit
   // dialog can show Contribution % per Owner + per-owner Target Breakdown rows).
   ownerIds: string[];
@@ -94,16 +97,30 @@ function EditTab({
   // weeks (incl. past). When "Add Past Week Data" is off those cells are locked,
   // so the Target Value is locked too. EditTab is always an edit context.
   const targetLocked = isTargetValueLocked({ isEditMode: true, flagsLoaded, canAddPastWeek });
-  // A week is locked-by-past when state has resolved and the week is strictly
-  // before the current quarter week AND the org disallows adding past-week
-  // data. This is a hard binary (no "current week − 1" grace) — that grace
-  // window lives exclusively on the Updates tab.
+  // A week is locked-by-past when state has resolved, the week is in the past
+  // (quarter/year-aware — a fully-past quarter counts ALL its weeks as past, not
+  // just those below the clamped current week), AND the org disallows adding
+  // past-week data. Hard binary (no "current week − 1" grace — that grace lives
+  // only on the Updates tab); future quarters stay editable for target planning.
+  const editQuarterPos = useQuarterPosition(parseInt(form.year) || null, form.quarter);
+  const isEditWeekPast = (w: number): boolean =>
+    isWeekInPast(editQuarterPos ?? "current", w, currentWeek);
   const weekLockedByPast = (w: number): boolean =>
-    flagsLoaded && currentWeek !== null && w < currentWeek && !canAddPastWeek;
+    flagsLoaded && editQuarterPos !== null && isEditWeekPast(w) && !canAddPastWeek;
+  // Standalone renders current & future weeks as editable 0/target dropdowns
+  // always; past weeks become editable only when "Add Past Week Data" is ON.
+  // Shared per-week gate with the create form (KPIModal) via
+  // isStandaloneCellEditable. See that helper for the rationale.
+  const pastWeekAllowed = flagsLoaded && canAddPastWeek;
   const currentWeek = useCurrentWeek(parseInt(form.year) || null, form.quarter);
   const editTabWeekLabels = useWeekLabels(parseInt(form.year) || null, form.quarter);
   const weekCount = useQuarterWeekCount(parseInt(form.year) || null, form.quarter);
-  const firstEditableWeek = (currentWeek !== null && currentWeek > 1) ? currentWeek : 1;
+  // In past-week mode a fully-PAST selected quarter has every week open for
+  // retroactive planning, so distribute from week 1 rather than the clamped
+  // last week. Current/future quarters keep the existing behaviour.
+  const firstEditableWeek = (pastWeekAllowed && editQuarterPos === "past")
+    ? 1
+    : ((currentWeek !== null && currentWeek > 1) ? currentWeek : 1);
   // Buffers the in-progress keystrokes of a scaled breakdown cell so decimals
   // (e.g. "2.5") aren't mangled by the raw↔unit round-trip mid-type.
   const [editingCell, setEditingCell] = useState<{ key: string; raw: string } | null>(null);
@@ -111,6 +128,34 @@ function EditTab({
   function set(key: string, val: string) {
     setForm(f => ({ ...f, [key]: val }));
   }
+
+  /** Change the KPI's quarter (only reachable when "Add Past Week Data" is on). */
+  function setQuarter(q: string) {
+    quarterTouchedRef.current = true;
+    setForm(f => ({ ...f, quarter: q }));
+  }
+
+  // Rebuild the weekly breakdown for the NEW quarter once its async-resolved
+  // `firstEditableWeek` + `weekCount` settle. Only fires after a user-initiated
+  // quarter switch (mirrors KPIModal). Standalone/Cumulative both re-derive from
+  // formula since the saved breakdown belonged to the previous quarter.
+  const quarterTouchedRef = useRef(false);
+  useEffect(() => {
+    if (!quarterTouchedRef.current) return;
+    setForm(f => {
+      const tNum = f.measurementUnit === "Currency"
+        ? (parseFloat(f.target) || 0) * getMultiplier(f.currency, f.targetScale)
+        : parseFloat(f.target) || 0;
+      if (tNum <= 0) return f;
+      const next = {
+        ...f,
+        weeklyBreakdown: buildBreakdown(f.divisionType, tNum, f.measurementUnit, firstEditableWeek, weekCount),
+      };
+      if (isTeamKPI) next.weeklyOwnerBreakdown = computeAllOwnerBreakdowns(next);
+      return next;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.quarter, firstEditableWeek, weekCount]);
 
   /** Compute the actual (scaled) target from display value + scale */
   function actualNum(f: EditFormState): number {
@@ -341,12 +386,14 @@ function EditTab({
         </div>
       </div>
 
-      {/* Quarter (read-only) */}
+      {/* Quarter (editable dropdown when "Add Past Week Data" is on) */}
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Quarter</label>
-        <div className="px-3 py-2 text-xs border border-gray-100 rounded-lg bg-gray-50 text-gray-600">
-          {fiscalYearLabel(parseInt(form.year))} · {form.quarter}
-        </div>
+        <QuarterField
+          year={parseInt(form.year)}
+          quarter={form.quarter}
+          editable={pastWeekAllowed}
+          onChange={setQuarter}
+        />
       </div>
 
       {/* Measurement Unit + Currency (read-only) */}
@@ -365,6 +412,22 @@ function EditTab({
             </div>
           </div>
         )}
+      </div>
+
+      {/* KPI Type — Leading (predictive input) vs Lagging (outcome); NA = unset. */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            KPI Type
+          </label>
+          <DropdownPicker
+            value={form.kpiType}
+            onChange={(v) => set("kpiType", v)}
+            options={KPI_TYPES.map(t => ({ value: t, label: t }))}
+            disabled={readOnly}
+          />
+          {errors.kpiType && <p className="text-[10px] text-red-500 mt-0.5">{errors.kpiType}</p>}
+        </div>
       </div>
 
       {/* Target Value */}
@@ -579,8 +642,7 @@ function EditTab({
                     </th>
                   )}
                   {weeksArray(weekCount).map(w => {
-                    const isPastWeek = currentWeek !== null && w < currentWeek;
-                    const isStandaloneEditable = form.divisionType === "Standalone" && isPastWeek && !weekLockedByPast(w);
+                    const isStandaloneEditable = isStandaloneCellEditable(form.divisionType, isEditWeekPast(w), pastWeekAllowed);
                     const showLock = weekLockedByPast(w) && !isStandaloneEditable;
                     return (
                     <th key={w} className={`px-2 py-1.5 text-center font-medium border-r border-gray-200 last:border-r-0 whitespace-nowrap ${showLock ? "text-gray-300" : "text-gray-500"}`}>
@@ -599,10 +661,15 @@ function EditTab({
                     </td>
                   )}
                   {weeksArray(weekCount).map(w => {
-                    const isPastWeek = currentWeek !== null && w < currentWeek;
                     const isStandalone = form.divisionType === "Standalone";
-                    const isStandalonePastEditable = isStandalone && isPastWeek && !weekLockedByPast(w);
-                    const isLocked = isStandalone ? !isStandalonePastEditable : weekLockedByPast(w);
+                    // Individual row: Standalone current & future weeks are ALWAYS an
+                    // editable 0/target dropdown; past weeks require "Add Past Week Data".
+                    // The Team total row is a read-only SUM of the per-owner cells below
+                    // (those rows are the source of truth), so it never renders a dropdown.
+                    const isStandaloneDropdown = !isTeamKPI
+                      && isStandaloneCellEditable(form.divisionType, isEditWeekPast(w), pastWeekAllowed);
+                    const standaloneCellEditable = isStandaloneDropdown;
+                    const isLocked = isStandalone ? !standaloneCellEditable : weekLockedByPast(w);
 
                     // Team mode: total = live sum of per-owner cells, edit redistributes by contribution %.
                     if (isTeamKPI && form.ownerIds.length > 0) {
@@ -639,7 +706,7 @@ function EditTab({
                       );
                     }
 
-                    if (isStandalonePastEditable) {
+                    if (isStandaloneDropdown) {
                       const isNumUnit = form.measurementUnit === "Number";
                       const zeroStr = isNumUnit ? "0" : "0.00";
                       const targetStr = scaledTarget > 0
@@ -710,6 +777,43 @@ function EditTab({
                       </td>
                       {weeksArray(weekCount).map(w => {
                         const isStandalone = form.divisionType === "Standalone";
+                        // Standalone per-owner: current & future weeks are ALWAYS an
+                        // editable 0/sub-target dropdown; past weeks become editable
+                        // only when "Add Past Week Data" is ON (else locked). Mirrors
+                        // the create form (KPIModal). Cumulative keeps the numeric input.
+                        if (isStandaloneCellEditable(form.divisionType, isEditWeekPast(w), pastWeekAllowed)) {
+                          const isNumUnit = form.measurementUnit === "Number";
+                          const ownerTarget = (pct / 100) * scaledTarget;
+                          const zeroStr = isNumUnit ? "0" : "0.00";
+                          const targetStr = ownerTarget > 0
+                            ? (isNumUnit ? String(Math.round(ownerTarget)) : ownerTarget.toFixed(2))
+                            : "";
+                          const current = ownerRow[w] ?? "";
+                          const currentNum = parseFloat(current) || 0;
+                          const norm = (currentNum === 0 || current === "") ? zeroStr
+                            : (targetStr && Math.abs(currentNum - ownerTarget) < 0.001) ? targetStr
+                            : current;
+                          return (
+                            <td key={w} className="px-1 py-1.5 border-r border-t border-gray-100 last:border-r-0">
+                              <div className="flex items-center gap-0.5">
+                                {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0 whitespace-nowrap">{breakdownPrefix}</span>}
+                                <select
+                                  value={norm}
+                                  onChange={e => setOwnerWeekCell(id, w, e.target.value)}
+                                  title={rawTip(ownerRow[w] ?? "")}
+                                  className={`w-full px-1 py-1 text-center text-[11px] border border-gray-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 ${cellMinW} cursor-pointer`}
+                                >
+                                  <option value={zeroStr}>0</option>
+                                  {targetStr && <option value={targetStr}>{toDisp(targetStr)}</option>}
+                                  {norm !== zeroStr && norm !== "" && norm !== targetStr && (
+                                    <option value={norm}>{toDisp(norm)} (custom)</option>
+                                  )}
+                                </select>
+                                {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0 whitespace-nowrap">{breakdownUnit}</span>}
+                              </div>
+                            </td>
+                          );
+                        }
                         const isLocked = isStandalone || weekLockedByPast(w);
                         return (
                           <td key={w} className="px-1 py-1.5 border-r border-t border-gray-100 last:border-r-0">
@@ -798,6 +902,10 @@ function UpdatesTab({
   // current-week state resolve (see weeklyInputLockState).
   const { canEditPastWeek, loaded: flagsLoaded } = usePastWeekFlags();
   const currentWeek = useCurrentWeek(kpi.year, kpi.quarter);
+  // Quarter/year position so a past KPI's last week and a future KPI's first
+  // week are locked correctly (the clamped `currentWeek` can't tell them apart).
+  const updatesQuarterPos = useQuarterPosition(kpi.year, kpi.quarter);
+  const updatesGateLoaded = flagsLoaded && updatesQuarterPos !== null;
   const updatesTabWeekLabels = useWeekLabels(kpi.year, kpi.quarter);
   const weekCount = useQuarterWeekCount(kpi.year, kpi.quarter);
 
@@ -884,8 +992,9 @@ function UpdatesTab({
             </p>
             <div className="space-y-3">
               {weeksArray(weekCount).map(w => {
-                const { isPast, isFuture, locked } = weeklyInputLockState({
-                  week: w, currentWeek, canEditPastWeek, flagsLoaded,
+                const { isPast, isFuture, locked } = weekEditState({
+                  quarterPosition: updatesQuarterPos ?? "current",
+                  week: w, currentWeek, canEditPastWeek, flagsLoaded: updatesGateLoaded,
                 });
                 // Aggregate total for this week (display only)
                 const total = ownerList.reduce((s, o) => {
@@ -979,8 +1088,9 @@ function UpdatesTab({
             </div>
             <div className="border border-gray-200 rounded-lg px-3 bg-white">
               {weeksArray(weekCount).map(w => {
-                const { locked } = weeklyInputLockState({
-                  week: w, currentWeek, canEditPastWeek, flagsLoaded,
+                const { locked } = weekEditState({
+                  quarterPosition: updatesQuarterPos ?? "current",
+                  week: w, currentWeek, canEditPastWeek, flagsLoaded: updatesGateLoaded,
                 });
                 // When a week has no target (target = 0 or unset), lock the input
                 // so nothing new can be entered — but keep any existing historical
@@ -1069,12 +1179,16 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
   // Current week-of-quarter for the header pill. DB-driven: respects tenant's
   // QuarterSetting.startDate (may be offset from Apr 1 / Jul 1 / etc.).
   const headerCurrentWeek = useCurrentWeek(kpi.year, kpi.quarter);
+  const headerQuarterPos = useQuarterPosition(kpi.year, kpi.quarter);
   const weekCount = useQuarterWeekCount(kpi.year, kpi.quarter);
   // Past-week edit flag — when off (default), the batch endpoint will reject
   // any row with weekNumber < currentWeek. The save handler uses this to
   // skip past weeks instead of sending them and getting a confusing
   // "N of 13 weeks failed" partial-success error back.
-  const { canEditPastWeek: canEditPastWeekAtSave } = usePastWeekFlags();
+  const { canEditPastWeek: canEditPastWeekAtSave, canAddPastWeek: canAddPastWeekAtSave, loaded: flagsLoadedAtSave } = usePastWeekFlags();
+  // Quarter is editable only when "Add Past Week Data" is on; mirrors the
+  // gate the Edit tab uses to render the Quarter dropdown.
+  const pastWeekAllowedAtSave = flagsLoadedAtSave && canAddPastWeekAtSave;
 
   const isTeamKPI = kpi.kpiLevel === "team";
   const currentUserId = session?.user?.id ?? "";
@@ -1152,6 +1266,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
       unit: kpi.unit ?? "",
       scaledDisplay: kpi.scaledDisplay ?? (measurementUnit === "Currency" && !!savedScale),
       reverseColor: kpi.reverseColor ?? false,
+      kpiType: (kpi.kpiType as "NA" | "Leading" | "Lagging" | undefined) ?? "NA",
       ownerIds: teamOwnerIds,
       ownerContributions: teamContribs,
       weeklyOwnerBreakdown: teamWeeklyOwner,
@@ -1295,7 +1410,11 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
         teamId: editForm.teamId || undefined,
         parentKPIId: editForm.parentKPIId || undefined,
         target: newTarget,
-        quarterlyGoal: editForm.quarterlyGoal ? parseFloat(editForm.quarterlyGoal) : undefined,
+        // quarterlyGoal + qtdGoal both track the edited Target Value. `editForm.quarterlyGoal`
+        // is seeded from the OLD saved value on open and is never touched by setTarget, so
+        // sending it as-is persisted a stale Quarter Goal (dashboard's "Quarter Goal" column
+        // reads kpi.quarterlyGoal and stayed wrong even after reload). Mirror the qtdGoal logic.
+        quarterlyGoal: newTarget !== undefined ? newTarget : (editForm.quarterlyGoal ? parseFloat(editForm.quarterlyGoal) : undefined),
         qtdGoal: newTarget !== undefined ? newTarget : (editForm.qtdGoal ? parseFloat(editForm.qtdGoal) : undefined),
         status: editForm.status as "active" | "paused" | "completed",
         divisionType: editForm.divisionType,
@@ -1304,8 +1423,17 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
         scaledDisplay:
           editForm.measurementUnit === "Currency" && !!editForm.targetScale ? editForm.scaledDisplay : false,
         reverseColor: editForm.reverseColor,
+        kpiType: editForm.kpiType,
         weeklyTargets: weeklyTargetsPayload,
       };
+
+      // Quarter/year are immutable UNLESS "Add Past Week Data" is on, in which
+      // case the Edit tab exposes the Quarter dropdown and the user may have
+      // re-pointed the KPI at a different quarter.
+      if (pastWeekAllowedAtSave) {
+        kpiPayload.quarter = editForm.quarter;
+        kpiPayload.year = parseInt(editForm.year);
+      }
 
       if (isTeamKPI && editForm.ownerIds.length > 0) {
         kpiPayload.ownerContributions = Object.fromEntries(
@@ -1343,8 +1471,16 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
       //      into a literal 0, wiping the column on every save.
       type WeeklyInput = { weekNumber: number; value: number | null; notes: string | null; userId?: string };
       const weeklyInputs: WeeklyInput[] = [];
+      // Quarter-aware so we don't ship past-/future-quarter weeks the server
+      // will reject (which surfaced as a confusing "N of 13 weeks failed").
       const isPastWeekLocked = (w: number) =>
-        headerCurrentWeek !== null && isWeekBeforeEditableWindow(w, headerCurrentWeek, canEditPastWeekAtSave);
+        weekEditState({
+          quarterPosition: headerQuarterPos ?? "current",
+          week: w,
+          currentWeek: headerCurrentWeek,
+          canEditPastWeek: canEditPastWeekAtSave,
+          flagsLoaded: headerQuarterPos !== null,
+        }).locked;
       const cellsDiffer = (
         cur: { value: string; notes: string } | undefined,
         prev: { value: string; notes: string } | undefined,

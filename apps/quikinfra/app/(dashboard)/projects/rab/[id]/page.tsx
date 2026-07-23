@@ -35,14 +35,14 @@ export default function RabDetail() {
 
   const columns: LineCol<Line>[] = [
     { key: "desc", label: "Item", render: (l) => <>
-      {l.boqItem?.code && <span className="font-mono text-xs text-gray-600 mr-2">{l.boqItem.code}</span>}
+      {l.boqItem?.code && <span className="text-xs text-gray-600 mr-2">{l.boqItem.code}</span>}
       <span className="text-gray-900">{l.boqItem?.description ?? "—"}</span>
     </> },
     { key: "boq", label: "BOQ Qty", align: "right", render: (l) => `${l.boqItem?.quantity ?? "—"} ${l.boqItem?.uom?.code ?? ""}` },
     { key: "rate", label: "Rate", align: "right", render: (l) => `₹${l.rate}` },
     { key: "prior", label: "Prior Cum.", align: "right", render: (l) => l.priorCumulativeQty },
     { key: "cum", label: "Cum. Done", align: "right", render: (l) => <strong>{l.cumulativeQtyDone}</strong> },
-    { key: "period", label: "This Period", align: "right", render: (l) => <span className="text-accent-700 font-medium">{l.currentPeriodQty}</span> },
+    { key: "period", label: "This Period", align: "right", render: (l) => <span className="text-slate-700 font-medium">{l.currentPeriodQty}</span> },
     { key: "amt", label: "Amount", align: "right", render: (l) => <span className="font-medium">₹{l.currentPeriodAmount}</span> },
   ];
 
@@ -55,11 +55,11 @@ export default function RabDetail() {
       statusBadge={<span className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded ${BADGE[rab.status] ?? "bg-gray-100 text-gray-600"}`}>{rab.status}</span>}
       meta={[
         { label: "Project", value: rab.project?.name ?? "—" },
-        { label: "Source BOQ", value: rab.boq ? <a href={`/projects/boq/${rab.boq.id}`} className="font-mono text-accent-700 hover:underline">{rab.boq.boqNumber}</a> : "—" },
+        { label: "Source BOQ", value: rab.boq ? <a href={`/projects/boq/${rab.boq.id}`} className="text-slate-700 hover:underline">{rab.boq.boqNumber}</a> : "—" },
         { label: "RAB Date", value: new Date(rab.rabDate).toISOString().slice(0, 10) },
         { label: "Billed Till", value: new Date(rab.billedTillDate).toISOString().slice(0, 10) },
         { label: "Prior Billed", value: `₹${rab.priorBilledAmount}` },
-        { label: "This Period", value: <strong className="text-accent-700">₹{rab.currentBillAmount}</strong> },
+        { label: "This Period", value: <strong className="text-slate-700">₹{rab.currentBillAmount}</strong> },
         { label: "Tax", value: `₹${rab.taxAmount}` },
         { label: "Total", value: <strong>₹{rab.total}</strong> },
       ]}

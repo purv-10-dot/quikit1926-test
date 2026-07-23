@@ -7,10 +7,11 @@ import {
   createMaterialIssue,
   listMaterialIssues,
   countMaterialIssues,
+  materialIssueStatusCounts,
   countMaterialIssuesForDate,
   type MIMaterialLine,
 } from "@/lib/store/material-issue-repository";
-import { parsePagination, paginateDb } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
 import { canActOnCurrentStep } from "@/lib/approvals/workflow-rbac";
 
 /**
@@ -49,9 +50,19 @@ export async function GET(req: NextRequest) {
 
   // Push LIMIT/OFFSET + COUNT down into the raw SQL query — no longer
   // loading the full table into memory just to slice in JS.
+  if (searchParams.get("counts") === "1") {
+    const counts = await materialIssueStatusCounts(ctx.orgId, baseOpts);
+    return NextResponse.json({ counts });
+  }
+
+  const { sortBy, sortOrder } = parseSort(
+    searchParams,
+    ["issueNumber", "issueDate", "status", "projectName", "createdAt"],
+    { field: "issueDate", order: "desc" },
+  );
   const result = await paginateDb(
     parsePagination(req),
-    (paging) => listMaterialIssues(ctx.orgId, { ...baseOpts, ...paging }),
+    (paging) => listMaterialIssues(ctx.orgId, { ...baseOpts, ...paging, sortBy, sortOrder }),
     () => countMaterialIssues(ctx.orgId, baseOpts),
   );
 

@@ -2,7 +2,7 @@ import { toErrorMessage } from "@/lib/api/errors";
 import { requireEquipmentAction } from "@/lib/auth/requireEquipmentAction";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
-import { parsePagination } from "@/lib/http/pagination";
+import { parsePagination, parseSort } from "@/lib/http/pagination";
 import { db } from "@/lib/db";
 import { canActOnCurrentStep } from "@/lib/approvals/workflow-rbac";
 import {
@@ -11,6 +11,17 @@ import {
   listEquipmentLogs,
 } from "@/lib/equipment/log-book-service";
 import { NextRequest, NextResponse } from "next/server";
+
+const EQUIPMENT_LOG_SORT_COLUMNS = [
+  "logDate",
+  "shift",
+  "run",
+  "idleHours",
+  "breakdownHours",
+  "dieselIssued",
+  "status",
+  "createdAt",
+] as const;
 
 function mapError(err: unknown) {
   const msg = err instanceof Error ? err.message : String(err);
@@ -51,6 +62,7 @@ export async function GET(req: NextRequest) {
   const status = searchParams.get("status") ?? "all";
   const fromDate = searchParams.get("fromDate") ?? "";
   const toDate = searchParams.get("toDate") ?? "";
+  const search = searchParams.get("search") ?? "";
   const summaryOnly = searchParams.get("summary") === "true";
 
   const baseOpts = {
@@ -60,6 +72,7 @@ export async function GET(req: NextRequest) {
     status: status || undefined,
     fromDate: fromDate || undefined,
     toDate: toDate || undefined,
+    search: search || undefined,
     projectIds:
       Array.isArray(ctx.projectIds) && ctx.projectIds.length > 0
         ? ctx.projectIds
@@ -72,8 +85,13 @@ export async function GET(req: NextRequest) {
   }
 
   const p = parsePagination(req);
+  const sort = parseSort(req, EQUIPMENT_LOG_SORT_COLUMNS, {
+    field: "logDate",
+    order: "desc",
+  });
   const result = await listEquipmentLogs({
     ...baseOpts,
+    orderBy: sort.orderBy as never,
     ...(p.paginated ? { take: p.take, skip: p.skip } : {}),
   });
 

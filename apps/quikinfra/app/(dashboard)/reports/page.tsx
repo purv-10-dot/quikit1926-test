@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import {
   FileBarChart2, BarChart3, TrendingUp, Package,
@@ -9,7 +10,6 @@ import {
 import { PageHeader, PageContainer, StatusChip, SecondaryButton } from "@/components/PageShell";
 import { exportCSV } from "@/components/QuickCreateDrawer";
 import { SelectInput } from "@/components/FormDrawer";
-import { useFinancialYears } from "@/hooks/use-masters";
 import { getCurrentFY } from "@/lib/validators";
 
 type ReportType = "po-register" | "po-vs-grn" | "vendor-purchase" | "pending-delivery" |
@@ -27,50 +27,21 @@ interface FYOption {
 export default function ReportsPage() {
   const [activeReport, setActiveReport] = useState<ReportType | null>(null);
 
-  // Build the FY list. Prefer the seeded master list; if it doesn't include
-  // the actual current FY (based on today's date), fall back to a synthetic
-  // one so the user is never stuck reporting against a stale year.
-  const { data: fyData } = useFinancialYears();
+  // Reports scope to the current financial year, computed from today's date
+  // (Apr–Mar Indian fiscal year). Single option — the current FY.
   const fyOptions = useMemo<FYOption[]>(() => {
-    const fromStore: FYOption[] = (fyData?.data ?? []).filter((f) => f.status === "active").map((f) => ({
-      id: f.id,
-      label: f.label,
-      startDate: f.startDate,
-      endDate: f.endDate,
-      isCurrent: !!f.isCurrent,
-    }));
-    const current = getCurrentFY();
-    const hasCurrent = fromStore.some((f) => f.label.replace(/\s+/g, "") === current.label.replace(/\s+/g, ""));
-    if (!hasCurrent) {
-      fromStore.push({
-        id: "fy-current-synthetic",
-        label: current.label,
-        startDate: current.startDate,
-        endDate: current.endDate,
-        isCurrent: true,
-      });
-    }
-    // Sort newest first
-    return fromStore.sort((a, b) => b.startDate.localeCompare(a.startDate));
-  }, [fyData]);
-
-  // Default selection: the FY that matches today's date.
-  const defaultFy = useMemo(() => {
     const cur = getCurrentFY();
-    return (
-      fyOptions.find((f) => f.label.replace(/\s+/g, "") === cur.label.replace(/\s+/g, "")) ??
-      fyOptions[0] ?? {
-        id: "fy-current-synthetic",
-        label: cur.label,
-        startDate: cur.startDate,
-        endDate: cur.endDate,
-        isCurrent: true,
-      }
-    );
-  }, [fyOptions]);
+    return [{
+      id: "fy-current",
+      label: cur.label,
+      startDate: cur.startDate,
+      endDate: cur.endDate,
+      isCurrent: true,
+    }];
+  }, []);
 
   const [selectedFyId, setSelectedFyId] = useState<string | null>(null);
-  const selectedFy = fyOptions.find((f) => f.id === selectedFyId) ?? defaultFy;
+  const selectedFy = fyOptions.find((f) => f.id === selectedFyId) ?? fyOptions[0]!;
 
   return (
     <>
@@ -79,8 +50,8 @@ export default function ReportsPage() {
         subtitle="Construction operations intelligence"
         actions={
           <div className="flex items-center gap-2">
-            <CalendarCheck className="w-4 h-4 text-orange-600" />
-            <label className="text-xs font-semibold text-orange-700">Financial Year</label>
+            <CalendarCheck className="w-4 h-4 text-accent-600" />
+            <label className="text-xs font-semibold text-accent-700">Financial Year</label>
             <div className="min-w-[180px]">
               <SelectInput
                 value={selectedFy.id}
@@ -105,26 +76,40 @@ export default function ReportsPage() {
   );
 }
 
+type MenuItem = {
+  label: string;
+  desc: string;
+  icon: typeof BarChart3;
+  /** Inline report rendered by ReportViewer. */
+  key?: ReportType;
+  /** Standalone report page to navigate to instead of rendering inline. */
+  href?: string;
+};
+
 function ReportMenu({ onSelect, fy }: { onSelect: (r: ReportType) => void; fy: FYOption }) {
-  const REPORTS = [
+  const REPORTS: { section: string; items: MenuItem[] }[] = [
     { section: "Purchase", items: [
-      { key: "po-register" as ReportType, label: "PO Register", desc: "All purchase orders with status and amounts", icon: ShoppingCart },
-      { key: "po-vs-grn" as ReportType, label: "PO vs GRN", desc: "Ordered vs received quantity comparison", icon: BarChart3 },
-      { key: "vendor-purchase" as ReportType, label: "Vendor-wise Purchase", desc: "Total purchase value by vendor", icon: TrendingUp },
-      { key: "pr-status" as ReportType, label: "PR Status Report", desc: "All PRs with current status", icon: FileBarChart2 },
+      { key: "po-register", label: "PO Register", desc: "All purchase orders with status and amounts", icon: ShoppingCart },
+      { key: "po-vs-grn", label: "PO vs GRN", desc: "Ordered vs received quantity comparison", icon: BarChart3 },
+      { key: "vendor-purchase", label: "Vendor-wise Purchase", desc: "Total purchase value by vendor", icon: TrendingUp },
+      { key: "pr-status", label: "PR Status Report", desc: "All PRs with current status", icon: FileBarChart2 },
+      { href: "/reports/vendor-performance", label: "Vendor Performance", desc: "On-time delivery & quality acceptance by vendor", icon: BarChart3 },
     ]},
     { section: "Store & Inventory", items: [
-      { key: "stock-valuation" as ReportType, label: "Stock Valuation", desc: "Current stock value by item", icon: Warehouse },
-      { key: "low-stock" as ReportType, label: "Low Stock Alert", desc: "Items below minimum stock level", icon: Package },
-      { key: "stock-movement" as ReportType, label: "Stock Movement", desc: "GRN receipts and issues summary", icon: BarChart3 },
-      { key: "consumption" as ReportType, label: "Consumption Report", desc: "Material usage by project", icon: TrendingUp },
+      { key: "stock-valuation", label: "Stock Valuation", desc: "Current stock value by item", icon: Warehouse },
+      { key: "low-stock", label: "Low Stock Alert", desc: "Items below minimum stock level", icon: Package },
+      { key: "stock-movement", label: "Stock Movement", desc: "GRN receipts and issues summary", icon: BarChart3 },
+      { key: "consumption", label: "Consumption Report", desc: "Material usage by project", icon: TrendingUp },
     ]},
     { section: "Projects & Approvals", items: [
-      { key: "boq-progress" as ReportType, label: "Project Progress", desc: "Project-wise value and status", icon: FolderKanban },
-      { key: "dpr-summary" as ReportType, label: "DPR Summary", desc: "Daily progress overview", icon: FileBarChart2 },
-      { key: "approval-log" as ReportType, label: "Approval Audit Log", desc: "All approval actions with timestamps", icon: BarChart3 },
+      { key: "boq-progress", label: "Project Progress", desc: "Project-wise value and status", icon: FolderKanban },
+      { key: "dpr-summary", label: "DPR Summary", desc: "Daily progress overview", icon: FileBarChart2 },
+      { key: "approval-log", label: "Approval Audit Log", desc: "All approval actions with timestamps", icon: BarChart3 },
     ]},
   ];
+
+  const cardClass =
+    "flex flex-col p-4 rounded-xl bg-white border border-gray-200 shadow-sm hover:shadow-md hover:border-accent-200 transition-all text-left";
 
   return (
     <div className="space-y-6">
@@ -136,14 +121,21 @@ function ReportMenu({ onSelect, fy }: { onSelect: (r: ReportType) => void; fy: F
         <div key={section.section}>
           <h3 className="text-sm font-semibold text-gray-900 mb-3">{section.section}</h3>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {section.items.map((report) => (
-              <button key={report.key} onClick={() => onSelect(report.key)}
-                className="flex flex-col p-4 rounded-xl bg-white border border-gray-200 shadow-sm hover:shadow-md hover:border-orange-200 transition-all text-left">
-                <report.icon className="w-5 h-5 text-orange-600 mb-2" />
-                <p className="text-sm font-medium text-gray-900">{report.label}</p>
-                <p className="text-xs text-gray-500 mt-0.5">{report.desc}</p>
-              </button>
-            ))}
+            {section.items.map((report) =>
+              report.href ? (
+                <Link key={report.href} href={report.href} className={cardClass}>
+                  <report.icon className="w-5 h-5 text-accent-600 mb-2" />
+                  <p className="text-sm font-medium text-gray-900">{report.label}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{report.desc}</p>
+                </Link>
+              ) : (
+                <button key={report.key} onClick={() => report.key && onSelect(report.key)} className={cardClass}>
+                  <report.icon className="w-5 h-5 text-accent-600 mb-2" />
+                  <p className="text-sm font-medium text-gray-900">{report.label}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{report.desc}</p>
+                </button>
+              )
+            )}
           </div>
         </div>
       ))}
@@ -304,7 +296,7 @@ function ReportViewer({ type, fy, onBack }: { type: ReportType; fy: FYOption; on
             ← Back to Reports
           </button>
           <h2 className="text-lg font-semibold text-gray-900">{config.title}</h2>
-          <span className="text-xs font-bold text-orange-700 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full">
+          <span className="text-xs font-bold text-accent-700 bg-accent-50 border border-accent-200 px-2 py-0.5 rounded-full">
             {fy.label}
           </span>
           <span className="text-sm text-gray-500">({rows.length} records)</span>

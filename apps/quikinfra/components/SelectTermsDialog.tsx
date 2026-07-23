@@ -119,7 +119,7 @@ function Option({
     <button
       type="button"
       onClick={onClick}
-      className="block w-full px-6 py-3 text-left transition-colors hover:bg-orange-50"
+      className="block w-full px-6 py-3 text-left transition-colors hover:bg-accent-50"
     >
       <div className="text-sm font-semibold text-gray-900">{title}</div>
       {subtitle && <div className="mt-0.5 text-xs text-gray-500">{subtitle}</div>}

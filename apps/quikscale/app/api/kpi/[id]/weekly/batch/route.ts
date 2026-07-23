@@ -4,8 +4,8 @@ import { db } from "@/lib/db";
 import { weeklyValueBatchSchema } from "@/lib/schemas/kpiSchema";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 const withOrgAuth = withOrgAuthForModule("kpi");
-import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
-import { isWeekBeforeEditableWindow, earliestEditableWeek } from "@/lib/utils/weekLock";
+import { getPastWeekFlags, getWeekGateFromDB } from "@/lib/utils/featureFlags";
+import { weekEditState, earliestEditableWeek } from "@/lib/utils/weekLock";
 import { audit, requestContext } from "@/lib/audit";
 import { weeklyTargetForWeek } from "@/lib/utils/kpiHelpers";
 import { withTxRetry } from "@/lib/api/withTxRetry";
@@ -36,28 +36,31 @@ async function upsertRow(opts: {
   // RED on `value != null`, so coercing null → 0 here paints unentered
   // weeks red. The KPIWeeklyValue.value column is Float? — nullable.
   const value = opts.value ?? null;
-  const existing = await db.kPIWeeklyValue.findFirst({
-    where: { kpiId: opts.kpiId, userId: opts.userId, weekNumber: opts.weekNumber },
-    select: { id: true },
-  });
-  if (existing) {
-    await db.kPIWeeklyValue.update({
-      where: { id: existing.id },
-      data: { value, notes: opts.notes ?? null, updatedBy: opts.changedBy },
-    });
-  } else {
-    await db.kPIWeeklyValue.create({
-      data: {
+  // Atomic upsert on the @@unique([kpiId, userId, weekNumber]) constraint.
+  // Replaces a findFirst-then-create that raced to a P2002 on concurrent /
+  // double-click saves (two requests both see "no row" and both INSERT).
+  // `orgId` isn't part of the unique key so Prisma won't accept it in `where`;
+  // tenant isolation is already enforced by the KPI-ownership check in the
+  // handler, and `orgId` is still written on insert via `create`.
+  await db.kPIWeeklyValue.upsert({
+    where: {
+      kpiId_userId_weekNumber: {
         kpiId: opts.kpiId,
-        orgId: opts.orgId,
         userId: opts.userId,
         weekNumber: opts.weekNumber,
-        value,
-        notes: opts.notes ?? null,
-        createdBy: opts.changedBy,
       },
-    });
-  }
+    },
+    update: { value, notes: opts.notes ?? null, updatedBy: opts.changedBy },
+    create: {
+      kpiId: opts.kpiId,
+      orgId: opts.orgId,
+      userId: opts.userId,
+      weekNumber: opts.weekNumber,
+      value,
+      notes: opts.notes ?? null,
+      createdBy: opts.changedBy,
+    },
+  });
 }
 
 /**
@@ -141,9 +144,9 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req: N
   const validated = parsed.data;
 
   const { canEditPastWeek } = await getPastWeekFlags(orgId);
-  const currentWeek = kpi.quarter && kpi.year
-    ? await getCurrentFiscalWeekFromDB(orgId, kpi.year, kpi.quarter)
-    : 1;
+  const { currentWeek, quarterPosition } = kpi.quarter && kpi.year
+    ? await getWeekGateFromDB(orgId, kpi.year, kpi.quarter)
+    : { currentWeek: 1, quarterPosition: "current" as const };
 
   const ownerIds = (kpi.ownerIds ?? []) as string[];
   const results: BatchResult[] = [];
@@ -179,12 +182,19 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req: N
       continue;
     }
 
-    // Past-week gate — org-level config, not a role check. When edit-past is
-    // off, weeks before the editable window (current week minus the grace) are
-    // rejected; the grace keeps the immediately-previous week editable.
-    if (isWeekBeforeEditableWindow(input.weekNumber, currentWeek, canEditPastWeek)) {
-      const earliest = earliestEditableWeek(currentWeek, canEditPastWeek);
-      results.push({ weekNumber: input.weekNumber, userId: targetUserId, ok: false, error: `Editing past weeks is disabled. Week ${input.weekNumber} is before the earliest editable week (${earliest}). Enable it in Settings > Configurations.` });
+    // Quarter-aware past/future gate — org-level config, not a role check.
+    // Future quarters/weeks are always rejected; a past quarter is rejected
+    // unless edit-past is on; in the current quarter, weeks before the editable
+    // window (current week minus the grace) are rejected — the grace keeps the
+    // immediately-previous week editable.
+    const gate = weekEditState({ quarterPosition, week: input.weekNumber, currentWeek, canEditPastWeek, flagsLoaded: true });
+    if (gate.locked) {
+      const reason = gate.isFuture
+        ? `Week ${input.weekNumber} is in the future and can't be updated yet.`
+        : quarterPosition === "past"
+          ? `Editing past quarters is disabled. Enable it in Settings > Configurations.`
+          : `Editing past weeks is disabled. Week ${input.weekNumber} is before the earliest editable week (${earliestEditableWeek(currentWeek, canEditPastWeek)}). Enable it in Settings > Configurations.`;
+      results.push({ weekNumber: input.weekNumber, userId: targetUserId, ok: false, error: reason });
       continue;
     }
 
@@ -211,17 +221,39 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req: N
       continue;
     }
 
-    // Team ↔ Individual sync (mirror the single-week route's logic)
-    if (kpi.kpiLevel === "team") {
-      const child = await db.kPI.findFirst({
-        where: { parentKPIId: params.id, owner: targetUserId, deletedAt: null },
-        select: { id: true, orgId: true },
-      });
-      if (child) {
+    // Team ↔ Individual sync (mirror the single-week route's logic).
+    // The primary write above already succeeded, so a failure syncing the
+    // linked partner KPI must NOT abort the batch or 500 the whole save — it's
+    // surfaced as a per-input error instead, preserving the partial-success
+    // contract. (Previously this ran unwrapped and a partner failure escaped
+    // to the route's outer catch as a 500.)
+    let partnerSyncError: string | null = null;
+    try {
+      if (kpi.kpiLevel === "team") {
+        const child = await db.kPI.findFirst({
+          where: { parentKPIId: params.id, owner: targetUserId, deletedAt: null },
+          select: { id: true, orgId: true },
+        });
+        if (child) {
+          await withTxRetry(() =>
+            upsertRow({
+              kpiId: child.id,
+              orgId: child.orgId,
+              userId: targetUserId,
+              weekNumber: input.weekNumber,
+              value: input.value,
+              notes: input.notes,
+              changedBy: userId,
+            }),
+          );
+          touchedKpiIds.add(child.id);
+        }
+      } else if (kpi.parentKPIId) {
+        const parentKpiId = kpi.parentKPIId; // capture: narrowing is lost inside the closure
         await withTxRetry(() =>
           upsertRow({
-            kpiId: child.id,
-            orgId: child.orgId,
+            kpiId: parentKpiId,
+            orgId,
             userId: targetUserId,
             weekNumber: input.weekNumber,
             value: input.value,
@@ -229,22 +261,10 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req: N
             changedBy: userId,
           }),
         );
-        touchedKpiIds.add(child.id);
+        touchedKpiIds.add(kpi.parentKPIId);
       }
-    } else if (kpi.parentKPIId) {
-      const parentKpiId = kpi.parentKPIId; // capture: narrowing is lost inside the closure
-      await withTxRetry(() =>
-        upsertRow({
-          kpiId: parentKpiId,
-          orgId,
-          userId: targetUserId,
-          weekNumber: input.weekNumber,
-          value: input.value,
-          notes: input.notes,
-          changedBy: userId,
-        }),
-      );
-      touchedKpiIds.add(kpi.parentKPIId);
+    } catch (e: unknown) {
+      partnerSyncError = e instanceof Error ? e.message : "Linked KPI sync failed";
     }
 
     appliedChanges.push({
@@ -254,7 +274,17 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req: N
       newValue: input.value ?? null,
       note: input.notes ?? null,
     });
+    // Primary write landed → this input is applied. Any linked-sync failure is
+    // reported as an additional (non-fatal) error row so it stays visible.
     results.push({ weekNumber: input.weekNumber, userId: targetUserId, ok: true });
+    if (partnerSyncError) {
+      results.push({
+        weekNumber: input.weekNumber,
+        userId: targetUserId,
+        ok: false,
+        error: `Linked KPI sync failed: ${partnerSyncError}`,
+      });
+    }
   }
 
   // Recompute aggregates for each touched KPI (primary + linked partners).

@@ -42,10 +42,14 @@ export interface ListDepartmentsOptions {
   /** Pagination — passed straight through to Prisma findMany. */
   take?: number;
   skip?: number;
+  /** Status view. Omit for legacy picker behavior (all non-deleted). */
+  status?: "active" | "inactive" | "all";
+  /** Server-side sort (from `parseSort`). Defaults to the repo default. */
+  orderBy?: Array<Record<string, "asc" | "desc">>;
 }
 
 function buildDepartmentsWhere(
-  opts: Pick<ListDepartmentsOptions, "orgId" | "search">,
+  opts: Pick<ListDepartmentsOptions, "orgId" | "search" | "status">,
 ): Record<string, unknown> {
   const q = (opts.search ?? "").trim();
   return {
@@ -53,7 +57,11 @@ function buildDepartmentsWhere(
     // "deleted" is the hard-soft-delete marker: those rows are gone from the
     // UI entirely (neither the active nor the Inactive tab shows them).
     // "inactive" rows are still returned so the Inactive tab can list them.
-    status: { not: "deleted" },
+    ...(opts.status === "inactive"
+      ? { status: "inactive" }
+      : opts.status === "active"
+        ? { status: { notIn: ["inactive", "deleted"] } }
+        : { status: { not: "deleted" } }),
     ...(q
       ? {
           OR: [
@@ -69,7 +77,7 @@ function buildDepartmentsWhere(
 export async function listDepartments(opts: ListDepartmentsOptions): Promise<DepartmentRecord[]> {
   const rows = await db.cnDepartment.findMany({
     where: buildDepartmentsWhere(opts),
-    orderBy: { createdAt: "desc" },
+    orderBy: opts.orderBy ?? { createdAt: "desc" },
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
   });
@@ -77,7 +85,7 @@ export async function listDepartments(opts: ListDepartmentsOptions): Promise<Dep
 }
 
 export async function countDepartments(
-  opts: Pick<ListDepartmentsOptions, "orgId" | "search">,
+  opts: Pick<ListDepartmentsOptions, "orgId" | "search" | "status">,
 ): Promise<number> {
   return db.cnDepartment.count({ where: buildDepartmentsWhere(opts) });
 }

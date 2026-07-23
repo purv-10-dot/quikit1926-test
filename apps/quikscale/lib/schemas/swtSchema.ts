@@ -6,6 +6,7 @@ export type TrendDirection = "positive" | "negative" | "neutral";
 export const SWT_TYPE_CONFIG = {
   strength: {
     label: "Strengths",
+    singularLabel: "Strength",
     description: "Internal competitive advantages",
     color: "green",
     bg: "bg-green-50",
@@ -18,6 +19,7 @@ export const SWT_TYPE_CONFIG = {
   },
   weakness: {
     label: "Weaknesses",
+    singularLabel: "Weakness",
     description: "Internal areas to improve",
     color: "red",
     bg: "bg-red-50",
@@ -30,6 +32,7 @@ export const SWT_TYPE_CONFIG = {
   },
   trend: {
     label: "Trends",
+    singularLabel: "Trend",
     description: "External forces & market shifts",
     color: "blue",
     bg: "bg-blue-50",
@@ -42,14 +45,16 @@ export const SWT_TYPE_CONFIG = {
   },
 } as const;
 
+// Stored values stay positive/negative/neutral; only the display labels are
+// the business-facing SWT terms (Opportunity / Threat / Neutral).
 export const TREND_DIRECTION_CONFIG = {
-  positive: { label: "Positive", bg: "bg-green-100", text: "text-green-700" },
-  negative: { label: "Negative", bg: "bg-red-100",   text: "text-red-700"   },
-  neutral:  { label: "Neutral",  bg: "bg-gray-100",  text: "text-gray-600"  },
+  positive: { label: "Opportunity", bg: "bg-green-100", text: "text-green-700" },
+  negative: { label: "Threat",      bg: "bg-red-100",   text: "text-red-700"   },
+  neutral:  { label: "Neutral",     bg: "bg-gray-100",  text: "text-gray-600"  },
 } as const;
 
 // ─── Trend categories from the book ───────────────────────────────────────────
-export const TREND_CATEGORIES = ["technology", "distribution", "product", "markets", "consumer", "social"] as const;
+export const TREND_CATEGORIES = ["technology", "distribution", "product", "markets", "consumer", "social", "regulatory"] as const;
 export type TrendCategory = (typeof TREND_CATEGORIES)[number];
 
 export const TREND_CATEGORY_CONFIG: Record<TrendCategory, { label: string; bg: string; text: string }> = {
@@ -59,13 +64,25 @@ export const TREND_CATEGORY_CONFIG: Record<TrendCategory, { label: string; bg: s
   markets:      { label: "Markets",           bg: "bg-blue-100",   text: "text-blue-700" },
   consumer:     { label: "Consumer",          bg: "bg-amber-100",  text: "text-amber-700" },
   social:       { label: "Social",            bg: "bg-rose-100",   text: "text-rose-700" },
+  regulatory:   { label: "Regulatory",        bg: "bg-slate-100",  text: "text-slate-700" },
+};
+
+/**
+ * Per-quarter cap on how many SWT entries of each type an org can create.
+ * Enforced server-side in POST /api/swt (see the count guard there). Centralized
+ * here so the UI can also read it (e.g. to disable an "Add" button at the cap).
+ */
+export const SWT_TYPE_LIMITS: Record<SWTType, number> = {
+  strength: 3,
+  weakness: 3,
+  trend:    6,
 };
 
 // Contextual "impact / why" label per type — mirrors the Scaling Up book prompts.
 export const IMPACT_LABEL: Record<SWTType, string> = {
   strength: "Why is this a source of your success?",
   weakness: "Why is this unlikely to change?",
-  trend:    "How does this impact your industry/organization?",
+  trend:    "What do you doing about this trend ?",
 };
 
 // The book questions themselves, for section subtitles.

@@ -8,7 +8,7 @@ import { err as envelopeErr } from "@/lib/http/envelope";
 import { generateDocNumber } from "@/lib/db/doc-number";
 import { BOQError, boqService } from "@/lib/boq";
 import { computeRABill } from "@/lib/rab/compute";
-import { parsePagination } from "@/lib/http/pagination";
+import { parsePagination, parseSort } from "@/lib/http/pagination";
 
 const round2 = (n: number): number => Number(n.toFixed(2));
 const round4 = (n: number): number => Number(n.toFixed(4));
@@ -39,11 +39,19 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status") ?? "";
   const projectId = searchParams.get("projectId") ?? "";
+  const search = (searchParams.get("search") ?? "").trim();
 
   const where: Record<string, unknown> = {
     orgId: ctx.orgId,
   };
   if (status && status !== "all") where.status = status;
+  if (search) {
+    where.OR = [
+      { rabNumber: { contains: search, mode: "insensitive" } },
+      { project: { is: { name: { contains: search, mode: "insensitive" } } } },
+      { contractor: { is: { name: { contains: search, mode: "insensitive" } } } },
+    ];
+  }
 
   // Per-user project scope (assigned site users) takes precedence over the
   // optional ?projectId query — a user can never use the query string to
@@ -59,15 +67,31 @@ export async function GET(req: NextRequest) {
   }
 
   const p = parsePagination(req);
-  const rows = await db.cnRunningAccountBill.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-    include: {
-      project: { select: { name: true } },
-      contractor: { select: { name: true } },
-    },
-    ...(p.paginated ? { take: p.take, skip: p.skip } : {}),
-  });
+  const sort = parseSort(
+    searchParams,
+    [
+      "rabNumber",
+      "status",
+      "netPayable",
+      "currentBillAmount",
+      "cumulativeAmount",
+      "billPeriodTo",
+      "createdAt",
+    ],
+    { field: "createdAt", order: "desc" },
+  );
+  const [rows, total] = await Promise.all([
+    db.cnRunningAccountBill.findMany({
+      where,
+      orderBy: sort.orderBy,
+      include: {
+        project: { select: { name: true } },
+        contractor: { select: { name: true } },
+      },
+      ...(p.paginated ? { take: p.take, skip: p.skip } : {}),
+    }),
+    db.cnRunningAccountBill.count({ where }),
+  ]);
 
   const data = rows.map((r) => ({
     id: r.id,
@@ -91,13 +115,13 @@ export async function GET(req: NextRequest) {
   if (p.paginated) {
     return NextResponse.json({
       data,
-      total: data.length,
+      total,
       page: p.page,
       pageSize: p.pageSize,
-      hasMore: data.length === p.pageSize,
+      hasMore: p.skip + data.length < total,
     });
   }
-  return NextResponse.json({ data, total: data.length });
+  return NextResponse.json({ data, total });
 }
 
 export async function POST(req: NextRequest) {

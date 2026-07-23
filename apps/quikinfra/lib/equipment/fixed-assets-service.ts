@@ -233,13 +233,37 @@ function toIssuanceRecord(
   };
 }
 
-export async function listIssuances(opts: { orgId: string }) {
-  const rows = await db.cnFixedAssetTransaction.findMany({
-    where: { orgId: opts.orgId, recordType: FA_ISSUANCE },
-    include: issuanceInclude,
-    orderBy: { createdAt: "desc" },
-  });
-  return { data: rows.map(toIssuanceRecord), total: rows.length };
+export async function listIssuances(opts: {
+  orgId: string;
+  search?: string;
+  orderBy?: Prisma.CnFixedAssetTransactionOrderByWithRelationInput[];
+  take?: number;
+  skip?: number;
+}) {
+  const where: Prisma.CnFixedAssetTransactionWhereInput = {
+    orgId: opts.orgId,
+    recordType: FA_ISSUANCE,
+  };
+  const search = opts.search?.trim();
+  if (search) {
+    where.OR = [
+      { referenceNumber: { contains: search, mode: "insensitive" } },
+      { gatePassNo: { contains: search, mode: "insensitive" } },
+      { notes: { contains: search, mode: "insensitive" } },
+      { asset: { assetCode: { contains: search, mode: "insensitive" } } },
+      { asset: { name: { contains: search, mode: "insensitive" } } },
+    ];
+  }
+  const [rows, total] = await Promise.all([
+    db.cnFixedAssetTransaction.findMany({
+      where,
+      include: issuanceInclude,
+      orderBy: opts.orderBy ?? [{ createdAt: "desc" }],
+      ...(opts.take != null ? { take: opts.take, skip: opts.skip ?? 0 } : {}),
+    }),
+    db.cnFixedAssetTransaction.count({ where }),
+  ]);
+  return { data: rows.map(toIssuanceRecord), total };
 }
 
 export async function createIssuance(input: {
@@ -345,13 +369,37 @@ function toTransferRecord(
   };
 }
 
-export async function listTransfers(opts: { orgId: string }) {
-  const rows = await db.cnFixedAssetTransaction.findMany({
-    where: { orgId: opts.orgId, recordType: FA_TRANSFER },
-    include: transferInclude,
-    orderBy: { transferDate: "desc" },
-  });
-  return { data: rows.map(toTransferRecord), total: rows.length };
+export async function listTransfers(opts: {
+  orgId: string;
+  search?: string;
+  orderBy?: Prisma.CnFixedAssetTransactionOrderByWithRelationInput[];
+  take?: number;
+  skip?: number;
+}) {
+  const where: Prisma.CnFixedAssetTransactionWhereInput = {
+    orgId: opts.orgId,
+    recordType: FA_TRANSFER,
+  };
+  const search = opts.search?.trim();
+  if (search) {
+    where.OR = [
+      { referenceNumber: { contains: search, mode: "insensitive" } },
+      { gatePassNo: { contains: search, mode: "insensitive" } },
+      { notes: { contains: search, mode: "insensitive" } },
+      { asset: { assetCode: { contains: search, mode: "insensitive" } } },
+      { asset: { name: { contains: search, mode: "insensitive" } } },
+    ];
+  }
+  const [rows, total] = await Promise.all([
+    db.cnFixedAssetTransaction.findMany({
+      where,
+      include: transferInclude,
+      orderBy: opts.orderBy ?? [{ transferDate: "desc" }, { createdAt: "desc" }],
+      ...(opts.take != null ? { take: opts.take, skip: opts.skip ?? 0 } : {}),
+    }),
+    db.cnFixedAssetTransaction.count({ where }),
+  ]);
+  return { data: rows.map(toTransferRecord), total };
 }
 
 export async function createTransfer(input: {
@@ -552,7 +600,7 @@ export async function listAudits(opts: { orgId: string }) {
   const rows = await db.cnFixedAssetTransaction.findMany({
     where: { orgId: opts.orgId, recordType: FA_AUDIT },
     include: auditInclude,
-    orderBy: { auditDate: "desc" },
+    orderBy: [{ auditDate: "desc" }, { createdAt: "desc" }],
   });
   return { data: rows.map(toAuditRecord), total: rows.length };
 }

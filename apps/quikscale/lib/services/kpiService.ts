@@ -38,6 +38,8 @@ export interface KPIResponse {
   progressPercent: number;
   status: string;
   healthStatus: string;
+  /** Leading (predictive input) vs Lagging (outcome) classification; "NA" = unset. */
+  kpiType?: string;
   createdAt: string;
   updatedAt: string;
   createdBy: string;

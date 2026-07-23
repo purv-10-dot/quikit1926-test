@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getTenantContext } from "@/lib/auth/context";
+import { parsePagination } from "@/lib/http/pagination";
 
 /**
  * Stock Register — computed on-the-fly from real transactional state
@@ -423,5 +424,21 @@ export async function GET(req: NextRequest) {
     lowStockCount: data.filter((d) => d.isLowStock).length,
   };
 
-  return NextResponse.json({ data, total: data.length, summary });
+  // Summary is computed from the full filtered set above; the row payload is
+  // paginated so large catalogs don't ship every row to the client at once.
+  const total = data.length;
+  const p = parsePagination(req);
+  const pagedData = p.paginated ? data.slice(p.skip, p.skip + p.take) : data;
+
+  if (p.paginated) {
+    return NextResponse.json({
+      data: pagedData,
+      total,
+      summary,
+      page: p.page,
+      pageSize: p.pageSize,
+      hasMore: p.skip + pagedData.length < total,
+    });
+  }
+  return NextResponse.json({ data: pagedData, total, summary });
 }

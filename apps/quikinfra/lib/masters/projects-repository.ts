@@ -43,7 +43,7 @@ function isoDate(d: Date | null | undefined): string {
   }
 }
 
-function toRecord(row: Prisma.CnProjectGetPayload<{ include: { client: true } }>): ProjectRecord {
+function toRecord(row: Prisma.CnProjectGetPayload<{ include: { client: { select: { name: true } } } }>): ProjectRecord {
   return {
     id: row.id,
     orgId: row.orgId,
@@ -91,7 +91,10 @@ export interface ListProjectsOptions {
   orgId: string;
   search?: string;
   includeInactive?: boolean;
+  /** 3-way status tab from the Masters list: active | inactive | all. */
+  status?: "active" | "inactive" | "all";
   projectIds?: string[];
+  orderBy?: Record<string, "asc" | "desc">[];
   /** Pagination — passed straight through to Prisma findMany. */
   take?: number;
   skip?: number;
@@ -100,15 +103,23 @@ export interface ListProjectsOptions {
 function buildProjectsWhere(
   opts: Pick<
     ListProjectsOptions,
-    "orgId" | "search" | "includeInactive" | "projectIds"
+    "orgId" | "search" | "includeInactive" | "status" | "projectIds"
   >,
 ): Record<string, unknown> {
   const q = (opts.search ?? "").trim();
   const restrictToIds = Array.isArray(opts.projectIds);
+  // status tab wins when provided; otherwise fall back to the legacy
+  // includeInactive flag (pickers omit both → active-only).
+  const statusFilter =
+    opts.status === "all" || opts.includeInactive
+      ? {}
+      : opts.status === "inactive"
+        ? { status: "inactive" }
+        : { status: { not: "inactive" } };
   return {
     orgId: opts.orgId,
     ...(restrictToIds ? { id: { in: opts.projectIds } } : {}),
-    ...(opts.includeInactive ? {} : { status: { not: "inactive" } }),
+    ...statusFilter,
     ...(q
       ? {
           OR: [
@@ -127,8 +138,8 @@ export async function listProjects(
 ): Promise<ProjectRecord[]> {
   const rows = await db.cnProject.findMany({
     where: buildProjectsWhere(opts),
-    include: { client: true },
-    orderBy: { createdAt: "desc" },
+    include: { client: { select: { name: true } } },
+    orderBy: opts.orderBy ?? [{ createdAt: "desc" }],
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
   });
@@ -138,7 +149,7 @@ export async function listProjects(
 export async function countProjects(
   opts: Pick<
     ListProjectsOptions,
-    "orgId" | "search" | "includeInactive" | "projectIds"
+    "orgId" | "search" | "includeInactive" | "status" | "projectIds"
   >,
 ): Promise<number> {
   return db.cnProject.count({ where: buildProjectsWhere(opts) });
@@ -150,7 +161,7 @@ export async function findProjectById(
 ): Promise<ProjectRecord | null> {
   const row = await db.cnProject.findFirst({
     where: { id, orgId },
-    include: { client: true },
+    include: { client: { select: { name: true } } },
   });
   return row ? toRecord(row) : null;
 }
@@ -216,7 +227,7 @@ export async function createProject(
       createdBy: input.createdBy,
       updatedBy: input.createdBy,
     },
-    include: { client: true },
+    include: { client: { select: { name: true } } },
   });
   return toRecord(row);
 }
@@ -278,7 +289,7 @@ export async function updateProject(
   const row = await db.cnProject.update({
     where: { id },
     data,
-    include: { client: true },
+    include: { client: { select: { name: true } } },
   });
   return toRecord(row);
 }

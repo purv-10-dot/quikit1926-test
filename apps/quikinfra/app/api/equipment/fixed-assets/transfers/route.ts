@@ -2,16 +2,44 @@ import { toErrorMessage } from "@/lib/api/errors";
 import { requireEquipmentAction } from "@/lib/auth/requireEquipmentAction";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
+import { parsePagination, parseSort } from "@/lib/http/pagination";
 import { createTransfer, listTransfers } from "@/lib/equipment/fixed-assets-service";
 import { NextRequest, NextResponse } from "next/server";
 
-export async function GET() {
+const FA_TRANSFER_SORT_COLUMNS = [
+  "transferDate",
+  "createdAt",
+  "status",
+] as const;
+
+export async function GET(req: NextRequest) {
   const ctxOrResp = await requireEquipmentAction(
     "construction.equipment_fixed_assets",
     "view",
   );
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
-  return NextResponse.json(await listTransfers({ orgId: ctxOrResp.orgId }));
+
+  const search = new URL(req.url).searchParams.get("search") ?? "";
+  const p = parsePagination(req);
+  const sort = parseSort(req, FA_TRANSFER_SORT_COLUMNS, {
+    field: "transferDate",
+    order: "desc",
+  });
+  const result = await listTransfers({
+    orgId: ctxOrResp.orgId,
+    search: search || undefined,
+    orderBy: sort.orderBy as never,
+    ...(p.paginated ? { take: p.take, skip: p.skip } : {}),
+  });
+  if (p.paginated) {
+    return NextResponse.json({
+      ...result,
+      page: p.page,
+      pageSize: p.pageSize,
+      hasMore: p.skip + result.data.length < result.total,
+    });
+  }
+  return NextResponse.json(result);
 }
 
 export async function POST(req: NextRequest) {

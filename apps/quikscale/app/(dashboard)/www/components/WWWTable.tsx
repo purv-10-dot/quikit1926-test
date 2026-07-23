@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useRef, useEffect, type UIEvent } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback, type UIEvent } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import { ROLES, ROLE_HIERARCHY } from "@quikit/shared";
 import type { WWWItem } from "@/lib/types/www";
+import { invalidateEntity } from "@/lib/hooks/dashboardInvalidation";
 import { WWWPanel } from "./WWWPanel";
 import { WWWChangeHistoryPanel } from "./WWWChangeHistoryPanel";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
@@ -13,11 +15,17 @@ import { ColMenu } from "@/components/table/ColMenu";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import { isNearBottom } from "@/lib/utils/scroll";
 import { useColumnResize, ResizeHandle } from "@/lib/hooks/useColumnResize";
+import { useColumnOrder } from "@/lib/hooks/useColumnOrder";
+import { moveByKey, columnsUnfrozenBy, columnsFrozenBy } from "@/lib/utils/columnOrder";
+import { confirmFreezeChange } from "@/lib/utils/freezeConfirm";
+import { useColumnDnD, DragHandle } from "@/lib/hooks/useColumnDnD";
+import { useRowDnD } from "@/lib/hooks/useRowDnD";
+import { rowNeighbors } from "@/lib/utils/rowOrder";
 import { BaseTooltip } from "@/components/ui/base-tooltip";
 import { UserAuditCell, DateAuditCell } from "@/components/table/AuditCells";
 import { useClickOutside } from "@/lib/hooks/useClickOutside";
 import { toDateInputValue } from "@/lib/utils/dateUtils";
-import { Pagination } from "@quikit/ui";
+import { Pagination, useConfirm } from "@quikit/ui";
 import { notify } from "@/lib/utils/notify";
 
 import {
@@ -292,8 +300,10 @@ interface Props {
 }
 
 // Column keys: _cb, _log, _id (always visible+frozen) | who, when, what, revisedDate, status, notes
-const WWW_COL_ORDER_FULL = [
-  "_cb", "_log", "_id", "who", "when", "what", "revisedDate", "status", "category", "notes",
+// Rail columns are never reorderable; the rest are user-draggable + persisted.
+const WWW_RAIL_COLS = ["_cb", "_log", "_id"] as const;
+const WWW_DEFAULT_NON_RAIL = [
+  "who", "when", "what", "revisedDate", "status", "category", "notes",
   // Audit columns — appended at the end.
   "createdBy", "updatedBy", "createdAt", "updatedAt",
 ];
@@ -317,6 +327,11 @@ const WWW_FREEZABLE = new Set(["who", "when"]);
 
 export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideColumns, readOnly, maxRows, page, pageSize, total, onPageChange, onPageSizeChange, canDelete = true, canUpdate = true, sortBy: sortByProp, sortOrder: sortOrderProp, onSort: onSortProp, maxBodyHeight, hasMore, isFetchingMore, onLoadMore }: Props) {
   const items = maxRows != null ? itemsAll.slice(0, maxRows) : itemsAll;
+  // Cross-surface cache invalidation. This table is shared by the WWW module
+  // page AND the Dashboard; its inline writes below (raw fetch) must bust the
+  // Dashboard's `["www-infinite"]` + `["dashboard"]` caches too, not just the
+  // parent's `onRefresh()` (which only refetches the current surface's list).
+  const queryClient = useQueryClient();
   // Infinite-scroll mode: bounded-height body whose vertical scroll loads more.
   const infiniteMode = maxBodyHeight != null;
   const handleBodyScroll = (e: UIEvent<HTMLDivElement>) => {
@@ -372,6 +387,16 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
     else setRedSort({ sortBy: col, sortOrder: dir });
   };
 
+  // Per-user drag-and-drop order of the non-rail columns.
+  const {
+    orderedCols: orderedNonRail,
+    applyOrder: applyColumnOrder,
+  } = useColumnOrder("www", WWW_DEFAULT_NON_RAIL, { alwaysFrozen: WWW_RAIL_COLS });
+  const WWW_COL_ORDER_FULL = useMemo(
+    () => [...WWW_RAIL_COLS, ...orderedNonRail],
+    [orderedNonRail],
+  );
+
   // Filter out hidden columns.
   // - Persisted `hiddenCols` cannot hide WWW_ALWAYS_VISIBLE cols
   // - Per-instance `hideColumns` prop CAN hide anything (dashboard preview)
@@ -411,6 +436,77 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
   const handleFreezeCol = (colKey: string) => setFrozenCol(frozenCol === colKey ? null : colKey);
   const handleHideCol = (colKey: string) => hideCol(colKey);
 
+  // ── Drag-to-reorder columns ─────────────────────────────────────────────
+  const headerRowRef = useRef<HTMLTableRowElement>(null);
+  const confirm = useConfirm();
+  // Previews opt out via layout flags (readOnly / maxRows / maxBodyHeight).
+  // `hideColumns` is NOT a preview signal, so it must not gate reordering.
+  const reorderDisabled = !!readOnly || maxRows != null || maxBodyHeight != null;
+  const canReorderCol = useCallback(
+    (col: string) => !reorderDisabled && orderedNonRail.includes(col),
+    [reorderDisabled, orderedNonRail],
+  );
+  const handleColDrop = useCallback(
+    async (fromKey: string, toKey: string, side: "before" | "after") => {
+      const nextNonRail = moveByKey(orderedNonRail, fromKey, toKey, side);
+      const nextFull = [...WWW_RAIL_COLS, ...nextNonRail];
+      const curFull = [...WWW_RAIL_COLS, ...orderedNonRail];
+      const unfrozen = columnsUnfrozenBy(curFull, nextFull, frozenCol, WWW_RAIL_COLS);
+      const frozen = columnsFrozenBy(curFull, nextFull, frozenCol, WWW_RAIL_COLS);
+      if (!(await confirmFreezeChange(confirm, unfrozen, frozen))) return;
+      applyColumnOrder(nextNonRail);
+    },
+    [orderedNonRail, frozenCol, applyColumnOrder, confirm],
+  );
+  const dnd = useColumnDnD({
+    getHeaderRow: () => headerRowRef.current,
+    onDrop: handleColDrop,
+    canReorder: canReorderCol,
+  });
+
+  // ── Drag-to-reorder ROWS (org-shared manual order) ───────────────────────
+  const tbodyRef = useRef<HTMLTableSectionElement>(null);
+  const rowReorderEnabled = !reorderDisabled && !sortCol;
+  const orderedRowIds = useMemo(() => items.map(i => i.id), [items]);
+  const handleRowDrop = useCallback(
+    async (fromId: string, toId: string, side: "before" | "after") => {
+      const n = rowNeighbors(orderedRowIds, fromId, toId, side);
+      if (!n) return;
+      try {
+        const res = await fetch("/api/www/reorder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: fromId, beforeId: n.beforeId, afterId: n.afterId }),
+        });
+        if (!res.ok) throw new Error("reorder failed");
+        invalidateEntity(queryClient, "www");
+        onRefresh();
+      } catch {
+        notify.error("Failed to reorder row");
+        onRefresh();
+      }
+    },
+    [orderedRowIds, onRefresh, queryClient],
+  );
+  const rowDnd = useRowDnD({
+    getRowsContainer: () => tbodyRef.current,
+    onDrop: handleRowDrop,
+    canDrag: () => rowReorderEnabled,
+  });
+  function rowDropClass(id: string) {
+    if (rowDnd.overId !== id || !rowDnd.dropSide) return "";
+    return rowDnd.dropSide === "before"
+      ? "shadow-[inset_0_2px_0_0_var(--tw-shadow-color)] shadow-blue-500"
+      : "shadow-[inset_0_-2px_0_0_var(--tw-shadow-color)] shadow-blue-500";
+  }
+
+  function dropIndicatorClass(col: string) {
+    if (dnd.overKey !== col || !dnd.dropSide) return "";
+    return dnd.dropSide === "before"
+      ? "shadow-[inset_2px_0_0_0_var(--tw-shadow-color)] shadow-blue-500"
+      : "shadow-[inset_-2px_0_0_0_var(--tw-shadow-color)] shadow-blue-500";
+  }
+
   function toggleSelect(id: string) {
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -434,6 +530,9 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       });
+      // Bust cross-surface caches (Dashboard summary + www-infinite table) so
+      // the edit reflects everywhere, not just the current surface's onRefresh.
+      invalidateEntity(queryClient, "www", { id });
       onRefresh();
     } catch {
       // ignore
@@ -447,6 +546,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ revisedDates: allDates }),
       });
+      invalidateEntity(queryClient, "www", { id });
       onRefresh();
     } catch {
       // ignore
@@ -468,6 +568,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
         return;
       }
       setOpenNotesPicker(null);
+      invalidateEntity(queryClient, "www", { id });
       onRefresh();
     } catch {
       notify.error("Failed to update notes");
@@ -486,7 +587,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
       >
         <table className="border-collapse w-full" style={{ tableLayout: "fixed" }}>
           <thead>
-            <tr className="bg-accent-50 border-b border-gray-200">
+            <tr ref={headerRowRef} className="bg-accent-50 border-b border-gray-200">
               {WWW_COL_ORDER.map((colKey) => {
                 const frozen = isColFrozen(colKey);
                 const width = getColWidth(colKey);
@@ -501,10 +602,12 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
                 const sortKey = WWW_SORT_KEYS[colKey];
                 const isSorted = sortKey && sortCol === sortKey;
                 const canFreeze = WWW_FREEZABLE.has(colKey);
+                const isDragging = dnd.draggingKey === colKey;
 
                 return (
                   <th key={colKey}
-                    className={`group relative top-0 z-30 bg-accent-50 border-b border-gray-200 border-r border-r-gray-200 text-left px-2 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap select-none ${frozen ? "sticky" : ""}`}
+                    data-col-key={colKey}
+                    className={`group relative top-0 z-30 bg-accent-50 border-b border-gray-200 border-r border-r-gray-200 text-left px-2 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap select-none ${frozen ? "sticky" : ""} ${dropIndicatorClass(colKey)} ${isDragging ? "opacity-40" : ""}`}
                     style={{
                       left: frozen ? getLeftOffset(colKey) : undefined,
                       width,
@@ -529,6 +632,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
                     ) : (
                       <div className="flex items-center justify-between gap-1">
                         <span className="inline-flex items-center gap-1">
+                          {!reorderDisabled && <DragHandle onStart={(e) => dnd.startDrag(colKey, e)} />}
                           {frozenCol === colKey && (
                             <svg className="h-3 w-3 text-blue-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                               <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
@@ -536,8 +640,13 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
                           )}
                           {/* `title` surfaces the full label as a native tooltip
                               when the column is narrow enough to ellipsize
-                              (common on Dashboard previews). */}
-                          <span title={label} className={isSorted ? "text-accent-700" : ""}>{label}</span>
+                              (common on Dashboard previews). The label is also a
+                              drag handle for reorderable columns. */}
+                          <span
+                            title={label}
+                            onPointerDown={!reorderDisabled && orderedNonRail.includes(colKey) ? (e) => dnd.startDrag(colKey, e) : undefined}
+                            className={`${isSorted ? "text-accent-700" : ""} ${!reorderDisabled && orderedNonRail.includes(colKey) ? "cursor-grab active:cursor-grabbing touch-none" : ""}`}
+                          >{label}</span>
                           <SortIndicator active={!!isSorted} direction={sortDir} />
                         </span>
                         {showMenu && (
@@ -564,7 +673,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
               })}
             </tr>
           </thead>
-          <tbody>
+          <tbody ref={tbodyRef}>
             {items.length === 0 && (
               <tr>
                 <td colSpan={9} className="text-center py-12 text-xs text-gray-400">
@@ -586,244 +695,256 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
               const isDatePickerOpen = openDatePicker === item.id;
               const isNotesPickerOpen = openNotesPicker === item.id;
 
+              // Render one body cell by column key, in the user's drag order.
+              // Cell styling is byte-identical to the previous hardcoded blocks.
+              const renderBodyCell = (colKey: string) => {
+                switch (colKey) {
+                  case "_cb":
+                    return (
+                      <td key={colKey} className="sticky z-20 border-r border-gray-100 px-2 py-1.5 bg-inherit" style={{ left: getLeftOffset("_cb"), width: 40, minWidth: 40 }}>
+                        <label
+                          onClickCapture={(e) => {
+                            if (!canDelete) {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              notify.error("You don't have permission to delete");
+                            }
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(item.id)}
+                            onChange={() => toggleSelect(item.id)} disabled={!canDelete}
+                            className={`rounded border-gray-300 text-blue-600 ${canDelete ? "cursor-pointer" : "opacity-40 cursor-not-allowed"}`}
+                          />
+                        </label>
+                      </td>
+                    );
+                  case "_log":
+                    return (
+                      <td key={colKey} className="sticky z-20 border-r border-gray-100 px-1 py-1.5 text-center bg-inherit" style={{ left: getLeftOffset("_log"), width: 40, minWidth: 40 }}>
+                        <button
+                          onClick={() => setLogItem(item)}
+                          className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500 transition-colors"
+                          title="Open log"
+                        >
+                          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        </button>
+                      </td>
+                    );
+                  case "_id":
+                    return (
+                      // Whole cell is a drag-safe click target (see PriorityTable).
+                      <td key={colKey} data-no-drag className="sticky z-20 border-r border-gray-100 px-1 py-1.5 text-center bg-inherit"
+                        style={{
+                          left: getLeftOffset("_id"),
+                          width: 50,
+                          minWidth: 50,
+                          boxShadow: lastFrozenKey === "_id" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
+                        }}>
+                        <button
+                          onClick={() => { setPanelTab("edit"); setEditItem(item); }}
+                          className="absolute inset-0 flex items-center justify-center text-gray-900 hover:underline font-medium text-xs transition-colors"
+                        >
+                          {rowIdx + 1}
+                        </button>
+                      </td>
+                    );
+                  case "who":
+                    return (
+                      <td key={colKey} className={`z-20 border-r border-gray-100 px-2 py-1.5 bg-inherit ${isColFrozen("who") ? "sticky" : ""}`}
+                        style={{
+                          left: isColFrozen("who") ? getLeftOffset("who") : undefined,
+                          width: getColWidth("who"),
+                          minWidth: getColWidth("who"),
+                          boxShadow: lastFrozenKey === "who" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
+                        }}>
+                        <span className="text-xs text-gray-800 font-medium truncate block">
+                          {whoName}
+                        </span>
+                      </td>
+                    );
+                  case "when":
+                    return (
+                      <td key={colKey} className={`z-20 border-r border-gray-200 px-2 py-1.5 bg-inherit ${isColFrozen("when") ? "sticky" : ""}`}
+                        style={{
+                          left: isColFrozen("when") ? getLeftOffset("when") : undefined,
+                          width: getColWidth("when"),
+                          minWidth: getColWidth("when"),
+                          boxShadow: lastFrozenKey === "when" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
+                        }}>
+                        <div className="flex items-center gap-1">
+                          <svg className="h-3 w-3 text-blue-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                          <span className={`text-xs ${item.when ? "text-blue-600" : "text-gray-400"}`}>
+                            {formatDate(item.when)}
+                          </span>
+                        </div>
+                      </td>
+                    );
+                  case "what":
+                    return (
+                      <td key={colKey} className="border-r border-gray-100 px-2 py-1.5 overflow-hidden align-top" style={{ width: getColWidth("what"), minWidth: getColWidth("what") }}>
+                        <WhatTooltip text={item.what}>
+                          <p className="text-xs text-gray-800 line-clamp-2 leading-snug break-words cursor-default">
+                            {item.what}
+                          </p>
+                        </WhatTooltip>
+                      </td>
+                    );
+                  case "revisedDate":
+                    return (
+                      <td key={colKey} className="relative border-r border-gray-100 px-2 py-1.5" style={{ width: getColWidth("revisedDate"), minWidth: getColWidth("revisedDate") }}>
+                        <button
+                          onClick={() => {
+                            if (rowLocked) return;
+                            setOpenStatusPicker(null);
+                            setOpenNotesPicker(null);
+                            setOpenDatePicker(isDatePickerOpen ? null : item.id);
+                          }}
+                          disabled={rowLocked}
+                          title={rowLocked && !readOnly ? "Only the creator, assignee, or an admin can edit this item" : undefined}
+                          className={`flex items-center gap-1 group ${rowLocked ? "cursor-default" : ""}`}
+                        >
+                          {lastRevisedDate ? (
+                            <>
+                              <svg className="h-3 w-3 text-blue-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                              </svg>
+                              <span className={`text-xs text-blue-600 ${!rowLocked ? "group-hover:underline" : ""}`}>{formatDate(lastRevisedDate)}</span>
+                            </>
+                          ) : (
+                            <span className={`text-xs text-gray-300 ${!rowLocked ? "group-hover:text-gray-500" : ""}`}>—</span>
+                          )}
+                        </button>
+                        {isDatePickerOpen && !rowLocked && (
+                          <RevisedDatePicker
+                            itemId={item.id}
+                            currentDate={lastRevisedDate ?? ""}
+                            existingDates={item.revisedDates ?? []}
+                            minDate={item.when}
+                            onSave={handleRevisedDateSave}
+                            onClose={() => setOpenDatePicker(null)}
+                          />
+                        )}
+                      </td>
+                    );
+                  case "status":
+                    return (
+                      <td key={colKey} className={`relative border-r border-gray-100 ${statusBadgeColor(item.status)}`} style={{ width: getColWidth("status"), minWidth: getColWidth("status") }}>
+                        <button
+                          onClick={() => {
+                            if (rowLocked) return;
+                            setOpenDatePicker(null);
+                            setOpenNotesPicker(null);
+                            setOpenStatusPicker(isStatusPickerOpen ? null : item.id);
+                          }}
+                          disabled={rowLocked}
+                          title={rowLocked && !readOnly ? "Only the creator, assignee, or an admin can edit this item" : undefined}
+                          className={`w-full h-full flex items-center justify-center px-2 py-3 text-[10px] font-semibold whitespace-nowrap ${rowLocked ? "cursor-default" : ""}`}
+                        >
+                          {statusLabel(item.status)}
+                        </button>
+                        {isStatusPickerOpen && !rowLocked && (
+                          <StatusPicker
+                            itemId={item.id}
+                            currentStatus={item.status}
+                            onSave={handleStatusSave}
+                            onClose={() => setOpenStatusPicker(null)}
+                          />
+                        )}
+                      </td>
+                    );
+                  case "category":
+                    return (
+                      <td key={colKey} className="border-r border-gray-100 px-2 py-1.5 overflow-hidden align-top" style={{ width: getColWidth("category"), minWidth: getColWidth("category") }}>
+                        {item.category ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-700">
+                            {item.category}
+                          </span>
+                        ) : (
+                          <span className="text-gray-300 text-xs">—</span>
+                        )}
+                      </td>
+                    );
+                  case "notes":
+                    return (
+                      <td key={colKey} className="relative border-r border-gray-100 px-2 py-1.5 align-top" style={{ width: getColWidth("notes"), minWidth: getColWidth("notes") }}>
+                        <button
+                          onClick={() => {
+                            if (rowLocked) return;
+                            setOpenStatusPicker(null);
+                            setOpenDatePicker(null);
+                            setOpenNotesPicker(isNotesPickerOpen ? null : item.id);
+                          }}
+                          disabled={rowLocked}
+                          title={rowLocked && !readOnly ? "Only the creator, assignee, or an admin can edit this item" : undefined}
+                          className={`w-full text-left rounded ${rowLocked ? "cursor-default" : "hover:bg-blue-50/40"}`}
+                        >
+                          <ScrollableNote text={item.notes} />
+                        </button>
+                        {isNotesPickerOpen && !rowLocked && (
+                          <NotesPicker
+                            itemId={item.id}
+                            currentNotes={item.notes ?? ""}
+                            onSave={handleNotesSave}
+                            onClose={() => setOpenNotesPicker(null)}
+                          />
+                        )}
+                      </td>
+                    );
+                  case "createdBy":
+                    return (
+                      <td key={colKey} className="border-r border-gray-100 px-3 py-1.5 align-top" style={{ width: getColWidth("createdBy"), minWidth: getColWidth("createdBy") }}>
+                        <UserAuditCell name={item.createdByName} initials={item.createdByInitials} />
+                      </td>
+                    );
+                  case "updatedBy":
+                    return (
+                      <td key={colKey} className="border-r border-gray-100 px-3 py-1.5 align-top" style={{ width: getColWidth("updatedBy"), minWidth: getColWidth("updatedBy") }}>
+                        <UserAuditCell name={item.updatedByName} initials={item.updatedByInitials} />
+                      </td>
+                    );
+                  case "createdAt":
+                    return (
+                      <td key={colKey} className="border-r border-gray-100 px-3 py-1.5 align-top" style={{ width: getColWidth("createdAt"), minWidth: getColWidth("createdAt") }}>
+                        <DateAuditCell iso={item.createdAt} />
+                      </td>
+                    );
+                  case "updatedAt":
+                    return (
+                      <td key={colKey} className="border-r border-gray-100 px-3 py-1.5 align-top" style={{ width: getColWidth("updatedAt"), minWidth: getColWidth("updatedAt") }}>
+                        <DateAuditCell iso={item.updatedAt} />
+                      </td>
+                    );
+                  default:
+                    return null;
+                }
+              };
+
               return (
                 <tr
                   key={item.id}
-                  className={`border-b border-gray-100 hover:bg-blue-50 transition-colors ${rowBg}`}
+                  data-row-id={item.id}
+                  data-row-label={item.what}
+                  onPointerDown={rowReorderEnabled ? (e) => rowDnd.startDrag(item.id, e) : undefined}
+                  className={`group border-b border-gray-100 hover:bg-blue-50 transition-colors ${rowReorderEnabled ? "cursor-grab active:cursor-grabbing" : ""} ${rowBg} ${rowDropClass(item.id)} ${rowDnd.draggingId === item.id ? "opacity-40" : ""}`}
                 >
-                  {/* Checkbox — always frozen (hidable only via hideColumns prop) */}
-                  {WWW_COL_ORDER.includes("_cb") && (
-                    <td className="sticky z-20 border-r border-gray-100 px-2 py-1.5 bg-inherit" style={{ left: getLeftOffset("_cb"), width: 40, minWidth: 40 }}>
-                      <label
-                        onClickCapture={(e) => {
-                          if (!canDelete) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            notify.error("You don't have permission to delete");
-                          }
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.has(item.id)}
-                          onChange={() => toggleSelect(item.id)} disabled={!canDelete}
-                          className={`rounded border-gray-300 text-blue-600 ${canDelete ? "cursor-pointer" : "opacity-40 cursor-not-allowed"}`}
-                        />
-                      </label>
-                    </td>
-                  )}
-
-                  {/* Log icon — always frozen (hidable only via hideColumns prop) */}
-                  {WWW_COL_ORDER.includes("_log") && (
-                    <td className="sticky z-20 border-r border-gray-100 px-1 py-1.5 text-center bg-inherit" style={{ left: getLeftOffset("_log"), width: 40, minWidth: 40 }}>
-                      <button
-                        onClick={() => setLogItem(item)}
-                        className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500 transition-colors"
-                        title="Open log"
-                      >
-                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      </button>
-                    </td>
-                  )}
-
-                  {/* ID — always frozen (hidable only via hideColumns prop) */}
-                  {WWW_COL_ORDER.includes("_id") && (
-                    <td className="sticky z-20 border-r border-gray-100 px-1 py-1.5 text-center bg-inherit"
-                      style={{
-                        left: getLeftOffset("_id"),
-                        width: 50,
-                        minWidth: 50,
-                        boxShadow: lastFrozenKey === "_id" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
-                      }}>
-                      <button
-                        onClick={() => { setPanelTab("edit"); setEditItem(item); }}
-                        className="text-gray-900 hover:underline font-medium text-xs transition-colors"
-                      >
-                        {rowIdx + 1}
-                      </button>
-                    </td>
-                  )}
-
-                  {/* Who — user-freezable, hidable */}
-                  {WWW_COL_ORDER.includes("who") && (
-                    <td className={`z-20 border-r border-gray-100 px-2 py-1.5 bg-inherit ${isColFrozen("who") ? "sticky" : ""}`}
-                      style={{
-                        left: isColFrozen("who") ? getLeftOffset("who") : undefined,
-                        width: getColWidth("who"),
-                        minWidth: getColWidth("who"),
-                        boxShadow: lastFrozenKey === "who" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
-                      }}>
-                      <span className="text-xs text-gray-800 font-medium truncate block">
-                        {whoName}
-                      </span>
-                    </td>
-                  )}
-
-                  {/* When — user-freezable, hidable */}
-                  {WWW_COL_ORDER.includes("when") && (
-                    <td className={`z-20 border-r border-gray-200 px-2 py-1.5 bg-inherit ${isColFrozen("when") ? "sticky" : ""}`}
-                      style={{
-                        left: isColFrozen("when") ? getLeftOffset("when") : undefined,
-                        width: getColWidth("when"),
-                        minWidth: getColWidth("when"),
-                        boxShadow: lastFrozenKey === "when" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
-                      }}>
-                      <div className="flex items-center gap-1">
-                        <svg className="h-3 w-3 text-blue-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                        </svg>
-                        <span className={`text-xs ${item.when ? "text-blue-600" : "text-gray-400"}`}>
-                          {formatDate(item.when)}
-                        </span>
-                      </div>
-                    </td>
-                  )}
-
-                  {/* What — hidable */}
-                  {WWW_COL_ORDER.includes("what") && (
-                    <td className="border-r border-gray-100 px-2 py-1.5 overflow-hidden align-top" style={{ width: getColWidth("what"), minWidth: getColWidth("what") }}>
-                      <WhatTooltip text={item.what}>
-                        <p className="text-xs text-gray-800 line-clamp-2 leading-snug break-words cursor-default">
-                          {item.what}
-                        </p>
-                      </WhatTooltip>
-                    </td>
-                  )}
-
-                  {/* Revised Date — inline editable, hidable */}
-                  {WWW_COL_ORDER.includes("revisedDate") && (
-                    <td className="relative border-r border-gray-100 px-2 py-1.5" style={{ width: getColWidth("revisedDate"), minWidth: getColWidth("revisedDate") }}>
-                      <button
-                        onClick={() => {
-                          if (rowLocked) return;
-                          setOpenStatusPicker(null);
-                          setOpenNotesPicker(null);
-                          setOpenDatePicker(isDatePickerOpen ? null : item.id);
-                        }}
-                        disabled={rowLocked}
-                        title={rowLocked && !readOnly ? "Only the creator, assignee, or an admin can edit this item" : undefined}
-                        className={`flex items-center gap-1 group ${rowLocked ? "cursor-default" : ""}`}
-                      >
-                        {lastRevisedDate ? (
-                          <>
-                            <svg className="h-3 w-3 text-blue-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                            <span className={`text-xs text-blue-600 ${!rowLocked ? "group-hover:underline" : ""}`}>{formatDate(lastRevisedDate)}</span>
-                          </>
-                        ) : (
-                          <span className={`text-xs text-gray-300 ${!rowLocked ? "group-hover:text-gray-500" : ""}`}>—</span>
-                        )}
-                      </button>
-                      {isDatePickerOpen && !rowLocked && (
-                        <RevisedDatePicker
-                          itemId={item.id}
-                          currentDate={lastRevisedDate ?? ""}
-                          existingDates={item.revisedDates ?? []}
-                          minDate={item.when}
-                          onSave={handleRevisedDateSave}
-                          onClose={() => setOpenDatePicker(null)}
-                        />
-                      )}
-                    </td>
-                  )}
-
-                  {/* Status — hidable */}
-                  {WWW_COL_ORDER.includes("status") && (
-                    <td className={`relative border-r border-gray-100 ${statusBadgeColor(item.status)}`} style={{ width: getColWidth("status"), minWidth: getColWidth("status") }}>
-                      <button
-                        onClick={() => {
-                          if (rowLocked) return;
-                          setOpenDatePicker(null);
-                          setOpenNotesPicker(null);
-                          setOpenStatusPicker(isStatusPickerOpen ? null : item.id);
-                        }}
-                        disabled={rowLocked}
-                        title={rowLocked && !readOnly ? "Only the creator, assignee, or an admin can edit this item" : undefined}
-                        className={`w-full h-full flex items-center justify-center px-2 py-3 text-[10px] font-semibold whitespace-nowrap ${rowLocked ? "cursor-default" : ""}`}
-                      >
-                        {statusLabel(item.status)}
-                      </button>
-                      {isStatusPickerOpen && !rowLocked && (
-                        <StatusPicker
-                          itemId={item.id}
-                          currentStatus={item.status}
-                          onSave={handleStatusSave}
-                          onClose={() => setOpenStatusPicker(null)}
-                        />
-                      )}
-                    </td>
-                  )}
-
-                  {/* Category — hidable */}
-                  {WWW_COL_ORDER.includes("category") && (
-                    <td className="border-r border-gray-100 px-2 py-1.5 overflow-hidden align-top" style={{ width: getColWidth("category"), minWidth: getColWidth("category") }}>
-                      {item.category ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-700">
-                          {item.category}
-                        </span>
-                      ) : (
-                        <span className="text-gray-300 text-xs">—</span>
-                      )}
-                    </td>
-                  )}
-
-                  {/* Notes — inline editable, hidable */}
-                  {WWW_COL_ORDER.includes("notes") && (
-                    <td className="relative border-r border-gray-100 px-2 py-1.5 align-top" style={{ width: getColWidth("notes"), minWidth: getColWidth("notes") }}>
-                      <button
-                        onClick={() => {
-                          if (rowLocked) return;
-                          setOpenStatusPicker(null);
-                          setOpenDatePicker(null);
-                          setOpenNotesPicker(isNotesPickerOpen ? null : item.id);
-                        }}
-                        disabled={rowLocked}
-                        title={rowLocked && !readOnly ? "Only the creator, assignee, or an admin can edit this item" : undefined}
-                        className={`w-full text-left rounded ${rowLocked ? "cursor-default" : "hover:bg-blue-50/40"}`}
-                      >
-                        <ScrollableNote text={item.notes} />
-                      </button>
-                      {isNotesPickerOpen && !rowLocked && (
-                        <NotesPicker
-                          itemId={item.id}
-                          currentNotes={item.notes ?? ""}
-                          onSave={handleNotesSave}
-                          onClose={() => setOpenNotesPicker(null)}
-                        />
-                      )}
-                    </td>
-                  )}
-
-                  {/* Audit columns — populated by GET /api/www via decorateAudit. */}
-                  {WWW_COL_ORDER.includes("createdBy") && (
-                    <td className="border-r border-gray-100 px-3 py-1.5 align-top" style={{ width: getColWidth("createdBy"), minWidth: getColWidth("createdBy") }}>
-                      <UserAuditCell name={item.createdByName} initials={item.createdByInitials} />
-                    </td>
-                  )}
-                  {WWW_COL_ORDER.includes("updatedBy") && (
-                    <td className="border-r border-gray-100 px-3 py-1.5 align-top" style={{ width: getColWidth("updatedBy"), minWidth: getColWidth("updatedBy") }}>
-                      <UserAuditCell name={item.updatedByName} initials={item.updatedByInitials} />
-                    </td>
-                  )}
-                  {WWW_COL_ORDER.includes("createdAt") && (
-                    <td className="border-r border-gray-100 px-3 py-1.5 align-top" style={{ width: getColWidth("createdAt"), minWidth: getColWidth("createdAt") }}>
-                      <DateAuditCell iso={item.createdAt} />
-                    </td>
-                  )}
-                  {WWW_COL_ORDER.includes("updatedAt") && (
-                    <td className="border-r border-gray-100 px-3 py-1.5 align-top" style={{ width: getColWidth("updatedAt"), minWidth: getColWidth("updatedAt") }}>
-                      <DateAuditCell iso={item.updatedAt} />
-                    </td>
-                  )}
+                  {/* Cells rendered in the user's drag order (see renderBodyCell).
+                      Styling/colors unchanged from the previous hardcoded blocks. */}
+                  {WWW_COL_ORDER.map(renderBodyCell)}
                 </tr>
               );
             })}
           </tbody>
         </table>
       </HorizontalScroller>
+
+      {/* Floating "lifted" card that follows the cursor while dragging a row. */}
+      {rowDnd.dragGhost}
 
       {infiniteMode && isFetchingMore && (
         <div className="flex items-center justify-center gap-2 py-2.5 text-xs text-gray-400 border-t border-gray-100 bg-gray-50">

@@ -6,12 +6,12 @@ import { isVendorBlacklisted } from "@/lib/masters/vendors-repository";
 import { validateIndentCreation, PurchaseValidationError } from "@/lib/purchase-service";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
-import { listIndents, createIndent } from "@/lib/purchase/indent-repository";
+import { listIndents, countIndents, indentStatusCounts, createIndent } from "@/lib/purchase/indent-repository";
 import { findPRById } from "@/lib/purchase/pr-repository";
 import { findProjectById } from "@/lib/masters/projects-repository";
 import { db } from "@/lib/db";
 import { USER_TYPE_CATALOG } from "@/lib/rbac/user-types";
-import { parsePagination } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
 
 /**
  * Decide whether the caller is a "workflow participant" for indents.
@@ -92,26 +92,30 @@ export async function GET(req: NextRequest) {
     roleKey: ctx.roleKey,
   });
 
-  const p = parsePagination(req);
-  const data = await listIndents({
+  const baseOpts = {
     orgId: ctx.orgId,
     projectIds: ctx.projectIds ?? null,
     status,
     projectId,
     search,
     ownOnlyForUserId: ownOnly ? ctx.userId : null,
-    ...(p.paginated ? { take: p.take, skip: p.skip } : {}),
-  });
-  if (p.paginated) {
-    return NextResponse.json({
-      data,
-      total: data.length,
-      page: p.page,
-      pageSize: p.pageSize,
-      hasMore: data.length === p.pageSize,
-    });
+  };
+  if (searchParams.get("counts") === "1") {
+    const counts = await indentStatusCounts(baseOpts);
+    return NextResponse.json({ counts });
   }
-  return NextResponse.json({ data, total: data.length });
+  const p = parsePagination(req);
+  const { orderBy } = parseSort(
+    searchParams,
+    ["indentNumber", "indentDate", "status", "createdAt"],
+    { field: "indentDate", order: "desc" },
+  );
+  const result = await paginateDb(
+    p,
+    (paging) => listIndents({ ...baseOpts, ...paging, orderBy }),
+    () => countIndents(baseOpts),
+  );
+  return NextResponse.json(result);
 }
 
 interface IndentLineInput {

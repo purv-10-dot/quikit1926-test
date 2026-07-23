@@ -83,6 +83,53 @@ export interface ListIndentsOptions {
   /** Pagination — passed straight through to Prisma findMany. */
   take?: number;
   skip?: number;
+  /** Server-side sort (from `parseSort`). Defaults to newest-first. */
+  orderBy?: Array<Record<string, "asc" | "desc">>;
+}
+
+function buildIndentsWhere(
+  opts: Pick<ListIndentsOptions, "orgId" | "projectIds" | "status" | "projectId" | "search" | "ownOnlyForUserId">,
+): Record<string, unknown> {
+  const where: Record<string, unknown> = { orgId: opts.orgId };
+  if (opts.status && opts.status !== "all") where.status = opts.status;
+  if (opts.projectId) where.projectId = opts.projectId;
+  if (Array.isArray(opts.projectIds)) {
+    where.projectId = opts.projectId
+      ? opts.projectIds.includes(opts.projectId)
+        ? opts.projectId
+        : "__none__"
+      : { in: opts.projectIds };
+  }
+  const q = (opts.search ?? "").trim();
+  if (q) {
+    where.OR = [
+      { indentNumber: { contains: q, mode: "insensitive" } },
+      { sourceMrNumber: { contains: q, mode: "insensitive" } },
+    ];
+  }
+  if (opts.ownOnlyForUserId) {
+    where.requestedById = opts.ownOnlyForUserId;
+  }
+  return where;
+}
+
+export async function countIndents(
+  opts: Pick<ListIndentsOptions, "orgId" | "projectIds" | "status" | "projectId" | "search" | "ownOnlyForUserId">,
+): Promise<number> {
+  return db.cnPurchaseIndent.count({ where: buildIndentsWhere(opts) });
+}
+
+export async function indentStatusCounts(
+  opts: Pick<ListIndentsOptions, "orgId" | "projectIds" | "projectId" | "search" | "ownOnlyForUserId">,
+): Promise<Record<string, number>> {
+  const groups = await db.cnPurchaseIndent.groupBy({
+    by: ["status"],
+    where: buildIndentsWhere({ ...opts, status: undefined }),
+    _count: { _all: true },
+  });
+  const out: Record<string, number> = {};
+  for (const g of groups) out[String(g.status)] = g._count._all;
+  return out;
 }
 
 // ─── Schema-drift strip-and-retry (mirrors pr-repository) ───────────
@@ -465,36 +512,13 @@ export type EnrichedIndent = ReturnType<typeof enrichIndent>;
 // ─── Queries ───────────────────────────────────────────────────────
 
 export async function listIndents(opts: ListIndentsOptions): Promise<any[]> {
-  const where: Record<string, unknown> = { orgId: opts.orgId };
-  if (opts.status && opts.status !== "all") where.status = opts.status;
-  if (opts.projectId) where.projectId = opts.projectId;
-  if (Array.isArray(opts.projectIds)) {
-    // Caller-supplied project scope (per-user restriction) — intersected
-    // with any explicit projectId filter above.
-    where.projectId = opts.projectId
-      ? opts.projectIds.includes(opts.projectId)
-        ? opts.projectId
-        : "__none__"
-      : { in: opts.projectIds };
-  }
-  if (opts.search) {
-    const q = opts.search.toLowerCase();
-    where.OR = [
-      { indentNumber: { contains: q, mode: "insensitive" } },
-      { sourceMrNumber: { contains: q, mode: "insensitive" } },
-    ];
-  }
-  if (opts.ownOnlyForUserId) {
-    where.requestedById = opts.ownOnlyForUserId;
-  }
-
   const rows = await db.cnPurchaseIndent.findMany({
-    where,
+    where: buildIndentsWhere(opts),
     include: {
       project: { select: { id: true, name: true, code: true } },
       lines: true,
     },
-    orderBy: { indentDate: "desc" },
+    orderBy: opts.orderBy ?? [{ indentDate: "desc" }, { createdAt: "desc" }],
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
   });

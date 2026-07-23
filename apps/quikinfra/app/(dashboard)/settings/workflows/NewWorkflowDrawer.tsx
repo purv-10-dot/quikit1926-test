@@ -314,14 +314,14 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
           definition will end up applied to. The save button below
           creates one workflow row per chip. */}
       {moduleMode && (
-        <div className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-3 mb-4">
-          <div className="flex items-center gap-2 text-xs font-semibold text-orange-800 mb-1">
+        <div className="bg-accent-50 border border-accent-200 rounded-lg px-4 py-3 mb-4">
+          <div className="flex items-center gap-2 text-xs font-semibold text-accent-800 mb-1">
             <Layers className="w-3.5 h-3.5" />
             Applies to {moduleMode.entityTypes.length}{" "}
             page{moduleMode.entityTypes.length === 1 ? "" : "s"} in{" "}
             {moduleMode.moduleLabel}
           </div>
-          <div className="text-[11px] text-orange-700 mb-2">
+          <div className="text-[11px] text-accent-700 mb-2">
             Scope:{" "}
             <span className="font-semibold">
               {moduleMode.projectId
@@ -333,7 +333,7 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
             {moduleMode.entityTypes.map((et) => (
               <span
                 key={et.type}
-                className="inline-flex items-center text-[10px] font-semibold text-orange-700 bg-white border border-orange-200 px-2 py-0.5 rounded-full"
+                className="inline-flex items-center text-[10px] font-semibold text-accent-700 bg-white border border-accent-200 px-2 py-0.5 rounded-full"
               >
                 {et.label}
               </span>
@@ -559,13 +559,13 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
                     {pickedUsers.map((u) => (
                       <span
                         key={u.id}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-50 border border-orange-200 text-[11px] text-orange-700"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent-50 border border-accent-200 text-[11px] text-accent-700"
                       >
                         {u.fullName || u.email}
                         <button
                           type="button"
                           onClick={() => removeUser(u.id)}
-                          className="text-orange-400 hover:text-orange-700"
+                          className="text-accent-400 hover:text-accent-700"
                           aria-label={`Remove ${u.fullName || u.email}`}
                         >
                           <X className="w-3 h-3" />
@@ -600,7 +600,7 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
         <button
           type="button"
           onClick={addStep}
-          className="mt-2 text-xs text-orange-600 font-semibold inline-flex items-center gap-1"
+          className="mt-2 text-xs text-accent-600 font-semibold inline-flex items-center gap-1"
         >
           <Plus className="w-3.5 h-3.5" /> Add Step
         </button>

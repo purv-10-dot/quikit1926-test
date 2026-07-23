@@ -23,6 +23,7 @@
  */
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { AlertTriangle, AlertCircle, Info } from "lucide-react";
 
@@ -46,6 +47,14 @@ const ConfirmContext = React.createContext<((opts: ConfirmOptions) => Promise<bo
 
 export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   const [pending, setPending] = React.useState<PendingConfirm | null>(null);
+
+  // Portal target. We only render the dialog into document.body after mount so
+  // server render (where `document` is undefined) stays a no-op and hydration
+  // matches. Portaling to <body> is what makes the fixed backdrop escape the
+  // sticky table's stacking contexts (thead z-30 / frozen th z-[35]) — rendered
+  // inline, the backdrop gets trapped and the frozen header cells paint over it.
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => setMounted(true), []);
 
   const confirm = React.useCallback((opts: ConfirmOptions): Promise<boolean> => {
     return new Promise<boolean>((resolve) => {
@@ -89,22 +98,20 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
 
   const Icon = toneClasses.Icon;
 
-  return (
-    <ConfirmContext.Provider value={confirm}>
-      {children}
-      <AnimatePresence>
-        {pending && (
-          <motion.div
-            key="confirm-backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.12 }}
-            className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
-            onClick={() => close(false)}
-            role="dialog"
-            aria-modal="true"
-          >
+  const overlay = (
+    <AnimatePresence>
+      {pending && (
+        <motion.div
+          key="confirm-backdrop"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.12 }}
+          className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4"
+          onClick={() => close(false)}
+          role="dialog"
+          aria-modal="true"
+        >
             <motion.div
               initial={{ opacity: 0, y: 12, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -144,9 +151,15 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
                 </button>
               </div>
             </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+
+  return (
+    <ConfirmContext.Provider value={confirm}>
+      {children}
+      {mounted ? createPortal(overlay, document.body) : null}
     </ConfirmContext.Provider>
   );
 }
