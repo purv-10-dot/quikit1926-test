@@ -64,6 +64,50 @@ export function usePrioritiesPaginated(filters: PriorityFilters) {
 
 export const useCreatePriority = priority.useCreate;
 export const useUpdatePriority = priority.useUpdate;
+
+// ── Multi-owner create ──────────────────────────────────────────────────────
+//
+// The Add Priority form supports selecting multiple owners; the server fans out
+// one row per owner (POST /api/priority). The generic `useCreate` unwraps only
+// the `data` field, discarding the fan-out `meta`. This variant preserves the
+// full envelope so the form can report how many rows were created and how many
+// were skipped as duplicates, while reusing the same cache invalidation.
+export interface CreatePriorityMultiResult {
+  data: PriorityRow;
+  /** Rows actually created (owners minus skipped duplicates). */
+  created: number;
+  /** Distinct owners requested. */
+  requested: number;
+  /** Owners skipped because an identical priority already existed. */
+  skipped: number;
+}
+
+async function createPriorityMulti(
+  body: Record<string, unknown>,
+): Promise<CreatePriorityMultiResult> {
+  const res = await fetch("/api/priority", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json();
+  if (!json.success) throw new Error(json.error || "Failed to create priority");
+  const meta = json.meta ?? {};
+  return {
+    data: json.data as PriorityRow,
+    created: meta.created ?? 1,
+    requested: meta.requested ?? 1,
+    skipped: meta.skipped ?? 0,
+  };
+}
+
+export function useCreatePriorityMulti() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Record<string, unknown>) => createPriorityMulti(body),
+    onSuccess: () => invalidateEntity(queryClient, "priority"),
+  });
+}
 export const useDeletePriority = priority.useDelete;
 export const useRestorePriority = priority.useRestore;
 export const useBulkRestorePriority = priority.useBulkRestore;

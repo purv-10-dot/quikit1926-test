@@ -4,7 +4,7 @@ import { toErrorMessage } from "@/lib/api/errors";
 import { useState } from "react";
 import { FileText } from "lucide-react";
 import { MasterListPage, type MasterColumnDef } from "@/components/MasterListPage";
-import { useTermsConditions, useCreateTermsCondition, useUpdateTermsCondition, useDeleteTermsCondition } from "@/hooks/use-masters";
+import { useCreateTermsCondition, useUpdateTermsCondition, useDeleteTermsCondition } from "@/hooks/use-masters";
 import { FormDrawer, FormSection, Field, TextInput, SelectInput, TextAreaInput, CheckboxInput, InactiveStatusNotice } from "@/components/FormDrawer";
 import dynamic from "next/dynamic";
 import type { ImportFieldDef } from "@/components/ImportDataDrawer";
@@ -54,7 +54,6 @@ const rules: ValidationRules<typeof emptyForm> = {
 };
 
 export default function TermsPage() {
-  const { data: result, isLoading } = useTermsConditions({ status: "all" });
   const createMutation = useCreateTermsCondition();
   const updateMutation = useUpdateTermsCondition();
   const deleteMutation = useDeleteTermsCondition();
@@ -109,7 +108,13 @@ export default function TermsPage() {
     <>
       <MasterListPage title="Terms & Conditions" entityName="T&C Template" permissionUrl="/masters/terms" columns={columns}
         showStatusTabs
-        data={result?.data ?? []} total={result?.total ?? 0} isLoading={isLoading}
+        infinite={{
+          queryKey: "terms-conditions-infinite",
+          endpoint: "/api/masters/terms",
+          pageSize: 25,
+          defaultSortBy: "createdAt",
+          defaultSortOrder: "desc",
+        }}
         canImport canExport
         historyEntityType="terms_condition"
         onImport={() => setImportOpen(true)}

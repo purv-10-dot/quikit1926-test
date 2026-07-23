@@ -21,7 +21,6 @@ import {
   Button,
   Select,
   DataTable,
-  type DataTableColumn,
 } from "@quikit/ui";
 import { Clock, FileText, X, RotateCcw, AlertTriangle, History } from "lucide-react";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
@@ -33,6 +32,8 @@ import { OPSP_FIELD_LABELS } from "@/lib/utils/auditLog";
 import { useSession } from "next-auth/react";
 import { useOpspAck } from "@/lib/hooks/useOpspAck";
 import { editedRowIndices, editsSince, latestEdit, REVIEW_PRIMARY_ARRAY, type EditLogLike } from "@/lib/utils/opspEditHighlight";
+import { useDataTableGrid, type GridColumn } from "@/components/table/useDataTableGrid";
+import { MasterDataMoreActions } from "@/components/table/MasterDataMoreActions";
 
 /** Top-level OPSP fields whose post-finalize edits are relevant to the Review
  *  (same allow-list the Review history drawer uses). */
@@ -853,8 +854,8 @@ export default function OPSPReviewPage() {
     [filteredRows],
   );
 
-  const primaryColumns: DataTableColumn<TableRow>[] = useMemo(() => {
-    const cols: DataTableColumn<TableRow>[] = [
+  const primaryColumns: GridColumn<TableRow>[] = useMemo(() => {
+    const cols: GridColumn<TableRow>[] = [
     {
       key: "_cb",
       label: (
@@ -927,6 +928,8 @@ export default function OPSPReviewPage() {
       key: "category",
       label: "Category",
       width: 200,
+      sortable: true,
+      sortAccessor: (row) => row.category,
       render: (row) =>
         row.isFirstInGroup ? (
           <span className="font-medium text-gray-800 truncate block">{row.category}</span>
@@ -937,6 +940,8 @@ export default function OPSPReviewPage() {
       label: "Category Type",
       width: 130,
       thClassName: "whitespace-nowrap",
+      sortable: true,
+      sortAccessor: (row) => row.categoryType,
       // Render the friendly label ("Cumulative Till Exit") instead of the raw
       // DB key ("CumulativeTillEnd"). Falls back to the raw value if a future
       // categoryType is added without a label entry.
@@ -962,6 +967,8 @@ export default function OPSPReviewPage() {
       label: "Target",
       width: 100,
       align: "right",
+      sortable: true,
+      sortAccessor: (row) => row.target,
       render: (row) => (
         <span className="text-gray-700">{formatReviewValue(row.target, row.dataType, row.currency)}</span>
       ),
@@ -971,6 +978,8 @@ export default function OPSPReviewPage() {
       label: "Achieved",
       width: 100,
       align: "right",
+      sortable: true,
+      sortAccessor: (row) => row.achieved,
       render: (row) => (
         <span className="text-gray-700">{formatReviewValue(row.achieved, row.dataType, row.currency)}</span>
       ),
@@ -980,6 +989,8 @@ export default function OPSPReviewPage() {
       label: "Gap",
       width: 90,
       align: "right",
+      sortable: true,
+      sortAccessor: (row) => row.gap,
       render: (row) => (
         <span className="text-gray-700">{formatReviewValue(row.gap, row.dataType, row.currency)}</span>
       ),
@@ -990,6 +1001,8 @@ export default function OPSPReviewPage() {
       width: 100,
       align: "center",
       thClassName: "whitespace-nowrap",
+      sortable: true,
+      sortAccessor: (row) => row.achievedPct,
       tdClassName: (row) => {
         if (row.achievedPct == null) return "";
         const color = achievedPctColor(row.achievedPct);
@@ -1020,6 +1033,8 @@ export default function OPSPReviewPage() {
       width: 140,
       align: "right",
       thClassName: "whitespace-nowrap",
+      sortable: true,
+      sortAccessor: (row) => row.lastYearAchieved,
       render: (row) => (
         <span className={cn("text-gray-700", row.lastYearAchieved == null && "text-gray-400")}>
           {formatReviewValue(row.lastYearAchieved, row.dataType, row.currency)}
@@ -1032,6 +1047,8 @@ export default function OPSPReviewPage() {
       width: 110,
       align: "right",
       thClassName: "whitespace-nowrap",
+      sortable: true,
+      sortAccessor: (row) => row.yearGrowth,
       render: (row) => {
         if (row.yearGrowth == null) return <span className="text-gray-400">—</span>;
         const g = row.yearGrowth;
@@ -1054,8 +1071,8 @@ export default function OPSPReviewPage() {
     [filteredSecondary],
   );
 
-  const secondaryColumns: DataTableColumn<SecondaryTableRow>[] = useMemo(() => {
-    const cols: DataTableColumn<SecondaryTableRow>[] = [
+  const secondaryColumns: GridColumn<SecondaryTableRow>[] = useMemo(() => {
+    const cols: GridColumn<SecondaryTableRow>[] = [
     {
       key: "_cb",
       label: (
@@ -1123,6 +1140,8 @@ export default function OPSPReviewPage() {
       label: "Who",
       width: 160,
       align: "left",
+      sortable: true,
+      sortAccessor: (row) => row.ownerName,
       render: (row) => (
         <span className={cn("truncate block text-gray-700", !row.ownerName && "text-gray-400")}>
           {row.ownerName || "—"}
@@ -1134,6 +1153,8 @@ export default function OPSPReviewPage() {
       label: "Description",
       width: 280,
       align: "left",
+      sortable: true,
+      sortAccessor: (row) => row.desc,
       render: (row) => (
         <span className="text-gray-800 truncate block">{row.desc}</span>
       ),
@@ -1143,6 +1164,8 @@ export default function OPSPReviewPage() {
       label: "Status",
       width: 130,
       align: "center",
+      sortable: true,
+      sortAccessor: (row) => row.status,
       tdClassName: (row) => statusCellBg(row.status),
       render: (row) => (
         <span className={cn("text-xs font-medium", !row.status && "text-gray-400")}>
@@ -1170,6 +1193,37 @@ export default function OPSPReviewPage() {
     // capability rows on this horizon don't carry per-row ownership.
     return showOpspReviewOwnerColumn(horizon) ? cols : cols.filter((c) => c.key !== "who");
   }, [secondarySel, secondaryIdxs, horizon, openSecondaryModal, canUpdateReview]);
+
+  // ── Global-grid column features (freeze / hide / sort / resize / drag) ──
+  // Persisted per-user via useTablePrefs; one bucket per table role.
+  const RAIL = ["_cb", "_log", "_id"];
+  const primaryGrid = useDataTableGrid<TableRow>({
+    table: "opspReviewPrimary",
+    columns: primaryColumns,
+    railKeys: RAIL,
+  });
+  const secondaryGrid = useDataTableGrid<SecondaryTableRow>({
+    table: "opspReviewSecondary",
+    columns: secondaryColumns,
+    railKeys: RAIL,
+  });
+  const activeGrid = viewMode === "primary" ? primaryGrid : secondaryGrid;
+
+  // Group-aware sort: primary rows group by category (rowIndex) and rank by the
+  // aggregate/cumulative row's value; secondary rows are flat (one per index).
+  const sortedPrimaryRows = useMemo(
+    () =>
+      primaryGrid.applySort(
+        filteredRows,
+        (r) => r.rowIndex,
+        (g) => g.find((x) => x.isCumulative) ?? g[0],
+      ),
+    [primaryGrid, filteredRows],
+  );
+  const sortedSecondaryRows = useMemo(
+    () => secondaryGrid.applySort(filteredSecondary, (r) => r.index),
+    [secondaryGrid, filteredSecondary],
+  );
 
   /* ═══════════════════════════════════════════════
      Render
@@ -1280,6 +1334,17 @@ export default function OPSPReviewPage() {
               className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-accent-400 w-44"
             />
           </div>
+
+          {/* Manage Columns for the active table (freeze/sort/hide live in each
+              column's header menu; this restores hidden columns). */}
+          <MasterDataMoreActions
+            columns={activeGrid.manageColumns}
+            hiddenCols={activeGrid.hiddenCols}
+            onHiddenColsChange={activeGrid.setHiddenCols}
+            isTrashActive={false}
+            onToggleTrash={() => {}}
+            showTrash={false}
+          />
           </>)}
 
           {/* OPSP edit history — opens the same drawer as the editor, scoped to
@@ -1439,16 +1504,18 @@ export default function OPSPReviewPage() {
                   message={search ? `No results matching "${search}"` : `No ${labels.primary.toLowerCase()} data in this OPSP`}
                 />
               ) : (
-                <DataTable<TableRow>
-                  columns={primaryColumns}
-                  data={filteredRows}
-                  rowKey={(row) => `${row.rowIndex}-${row.periodKey}`}
-                  rowClassName={(row) => {
-                    if (showRowHighlight && editedPrimarySet.has(row.rowIndex)) return "bg-amber-50";
-                    return row.isCumulative ? "bg-gray-50/70" : "";
-                  }}
-                  emptyMessage={`No ${labels.primary.toLowerCase()} data`}
-                />
+                <div ref={primaryGrid.containerRef}>
+                  <DataTable<TableRow>
+                    columns={primaryGrid.columns}
+                    data={sortedPrimaryRows}
+                    rowKey={(row) => `${row.rowIndex}-${row.periodKey}`}
+                    rowClassName={(row) => {
+                      if (showRowHighlight && editedPrimarySet.has(row.rowIndex)) return "bg-amber-50";
+                      return row.isCumulative ? "bg-gray-50/70" : "";
+                    }}
+                    emptyMessage={`No ${labels.primary.toLowerCase()} data`}
+                  />
+                </div>
               )
             ) : (
               /* ── SECONDARY TABLE ── */
@@ -1458,12 +1525,14 @@ export default function OPSPReviewPage() {
                   message={search ? `No results matching "${search}"` : `No ${labels.secondary.toLowerCase()} data in this OPSP`}
                 />
               ) : (
-                <DataTable<SecondaryTableRow>
-                  columns={secondaryColumns}
-                  data={filteredSecondary}
-                  rowKey={(row) => String(row.index)}
-                  emptyMessage={`No ${labels.secondary.toLowerCase()} data`}
-                />
+                <div ref={secondaryGrid.containerRef}>
+                  <DataTable<SecondaryTableRow>
+                    columns={secondaryGrid.columns}
+                    data={sortedSecondaryRows}
+                    rowKey={(row) => String(row.index)}
+                    emptyMessage={`No ${labels.secondary.toLowerCase()} data`}
+                  />
+                </div>
               )
             )}
           </div>

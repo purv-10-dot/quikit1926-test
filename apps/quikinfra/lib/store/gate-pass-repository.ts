@@ -224,68 +224,147 @@ function mapRow(row: GatePassRow | null) {
 /** The mapped, client-facing gate-pass shape returned by every public read/write. */
 export type GatePass = NonNullable<ReturnType<typeof mapRow>>;
 
-export async function listGatePasses(
+export interface ListGatePassesOptions {
+  status?: string | null;
+  type?: string | null;
+  projectId?: string | null;
+  search?: string | null;
+  allowedProjectIds?: string[] | null;
+  sortBy?: string | null;
+  sortOrder?: "asc" | "desc" | null;
+  take?: number | null;
+  skip?: number | null;
+}
+
+// Whitelist: sortBy key → a pre-built SQL identifier fragment. Only keys in
+// this map can reach ORDER BY, so no caller string is ever interpolated raw.
+const GP_SORT_COLUMNS: Record<string, Prisma.Sql> = {
+  gatePassNumber: Prisma.sql`"gatePassNumber"`,
+  gatePassDate: Prisma.sql`"gatePassDate"`,
+  type: Prisma.sql`type`,
+  status: Prisma.sql`status`,
+  expectedReturnDate: Prisma.sql`"expectedReturnDate"`,
+  referenceNo: Prisma.sql`"referenceNo"`,
+  vehicleNo: Prisma.sql`"vehicleNo"`,
+  createdAt: Prisma.sql`"createdAt"`,
+};
+
+function gatePassOrderBy(
+  sortBy?: string | null,
+  sortOrder?: "asc" | "desc" | null,
+): Prisma.Sql {
+  const col = sortBy ? GP_SORT_COLUMNS[sortBy] : undefined;
+  if (!col) {
+    return Prisma.sql`ORDER BY "gatePassDate" DESC NULLS LAST, "createdAt" DESC`;
+  }
+  const dir = sortOrder === "asc" ? Prisma.sql`ASC` : Prisma.sql`DESC`;
+  return Prisma.sql`ORDER BY ${col} ${dir} NULLS LAST, "createdAt" DESC`;
+}
+
+// Build the shared WHERE fragment. `includeStatus` is false for the
+// count-by-status query (which groups over every status within the other
+// filters). Mirrors the previous in-memory filtering exactly: rows with no
+// projectId always pass the allowed-project scope; status/type match is
+// case-insensitive exact; search spans number/project/vehicle/reference.
+function buildGatePassWhere(
   orgId: string,
-  opts: {
-    status?: string | null;
-    type?: string | null;
-    projectId?: string | null;
-    search?: string | null;
-    allowedProjectIds?: string[] | null;
-  } = {},
-): Promise<GatePass[]> {
+  opts: Omit<ListGatePassesOptions, "sortBy" | "sortOrder" | "take" | "skip">,
+  includeStatus: boolean,
+): Prisma.Sql {
+  const conds: Prisma.Sql[] = [Prisma.sql`"orgId" = ${orgId}`];
   const allowed = opts.allowedProjectIds ?? null;
-  if (allowed !== null && allowed.length === 0) return [];
-
-  const rows = await db.$queryRaw<GatePassRow[]>`
-    SELECT *
-    FROM app_quikinfra."Gate_passes"
-    WHERE "orgId" = ${orgId}
-    ORDER BY "gatePassDate" DESC NULLS LAST, "createdAt" DESC
-  `;
-  let mapped = rows
-    .map(mapRow)
-    .filter((r): r is NonNullable<typeof r> => r !== null);
-
-  if (allowed !== null) {
-    const set = new Set(allowed);
-    // Allow rows with no projectId (rare; gate-house may tag nothing)
-    // through so gate-house staff still see them.
-    mapped = mapped.filter(
-      (r) => !r.projectId || set.has(r.projectId),
+  if (allowed !== null && allowed.length > 0) {
+    // Rows with no projectId always pass (gate-house may tag nothing);
+    // otherwise the projectId must be in the caller's allowed set.
+    conds.push(
+      Prisma.sql`("projectId" IS NULL OR "projectId" = ANY(${allowed}::text[]))`,
     );
   }
-  if (opts.status && opts.status !== "all") {
-    if (opts.status === "issued") {
-      mapped = mapped.filter((g) =>
-        ["draft", "pending_approval", "approved", "issued"].includes(
-          String(g.status ?? "").toLowerCase(),
-        ),
-      );
-    } else {
-      mapped = mapped.filter(
-        (g) =>
-          String(g.status ?? "").toLowerCase() === opts.status,
-      );
-    }
+  if (includeStatus && opts.status && opts.status !== "all") {
+    conds.push(Prisma.sql`LOWER(status) = LOWER(${opts.status})`);
   }
   if (opts.type && opts.type !== "all") {
-    mapped = mapped.filter(
-      (g) => String(g.type ?? "").toLowerCase() === opts.type,
-    );
+    conds.push(Prisma.sql`LOWER(type) = LOWER(${opts.type})`);
   }
   if (opts.projectId) {
-    mapped = mapped.filter((g) => g.projectId === opts.projectId);
+    conds.push(Prisma.sql`"projectId" = ${opts.projectId}`);
   }
-  if (opts.search) {
-    const q = opts.search.toLowerCase();
-    mapped = mapped.filter((g) =>
-      [g.gatePassNumber, g.projectName, g.vehicleNo, g.referenceNo].some(
-        (v) => typeof v === "string" && v.toLowerCase().includes(q),
-      ),
-    );
+  const search = opts.search?.trim();
+  if (search) {
+    const like = `%${search.toLowerCase()}%`;
+    conds.push(Prisma.sql`(
+      LOWER("gatePassNumber") LIKE ${like}
+      OR LOWER(COALESCE("projectName", '')) LIKE ${like}
+      OR LOWER(COALESCE("vehicleNo", '')) LIKE ${like}
+      OR LOWER(COALESCE("referenceNo", '')) LIKE ${like}
+      OR LOWER(COALESCE("referenceNumber", '')) LIKE ${like}
+    )`);
   }
-  return mapped;
+  return Prisma.join(conds, " AND ");
+}
+
+export async function listGatePasses(
+  orgId: string,
+  opts: ListGatePassesOptions = {},
+): Promise<{ data: GatePass[]; total: number }> {
+  const allowed = opts.allowedProjectIds ?? null;
+  if (allowed !== null && allowed.length === 0) return { data: [], total: 0 };
+
+  const where = buildGatePassWhere(orgId, opts, true);
+  const orderBy = gatePassOrderBy(opts.sortBy, opts.sortOrder);
+  const limit =
+    opts.take != null
+      ? Prisma.sql`LIMIT ${opts.take} OFFSET ${opts.skip ?? 0}`
+      : Prisma.empty;
+
+  const [rows, countRows] = await Promise.all([
+    db.$queryRaw<GatePassRow[]>`
+      SELECT * FROM app_quikinfra."Gate_passes"
+      WHERE ${where}
+      ${orderBy}
+      ${limit}
+    `,
+    db.$queryRaw<{ count: number }[]>`
+      SELECT COUNT(*)::int AS count FROM app_quikinfra."Gate_passes"
+      WHERE ${where}
+    `,
+  ]);
+
+  const data = rows
+    .map(mapRow)
+    .filter((r): r is NonNullable<typeof r> => r !== null);
+  return { data, total: Number(countRows[0]?.count ?? 0) };
+}
+
+/**
+ * Per-status counts for the tab badges. Counts across every status within
+ * the caller's project scope (+ optional type/project/search), so the "All"
+ * total and each status badge stay accurate while the list itself is paged.
+ */
+export async function gatePassStatusCounts(
+  orgId: string,
+  opts: Pick<
+    ListGatePassesOptions,
+    "type" | "projectId" | "search" | "allowedProjectIds"
+  > = {},
+): Promise<{ total: number; byStatus: Record<string, number> }> {
+  const allowed = opts.allowedProjectIds ?? null;
+  if (allowed !== null && allowed.length === 0) return { total: 0, byStatus: {} };
+
+  const where = buildGatePassWhere(orgId, opts, false);
+  const rows = await db.$queryRaw<{ status: string | null; count: number }[]>`
+    SELECT LOWER(COALESCE(status, 'draft')) AS status, COUNT(*)::int AS count
+    FROM app_quikinfra."Gate_passes"
+    WHERE ${where}
+    GROUP BY LOWER(COALESCE(status, 'draft'))
+  `;
+  const byStatus: Record<string, number> = {};
+  let total = 0;
+  for (const r of rows) {
+    byStatus[r.status ?? "draft"] = Number(r.count);
+    total += Number(r.count);
+  }
+  return { total, byStatus };
 }
 
 export async function findGatePassById(

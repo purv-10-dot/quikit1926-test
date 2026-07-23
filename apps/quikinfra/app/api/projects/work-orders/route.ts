@@ -41,7 +41,8 @@ function enrichWO(
     lineDate: l.lineDate?.toISOString?.().slice(0, 10) ?? "",
     activityName: l.activityName ?? "",
     workCategoryId: l.workCategoryId ?? "",
-    labourCounts: (l as { labourCounts?: unknown }).labourCounts ?? [],
+    labourCategoryId: (l as { labourCategoryId?: string | null }).labourCategoryId ?? "",
+    labourCount: (l as { labourCount?: { toString?: () => string } | null }).labourCount?.toString?.() ?? "",
   }));
   return {
     id: row.id,
@@ -84,6 +85,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status") ?? "";
   const projectId = searchParams.get("projectId") ?? "";
+  const contractorId = searchParams.get("contractorId") ?? "";
   const search = searchParams.get("search")?.toLowerCase() ?? "";
 
   const ctxOrResp = await requireProjectsFinanceAction("construction.wo", "view");
@@ -99,8 +101,81 @@ export async function GET(req: NextRequest) {
   if (Array.isArray(ctx.projectIds) && ctx.projectIds.length > 0) {
     where.projectId = { in: ctx.projectIds };
   }
+  // Soft-deleted rows are hidden from every list view.
+  where.status = { not: "inactive" };
   if (status && status !== "all") where.status = status;
   if (projectId) where.projectId = projectId;
+  if (contractorId) where.contractorId = contractorId;
+  // Search pushed into the DB so it stays correct under pagination (the old
+  // in-memory filter ran AFTER take/skip, so it only searched one page).
+  if (search) {
+    where.OR = [
+      { woNumber: { contains: search, mode: "insensitive" } },
+      { title: { contains: search, mode: "insensitive" } },
+      { project: { is: { name: { contains: search, mode: "insensitive" } } } },
+      { contractor: { is: { name: { contains: search, mode: "insensitive" } } } },
+    ];
+  }
+
+  // KPI tiles (Total / Active / Value / Avg progress) over the filtered set,
+  // computed server-side so they stay correct regardless of pagination.
+  if (searchParams.get("stats") === "1") {
+    const statsWhere = { ...where, status: { not: "inactive" } };
+    const [grouped, agg, woForProgress] = await Promise.all([
+      db.cnWorkOrder.groupBy({
+        by: ["status"],
+        where: statsWhere,
+        _count: { _all: true },
+      }),
+      db.cnWorkOrder.aggregate({
+        where: statsWhere,
+        _sum: { totalAmount: true },
+      }),
+      db.cnWorkOrder.findMany({
+        where: statsWhere,
+        select: { id: true, lines: { select: { quantity: true } } },
+      }),
+    ]);
+    let total = 0;
+    let active = 0;
+    for (const g of grouped) {
+      total += g._count._all;
+      if (g.status === "approved" || g.status === "in_progress") {
+        active += g._count._all;
+      }
+    }
+    const totalValue = Number(agg._sum.totalAmount ?? 0);
+    // Avg progress needs DPR-derived done-qty per WO (same as the list rows),
+    // aggregated across every matching WO. WO counts are bounded per org.
+    const statWoIds = woForProgress.map((w) => w.id);
+    const doneByWo = new Map<string, number>();
+    if (statWoIds.length) {
+      const items = await db.cnDPRWorkItem.findMany({
+        where: {
+          woId: { in: statWoIds },
+          dpr: { orgId: ctx.orgId, status: "approved" },
+        },
+        select: { woId: true, todayQty: true },
+      });
+      for (const it of items) {
+        if (!it.woId) continue;
+        doneByWo.set(it.woId, (doneByWo.get(it.woId) ?? 0) + Number(it.todayQty ?? 0));
+      }
+    }
+    let progressSum = 0;
+    for (const w of woForProgress) {
+      const scope = (w.lines ?? []).reduce(
+        (s, l) => s + Number(l.quantity ?? 0),
+        0,
+      );
+      const done = doneByWo.get(w.id) ?? 0;
+      progressSum += scope > 0 ? Math.min(100, Math.round((done / scope) * 100)) : 0;
+    }
+    const avgProgress = woForProgress.length
+      ? Math.round(progressSum / woForProgress.length)
+      : 0;
+    return NextResponse.json({ stats: { total, active, totalValue, avgProgress } });
+  }
 
   const p = parsePagination(req);
   const rows = await db.cnWorkOrder.findMany({
@@ -175,20 +250,14 @@ export async function GET(req: NextRequest) {
     };
   });
 
-  if (search) {
-    data = data.filter((r) =>
-      [r.woNumber, r.title, r.projectName, r.contractorName]
-        .some((v) => typeof v === "string" && v.toLowerCase().includes(search))
-    );
-  }
-
   if (p.paginated) {
+    const total = await db.cnWorkOrder.count({ where });
     return NextResponse.json({
       data,
-      total: data.length,
+      total,
       page: p.page,
       pageSize: p.pageSize,
-      hasMore: data.length === p.pageSize,
+      hasMore: p.skip + data.length < total,
     });
   }
   return NextResponse.json({ data, total: data.length });
@@ -225,7 +294,8 @@ export async function POST(req: NextRequest) {
       lineDate?: string | null;
       activityName?: string | null;
       workCategoryId?: string | null;
-      labourCounts?: { type: string; count: number }[] | null;
+      labourCategoryId?: string | null;
+      labourCount?: number | string | null;
     }>;
   };
   try {
@@ -315,9 +385,8 @@ export async function POST(req: NextRequest) {
             lineDate: it.lineDate ? new Date(it.lineDate) : null,
             activityName: it.activityName ?? null,
             workCategoryId: it.workCategoryId ?? null,
-            labourCounts: Array.isArray(it.labourCounts)
-              ? (it.labourCounts as Prisma.InputJsonValue)
-              : undefined,
+            labourCategoryId: it.labourCategoryId ?? null,
+            labourCount: it.labourCount != null ? String(it.labourCount) : null,
           })),
         },
       }),

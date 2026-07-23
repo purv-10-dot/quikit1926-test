@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTenantContext } from "@/lib/auth/context";
-import { listEstimations } from "@/lib/projects/estimation-repository";
+import {
+  listEstimations,
+  listEstimationsPaged,
+} from "@/lib/projects/estimation-repository";
+import { parsePagination } from "@/lib/http/pagination";
 import { db } from "@/lib/db";
 import { canActOnCurrentStep } from "@/lib/approvals/workflow-rbac";
 
@@ -25,12 +29,37 @@ export async function GET(req: NextRequest) {
 
   // Per-user project scoping applied at the repository layer so a user
   // can never use the query string to see a project they aren't
-  // assigned to.
-  const data = await listEstimations(ctx.orgId, {
-    projectId: projectId || null,
-    search: search || null,
-    allowedProjectIds: ctx.projectIds ?? null,
-  });
+  // assigned to. The list page requests paginated results (+ hides
+  // inactive estimations server-side); the PR drawer / project-scoped
+  // callers request the full array via the unpaged path.
+  const p = parsePagination(req);
+  const sortBy = searchParams.get("sortBy");
+  const sortOrder = searchParams.get("sortOrder") === "asc" ? "asc" : "desc";
+  const excludeInactive = searchParams.get("excludeInactive") === "1";
+
+  let data: Awaited<ReturnType<typeof listEstimations>>;
+  let total: number;
+  if (p.paginated) {
+    const res = await listEstimationsPaged(ctx.orgId, {
+      projectId: projectId || null,
+      search: search || null,
+      allowedProjectIds: ctx.projectIds ?? null,
+      excludeInactive,
+      sortBy,
+      sortOrder,
+      take: p.take,
+      skip: p.skip,
+    });
+    data = res.data;
+    total = res.total;
+  } else {
+    data = await listEstimations(ctx.orgId, {
+      projectId: projectId || null,
+      search: search || null,
+      allowedProjectIds: ctx.projectIds ?? null,
+    });
+    total = data.length;
+  }
 
   // Per-row Approve/Reject visibility — driven by the workflow's current
   // step, not the caller's role. Batch-load every pending instance + its
@@ -68,5 +97,14 @@ export async function GET(req: NextRequest) {
     };
   });
 
-  return NextResponse.json({ data: decorated, total: decorated.length });
+  if (p.paginated) {
+    return NextResponse.json({
+      data: decorated,
+      total,
+      page: p.page,
+      pageSize: p.pageSize,
+      hasMore: p.skip + decorated.length < total,
+    });
+  }
+  return NextResponse.json({ data: decorated, total });
 }

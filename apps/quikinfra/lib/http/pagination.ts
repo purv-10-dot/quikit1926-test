@@ -156,3 +156,62 @@ export async function paginateDb<T>(
     hasMore: p.skip + data.length < total,
   };
 }
+
+// ─── Sorting ──────────────────────────────────────────────────────────
+
+/** A Prisma-ready `orderBy` clause (single column + a stable `id` tie-break). */
+export type OrderByClause = Array<Record<string, "asc" | "desc">>;
+
+export interface SortParams {
+  /** The column that was actually applied (whitelisted or fallback). */
+  sortBy: string;
+  sortOrder: "asc" | "desc";
+  /** Spread straight into a Prisma `findMany({ orderBy })`. */
+  orderBy: OrderByClause;
+}
+
+/** Pull a URLSearchParams out of any of the accepted source shapes. */
+function toSearchParams(
+  source: { url: string } | URL | URLSearchParams,
+): URLSearchParams {
+  if (source instanceof URLSearchParams) return source;
+  if (source instanceof URL) return source.searchParams;
+  return new URL(source.url).searchParams;
+}
+
+/**
+ * Parse `?sortBy=&sortOrder=` into a safe Prisma `orderBy`.
+ *
+ * `sortBy` is validated against an explicit `allowed` whitelist so a client
+ * can never sort on a non-indexed / relation column (or inject a field name).
+ * Anything invalid falls back to `fallback`. A stable `{ id: "asc" }`
+ * tie-break is always appended (unless the sort column IS `id`) so pages
+ * don't drift when the primary sort has duplicate values.
+ *
+ *   const { orderBy } = parseSort(req, ["name", "createdAt", "status"], {
+ *     field: "createdAt",
+ *     order: "desc",
+ *   });
+ *   listCompanies({ ...opts, ...paging, orderBy });
+ */
+export function parseSort(
+  source: { url: string } | URL | URLSearchParams,
+  allowed: readonly string[],
+  fallback: { field: string; order?: "asc" | "desc" },
+): SortParams {
+  const params = toSearchParams(source);
+  const rawBy = params.get("sortBy");
+  const rawOrder = params.get("sortOrder");
+
+  const sortOrder: "asc" | "desc" =
+    rawOrder === "asc" ? "asc" : rawOrder === "desc" ? "desc" : fallback.order ?? "desc";
+
+  const sortBy = rawBy && allowed.includes(rawBy) ? rawBy : fallback.field;
+
+  const orderBy: OrderByClause =
+    sortBy === "id"
+      ? [{ id: sortOrder }]
+      : [{ [sortBy]: sortOrder }, { id: "asc" }];
+
+  return { sortBy, sortOrder, orderBy };
+}

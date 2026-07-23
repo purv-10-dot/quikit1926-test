@@ -5,6 +5,7 @@ const auth = withOrgAuthForResource("orgSetup.units", "Unit");
 import { validationError } from "@/lib/api/validationError";
 import { updateUnitSchema } from "@/lib/schemas/unitSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
+import { unitNameConflictMessage, UNIT_NAME_TAKEN } from "@/lib/api/unitConflict";
 
 type RouteParams = { id: string };
 
@@ -49,8 +50,14 @@ export const PUT = auth.update<RouteParams>(async ({ orgId, userId }, request, {
       "code" in err &&
       (err as { code?: string }).code === "P2002"
     ) {
+      // A rename can only collide with a *different* row; if that row is
+      // soft-deleted, guide the user to Trash. Fall back to the generic
+      // message when the new name is somehow absent.
+      const message = trimmedName
+        ? await unitNameConflictMessage(orgId, trimmedName)
+        : UNIT_NAME_TAKEN;
       return NextResponse.json(
-        { success: false, error: "A unit with this name already exists." },
+        { success: false, error: message },
         { status: 409 },
       );
     }
@@ -58,12 +65,14 @@ export const PUT = auth.update<RouteParams>(async ({ orgId, userId }, request, {
   }
 }, { fallbackErrorMessage: "Failed to update unit" });
 
-// DELETE /api/units/[id] — delete a unit.
+// DELETE /api/units/[id] — SOFT delete (moves the unit to Trash). Retains the
+// row with a `deletedAt` tombstone so it can be restored.
 export const DELETE = auth.delete<RouteParams>(async ({ orgId, userId }, _request, { params }) => {
   const existing = await db.unitMaster.findFirst({ where: { id: params.id, orgId } });
   if (!existing) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+  if (existing.deletedAt != null) return NextResponse.json({ success: true, message: "Already deleted" });
 
-  await db.unitMaster.delete({ where: { id: params.id } });
+  await db.unitMaster.update({ where: { id: params.id }, data: { deletedAt: new Date() } });
 
   await writeAuditLog({
     orgId,

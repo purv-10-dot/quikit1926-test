@@ -6,6 +6,7 @@ import { audit } from "@/lib/audit";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { userCan } from "@/lib/api/permissions";
 import { assignedAssetIdsForEmail } from "@/lib/api/assetScope";
+import { resolveActorNames } from "@/lib/api/actorNames";
 
 const auth = withOrgAuthForResource("Asset");
 
@@ -57,7 +58,15 @@ export const GET = auth.view(async ({ orgId, userId, userEmail }) => {
       },
     },
   });
-  return NextResponse.json({ success: true, data: assets });
+
+  // Resolve "Added by" names in one batched User lookup.
+  const actorNames = await resolveActorNames(assets.map((a) => a.createdByUserId));
+  const data = assets.map((a) => ({
+    ...a,
+    addedByName: a.createdByUserId ? actorNames.get(a.createdByUserId) ?? null : null,
+  }));
+
+  return NextResponse.json({ success: true, data });
 });
 
 export const POST = auth.create(async ({ orgId, userId, userEmail }, req) => {
@@ -76,6 +85,7 @@ export const POST = auth.create(async ({ orgId, userId, userEmail }, req) => {
     description: parsed.data.description ?? "",
     assetStatus: parsed.data.assetStatus as Prisma.AstAssetUncheckedCreateInput["assetStatus"],
     orgId,
+    createdByUserId: userId,
   };
   const asset = await db.astAsset.create({
     data,

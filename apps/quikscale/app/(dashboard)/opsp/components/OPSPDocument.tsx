@@ -982,8 +982,16 @@ export function OPSPDocument({
               the next row; short data still fills the 50mm minimum. */}
           <View style={{ flexDirection: "row", minHeight: "50mm" }}>
             <View style={{ flex: 1.01, borderRightWidth: 1, borderBottomWidth: 1, borderLeftWidth: 1, borderTopColor: COLORS.borderDark, borderRightColor: COLORS.borderDark, borderBottomColor: COLORS.borderDark, borderLeftColor: COLORS.borderDark, padding: 2, overflow: "hidden" }}>
+              {/* Fill-in template: always show ≥6 Actions rows. The column-label
+                  sub-header is omitted (showHeader=false) so 6 data rows equal the
+                  Accountability column's height (its header + 5 placeholder rows =
+                  6 rows). A sub-header here would make Actions 7 rows tall — ~10mm
+                  over the §2.4 row budget — which pushed Process onto a blank 3rd
+                  page. The §2.4 section header already labels this "Actions (QTR)".
+                  See OPSPDocument.pagecount.test.ts. */}
               <CatProjTable
                 rows={form.actionsQtr ?? []}
+                showHeader={false}
                 maxRows={10}
                 minRows={6}
                 compact={actionsOverflow}

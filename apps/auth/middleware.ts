@@ -133,5 +133,7 @@ export const config = {
   //                   by the new login UI). Without this exclusion the
   //                   middleware redirects asset requests to /login and the
   //                   page renders with broken image icons.
-  matcher: ["/((?!_next/static|_next/image|auth/|favicon.ico).*)"],
+  //   brand/        — public/brand/* (quikit-wordmark-*.svg rendered by the
+  //                   sign-in / sign-up logo). Same broken-icon reason as auth/.
+  matcher: ["/((?!_next/static|_next/image|auth/|brand/|favicon.ico).*)"],
 };

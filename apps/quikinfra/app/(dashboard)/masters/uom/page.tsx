@@ -4,7 +4,7 @@ import { toErrorMessage } from "@/lib/api/errors";
 import { useState } from "react";
 import { Calculator } from "lucide-react";
 import { MasterListPage, type MasterColumnDef } from "@/components/MasterListPage";
-import { useUOMs, useCreateUOM, useUpdateUOM, useDeleteUOM } from "@/hooks/use-masters";
+import { useCreateUOM, useUpdateUOM, useDeleteUOM } from "@/hooks/use-masters";
 import {
   FormDrawer, FormSection, FormRow, Field,
   TextInput, SelectInput, CheckboxInput, InactiveStatusNotice,
@@ -73,7 +73,6 @@ const rules: ValidationRules<typeof emptyForm> = {
 };
 
 export default function UOMPage() {
-  const { data: result, isLoading } = useUOMs();
   const createMutation = useCreateUOM();
   const updateMutation = useUpdateUOM();
   const deleteMutation = useDeleteUOM();
@@ -131,7 +130,13 @@ export default function UOMPage() {
     <>
       <MasterListPage title="Units of Measurement" entityName="UOM" permissionUrl="/masters/uom" columns={columns}
         showStatusTabs
-        data={(result?.data ?? []) as UOMRow[]} total={result?.data?.length ?? 0} isLoading={isLoading}
+        infinite={{
+          queryKey: "uoms-infinite",
+          endpoint: "/api/masters/uom",
+          pageSize: 25,
+          defaultSortBy: "createdAt",
+          defaultSortOrder: "desc",
+        }}
         canImport canExport
         historyEntityType="uom"
         onImport={() => setImportOpen(true)}

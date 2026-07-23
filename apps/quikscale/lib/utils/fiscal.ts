@@ -23,6 +23,14 @@ export const weeksArray = (count: number = DEFAULT_WEEKS_PER_QUARTER): number[] 
 export const MEASUREMENT_UNITS = ["Number", "Percentage", "Currency"] as const;
 
 /**
+ * KPI Type classification. "NA" (default) = unclassified, "Leading" = predictive
+ * input metric, "Lagging" = outcome metric. Single source of truth for the
+ * Add/Edit form dropdown and the grid; the Zod schema mirrors these literals.
+ */
+export const KPI_TYPES = ["NA", "Leading", "Lagging"] as const;
+export type KpiType = (typeof KPI_TYPES)[number];
+
+/**
  * Weekly meeting day-name → JS `Date.getDay()` index (Sunday=0 … Saturday=6).
  * Used by Custom Quarter Settings' meeting-day week alignment.
  */
@@ -131,6 +139,30 @@ export function resolveQuarterForDate(
 /** Formats "2026–2027" style label. */
 export function fiscalYearLabel(year: number): string {
   return `${year}–${year + 1}`;
+}
+
+/** Where a quarter sits relative to today. */
+export type QuarterPosition = "past" | "current" | "future";
+
+/**
+ * Classify a quarter as past / current / future by comparing today against the
+ * quarter's real start/end dates (same date logic as `qtdReferenceWeek`). This
+ * is what per-week edit gating needs but historically lacked: `useCurrentWeek`
+ * clamps a past quarter to `weekCount` and a future quarter to `1`, so a
+ * week-number-only gate can't tell that the whole quarter is out of range.
+ * Callers combine this with the in-quarter week number to gate edits correctly.
+ */
+export function resolveQuarterPosition(
+  startDate: string | Date,
+  endDate: string | Date,
+  now: Date = new Date(),
+): QuarterPosition {
+  const today = toLocalDay(now).getTime();
+  const start = toLocalDay(startDate).getTime();
+  const end = toLocalDay(endDate).getTime();
+  if (today < start) return "future";
+  if (today > end) return "past";
+  return "current";
 }
 
 /**

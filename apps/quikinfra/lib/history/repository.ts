@@ -123,6 +123,8 @@ const MASTER_MODEL_MAP: Record<string, string> = {
   contractor: "cnContractor",
   customer: "cnCustomer",
   project: "cnProject",
+  "labour-category": "cnLabourCategory",
+  "labour-rate": "cnLabourRate",
   // Transactional entities — purchase
   mr: "cnPurchaseRequisition",
   purchase_requisitions: "cnPurchaseRequisition",
@@ -182,6 +184,8 @@ const MODEL_FINDERS: Record<
   cnContractor: (where) => db.cnContractor.findFirst({ where, select: AUDIT_SELECT }),
   cnCustomer: (where) => db.cnCustomer.findFirst({ where, select: AUDIT_SELECT }),
   cnProject: (where) => db.cnProject.findFirst({ where, select: AUDIT_SELECT }),
+  cnLabourCategory: (where) => db.cnLabourCategory.findFirst({ where, select: AUDIT_SELECT }),
+  cnLabourRate: (where) => db.cnLabourRate.findFirst({ where, select: AUDIT_SELECT }),
   cnPurchaseRequisition: (where) => db.cnPurchaseRequisition.findFirst({ where, select: AUDIT_SELECT }),
   cnPurchaseIndent: (where) => db.cnPurchaseIndent.findFirst({ where, select: AUDIT_SELECT }),
   cnRfq: (where) => db.cnRfq.findFirst({ where, select: AUDIT_SELECT }),

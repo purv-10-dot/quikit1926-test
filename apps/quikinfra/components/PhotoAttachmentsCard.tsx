@@ -121,9 +121,9 @@ function PhotoThumb({ url, index }: { url: string; index: number }) {
   );
 
   const imageCls =
-    "group relative block w-20 h-20 rounded-lg border border-gray-200 overflow-hidden bg-gray-50 hover:border-orange-300 transition-colors shrink-0";
+    "group relative block w-20 h-20 rounded-lg border border-gray-200 overflow-hidden bg-gray-50 hover:border-accent-300 transition-colors shrink-0";
   const chipCls =
-    "w-20 h-20 rounded-lg border border-gray-200 bg-gray-50 hover:border-orange-300 hover:bg-white transition-colors flex flex-col items-center justify-center gap-1 p-1.5 shrink-0";
+    "w-20 h-20 rounded-lg border border-gray-200 bg-gray-50 hover:border-accent-300 hover:bg-white transition-colors flex flex-col items-center justify-center gap-1 p-1.5 shrink-0";
 
   if (isOpenable) {
     return (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { BarChart3, AlertTriangle, ShoppingCart } from "lucide-react";
 import {
   PageHeader, PageContainer, KPICard,
@@ -20,14 +20,25 @@ export default function StockRegisterPage() {
   const [locationFilter, setLocationFilter] = useState("");
   const [showLowOnly, setShowLowOnly] = useState(false);
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    setPage(1);
+  }, [projectFilter, locationFilter, showLowOnly, search, pageSize]);
+
   const { data: result, isLoading } = useStockRegister({
     projectId: projectFilter || undefined,
     locationId: locationFilter || undefined,
     lowStockOnly: showLowOnly,
-    search: undefined,
+    search: search || undefined,
+    page,
+    pageSize,
   });
 
   const stockData = result?.data ?? [];
+  const total = result?.total ?? 0;
   const summary = result?.summary ?? {
     totalItems: 0,
     totalValue: 0,
@@ -111,8 +122,16 @@ export default function StockRegisterPage() {
 
         <DataTable
           id="stock-register"
-          columns={columns}
+          columns={columns.map((c) => ({ ...c, sortable: false }))}
           data={stockData as unknown as StockRegisterRow[]}
+          loading={isLoading}
+          serverMode
+          serverTotal={total}
+          serverPage={page}
+          serverPageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          onSearchChange={setSearch}
         />
       </PageContainer>
     </>

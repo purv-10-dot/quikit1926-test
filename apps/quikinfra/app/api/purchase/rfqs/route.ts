@@ -4,13 +4,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { nextProjectScopedDocNumber } from "@/lib/db/doc-number";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
-import { listRfqs, createRfq } from "@/lib/purchase/rfq-repository";
+import { listRfqs, countRfqs, rfqStatusCounts, createRfq } from "@/lib/purchase/rfq-repository";
 import { findIndentById } from "@/lib/purchase/indent-repository";
 import { findVendorsByIds } from "@/lib/masters/vendors-repository";
 import { assertVendorGstActiveForPo } from "@/lib/integrations/whitebooks-gst";
 import { findProjectById } from "@/lib/masters/projects-repository";
 import { db } from "@/lib/db";
-import { parsePagination } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
 
 /**
  * RFQ API — Postgres-backed via `rfq-repository`.
@@ -78,26 +78,30 @@ export async function GET(req: NextRequest) {
   const sourceIndentId = searchParams.get("sourceIndentId") ?? "";
   const search = searchParams.get("search") ?? "";
 
-  const p = parsePagination(req);
-  const data = await listRfqs({
+  const baseOpts = {
     orgId: ctx.orgId,
     projectIds: ctx.projectIds ?? null,
     status,
     projectId,
     sourceIndentId,
     search,
-    ...(p.paginated ? { take: p.take, skip: p.skip } : {}),
-  });
-  if (p.paginated) {
-    return NextResponse.json({
-      data,
-      total: data.length,
-      page: p.page,
-      pageSize: p.pageSize,
-      hasMore: data.length === p.pageSize,
-    });
+  };
+  if (searchParams.get("counts") === "1") {
+    const counts = await rfqStatusCounts(baseOpts);
+    return NextResponse.json({ counts });
   }
-  return NextResponse.json({ data, total: data.length });
+  const p = parsePagination(req);
+  const { orderBy } = parseSort(
+    searchParams,
+    ["rfqNumber", "rfqDate", "status", "createdAt"],
+    { field: "rfqDate", order: "desc" },
+  );
+  const result = await paginateDb(
+    p,
+    (paging) => listRfqs({ ...baseOpts, ...paging, orderBy }),
+    () => countRfqs(baseOpts),
+  );
+  return NextResponse.json(result);
 }
 
 interface RfqLineInput {

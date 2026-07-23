@@ -4,7 +4,7 @@ import { toErrorMessage } from "@/lib/api/errors";
 import { useState } from "react";
 import { ListTodo } from "lucide-react";
 import { MasterListPage, type MasterColumnDef } from "@/components/MasterListPage";
-import { useWorkCategories, useCreateWorkCategory, useUpdateWorkCategory, useDeleteWorkCategory } from "@/hooks/use-masters";
+import { useCreateWorkCategory, useUpdateWorkCategory, useDeleteWorkCategory } from "@/hooks/use-masters";
 import { FormDrawer, FormSection, FormRow, Field, TextInput, NumberInput, SelectInput, InactiveStatusNotice } from "@/components/FormDrawer";
 import dynamic from "next/dynamic";
 import type { ImportFieldDef } from "@/components/ImportDataDrawer";
@@ -43,7 +43,6 @@ const rules: ValidationRules<typeof emptyForm> = {
 };
 
 export default function WorkCategoriesPage() {
-  const { data: result, isLoading } = useWorkCategories();
   const createMutation = useCreateWorkCategory();
   const updateMutation = useUpdateWorkCategory();
   const deleteMutation = useDeleteWorkCategory();
@@ -95,7 +94,13 @@ export default function WorkCategoriesPage() {
     <>
       <MasterListPage title="Work Categories" entityName="Work Category" permissionUrl="/masters/work-categories" columns={columns}
         showStatusTabs
-        data={(result?.data ?? []) as Row[]} total={result?.total ?? 0} isLoading={isLoading}
+        infinite={{
+          queryKey: "work-categories-infinite",
+          endpoint: "/api/masters/work-categories",
+          pageSize: 25,
+          defaultSortBy: "sortOrder",
+          defaultSortOrder: "asc",
+        }}
         canImport canExport
         historyEntityType="work_category"
         onImport={() => setImportOpen(true)}
