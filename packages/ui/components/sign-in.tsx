@@ -87,6 +87,11 @@ interface SignInComponentProps {
    *  step pointing here (the central auth app passes its /register URL).
    *  Omitted by other apps → no Sign up link (unchanged). */
   signUpUrl?: string;
+  /** Destination for the brand-panel "Back" button. Defaults to "/" (the
+   *  current in-app behavior). The central auth app overrides this to point
+   *  at the external marketing/landing site; other apps leave it unset so
+   *  their Back button keeps returning to their own root. */
+  backUrl?: string;
 }
 
 export const SignInComponent = ({
@@ -100,6 +105,7 @@ export const SignInComponent = ({
   invitationToken,
   invitationLauncherUrl,
   signUpUrl,
+  backUrl = "/",
 }: SignInComponentProps) => {
   const router = useRouter();
 
@@ -884,7 +890,13 @@ export const SignInComponent = ({
         <aside className="auth-side">
           <div className="auth-side-head fade-in-up d1">
             <button type="button" className="auth-back" aria-label="Back to home"
-              onClick={() => { if (hardNavigate) window.location.assign("/"); else router.push("/"); }}>
+              onClick={() => {
+                // Absolute (cross-origin) targets must go through a full
+                // browser navigation — router.push only handles in-app paths.
+                const isAbsolute = /^https?:\/\//i.test(backUrl);
+                if (isAbsolute || hardNavigate) window.location.assign(backUrl);
+                else router.push(backUrl);
+              }}>
               <ArrowLeft size={18} />
             </button>
             <div className="auth-brand-content">
