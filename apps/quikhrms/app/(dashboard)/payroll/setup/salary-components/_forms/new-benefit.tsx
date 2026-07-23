@@ -26,6 +26,7 @@ export function NewBenefitForm({ onCancel, onCreated }: { onCancel: () => void; 
   const createMut = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.post("/api/v1/hrms/payroll/salary-components", body),
     onSuccess: () => { onCreated(); setErr(null); },
+    meta: { suppressGlobalError: true },
     onError: (e: Error) => setErr(e.message),
   });
 
@@ -57,7 +58,7 @@ export function NewBenefitForm({ onCancel, onCreated }: { onCancel: () => void; 
     : null;
 
   return (
-    <form onSubmit={submit} className="p-5 space-y-4 max-w-xl">
+    <form onSubmit={submit} className="p-4 space-y-4 max-w-xl">
       <div>
         <label className="block text-xs font-medium text-gray-700 mb-1">Benefit Plan</label>
         <Select
@@ -84,7 +85,7 @@ export function NewBenefitForm({ onCancel, onCreated }: { onCancel: () => void; 
           <button
             type="button"
             onClick={() => setInvOpen((v) => !v)}
-            className="w-full px-3 py-2 text-sm bg-white border border-[var(--border)] rounded-md flex items-center justify-between hover:border-[#93c5fd]"
+            className="w-full px-3 py-2 text-xs bg-white border border-[var(--border)] rounded-md flex items-center justify-between hover:border-[#86efac]"
           >
             <span className={selectedLabel ? "text-gray-900" : "text-gray-400"}>{selectedLabel || "Select an Investment"}</span>
             <ChevronDown size={14} className="text-gray-400" />
@@ -94,7 +95,7 @@ export function NewBenefitForm({ onCancel, onCreated }: { onCancel: () => void; 
               <div className="p-2 border-b border-gray-100 sticky top-0 bg-white">
                 <div className="relative">
                   <Search size={14} className="absolute left-2 top-2.5 text-gray-400" />
-                  <input value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-7 pr-2 py-1.5 text-sm border border-[var(--border)] rounded" autoFocus />
+                  <input value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-7 pr-2 py-1.5 text-xs border border-[var(--border)] rounded" autoFocus />
                 </div>
               </div>
               {INVESTMENT_SECTIONS.map((sec) => {
@@ -111,8 +112,8 @@ export function NewBenefitForm({ onCancel, onCreated }: { onCancel: () => void; 
                           key={o.value}
                           onClick={() => { setForm({ ...form, investmentType: o.value, investmentSection: sec.section }); setInvOpen(false); }}
                           className={
-                            "w-full text-left px-3 py-2 text-sm flex items-center justify-between hover:bg-[#dbeafe] " +
-                            (active ? "bg-[#16243A] text-white hover:bg-[#2563eb]" : "text-gray-700")
+                            "w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-[#dcfce7] " +
+                            (active ? "bg-green-600 text-white hover:bg-green-700" : "text-gray-700")
                           }
                         >
                           {o.label}
@@ -128,8 +129,8 @@ export function NewBenefitForm({ onCancel, onCreated }: { onCancel: () => void; 
         </div>
       </div>
 
-      <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer pt-2">
-        <input type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} className="text-[#3b82f6] rounded" />
+      <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer pt-2">
+        <input type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} className="text-[#22c55e] rounded" />
         Mark this as Active
       </label>
 
@@ -137,14 +138,14 @@ export function NewBenefitForm({ onCancel, onCreated }: { onCancel: () => void; 
         <span className="font-semibold">Note:</span> Once you associate this benefits with an employee, you will only be able to edit the Name in Payslip. The change will be reflected in both new and existing employees.
       </div>
 
-      {err && <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">{err}</p>}
+      {err && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">{err}</p>}
 
       <div className="flex items-center justify-between pt-3 border-t border-gray-100">
         <div className="flex gap-2">
-          <button type="submit" disabled={createMut.isPending} className="px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 text-white rounded-md text-sm font-semibold shadow-sm">
+          <button type="submit" disabled={createMut.isPending} className="px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-md text-xs font-medium shadow-sm">
             {createMut.isPending ? "Saving..." : "Save"}
           </button>
-          <button type="button" onClick={onCancel} className="px-4 py-2 border border-[var(--border)] bg-white hover:bg-gray-50 text-gray-700 rounded-md text-sm font-medium">
+          <button type="button" onClick={onCancel} className="px-3 py-1.5 border border-[var(--border)] bg-white hover:bg-gray-50 text-gray-700 rounded-md text-xs font-medium">
             Cancel
           </button>
         </div>

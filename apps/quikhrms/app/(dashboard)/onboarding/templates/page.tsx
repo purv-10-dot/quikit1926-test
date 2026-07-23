@@ -6,7 +6,7 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
-import { Plus, ListChecks, X } from "lucide-react";
+import { Plus, ListChecks, X, Pencil, Trash2 } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonCards } from "@/components/hrms/skeleton";
 
@@ -23,20 +23,48 @@ export default function OnboardingTemplatesPage() {
   const api = useApiClient();
   const qc = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState<{ name: string; description: string; departmentId: string; designationId: string; tasks: TaskTpl[] }>({
-    name: "", description: "", departmentId: "", designationId: "",
-    tasks: [{ title: "", assigneeRole: "HRRole", dueInDays: 3, category: "Documentation", isMandatory: true, sortOrder: 0 }],
-  });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const emptyForm = {
+    name: "", description: "", departmentId: "", designationId: "", isActive: true,
+    tasks: [{ title: "", assigneeRole: "HRRole" as AssigneeRole, dueInDays: 3, category: "Documentation" as Category, isMandatory: true, sortOrder: 0 }] as TaskTpl[],
+  };
+  const [form, setForm] = useState<{ name: string; description: string; departmentId: string; designationId: string; isActive: boolean; tasks: TaskTpl[] }>(emptyForm);
+
+  const openCreate = () => { setEditingId(null); setForm(emptyForm); setShowCreate(true); };
+  const openEdit = (t: Template) => {
+    setEditingId(t.id);
+    setForm({
+      name: t.name,
+      description: t.description ?? "",
+      departmentId: t.departmentId ?? "",
+      designationId: t.designationId ?? "",
+      isActive: t.isActive,
+      tasks: (t.tasks ?? []).map((tk, i) => ({ ...tk, sortOrder: i })),
+    });
+    setShowCreate(true);
+  };
 
   const { data, isLoading } = useQuery({
     queryKey: ["onboarding", "templates"],
     queryFn: () => api.get<Template[]>("/api/v1/hrms/onboarding/templates?limit=100"),
   });
 
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["onboarding", "templates"] });
+
   const createMut = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.post("/api/v1/hrms/onboarding/templates", body),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["onboarding", "templates"] }); setShowCreate(false); },
+    onSuccess: () => { invalidate(); setShowCreate(false); },
   });
+  const updateMut = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) =>
+      api.put(`/api/v1/hrms/onboarding/templates/${id}`, body),
+    onSuccess: () => { invalidate(); setShowCreate(false); },
+  });
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => api.delete(`/api/v1/hrms/onboarding/templates/${id}`),
+    onSuccess: () => invalidate(),
+  });
+  const saving = createMut.isPending || updateMut.isPending;
 
   const addTask = () => setForm({ ...form, tasks: [...form.tasks, { title: "", assigneeRole: "HRRole", dueInDays: 7, category: "TaskOther", isMandatory: true, sortOrder: form.tasks.length }] });
   const removeTask = (idx: number) => setForm({ ...form, tasks: form.tasks.filter((_, i) => i !== idx) });
@@ -46,14 +74,14 @@ export default function OnboardingTemplatesPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <ListChecks className="text-[#3b82f6]" />
-          <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">Onboarding Templates</h1>
+          <ListChecks className="text-[#22c55e]" />
+          <h1 className="text-page-title text-gray-900">Onboarding Templates</h1>
         </div>
-        <button onClick={() => setShowCreate(true)}
+        <button onClick={openCreate}
           className="flex items-center gap-2 btn btn-primary">
-          <Plus size={16} /> New Template
+          <Plus size={13} /> New Template
         </button>
       </div>
 
@@ -66,10 +94,22 @@ export default function OnboardingTemplatesPage() {
           {templates.map((t, i) => (
             <div key={t.id} className="row-stagger bg-white rounded-lg shadow-sm border border-gray-200 p-4" style={{ ["--i" as never]: Math.min(i, 10) }}>
               <div className="flex items-start justify-between mb-2">
-                <h3 className="font-medium text-gray-900">{t.name}</h3>
-                <span className={clsx("px-2 py-0.5 rounded-full text-xs font-medium", t.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500")}>
-                  {t.isActive ? "Active" : "Inactive"}
-                </span>
+                <h3 className="text-[13px] font-semibold text-gray-900">{t.name}</h3>
+                <div className="flex items-center gap-1.5">
+                  <span className={clsx("px-2 py-0.5 rounded-full text-[11px] font-medium", t.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500")}>
+                    {t.isActive ? "Active" : "Inactive"}
+                  </span>
+                  <button type="button" onClick={() => openEdit(t)} title="Edit template"
+                    className="p-1 text-gray-400 hover:text-[#16a34a] hover:bg-gray-100 rounded">
+                    <Pencil size={13} />
+                  </button>
+                  <button type="button"
+                    onClick={() => { if (window.confirm(`Delete template "${t.name}"? This can't be undone.`)) deleteMut.mutate(t.id); }}
+                    title="Delete template"
+                    className="p-1 text-gray-400 hover:text-red-500 hover:bg-gray-100 rounded">
+                    <Trash2 size={13} />
+                  </button>
+                </div>
               </div>
               {t.description && <p className="text-xs text-gray-500 mb-2">{t.description}</p>}
               <div className="text-xs text-gray-500">{(t.tasks ?? []).length} tasks</div>
@@ -88,36 +128,43 @@ export default function OnboardingTemplatesPage() {
         </div>
       )}
 
-      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="New Onboarding Template">
+      <Modal open={showCreate} onClose={() => setShowCreate(false)} size="2xl" title={editingId ? "Edit Onboarding Template" : "New Onboarding Template"}>
         <form onSubmit={(e) => {
           e.preventDefault();
-          createMut.mutate({ ...form, departmentId: form.departmentId || null, designationId: form.designationId || null, tasks: form.tasks });
+          const payload = { ...form, departmentId: form.departmentId || null, designationId: form.designationId || null, tasks: form.tasks };
+          if (editingId) updateMut.mutate({ id: editingId, body: payload });
+          else createMut.mutate(payload);
         }} className="space-y-4 max-h-[80vh] overflow-y-auto pr-2">
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+            <div><label className="block text-xs font-medium text-gray-700 mb-1">Name</label>
               <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" /></div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Department (optional)</label>
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" /></div>
+            <div><label className="block text-xs font-medium text-gray-700 mb-1">Department (optional)</label>
               <input value={form.departmentId} onChange={(e) => setForm({ ...form, departmentId: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" /></div>
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" /></div>
           </div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+          <div><label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
             <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
-              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" /></div>
+              className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" /></div>
+
+          <label className="flex items-center gap-2 text-xs font-medium text-gray-700">
+            <input type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} />
+            Active (available when initiating onboarding)
+          </label>
 
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-gray-700">Tasks ({form.tasks.length})</label>
-              <button type="button" onClick={addTask} className="text-xs text-[#3b82f6] hover:underline">+ Add task</button>
+              <label className="block text-xs font-medium text-gray-700">Tasks ({form.tasks.length})</label>
+              <button type="button" onClick={addTask} className="text-xs text-[#22c55e] hover:underline">+ Add task</button>
             </div>
-            <div className="space-y-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               {form.tasks.map((t, idx) => (
                 <div key={idx} className="border border-gray-200 rounded-lg p-3 space-y-2">
                   <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.5 bg-[#dbeafe] text-[#2563eb] rounded text-xs font-bold">#{idx + 1}</span>
+                    <span className="px-2 py-0.5 bg-[#dcfce7] text-[#16a34a] rounded text-[11px] font-semibold">#{idx + 1}</span>
                     <input required placeholder="Task title" value={t.title} onChange={(e) => updateTask(idx, { title: e.target.value })}
-                      className="flex-1 border border-[var(--border)] rounded px-2 py-1.5 text-sm" />
-                    {form.tasks.length > 1 && <button type="button" onClick={() => removeTask(idx)} className="text-red-500"><X size={14} /></button>}
+                      className="flex-1 border border-[var(--border)] rounded px-2 py-1.5 text-xs" />
+                    {form.tasks.length > 1 && <button type="button" onClick={() => removeTask(idx)} className="text-red-500"><X size={12} /></button>}
                   </div>
                   <div className="grid grid-cols-3 gap-2">
                     <Select
@@ -144,8 +191,10 @@ export default function OnboardingTemplatesPage() {
           </div>
 
           <div className="flex justify-end gap-2 pt-2 sticky bottom-0 bg-white">
-            <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm">Cancel</button>
-            <button type="submit" className="px-4 py-2 bg-[#16243A] text-white rounded-lg text-sm font-medium hover:bg-[#2563eb]">Create</button>
+            <button type="button" onClick={() => setShowCreate(false)} className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium">Cancel</button>
+            <button type="submit" disabled={saving} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-60">
+              {saving ? "Saving…" : editingId ? "Save changes" : "Create"}
+            </button>
           </div>
         </form>
       </Modal>

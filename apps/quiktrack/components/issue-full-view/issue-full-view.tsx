@@ -7,6 +7,7 @@ import {
   BookOpen,
   ListTree,
 } from "lucide-react";
+import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { LinkedWorkItems } from "@/components/linked-work-items";
@@ -107,6 +108,18 @@ export function IssueFullView({
       },
     },
   );
+
+  // Reflect the issue in the browser tab (Jira-style "[SCRUM-58] title"), and
+  // restore the previous title when navigating away so other pages aren't left
+  // showing a stale work-item name.
+  useEffect(() => {
+    if (!issue?.key) return;
+    const previous = document.title;
+    document.title = `[${issue.key}] ${issue.title}`;
+    return () => {
+      document.title = previous;
+    };
+  }, [issue?.key, issue?.title]);
 
   async function patch(data: Record<string, unknown>) {
     const res = await fetch(`/api/issues/${issueId}`, {

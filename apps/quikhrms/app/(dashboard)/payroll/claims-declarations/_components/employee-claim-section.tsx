@@ -140,7 +140,6 @@ export function EmployeeClaimSection({ kind }: { kind: Kind }) {
       qc.invalidateQueries({ queryKey: ["payroll", "my-claims", kind] });
       setShowForm(false);
     },
-    onError: (e: Error) => toast.error("Submission failed", e.message),
   });
 
   // ── Apply status + date filters ──
@@ -162,18 +161,18 @@ export function EmployeeClaimSection({ kind }: { kind: Kind }) {
   // FBP needs admin-configured categories first.
   if (kind === "FBP" && components.length === 0) {
     return (
-      <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+      <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
         No FBP categories have been created yet. Ask your HR / payroll admin to add at least one FBP component.
       </div>
     );
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* ── New Claim button (when form is closed) ── */}
       {!showForm && (
         <div className="flex items-start justify-between gap-3">
-          <p className="text-sm text-gray-600 max-w-2xl">
+          <p className="text-xs text-gray-600 max-w-2xl">
             {kind === "FBP"
               ? "Submit Flexible Benefit Plan claims for any approved FBP category. HR will review and approve."
               : "Submit reimbursement claims with bill proof. HR reviews the amount and may approve, partially approve, or reject."}
@@ -181,9 +180,9 @@ export function EmployeeClaimSection({ kind }: { kind: Kind }) {
           <button
             type="button"
             onClick={() => setShowForm(true)}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] text-white rounded-md text-sm font-semibold shadow-sm shrink-0"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-xs font-medium shadow-sm shrink-0"
           >
-            <Plus size={14} /> New Claim
+            <Plus size={13} /> New Claim
           </button>
         </div>
       )}
@@ -202,7 +201,7 @@ export function EmployeeClaimSection({ kind }: { kind: Kind }) {
       {/* ── Claims list ── */}
       <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
         <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-100 bg-gray-50/40">
-          <h3 className="text-sm font-bold text-gray-900">
+          <h3 className="text-[13px] font-semibold text-gray-900">
             My {kind === "FBP" ? "FBP" : "Reimbursement"} Claims
           </h3>
           <div className="flex items-center gap-2">
@@ -234,7 +233,7 @@ export function EmployeeClaimSection({ kind }: { kind: Kind }) {
         </div>
 
         {isLoading ? (
-          <div className="p-8 text-center text-sm text-gray-500">Loading…</div>
+          <div className="p-8 text-center text-xs text-gray-500">Loading…</div>
         ) : filtered.length === 0 ? (
           <EmptyClaims kind={kind} hasUnfiltered={claims.length > 0} onCta={() => setShowForm(true)} />
         ) : (
@@ -242,7 +241,7 @@ export function EmployeeClaimSection({ kind }: { kind: Kind }) {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50/60">
+                  <tr className="text-table-head font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50/60">
                     <th className="text-left py-2.5 px-4">Category / Title</th>
                     <th className="text-left py-2.5 px-3">Date</th>
                     <th className="text-left py-2.5 px-3">Merchant</th>
@@ -265,17 +264,17 @@ export function EmployeeClaimSection({ kind }: { kind: Kind }) {
                       >
                         <td className="py-2.5 px-4">
                           <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="w-7 h-7 rounded-md bg-blue-50 text-[#3b82f6] flex items-center justify-center shrink-0">
+                            <div className="w-7 h-7 rounded-md bg-green-50 text-[#22c55e] flex items-center justify-center shrink-0">
                               <Icon size={14} />
                             </div>
                             <div className="min-w-0">
-                              <p className="font-medium text-gray-900 truncate" title={c.componentName}>
+                              <p className="text-[13px] font-medium text-gray-900 truncate" title={c.componentName}>
                                 {c.componentName}
                               </p>
                               {c.title && c.title.trim() !== c.componentName && (
                                 <p className="text-[11px] text-gray-500 truncate" title={c.title}>
                                   {c.title}
-                                  {c.isProject && <span className="ml-1 px-1 py-0.5 rounded bg-blue-50 text-blue-700 text-[9px] font-semibold uppercase">project</span>}
+                                  {c.isProject && <span className="ml-1 px-1 py-0.5 rounded bg-green-50 text-green-700 text-[10px] font-semibold uppercase">project</span>}
                                 </p>
                               )}
                             </div>
@@ -301,7 +300,7 @@ export function EmployeeClaimSection({ kind }: { kind: Kind }) {
                         <td className="py-2.5 px-3 text-center">
                           <span
                             className={clsx(
-                              "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border",
+                              "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border",
                               STATUS_BADGE[c.status],
                             )}
                             title={c.rejectionReason ?? undefined}
@@ -378,7 +377,7 @@ function Pager({
         disabled={page <= 1}
         className="w-7 h-7 rounded flex items-center justify-center text-gray-600 hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent"
       >
-        <ChevronLeft size={14} />
+        <ChevronLeft size={12} />
       </button>
       {pages.map((p, i) =>
         p === "..." ? (
@@ -391,7 +390,7 @@ function Pager({
             className={clsx(
               "w-7 h-7 rounded text-xs font-semibold flex items-center justify-center tabular-nums",
               p === page
-                ? "bg-[#16243A] text-white"
+                ? "bg-green-600 text-white"
                 : "text-gray-700 hover:bg-gray-100",
             )}
           >
@@ -405,7 +404,7 @@ function Pager({
         disabled={page >= totalPages}
         className="w-7 h-7 rounded flex items-center justify-center text-gray-600 hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent"
       >
-        <ChevronRight size={14} />
+        <ChevronRight size={12} />
       </button>
     </div>
   );
@@ -432,17 +431,17 @@ function ClaimFilesCell({ claim }: { claim: Claim }) {
         href={files[0].url}
         target="_blank"
         rel="noreferrer"
-        className="inline-flex items-center justify-center w-7 h-7 rounded text-gray-500 hover:text-[#3b82f6] hover:bg-blue-50"
+        className="inline-flex items-center justify-center w-7 h-7 rounded text-gray-500 hover:text-[#22c55e] hover:bg-green-50"
         title={files[0].name}
       >
-        <FileText size={14} />
+        <FileText size={12} />
       </a>
     );
   }
   // Multi-file: chip with hover popover
   return (
     <div className="relative inline-flex group">
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-semibold cursor-default">
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200 text-[11px] font-semibold cursor-default">
         <FileText size={11} /> {files.length} files
       </span>
       <div className="absolute right-0 top-full mt-1 z-10 hidden group-hover:block min-w-[220px] rounded-md border border-gray-200 bg-white shadow-lg p-1.5 text-left">
@@ -468,11 +467,11 @@ function EmptyClaims({
   kind, hasUnfiltered, onCta,
 }: { kind: Kind; hasUnfiltered: boolean; onCta: () => void }) {
   return (
-    <div className="px-6 py-12 text-center">
+    <div className="px-5 py-12 text-center">
       <div className="mx-auto w-14 h-14 rounded-full bg-gray-50 ring-1 ring-gray-200 flex items-center justify-center mb-3">
         <Receipt size={22} className="text-gray-400" />
       </div>
-      <p className="text-sm font-semibold text-gray-900">
+      <p className="text-[13px] font-semibold text-gray-900">
         {hasUnfiltered ? "No claims match these filters" : kind === "FBP" ? "No FBP claims yet" : "No claims yet"}
       </p>
       <p className="text-xs text-gray-500 mt-1 max-w-sm mx-auto">
@@ -486,9 +485,9 @@ function EmptyClaims({
         <button
           type="button"
           onClick={onCta}
-          className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-[#16243A] text-white hover:bg-[#1E3354]"
+          className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-green-600 text-white hover:bg-[#15803d]"
         >
-          <Plus size={12} /> Submit your first claim
+          <Plus size={13} /> Submit your first claim
         </button>
       )}
     </div>
@@ -529,7 +528,7 @@ function ClaimForm({
   const [description, setDescription] = useState("");
 
   const inputCls =
-    "w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#16243A]/20 focus:border-[#16243A]";
+    "w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#166534]/20 focus:border-[#166534]";
 
   const selected = kind === "FBP" ? components.find((c) => c.id === componentId) : undefined;
   const dateRangeInvalid = billDateTo && billDate && new Date(billDateTo) < new Date(billDate);
@@ -563,9 +562,9 @@ function ClaimForm({
       className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden"
     >
       {/* Panel header */}
-      <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-50/60 to-white">
+      <div className="flex items-start justify-between gap-4 px-4 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-50/60 to-white">
         <div>
-          <h3 className="text-base font-bold text-gray-900">
+          <h3 className="text-[13px] font-semibold text-gray-900">
             Submit {kind === "FBP" ? "FBP" : "Reimbursement"} Claim
           </h3>
           <p className="text-xs text-gray-500 mt-0.5 max-w-lg">
@@ -577,13 +576,13 @@ function ClaimForm({
         <button
           type="button"
           onClick={onCancel}
-          className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50"
+          className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50"
         >
-          <X size={12} /> Cancel
+          <X size={13} /> Cancel
         </button>
       </div>
 
-      <div className="p-5 space-y-4">
+      <div className="p-4 space-y-4">
         {/* Row 1: Category + Date */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label={kind === "FBP" ? "FBP Component" : "Reimbursement Category"} required>
@@ -644,7 +643,7 @@ function ClaimForm({
             onClick={() => setIsProject((v) => !v)}
             className={clsx(
               "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
-              isProject ? "bg-[#3b82f6]" : "bg-gray-300",
+              isProject ? "bg-[#22c55e]" : "bg-gray-300",
             )}
           >
             <span
@@ -732,20 +731,20 @@ function ClaimForm({
       </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-100 bg-gray-50/40">
+      <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-gray-100 bg-gray-50/40">
         <button
           type="button"
           onClick={onCancel}
-          className="px-3 py-1.5 text-sm border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 rounded-md font-medium"
+          className="px-3 py-1.5 text-xs border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 rounded-md font-medium"
         >
           Cancel
         </button>
         <button
           type="submit"
           disabled={submitting || !!dateRangeInvalid || !categoryPicked || !billDate || !title || !amountClaimed || !!billNumberMissing || !!merchantMissing || !!docMissing}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-md text-sm font-semibold shadow-sm"
+          className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-md text-xs font-medium shadow-sm"
         >
-          <Save size={14} /> {submitting ? "Submitting…" : "Submit Claim"}
+          <Save size={13} /> {submitting ? "Submitting…" : "Submit Claim"}
         </button>
       </div>
     </form>
@@ -890,7 +889,7 @@ function FileUpload({
                 <CheckCircle2 size={14} />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate" title={f.name}>{f.name}</p>
+                <p className="text-[13px] font-semibold text-gray-900 truncate" title={f.name}>{f.name}</p>
                 <div className="flex items-center gap-2 text-[11px] text-gray-600">
                   <span>{formatSize(f.size)}</span>
                   <span className="text-gray-300">·</span>
@@ -898,7 +897,7 @@ function FileUpload({
                     href={f.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-0.5 text-[#3b82f6] hover:underline"
+                    className="inline-flex items-center gap-0.5 text-[#22c55e] hover:underline"
                   >
                     Preview <ExternalLink size={10} />
                   </a>
@@ -910,7 +909,7 @@ function FileUpload({
                 className="shrink-0 inline-flex items-center justify-center w-7 h-7 rounded text-gray-400 hover:text-rose-600 hover:bg-rose-50"
                 title="Remove"
               >
-                <Trash2 size={14} />
+                <Trash2 size={12} />
               </button>
             </li>
           ))}
@@ -924,15 +923,15 @@ function FileUpload({
           onDragLeave={() => setIsDragging(false)}
           onDrop={onDrop}
           className={clsx(
-            "rounded-md border-2 border-dashed px-4 py-5 text-center transition-colors",
+            "rounded-md border-2 border-dashed px-4 py-4 text-center transition-colors",
             isDragging
-              ? "border-[#16243A] bg-blue-50/60"
+              ? "border-[#166534] bg-green-50/60"
               : "border-gray-300 bg-gray-50/40 hover:border-gray-400 hover:bg-gray-50/60",
           )}
         >
           {uploading ? (
             <>
-              <Loader2 size={20} className="mx-auto text-[#3b82f6] mb-1.5 animate-spin" />
+              <Loader2 size={20} className="mx-auto text-[#22c55e] mb-1.5 animate-spin" />
               <p className="text-xs font-semibold text-gray-700">Uploading…</p>
             </>
           ) : (
@@ -942,7 +941,7 @@ function FileUpload({
                 {attachments.length === 0
                   ? <>Drag &amp; drop files or{" "}</>
                   : <>Add more files —{" "}</>}
-                <label className="text-[#3b82f6] font-semibold cursor-pointer hover:underline">
+                <label className="text-[#22c55e] font-semibold cursor-pointer hover:underline">
                   Browse
                   <input
                     ref={fileInputRef}

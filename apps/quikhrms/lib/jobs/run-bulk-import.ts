@@ -2,7 +2,6 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { processBulkEmployees } from "@/lib/services/gap-fill";
 import { createAuditLog } from "@/lib/utils/audit";
-import { inviteImportedEmployees } from "@/lib/services/invitation";
 import { bulkEmployeeRowSchema } from "@/lib/validations/gap-fill";
 
 const rowsSchema = z.array(bulkEmployeeRowSchema);
@@ -58,16 +57,9 @@ export async function runBulkEmployeeImport(args: BulkImportArgs): Promise<void>
     metadata: { importId, success: result.success, failed: result.failed, dryRun },
   });
 
-  // Auto-invite freshly onboarded employees — creates a Users & Invitations row
-  // + sends an activation email (inline) so each sets their own password.
-  if (!dryRun && result.createdEmployees.length > 0) {
-    try {
-      const inv = await inviteImportedEmployees(orgId, userId, result.createdEmployees);
-      console.log(`[bulk-import] invitations: ${inv.invited} created, ${inv.queued} emails sent`);
-    } catch (e) {
-      console.error("[bulk-import] auto-invite step failed:", e);
-    }
-  }
+  // No auto-invite. Imported employees are created only; they show up under
+  // "Not yet invited" on the Users & Invitations screen, where an admin sends
+  // the invitation manually.
 }
 
 /** Mark a stuck/failed import record failed (used as runBackground onError). */

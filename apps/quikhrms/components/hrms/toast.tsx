@@ -1,10 +1,10 @@
 "use client";
 
-import { createContext, useCallback, useContext, useState } from "react";
-import { CheckCircle, AlertCircle, Info, X, AlertTriangle } from "lucide-react";
+import { createContext, useCallback, useContext, useRef, useState } from "react";
+import { CheckCircle, AlertCircle, Info, X, AlertTriangle, Loader2 } from "lucide-react";
 import { clsx } from "clsx";
 
-type ToastType = "success" | "error" | "info" | "warning";
+type ToastType = "success" | "error" | "info" | "warning" | "loading";
 
 interface ToastItem {
   id: string;
@@ -14,12 +14,28 @@ interface ToastItem {
   details?: Record<string, string[]> | string[] | null;
 }
 
+/** Options for a promise-driven toast (Sending… → Sent / Failed). */
+interface PromiseToastOptions<T> {
+  loading: string;
+  loadingDescription?: string;
+  success: string | ((value: T) => string);
+  successDescription?: string | ((value: T) => string | undefined);
+  error?: string | ((err: unknown) => string);
+}
+
 interface ToastContextValue {
-  show: (t: Omit<ToastItem, "id">) => void;
+  show: (t: Omit<ToastItem, "id">) => string;
   success: (title: string, description?: string) => void;
   error: (title: string, description?: string, details?: ToastItem["details"]) => void;
   info: (title: string, description?: string) => void;
   warning: (title: string, description?: string) => void;
+  /** Persistent spinner toast; returns an id to update()/dismiss() later. */
+  loading: (title: string, description?: string) => string;
+  /** Mutate an existing toast (e.g. turn a loading toast into success/error). */
+  update: (id: string, patch: Partial<Omit<ToastItem, "id">>) => void;
+  dismiss: (id: string) => void;
+  /** Wrap an async op: shows "loading" then resolves to success/error automatically. */
+  promise: <T>(promise: Promise<T>, opts: PromiseToastOptions<T>) => Promise<T>;
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null);
@@ -56,20 +72,63 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     }, 200);
   }, [remove]);
 
+  // Track pending auto-dismiss timers so update() can cancel/re-arm them.
+  const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  const armDismiss = useCallback((id: string, type: ToastType) => {
+    const existing = timers.current.get(id);
+    if (existing) clearTimeout(existing);
+    if (type === "loading") return; // loading toasts stay until updated/dismissed
+    const ttl = type === "error" ? 7000 : 4000;
+    const t = setTimeout(() => { timers.current.delete(id); beginDismiss(id); }, ttl);
+    timers.current.set(id, t);
+  }, [beginDismiss]);
+
   const show = useCallback((t: Omit<ToastItem, "id">) => {
     const id = Math.random().toString(36).slice(2);
     const item: ToastItem = { id, ...t };
     setToasts((prev) => [...prev, item]);
-    const ttl = t.type === "error" ? 7000 : 4000;
-    setTimeout(() => beginDismiss(id), ttl);
-  }, [beginDismiss]);
+    armDismiss(id, t.type);
+    return id;
+  }, [armDismiss]);
+
+  const update = useCallback((id: string, patch: Partial<Omit<ToastItem, "id">>) => {
+    setToasts((prev) => {
+      let found = false;
+      const next = prev.map((x) => (x.id === id ? (found = true, { ...x, ...patch }) : x));
+      return found ? next : prev;
+    });
+    if (patch.type) armDismiss(id, patch.type);
+  }, [armDismiss]);
 
   const value: ToastContextValue = {
     show,
-    success: (title, description) => show({ type: "success", title, description }),
-    error: (title, description, details) => show({ type: "error", title, description, details }),
-    info: (title, description) => show({ type: "info", title, description }),
-    warning: (title, description) => show({ type: "warning", title, description }),
+    success: (title, description) => { show({ type: "success", title, description }); },
+    error: (title, description, details) => { show({ type: "error", title, description, details }); },
+    info: (title, description) => { show({ type: "info", title, description }); },
+    warning: (title, description) => { show({ type: "warning", title, description }); },
+    loading: (title, description) => show({ type: "loading", title, description }),
+    update,
+    dismiss: (id) => beginDismiss(id),
+    promise: async (promise, opts) => {
+      const id = show({ type: "loading", title: opts.loading, description: opts.loadingDescription });
+      try {
+        const result = await promise;
+        update(id, {
+          type: "success",
+          title: typeof opts.success === "function" ? opts.success(result) : opts.success,
+          description: typeof opts.successDescription === "function" ? opts.successDescription(result) : opts.successDescription,
+        });
+        return result;
+      } catch (err) {
+        const { message, details } = extractErrorDetails(err);
+        const title = opts.error
+          ? (typeof opts.error === "function" ? opts.error(err) : opts.error)
+          : message;
+        update(id, { type: "error", title, description: undefined, details });
+        throw err;
+      }
+    },
   };
 
   return (
@@ -132,22 +191,22 @@ function ToastCard({ item, closing, onDismiss }: { item: ToastItem; closing: boo
         closing ? "toast-slide-out" : "toast-slide-in",
       )}
     >
-      <div className="flex items-start gap-3 p-4">
-        <div className={clsx("shrink-0 rounded-full w-8 h-8 flex items-center justify-center", config.iconBg)}>
+      <div className="flex items-start gap-2.5 p-3.5">
+        <div className={clsx("shrink-0 rounded-full w-7 h-7 flex items-center justify-center", config.iconBg)}>
           {config.icon}
         </div>
         <div className="flex-1 min-w-0">
-          <div className={clsx("text-sm font-semibold", config.titleColor)}>{item.title}</div>
-          {item.description && <div className="text-xs text-gray-600 mt-0.5 break-words">{item.description}</div>}
+          <div className={clsx("text-[13px] font-semibold", config.titleColor)}>{item.title}</div>
+          {item.description && <div className="text-[11px] text-gray-600 mt-0.5 break-words">{item.description}</div>}
           {detailList && detailList.length > 0 && (
-            <ul className="mt-2 space-y-0.5 text-xs text-gray-700">
+            <ul className="mt-2 space-y-0.5 text-[11px] text-gray-700">
               {detailList.slice(0, 5).map((d, i) => (
                 <li key={i} className="flex items-start gap-1.5">
                   <span className={clsx("w-1 h-1 rounded-full mt-1.5 shrink-0", config.dot)} />
                   <span className="break-words">{d}</span>
                 </li>
               ))}
-              {detailList.length > 5 && <li className="text-gray-400 text-xs">+{detailList.length - 5} more</li>}
+              {detailList.length > 5 && <li className="text-gray-400 text-[11px]">+{detailList.length - 5} more</li>}
             </ul>
           )}
         </div>
@@ -179,9 +238,14 @@ const toastConfig: Record<ToastType, {
     titleColor: "text-amber-900", accent: "bg-amber-500", dot: "bg-amber-400",
   },
   info: {
-    border: "border-blue-200", iconBg: "bg-blue-100",
-    icon: <Info size={16} className="text-blue-600" />,
-    titleColor: "text-blue-900", accent: "bg-blue-500", dot: "bg-blue-400",
+    border: "border-green-200", iconBg: "bg-green-100",
+    icon: <Info size={16} className="text-green-600" />,
+    titleColor: "text-green-900", accent: "bg-green-500", dot: "bg-green-400",
+  },
+  loading: {
+    border: "border-gray-200", iconBg: "bg-gray-100",
+    icon: <Loader2 size={16} className="text-gray-600 animate-spin" />,
+    titleColor: "text-gray-900", accent: "bg-gray-300", dot: "bg-gray-400",
   },
 };
 

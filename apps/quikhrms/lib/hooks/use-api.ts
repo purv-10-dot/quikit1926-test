@@ -145,6 +145,25 @@ async function apiDownloadPost(url: string, body: unknown, fallbackName?: string
   URL.revokeObjectURL(objectUrl);
 }
 
+/** Fetch a binary response (with auth) and open it inline in a new tab. */
+async function apiView(url: string): Promise<void> {
+  const res = await fetch(withBasePath(url), { headers: getAuthHeaders() });
+  if (!res.ok) {
+    let msg = `Couldn't open file (${res.status})`;
+    try {
+      const data = await res.json();
+      msg = data?.error?.message ?? msg;
+    } catch { /* not JSON */ }
+    throw new ApiError(msg, "VIEW_FAILED", res.status);
+  }
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const win = window.open(objectUrl, "_blank", "noopener,noreferrer");
+  if (!win) window.location.href = objectUrl; // popup blocked → same tab
+  // Keep the URL alive long enough for the new tab to load, then release it.
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+}
+
 export function useApiClient() {
   return {
     get: <T>(url: string) => apiFetch<T>(url),
@@ -161,5 +180,6 @@ export function useApiClient() {
       apiFetch<T>(url, { method: "POST", body: formData, timeoutMs: 5 * 60_000 }, { skipContentType: true }),
     download: (url: string, filename?: string) => apiDownload(url, filename),
     downloadPost: (url: string, body: unknown, filename?: string) => apiDownloadPost(url, body, filename),
+    view: (url: string) => apiView(url),
   };
 }

@@ -16,6 +16,13 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, { id })
       return validationError((err as Error).message);
     }
 
+    // A run with no computed payslips must not be approvable (would release an
+    // empty run to Paid).
+    const payslipCount = await prisma.payslip.count({ where: { payRunId: id, orgId, deletedAt: null } });
+    if (payslipCount === 0) {
+      return validationError("Compute the pay run before approving — it has no payslips yet.");
+    }
+
     const before = { status: run.status, approvedBy: run.approvedBy, approvedAt: run.approvedAt };
     const updated = await prisma.payRun.update({
       where: { id },

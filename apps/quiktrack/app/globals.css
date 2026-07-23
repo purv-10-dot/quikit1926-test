@@ -320,6 +320,12 @@ html.dark .bg-blue-50          { background-color: rgba(59, 130, 246, 0.18) !imp
 html.dark .bg-blue-100         { background-color: rgba(59, 130, 246, 0.25) !important; }
 html.dark .hover\:bg-blue-50:hover  { background-color: rgba(59, 130, 246, 0.22) !important; }
 html.dark .hover\:bg-blue-100:hover { background-color: rgba(59, 130, 246, 0.3) !important; }
+/* group-hover variants (row-hover on tables like the Ideas grid). Tailwind emits
+   these as `.group:hover .group-hover\:bg-blue-50` — a distinct selector the
+   plain `hover:` remaps above never reach, so they need their own overrides or
+   the frozen (sticky) columns keep a light-blue wash in dark mode. */
+html.dark .group:hover .group-hover\:bg-blue-50  { background-color: rgba(59, 130, 246, 0.22) !important; }
+html.dark .group:hover .group-hover\:bg-blue-100 { background-color: rgba(59, 130, 246, 0.3) !important; }
 html.dark .text-blue-700       { color: #93c5fd !important; }
 html.dark .text-blue-800       { color: #bfdbfe !important; }
 html.dark .text-blue-900       { color: #dbeafe !important; }
@@ -407,9 +413,34 @@ html.dark .bg-blue-50\/70    { background-color: rgba(59, 130, 246, 0.18) !impor
 html.dark .hover\:bg-blue-50\/30:hover,
 html.dark .hover\:bg-blue-50\/40:hover,
 html.dark .hover\:bg-blue-50\/60:hover { background-color: rgba(59, 130, 246, 0.22) !important; }
+/* group-hover opacity variants — the Ideas grid paints non-frozen cells with
+   `group-hover:bg-blue-50/40`; match the solid group-hover wash above so the
+   whole row (frozen + scrolling columns) hovers to one uniform tint. */
+html.dark .group:hover .group-hover\:bg-blue-50\/30,
+html.dark .group:hover .group-hover\:bg-blue-50\/40,
+html.dark .group:hover .group-hover\:bg-blue-50\/60 { background-color: rgba(59, 130, 246, 0.22) !important; }
 html.dark .border-blue-100   { border-color: rgba(59, 130, 246, 0.3) !important; }
 html.dark .border-blue-300   { border-color: rgba(96, 165, 250, 0.5) !important; }
 html.dark .hover\:border-blue-300:hover { border-color: rgba(96, 165, 250, 0.6) !important; }
+
+/* ── Ideas (discovery) grid, dark mode ────────────────────────────────────
+   The frozen checkbox + Summary columns are painted opaque (`bg-white` →
+   #151A21 in dark) so scrolling content can't bleed through. Their row-hover
+   tint rides on `group-hover:bg-blue-50`, but the sticky cells sit at a higher
+   stacking context and carry an inline `background`, so the generic group-hover
+   remap doesn't always win — pin them explicitly here so BOTH frozen columns
+   hover to the exact same wash as the scrolling cells. */
+html.dark .qt-ideas-row:hover .qt-ideas-sticky {
+  background-color: rgba(59, 130, 246, 0.22) !important;
+  background-image: none !important;
+}
+/* The Summary freeze boundary uses a hardcoded light-grey inset shadow
+   (#d1d5db) that glares against the dark surface — swap it for a dark hairline
+   plus a soft depth shadow that reads correctly on #151A21. Only the Summary
+   cell carries the freeze boundary (the checkbox column just has a border). */
+html.dark .qt-ideas-freeze {
+  box-shadow: inset -1px 0 0 0 #262E3A, 2px 0 4px -2px rgba(0, 0, 0, 0.5) !important;
+}
 
 /* Subtle shimmer + qt-list-scroll thumbs stay legible on the dark track.
    Override the two tracks set above the override block — these rules need

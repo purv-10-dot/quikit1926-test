@@ -2,14 +2,20 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Filter,
   Search,
   ChevronRight,
   ChevronDown,
   ListFilter,
+  Star,
 } from "lucide-react";
+
+interface SavedFilterLite {
+  id: string;
+  name: string;
+}
 
 const DEFAULT_FILTERS = [
   { id: "my-open", label: "My open work items" },
@@ -33,6 +39,23 @@ export function FiltersSection() {
   const pathname = usePathname();
   const [open, setOpen] = useState(() => Boolean(pathname?.startsWith("/filters")));
   const [defaultsOpen, setDefaultsOpen] = useState(true);
+  const [starred, setStarred] = useState<SavedFilterLite[]>([]);
+
+  // The user's starred saved filters, pinned under the Filters section (like
+  // Jira's "Starred"). Re-fetched when navigating within /filters so a newly
+  // starred/unstarred filter appears/disappears without a full reload.
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/saved-filters?starred=1")
+      .then((r) => r.json())
+      .then((j) => {
+        if (alive && j?.success) setStarred(j.data ?? []);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [pathname]);
 
   const isActive = (id: string) => pathname === `/filters/${id}`;
 
@@ -55,8 +78,12 @@ export function FiltersSection() {
       {open && (
         <div className="pt-0.5 space-y-0.5">
           <Link
-            href="/filters/all"
-            className="flex items-center gap-2 pl-9 pr-3 h-8 text-sm rounded text-gray-700 hover:bg-gray-100"
+            href="/filters/search"
+            className={`flex items-center gap-2 pl-9 pr-3 h-8 text-sm rounded ${
+              isActive("search")
+                ? "bg-blue-50 text-blue-700 font-medium"
+                : "text-gray-700 hover:bg-gray-100"
+            }`}
           >
             <Search className="h-4 w-4 shrink-0" />
             <span className="flex-1 truncate">Search work items</span>
@@ -97,8 +124,33 @@ export function FiltersSection() {
             </div>
           )}
 
+          {starred.length > 0 && (
+            <div className="pt-0.5">
+              <div className="pl-6 pr-3 pb-0.5 text-[11px] font-medium text-gray-500 uppercase">
+                Starred
+              </div>
+              {starred.map((f) => {
+                const active = isActive(f.id);
+                return (
+                  <Link
+                    key={f.id}
+                    href={`/filters/${f.id}`}
+                    className={`flex items-center gap-2 pl-9 pr-3 h-8 text-sm rounded ${
+                      active
+                        ? "bg-blue-50 text-blue-700 font-medium"
+                        : "text-gray-700 hover:bg-gray-100"
+                    }`}
+                  >
+                    <Star className="h-4 w-4 shrink-0 text-yellow-400 fill-yellow-400" />
+                    <span className="flex-1 truncate">{f.name}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+
           <Link
-            href="/filters/all"
+            href="/filters"
             className="flex items-center gap-2 pl-9 pr-3 h-8 text-sm rounded text-gray-700 hover:bg-gray-100"
           >
             <ListFilter className="h-4 w-4 shrink-0" />

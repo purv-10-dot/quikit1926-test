@@ -35,4 +35,4 @@ export interface SalaryComponent {
   isActive: boolean;
 }
 
-export const inputCls = "w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent";
+export const inputCls = "w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent";

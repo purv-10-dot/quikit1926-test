@@ -25,10 +25,10 @@ export default function CategoryMasterPage() {
   const [editingCat, setEditingCat] = useState<{ id: string; name: string } | null>(null)
   const [deletingCat, setDeletingCat] = useState<Category | null>(null)
 
-  const [toast, setToast] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null)
 
-  function showToast(msg: string) {
-    setToast(msg)
+  function showToast(msg: string, type: "success" | "error" = "success") {
+    setToast({ msg, type })
     setTimeout(() => setToast(null), 3000)
   }
 
@@ -78,7 +78,13 @@ export default function CategoryMasterPage() {
 
   async function handleDeleteBase() {
     if (!deletingBase) return
-    await fetch(`/api/base-categories/${deletingBase.id}`, { method: "DELETE" })
+    const res = await fetch(`/api/base-categories/${deletingBase.id}`, { method: "DELETE" })
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      showToast(json.error ?? "Failed to delete base category", "error")
+      setDeletingBase(null)
+      return
+    }
     if (selectedBase?.id === deletingBase.id) { setSelectedBase(null); setCategories([]) }
     setDeletingBase(null)
     await loadBase()
@@ -113,7 +119,13 @@ export default function CategoryMasterPage() {
 
   async function handleDeleteCat() {
     if (!deletingCat || !selectedBase) return
-    await fetch(`/api/categories/${deletingCat.id}`, { method: "DELETE" })
+    const res = await fetch(`/api/categories/${deletingCat.id}`, { method: "DELETE" })
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      showToast(json.error ?? "Failed to delete category", "error")
+      setDeletingCat(null)
+      return
+    }
     setDeletingCat(null)
     await loadCats(selectedBase.id)
     await loadBase()
@@ -337,8 +349,14 @@ export default function CategoryMasterPage() {
 
       {/* Toast */}
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-gray-900 text-white text-xs font-medium px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2">
-          <Check className="w-3.5 h-3.5 text-green-400" /> {toast}
+        <div className={cn(
+          "fixed bottom-6 right-6 z-50 text-white text-xs font-medium px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2 max-w-sm",
+          toast.type === "error" ? "bg-red-600" : "bg-gray-900",
+        )}>
+          {toast.type === "error"
+            ? <AlertTriangle className="w-3.5 h-3.5 text-white flex-shrink-0" />
+            : <Check className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />}
+          {toast.msg}
         </div>
       )}
     </>

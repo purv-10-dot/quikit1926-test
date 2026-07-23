@@ -38,3 +38,6 @@ next-env.d.ts
 .next-dev*.err.log
 .tmp-*
 .artifacts-*
+
+# local invoice/receipt uploads (served only via authenticated API, never static)
+.uploads/

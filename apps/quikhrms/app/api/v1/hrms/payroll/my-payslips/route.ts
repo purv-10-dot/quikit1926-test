@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { withAuth } from "@/lib/with-auth";
-import { successResponse, internalError, notFound } from "@/lib/api-response";
+import { withServiceAuth } from "@/lib/with-auth";
+import { successResponse, internalError, notFound, validationError } from "@/lib/api-response";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 
 function fyBounds(fy: string): { start: Date; end: Date } {
@@ -10,18 +10,30 @@ function fyBounds(fy: string): { start: Date; end: Date } {
   return { start: new Date(`${y}-04-01`), end: new Date(`${y + 1}-03-31`) };
 }
 
-export const GET = withAuth(async (req: NextRequest, { orgId, userId }) => {
+export const GET = withServiceAuth(async (req: NextRequest, { orgId, userId }) => {
   try {
     const employeeId = await resolveEmployeeId(orgId, userId);
     if (!employeeId) return notFound("Employee record not found");
 
     const url = new URL(req.url);
     const fy = url.searchParams.get("fy");
+    const month = url.searchParams.get("month"); // "YYYY-MM" — single-month filter
     const where: Record<string, unknown> = {
       orgId, employeeId, deletedAt: null,
       status: { in: ["Released", "Generated"] },
     };
-    if (fy) {
+    if (month) {
+      // Match by pay period, not payDate: the payslip whose period starts within
+      // the requested calendar month. Takes precedence over `fy` when both given.
+      const m = /^(\d{4})-(\d{2})$/.exec(month);
+      if (!m) return validationError("month must be in YYYY-MM format");
+      const y = Number(m[1]);
+      const mon = Number(m[2]) - 1; // JS months are 0-based
+      if (mon < 0 || mon > 11) return validationError("month must be 01–12");
+      const start = new Date(y, mon, 1);
+      const end = new Date(y, mon + 1, 0, 23, 59, 59, 999);
+      where.periodStart = { gte: start, lte: end };
+    } else if (fy) {
       const { start, end } = fyBounds(fy);
       where.periodStart = { gte: start, lte: end };
     }

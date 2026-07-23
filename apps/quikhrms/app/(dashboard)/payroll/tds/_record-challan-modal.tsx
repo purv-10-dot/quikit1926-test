@@ -189,7 +189,6 @@ export function RecordChallanModal({
       toast.success("Challan recorded", `CIN ${cin} saved & allocated to ${MONTHS[allocPeriodMonth - 1]} ${allocPeriodYear}.`);
       onClose();
     },
-    onError: (e: Error) => toast.error("Save failed", e.message),
   });
 
   const canSubmit = errors.length === 0 && !submitMut.isPending;
@@ -213,13 +212,13 @@ export function RecordChallanModal({
     >
       <form
         onSubmit={(e) => { e.preventDefault(); if (canSubmit) submitMut.mutate(); }}
-        className="p-5 space-y-5"
+        className="p-4 space-y-4"
       >
         {/* Period banner */}
-        <div className="rounded-xl bg-blue-50 ring-1 ring-blue-100 px-4 py-3 flex items-center justify-between gap-3">
+        <div className="rounded-xl bg-green-50 ring-1 ring-green-100 px-4 py-3 flex items-center justify-between gap-3">
           <div className="text-xs">
-            <p className="font-bold text-blue-900">For period</p>
-            <p className="text-blue-800">
+            <p className="font-bold text-green-900">For period</p>
+            <p className="text-green-800">
               {MONTHS[allocPeriodMonth - 1]} {allocPeriodYear}{matchedPeriod && <> · pending ₹{INR.format(periodPending)}</>}
             </p>
           </div>
@@ -326,7 +325,7 @@ export function RecordChallanModal({
           </div>
           <div className="mt-3 pt-3 border-t border-gray-200 flex items-center justify-between">
             <span className="text-xs font-semibold text-gray-600">TOTAL DEPOSIT</span>
-            <span className="font-bold text-lg text-gray-900 tabular-nums">₹{INR.format(totalAmount)}</span>
+            <span className="font-bold text-base text-gray-900 tabular-nums">₹{INR.format(totalAmount)}</span>
           </div>
         </Section>
 
@@ -350,11 +349,11 @@ export function RecordChallanModal({
         )}
       </form>
 
-      <div className="flex items-center justify-end gap-2 px-5 py-3.5 border-t border-gray-100 bg-gray-50/60">
+      <div className="flex items-center justify-end gap-2 px-4 py-3.5 border-t border-gray-100 bg-gray-50/60">
         <button
           type="button"
           onClick={onClose}
-          className="px-4 py-2 border border-gray-300 bg-white rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+          className="px-3 py-1.5 border border-gray-300 bg-white rounded-md text-xs font-medium text-gray-700 hover:bg-gray-50"
         >
           Cancel
         </button>
@@ -362,7 +361,7 @@ export function RecordChallanModal({
           type="button"
           disabled={!canSubmit}
           onClick={() => submitMut.mutate()}
-          className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md text-sm font-semibold"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md text-xs font-medium"
         >
           {submitMut.isPending && <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
           {submitMut.isPending ? "Saving…" : "Record & allocate"}
@@ -372,7 +371,7 @@ export function RecordChallanModal({
   );
 }
 
-const inputCls = "w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#16243A]/20 focus:border-[#16243A]";
+const inputCls = "w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#166534]/20 focus:border-[#166534]";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (

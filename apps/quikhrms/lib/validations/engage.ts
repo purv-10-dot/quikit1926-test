@@ -45,7 +45,7 @@ export const createCommentSchema = z.object({
 
 // ─── Announcement ───────────────────────────────────────
 
-export const createAnnouncementSchema = z.object({
+const announcementBase = z.object({
   title: z.string().min(1, "Title required"),
   content: z.string().min(1, "Content required"),
   attachments: z.array(z.string()).optional(),
@@ -57,7 +57,15 @@ export const createAnnouncementSchema = z.object({
   expiresAt: z.string().optional(),
 });
 
-export const updateAnnouncementSchema = createAnnouncementSchema.partial();
+const announcementChecks = (d: { publishedAt?: string; expiresAt?: string }, ctx: z.RefinementCtx) => {
+  if (d.publishedAt && d.expiresAt && d.expiresAt < d.publishedAt) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Expiry must be on or after the publish date", path: ["expiresAt"] });
+  }
+};
+
+export const createAnnouncementSchema = announcementBase.superRefine(announcementChecks);
+
+export const updateAnnouncementSchema = announcementBase.partial().superRefine(announcementChecks);
 
 // ─── Survey ─────────────────────────────────────────────
 
@@ -68,7 +76,9 @@ export const createSurveySchema = z.object({
     text: z.string().min(1),
     type: z.enum(["SurveyRating", "SurveyScale", "MultiChoice", "SingleChoice", "FreeText", "NPS", "Matrix"]),
     options: z.array(z.string()).optional(),
-    scale: z.object({ min: z.number(), max: z.number(), labels: z.array(z.string()).optional() }).optional(),
+    scale: z.object({ min: z.number(), max: z.number(), labels: z.array(z.string()).optional() })
+      .refine((s) => s.max > s.min, { message: "Scale max must be greater than min", path: ["max"] })
+      .optional(),
     isRequired: z.boolean().default(true),
     category: z.string().optional(),
   })).min(1),
@@ -81,7 +91,10 @@ export const createSurveySchema = z.object({
   startDate: z.string().min(1),
   endDate: z.string().min(1),
   recurrence: z.string().optional(),
-});
+}).refine(
+  (d) => d.endDate >= d.startDate,
+  { message: "End date must be on or after the start date", path: ["endDate"] },
+);
 
 export const updateSurveySchema = z.object({
   status: z.enum(["SurveyDraft", "SurveyActive", "SurveyClosed", "SurveyAnalysed"]).optional(),

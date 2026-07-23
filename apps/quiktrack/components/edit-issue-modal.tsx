@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { CustomFieldsSection } from "@/components/custom-fields/custom-fields-section";
 import type { CustomFieldDTO } from "@/lib/services/customFields";
@@ -776,9 +777,18 @@ export function EditIssueModal({
             )}
           </div>
           <div className="flex items-center gap-1 text-gray-500">
-            {/* <button className="p-1.5 hover:bg-gray-100 rounded" aria-label="Open in new tab">
-              <ExternalLink className="h-4 w-4" />
-            </button> */}
+            {issue?.key && (
+              <Link
+                href={`/browse/${issue.key}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-1.5 hover:bg-gray-100 rounded text-gray-500 hover:text-gray-700"
+                aria-label="Open in new tab"
+                title="Open in new tab"
+              >
+                <ExternalLink className="h-4 w-4" />
+              </Link>
+            )}
             {issue &&
               (canDeleteIssue ||
                 (!!currentUserId &&
@@ -902,20 +912,29 @@ export function EditIssueModal({
                   )}
                   {issue.type !== "EPIC" && <span className="text-gray-400 mx-1">/</span>}
                   {WORK_TYPE_OPTIONS.includes(issue.type as IssueType) ? (
-                    <div className="relative" ref={typeMenuRef}>
+                    <div className="relative inline-flex items-center gap-1 h-6 px-1.5 -mx-1 rounded hover:bg-gray-100" ref={typeMenuRef}>
                       <button
                         type="button"
                         onClick={() => setTypeMenuOpen((v) => !v)}
-                        className="inline-flex items-center gap-1 h-6 px-1.5 -mx-1 rounded hover:bg-gray-100"
+                        className="inline-flex items-center gap-1"
                         title="Change work type"
+                        aria-label="Change work type"
                       >
                         {(() => {
                           const T = typeMeta(issue.type);
                           return <T.Icon className={`h-3 w-3 ${T.color}`} />;
                         })()}
-                        {issue.key}
                         <ChevronDown className="h-3 w-3 text-gray-400" />
                       </button>
+                      <Link
+                        href={`/browse/${issue.key}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:underline"
+                        title="Open in new tab"
+                      >
+                        {issue.key}
+                      </Link>
                       {typeMenuOpen && (
                         <div className="absolute left-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1">
                           <div className="px-3 py-1.5 text-[11px] font-semibold text-gray-500">
@@ -951,7 +970,15 @@ export function EditIssueModal({
                         const T = typeMeta(issue.type);
                         return <T.Icon className={`h-3 w-3 ${T.color}`} />;
                       })()}
-                      {issue.key}
+                      <Link
+                        href={`/browse/${issue.key}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:underline"
+                        title="Open in new tab"
+                      >
+                        {issue.key}
+                      </Link>
                     </span>
                   )}
                 </div>

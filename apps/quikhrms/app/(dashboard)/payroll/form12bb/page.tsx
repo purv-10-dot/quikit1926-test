@@ -204,7 +204,6 @@ export default function Form12BBPage() {
       setErrors({});
       qc.invalidateQueries({ queryKey: ["payroll", "form12bb"] });
     },
-    onError: (e: Error) => toast.error("Save failed", e.message),
   });
 
   const num = (k: keyof Decl) => Number((form as Record<string, unknown>)[k] ?? 0);
@@ -225,7 +224,7 @@ export default function Form12BBPage() {
   const setDocsBucket = (bucket: DocSection, next: Doc[]) =>
     setForm((p) => ({ ...p, documents: { ...((p.documents as Documents) ?? {}), [bucket]: next } }));
 
-  const inputCls = "w-full px-3 py-2 border border-[var(--border)] rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]";
+  const inputCls = "w-full px-3 py-2 border border-[var(--border)] rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]";
 
   const submit = () => {
     // Drop empty buckets so we send a clean object (or null when there's
@@ -318,10 +317,10 @@ export default function Form12BBPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <FileText className="text-[#16243A]" />
+          <FileText className="text-[#166534]" />
           <div>
-            <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">Form 12BB declaration</h1>
-            <p className="text-sm text-gray-500">Declare investments + HRA + LTA + home loan interest for TDS computation. Attach supporting documents per Form 12BB.</p>
+            <h1 className="text-page-title text-gray-900">Form 12BB declaration</h1>
+            <p className="text-xs text-gray-500">Declare investments + HRA + LTA + home loan interest for TDS computation. Attach supporting documents per Form 12BB.</p>
           </div>
         </div>
         <Select
@@ -548,7 +547,7 @@ export default function Form12BBPage() {
 
       <div className="flex justify-end">
         <button onClick={submit} disabled={saveMut.isPending} className="btn btn-primary">
-          <Save size={14} /> {saveMut.isPending ? "Saving…" : existing ? "Update Declaration" : "Submit Declaration"}
+          <Save size={13} /> {saveMut.isPending ? "Saving…" : existing ? "Update Declaration" : "Submit Declaration"}
         </button>
       </div>
     </div>
@@ -557,8 +556,8 @@ export default function Form12BBPage() {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="surface-card p-5">
-      <h2 className="text-sm font-bold text-gray-900 mb-3">{title}</h2>
+    <div className="surface-card p-4">
+      <h2 className="text-[13px] font-semibold text-gray-900 mb-3">{title}</h2>
       {children}
     </div>
   );
@@ -677,13 +676,13 @@ function DocList({
                   href={doc.url}
                   target="_blank"
                   rel="noreferrer noopener"
-                  className="font-medium text-gray-900 hover:text-blue-600 hover:underline truncate block"
+                  className="font-medium text-gray-900 hover:text-green-600 hover:underline truncate block"
                   title={doc.name}
                 >
                   {doc.name}
                 </a>
                 <div className="flex items-center gap-2 text-[10px] text-gray-500">
-                  {doc.label && <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">{doc.label}</span>}
+                  {doc.label && <span className="px-1.5 py-0.5 rounded bg-green-50 text-green-700 font-medium">{doc.label}</span>}
                   <span>{formatSize(doc.size)}</span>
                   <span>·</span>
                   <span>{new Date(doc.uploadedAt).toLocaleDateString("en-IN")}</span>
@@ -709,7 +708,7 @@ function DocList({
           value={labelForNext}
           onChange={(e) => setLabelForNext(e.target.value)}
           placeholder="Tag for next upload (optional)"
-          className="flex-1 px-2.5 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#16243A] bg-white"
+          className="flex-1 px-2.5 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#166534] bg-white"
         />
         <input
           ref={fileRef}
@@ -723,7 +722,7 @@ function DocList({
           type="button"
           onClick={() => fileRef.current?.click()}
           disabled={uploading}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 text-white rounded-md font-semibold"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-md font-medium"
         >
           {uploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
           {uploading ? "Uploading…" : "Upload document"}
@@ -738,7 +737,7 @@ function DocList({
               key={l}
               type="button"
               onClick={() => setLabelForNext(l)}
-              className="text-[10px] px-1.5 py-0.5 rounded border border-gray-200 bg-white text-gray-600 hover:border-blue-300 hover:text-blue-700"
+              className="text-[10px] px-1.5 py-0.5 rounded border border-gray-200 bg-white text-gray-600 hover:border-green-300 hover:text-green-700"
             >
               {l}
             </button>
@@ -790,7 +789,7 @@ function SingleDocUploader({
             href={currentUrl}
             target="_blank"
             rel="noreferrer noopener"
-            className="flex-1 font-medium text-gray-900 hover:text-blue-600 hover:underline truncate"
+            className="flex-1 font-medium text-gray-900 hover:text-green-600 hover:underline truncate"
           >
             {fileName ?? "Signed Form 12BB"}
           </a>
@@ -816,9 +815,9 @@ function SingleDocUploader({
             type="button"
             onClick={() => fileRef.current?.click()}
             disabled={uploading}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 text-white rounded-md font-semibold"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-md font-medium"
           >
-            {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+            {uploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
             {uploading ? "Uploading…" : "Upload signed PDF"}
           </button>
         </>

@@ -15,7 +15,7 @@ import { SkeletonCards } from "@/components/hrms/skeleton";
 type ApprovalModule =
   | "Leave" | "Expense" | "Asset" | "Onboarding" | "Offboarding"
   | "Attendance" | "Document" | "Engagement" | "Feedback"
-  | "Reimbursement" | "ProofOfInvestment" | "SalaryRevision" | "OneTimeEarning";
+  | "Reimbursement" | "ProofOfInvestment" | "SalaryRevision" | "OneTimeEarning" | "Requisition";
 type ApproverKind = "ROLE" | "USER";
 
 interface Level {
@@ -48,15 +48,16 @@ interface EmployeeRef {
 }
 
 const MODULES: ApprovalModule[] = [
-  "Leave", "Expense", "Asset", "Onboarding", "Offboarding",
+  "Leave", "Expense", "Onboarding", "Offboarding",
   "Attendance", "Document", "Engagement", "Feedback",
-  "Reimbursement", "ProofOfInvestment", "SalaryRevision", "OneTimeEarning",
+  "Reimbursement", "ProofOfInvestment", "SalaryRevision", "OneTimeEarning", "Requisition",
 ];
 
 const MODULE_ICON: Record<ApprovalModule, string> = {
   Leave: "🌴", Expense: "💰", Asset: "💻", Onboarding: "👋", Offboarding: "👋",
   Attendance: "🕐", Document: "📄", Engagement: "🎉", Feedback: "💬",
   Reimbursement: "🧾", ProofOfInvestment: "🛡️", SalaryRevision: "📈", OneTimeEarning: "🎁",
+  Requisition: "📋",
 };
 
 // Human-readable labels for the Select / display.
@@ -74,6 +75,7 @@ const MODULE_LABEL: Record<ApprovalModule, string> = {
   ProofOfInvestment: "Proof of Investment",
   SalaryRevision: "Salary Revision",
   OneTimeEarning: "One-Time Earning / Deduction",
+  Requisition: "Requisition",
 };
 
 interface FormState {
@@ -207,15 +209,15 @@ export default function ApprovalChainsPage() {
   const validForm = form.levels.every((l) => (l.kind === "ROLE" ? !!l.roleId : !!l.userId));
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between bg-white rounded-lg border border-gray-200 px-5 py-4">
+      <div className="flex items-center justify-between bg-white rounded-lg border border-gray-200 px-4 py-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white shadow-sm">
+          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center text-white shadow-sm">
             <GitBranch size={18} />
           </div>
           <div>
-            <h1 className="text-lg font-semibold text-gray-900">Approval Chains</h1>
+            <h1 className="text-base font-semibold text-gray-900">Approval Chains</h1>
             <p className="text-xs text-gray-500 mt-0.5">Define who approves what — pick roles or specific people per step.</p>
           </div>
         </div>
@@ -229,9 +231,9 @@ export default function ApprovalChainsPage() {
           />
           <button
             onClick={openCreate}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-gradient-to-b from-blue-500 to-blue-600 rounded-lg shadow-sm hover:shadow-md hover:-translate-y-0.5 transition"
+            className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-b from-green-500 to-green-600 rounded-lg shadow-sm hover:shadow-md hover:-translate-y-0.5 transition"
           >
-            <Plus size={16} /> New chain
+            <Plus size={13} /> New chain
           </button>
         </div>
       </div>
@@ -241,10 +243,10 @@ export default function ApprovalChainsPage() {
       ) : chains.length === 0 ? (
         <div className="bg-white rounded-lg border border-dashed border-gray-300 p-12 text-center">
           <GitBranch size={36} className="mx-auto mb-3 text-gray-300" />
-          <h3 className="text-sm font-semibold text-gray-700 mb-1">No approval chains yet</h3>
+          <h3 className="text-[13px] font-semibold text-gray-700 mb-1">No approval chains yet</h3>
           <p className="text-xs text-gray-500 mb-4">Create one to route requests through approvers automatically.</p>
-          <button onClick={openCreate} className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-            <Plus size={14} /> Create your first chain
+          <button onClick={openCreate} className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700">
+            <Plus size={13} /> Create your first chain
           </button>
         </div>
       ) : (
@@ -261,10 +263,10 @@ export default function ApprovalChainsPage() {
                 <div className="flex items-center gap-2">
                   <span className="text-xl">{MODULE_ICON[c.module]}</span>
                   <div>
-                    <h3 className="font-semibold text-gray-900 text-sm">{c.name}</h3>
+                    <h3 className="font-semibold text-gray-900 text-[13px]">{c.name}</h3>
                     <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-[11px] px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full font-medium">{MODULE_LABEL[c.module] ?? c.module}</span>
-                      <span className={clsx("text-[11px] px-2 py-0.5 rounded-full font-medium", c.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500")}>
+                      <span className="text-[11px] px-2 py-0.5 bg-green-50 text-green-700 rounded-full font-semibold">{MODULE_LABEL[c.module] ?? c.module}</span>
+                      <span className={clsx("text-[11px] px-2 py-0.5 rounded-full font-semibold", c.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500")}>
                         {c.isActive ? "Active" : "Inactive"}
                       </span>
                       {c.autoApproveAfterDays && (
@@ -277,13 +279,13 @@ export default function ApprovalChainsPage() {
                   <button
                     onClick={() => openEdit(c)}
                     title="Edit"
-                    className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition"
+                    className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded transition"
                   >
-                    <Pencil size={14} />
+                    <Pencil size={12} />
                   </button>
                   <button
                     onClick={() => toggleMut.mutate({ id: c.id, isActive: !c.isActive })}
-                    className="px-2 py-1 text-[11px] font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded transition"
+                    className="px-2.5 py-1 text-xs font-normal text-gray-600 bg-gray-100 hover:bg-gray-200 rounded transition"
                   >
                     {c.isActive ? "Disable" : "Enable"}
                   </button>
@@ -300,14 +302,14 @@ export default function ApprovalChainsPage() {
                     title="Delete"
                     className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition"
                   >
-                    <Trash2 size={14} />
+                    <Trash2 size={12} />
                   </button>
                 </div>
               </div>
 
               {/* Visual flow */}
               <div className="flex items-center gap-1.5 flex-wrap">
-                <div className="flex items-center gap-1 px-2.5 py-1 bg-gray-50 border border-gray-200 rounded text-[11px] text-gray-600">
+                <div className="flex items-center gap-1 px-2.5 py-1 bg-gray-50 border border-gray-200 rounded text-[11px] font-medium text-gray-600">
                   <User size={11} /> Requester
                 </div>
                 {c.levels.map((l) => {
@@ -319,7 +321,7 @@ export default function ApprovalChainsPage() {
                         "inline-flex items-center gap-1.5 px-2.5 py-1 border rounded text-[11px] font-medium",
                         isUser
                           ? "bg-purple-50 text-purple-700 border-purple-200"
-                          : "bg-blue-50 text-blue-700 border-blue-200",
+                          : "bg-green-50 text-green-700 border-green-200",
                       )}>
                         <span className="opacity-60">L{l.level}</span>
                         {isUser ? <User size={10} /> : <Shield size={10} />}
@@ -330,7 +332,7 @@ export default function ApprovalChainsPage() {
                   );
                 })}
                 <ArrowRight size={12} className="text-gray-300" />
-                <div className="inline-flex items-center gap-1 px-2.5 py-1 bg-green-50 text-green-700 border border-green-200 rounded text-[11px]">
+                <div className="inline-flex items-center gap-1 px-2.5 py-1 bg-green-50 text-green-700 border border-green-200 rounded text-[11px] font-medium">
                   ✓ Approved
                 </div>
               </div>
@@ -354,7 +356,7 @@ export default function ApprovalChainsPage() {
             if (!validForm) return;
             saveMut.mutate(form);
           }}
-          className="space-y-5"
+          className="space-y-4"
         >
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -364,7 +366,7 @@ export default function ApprovalChainsPage() {
                 placeholder="e.g. Leave — Standard"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-green-400"
               />
             </div>
             <div>
@@ -384,7 +386,7 @@ export default function ApprovalChainsPage() {
               <button
                 type="button"
                 onClick={addLevel}
-                className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700"
+                className="inline-flex items-center gap-1 text-xs font-medium text-green-600 hover:text-green-700"
               >
                 <Plus size={12} /> Add step
               </button>
@@ -394,7 +396,7 @@ export default function ApprovalChainsPage() {
               {form.levels.map((l, idx) => (
                 <div key={idx} className="border border-gray-200 rounded-lg overflow-hidden bg-gray-50/40">
                   <div className="flex items-center gap-2 p-2.5">
-                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-600 text-white text-[11px] font-bold flex-shrink-0">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-green-600 text-white text-[11px] font-medium flex-shrink-0">
                       {l.level}
                     </span>
 
@@ -403,7 +405,7 @@ export default function ApprovalChainsPage() {
                       <button
                         type="button"
                         onClick={() => updateLevel(idx, { kind: "ROLE", userId: undefined })}
-                        className={clsx("px-2.5 py-1 flex items-center gap-1", l.kind === "ROLE" ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50")}
+                        className={clsx("px-2.5 py-1 flex items-center gap-1", l.kind === "ROLE" ? "bg-green-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50")}
                       >
                         <Shield size={11} /> Role
                       </button>
@@ -446,7 +448,7 @@ export default function ApprovalChainsPage() {
                       title="Advanced options"
                       className={clsx(
                         "p-1.5 rounded transition flex items-center gap-1 text-[11px]",
-                        advancedIdx.has(idx) ? "bg-blue-100 text-blue-700" : "text-gray-400 hover:text-gray-700 hover:bg-gray-100",
+                        advancedIdx.has(idx) ? "bg-green-100 text-green-700" : "text-gray-400 hover:text-gray-700 hover:bg-gray-100",
                       )}
                     >
                       <SettingsIcon size={12} />
@@ -459,7 +461,7 @@ export default function ApprovalChainsPage() {
                         title="Remove step"
                         className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition"
                       >
-                        <X size={14} />
+                        <X size={12} />
                       </button>
                     )}
                   </div>
@@ -480,7 +482,7 @@ export default function ApprovalChainsPage() {
                           type="checkbox"
                           checked={l.allowSkip ?? false}
                           onChange={(e) => updateLevel(idx, { allowSkip: e.target.checked })}
-                          className="w-3.5 h-3.5 accent-blue-600"
+                          className="w-3.5 h-3.5 accent-green-600"
                         />
                         Allow skip if approver absent
                       </label>
@@ -504,17 +506,17 @@ export default function ApprovalChainsPage() {
                   placeholder="Optional"
                   value={form.autoApproveAfterDays ?? null}
                   onChange={(v) => setForm({ ...form, autoApproveAfterDays: v })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs"
                 />
                 <span className="text-xs text-gray-500 flex-shrink-0">days</span>
               </div>
             </div>
-            <label className="flex items-center gap-2 self-end pb-2 text-sm text-gray-700 cursor-pointer">
+            <label className="flex items-center gap-2 self-end pb-2 text-xs text-gray-700 cursor-pointer">
               <input
                 type="checkbox"
                 checked={form.isActive}
                 onChange={(e) => setForm({ ...form, isActive: e.target.checked })}
-                className="w-4 h-4 accent-blue-600"
+                className="w-4 h-4 accent-green-600"
               />
               Activate immediately
             </label>
@@ -528,14 +530,14 @@ export default function ApprovalChainsPage() {
                 setShowModal(false);
                 setEditingId(null);
               }}
-              className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+              className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saveMut.isPending || !validForm}
-              className="px-4 py-2 bg-gradient-to-b from-blue-500 to-blue-600 text-white rounded-lg text-sm font-semibold hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3 py-1.5 bg-gradient-to-b from-green-500 to-green-600 text-white rounded-lg text-xs font-medium hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {saveMut.isPending ? "Saving..." : editingId ? "Save changes" : "Create chain"}
             </button>

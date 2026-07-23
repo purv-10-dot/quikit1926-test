@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useCallback } from "react"
 import ImportAssetModal from "@/components/assets/ImportAssetModal"
 import AddEditAssetModal from "@/components/assets/AddEditAssetModal"
-import { Upload, Plus, Search, Pencil, Trash2, CheckCircle2, X, AlertTriangle, Download, Loader2, Laptop, Smartphone, Monitor, Printer, Server, HardDrive, Camera, Car, Wrench, Cpu, Wifi, Headphones, Package, Box, Tablet, BookOpen, Armchair, SlidersHorizontal, ChevronUp, Wallet, ChevronRight } from "lucide-react"
+import { Upload, Plus, Search, Pencil, Trash2, CheckCircle2, X, AlertTriangle, Download, FileText, Loader2, Laptop, Smartphone, Monitor, Printer, Server, HardDrive, Camera, Car, Wrench, Cpu, Wifi, Headphones, Package, Box, Tablet, BookOpen, Armchair, SlidersHorizontal, ChevronUp, Wallet, ChevronRight } from "lucide-react"
 import FiscalBudgetModal, { type FiscalBudget, type FiscalBudgetFormData } from "@/components/assets/FiscalBudgetModal"
 import Pagination from "@/components/ui/Pagination"
 import { RequirePerm } from "@/components/require-perm"
@@ -69,7 +69,7 @@ function AssetInventory() {
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
-  const [filters, setFilters] = useState({ item: "", serialNumber: "", assetType: "", category: "", location: "", condition: "", status: "" })
+  const [filters, setFilters] = useState({ item: "", serialNumber: "", baseCategory: "", category: "", location: "", condition: "", status: "" })
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [showImport, setShowImport] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
@@ -162,7 +162,15 @@ function AssetInventory() {
     setEditFiscalBudget(undefined)
   }
 
-  const categories = useMemo(() => [...new Set(assets.map((a) => a.category?.name).filter(Boolean))].sort() as string[], [assets])
+  const baseCategories = useMemo(() => [...new Set(assets.map((a) => a.baseCategory?.name).filter(Boolean))].sort() as string[], [assets])
+  // Category options cascade off the selected Asset Type (base category), mirroring
+  // the Add/Edit form. "All Asset Types" (no base filter) lists every sub-category.
+  const categories = useMemo(() => {
+    const scoped = filters.baseCategory
+      ? assets.filter((a) => a.baseCategory?.name === filters.baseCategory)
+      : assets
+    return [...new Set(scoped.map((a) => a.category?.name).filter(Boolean))].sort() as string[]
+  }, [assets, filters.baseCategory])
   const locations  = useMemo(() => [...new Set(assets.map((a) => a.location).filter(Boolean))].sort() as string[], [assets])
 
   const filtered = useMemo(() => {
@@ -174,7 +182,7 @@ function AssetInventory() {
           !a.assetType.toLowerCase().includes(q)) return false
       if (filters.item && !a.itemName.toLowerCase().includes(filters.item.toLowerCase()) && !a.itemCode.toLowerCase().includes(filters.item.toLowerCase())) return false
       if (filters.serialNumber && !a.serialNumber.toLowerCase().includes(filters.serialNumber.toLowerCase())) return false
-      if (filters.assetType && a.assetType !== filters.assetType) return false
+      if (filters.baseCategory && a.baseCategory?.name !== filters.baseCategory) return false
       if (filters.category && a.category?.name !== filters.category) return false
       if (filters.location && a.location !== filters.location) return false
       if (filters.condition && a.condition !== filters.condition) return false
@@ -185,7 +193,7 @@ function AssetInventory() {
   const paginated = filtered.slice((page - 1) * pageSize, page * pageSize)
 
   const activeFilterCount = Object.values(filters).filter(Boolean).length
-  function clearFilters() { setFilters({ item: "", serialNumber: "", assetType: "", category: "", location: "", condition: "", status: "" }) }
+  function clearFilters() { setFilters({ item: "", serialNumber: "", baseCategory: "", category: "", location: "", condition: "", status: "" }) }
 
   const filteredIds = useMemo(() => new Set(filtered.map((a) => a.id)), [filtered])
   const allSelected = filtered.length > 0 && filtered.every((a) => selected.has(a.id))
@@ -239,31 +247,43 @@ function AssetInventory() {
     showToast("Import complete", `${result.created} asset${result.created !== 1 ? "s" : ""} imported${result.failed > 0 ? `, ${result.failed} failed` : ""}`)
   }
 
-  async function handleAddAsset(data: Omit<Asset, "id" | "createdAt" | "updatedAt" | "baseCategory" | "category">) {
+  // onSave: persist and return the saved row (so the modal can attach the invoice
+  // to it). Closing + list refresh happens in handleAssetSaved after the full flow.
+  async function handleAddAsset(
+    data: Omit<Asset, "id" | "createdAt" | "updatedAt" | "baseCategory" | "category">,
+  ): Promise<Asset | null> {
     try {
       const res = await fetch("/api/assets", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
       })
       const json = await res.json()
-      const asset = json.data
-      setAssets((p) => [asset, ...p])
-      setShowAdd(false)
+      if (!res.ok || !json.success) { showToast("Error", json.error ?? "Failed to add asset"); return null }
       showToast("Asset added", `${data.itemName} has been added to inventory`)
-    } catch { showToast("Error", "Failed to add asset") }
+      return json.data as Asset
+    } catch { showToast("Error", "Failed to add asset"); return null }
   }
 
-  async function handleEditAsset(data: Omit<Asset, "id" | "createdAt" | "updatedAt" | "baseCategory" | "category">) {
-    if (!editAsset) return
+  async function handleEditAsset(
+    data: Omit<Asset, "id" | "createdAt" | "updatedAt" | "baseCategory" | "category">,
+  ): Promise<Asset | null> {
+    if (!editAsset) return null
     try {
       const res = await fetch(`/api/assets/${editAsset.id}`, {
         method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
       })
       const json = await res.json()
-      const updated = json.data
-      setAssets((p) => p.map((a) => a.id === editAsset.id ? updated : a))
-      setEditAsset(null)
+      if (!res.ok || !json.success) { showToast("Error", json.error ?? "Failed to update asset"); return null }
       showToast("Asset updated", `${data.itemName} has been saved`)
-    } catch { showToast("Error", "Failed to update asset") }
+      return json.data as Asset
+    } catch { showToast("Error", "Failed to update asset"); return null }
+  }
+
+  // Called by the modal once the asset (and any invoice) is saved.
+  function handleAssetSaved(warning?: string) {
+    setShowAdd(false)
+    setEditAsset(null)
+    loadAssets()
+    if (warning) showToast("Invoice not attached", warning)
   }
 
   async function handleDelete() {
@@ -499,7 +519,6 @@ function AssetInventory() {
                   <th className="px-2 py-3 font-semibold text-center w-10">S.No</th>
                   <th className="text-left px-4 py-3 font-semibold">Item</th>
                   <th className="text-left px-4 py-3 font-semibold">Serial No.</th>
-                  <th className="text-left px-4 py-3 font-semibold">Type</th>
                   <th className="text-left px-4 py-3 font-semibold">Category</th>
                   <th className="text-left px-4 py-3 font-semibold">Location</th>
                   <th className="text-left px-4 py-3 font-semibold">Condition</th>
@@ -509,7 +528,7 @@ function AssetInventory() {
                 </tr>
                 {showFilters && (
                   <tr className="border-b border-accent-100 bg-accent-50/30">
-                    <td colSpan={11} className="px-4 py-3">
+                    <td colSpan={10} className="px-4 py-3">
                       <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-2">
                         <div className="flex flex-col gap-1">
                           <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Item / Code</label>
@@ -524,12 +543,19 @@ function AssetInventory() {
                             className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white" />
                         </div>
                         <div className="flex flex-col gap-1">
-                          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Type</label>
-                          <select value={filters.assetType} onChange={(e) => setFilters((f) => ({ ...f, assetType: e.target.value }))}
+                          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Asset Type</label>
+                          <select value={filters.baseCategory} onChange={(e) => {
+                              const bc = e.target.value
+                              setFilters((f) => ({
+                                ...f,
+                                baseCategory: bc,
+                                // Clear a now-invalid Category (one that belongs to a different Asset Type).
+                                category: !bc || !f.category || assets.some((a) => a.baseCategory?.name === bc && a.category?.name === f.category) ? f.category : "",
+                              }))
+                            }}
                             className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
-                            <option value="">All Types</option>
-                            <option value="Fixed">Fixed</option>
-                            <option value="Consumable">Consumable</option>
+                            <option value="">All Asset Types</option>
+                            {baseCategories.map((b) => <option key={b} value={b}>{b}</option>)}
                           </select>
                         </div>
                         <div className="flex flex-col gap-1">
@@ -578,11 +604,11 @@ function AssetInventory() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={11} className="px-4 py-16 text-center text-gray-400">
+                  <tr><td colSpan={10} className="px-4 py-16 text-center text-gray-400">
                     <div className="flex items-center justify-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading assets…</div>
                   </td></tr>
                 ) : filtered.length === 0 ? (
-                  <tr><td colSpan={11} className="px-4 py-12 text-center text-gray-400">
+                  <tr><td colSpan={10} className="px-4 py-12 text-center text-gray-400">
                     {search ? "No assets match your search" : "No assets yet — click Add Asset to get started"}
                   </td></tr>
                 ) : paginated.map((asset, idx) => {
@@ -606,13 +632,6 @@ function AssetInventory() {
                       </td>
 
                       <td className="px-4 py-3 font-mono text-gray-600">{asset.serialNumber}</td>
-
-                      <td className="px-4 py-3">
-                        <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-semibold",
-                          asset.assetType === "Fixed" ? "bg-purple-100 text-purple-700" : "bg-cyan-100 text-cyan-700")}>
-                          {asset.assetType}
-                        </span>
-                      </td>
 
                       <td className="px-4 py-3">
                         <p className="text-gray-700 font-medium">{asset.category?.name ?? "—"}</p>
@@ -662,6 +681,12 @@ function AssetInventory() {
 
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1">
+                          {asset.invoiceFileKey && (
+                            <a href={`/api/assets/${asset.id}/invoice`} target="_blank" rel="noopener noreferrer" title="View invoice / receipt"
+                              className="p-1.5 text-gray-400 hover:text-accent-600 hover:bg-accent-50 rounded-lg transition-colors">
+                              <FileText className="w-3.5 h-3.5" />
+                            </a>
+                          )}
                           <button onClick={() => setEditAsset(asset)} title="Edit"
                             className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
                             <Pencil className="w-3.5 h-3.5" />
@@ -683,8 +708,8 @@ function AssetInventory() {
       </div>
 
       {showImport && <ImportAssetModal onClose={() => setShowImport(false)} onImport={handleImport} />}
-      {showAdd && <AddEditAssetModal onClose={() => setShowAdd(false)} onSave={handleAddAsset} />}
-      {editAsset && <AddEditAssetModal asset={editAsset} onClose={() => setEditAsset(null)} onSave={handleEditAsset} />}
+      {showAdd && <AddEditAssetModal onClose={() => setShowAdd(false)} onSave={handleAddAsset} onSaved={handleAssetSaved} />}
+      {editAsset && <AddEditAssetModal asset={editAsset} onClose={() => setEditAsset(null)} onSave={handleEditAsset} onSaved={handleAssetSaved} />}
       {showBudgetModal && (
         <FiscalBudgetModal
           budget={editFiscalBudget}

@@ -27,7 +27,10 @@ export const regularizationSchema = z.object({
   checkIn: z.string().optional(),
   checkOut: z.string().optional(),
   reason: z.string().min(1, "Reason required"),
-});
+}).refine(
+  (d) => !d.checkIn || !d.checkOut || new Date(d.checkIn).getTime() < new Date(d.checkOut).getTime(),
+  { message: "Check-out time must be after check-in time", path: ["checkOut"] },
+);
 
 export const regularizationActionSchema = z.object({
   status: z.enum(["Approved", "Rejected"]),

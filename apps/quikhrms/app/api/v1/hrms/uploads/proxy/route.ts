@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/with-auth";
-import { getS3Object } from "@/lib/storage";
+import { getObject } from "@/lib/storage";
 
-// Keys are `uploads/<orgId>/<uuid>.<ext>` (see ../route.ts).
-const KEY_PATTERN = /^uploads\/[a-zA-Z0-9_-]+\/[a-f0-9-]{8,}\.[a-zA-Z0-9]{2,8}$/;
+// Stored object keys, all shaped `<prefix>/<orgId>/…/<file>.<ext>` so the
+// tenant segment is always index [1] (see the various upload routes):
+//   uploads/<orgId>/<uuid>.<ext>                              (generic uploads)
+//   candidate-docs/<orgId>/<requestId>/<uuid>.<ext>           (candidate docs)
+//   tenants/<orgId>/leave-policies/<policyId>/<file>.<ext>    (leave policies)
+// Allow a known prefix, the org segment, any nested segments, then a filename.
+const KEY_PATTERN = /^(uploads|candidate-docs|tenants)\/[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*\/[a-zA-Z0-9][a-zA-Z0-9._-]*\.[a-zA-Z0-9]{2,8}$/;
 
 /**
  * GET /api/v1/hrms/uploads/proxy?key=...
@@ -28,15 +33,20 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
   }
 
   try {
-    const obj = await getS3Object(key);
-    return new NextResponse(new Uint8Array(obj.body), {
-      status: 200,
-      headers: {
-        "Content-Type": obj.contentType,
-        "Content-Length": String(obj.length),
-        "Cache-Control": "private, max-age=3600",
-      },
-    });
+    const obj = await getObject(key);
+    const headers: Record<string, string> = {
+      "Content-Type": obj.contentType,
+      "Content-Length": String(obj.length),
+      "Cache-Control": "private, max-age=3600",
+    };
+    // `?dl=1` forces a download instead of inline preview. Optional `?name=`
+    // supplies a friendly filename; falls back to the stored object's basename.
+    if (searchParams.get("dl")) {
+      const fallback = key.split("/").pop() || "download";
+      const filename = (searchParams.get("name") || fallback).replace(/["\\\r\n]/g, "");
+      headers["Content-Disposition"] = `attachment; filename="${filename}"`;
+    }
+    return new NextResponse(new Uint8Array(obj.body), { status: 200, headers });
   } catch (err) {
     console.error("GET /uploads/proxy error:", err);
     return NextResponse.json({ success: false, error: { code: "NOT_FOUND", message: "Object not found" } }, { status: 404 });

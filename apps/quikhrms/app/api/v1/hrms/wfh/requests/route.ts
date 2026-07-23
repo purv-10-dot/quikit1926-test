@@ -4,7 +4,7 @@ import { withAuth } from "@/lib/with-auth";
 import { successResponse, validationError, internalError, notFound } from "@/lib/api-response";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { createWfhSchema } from "@/lib/validations/wfh";
-import { queueEmail } from "@/lib/services/mailer";
+import { resolveAndSend } from "@/lib/email/resolve";
 import { buildWfhNoticeEmail } from "@/lib/email-templates/wfh-notice";
 import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
 import { resolveEffectiveWfhQuotaGroup } from "@/lib/services/wfh-quota";
@@ -217,8 +217,8 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         const first = flow[0];
         if (!first?.approverEmail) return;
         const company = await prisma.companySettings.findUnique({ where: { orgId }, select: { companyName: true } });
-        const tpl = buildWfhNoticeEmail({
-          variant: "submitted_to_manager",
+        const wfhData = {
+          variant: "submitted_to_manager" as const,
           recipientName: first.approverName,
           employeeName: `${employee.firstName} ${employee.lastName}`.trim(),
           employeeCode: employee.employeeCode,
@@ -231,8 +231,13 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
           session: data.session,
           reason: data.reason,
           companyName: company?.companyName ?? "Our Company",
+        };
+        await resolveAndSend(orgId, {
+          key: "wfh.approver-request",
+          to: first.approverEmail,
+          vars: { ...wfhData },
+          fallback: () => buildWfhNoticeEmail(wfhData),
         });
-        await queueEmail(orgId, { to: first.approverEmail, subject: tpl.subject, html: tpl.html, kind: "wfh.approver-request" });
       } catch (e) { console.error("wfh approver mail failed", e); }
     })();
 

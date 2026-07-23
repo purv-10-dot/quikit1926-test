@@ -10,6 +10,7 @@ import { Plus, Home, Calendar, Clock, CheckCircle2, XCircle, MessageSquare, X, T
 import { clsx } from "clsx";
 import { WfhTabs } from "../_components/wfh-tabs";
 import { PageHeader } from "@/components/hrms/ui/page-header";
+import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 
 interface Approver { id: string; firstName: string; lastName: string; employeeCode: string }
 interface ApprovalRow { id: string; level: number; role: string; status: string; comment: string | null; decidedAt: string | null; approver: Approver }
@@ -70,7 +71,6 @@ export default function MyWfhPage() {
       setShowCreate(false);
       setForm({ startDate: today, endDate: today, isHalfDay: false, session: "FullDay", reason: "" });
     },
-    onError: (e: Error) => toast.error("Submit failed", e.message),
   });
 
   const cancelMut = useMutation({
@@ -79,7 +79,6 @@ export default function MyWfhPage() {
       toast.success("Request cancelled");
       qc.invalidateQueries({ queryKey: ["wfh"] });
     },
-    onError: (e: Error) => toast.error("Cancel failed", e.message),
   });
 
   const stats = {
@@ -89,16 +88,37 @@ export default function MyWfhPage() {
     total: items.length,
   };
 
+  // ── Excel export (exports the currently rendered request list) ──
+  const exportColumns = [
+    { header: "From", key: "from", width: 16 },
+    { header: "To", key: "to", width: 16 },
+    { header: "Days", key: "days", width: 10 },
+    { header: "Session", key: "session", width: 14 },
+    { header: "Reason", key: "reason", width: 30 },
+    { header: "Status", key: "status", width: 14 },
+  ];
+  const exportRows = items.map((i) => ({
+    from: new Date(i.startDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
+    to: new Date(i.endDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
+    days: i.days,
+    session: i.session === "FirstHalf" ? "First Half" : i.session === "SecondHalf" ? "Second Half" : "Full Day",
+    reason: i.reason || "",
+    status: i.status,
+  }));
+
   return (
-    <div className="w-full px-6 py-6">
+    <div className="w-full px-5 py-4">
       <PageHeader
-        icon={<Home size={28} className="text-[#3b82f6]" />}
+        icon={<Home size={28} className="text-[#22c55e]" />}
         title="Work from home"
         subtitle="Apply for and track your remote work requests."
         actions={
-          <button onClick={() => setShowCreate(true)} className="btn btn-primary">
-            <Plus size={14} /> Apply for WFH
-          </button>
+          <>
+            <ExcelExportButton filename="my-wfh-requests" sheetName="My WFH Requests" columns={exportColumns} rows={exportRows} label="Export to Excel" />
+            <button onClick={() => setShowCreate(true)} className="btn btn-primary">
+              <Plus size={13} /> Apply for WFH
+            </button>
+          </>
         }
       />
       <div className="mb-5"><WfhTabs /></div>
@@ -112,13 +132,13 @@ export default function MyWfhPage() {
 
       {quota?.hasQuota && quota.yearlyQuota !== null && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-4 flex items-center gap-4 flex-wrap">
-          <div className="w-11 h-11 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+          <div className="w-11 h-11 rounded-lg bg-green-50 text-green-600 flex items-center justify-center shrink-0">
             <Briefcase size={18} />
           </div>
           <div className="flex-1 min-w-[200px]">
             <div className="flex items-center gap-2">
-              <p className="text-sm font-semibold text-gray-900">{quota.group?.name}</p>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 font-semibold">{quota.year} quota</span>
+              <p className="text-[13px] font-semibold text-gray-900">{quota.group?.name}</p>
+              <span className="text-[11px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 font-medium">{quota.year} quota</span>
             </div>
             <p className="text-xs text-gray-500 mt-0.5">
               Used <strong className="text-gray-900">{quota.used}</strong> / {quota.yearlyQuota} days · <strong className="text-emerald-700">{quota.remaining}</strong> remaining
@@ -138,23 +158,23 @@ export default function MyWfhPage() {
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         {isLoading ? (
-          <div className="p-8 text-center text-slate-400 text-sm">Loading...</div>
+          <div className="p-8 text-center text-slate-400 text-xs">Loading...</div>
         ) : items.length === 0 ? (
           <div className="p-12 text-center text-slate-500">
             <Home size={36} className="mx-auto mb-2 text-slate-300" />
-            <p className="text-sm font-medium">No WFH requests yet</p>
+            <p className="text-[13px] font-semibold">No WFH requests yet</p>
             <p className="text-xs text-slate-400 mt-0.5">Click &quot;Apply for WFH&quot; to submit your first request.</p>
           </div>
         ) : (
           <table className="w-full">
             <thead>
               <tr className="bg-slate-50/60 border-b border-slate-200">
-                <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Date(s)</th>
-                <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Days</th>
-                <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Reason</th>
-                <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Approvals</th>
-                <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Status</th>
-                <th className="text-right px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Action</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Date(s)</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Days</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Reason</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Approvals</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Status</th>
+                <th className="text-right px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -165,18 +185,18 @@ export default function MyWfhPage() {
                   className="row-stagger border-b border-slate-100 hover:bg-slate-50/60 cursor-pointer"
                   style={{ ["--i" as never]: Math.min(idx, 10) }}
                 >
-                  <td className="px-4 py-3 text-sm text-slate-700">
+                  <td className="px-4 py-2.5 text-xs text-slate-700">
                     <div className="flex items-center gap-1.5"><Calendar size={12} className="text-slate-400" /> {fmtRange(i.startDate, i.endDate)}</div>
                     {i.isHalfDay && <p className="text-[11px] text-slate-400 mt-0.5">{i.session}</p>}
                   </td>
-                  <td className="px-4 py-3 text-sm font-semibold text-slate-700">{i.days}</td>
-                  <td className="px-4 py-3 text-sm text-slate-600 max-w-xs truncate">{i.reason}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-2.5 text-xs font-semibold text-slate-700">{i.days}</td>
+                  <td className="px-4 py-2.5 text-xs text-slate-600 max-w-xs truncate">{i.reason}</td>
+                  <td className="px-4 py-2.5">
                     <div className="flex flex-col gap-0.5">
                       {i.approvals.map((a) => (
                         <div key={a.id} className="flex items-center gap-1.5 text-[11px]">
                           <span className="font-semibold text-slate-600">{a.role}:</span>
-                          <span className={clsx("px-1.5 py-0.5 rounded font-semibold ring-1",
+                          <span className={clsx("px-1.5 py-0.5 rounded font-medium ring-1",
                             a.status === "Approved" ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
                             : a.status === "Rejected" ? "bg-red-50 text-red-700 ring-red-200"
                             : a.status === "Skipped" ? "bg-slate-100 text-slate-500 ring-slate-200"
@@ -188,24 +208,24 @@ export default function MyWfhPage() {
                       ))}
                     </div>
                   </td>
-                  <td className="px-4 py-3">
-                    <span className={clsx("px-2 py-0.5 rounded-full text-[11px] font-semibold ring-1", STATUS_PILL[i.status])}>{i.status}</span>
+                  <td className="px-4 py-2.5">
+                    <span className={clsx("px-2 py-0.5 rounded-full text-[11px] font-medium ring-1", STATUS_PILL[i.status])}>{i.status}</span>
                   </td>
-                  <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                  <td className="px-4 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="inline-flex items-center gap-2 justify-end">
                       <button
                         onClick={() => setLogItem(i)}
-                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-50 text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-normal bg-slate-50 text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100"
                       >
-                        <ListChecks size={11} /> Log
+                        <ListChecks size={12} /> Log
                       </button>
                       {i.status === "Pending" && (
                         <button
                           onClick={() => { if (confirm("Cancel this WFH request?")) cancelMut.mutate(i.id); }}
                           disabled={cancelMut.isPending}
-                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-red-50 text-red-700 ring-1 ring-red-200 hover:bg-red-100 disabled:opacity-50"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-normal bg-red-50 text-red-700 ring-1 ring-red-200 hover:bg-red-100 disabled:opacity-50"
                         >
-                          <Trash2 size={11} /> Cancel
+                          <Trash2 size={12} /> Cancel
                         </button>
                       )}
                     </div>
@@ -221,9 +241,11 @@ export default function MyWfhPage() {
         <form onSubmit={(e) => {
           e.preventDefault();
           if (!form.reason.trim()) return toast.error("Reason is required");
+          if (form.endDate < form.startDate) return toast.error("End date can’t be before the start date");
+          if (form.isHalfDay && form.startDate !== form.endDate) return toast.error("Half-day WFH must be a single day");
           createMut.mutate();
         }} className="space-y-4">
-          <label className="flex items-center gap-2 text-sm">
+          <label className="flex items-center gap-2 text-xs">
             <input
               type="checkbox"
               checked={form.isHalfDay}
@@ -239,7 +261,7 @@ export default function MyWfhPage() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Start Date *</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Start Date *</label>
               <input
                 type="date"
                 required
@@ -250,11 +272,11 @@ export default function MyWfhPage() {
                   startDate: e.target.value,
                   endDate: form.isHalfDay ? e.target.value : (form.endDate < e.target.value ? e.target.value : form.endDate),
                 })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]"
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">End Date *</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">End Date *</label>
               <input
                 type="date"
                 required
@@ -262,20 +284,20 @@ export default function MyWfhPage() {
                 min={form.startDate}
                 value={form.endDate}
                 onChange={(e) => setForm({ ...form, endDate: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A] disabled:bg-slate-50 disabled:text-slate-400"
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534] disabled:bg-slate-50 disabled:text-slate-400"
               />
             </div>
           </div>
 
           {form.isHalfDay && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Session *</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Session *</label>
               <div className="flex gap-2">
                 {(["FirstHalf", "SecondHalf"] as const).map((s) => (
                   <button key={s} type="button"
                     onClick={() => setForm({ ...form, session: s })}
-                    className={clsx("flex-1 px-3 py-2 rounded-lg text-sm font-semibold ring-1",
-                      form.session === s ? "bg-[#16243A] text-white ring-[#3b82f6]" : "bg-white text-slate-600 ring-slate-200")}
+                    className={clsx("flex-1 px-3 py-1.5 rounded-lg text-xs font-medium ring-1",
+                      form.session === s ? "bg-green-600 text-white ring-[#22c55e]" : "bg-white text-slate-600 ring-slate-200")}
                   >{s === "FirstHalf" ? "First Half" : "Second Half"}</button>
                 ))}
               </div>
@@ -283,27 +305,27 @@ export default function MyWfhPage() {
           )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Reason *</label>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Reason *</label>
             <textarea
               rows={3}
               required
               value={form.reason}
               onChange={(e) => setForm({ ...form, reason: e.target.value })}
               placeholder="Why do you need WFH? (e.g., medical, family commitment, internet/commute issues)"
-              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]"
+              className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]"
             />
           </div>
 
-          <div className="bg-blue-50 border border-blue-200 rounded-md p-2.5 text-[11px] text-blue-700 flex gap-1.5">
+          <div className="bg-green-50 border border-green-200 rounded-md p-2.5 text-[11px] text-green-700 flex gap-1.5">
             <MessageSquare size={12} className="shrink-0 mt-0.5" />
             Approval flow: <strong>Manager → HR</strong>. Both must approve.
           </div>
 
           <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
             <button type="button" onClick={() => setShowCreate(false)} disabled={createMut.isPending}
-              className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancel</button>
+              className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancel</button>
             <button type="submit" disabled={createMut.isPending}
-              className="px-5 py-2 bg-[#16243A] hover:bg-[#1E3354] text-white rounded-lg text-sm font-semibold shadow-sm disabled:opacity-50">
+              className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium shadow-sm disabled:opacity-50">
               {createMut.isPending ? "Submitting..." : "Submit Request"}
             </button>
           </div>
@@ -313,10 +335,10 @@ export default function MyWfhPage() {
       <Modal open={!!logItem} onClose={() => setLogItem(null)} title={logItem ? `Approval log · ${fmtRange(logItem.startDate, logItem.endDate)}` : "Approval log"}>
         {logItem && (
           <div className="space-y-3">
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm">
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs text-slate-500">Status</span>
-                <span className={clsx("px-2 py-0.5 rounded-full text-[11px] font-semibold ring-1", STATUS_PILL[logItem.status])}>{logItem.status}</span>
+                <span className={clsx("px-2 py-0.5 rounded-full text-[11px] font-medium ring-1", STATUS_PILL[logItem.status])}>{logItem.status}</span>
               </div>
               <div className="text-xs text-slate-600">Days: <strong className="text-slate-900">{logItem.days}</strong>{logItem.isHalfDay && ` · ${logItem.session}`}</div>
               <div className="text-xs text-slate-600 mt-1">Reason: <span className="text-slate-900">{logItem.reason}</span></div>
@@ -328,7 +350,7 @@ export default function MyWfhPage() {
             <div>
               <h4 className="text-xs font-bold text-gray-600 uppercase mb-2">Approval chain</h4>
               {logItem.approvals.length === 0 ? (
-                <p className="text-sm text-gray-400">No approval steps.</p>
+                <p className="text-xs text-gray-400">No approval steps.</p>
               ) : (
                 <ol className="space-y-2">
                   {logItem.approvals.map((a) => (
@@ -337,11 +359,11 @@ export default function MyWfhPage() {
                         <div className="flex items-center gap-2">
                           <span className="w-6 h-6 rounded-full bg-gray-100 text-gray-600 text-xs font-bold flex items-center justify-center">L{a.level}</span>
                           <div>
-                            <p className="text-sm font-semibold text-gray-900">{a.role}</p>
+                            <p className="text-[13px] font-semibold text-gray-900">{a.role}</p>
                             <p className="text-xs text-gray-500">{a.approver.firstName} {a.approver.lastName} {a.approver.employeeCode ? `· ${a.approver.employeeCode}` : ""}</p>
                           </div>
                         </div>
-                        <span className={clsx("px-2 py-0.5 rounded text-[11px] font-semibold ring-1",
+                        <span className={clsx("px-2 py-0.5 rounded text-[11px] font-medium ring-1",
                           a.status === "Approved" ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
                           : a.status === "Rejected" ? "bg-red-50 text-red-700 ring-red-200"
                           : a.status === "Skipped" ? "bg-slate-100 text-slate-500 ring-slate-200"
@@ -380,7 +402,7 @@ function fmtRange(start: string, end: string): string {
 
 function StatCard({ label, value, icon, color }: { label: string; value: number; icon: React.ReactNode; color: "blue" | "amber" | "emerald" | "red" }) {
   const cls = {
-    blue: "bg-blue-50 text-blue-600",
+    blue: "bg-green-50 text-green-600",
     amber: "bg-amber-50 text-amber-600",
     emerald: "bg-emerald-50 text-emerald-600",
     red: "bg-red-50 text-red-600",
@@ -390,7 +412,7 @@ function StatCard({ label, value, icon, color }: { label: string; value: number;
       <div className={clsx("w-11 h-11 rounded-lg flex items-center justify-center", cls)}>{icon}</div>
       <div>
         <p className="text-[11px] text-slate-500 font-medium">{label}</p>
-        <p className="text-2xl font-bold text-slate-900 leading-tight">{value}</p>
+        <p className="text-xl font-bold text-slate-900 leading-tight">{value}</p>
       </div>
     </div>
   );

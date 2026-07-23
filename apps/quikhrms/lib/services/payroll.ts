@@ -23,14 +23,14 @@ export async function markStepCompleted(orgId: string, userId: string, step: Ste
     where: { orgId },
     data: { [step]: true, updatedBy: userId },
   });
+  // Latch on the 6 onboarding steps only — Prior Payroll is not part of setup.
   const allDone =
     updated.orgDetailsCompleted &&
     updated.taxDetailsCompleted &&
     updated.payScheduleCompleted &&
     updated.statutoryComponentsCompleted &&
     updated.salaryComponentsCompleted &&
-    updated.employeesCompleted &&
-    updated.priorPayrollCompleted;
+    updated.employeesCompleted;
 
   if (allDone && !updated.setupCompleted) {
     return prisma.payrollSettings.update({
@@ -146,11 +146,19 @@ export async function computeSetupProgress(orgId: string): Promise<SetupProgress
     }),
   };
 
-  const completedSteps = Object.values(steps).filter((s) => s.completed).length;
+  // Prior Payroll ("Mid-year Joiners") is intentionally NOT part of the setup
+  // wizard — it's ongoing operational work, not onboarding (see the STEPS list
+  // in payroll/setup/page.tsx). It stays in `steps` for the Mid-year Joiners
+  // page, but only the 6 onboarding steps count toward progress + completion.
+  const SETUP_STEPS = [
+    "orgDetails", "taxDetails", "paySchedule",
+    "statutoryComponents", "salaryComponents", "employees",
+  ] as const;
+  const completedSteps = SETUP_STEPS.filter((k) => steps[k].completed).length;
   return {
     completedSteps,
-    totalSteps: 7,
-    setupCompleted: !!settings?.setupCompleted || completedSteps === 7,
+    totalSteps: SETUP_STEPS.length,
+    setupCompleted: !!settings?.setupCompleted || completedSteps === SETUP_STEPS.length,
     setupCompletedAt: settings?.setupCompletedAt ?? null,
     steps,
   };

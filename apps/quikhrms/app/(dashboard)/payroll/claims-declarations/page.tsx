@@ -53,23 +53,23 @@ export default function ClaimsDeclarationsPage() {
   const info = data?.data;
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-6 space-y-4">
+    <div className="max-w-5xl mx-auto px-5 py-4 space-y-4">
       <div className="flex items-start gap-3 mb-2">
-        <FileCheck size={28} className="text-[#3b82f6] mt-1.5" />
-        <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900 leading-tight">Claims and declarations</h1>
+        <FileCheck size={28} className="text-[#22c55e] mt-1.5" />
+        <h1 className="text-page-title text-gray-900 leading-tight">Claims and declarations</h1>
       </div>
       <div className="surface-card overflow-hidden">
 
-        <div className="border-b border-gray-200 px-5">
-          <div className="flex gap-6 overflow-x-auto">
+        <div className="border-b border-gray-200 px-4">
+          <div className="flex gap-4 overflow-x-auto">
             {TABS.map((t) => (
               <button
                 key={t.key}
                 onClick={() => setTab(t.key)}
                 data-active={tab === t.key}
                 className={clsx(
-                  "tab-underline whitespace-nowrap py-3 px-1 text-sm -mb-px inline-flex items-center gap-1.5",
-                  tab === t.key ? "text-[#3b82f6] font-semibold" : "text-gray-500 hover:text-gray-700",
+                  "tab-underline whitespace-nowrap py-3 px-1 text-[13px] font-semibold -mb-px inline-flex items-center gap-1.5",
+                  tab === t.key ? "text-[#22c55e] font-semibold" : "text-gray-500 hover:text-gray-700",
                 )}
               >
                 {t.icon} {t.label}
@@ -78,7 +78,7 @@ export default function ClaimsDeclarationsPage() {
           </div>
         </div>
 
-        <div className="p-5">
+        <div className="p-4">
           {isLoading ? (
             <SkeletonTable rows={5} cols={4} />
           ) : (
@@ -98,11 +98,11 @@ export default function ClaimsDeclarationsPage() {
 function EmptyCard({ title, body }: { title: string; body: React.ReactNode }) {
   return (
     <div className="rounded-lg border border-gray-200 bg-gradient-to-b from-gray-50/50 to-white p-10 text-center">
-      <div className="mx-auto w-24 h-24 rounded-full bg-gradient-to-br from-[#dbeafe] to-[#dbeafe] flex items-center justify-center mb-4">
-        <Info size={40} className="text-[#bfdbfe]" strokeWidth={1.5} />
+      <div className="mx-auto w-24 h-24 rounded-full bg-gradient-to-br from-[#dcfce7] to-[#dcfce7] flex items-center justify-center mb-4">
+        <Info size={40} className="text-[#bbf7d0]" strokeWidth={1.5} />
       </div>
-      <p className="text-base font-bold text-gray-900">{title}</p>
-      <p className="text-sm text-gray-600 mt-2 max-w-2xl mx-auto">{body}</p>
+      <p className="text-[13px] font-semibold text-gray-900">{title}</p>
+      <p className="text-xs text-gray-600 mt-2 max-w-2xl mx-auto">{body}</p>
     </div>
   );
 }
@@ -117,7 +117,7 @@ function FBPTab({ hasActive }: { hasActive: boolean }) {
       body={
         <>
           Your organisation does not have an active FBP component associated to an employee. Mark a reimbursement as FBP component under{" "}
-          <Link href="/payroll/setup/salary-components" className="text-[#3b82f6] hover:underline">
+          <Link href="/payroll/setup/salary-components" className="text-[#22c55e] hover:underline">
             Settings → Salary Components → Reimbursements
           </Link>{" "}
           and associate it to the employee&apos;s salary.
@@ -137,7 +137,7 @@ function ReimbursementTab({ hasActive }: { hasActive: boolean }) {
       body={
         <>
           Employees can get tax exemptions on producing necessary bills. You can enable a reimbursement component under{" "}
-          <Link href="/payroll/setup/salary-components" className="text-[#3b82f6] hover:underline">
+          <Link href="/payroll/setup/salary-components" className="text-[#22c55e] hover:underline">
             Settings → Salary Components → Reimbursements
           </Link>{" "}
           and associate it to the employee&apos;s salary.
@@ -165,24 +165,25 @@ function ITDeclarationTab({ info, onSaved }: { info: Res | undefined; onSaved: (
   const saveMut = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.put("/api/v1/hrms/payroll/claims-declarations", body),
     onSuccess: () => { onSaved(); setErr(null); },
+    meta: { suppressGlobalError: true },
     onError: (e: Error) => setErr(e.message),
   });
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-gray-700">Employees can declare their tax saving investments and expense details through the employee portal once you enable this option.</p>
+      <p className="text-xs text-gray-700">Employees can declare their tax saving investments and expense details through the employee portal once you enable this option.</p>
       <p className="text-xs text-gray-600 border-l-2 border-amber-400 pl-3">
-        Learn how to manage investment declarations. <span className="text-[#3b82f6]">IT Declaration Help Document</span>
+        Learn how to manage investment declarations. <span className="text-[#22c55e]">IT Declaration Help Document</span>
         <br />
-        Help your employees submit IT Declaration on time. <span className="text-[#3b82f6]">Download and share</span> this IT Declaration ebook.
+        Help your employees submit IT Declaration on time. <span className="text-[#22c55e]">Download and share</span> this IT Declaration ebook.
       </p>
 
       <div className="rounded-lg border border-gray-200 bg-gradient-to-b from-gray-50/50 to-white p-8 text-center">
-        <div className="mx-auto w-24 h-24 rounded-full bg-gradient-to-br from-[#dbeafe] to-[#dbeafe] flex items-center justify-center mb-4">
-          {released ? <Unlock size={40} className="text-emerald-500" strokeWidth={1.5} /> : <Lock size={40} className="text-[#bfdbfe]" strokeWidth={1.5} />}
+        <div className="mx-auto w-24 h-24 rounded-full bg-gradient-to-br from-[#dcfce7] to-[#dcfce7] flex items-center justify-center mb-4">
+          {released ? <Unlock size={40} className="text-emerald-500" strokeWidth={1.5} /> : <Lock size={40} className="text-[#bbf7d0]" strokeWidth={1.5} />}
         </div>
-        <p className="text-base font-bold text-gray-900">{released ? "IT Declaration is Released" : "IT Declaration is Locked"}</p>
-        <p className="text-sm text-gray-600 mt-2 max-w-2xl mx-auto">
+        <p className="text-[13px] font-semibold text-gray-900">{released ? "IT Declaration is Released" : "IT Declaration is Locked"}</p>
+        <p className="text-xs text-gray-600 mt-2 max-w-2xl mx-auto">
           {released
             ? "Employees can now submit their IT Declaration through their portal. You can lock it anytime."
             : "You are yet to enable the submission of IT Declaration for your employees through their respective portals. Release IT Declaration or submit it on their behalf under Employees → Employee profile → Investments → IT Declaration."}
@@ -190,21 +191,21 @@ function ITDeclarationTab({ info, onSaved }: { info: Res | undefined; onSaved: (
         <button
           onClick={() => saveMut.mutate({ itDeclarationReleased: !released })}
           disabled={saveMut.isPending}
-          className="mt-4 px-4 py-2 border border-[var(--border)] bg-white hover:bg-gray-50 text-gray-700 rounded-md text-sm font-semibold disabled:opacity-60"
+          className="mt-4 px-3 py-1.5 border border-[var(--border)] bg-white hover:bg-gray-50 text-gray-700 rounded-md text-xs font-medium disabled:opacity-60"
         >
           {released ? "Lock IT Declaration" : "Release IT Declaration"}
         </button>
       </div>
 
       <div>
-        <p className="text-sm font-semibold text-gray-900">Other Configurations</p>
+        <p className="text-[13px] font-semibold text-gray-900">Other Configurations</p>
         <div className="mt-2 space-y-2">
-          <label className="flex items-center gap-2 text-sm text-gray-700">
-            <input type="checkbox" checked={allowRegimeSwitch} onChange={(e) => setAllowRegimeSwitch(e.target.checked)} className="text-[#3b82f6] rounded" />
+          <label className="flex items-center gap-2 text-xs text-gray-700">
+            <input type="checkbox" checked={allowRegimeSwitch} onChange={(e) => setAllowRegimeSwitch(e.target.checked)} className="text-[#22c55e] rounded" />
             Allow employees to switch tax regimes
           </label>
-          <label className="flex items-start gap-2 text-sm text-gray-700">
-            <input type="checkbox" checked={allowTDSMod} onChange={(e) => setAllowTDSMod(e.target.checked)} className="mt-0.5 text-[#3b82f6] rounded" />
+          <label className="flex items-start gap-2 text-xs text-gray-700">
+            <input type="checkbox" checked={allowTDSMod} onChange={(e) => setAllowTDSMod(e.target.checked)} className="mt-0.5 text-[#22c55e] rounded" />
             <span>
               Allow TDS modification to exceed the current fiscal year&apos;s calculated tax amount
               <Info size={11} className="inline-block ml-1 text-gray-400" />
@@ -213,15 +214,15 @@ function ITDeclarationTab({ info, onSaved }: { info: Res | undefined; onSaved: (
         </div>
       </div>
 
-      {err && <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">{err}</p>}
+      {err && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">{err}</p>}
 
       <div className="pt-2">
         <button
           onClick={() => saveMut.mutate({ allowRegimeSwitch, allowTDSModification: allowTDSMod })}
           disabled={saveMut.isPending}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 text-white rounded-md text-sm font-semibold shadow-sm"
+          className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-md text-xs font-medium shadow-sm"
         >
-          <Save size={14} /> {saveMut.isPending ? "Saving..." : "Save"}
+          <Save size={13} /> {saveMut.isPending ? "Saving..." : "Save"}
         </button>
       </div>
     </div>
@@ -248,24 +249,25 @@ function POITab({ info, onSaved }: { info: Res | undefined; onSaved: () => void 
   const saveMut = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.put("/api/v1/hrms/payroll/claims-declarations", body),
     onSuccess: () => { onSaved(); setErr(null); },
+    meta: { suppressGlobalError: true },
     onError: (e: Error) => setErr(e.message),
   });
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-gray-700">Employees can submit the necessary supporting documents for their declared investments through the employee portal once you enable this option.</p>
+      <p className="text-xs text-gray-700">Employees can submit the necessary supporting documents for their declared investments through the employee portal once you enable this option.</p>
       <p className="text-xs text-gray-600 border-l-2 border-amber-400 pl-3">
-        Learn how to manage investment proofs. <span className="text-[#3b82f6]">POI Help Document</span>
+        Learn how to manage investment proofs. <span className="text-[#22c55e]">POI Help Document</span>
         <br />
-        Help your employees submit POI on time. <span className="text-[#3b82f6]">Download and share</span> this POI ebook.
+        Help your employees submit POI on time. <span className="text-[#22c55e]">Download and share</span> this POI ebook.
       </p>
 
       <div className="rounded-lg border border-gray-200 bg-gradient-to-b from-gray-50/50 to-white p-8 text-center">
-        <div className="mx-auto w-24 h-24 rounded-full bg-gradient-to-br from-[#dbeafe] to-[#dbeafe] flex items-center justify-center mb-4">
-          {released ? <Unlock size={40} className="text-emerald-500" strokeWidth={1.5} /> : <Lock size={40} className="text-[#bfdbfe]" strokeWidth={1.5} />}
+        <div className="mx-auto w-24 h-24 rounded-full bg-gradient-to-br from-[#dcfce7] to-[#dcfce7] flex items-center justify-center mb-4">
+          {released ? <Unlock size={40} className="text-emerald-500" strokeWidth={1.5} /> : <Lock size={40} className="text-[#bbf7d0]" strokeWidth={1.5} />}
         </div>
-        <p className="text-base font-bold text-gray-900">{released ? "POI is Released" : "POI is Locked"}</p>
-        <p className="text-sm text-gray-600 mt-2 max-w-2xl mx-auto">
+        <p className="text-[13px] font-semibold text-gray-900">{released ? "POI is Released" : "POI is Locked"}</p>
+        <p className="text-xs text-gray-600 mt-2 max-w-2xl mx-auto">
           {released
             ? "Employees can now submit their investment proofs via the portal."
             : "You are yet to enable submission of investment proofs for your employees through their respective portals. Release POI or submit it on their behalf under Employees → Employee profile → Investments → Proof of Investments."}
@@ -273,7 +275,7 @@ function POITab({ info, onSaved }: { info: Res | undefined; onSaved: () => void 
         <button
           onClick={() => saveMut.mutate({ poiReleased: !released })}
           disabled={saveMut.isPending}
-          className="mt-4 px-4 py-2 border border-[var(--border)] bg-white hover:bg-gray-50 text-gray-700 rounded-md text-sm font-semibold disabled:opacity-60"
+          className="mt-4 px-3 py-1.5 border border-[var(--border)] bg-white hover:bg-gray-50 text-gray-700 rounded-md text-xs font-medium disabled:opacity-60"
         >
           {released ? "Lock Proof Of Investments" : "Release Proof Of Investments"}
         </button>
@@ -282,7 +284,7 @@ function POITab({ info, onSaved }: { info: Res | undefined; onSaved: () => void 
       <div className="border-t border-gray-100 pt-4">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <p className="text-sm font-semibold text-gray-900">Process payroll with approved POI amount from</p>
+            <p className="text-[13px] font-semibold text-gray-900">Process payroll with approved POI amount from</p>
             <p className="text-xs text-emerald-700 mt-0.5">
               The approved POI amount will be considered for the payroll from <span className="font-semibold">{MONTHS[startMonth - 1]}</span> onwards to calculate and deduct income tax amount in subsequent payrolls.
             </p>
@@ -300,28 +302,28 @@ function POITab({ info, onSaved }: { info: Res | undefined; onSaved: () => void 
       </div>
 
       <div className="border-t border-gray-100 pt-4">
-        <p className="text-sm font-semibold text-gray-900">Other Configurations</p>
+        <p className="text-[13px] font-semibold text-gray-900">Other Configurations</p>
         <div className="mt-2 space-y-2">
-          <label className="flex items-center gap-2 text-sm text-gray-700">
-            <input type="checkbox" checked={allowRegimeSwitch} onChange={(e) => setAllowRegimeSwitch(e.target.checked)} className="text-[#3b82f6] rounded" />
+          <label className="flex items-center gap-2 text-xs text-gray-700">
+            <input type="checkbox" checked={allowRegimeSwitch} onChange={(e) => setAllowRegimeSwitch(e.target.checked)} className="text-[#22c55e] rounded" />
             Allow employees to switch tax regimes
           </label>
-          <label className="flex items-center gap-2 text-sm text-gray-700">
-            <input type="checkbox" checked={allowTDSPayroll} onChange={(e) => setAllowTDSPayroll(e.target.checked)} className="text-[#3b82f6] rounded" />
+          <label className="flex items-center gap-2 text-xs text-gray-700">
+            <input type="checkbox" checked={allowTDSPayroll} onChange={(e) => setAllowTDSPayroll(e.target.checked)} className="text-[#22c55e] rounded" />
             Allow TDS modification during Payroll
           </label>
         </div>
       </div>
 
-      {err && <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">{err}</p>}
+      {err && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">{err}</p>}
 
       <div className="pt-2">
         <button
           onClick={() => saveMut.mutate({ poiStartMonth: startMonth, allowRegimeSwitch, allowTDSModificationPayroll: allowTDSPayroll })}
           disabled={saveMut.isPending}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 text-white rounded-md text-sm font-semibold shadow-sm"
+          className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-md text-xs font-medium shadow-sm"
         >
-          <Save size={14} /> {saveMut.isPending ? "Saving..." : "Save"}
+          <Save size={13} /> {saveMut.isPending ? "Saving..." : "Save"}
         </button>
       </div>
     </div>

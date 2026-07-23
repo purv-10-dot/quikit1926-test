@@ -43,7 +43,7 @@ function isOverdue(due: string | null): boolean {
 
 const PRIORITY_STYLES: Record<TaskRowData["priority"], string> = {
   Low: "bg-gray-100 text-gray-600",
-  Normal: "bg-blue-50 text-blue-700",
+  Normal: "bg-green-50 text-green-700",
   High: "bg-orange-50 text-orange-700",
   Urgent: "bg-red-50 text-red-700",
 };
@@ -60,7 +60,6 @@ export function TaskRow({ task, onClick, active, index }: Props) {
       qc.invalidateQueries({ queryKey: ["tasks"] });
       qc.invalidateQueries({ queryKey: ["tasks", "detail", task.id] });
     },
-    onError: (e: Error) => toast.error("Action failed", e.message),
   });
 
   const deleteMut = useMutation({
@@ -70,7 +69,6 @@ export function TaskRow({ task, onClick, active, index }: Props) {
       qc.invalidateQueries({ queryKey: ["tasks", "detail", task.id] });
       toast.success("Todo deleted", task.title);
     },
-    onError: (e: Error) => toast.error("Delete failed", e.message),
   });
 
   const handleDelete = async (e: React.MouseEvent) => {
@@ -96,7 +94,7 @@ export function TaskRow({ task, onClick, active, index }: Props) {
       )}
       style={index != null ? { ["--i" as never]: Math.min(index, 10) } : undefined}
     >
-      <td className="py-3 px-3 w-10">
+      <td className="py-2.5 px-4 w-10">
         <button
           onClick={(e) => { e.stopPropagation(); completeMut.mutate(); }}
           disabled={completeMut.isPending}
@@ -109,16 +107,16 @@ export function TaskRow({ task, onClick, active, index }: Props) {
           {isComplete && <Check size={11} strokeWidth={3} />}
         </button>
       </td>
-      <td className="py-3 px-3">
-        <p className={clsx("text-sm font-medium truncate max-w-[280px]", isComplete ? "text-gray-400 line-through" : "text-gray-900")}>
+      <td className="py-2.5 px-4">
+        <p className={clsx("text-[13px] font-semibold truncate max-w-[280px]", isComplete ? "text-gray-400 line-through" : "text-gray-900")}>
           {task.title}
         </p>
       </td>
-      <td className="py-3 px-3 align-top">
+      <td className="py-2.5 px-4 align-top">
         {task.description ? (
           <p
             className={clsx(
-              "text-sm whitespace-pre-wrap break-words line-clamp-3 max-w-[420px]",
+              "text-xs whitespace-pre-wrap break-words line-clamp-3 max-w-[420px]",
               isComplete ? "text-gray-400 line-through" : "text-gray-800",
             )}
             title={task.description}
@@ -129,27 +127,27 @@ export function TaskRow({ task, onClick, active, index }: Props) {
           <span className="text-xs text-gray-400">—</span>
         )}
       </td>
-      <td className="py-3 px-3">
-        <span className={clsx("inline-block px-2 py-0.5 text-[11px] font-semibold rounded", PRIORITY_STYLES[task.priority])}>
+      <td className="py-2.5 px-4">
+        <span className={clsx("inline-block px-2 py-0.5 text-[11px] font-medium rounded", PRIORITY_STYLES[task.priority])}>
           {task.priority}
         </span>
       </td>
-      <td className="py-3 px-3">
+      <td className="py-2.5 px-4">
         <div className="flex items-center gap-1.5">
           {overdue && <AlertTriangle size={12} className="text-amber-500" />}
-          <span className={clsx("text-sm", overdue ? "text-amber-700 font-semibold" : "text-gray-700")}>
+          <span className={clsx("text-xs", overdue ? "text-amber-700 font-semibold" : "text-gray-700")}>
             {task.dueDate ? new Date(task.dueDate).toLocaleDateString("en-IN") : "—"}
           </span>
         </div>
       </td>
-      <td className="py-3 px-3 w-10 text-right">
+      <td className="py-2.5 px-4 w-10 text-right">
         <button
           onClick={handleDelete}
           disabled={deleteMut.isPending}
           title="Delete todo"
           className="p-1.5 rounded text-gray-400 hover:bg-red-50 hover:text-red-600 transition disabled:opacity-50"
         >
-          <Trash2 size={14} />
+          <Trash2 size={12} />
         </button>
       </td>
     </tr>

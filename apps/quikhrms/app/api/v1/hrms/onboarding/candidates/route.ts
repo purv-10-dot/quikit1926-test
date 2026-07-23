@@ -137,18 +137,27 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
         include: {
           department: { select: { id: true, name: true } },
           designation: { select: { id: true, title: true } },
+          officeLocation: { select: { id: true, name: true } },
+          reportingManager: { select: { id: true, firstName: true, lastName: true } },
         },
       }),
       prisma.employee.count({ where }),
     ]);
 
     const employeeIds = employees.map((e) => e.id);
-    const instances = await prisma.onboardingInstance.findMany({
-      where: { orgId, employeeId: { in: employeeIds }, deletedAt: null },
-      select: { id: true, employeeId: true, status: true, startDate: true },
-    });
+    const [instances, salaries] = await Promise.all([
+      prisma.onboardingInstance.findMany({
+        where: { orgId, employeeId: { in: employeeIds }, deletedAt: null },
+        select: { id: true, employeeId: true, status: true, startDate: true },
+      }),
+      prisma.employeeSalary.findMany({
+        where: { orgId, employeeId: { in: employeeIds }, isActive: true, deletedAt: null },
+        select: { employeeId: true, ctc: true },
+      }),
+    ]);
 
     const instanceMap = new Map(instances.map((i) => [i.employeeId, i]));
+    const salaryMap = new Map(salaries.map((s) => [s.employeeId, s]));
 
     const candidates = employees
       .map((e) => ({
@@ -158,13 +167,37 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
         lastName: e.lastName,
         personalEmail: e.personalEmail,
         workEmail: e.workEmail,
+        personalPhone: e.personalPhone,
+        profilePhoto: e.profilePhoto,
         department: e.department?.name ?? null,
         departmentId: e.departmentId,
         designation: e.designation?.title ?? null,
+        jobTitle: e.jobTitle,
+        officeLocation: e.officeLocation?.name ?? null,
+        reportingManager: e.reportingManager ? `${e.reportingManager.firstName} ${e.reportingManager.lastName}` : null,
         sourceOfHire: e.sourceOfHire,
         dateOfJoining: e.dateOfJoining,
+        tentativeJoiningDate: e.tentativeJoiningDate,
+        // Identity / statutory
         panNumber: e.panNumber,
         aadhaarNumber: e.aadhaarNumber,
+        uanNumber: e.uanNumber,
+        // Professional
+        previousExperience: e.previousExperience,
+        currentSalary: e.currentSalary != null ? Number(e.currentSalary) : null,
+        ctcLpa: salaryMap.get(e.id)?.ctc != null ? Number(salaryMap.get(e.id)!.ctc) / 100000 : null,
+        highestQualification: e.highestQualification,
+        skillSet: e.skillSet,
+        additionalInfo: e.additionalInfo,
+        offerLetterUrl: e.offerLetterUrl,
+        // Addresses + nested groups (JSON) — exported one-cell-per-group by the client
+        currentAddress: e.currentAddress ?? null,
+        permanentAddress: e.permanentAddress ?? null,
+        emergencyContacts: e.emergencyContacts ?? null,
+        educations: e.educations ?? null,
+        pastExperiences: e.pastExperiences ?? null,
+        certifications: e.certifications ?? null,
+        familyMembers: (e.customFields as { familyMembers?: unknown[] } | null)?.familyMembers ?? null,
         onboardingStatus: instanceMap.get(e.id)?.status ?? "NotStarted",
         onboardingInstanceId: instanceMap.get(e.id)?.id ?? null,
       }))
@@ -191,6 +224,20 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       where: { orgId, workEmail: d.workEmail, deletedAt: null },
     });
     if (duplicate) return conflict("Work email already exists");
+
+    // Validate required FKs up front so a stale/cross-org id returns a clear
+    // message instead of a Prisma FK error surfacing as "Something went wrong".
+    const manager = await prisma.employee.findFirst({
+      where: { id: d.reportingManagerId, orgId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!manager) return validationError("Selected reporting manager not found.");
+
+    const role = await prisma.hrmsAppRole.findFirst({
+      where: { id: d.roleId, orgId },
+      select: { id: true },
+    });
+    if (!role) return validationError("Selected role not found.");
 
     const employeeCode = await generateEmployeeCode(orgId);
     const joining = d.dateOfJoining || d.tentativeJoiningDate || new Date().toISOString();
@@ -273,11 +320,15 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
 
     if (!d.saveDraft) {
       let tasks: TaskTpl[] = [];
+      let resolvedTemplateId: string | null = null;
       if (d.templateId) {
         const template = await prisma.onboardingTemplate.findFirst({
           where: { id: d.templateId, orgId, deletedAt: null },
         });
-        if (template) tasks = template.tasks as unknown as TaskTpl[];
+        if (template) {
+          tasks = template.tasks as unknown as TaskTpl[];
+          resolvedTemplateId = template.id;
+        }
       }
 
       if (tasks.length === 0) {
@@ -294,7 +345,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         data: {
           orgId,
           employeeId: employee.id,
-          templateId: d.templateId ?? null,
+          templateId: resolvedTemplateId,
           startDate,
           status: "InProgress",
           createdBy: userId,

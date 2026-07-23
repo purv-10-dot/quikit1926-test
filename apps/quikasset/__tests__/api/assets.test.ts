@@ -3,7 +3,7 @@ import { mockDb, resetMockDb } from "../helpers/mockDb";
 import { makeReq } from "../helpers/req";
 import { setSession } from "../setup";
 
-import { GET } from "@/app/api/assets/route";
+import { GET, POST } from "@/app/api/assets/route";
 import { GET as GET_MINE } from "@/app/api/assets/mine/route";
 import { PUT, DELETE } from "@/app/api/assets/[id]/route";
 import { POST as BULK_DELETE } from "@/app/api/assets/bulk-delete/route";
@@ -44,6 +44,87 @@ function assignedTo(...assetIds: string[]) {
   mockDb.astAssignment.findMany.mockResolvedValue(assetIds.map((assetId) => ({ assetId })) as never);
 }
 
+describe("POST /api/assets — price is required (#2)", () => {
+  beforeEach(() => resetMockDb());
+
+  const base = {
+    assetType: "Fixed", baseCategoryId: "b1", categoryId: "c1", itemName: "Laptop",
+    itemCode: "LAP-9", serialNumber: "SN-9", invoiceNumber: "INV-9",
+    purchaseDate: "2026-01-01", location: "HQ", condition: "Good", description: "x",
+  };
+
+  it("400s when price is missing", async () => {
+    setSession({ id: "admin", orgId: "org1", role: "admin" });
+    grantAll();
+    const res = await POST(makeReq("/api/assets", { method: "POST", body: base }), { params: {} });
+    expect(res.status).toBe(400);
+    expect(mockDb.astAsset.create).not.toHaveBeenCalled();
+  });
+
+  it("400s when price is negative", async () => {
+    setSession({ id: "admin", orgId: "org1", role: "admin" });
+    grantAll();
+    const res = await POST(makeReq("/api/assets", { method: "POST", body: { ...base, price: -5 } }), { params: {} });
+    expect(res.status).toBe(400);
+    expect(mockDb.astAsset.create).not.toHaveBeenCalled();
+  });
+
+  it("201s and persists a valid price", async () => {
+    setSession({ id: "admin", orgId: "org1", role: "admin" });
+    grantAll();
+    mockDb.astAsset.create.mockResolvedValue({ id: "a9", itemName: "Laptop", itemCode: "LAP-9" } as never);
+    const res = await POST(makeReq("/api/assets", { method: "POST", body: { ...base, price: 1200 } }), { params: {} });
+    expect(res.status).toBe(201);
+    const call = mockDb.astAsset.create.mock.calls[0]?.[0] as { data: { price: number } };
+    expect(call.data.price).toBe(1200);
+  });
+
+  it("defaults assetType to 'Fixed' when the form omits it (#2 Asset Type merge)", async () => {
+    setSession({ id: "admin", orgId: "org1", role: "admin" });
+    grantAll();
+    mockDb.astAsset.create.mockResolvedValue({ id: "a9", itemName: "Laptop", itemCode: "LAP-9" } as never);
+    const { assetType: _omit, ...noType } = { ...base, price: 500 };
+    const res = await POST(makeReq("/api/assets", { method: "POST", body: noType }), { params: {} });
+    expect(res.status).toBe(201);
+    const call = mockDb.astAsset.create.mock.calls[0]?.[0] as { data: { assetType: string } };
+    expect(call.data.assetType).toBe("Fixed");
+  });
+});
+
+describe("Item Code & Serial Number are required at the API", () => {
+  beforeEach(() => resetMockDb());
+
+  const base = {
+    assetType: "Fixed", baseCategoryId: "b1", categoryId: "c1", itemName: "Laptop",
+    itemCode: "LAP-9", serialNumber: "SN-9", invoiceNumber: "INV-9", price: 100,
+    purchaseDate: "2026-01-01", location: "HQ", condition: "Good", description: "x",
+  };
+
+  it("POST 400s a blank Item Code (single create)", async () => {
+    setSession({ id: "admin", orgId: "org1", role: "admin" });
+    grantAll();
+    const res = await POST(makeReq("/api/assets", { method: "POST", body: { ...base, itemCode: "" } }), { params: {} });
+    expect(res.status).toBe(400);
+    expect(mockDb.astAsset.create).not.toHaveBeenCalled();
+  });
+
+  it("POST 400s a whitespace-only Serial Number (single create)", async () => {
+    setSession({ id: "admin", orgId: "org1", role: "admin" });
+    grantAll();
+    const res = await POST(makeReq("/api/assets", { method: "POST", body: { ...base, serialNumber: "   " } }), { params: {} });
+    expect(res.status).toBe(400);
+    expect(mockDb.astAsset.create).not.toHaveBeenCalled();
+  });
+
+  it("PUT 400s an attempt to clear the Item Code on edit", async () => {
+    setSession({ id: "admin", orgId: "org1", role: "admin" });
+    grantAll();
+    const res = await PUT(makeReq("/api/assets/a1", { method: "PUT", body: { itemCode: "" } }), { params: { id: "a1" } });
+    expect(res.status).toBe(400);
+    expect(mockDb.astAsset.update).not.toHaveBeenCalled();
+  });
+});
+
 describe("GET /api/assets — role-aware scoping", () => {
   beforeEach(() => resetMockDb());
 
@@ -51,6 +132,17 @@ describe("GET /api/assets — role-aware scoping", () => {
     setSession(null);
     const res = await GET(makeReq("/api/assets"), { params: {} });
     expect(res.status).toBe(401);
+  });
+
+  it("403s a soft-removed user (access denied at the auth layer)", async () => {
+    setSession({ id: "u1", orgId: "org1", role: "member", email: "u1@x.com" });
+    grantMemberOnly();
+    mockDb.astUserRemoval.findUnique.mockResolvedValue({ id: "rm1" } as never); // removed
+
+    const res = await GET(makeReq("/api/assets"), { params: {} });
+    expect(res.status).toBe(403);
+    // Blocked before any asset query.
+    expect(mockDb.astAsset.findMany).not.toHaveBeenCalled();
   });
 
   it("returns the FULL register for a viewAll holder (no id filter)", async () => {

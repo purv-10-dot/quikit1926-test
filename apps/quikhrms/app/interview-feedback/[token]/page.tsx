@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
+import { useEffect, useState } from "react";
 import { Star, CheckCircle2, AlertTriangle, ExternalLink, Phone, Mail, Briefcase, Loader2 } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -32,8 +32,8 @@ const RECOMMENDATIONS = [
   { value: "StrongNoHire", label: "Strong Reject", desc: "Definitely not", color: "red" },
 ];
 
-export default function InterviewFeedbackPage({ params }: { params: Promise<{ token: string }> }) {
-  const { token } = use(params);
+export default function InterviewFeedbackPage({ params }: { params: { token: string } }) {
+  const { token } = params;
   const [detail, setDetail] = useState<Detail | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
@@ -130,9 +130,9 @@ export default function InterviewFeedbackPage({ params }: { params: Promise<{ to
         <p className="text-sm text-gray-500 mt-0.5">{detail.companyName} · Submit feedback for {iv.candidate.name}</p>
       </div>
 
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-5">
+      <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-5">
         <div className="flex items-start gap-3">
-          <div className="w-10 h-10 rounded-full bg-white ring-2 ring-blue-200 flex items-center justify-center text-blue-700 font-bold">
+          <div className="w-10 h-10 rounded-full bg-white ring-2 ring-green-200 flex items-center justify-center text-green-700 font-bold">
             {iv.candidate.name.split(" ").map((s) => s[0]).slice(0, 2).join("").toUpperCase()}
           </div>
           <div className="flex-1 min-w-0">
@@ -143,33 +143,33 @@ export default function InterviewFeedbackPage({ params }: { params: Promise<{ to
               {iv.candidate.phone && <span className="inline-flex items-center gap-1"><Phone size={10} /> {iv.candidate.phone}</span>}
               {iv.candidate.currentCompany && <span className="inline-flex items-center gap-1"><Briefcase size={10} /> {iv.candidate.currentDesignation ?? ""} @ {iv.candidate.currentCompany}</span>}
               {iv.candidate.totalExperience ? <span>{Math.floor(iv.candidate.totalExperience / 12)}y exp</span> : null}
-              {iv.candidate.resumeUrl && <a href={iv.candidate.resumeUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:underline"><ExternalLink size={10} /> Resume</a>}
+              {iv.candidate.resumeUrl && <a href={iv.candidate.resumeUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-green-600 hover:underline"><ExternalLink size={10} /> Resume</a>}
             </div>
             <div className="text-[11px] text-gray-500 mt-2">Interview: {dt.toLocaleString("en-IN", { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })} · {iv.duration}min · Interviewer: {iv.interviewer.name}</div>
           </div>
         </div>
       </div>
 
-      <form onSubmit={submit} className="space-y-5 bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
+      <form onSubmit={submit} className="space-y-4 bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
         <div>
-          <label className="block text-sm font-semibold text-gray-800 mb-2">Overall Rating *</label>
-          <div className="flex items-center gap-2">
-            {[1, 2, 3, 4, 5].map((n) => (
+          <label className="block text-sm font-semibold text-gray-800 mb-2">Overall Rating <span className="text-gray-400 font-normal">(out of 10)</span> *</label>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
               <button
                 key={n}
                 type="button"
                 onClick={() => setForm({ ...form, overallRating: n })}
                 className={clsx(
-                  "w-11 h-11 rounded-lg border-2 flex items-center justify-center transition",
+                  "w-10 h-10 rounded-lg border-2 flex items-center justify-center text-sm font-semibold transition",
                   n <= form.overallRating
                     ? "border-amber-400 bg-amber-50 text-amber-600"
-                    : "border-slate-200 text-slate-300 hover:border-slate-300",
+                    : "border-slate-200 text-slate-400 hover:border-slate-300",
                 )}
               >
-                <Star size={18} className={n <= form.overallRating ? "fill-current" : ""} />
+                {n}
               </button>
             ))}
-            <span className="ml-2 text-sm font-semibold text-slate-700">{form.overallRating || "—"}/5</span>
+            <span className="ml-2 text-sm font-semibold text-slate-700">{form.overallRating || "—"}/10</span>
           </div>
         </div>
 
@@ -206,7 +206,7 @@ export default function InterviewFeedbackPage({ params }: { params: Promise<{ to
               value={form.strengths}
               onChange={(e) => setForm({ ...form, strengths: e.target.value })}
               placeholder="What did the candidate do well?"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
             />
           </div>
           <div>
@@ -216,7 +216,7 @@ export default function InterviewFeedbackPage({ params }: { params: Promise<{ to
               value={form.concerns}
               onChange={(e) => setForm({ ...form, concerns: e.target.value })}
               placeholder="Any red flags or gaps?"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
             />
           </div>
         </div>
@@ -228,7 +228,7 @@ export default function InterviewFeedbackPage({ params }: { params: Promise<{ to
             value={form.overallComments}
             onChange={(e) => setForm({ ...form, overallComments: e.target.value })}
             placeholder="Summary, stage-specific notes, follow-up questions…"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
           />
         </div>
 
@@ -240,21 +240,21 @@ export default function InterviewFeedbackPage({ params }: { params: Promise<{ to
           <button
             type="submit"
             disabled={submitting}
-            className="inline-flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg text-sm font-semibold shadow-sm disabled:opacity-50"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-green-600 to-green-600 hover:from-green-700 hover:to-green-700 text-white rounded-lg text-sm font-semibold shadow-sm disabled:opacity-50"
           >
             {submitting ? <><Loader2 size={14} className="animate-spin" /> Submitting…</> : "Submit Feedback"}
           </button>
         </div>
       </form>
 
-      <p className="text-[11px] text-gray-400 text-center mt-6">One-time link. Expires 7 days after interview completion.</p>
+      <p className="text-[11px] text-gray-400 text-center mt-4">One-time link. Expires 7 days after interview completion.</p>
     </Shell>
   );
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-slate-50 py-8 px-4">
+    <div className="min-h-screen bg-slate-50 py-5 px-4">
       <div className="max-w-3xl mx-auto">
         {children}
       </div>
