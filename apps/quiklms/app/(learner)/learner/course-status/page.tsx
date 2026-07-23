@@ -367,7 +367,7 @@ const CourseStatusTrackingPage = () => {
                       <div className="flex justify-end">
                         <button
                           type="button"
-                          onClick={() => router.push(`/course-player/${a.courseId._id}`)}
+                          onClick={() => router.push(`/learner/course/${a.courseId._id}`)}
                           className={`w-full md:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition ${missed
                               ? 'bg-red-700 hover:bg-red-800 text-white shadow-sm'
                               : 'text-white'

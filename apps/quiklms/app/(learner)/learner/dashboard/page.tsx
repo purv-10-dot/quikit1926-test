@@ -498,7 +498,7 @@ const LearnerDashboardPage = () => {
           {continueLearning && (
             <div className="flex flex-wrap gap-3">
               <button
-                onClick={() => router.push(`/learner/course/${continueLearning.assignment.courseId._id}/view`)}
+                onClick={() => router.push(`/learner/course/${continueLearning.assignment.courseId._id}`)}
                 className="group bg-white px-8 py-3 rounded-2xl font-semibold inline-flex items-center gap-2 transition-all duration-300 shadow-xl hover:shadow-2xl hover:scale-105"
                 style={{ color: primaryColor }}
               >
@@ -715,7 +715,7 @@ const LearnerDashboardPage = () => {
             <div
               key={assignment._id}
               className="group relative bg-white dark:bg-gray-800 rounded-3xl shadow-lg border border-gray-100 dark:border-gray-700 hover:shadow-2xl transition-all duration-500 overflow-hidden hover:-translate-y-2 cursor-pointer flex flex-col"
-              onClick={() => router.push(`/learner/course/${assignment.courseId._id}/view`)}
+              onClick={() => router.push(`/learner/course/${assignment.courseId._id}`)}
             >
               {/* Card Header with Gradient Thumbnail */}
               <div className="relative h-36 sm:h-40 overflow-hidden">

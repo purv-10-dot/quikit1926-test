@@ -1,9 +1,18 @@
 import { route, json, BadRequest, PayloadTooLarge } from '@/lib/http';
 import { requireAuth, requireRoles } from '@/lib/auth/context';
 import { readUploadIntent, resolveUpload, getResourceTypeFromFile } from '@/lib/services/upload-service';
+import { MAX_COURSE_RESOURCE_BYTES } from '@/lib/constants/uploads';
 
-/** Legacy: `limits: { fileSize: 5 * 100 * 1024 * 1024 }` — 500MB (upload.controller.ts:318). */
-const MAX_BYTES = 5 * 100 * 1024 * 1024;
+/**
+ * 50MB, shared with the picker that chooses the file.
+ *
+ * The legacy limit was `limits: { fileSize: 5 * 100 * 1024 * 1024 }` — 500MB
+ * (upload.controller.ts:318) — while the resource picker allowed 5GB, so a file
+ * between the two was accepted by the UI, uploaded in full, and only then
+ * refused. Both now read one constant, and it is the same 50MB the homework and
+ * non-teaching-work routes already used.
+ */
+const MAX_BYTES = MAX_COURSE_RESOURCE_BYTES;
 
 /**
  * POST /api/upload/course-resource — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
@@ -13,8 +22,8 @@ const MAX_BYTES = 5 * 100 * 1024 * 1024;
  * for the browser to send them itself. SUPER_ADMIN without a tenant uploads to
  * the master-courses prefix.
  *
- * `fileSize` is capped at 500MB, restoring the legacy multer limit. That limit
- * surfaced as multer's LIMIT_FILE_SIZE, which Nest turned into a 413
+ * `fileSize` is capped at 50MB (see MAX_BYTES). Over-limit surfaces the way the
+ * legacy multer `LIMIT_FILE_SIZE` did, which Nest turned into a 413
  * `'File too large'` — hence PayloadTooLarge, not BadRequest.
  *
  * On the JSON path enforcement is on the CLIENT-DECLARED size, which the legacy
@@ -34,7 +43,7 @@ export const POST = route(async (req) => {
   const prefix = isMasterCourse
     ? 'master-courses/resources'
     : `tenants/${orgId}/course-resources`;
-  const { uploadUrl, s3Key, permanentUrl } = await resolveUpload(prefix, intent);
+  const { uploadUrl, s3Key, permanentUrl, previewUrl } = await resolveUpload(prefix, intent);
 
   return json({
     success: true,
@@ -42,6 +51,7 @@ export const POST = route(async (req) => {
       uploadUrl,
       url: permanentUrl,
       permanentUrl,
+      previewUrl,
       s3Key,
       type: getResourceTypeFromFile(intent.fileName, intent.fileType),
       title: intent.fileName,

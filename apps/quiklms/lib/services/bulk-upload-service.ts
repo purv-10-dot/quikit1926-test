@@ -19,7 +19,9 @@
 import { randomBytes } from 'crypto';
 import { prisma } from '@/lib/prisma';
 import { provisionLmsUser } from './identity-service';
-import { getNextId } from './counters';
+// Shared with the single-person roster forms — see roster-profile.ts for why
+// these had to stop being private to bulk upload.
+import { applyTeacherProfile, assignGeneratedId, type TeacherProfileFields } from './roster-profile';
 
 export interface RowResult {
   row: number;
@@ -89,58 +91,6 @@ const randomPassword = () => randomBytes(16).toString('hex') + 'A1!';
  * Each is best-effort per row: a failure here must not fail an already-created
  * user, but it IS surfaced so the report stays trustworthy.
  */
-
-/** Mint and persist the per-tenant roll number (SCH-T-0001 / SCH-S-0001 / SCH-P-0001). */
-async function assignGeneratedId(
-  userId: string,
-  orgId: string,
-  type: 'teacher' | 'student' | 'parent',
-): Promise<string | undefined> {
-  try {
-    const code = await getNextId(orgId, type);
-    const field = type === 'teacher' ? 'employeeId' : type === 'student' ? 'studentId' : 'parentCode';
-    await prisma.lmsUser.update({ where: { id: userId }, data: { [field]: code } });
-    return code;
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error(`[bulk-upload] failed to assign ${type} id for ${userId}:`, err);
-    return undefined;
-  }
-}
-
-interface TeacherProfileFields {
-  subjects?: string[];
-  ratePerClass?: number;
-  rateType?: string;
-  qualification?: string;
-  monthlyPayout?: number;
-  availableSlots?: { dayOfWeek: number; startTime: string; endTime: string }[];
-}
-
-/**
- * Write the teacher-only columns `registerUser` does not handle, plus the
- * availability slots (an embedded array in Mongo, the `LmsUserAvailabilitySlot`
- * relation here). Without this a bulk-uploaded teacher has no subjects, no pay
- * rate and no availability — unschedulable and mis-paid downstream.
- */
-async function applyTeacherProfile(userId: string, fields: TeacherProfileFields): Promise<void> {
-  const data: Record<string, unknown> = {};
-  if (fields.subjects?.length) data.subjects = fields.subjects;
-  if (fields.ratePerClass !== undefined && !Number.isNaN(fields.ratePerClass)) data.ratePerClass = fields.ratePerClass;
-  if (fields.rateType) data.rateType = fields.rateType;
-  if (fields.qualification) data.qualification = fields.qualification;
-  if (fields.monthlyPayout !== undefined && !Number.isNaN(fields.monthlyPayout)) data.monthlyPayout = fields.monthlyPayout;
-
-  if (Object.keys(data).length) {
-    await prisma.lmsUser.update({ where: { id: userId }, data });
-  }
-  if (fields.availableSlots?.length) {
-    await prisma.lmsUserAvailabilitySlot.createMany({
-      data: fields.availableSlots.map((s) => ({ userId, dayOfWeek: s.dayOfWeek, startTime: s.startTime, endTime: s.endTime })),
-      skipDuplicates: true,
-    });
-  }
-}
 
 /** Link a parent to explicit children (from `studentEmail`). */
 async function linkChildren(parentId: string, childIds: string[]): Promise<void> {

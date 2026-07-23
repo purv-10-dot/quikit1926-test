@@ -36,9 +36,25 @@ function isResourceCompleted(lessonProgress: LessonProgress, candidateIds: unkno
   return false;
 }
 
-/** Extract all lesson IDs from a MasterCourse's embedded modules → subModules → resources/quizzes. */
-function extractLessonIdsFromMasterCourse(masterCourse: { modules?: unknown }): string[] {
-  const lessonIds: string[] = [];
+/** One playable item in a MasterCourse, tagged so quizzes can be told apart. */
+interface MasterLessonEntry {
+  id: string;
+  /** True for a sub-module quiz or a module-end quiz — a GATED item. */
+  isQuiz: boolean;
+}
+
+/**
+ * Walk a MasterCourse's embedded modules → subModules → resources/quizzes and
+ * return every playable item WITH its kind.
+ *
+ * The kind tag exists so `getQuizLessonIds` can identify gated items using the
+ * exact same walk (and therefore the exact same fallback-id numbering) that
+ * `calculateOverallCourseProgress` counts with. Deriving the quiz set from a
+ * second, parallel walk would drift the moment either one changed, and a quiz id
+ * that the gate does not recognise is a quiz a learner can skip.
+ */
+function extractLessonEntriesFromMasterCourse(masterCourse: { modules?: unknown }): MasterLessonEntry[] {
+  const lessonIds: MasterLessonEntry[] = [];
   const getId = (obj: Record<string, unknown> | undefined): string | undefined => {
     if (!obj) return undefined;
     if (typeof obj.id === 'string') return obj.id;
@@ -46,18 +62,18 @@ function extractLessonIdsFromMasterCourse(masterCourse: { modules?: unknown }): 
     return undefined;
   };
   const usedIds = new Set<string>();
-  const pushUnique = (proposedId: string, fallbackId: string) => {
+  const pushUnique = (proposedId: string, fallbackId: string, isQuiz = false) => {
     const normalized = normalizeKey(proposedId);
     if (normalized && !usedIds.has(normalized)) {
       usedIds.add(normalized);
-      lessonIds.push(normalized);
+      lessonIds.push({ id: normalized, isQuiz });
       return;
     }
     let candidate = fallbackId;
     let suffix = 1;
     while (usedIds.has(candidate)) candidate = `${fallbackId}_${suffix++}`;
     usedIds.add(candidate);
-    lessonIds.push(candidate);
+    lessonIds.push({ id: candidate, isQuiz });
   };
 
   const modules = (masterCourse.modules as Record<string, unknown>[]) || [];
@@ -92,17 +108,102 @@ function extractLessonIdsFromMasterCourse(masterCourse: { modules?: unknown }): 
       const quiz = subMod.quiz as Record<string, unknown> | undefined;
       if (quiz && (quiz.questions as unknown[])?.length > 0) {
         const qid = getId(quiz) || `quiz_${moduleIndex}_${lessonIndex}`;
-        pushUnique(qid, `quiz_${moduleIndex}_${lessonIndex}`);
+        pushUnique(qid, `quiz_${moduleIndex}_${lessonIndex}`, true);
         lessonIndex++;
       }
     });
     const moduleEndQuiz = mod.moduleEndQuiz as Record<string, unknown> | undefined;
     if (moduleEndQuiz && (moduleEndQuiz.questions as unknown[])?.length > 0) {
       const mqid = getId(moduleEndQuiz) || `module_quiz_${moduleIndex}`;
-      pushUnique(mqid, `module_quiz_${moduleIndex}`);
+      pushUnique(mqid, `module_quiz_${moduleIndex}`, true);
     }
   });
   return lessonIds;
+}
+
+/** Ids only — the shape `calculateOverallCourseProgress` counts with. */
+function extractLessonIdsFromMasterCourse(masterCourse: { modules?: unknown }): string[] {
+  return extractLessonEntriesFromMasterCourse(masterCourse).map((e) => e.id);
+}
+
+/**
+ * The lesson ids in this course that are QUIZZES — the items a learner must
+ * actually sit rather than merely open.
+ *
+ * WHY THIS EXISTS. `updateProgress` / `syncProgress` accept a `lessonId` and a
+ * completion figure from the client, and both are reachable from
+ * `PATCH /api/player/sync`, `POST /api/progress` and
+ * `POST /api/progress/:courseId/lesson/:lessonId/complete`. Nothing checked what
+ * KIND of lesson was being completed, so a caller could post
+ * `{ lessonId: <quiz id>, completionPercentage: 100, status: 'Completed' }` and
+ * have the quiz counted as done. `calculateOverallCourseProgress` counts quiz
+ * ids as lessons, so marking every item that way reached 100%, which in turn
+ * fired `generateCertificateForCompletion` — a certificate with zero questions
+ * answered. The learner UI did exactly this: the `/course-player` page could not
+ * render a quiz at all and offered a plain "Mark Complete" button for it.
+ *
+ * Fixing the UI alone would not have closed it — the endpoints are public API
+ * and a hand-rolled request bypasses any client. The gate belongs here.
+ *
+ * Resolves against BOTH course shapes, in the same order the rest of this
+ * service uses: MasterCourse embedded JSON first, then the relational
+ * Module/Lesson tables (`Module.assessmentId`, plus any lesson typed `Quiz`).
+ */
+async function getQuizLessonIds(courseId: string): Promise<Set<string>> {
+  try {
+    const masterCourse = await prisma.lmsMasterCourse.findUnique({
+      where: { id: courseId },
+      select: { modules: true },
+    });
+    if (masterCourse && (masterCourse.modules as unknown[])?.length) {
+      return new Set(
+        extractLessonEntriesFromMasterCourse(masterCourse as { modules: unknown })
+          .filter((e) => e.isQuiz)
+          .map((e) => e.id),
+      );
+    }
+
+    const modules = await prisma.lmsModule.findMany({
+      where: { courseId },
+      select: { assessmentId: true, lessons: { select: { id: true, type: true } } },
+    });
+    const ids = new Set<string>();
+    for (const mod of modules) {
+      const assessmentId = normalizeKey(mod.assessmentId);
+      if (assessmentId) ids.add(assessmentId);
+      for (const lesson of mod.lessons) {
+        if (lesson.type === 'Quiz') ids.add(normalizeKey(lesson.id));
+      }
+    }
+    return ids;
+  } catch (err) {
+    // FAIL OPEN, but loudly. A DB fault here would otherwise block a legitimate
+    // video completion — and the very next call (`calculateOverallCourseProgress`)
+    // reads the same rows, so a real outage surfaces there regardless.
+    // eslint-disable-next-line no-console
+    console.error(`[progress] could not resolve quiz lessons for course ${courseId}:`, err);
+    return new Set();
+  }
+}
+
+/**
+ * May this write mark `lessonId` complete?
+ *
+ * No, when the lesson is a quiz and the caller is not the grading path. The
+ * ONLY writer allowed to complete a quiz is `submitQuiz` (reached via
+ * `POST /api/learner/submit-quiz`), which sets `quizGraded`.
+ *
+ * Cheap by construction: it is consulted only when a write would actually mark
+ * something complete, so ordinary position/heartbeat syncs cost no extra query.
+ */
+async function quizCompletionAllowed(
+  courseId: string,
+  lessonId: string,
+  quizGraded: boolean | undefined,
+): Promise<boolean> {
+  if (quizGraded) return true;
+  const quizIds = await getQuizLessonIds(courseId);
+  return !quizIds.has(normalizeKey(lessonId));
 }
 
 interface OverallProgress {
@@ -256,6 +357,11 @@ export async function updateProgress(data: {
   percentRemaining?: number;
   status?: ProgressStatus;
   scormStatus?: string;
+  /**
+   * Set ONLY by the quiz-grading path. Without it a quiz lesson cannot be
+   * marked complete here — see `getQuizLessonIds`.
+   */
+  quizGraded?: boolean;
 }) {
   const { orgId, learnerId, courseId, lessonId, currentPosition, duration, percentRemaining, status, scormStatus } = data;
   const positionNumeric = parseSCORMLocation(currentPosition);
@@ -278,14 +384,23 @@ export async function updateProgress(data: {
   let completedAt = existing?.completedAt ?? null;
 
   if (lessonId) {
-    lessonProgress[lessonId] = {
-      ...(lessonProgress[lessonId] || {}),
-      lessonId,
-      completionPercentage: lessonCompletionPercentage,
-      isCompleted: lessonCompletionPercentage >= 95,
-      currentPosition,
-      lastAccessedAt: new Date().toISOString(),
-    };
+    // A quiz is completed by SITTING it, never by reporting a position. When
+    // this write would complete one and it did not come from the grader, the
+    // lesson entry is left exactly as it is — so an already-graded attempt is
+    // preserved and an ungraded quiz is never invented.
+    const wouldComplete = lessonCompletionPercentage >= 95;
+    const blocked = wouldComplete && !(await quizCompletionAllowed(courseId, lessonId, data.quizGraded));
+
+    if (!blocked) {
+      lessonProgress[lessonId] = {
+        ...(lessonProgress[lessonId] || {}),
+        lessonId,
+        completionPercentage: lessonCompletionPercentage,
+        isCompleted: wouldComplete,
+        currentPosition,
+        lastAccessedAt: new Date().toISOString(),
+      };
+    }
     currentModuleId = lessonId;
   }
 
@@ -333,6 +448,11 @@ export async function syncProgress(data: {
   suspendData?: string;
   scormData?: Record<string, string>;
   status?: string | ProgressStatus;
+  /**
+   * Set ONLY by the quiz-grading path. Without it a quiz lesson cannot be
+   * marked complete here — see `getQuizLessonIds`.
+   */
+  quizGraded?: boolean;
 }) {
   const { orgId, learnerId, courseId, lessonId, completionPercentage, currentPosition, suspendData, scormData, status } = data;
 
@@ -358,30 +478,49 @@ export async function syncProgress(data: {
       isLessonCompleted = ['completed', 'passed'].includes(s12) || ['completed', 'passed'].includes(s2004) || sSuccess === 'passed';
     }
 
-    const existingLesson = lessonProgress[lessonId];
-    if (existingLesson?.isCompleted && !isLessonCompleted) {
-      existingLesson.lastAccessedAt = new Date().toISOString();
-      if (currentPosition) existingLesson.currentPosition = currentPosition;
-    } else if (existingLesson?.quizScore || existingLesson?.attempted) {
-      existingLesson.lastAccessedAt = new Date().toISOString();
-      if (currentPosition) existingLesson.currentPosition = currentPosition;
-    } else {
-      const isQuizScore = isLessonCompleted && pct < 95;
-      const finalPct = isQuizScore ? pct : isLessonCompleted ? Math.max(pct, 100) : pct;
-      const entry: Record<string, unknown> = {
-        lessonId, completionPercentage: finalPct, isCompleted: isLessonCompleted,
-        currentPosition, suspendData, scormData, lastAccessedAt: new Date().toISOString(),
-      };
-      const score = scormData?.['cmi.core.score.raw'] || scormData?.['cmi.score.raw'];
-      const maxScore = scormData?.['cmi.core.score.max'] || scormData?.['cmi.score.max'];
-      const minScore = scormData?.['cmi.core.score.min'] || scormData?.['cmi.score.min'];
-      if (score !== undefined) {
-        entry.quizScore = {
-          raw: parseFloat(score) || 0, max: parseFloat(maxScore || '') || 100,
-          min: parseFloat(minScore || '') || 0, scaled: maxScore ? parseFloat(score) / parseFloat(maxScore) : 0,
+    /**
+     * Same gate as `updateProgress`: only the grader may complete a quiz. This
+     * is the path `PATCH /api/player/sync` and
+     * `POST /api/progress/:courseId/lesson/:lessonId/complete` both land on, and
+     * it is where the "Mark Complete on a quiz" bypass lived.
+     *
+     * The whole lesson write is SKIPPED, not merely downgraded to
+     * `isCompleted: false`. Downgrading is not enough: the `else` branch below
+     * would still store `completionPercentage: 100`, and
+     * `calculateOverallCourseProgress` averages the stored percentages — so the
+     * course would reach 100% and issue a certificate anyway, just without the
+     * lesson-level flag. Skipping leaves a real graded attempt untouched and
+     * never invents one for an unsat quiz.
+     */
+    const quizBlocked =
+      isLessonCompleted && !(await quizCompletionAllowed(courseId, lessonId, data.quizGraded));
+
+    if (!quizBlocked) {
+      const existingLesson = lessonProgress[lessonId];
+      if (existingLesson?.isCompleted && !isLessonCompleted) {
+        existingLesson.lastAccessedAt = new Date().toISOString();
+        if (currentPosition) existingLesson.currentPosition = currentPosition;
+      } else if (existingLesson?.quizScore || existingLesson?.attempted) {
+        existingLesson.lastAccessedAt = new Date().toISOString();
+        if (currentPosition) existingLesson.currentPosition = currentPosition;
+      } else {
+        const isQuizScore = isLessonCompleted && pct < 95;
+        const finalPct = isQuizScore ? pct : isLessonCompleted ? Math.max(pct, 100) : pct;
+        const entry: Record<string, unknown> = {
+          lessonId, completionPercentage: finalPct, isCompleted: isLessonCompleted,
+          currentPosition, suspendData, scormData, lastAccessedAt: new Date().toISOString(),
         };
+        const score = scormData?.['cmi.core.score.raw'] || scormData?.['cmi.score.raw'];
+        const maxScore = scormData?.['cmi.core.score.max'] || scormData?.['cmi.score.max'];
+        const minScore = scormData?.['cmi.core.score.min'] || scormData?.['cmi.score.min'];
+        if (score !== undefined) {
+          entry.quizScore = {
+            raw: parseFloat(score) || 0, max: parseFloat(maxScore || '') || 100,
+            min: parseFloat(minScore || '') || 0, scaled: maxScore ? parseFloat(score) / parseFloat(maxScore) : 0,
+          };
+        }
+        lessonProgress[lessonId] = entry;
       }
-      lessonProgress[lessonId] = entry;
     }
   }
 

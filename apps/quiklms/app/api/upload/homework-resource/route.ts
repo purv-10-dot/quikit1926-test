@@ -1,9 +1,10 @@
 import { route, json, BadRequest, PayloadTooLarge } from '@/lib/http';
 import { requireAuth, requireRoles } from '@/lib/auth/context';
 import { readUploadIntent, resolveUpload } from '@/lib/services/upload-service';
+import { MAX_HOMEWORK_BYTES } from '@/lib/constants/uploads';
 
 /** Legacy: `limits: { fileSize: 50 * 1024 * 1024 }` (upload.controller.ts:402). */
-const MAX_BYTES = 50 * 1024 * 1024;
+const MAX_BYTES = MAX_HOMEWORK_BYTES;
 
 /**
  * POST /api/upload/homework-resource
@@ -24,7 +25,7 @@ export const POST = route(async (req) => {
   if (!actor.orgId) throw BadRequest('Tenant ID is required');
   const intent = await readUploadIntent(req);
   if (intent.fileSize > MAX_BYTES) throw PayloadTooLarge();
-  const { uploadUrl, s3Key, permanentUrl } = await resolveUpload(
+  const { uploadUrl, s3Key, permanentUrl, previewUrl } = await resolveUpload(
     `tenants/${actor.orgId}/homework`, intent,
   );
   return json({
@@ -33,6 +34,7 @@ export const POST = route(async (req) => {
       uploadUrl,
       url: permanentUrl,
       permanentUrl,
+      previewUrl,
       s3Key,
       title: intent.fileName,
       fileSize: intent.fileSize,

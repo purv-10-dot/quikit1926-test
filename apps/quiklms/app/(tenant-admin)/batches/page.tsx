@@ -174,6 +174,12 @@ const BatchesPage = () => {
   const { branding } = useBranding();
   const [batches, setBatches] = useState<Batch[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
+  /**
+   * Why the roster is empty, when it is empty because the FETCH failed rather
+   * than because the tenant has no teachers. The two look identical in the form
+   * and have completely different remedies.
+   */
+  const [rosterError, setRosterError] = useState('');
   const [allStudents, setAllStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -228,15 +234,28 @@ const BatchesPage = () => {
         setError((batchRes.reason as any)?.message || 'Failed to load batches');
       }
 
+      // A REJECTED roster fetch used to be dropped on the floor: `teachers`
+      // stayed empty and the form rendered "No teachers found. Add teachers
+      // first." — which sends the admin off to create a teacher they already
+      // have, while the real fault (a 401/403/500 on /api/users) was invisible
+      // in the UI and absent from the logs. Roster failures are now recorded so
+      // the empty dropdown can say WHY it is empty.
       if (teacherRes.status === 'fulfilled') {
         const d = (teacherRes.value as any).data;
         setTeachers(Array.isArray(d) ? d : d.data ?? []);
+        setRosterError('');
+      } else {
+        const reason = (teacherRes.reason as any)?.message || 'Could not load the teacher list';
+        console.error('[batches] teacher fetch failed:', teacherRes.reason);
+        setRosterError(reason);
       }
 
       if (studentRes.status === 'fulfilled') {
         const d = (studentRes.value as any).data;
         const all = Array.isArray(d) ? d : d.data ?? [];
         setAllStudents(all.filter((u: any) => u.role === 'LEARNER' && u.isActive));
+      } else {
+        console.error('[batches] student fetch failed:', studentRes.reason);
       }
 
       if (subjectRes.status === 'fulfilled' && Array.isArray((subjectRes.value as any))) {
@@ -294,6 +313,11 @@ const BatchesPage = () => {
     setFormError('');
     setStudentSearch('');
     setShowModal(true);
+    // The roster is fetched once on mount, so a teacher added since this page
+    // loaded — the usual order of work: add the teacher, then build their batch
+    // — was missing from the dropdown until a manual refresh. Silent, so an
+    // open form is never disturbed by it.
+    fetchAll(true);
   };
 
   const openEdit = (batch: Batch) => {
@@ -784,7 +808,16 @@ const BatchesPage = () => {
                   ))}
                 </select>
                 {teachers.length === 0 && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">No teachers found. Add teachers first.</p>
+                  rosterError ? (
+                    <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                      Could not load teachers: {rosterError}{' '}
+                      <button type="button" onClick={() => fetchAll(true)} className="underline">
+                        Retry
+                      </button>
+                    </p>
+                  ) : (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">No teachers found. Add teachers first.</p>
+                  )
                 )}
               </div>
 

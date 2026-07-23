@@ -23,7 +23,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const post = vi.fn();
 vi.mock('@/lib/api', () => ({ api: { post: (...a: unknown[]) => post(...a) } }));
 
-const { uploadFile, SERVER_UPLOAD_MAX_BYTES } = await import('@/lib/upload-client');
+const { uploadFile, uploadFileWithPreview, SERVER_UPLOAD_MAX_BYTES } = await import('@/lib/upload-client');
 
 const UPLOAD_URL = 'https://storage.googleapis.com/quikit-bucket/tenants/t1/course-resources/1-a.pdf';
 const PERMANENT_URL = 'https://storage.googleapis.com/quikit-bucket/tenants/t1/course-resources/1-a.pdf';
@@ -90,6 +90,58 @@ describe('an ordinary upload never leaves this origin', () => {
   it('fails loudly if the route returns no URL at all', async () => {
     post.mockResolvedValue({ success: true, data: {} });
     await expect(uploadFile(file(), '/upload/course-resource')).rejects.toThrow(/no URL was returned/i);
+  });
+});
+
+/**
+ * A file that uploads fine but renders as a broken image reads, to the person
+ * who uploaded it, exactly like a failed upload. The bucket is private, so the
+ * permanent URL is for STORING and the signed one is for SHOWING.
+ */
+describe('the caller gets a URL it can actually render', () => {
+  const SIGNED = `${PERMANENT_URL}?X-Goog-Signature=abc`;
+
+  it('hands back the signed preview URL alongside the permanent one', async () => {
+    post.mockResolvedValue({
+      success: true,
+      data: { permanentUrl: PERMANENT_URL, previewUrl: SIGNED },
+    });
+
+    const result = await uploadFileWithPreview(file('art.png', 'image/png'), '/upload/course-thumbnail');
+
+    expect(result.url).toBe(PERMANENT_URL);
+    expect(result.previewUrl).toBe(SIGNED);
+  });
+
+  it('carries the signed URL through the large-file path too', async () => {
+    post.mockResolvedValue({
+      success: true,
+      data: { uploadUrl: UPLOAD_URL, permanentUrl: PERMANENT_URL, previewUrl: SIGNED },
+    });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200 }));
+
+    const result = await uploadFileWithPreview(hugeFile(), '/upload/course-resource');
+
+    expect(result.previewUrl).toBe(SIGNED);
+  });
+
+  it('falls back to the permanent URL when a route sends no previewUrl', async () => {
+    // /upload/welcome-kit predates previewUrl — it must keep working, not throw.
+    post.mockResolvedValue({ success: true, data: { permanentUrl: PERMANENT_URL } });
+
+    const result = await uploadFileWithPreview(file(), '/upload/course-resource');
+
+    expect(result.previewUrl).toBe(PERMANENT_URL);
+  });
+
+  it('uploadFile still returns the URL to STORE, never the expiring one', async () => {
+    // Storing a signed URL would persist an hour-long signature into the DB.
+    post.mockResolvedValue({
+      success: true,
+      data: { permanentUrl: PERMANENT_URL, previewUrl: SIGNED },
+    });
+
+    expect(await uploadFile(file(), '/upload/course-resource')).toBe(PERMANENT_URL);
   });
 });
 

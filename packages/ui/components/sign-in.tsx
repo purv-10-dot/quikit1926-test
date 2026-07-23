@@ -620,7 +620,16 @@ export const SignInComponent = ({
       }
       fireConfetti();
       setModalStatus("success");
-      const target = invitationLauncherUrl || callbackUrl || redirectPath;
+      // `redirectUrl` is the server's answer to "which app was this invitation
+      // actually for?" — set only when the invitation names exactly one app, in
+      // which case it points at the auth host's /api/post-login bridge so the
+      // invitee lands INSIDE that app with a session on its own host. It takes
+      // precedence over `invitationLauncherUrl`, which is the correct fallback
+      // only for multi-app (or app-less) invitations, where the launcher grid
+      // genuinely is the destination. Sending a QuikSkill invitee to the
+      // launcher was the "sets password → dumped on the QuikIT launcher" bug.
+      const target =
+        json.data?.redirectUrl || invitationLauncherUrl || callbackUrl || redirectPath;
       setTimeout(() => {
         if (hardNavigate) window.location.assign(target);
         else router.push(target);

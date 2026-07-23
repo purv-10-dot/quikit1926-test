@@ -8,9 +8,9 @@
  *     it is why quiktrack never needed a bucket CORS policy.
  *  2. PRESIGNED (`kind: 'url'`). The route mints a signed PUT and the browser
  *     sends the bytes straight to storage.googleapis.com. Kept because a proxied
- *     upload cannot exceed the platform's 4.5MB request-body cap, and course
- *     resources are capped at 500MB — a 200MB lecture video has nowhere to go
- *     but direct-to-bucket. That hop IS cross-origin and still needs the bucket
+ *     upload cannot exceed the platform's 4.5MB request-body cap, while content
+ *     uploads are capped at 50MB — a 30MB video has nowhere to go but
+ *     direct-to-bucket. That hop IS cross-origin and still needs the bucket
  *     CORS policy in scripts/set-gcs-cors.mjs.
  *
  * Both paths write the SAME key format and return the SAME permanent URL, so
@@ -90,7 +90,7 @@ export type UploadIntent =
 
 /**
  * Hard ceiling on a PROXIED body, independent of the per-endpoint limits below
- * it. Those limits describe the file (500MB for a course resource); this one
+ * it. Those limits describe the file (50MB for a course resource); this one
  * describes what may be buffered in a function's memory. The client never sends
  * multipart above ~4MB, and the platform rejects a body over 4.5MB before it
  * reaches us, so this only fires on a hand-rolled request.
@@ -133,19 +133,33 @@ export async function readUploadIntent(req: NextRequest): Promise<UploadIntent> 
 
 /**
  * Store the bytes (proxied) or mint a signed PUT (direct), returning one shape.
- * `uploadUrl` is present ONLY when the caller still has to send the bytes —
- * its absence is how the client knows the upload is already complete.
+ *
+ * `uploadUrl` is present ONLY when the caller still has to send the bytes — its
+ * absence is how the client knows the upload is already complete.
+ *
+ * `previewUrl` is a signed GET for the same object. The bucket is PRIVATE, so
+ * `permanentUrl` is not renderable on its own: an `<img src>` pointed at it gets
+ * a 403 and the browser shows a broken image. Every read path in the app already
+ * knows this and attaches a signed sibling (`thumbnailUrlPresigned`, via
+ * `presignFromUrlOrKey`) — but that only happens when a record is LOADED, and a
+ * screen that has just uploaded a file has nothing loaded yet. Handing the
+ * signed URL back with the upload is what lets it render immediately.
+ *
+ * Signing is a local HMAC — no round trip — and works on the direct path too,
+ * where the object does not exist yet: the signature is valid for an hour, well
+ * past the PUT that is about to create it.
  */
 export async function resolveUpload(
   prefix: string,
   intent: UploadIntent,
-): Promise<{ uploadUrl?: string; s3Key: string; permanentUrl: string }> {
+): Promise<{ uploadUrl?: string; s3Key: string; permanentUrl: string; previewUrl: string }> {
   if (intent.kind === 'bytes') {
     const key = buildPrefixedKey(prefix, intent.fileName);
     await putObject(key, intent.buffer, intent.fileType);
-    return { s3Key: key, permanentUrl: publicUrl(key) };
+    return { s3Key: key, permanentUrl: publicUrl(key), previewUrl: await presignGet(key, 3600) };
   }
-  return presignForPrefix(prefix, intent.fileName, intent.fileType);
+  const presigned = await presignForPrefix(prefix, intent.fileName, intent.fileType);
+  return { ...presigned, previewUrl: await presignGet(presigned.s3Key, 3600) };
 }
 
 export async function presignReadUrl(s3Key: string): Promise<string> {

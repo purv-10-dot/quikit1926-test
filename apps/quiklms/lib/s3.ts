@@ -22,9 +22,10 @@
  * `bucket.exists()` or any other bucket-metadata method here — it will 403 even
  * though object reads and writes succeed.
  *
- * Large files (>150MB) never pass through Next.js API routes; the browser
- * uploads directly to GCS via the presigned PUT URL, or to the TUS server in
- * /worker. This module only mints URLs and reads bytes.
+ * Files above the platform's 4.5MB request-body cap never pass through Next.js
+ * API routes; the browser uploads directly to GCS via the presigned PUT URL.
+ * (The TUS server in /worker is a resumable alternative, but nothing in the app
+ * is wired to it today.) This module only mints URLs and reads bytes.
  */
 import { Storage } from '@google-cloud/storage';
 import { randomUUID } from 'crypto';

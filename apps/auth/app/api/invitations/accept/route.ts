@@ -7,6 +7,8 @@ import {
   MEMBERSHIP_ROLES,
 } from "@quikit/shared";
 import { assignAppRoles } from "@quikit/auth/assign-app-roles";
+import { inviteRedirectUrl } from "@quikit/auth/invite-redirect";
+import { publicBaseUrl } from "@quikit/auth/public-url";
 
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -270,6 +272,25 @@ export async function POST(request: NextRequest) {
 
   // Grant the apps the inviter selected (FR-SA-002 / FR-OA-002).
   const grantAppIds = membership.inviteAppIds ?? [];
+
+  // Where to send them once they're signed in. An invitation minted from
+  // inside an app carries exactly that app, so the invitee can be dropped
+  // straight into it instead of the launcher grid they never asked for.
+  // Resolved here (not on the client) because only the server can map an app
+  // id to its registered baseUrl. See @quikit/auth/invite-redirect.
+  let redirectUrl: string | null = null;
+  if (grantAppIds.length === 1) {
+    const app = await db.app.findUnique({
+      where: { id: grantAppIds[0] },
+      select: { baseUrl: true },
+    });
+    redirectUrl = inviteRedirectUrl({
+      authOrigin: publicBaseUrl(request),
+      appIds: grantAppIds,
+      appBaseUrl: app?.baseUrl,
+    });
+  }
+
   if (grantAppIds.length > 0) {
     const userAppRole =
       membership.role === MEMBERSHIP_ROLES.APP_ADMIN ? "admin" : "member";
@@ -306,6 +327,9 @@ export async function POST(request: NextRequest) {
       // Tells the client whether to attempt auto-sign-in (Save & Continue)
       // or send the user to /login to enter credentials manually (Skip).
       skipped: Boolean(skip),
+      // Absolute URL to land on after auto-sign-in, or null to keep the
+      // launcher default. Only set for single-app invitations.
+      redirectUrl,
     },
   });
 }

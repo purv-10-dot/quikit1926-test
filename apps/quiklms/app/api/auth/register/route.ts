@@ -3,16 +3,27 @@ import { requireAuth, requireRoles } from '@/lib/auth/context';
 import { canAssignRole, isUserRole } from '@/lib/auth/role-policy';
 import { type RegisterUserInput } from '@/lib/services/auth-service';
 import { provisionLmsUser } from '@/lib/services/identity-service';
+import { enrichRosterUser } from '@/lib/services/roster-profile';
 
 /**
  * POST /api/auth/register — create a login-capable LMS person (student /
  * teacher / parent) from the admin roster screens.
  *
- * Two writes, one identity:
+ * Three writes, one identity:
  *   1) createCentralIdentity → platform User + OrgMember + UserAppAccess in the
  *      ORG database (so the person can SSO-log-in). Returns the central userId.
  *   2) registerUser → the LMS row, created with that SAME id, so on login
  *      `session.user.id === LMS User.id` and the LMS role + data resolve.
+ *   3) enrichRosterUser → the roster fields `registerUser` does not write: a
+ *      teacher's subjects, rate, qualification and WEEKLY AVAILABILITY, plus the
+ *      per-tenant roll number.
+ *
+ * Step 3 used to be missing here while bulk CSV import did it, so the same
+ * person came out complete from a CSV and half-created from the form. The
+ * availability gap was the expensive one: `batches-service.create` runs
+ * `validateTeacherSchedule`, which refuses a teacher with zero slots, so a
+ * teacher added through the Teachers page could be selected in the batch form
+ * and then never saved into a batch. See lib/services/roster-profile.ts.
  *
  * Static route → takes precedence over app/api/auth/[...nextauth]. Tenant scope
  * is forced to the caller's session org (never trusted from the client body).
@@ -61,12 +72,23 @@ export const POST = route(async (req) => {
       createdByUserId: actor.id,
     });
 
+    // The roster fields the identity path does not write. Best-effort — the
+    // person exists and can log in either way, so this never fails the request.
+    const { generatedId } = await enrichRosterUser(
+      identity.userId,
+      orgId,
+      lmsRole,
+      body as Record<string, unknown>,
+    );
+
     return json(
       {
         success: true,
         data: {
           id: identity.userId,
           reused: identity.reused,
+          /** Per-tenant roll number (SCH-T-0001 / SCH-S-0001 / SCH-P-0001). */
+          generatedId,
           /**
            * The plaintext temp password is NOT returned.
            *

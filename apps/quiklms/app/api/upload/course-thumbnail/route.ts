@@ -1,9 +1,10 @@
 import { route, json, BadRequest } from '@/lib/http';
 import { requireAuth, requireRoles } from '@/lib/auth/context';
 import { readUploadIntent, resolveUpload } from '@/lib/services/upload-service';
+import { MAX_THUMBNAIL_BYTES } from '@/lib/constants/uploads';
 
 /** Legacy: `if (file.size > 5 * 1024 * 1024)` (upload.controller.ts:189). */
-const MAX_BYTES = 5 * 1024 * 1024;
+const MAX_BYTES = MAX_THUMBNAIL_BYTES;
 
 /**
  * POST /api/upload/course-thumbnail — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
@@ -27,10 +28,10 @@ export const POST = route(async (req) => {
   // Order matches the legacy handler: type first, then size.
   if (!intent.fileType.startsWith('image/')) throw BadRequest('Only image files are allowed');
   if (intent.fileSize > MAX_BYTES) throw BadRequest('File size must be less than 5MB');
-  const { uploadUrl, s3Key, permanentUrl } = await resolveUpload('course-thumbnails', intent);
+  const { uploadUrl, s3Key, permanentUrl, previewUrl } = await resolveUpload('course-thumbnails', intent);
   return json({
     success: true,
-    data: { uploadUrl, url: permanentUrl, permanentUrl, s3Key },
+    data: { uploadUrl, url: permanentUrl, permanentUrl, previewUrl, s3Key },
     message: 'Course thumbnail upload URL generated successfully',
   });
 });

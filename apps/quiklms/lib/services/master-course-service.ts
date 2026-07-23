@@ -93,11 +93,47 @@ export async function isApprovalWorkflowEnabled(orgId: string): Promise<boolean>
 }
 
 // ── selectedTenants helpers (join table) ─────────────────────────────────────
+/**
+ * Replace a course's tenant distribution list.
+ *
+ * THE AUTHORING TENANT IS ALWAYS KEPT. `submittedByTenantId` is the tenant that
+ * wrote the course, and it is re-added even when the incoming list omits it.
+ *
+ * WHY. `selectedTenants` is the ONLY thing that makes a master course visible to
+ * a tenant: `findAllForTenant`, `courses-service.findOne` and
+ * `assignCourse` all gate on `selectedTenants: { some: { orgId } }`. Wipe it and
+ * the course still exists, still says Published, and is reachable by nobody —
+ * the tenant that authored it cannot open it, cannot assign it, and gets no
+ * error explaining why. It simply vanishes from their catalogue.
+ *
+ * That is not hypothetical. On 2026-07-23 the production database held
+ * **19 published master courses with zero selectedTenants, every one of them
+ * carrying a `submittedByTenantId`** — i.e. 19 tenant-authored courses whose
+ * authors had silently lost them, across two tenants and three months. Several
+ * were still at `version: 1`, so they were never edited after creation; the only
+ * path that rewrites this list without bumping the version is `publish`, whose
+ * route defaulted a missing `selectedTenants` to `[]` (see the route, now
+ * fixed to require it).
+ *
+ * Every tenant-side write already forces `selectedTenants = [orgId]` — in this
+ * codebase and in the NestJS original (`master-course.controller.ts:316,338,352,
+ * 394,413,423`). This makes the same invariant hold on the super-admin paths,
+ * which are the ones that had no such guard.
+ */
 async function setSelectedTenants(masterCourseId: string, tenantIds: string[]): Promise<void> {
+  const course = await prisma.lmsMasterCourse.findUnique({
+    where: { id: masterCourseId },
+    select: { submittedByTenantId: true },
+  });
+
+  const finalIds = [...new Set(tenantIds.filter(Boolean))];
+  const author = course?.submittedByTenantId;
+  if (author && !finalIds.includes(author)) finalIds.push(author);
+
   await prisma.lmsMasterCourseSelectedTenant.deleteMany({ where: { masterCourseId } });
-  if (tenantIds.length) {
+  if (finalIds.length) {
     await prisma.lmsMasterCourseSelectedTenant.createMany({
-      data: tenantIds.map((orgId) => ({ masterCourseId, orgId })),
+      data: finalIds.map((orgId) => ({ masterCourseId, orgId })),
       skipDuplicates: true,
     });
   }

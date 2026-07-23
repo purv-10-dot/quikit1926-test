@@ -1,4 +1,4 @@
-﻿import { redirect } from 'next/navigation';
+import { redirect } from 'next/navigation';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { resolveLmsRole } from '@/lib/auth/resolve-role';
@@ -6,17 +6,22 @@ import { landingPathFor, resolveTenantType } from '@/lib/auth/landing';
 import { FAQS } from './layout';
 import Nav from './_components/Nav';
 import Hero from './_components/Hero';
+import TrustMarquee from './_components/TrustMarquee';
+import Stats from './_components/Stats';
 import Platform from './_components/Platform';
 import Roles from './_components/Roles';
 import Assessment from './_components/Assessment';
+import Lifecycle from './_components/Lifecycle';
 import Faq from './_components/Faq';
 import FooterCTA from './_components/FooterCTA';
+import Footer from './_components/Footer';
+import PageEffects from './_components/PageEffects';
 
 /**
  * Public landing page at `/`.
  *
- *   - Unauthenticated â†’ render the landing page (200 OK)
- *   - Authenticated   â†’ redirect to that role's dashboard
+ *   - Unauthenticated → render the landing page (200 OK)
+ *   - Authenticated   → redirect to that role's dashboard
  *
  * This REPLACES the old `app/page.tsx`, which assumed middleware had already
  * guaranteed a session and so redirected everyone to `/login`. `/` is now in
@@ -29,9 +34,8 @@ import FooterCTA from './_components/FooterCTA';
  * dashboard.
  *
  * A route group adds no path segment, so this file and `app/page.tsx` would
- * both resolve to `/` â€” the old one was deleted rather than left to collide.
+ * both resolve to `/` — the old one was deleted rather than left to collide.
  */
-
 
 export default async function LandingPage({
   searchParams,
@@ -44,7 +48,7 @@ export default async function LandingPage({
   const reason = Array.isArray(rawReason) ? rawReason[0] : rawReason;
   // Bounced here by the central entitlement gate (lib/auth/page-guard). This
   // visitor IS authenticated, so the redirect below would send them straight
-  // back to the dashboard that just refused them â€” an infinite loop. Render the
+  // back to the dashboard that just refused them — an infinite loop. Render the
   // landing page with an explanation instead.
   const deniedAppAccess = reason === 'no_app_access';
 
@@ -56,6 +60,11 @@ export default async function LandingPage({
   // central session is already gone → quikit-auth. That is exactly the "QuikLMS
   // page flashes for a second then jumps to the login" bug. Hold on the landing
   // instead; the user clicks Sign in when they choose to.
+  //
+  // The client half of that same bug lives in lib/api.ts + app/providers.tsx:
+  // `/` is exempt from the 401 → /login hard nav, and the providers only fetch
+  // once a session exists. Both halves are needed — this guard alone still let
+  // the page bounce about a second after it rendered.
   const loggedOut = reason === 'logged_out';
 
   if (session?.user?.id && !deniedAppAccess && !loggedOut) {
@@ -66,37 +75,42 @@ export default async function LandingPage({
     redirect(landingPathFor(role, tenantType));
   }
 
+  const notice = deniedAppAccess || loggedOut;
+
   return (
-    <div className="bg-[#0b1020]">
+    // `has-notice` reserves --lp-notice-h so the fixed nav and the hero shift
+    // down instead of sitting underneath the notice bar.
+    <div className={`lp-root${notice ? ' has-notice' : ''}`}>
       {deniedAppAccess && (
-        <div
-          role="status"
-          className="border-b border-amber-400/30 bg-amber-400/10 px-4 py-3 text-center text-sm text-amber-100"
-        >
-          Your organisation does not currently have access to QuikSkill, or your
-          access has been removed. Contact your administrator if you think this
-          is a mistake.
+        <div role="status" className="lp-notice lp-notice-warn">
+          <span>
+            Your organisation does not currently have access to QuikSkill, or your access has been
+            removed. Contact your administrator if you think this is a mistake.
+          </span>
         </div>
       )}
       {loggedOut && (
-        <div
-          role="status"
-          className="border-b border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-center text-sm text-emerald-100"
-        >
-          You&apos;ve been signed out. Click{' '}
-          <span className="font-semibold">Sign in</span> when you&apos;re ready
-          to return.
+        <div role="status" className="lp-notice lp-notice-ok">
+          <span>
+            You&apos;ve been signed out. Click <b>Sign in</b> when you&apos;re ready to return.
+          </span>
         </div>
       )}
+
       <Nav />
       <main>
         <Hero />
+        <TrustMarquee />
+        <Stats />
         <Platform />
         <Roles />
         <Assessment />
+        <Lifecycle />
         <Faq items={FAQS} />
+        <FooterCTA />
       </main>
-      <FooterCTA />
+      <Footer />
+      <PageEffects />
     </div>
   );
 }

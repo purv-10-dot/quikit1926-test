@@ -23,6 +23,12 @@ vi.mock('@/lib/s3', () => ({
 }));
 
 import { Unauthorized } from '@/lib/http';
+import {
+  MAX_COURSE_RESOURCE_BYTES,
+  MAX_HOMEWORK_BYTES,
+  MAX_NON_TEACHING_BYTES,
+  formatMaxSize,
+} from '@/lib/constants/uploads';
 import { POST as welcomeKitPOST, GET as welcomeKitGET } from '@/app/api/upload/welcome-kit/route';
 import { POST as thumbnailPOST } from '@/app/api/upload/course-thumbnail/route';
 import { POST as courseResourcePOST } from '@/app/api/upload/course-resource/route';
@@ -173,7 +179,10 @@ describe('multer-limit endpoints return 413, not 400', () => {
   // Nest's transformException maps multer's LIMIT_FILE_SIZE to
   // PayloadTooLargeException('File too large') → 413.
   const cases = [
-    { name: 'course-resource', fn: courseResourcePOST, url: 'http://x/api/upload/course-resource', max: 500 * MB },
+    // 50MB, same as the other two — and, critically, the same number the
+    // resource picker enforces. It used to be 500MB here against a 5GB picker,
+    // so a file in between uploaded in full and was then refused.
+    { name: 'course-resource', fn: courseResourcePOST, url: 'http://x/api/upload/course-resource', max: 50 * MB },
     { name: 'homework-resource', fn: homeworkPOST, url: 'http://x/api/upload/homework-resource', max: 50 * MB },
     { name: 'non-teaching-work-resource', fn: nonTeachingPOST, url: 'http://x/api/upload/non-teaching-work-resource', max: 50 * MB },
   ];
@@ -198,6 +207,50 @@ describe('multer-limit endpoints return 413, not 400', () => {
       expect((await res.json()).message).toBe('Validation failed');
     });
   }
+});
+
+/**
+ * The picker and the route must agree on the limit.
+ *
+ * They did not: the resource picker accepted 5GB while this route capped at
+ * 500MB, so a file between the two was chosen, uploaded in full, and only then
+ * refused with a 413 — the worst possible place to find out. Both now read
+ * lib/constants/uploads.ts, and this test fails if either side drifts.
+ */
+describe('one limit, shared by the form and the route', () => {
+  it('the route enforces exactly the constant the picker checks', async () => {
+    const res = await courseResourcePOST(
+      req('http://x/api/upload/course-resource', {
+        fileName: 'a.mp4',
+        fileType: 'video/mp4',
+        fileSize: MAX_COURSE_RESOURCE_BYTES + 1,
+      }),
+      {},
+    );
+    expect(res.status).toBe(413);
+  });
+
+  it('accepts a file at exactly the shared limit', async () => {
+    const res = await courseResourcePOST(
+      req('http://x/api/upload/course-resource', {
+        fileName: 'a.mp4',
+        fileType: 'video/mp4',
+        fileSize: MAX_COURSE_RESOURCE_BYTES,
+      }),
+      {},
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it('is 50MB, and the same number as homework and non-teaching work', () => {
+    expect(MAX_COURSE_RESOURCE_BYTES).toBe(50 * MB);
+    expect(MAX_HOMEWORK_BYTES).toBe(MAX_COURSE_RESOURCE_BYTES);
+    expect(MAX_NON_TEACHING_BYTES).toBe(MAX_COURSE_RESOURCE_BYTES);
+  });
+
+  it('formats the limit the way the error messages phrase it', () => {
+    expect(formatMaxSize(MAX_COURSE_RESOURCE_BYTES)).toBe('50MB');
+  });
 });
 
 /**
@@ -226,6 +279,19 @@ describe('multipart bodies are stored server-side', () => {
       expect(body.data.s3Key.startsWith(prefix)).toBe(true);
       // Nothing was signed — the browser is never asked to talk to the bucket.
       expect(h.presignPut).not.toHaveBeenCalled();
+    });
+
+    it(`${name} returns a SIGNED url to render, beside the permanent one to store`, async () => {
+      // The bucket is private: an <img> pointed at permanentUrl gets a 403 and
+      // renders as a broken image. The uploading screen has no loaded record to
+      // carry the usual `…Presigned` sibling, so the signed URL ships with the
+      // upload response or the file appears not to have uploaded at all.
+      const res = await fn(formReq(url, file, type), {});
+
+      const body = await res.json();
+      expect(body.data.previewUrl).toBe('https://s3.example/get?sig=1');
+      expect(h.presignGet).toHaveBeenCalledWith(body.data.s3Key, 3600);
+      expect(body.data.previewUrl).not.toBe(body.data.permanentUrl);
     });
 
     it(`${name} passes the real bytes and content type to storage`, async () => {

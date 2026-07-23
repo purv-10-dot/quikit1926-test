@@ -14,13 +14,31 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // is a no-op wherever the engine already resolves natively.
 if (!process.env.PRISMA_QUERY_ENGINE_LIBRARY) {
   const engineDir = path.resolve(__dirname, '../../node_modules/.prisma/client');
+  // The engine file MUST match the host OS, and the two naming conventions
+  // overlap in a way that bites:
+  //   Windows : query_engine-windows.dll.node
+  //   Linux   : libquery_engine-linux-musl-openssl-3.0.x.so.node
+  // The previous pattern was `/query_engine-.*\.node$/` — unanchored, so it
+  // also matched the LINUX file via the "…lib[query_engine-]…" substring. With
+  // both engines generated (binaryTargets = ["native", "linux-musl-…"]) and
+  // readdirSync returning alphabetical order, "libquery_engine-…" (l) sorted
+  // ahead of "query_engine-windows…" (q) — so on Windows this pinned
+  // PRISMA_QUERY_ENGINE_LIBRARY to the Linux .so and every query died with
+  // "is not a valid Win32 application", overriding Prisma's own (correct)
+  // platform detection. Anchoring per-platform is the fix.
+  //
+  // On Linux the selected file is unchanged, so deploys behave exactly as before.
+  const enginePattern =
+    process.platform === 'win32'
+      ? /^query_engine-.*\.dll\.node$/
+      : /^libquery_engine-.*\.so\.node$/;
   try {
-    const engine = fs
-      .readdirSync(engineDir)
-      .find((f) => /query_engine-.*\.node$/.test(f));
+    const engine = fs.readdirSync(engineDir).find((f) => enginePattern.test(f));
     if (engine) {
       process.env.PRISMA_QUERY_ENGINE_LIBRARY = path.join(engineDir, engine);
     }
+    // No match → leave Prisma's own resolution alone rather than pinning the
+    // wrong binary; it detects the platform correctly on its own.
   } catch {
     // engine dir missing (client not generated yet) — leave default resolution.
   }

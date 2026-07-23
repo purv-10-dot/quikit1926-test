@@ -1,21 +1,41 @@
+'use client';
+
+import { GraduationCap, Presentation, Settings, Users } from './icons';
+
+/** Mouse-follow spotlight: feeds the card's ::before radial-gradient vars. */
+function spotlight(e: React.PointerEvent<HTMLElement>) {
+  const card = e.currentTarget;
+  const r = card.getBoundingClientRect();
+  card.style.setProperty('--mx', e.clientX - r.left + 'px');
+  card.style.setProperty('--my', e.clientY - r.top + 'px');
+}
+
 const ROLES = [
   {
     name: 'Learners',
+    Icon: GraduationCap,
+    acc: '#6366f1',
     body: 'A clear queue of what is assigned and what is due, a player that remembers where they stopped, and certificates they can share.',
     points: ['Resume where you left off', 'Attempt history and scores', 'Shareable certificates'],
   },
   {
     name: 'Teachers',
+    Icon: Presentation,
+    acc: '#8b5cf6',
     body: 'Batches, attendance, homework and tutoring requests in one place — plus availability and payout summaries.',
     points: ['Batch rosters and schedules', 'Homework and grading', 'Availability and payouts'],
   },
   {
     name: 'Administrators',
+    Icon: Settings,
+    acc: '#22d3ee',
     body: 'Author or approve content, assign it, and see compliance across the whole organisation without exporting anything.',
     points: ['Course and quiz authoring', 'Approval workflow', 'Compliance and analytics'],
   },
   {
     name: 'Parents',
+    Icon: Users,
+    acc: '#f59e0b',
     body: 'For schools: visibility of a child’s schedule, homework status, live classes and results — without a separate portal.',
     points: ['Schedule and attendance', 'Homework status', 'Progress and results'],
   },
@@ -23,36 +43,39 @@ const ROLES = [
 
 export default function Roles() {
   return (
-    <section id="roles" className="bg-slate-50 py-24 sm:py-28">
-      <div className="mx-auto max-w-6xl px-5">
-        <div className="max-w-2xl">
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-600">Who it’s for</p>
-          <h2 className="font-display mt-3 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
-            One platform, four very different jobs
+    <section className="section" id="roles">
+      <div className="wrap">
+        <div className="section-head reveal">
+          <span className="eyebrow">Who it’s for</span>
+          <h2>
+            One platform, four very <span className="serif-italic gradient-text">different</span> jobs
           </h2>
-          <p className="mt-4 text-base leading-relaxed text-slate-600">
+          <p>
             Each role gets its own surface. Nobody is handed an admin console and asked to find the
             three things that concern them.
           </p>
         </div>
 
-        <div className="mt-14 grid gap-6 sm:grid-cols-2">
-          {ROLES.map((r) => (
-            <div
+        <div className="roles">
+          {ROLES.map((r, i) => (
+            <article
               key={r.name}
-              className="rounded-3xl border border-slate-200 bg-white p-8 transition-shadow hover:shadow-lg hover:shadow-slate-200/60"
+              className="card role-card reveal"
+              {...(i ? { 'data-d': String(Math.min(i, 4)) } : {})}
+              style={{ '--acc': r.acc } as React.CSSProperties}
+              onPointerMove={spotlight}
             >
-              <h3 className="font-display text-xl font-bold text-slate-900">{r.name}</h3>
-              <p className="mt-2.5 text-sm leading-relaxed text-slate-600">{r.body}</p>
-              <ul className="mt-5 space-y-2">
+              <div className="c-ico">
+                <r.Icon />
+              </div>
+              <h3>{r.name}</h3>
+              <p>{r.body}</p>
+              <ul>
                 {r.points.map((p) => (
-                  <li key={p} className="flex items-center gap-2.5 text-sm text-slate-700">
-                    <span className="size-1.5 shrink-0 rounded-full bg-indigo-500" />
-                    {p}
-                  </li>
+                  <li key={p}>{p}</li>
                 ))}
               </ul>
-            </div>
+            </article>
           ))}
         </div>
       </div>

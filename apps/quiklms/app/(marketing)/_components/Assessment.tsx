@@ -1,63 +1,66 @@
-import { Shuffle, Eye, FileCheck2, QrCode } from 'lucide-react';
+import { Eye, FileCheck, QrCode, Shuffle } from './icons';
 
 const POINTS = [
   {
-    icon: Shuffle,
+    Icon: Shuffle,
     title: 'Randomised per attempt',
     body: 'The served subset and its order are decided when the attempt starts and pinned server-side, so a refresh shows the same paper — and the person beside you does not.',
   },
   {
-    icon: Eye,
+    Icon: Eye,
     title: 'Proctoring that reports',
     body: 'Fullscreen enforcement, tab-switch and copy-paste detection, and webcam face checks. Every incident is logged against the session for an administrator to review.',
   },
   {
-    icon: FileCheck2,
+    Icon: FileCheck,
     title: 'Scored on the server',
     body: 'Answers are graded against the exact question set the learner was shown, never a re-derived one. Attempt limits are enforced where they are defined.',
   },
   {
-    icon: QrCode,
+    Icon: QrCode,
     title: 'Verifiable on the outside',
     body: 'Certificates carry a QR code to a public verification page, and only become downloadable once the learner has genuinely met the passing criteria.',
   },
 ];
 
+/**
+ * Inset panel with its own mesh — the visual slot the QuikHRMS landing gives
+ * to its Security section. Assessment integrity is the equivalent "why you can
+ * trust the output" argument for an LMS, so it takes the same treatment.
+ */
 export default function Assessment() {
   return (
-    <section id="assessment" className="relative overflow-hidden bg-[#0b1020] py-24 sm:py-28">
-      <div aria-hidden className="pointer-events-none absolute inset-0">
-        <div className="absolute right-1/4 top-0 size-[28rem] rounded-full bg-violet-600/15 blur-[110px]" />
-      </div>
-
-      <div className="relative mx-auto max-w-6xl px-5">
-        <div className="max-w-2xl">
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-400">Assessment</p>
-          <h2 className="font-display mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl">
-            A result that means something
-          </h2>
-          <p className="mt-4 text-base leading-relaxed text-white/60">
-            A completion tick is easy to produce and easy to doubt. These are the parts that make a
-            score defensible when someone asks.
-          </p>
-        </div>
-
-        <div className="mt-14 grid gap-6 sm:grid-cols-2">
-          {POINTS.map((p) => {
-            const Icon = p.icon;
-            return (
-              <div
-                key={p.title}
-                className="rounded-3xl border border-white/10 bg-white/[0.04] p-8 backdrop-blur transition-colors hover:bg-white/[0.07]"
-              >
-                <span className="grid size-11 place-items-center rounded-xl bg-indigo-500/15 text-indigo-300">
-                  <Icon className="size-5" />
-                </span>
-                <h3 className="font-display mt-5 text-lg font-bold text-white">{p.title}</h3>
-                <p className="mt-2.5 text-sm leading-relaxed text-white/60">{p.body}</p>
+    <section className="section" id="assessment">
+      <div className="wrap">
+        <div className="panel-inset">
+          <div className="mesh" aria-hidden="true">
+            <span className="blob b1" />
+            <span className="blob b2" />
+          </div>
+          <div
+            className="section-head reveal"
+            style={{ textAlign: 'left', margin: 0, maxWidth: '640px' }}
+          >
+            <span className="eyebrow">Assessment</span>
+            <h2>
+              A result that <span className="serif-italic gradient-text">means</span> something
+            </h2>
+            <p>
+              A completion tick is easy to produce and easy to doubt. These are the parts that make a
+              score defensible when someone asks.
+            </p>
+          </div>
+          <div className="sec-grid">
+            {POINTS.map((p, i) => (
+              <div className="sec-item reveal" key={p.title} {...(i ? { 'data-d': String(i) } : {})}>
+                <div className="s-ico">
+                  <p.Icon />
+                </div>
+                <h4>{p.title}</h4>
+                <p>{p.body}</p>
               </div>
-            );
-          })}
+            ))}
+          </div>
         </div>
       </div>
     </section>

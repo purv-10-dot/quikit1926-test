@@ -4,7 +4,7 @@
  * (QuikSkillsfrontend/src/components/ResourceUploader.tsx).
  *
  * Modal for attaching a file-backed lesson to a module:
- *   1. pick a title, a resource type, and a file (5GB client-side cap);
+ *   1. pick a title, a resource type, and a file (50MB cap, shared with the route);
  *   2. upload the bytes via the presigned-PUT helper
  *      (POST /api/upload/course-resource → PUT straight to S3);
  *   3. create the lesson record (POST /api/courses/lessons) and call onSuccess().
@@ -21,12 +21,13 @@
  *     uploading and is set to 100 on success.
  *   - Cancel cannot abort the in-flight PUT (the helper takes no AbortSignal);
  *     it drops the upload from the UI and suppresses the lesson creation.
- * Everything else — props, state, the 5GB check, the accept map, every
+ * Everything else — props, state, the size check, the accept map, every
  * className, the error UI, the button labels — is carried over unchanged.
  */
 import React, { useState, useRef } from 'react';
 import { api } from '@/lib/api';
 import { uploadFile } from '@/lib/upload-client';
+import { MAX_COURSE_RESOURCE_BYTES, formatMaxSize } from '@/lib/constants/uploads';
 
 interface ResourceUploaderProps {
   moduleId: string;
@@ -59,9 +60,11 @@ const ResourceUploader: React.FC<ResourceUploaderProps> = ({
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
-      // Validate file size (5GB max)
-      if (selectedFile.size > 5 * 1024 * 1024 * 1024) {
-        setError('File size exceeds 5GB limit');
+      // Same constant the route enforces — a file the picker accepts is a file
+      // the server will accept, so an over-limit file is refused here instead of
+      // after a full upload.
+      if (selectedFile.size > MAX_COURSE_RESOURCE_BYTES) {
+        setError(`File size exceeds ${formatMaxSize(MAX_COURSE_RESOURCE_BYTES)} limit`);
         return;
       }
       setFile(selectedFile);

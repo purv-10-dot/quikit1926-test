@@ -71,6 +71,11 @@ export const POST = route(async (req) => {
       lessonId: dto.assessmentId,
       completionPercentage: result.percentage,
       status: 'Completed',
+      // THE ONLY CALLER ALLOWED TO COMPLETE A QUIZ. `submitQuiz` above has just
+      // graded this attempt against the real answer key, so this is the one
+      // place a quiz lesson may legitimately be marked done. Every other write
+      // path into the progress engine is refused by `quizCompletionAllowed`.
+      quizGraded: true,
     });
   } catch {
     /* grading already succeeded — never fail the submission on a sync error */

@@ -25,7 +25,12 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${sans.variable} ${display.variable}`}>
+    // `suppressHydrationWarning` covers ONLY this element's own attributes, not
+    // its subtree. The marketing layout's pre-paint theme script stamps
+    // `data-theme` on <html> before React hydrates, and React would otherwise
+    // log "Extra attributes from the server: data-theme" on every landing view.
+    // This is the documented remedy for that pattern; it hides nothing else.
+    <html lang="en" suppressHydrationWarning className={`${sans.variable} ${display.variable}`}>
       <body>
         <Providers>{children}</Providers>
       </body>

@@ -11,8 +11,8 @@
  *
  * DIRECT (`> SERVER_UPLOAD_MAX_BYTES`): ask the route for a presigned PUT and
  * send the bytes to storage.googleapis.com ourselves. This exists because a
- * proxied upload cannot exceed the platform's 4.5MB request-body cap and course
- * resources are allowed up to 500MB — a lecture video has nowhere else to go.
+ * proxied upload cannot exceed the platform's 4.5MB request-body cap while
+ * content uploads are allowed up to 50MB — a video has nowhere else to go.
  * This hop IS cross-origin and carries a Content-Type header, so the browser
  * preflights it; a bucket with no CORS policy answers that preflight 200 but
  * WITHOUT Access-Control-Allow-Origin, and fetch() then rejects with the bare,
@@ -30,7 +30,24 @@ interface UploadResponse {
   uploadUrl?: string;
   permanentUrl?: string;
   url?: string;
+  /** Signed GET for the same object — see `UploadResult.previewUrl`. */
+  previewUrl?: string;
   s3Key?: string;
+}
+
+export interface UploadResult {
+  /** The permanent URL to STORE. Not renderable on its own — the bucket is private. */
+  url: string;
+  /**
+   * A signed GET, good for about an hour — the URL to RENDER right now.
+   *
+   * Screens that show what you just uploaded (the course-art tile, the resource
+   * preview pane) have no loaded record yet, so they never get the
+   * `…Presigned` sibling that read paths attach. Without this they would point
+   * an `<img>`/`<video>` at the permanent URL and get a 403 from the private
+   * bucket — a broken-image icon on a file that uploaded perfectly well.
+   */
+  previewUrl: string;
 }
 
 /**
@@ -67,18 +84,20 @@ function classifyPutFailure(err: unknown): Error {
 }
 
 /** Multipart POST to our own route. Same-origin — no preflight, no bucket policy. */
-async function uploadThroughServer(file: File, endpoint: string): Promise<string> {
+async function uploadThroughServer(file: File, endpoint: string): Promise<UploadResult> {
   const form = new FormData();
   form.append('file', file);
   const res = await api.post<{ success: boolean; data: UploadResponse }>(endpoint, form);
   const data = res.data;
   const url = data?.permanentUrl || data?.url;
   if (!url) throw new Error('Upload succeeded but no URL was returned');
-  return url;
+  // A route that predates `previewUrl` (welcome-kit) leaves rendering exactly as
+  // it was rather than breaking the call.
+  return { url, previewUrl: data?.previewUrl || url };
 }
 
 /** Mint a signed PUT, then send the bytes straight to the bucket. Cross-origin. */
-async function uploadDirectToBucket(file: File, endpoint: string, fileType: string): Promise<string> {
+async function uploadDirectToBucket(file: File, endpoint: string, fileType: string): Promise<UploadResult> {
   // 1. Same-origin, so a failure here arrives as a normal API error object with
   //    a server-side message.
   const res = await api.post<{ success: boolean; data: UploadResponse }>(endpoint, {
@@ -108,21 +127,33 @@ async function uploadDirectToBucket(file: File, endpoint: string, fileType: stri
   // a Content-Type that does not match the one it was signed for.
   if (!put.ok) throw new Error(`Upload failed (${put.status})`);
 
-  return data.permanentUrl || data.url || '';
+  const url = data.permanentUrl || data.url || '';
+  return { url, previewUrl: data.previewUrl || url };
 }
 
 /**
- * Upload `file` through `endpoint` and return its permanent URL.
+ * Upload `file` through `endpoint`, returning both the URL to store and the URL
+ * to render.
  *
  * `endpoint` is one of the /api/upload/* routes; every one of them accepts both
  * request shapes, so the strategy is chosen here and the caller never has to
  * care which one ran.
  */
-export async function uploadFile(file: File, endpoint: string): Promise<string> {
+export async function uploadFileWithPreview(file: File, endpoint: string): Promise<UploadResult> {
   const fileType = file.type || 'application/octet-stream';
 
   if (file.size <= SERVER_UPLOAD_MAX_BYTES) {
     return uploadThroughServer(file, endpoint);
   }
   return uploadDirectToBucket(file, endpoint, fileType);
+}
+
+/**
+ * Upload and return only the permanent URL — for callers that store the file
+ * without showing it back (homework attachments, course resources saved with
+ * the course). Anything that renders the file immediately wants
+ * `uploadFileWithPreview` instead.
+ */
+export async function uploadFile(file: File, endpoint: string): Promise<string> {
+  return (await uploadFileWithPreview(file, endpoint)).url;
 }

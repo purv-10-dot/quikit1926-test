@@ -52,7 +52,8 @@ import {
 import { DragDropContext, Droppable, Draggable, DropResult } from 'react-beautiful-dnd';
 import { v4 as uuidv4 } from 'uuid';
 import { api } from '@/lib/api';
-import { uploadFile } from '@/lib/upload-client';
+import { uploadFileWithPreview } from '@/lib/upload-client';
+import { MAX_COURSE_RESOURCE_BYTES, formatMaxSize } from '@/lib/constants/uploads';
 
 interface Resource {
   id: string;
@@ -97,6 +98,15 @@ const SubModuleResourceEngine = ({ resources: initialResources, onSave, onClose 
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null);
+  /**
+   * Signed GET URLs for files uploaded in THIS session, keyed by resource id.
+   *
+   * `Resource.url` holds the permanent URL, which is what gets saved — but the
+   * bucket is private, so it renders as a broken image/video until the course is
+   * reloaded and the server signs it. Kept out of `Resource` on purpose: these
+   * expire in an hour and must never reach the save payload.
+   */
+  const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
   const [addMode, setAddMode] = useState<'upload' | 'url' | 'text' | 'scorm' | null>(null);
   const [newResourceUrl, setNewResourceUrl] = useState('');
   const [newResourceTitle, setNewResourceTitle] = useState('');
@@ -152,11 +162,19 @@ const SubModuleResourceEngine = ({ resources: initialResources, onSave, onClose 
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
 
+        // This picker had no size check at all, so an over-limit file was
+        // uploaded in full and then refused by the route with a 413. Checked
+        // here against the same constant the route enforces.
+        if (file.size > MAX_COURSE_RESOURCE_BYTES) {
+          setError(`"${file.name}" exceeds the ${formatMaxSize(MAX_COURSE_RESOURCE_BYTES)} limit`);
+          continue;
+        }
+
         // Uploads the bytes and returns the permanent URL. Neither path can
         // report byte-level progress, so the bar is driven from start/finish per
         // file.
         setUploadProgress(0);
-        const uploadedUrl = await uploadFile(file, '/upload/course-resource');
+        const { url: uploadedUrl, previewUrl } = await uploadFileWithPreview(file, '/upload/course-resource');
         setUploadProgress(100);
 
         // The presign helper returns only the URL, so the backend-provided type /
@@ -176,6 +194,7 @@ const SubModuleResourceEngine = ({ resources: initialResources, onSave, onClose 
           orderIndex: resources.length,
         };
 
+        setPreviewUrls((prev) => ({ ...prev, [newResource.id]: previewUrl }));
         setResources((prev) => [...prev, newResource]);
       }
     } catch (err: unknown) {
@@ -828,13 +847,13 @@ const SubModuleResourceEngine = ({ resources: initialResources, onSave, onClose 
                         <video
                           controls
                           className="w-full rounded-lg"
-                          src={selectedResource.url}
+                          src={previewUrls[selectedResource.id] || selectedResource.url}
                         />
                       ) : (
                         <audio
                           controls
                           className="w-full"
-                          src={selectedResource.url}
+                          src={previewUrls[selectedResource.id] || selectedResource.url}
                         />
                       )}
                     </div>
@@ -849,7 +868,7 @@ const SubModuleResourceEngine = ({ resources: initialResources, onSave, onClose 
                       </div>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={selectedResource.url}
+                        src={previewUrls[selectedResource.id] || selectedResource.url}
                         alt={selectedResource.title || 'Preview'}
                         className="max-w-full max-h-96 rounded-lg mx-auto"
                       />

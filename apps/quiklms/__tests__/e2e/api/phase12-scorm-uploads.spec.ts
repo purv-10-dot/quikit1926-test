@@ -177,12 +177,12 @@ test.describe("Phase 12 — upload validation (before storage)", () => {
     await api.dispose();
   });
 
-  test("course-resource rejects a file over 500MB with 413", async () => {
+  test("course-resource rejects a file over 50MB with 413", async () => {
     // 413 rather than 400: this route ported a multer `limits.fileSize`, which
     // Nest mapped to PayloadTooLarge. The distinction is deliberate in lib/http.ts.
     const api = await apiAs("tenantAdmin");
     const res = await api.post("/api/upload/course-resource", {
-      data: { fileName: "huge.pdf", fileType: "application/pdf", fileSize: 600 * 1024 * 1024 },
+      data: { fileName: "huge.pdf", fileType: "application/pdf", fileSize: 60 * 1024 * 1024 },
     });
     expect(res.status()).toBe(413);
     const body = (await safeJson(res)) as ErrEnvelope;

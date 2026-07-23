@@ -44,22 +44,10 @@ test.beforeAll(async () => {
 test.describe("Phase 35 — course player surfaces", () => {
   const PLAYERS: Array<{ path: string; h1: string; copy: RegExp; distinguishes: string }> = [
     {
-      path: `/course-player/${COURSE}`,
-      h1: "E2E Published Course",
-      copy: /COURSE CONTENT/i,
-      distinguishes: "the standalone course-player shell (module tree + Mark as Complete)",
-    },
-    {
       path: `/learner/course/${COURSE}`,
       h1: "E2E Published Course",
       copy: /Save & Exit/i,
       distinguishes: "UniversalLMSPlayer — the 'standard' mode of components/players/CoursePlayer",
-    },
-    {
-      path: `/learner/course/${COURSE}/view`,
-      h1: "E2E Published Course",
-      copy: /Course Modules/i,
-      distinguishes: "CourseViewerPage — its own page.tsx, never routed through CoursePlayer",
     },
     {
       path: `/learner/course/${COURSE}/legacy`,
@@ -68,6 +56,40 @@ test.describe("Phase 35 — course player surfaces", () => {
       distinguishes: "LockedCoursePlayer — the 'legacy' mode of CoursePlayer",
     },
   ];
+
+  /**
+   * `/course-player/:id` and `/learner/course/:id/view` are RETIRED — both now
+   * redirect to the canonical player. They used to be separate learner-facing
+   * players with no forward-seek restriction, and `/course-player` additionally
+   * offered a "Mark Complete" button on quiz lessons, which let a learner reach
+   * 100% and earn a certificate without answering a question.
+   *
+   * Asserting the redirect (rather than deleting these cases) is what stops a
+   * future change from quietly reinstating a second, unrestricted player: if
+   * either path renders its own shell again, this fails.
+   */
+  for (const retired of [`/course-player/${COURSE}`, `/learner/course/${COURSE}/view`]) {
+    test(`LEARNER is redirected from the retired ${retired}`, async ({ page }) => {
+      test.setTimeout(180_000);
+
+      const probe = watch(page);
+      const status = await gotoAs(page, "learner", retired, { settle: 2_500 });
+
+      expect(status, `${retired}: navigation did not return 200`).toBe(200);
+      expect(
+        new URL(page.url()).pathname,
+        `${retired}: expected a redirect to the canonical player`,
+      ).toBe(`/learner/course/${COURSE}`);
+
+      // And it must be the REAL canonical player, not an empty shell.
+      await expectRealPage(page, {
+        path: retired,
+        heading: { name: "E2E Published Course", level: 1 },
+        text: /Save & Exit/i,
+      });
+      expectNoServerErrors(probe, retired);
+    });
+  }
 
   for (const { path, h1, copy, distinguishes } of PLAYERS) {
     test(`LEARNER renders ${path}`, async ({ page }) => {

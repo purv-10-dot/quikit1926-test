@@ -185,20 +185,20 @@ export function QuizTakingComponent({ assessmentId, courseId, onComplete, onCanc
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 p-12 backdrop-blur-xl">
-        <Loader2 className="w-10 h-10 text-indigo-400 animate-spin" />
+      <div className="flex items-center justify-center rounded-2xl border border-gray-200 bg-white p-12 shadow-sm">
+        <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
       </div>
     );
   }
 
   if (error && !assessment) {
     return (
-      <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-6 backdrop-blur-xl">
-        <div className="flex items-center gap-2 text-red-300">
+      <div className="rounded-2xl border border-red-200 bg-red-50 p-6">
+        <div className="flex items-center gap-2 text-red-700">
           <AlertCircle className="w-5 h-5" />
           <p>{error}</p>
         </div>
-        <button onClick={onCancel} className="mt-4 px-4 py-2 rounded-xl bg-white/10 text-gray-100 hover:bg-white/20 transition">
+        <button onClick={onCancel} className="mt-4 px-4 py-2 rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 transition">
           Go Back
         </button>
       </div>
@@ -225,27 +225,27 @@ export function QuizTakingComponent({ assessmentId, courseId, onComplete, onCanc
       : [];
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-xl shadow-2xl max-w-4xl mx-auto">
+    <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm max-w-4xl mx-auto">
       {/* Header */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-2xl font-bold text-gray-50">{assessment.title}</h2>
+          <h2 className="text-2xl font-bold text-gray-900">{assessment.title}</h2>
           {timeRemaining !== null && (
-            <div className="flex items-center gap-2 bg-red-500/20 border border-red-500/30 px-4 py-2 rounded-xl">
-              <Clock className="w-5 h-5 text-red-300" />
-              <span className="font-semibold text-red-200">{formatTime(timeRemaining)}</span>
+            <div className="flex items-center gap-2 bg-red-50 border border-red-200 px-4 py-2 rounded-xl">
+              <Clock className="w-5 h-5 text-red-600" />
+              <span className="font-semibold text-red-700">{formatTime(timeRemaining)}</span>
             </div>
           )}
         </div>
         <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-medium text-gray-300">
+          <span className="text-sm font-medium text-gray-700">
             Question {currentQuestion + 1} of {assessment.questions.length}
           </span>
-          <span className="text-sm text-gray-400">
+          <span className="text-sm text-gray-500">
             {answeredCount} / {assessment.questions.length} answered
           </span>
         </div>
-        <div className="w-full bg-white/10 rounded-full h-2">
+        <div className="w-full bg-gray-200 rounded-full h-2">
           <div
             className="bg-gradient-to-r from-indigo-500 to-violet-500 h-2 rounded-full transition-all"
             style={{ width: `${progressPct}%` }}
@@ -254,8 +254,8 @@ export function QuizTakingComponent({ assessmentId, courseId, onComplete, onCanc
       </div>
 
       {/* Question */}
-      <div className="mb-6 rounded-xl bg-white/5 border border-white/10 p-6">
-        <h3 className="text-lg font-semibold text-gray-100 mb-4">{question.text}</h3>
+      <div className="mb-6 rounded-xl bg-gray-50 border border-gray-200 p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">{question.text}</h3>
 
         {isText(question) ? (
           <input
@@ -263,7 +263,7 @@ export function QuizTakingComponent({ assessmentId, courseId, onComplete, onCanc
             value={typeof currentAnswer === 'string' ? currentAnswer : ''}
             onChange={(e) => handleText(currentQuestion, e.target.value)}
             placeholder="Type your answer..."
-            className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-gray-100 placeholder-gray-500 focus:border-indigo-500/50 focus:outline-none"
+            className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-gray-900 placeholder-gray-400 focus:border-indigo-500 focus:outline-none"
           />
         ) : (
           <div className="space-y-3">
@@ -274,8 +274,8 @@ export function QuizTakingComponent({ assessmentId, courseId, onComplete, onCanc
                   key={index}
                   className={`flex items-center p-4 border-2 rounded-xl cursor-pointer transition-all ${
                     isSelected
-                      ? 'border-indigo-500/60 bg-indigo-600/20'
-                      : 'border-white/10 hover:border-white/20 bg-white/5'
+                      ? 'border-indigo-500 bg-indigo-50'
+                      : 'border-gray-200 hover:border-indigo-300 bg-white'
                   }`}
                 >
                   <input
@@ -285,12 +285,12 @@ export function QuizTakingComponent({ assessmentId, courseId, onComplete, onCanc
                     onChange={() => handleSelect(currentQuestion, index)}
                     className="w-4 h-4 mr-3 accent-indigo-500"
                   />
-                  <span className="text-gray-100">{option}</span>
+                  <span className="text-gray-900">{option}</span>
                 </label>
               );
             })}
             {multi && (
-              <p className="text-xs text-gray-400 italic mt-2">
+              <p className="text-xs text-gray-500 italic mt-2">
                 Multi-select question — you can choose more than one answer.
               </p>
             )}
@@ -299,11 +299,11 @@ export function QuizTakingComponent({ assessmentId, courseId, onComplete, onCanc
       </div>
 
       {/* Navigation */}
-      <div className="flex items-center justify-between pt-4 border-t border-white/10">
+      <div className="flex items-center justify-between pt-4 border-t border-gray-200">
         <button
           onClick={() => setCurrentQuestion((q) => Math.max(0, q - 1))}
           disabled={currentQuestion === 0}
-          className="px-4 py-2 rounded-xl bg-white/10 text-gray-100 hover:bg-white/20 transition disabled:opacity-40 disabled:cursor-not-allowed"
+          className="px-4 py-2 rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 transition disabled:opacity-40 disabled:cursor-not-allowed"
         >
           Previous
         </button>
@@ -344,8 +344,8 @@ export function QuizTakingComponent({ assessmentId, courseId, onComplete, onCanc
                 index === currentQuestion
                   ? 'border-indigo-500 bg-indigo-600 text-white'
                   : isAnswered
-                    ? 'border-emerald-500/60 bg-emerald-500/20 text-emerald-200'
-                    : 'border-white/15 bg-white/5 text-gray-300 hover:border-white/30'
+                    ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                    : 'border-gray-300 bg-white text-gray-600 hover:border-gray-400'
               }`}
             >
               {index + 1}
@@ -355,8 +355,8 @@ export function QuizTakingComponent({ assessmentId, courseId, onComplete, onCanc
       </div>
 
       {error && (
-        <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3">
-          <p className="text-red-300 text-sm">{error}</p>
+        <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3">
+          <p className="text-red-700 text-sm">{error}</p>
         </div>
       )}
     </div>

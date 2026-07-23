@@ -4,11 +4,16 @@
  * and `/learner/course/[courseId]/legacy` mount, always via
  * `dynamic(..., { ssr:false })` since the players touch window/canvas/camera.
  *
- * Route → player mapping, matching the legacy frontend's App.tsx routes:
+ * Route → player mapping:
  *   standard  `/learner/course/:courseId`         → UniversalLMSPlayer  (ported)
  *   legacy    `/learner/course/:courseId/legacy`  → LockedCoursePlayer  (ported)
- *   view      `/learner/course/:courseId/view`    → handled by its own page.tsx,
- *                                                   which never routes through here.
+ *
+ * `view` USED to be a third mapping, handled by its own page.tsx. That route and
+ * `/course-player/:courseId` are now redirects to `standard`: both rendered
+ * learner-facing players with no forward-seek restriction, and `/course-player`
+ * could not render a quiz at all — it offered a "Mark Complete" button instead,
+ * which reached 100% and issued a certificate with nothing answered. There is
+ * one learner player now; see the docblocks on those two route files.
  *
  * Both players render their own fullscreen chrome (back button, sidebar, progress
  * header) and read `courseId` from the route via `useParams`, so this host hands
@@ -33,7 +38,7 @@ const LockedCoursePlayer = dynamic(() => import('@/components/learner/LockedCour
   loading: spinner,
 });
 
-export default function CoursePlayer({ courseId, mode }: { courseId: string; mode: 'standard' | 'view' | 'legacy' }) {
+export default function CoursePlayer({ courseId, mode }: { courseId: string; mode: 'standard' | 'legacy' }) {
   void courseId; // Both players read it from the route themselves, as the originals did.
   if (mode === 'legacy') {
     return <LockedCoursePlayer />;

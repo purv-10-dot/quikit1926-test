@@ -68,7 +68,7 @@ import {
   Trophy,
 } from 'lucide-react';
 import { api } from '@/lib/api';
-import { uploadFile } from '@/lib/upload-client';
+import { uploadFileWithPreview } from '@/lib/upload-client';
 import { v4 as uuidv4 } from 'uuid';
 import QuizBuilderAdvanced from '@/components/QuizBuilderAdvanced';
 import SubModuleResourceEngine from '@/components/SubModuleResourceEngine';
@@ -500,10 +500,13 @@ const MasterCourseStudio = ({ courseId, onClose, onSuccess, isTenantAdmin = fals
       // handler derived the resource type from the filename/mimetype).
       // Endpoint kept as `/upload/course-resource` — the original's choice, even
       // though a `/upload/course-thumbnail` route also exists.
-      const url = await uploadFile(file, '/upload/course-resource');
+      // `previewUrl` is the signed one. `thumbnailUrl` alone renders as a broken
+      // image until the course is reloaded, because the bucket is private and
+      // the signed `thumbnailUrlPresigned` sibling is only attached on READ.
+      const { url, previewUrl } = await uploadFileWithPreview(file, '/upload/course-resource');
 
       if (url) {
-        setCourse((prev) => ({ ...prev, thumbnailUrl: url }));
+        setCourse((prev) => ({ ...prev, thumbnailUrl: url, thumbnailUrlPresigned: previewUrl }));
         setSuccess('Thumbnail uploaded successfully!');
         setTimeout(() => setSuccess(null), 3000);
       } else {
