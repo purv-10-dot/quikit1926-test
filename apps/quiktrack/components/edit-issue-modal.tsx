@@ -42,6 +42,7 @@ import { DeleteTaskModal } from "@/components/delete-task-modal";
 import { LinkedWorkItems } from "@/components/linked-work-items";
 import { IssueActivity } from "@/components/issue-activity";
 import { IssueAttachments } from "@/components/issue-attachments";
+import { DescriptionAttachments } from "@/components/description-attachments";
 import { AlertCircle } from "lucide-react";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import { formatHoursAsClock } from "@/lib/utils/timesheetPeriod";
@@ -1160,6 +1161,10 @@ export function EditIssueModal({
                     )}
                   </button>
                 )}
+                {/* Files/images embedded in the description, as cards — rendered
+                    outside the read-only <button> (interactive links can't nest
+                    in a button). Only in read-only view. */}
+                {!descEditing && <DescriptionAttachments html={description} />}
               </div>
 
               {/* Subtasks — hidden for Epics (which group via epicId) and
@@ -1406,7 +1411,10 @@ export function EditIssueModal({
                 />
               )}
 
-              {/* Attachments — read-only list, sourced from migration imports. */}
+              {/* Separate "Attachments" section — the description's files as
+                  cards (also shown inside Description above), plus the
+                  migration-imported attachments. */}
+              <DescriptionAttachments html={description} heading />
               {issue?.id && <IssueAttachments issueId={issue.id} />}
 
               {/* Details (collapsible) */}

@@ -153,8 +153,8 @@ export function sanitizeDocHtml(html: string): string {
       "*": ["style", "class", "align", "valign"],
       // Mirror sanitizeRichText: keep the editor's file-attachment chip intact.
       a: [
-        "href", "name", "target", "rel",
-        "download", "data-file-name", "data-file-mime", "data-file-size",
+        "href", "name", "target", "rel", "title",
+        "download", "data-file-name", "data-file-mime", "data-file-size", "data-file-uploaded",
       ],
       img: ["src", "alt", "width", "height", "style"],
       table: TABLE_ATTRS,

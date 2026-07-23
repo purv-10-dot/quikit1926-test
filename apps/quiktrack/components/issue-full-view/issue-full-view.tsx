@@ -13,6 +13,7 @@ import { useApiData } from "@/lib/hooks/useApiData";
 import { LinkedWorkItems } from "@/components/linked-work-items";
 import { IssueActivity } from "@/components/issue-activity";
 import { IssueAttachments } from "@/components/issue-attachments";
+import { DescriptionAttachments } from "@/components/description-attachments";
 import { IssueViewSkeleton } from "@/components/skeleton";
 import { IssueDetailsPanel } from "./issue-details-panel";
 import { IssueHeaderSections } from "./issue-header-sections";
@@ -175,6 +176,10 @@ export function IssueFullView({
             window.location.href = `/spaces/${projectId}/work/${id}`;
           }}
         />
+        {/* Separate "Attachments" section — mirrors the files embedded in the
+            description as cards (same as shown inside Description), plus the
+            migration-imported attachments below. */}
+        <DescriptionAttachments html={issue.description} heading />
         <IssueAttachments issueId={issue.id} />
         <IssueActivity issueId={issue.id} projectId={projectId} mentions={memberMentions} />
       </div>

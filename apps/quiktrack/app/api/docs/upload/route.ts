@@ -10,7 +10,6 @@ import {
   ALLOWED_FILE_LABEL,
   putObject,
 } from "@/lib/storage";
-import { LOCAL_UPLOADS_ENABLED, putLocalObject } from "@/lib/local-storage";
 
 // Force the Node.js runtime (default for app-router but explicit here so
 // streaming the upload to Cloud Storage doesn't accidentally land on Edge).
@@ -90,22 +89,6 @@ export const POST = withOrgAuth(async (ctx, req) => {
     await putObject(key, buf, type);
   } catch (error: unknown) {
     const raw = error instanceof Error ? error.message : "Upload failed";
-    // Dev fallback: when GCS is unreachable in local development (blocked egress
-    // to storage.googleapis.com, clock skew, etc.), store the object on local
-    // disk so uploads still work without cloud access. Never runs in production
-    // — there GCS failures surface as the error below.
-    if (LOCAL_UPLOADS_ENABLED) {
-      try {
-        await putLocalObject(key, buf, type);
-        const url = `/api/docs/asset?key=${encodeURIComponent(key)}`;
-        return NextResponse.json(
-          { success: true, data: { key, url, fileName, mimeType: type, size: file.size } },
-          { status: 201 },
-        );
-      } catch {
-        /* fall through to the error response if local write also fails */
-      }
-    }
     // The GCS client surfaces cryptic auth/network errors (e.g. "Premature
     // close" when the OAuth token fetch to googleapis.com is dropped — usually
     // a proxy/firewall or a wrong system clock breaking TLS cert validation).

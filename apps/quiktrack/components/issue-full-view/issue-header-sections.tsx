@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { RichTextEditor } from "@/components/rich-text-editor-lazy";
 import { sanitizeRichText } from "@/lib/sanitize";
+import { DescriptionAttachments } from "@/components/description-attachments";
 import { uploadProjectImage } from "@/lib/upload-image";
 import type { MentionItem } from "@/components/editor/mention";
 import { SubtaskGrid } from "./subtask-grid";
@@ -263,14 +264,19 @@ export function IssueHeaderSections({
                 </div>
               </div>
             ) : issue.description ? (
-              <div
-                onClick={() => {
-                  setDescDraft(issue.description ?? "");
-                  setDescEditing(true);
-                }}
-                className="qt-rich-content text-sm text-gray-800 rounded p-2 -mx-2 cursor-text hover:bg-gray-50"
-                dangerouslySetInnerHTML={{ __html: sanitizeRichText(issue.description) }}
-              />
+              <>
+                <div
+                  onClick={() => {
+                    setDescDraft(issue.description ?? "");
+                    setDescEditing(true);
+                  }}
+                  className="qt-rich-content text-sm text-gray-800 rounded p-2 -mx-2 cursor-text hover:bg-gray-50"
+                  dangerouslySetInnerHTML={{ __html: sanitizeRichText(issue.description) }}
+                />
+                {/* Files/images embedded in the description, shown as cards
+                    (same AttachmentCard style as the imported Attachments). */}
+                <DescriptionAttachments html={issue.description} />
+              </>
             ) : (
               <button
                 type="button"

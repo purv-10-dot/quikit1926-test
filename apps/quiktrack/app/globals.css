@@ -952,6 +952,24 @@ html.dark .qt-rich-content hr { border-top-color: #262E3A !important; }
 
 /* Rich-text editor file-attachment chip (components/editor/file-attachment.tsx).
    Renders in both the editor and the read-only .qt-rich-content view. */
+/* In READ-ONLY description views (.prose / .qt-rich-content), hide the inline
+   file chips — those files are shown instead as rich cards by
+   DescriptionAttachments right below the description. The chips still render in
+   the TipTap editor (.ProseMirror) so authors see what they attached. Without
+   this the description would show BOTH the chips and the cards (duplicate). */
+.prose .qt-file-chip,
+.qt-rich-content .qt-file-chip {
+  display: none !important;
+}
+
+/* Inside the editor, the file attachment renders as a React NodeView card
+   (components/editor/file-attachment-view.tsx) matching the read-only card —
+   so no chip CSS is needed there. The rules below style the raw chip only in
+   fallback / non-editor contexts. */
+
+/* File attachment chip — compact inline label (fallback / non-editor contexts
+   that render the raw chip). Read-only description views hide it (rule above)
+   and show cards via DescriptionAttachments instead. */
 .qt-file-chip {
   display: inline-flex;
   align-items: center;

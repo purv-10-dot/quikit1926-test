@@ -1,6 +1,8 @@
 "use client";
 
 import { Node, mergeAttributes } from "@tiptap/core";
+import { ReactNodeViewRenderer } from "@tiptap/react";
+import { FileAttachmentView } from "./file-attachment-view";
 
 export interface FileAttachmentAttrs {
   href: string;
@@ -8,6 +10,8 @@ export interface FileAttachmentAttrs {
   mimeType?: string | null;
   /** Size in bytes. */
   size?: number | null;
+  /** ISO timestamp when the file was attached. */
+  uploadedAt?: string | null;
 }
 
 declare module "@tiptap/core" {
@@ -50,7 +54,14 @@ export const FileAttachment = Node.create({
       },
       fileName: {
         default: "file",
-        parseHTML: (el) => el.getAttribute("data-file-name") ?? el.textContent ?? "file",
+        parseHTML: (el) => {
+          const attr = el.getAttribute("data-file-name");
+          if (attr) return attr;
+          // Older chips: text label is "name · size" — take the name part.
+          const label = (el.textContent ?? "").trim();
+          if (label.includes(" · ")) return label.slice(0, label.lastIndexOf(" · ")).trim();
+          return label || "file";
+        },
         renderHTML: (attrs) => ({ "data-file-name": attrs.fileName ?? "file" }),
       },
       mimeType: {
@@ -68,11 +79,19 @@ export const FileAttachment = Node.create({
         renderHTML: (attrs) =>
           typeof attrs.size === "number" ? { "data-file-size": String(attrs.size) } : {},
       },
+      uploadedAt: {
+        default: null,
+        parseHTML: (el) => el.getAttribute("data-file-uploaded"),
+        renderHTML: (attrs) =>
+          attrs.uploadedAt ? { "data-file-uploaded": String(attrs.uploadedAt) } : {},
+      },
     };
   },
 
   parseHTML() {
-    return [{ tag: "a[data-file-name]" }];
+    // Match the newer `data-file-name` chips AND older `class="qt-file-chip"`
+    // chips (which have only href + a "name · size" text label).
+    return [{ tag: "a[data-file-name]" }, { tag: "a.qt-file-chip" }];
   },
 
   renderHTML({ HTMLAttributes, node }) {
@@ -86,6 +105,8 @@ export const FileAttachment = Node.create({
         download: name,
         target: "_blank",
         rel: "noopener noreferrer nofollow",
+        // Full filename on hover — the card face truncates long names.
+        title: name,
       }),
       label,
     ];
@@ -109,11 +130,23 @@ export const FileAttachment = Node.create({
                 fileName: attrs.fileName,
                 mimeType: attrs.mimeType ?? null,
                 size: attrs.size ?? null,
+                // Stamp the attach time so cards can show "uploaded at".
+                uploadedAt: attrs.uploadedAt ?? new Date().toISOString(),
               },
             })
             // Trailing space so the cursor lands after the chip, not inside it.
             .insertContent(" ")
             .run(),
     };
+  },
+
+  /**
+   * In-editor display only. parseHTML/renderHTML above are untouched, so the
+   * node still loads from the stored `<a data-file-*>` and serializes back to
+   * it — the NodeView just controls how it LOOKS while editing (a card matching
+   * the read-only AttachmentCard).
+   */
+  addNodeView() {
+    return ReactNodeViewRenderer(FileAttachmentView);
   },
 });
