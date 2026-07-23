@@ -15,6 +15,7 @@ export default async function DashboardPage() {
   }
 
   
+  
   const tenantId = session.user.orgId;
   const externalUserId = session.user.id;
 
