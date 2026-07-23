@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Plus,
   Layers,
@@ -46,9 +46,23 @@ export default function FixedAssetsPage() {
   const [tab, setTab] = useState<TabKey>("dashboard");
   const [createOpen, setCreateOpen] = useState(false);
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    setPage(1);
+    setSearch("");
+  }, [tab]);
+  useEffect(() => {
+    setPage(1);
+  }, [search, pageSize]);
+
+  const listParams = { search: search || undefined, page, pageSize };
+
   const { data: dashboard, isLoading: dashLoading } = useFixedAssetDashboard();
-  const { data: issuancesResult, isLoading: issuancesLoading } = useFixedAssetIssuances();
-  const { data: transfersResult, isLoading: transfersLoading } = useFixedAssetTransfers();
+  const { data: issuancesResult, isLoading: issuancesLoading } = useFixedAssetIssuances(listParams);
+  const { data: transfersResult, isLoading: transfersLoading } = useFixedAssetTransfers(listParams);
 
   const returnIssuance = useReturnFixedAssetIssuance();
   const patchTransfer = usePatchFixedAssetTransfer();
@@ -57,6 +71,18 @@ export default function FixedAssetsPage() {
   const byCategory = dashboard?.byCategory ?? [];
   const issuances = issuancesResult?.data ?? [];
   const transfers = transfersResult?.data ?? [];
+
+  const activeTotal =
+    (tab === "issuances" ? issuancesResult?.total : transfersResult?.total) ?? 0;
+  const serverPagerProps = {
+    serverMode: true as const,
+    serverTotal: activeTotal,
+    serverPage: page,
+    serverPageSize: pageSize,
+    onPageChange: setPage,
+    onPageSizeChange: setPageSize,
+    onSearchChange: setSearch,
+  };
 
   const primaryAction =
     tab === "issuances"
@@ -233,7 +259,7 @@ export default function FixedAssetsPage() {
               onClick={() => setTab(t.key)}
               className={`pb-3 text-sm font-medium border-b-2 transition-colors ${
                 tab === t.key
-                  ? "border-orange-500 text-orange-600"
+                  ? "border-accent-500 text-accent-600"
                   : "border-transparent text-slate-500 hover:text-slate-700"
               }`}
             >
@@ -275,10 +301,11 @@ export default function FixedAssetsPage() {
         {tab === "issuances" && (
           <DataTable
             id="fixed-asset-issuances"
-            columns={issuanceColumns}
+            columns={issuanceColumns.map((c) => ({ ...c, sortable: false }))}
             data={issuances}
             loading={issuancesLoading}
             fitToContent
+            {...serverPagerProps}
             emptyTitle="No issuances yet"
             emptyHint="Issue an asset to a user, department, or site."
           />
@@ -287,10 +314,11 @@ export default function FixedAssetsPage() {
         {tab === "transfers" && (
           <DataTable
             id="fixed-asset-transfers"
-            columns={transferColumns}
+            columns={transferColumns.map((c) => ({ ...c, sortable: false }))}
             data={transfers}
             loading={transfersLoading}
             fitToContent
+            {...serverPagerProps}
             emptyTitle="No transfers yet"
             emptyHint="Dispatch assets between project sites."
           />

@@ -69,12 +69,16 @@ export const PUT = auth.update<RouteParams>(async ({ orgId, userId }, request, {
   }
 }, { fallbackErrorMessage: "Failed to update category" });
 
-// DELETE /api/categories/[id] — delete a category
+// DELETE /api/categories/[id] — SOFT delete (moves the category to Trash). The
+// row is retained with a `deletedAt` tombstone so it can be restored; the list
+// endpoint hides it by default and surfaces it under the Trash view. Mirrors the
+// KPI/Priority/WWW soft-delete convention.
 export const DELETE = auth.delete<RouteParams>(async ({ orgId, userId }, _request, { params }) => {
   const existing = await db.categoryMaster.findFirst({ where: { id: params.id, orgId } });
   if (!existing) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+  if (existing.deletedAt != null) return NextResponse.json({ success: true, message: "Already deleted" });
 
-  await db.categoryMaster.delete({ where: { id: params.id } });
+  await db.categoryMaster.update({ where: { id: params.id }, data: { deletedAt: new Date() } });
 
   await writeAuditLog({
     orgId,

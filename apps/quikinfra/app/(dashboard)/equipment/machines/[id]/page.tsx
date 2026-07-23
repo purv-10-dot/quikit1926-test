@@ -280,7 +280,7 @@ export default function Machine360Page() {
               onClick={() => setTab(t.key)}
               className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
                 tab === t.key
-                  ? "border-orange-500 text-orange-600"
+                  ? "border-accent-500 text-accent-600"
                   : "border-transparent text-slate-500 hover:text-slate-700"
               }`}
             >
@@ -375,9 +375,9 @@ export default function Machine360Page() {
                 </div>
               </div>
             ))}
-            <div className="flex items-center justify-between bg-orange-50 px-5 py-4">
+            <div className="flex items-center justify-between bg-accent-50 px-5 py-4">
               <div className="font-semibold text-slate-900">Net Machine Cost</div>
-              <div className="tabular-nums text-xl font-bold text-orange-600">
+              <div className="tabular-nums text-xl font-bold text-accent-600">
                 {formatCurrency(costSheet.netMachineCost)}
               </div>
             </div>

@@ -8,6 +8,7 @@
  * a PM sees DPR / MR / PO L1 / Indent L2, etc.
  */
 
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -202,7 +203,7 @@ export default function ApprovalsInboxPage() {
                         <button
                           type="button"
                           onClick={() => router.push(it.href)}
-                          className="w-full px-5 py-3 hover:bg-orange-50/50 transition-colors flex items-center gap-4 text-left"
+                          className="w-full px-5 py-3 hover:bg-accent-50 transition-colors flex items-center gap-4 text-left"
                         >
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-0.5 flex-wrap">

@@ -16,7 +16,7 @@ import { useCurrentWeek, useCurrentQuarter, useWeekDateRange, useQuarterWeekCoun
 import { useNumberFormat } from "@/lib/hooks/useFeatureFlags";
 import { KPITable } from "./components/KPITable";
 import { KPIModal } from "./components/KPIModal";
-import { ALL_STATIC_COLS, COL_LABELS } from "./hooks/useTableColumns";
+import { ALL_STATIC_COLS, COL_LABELS, INDIVIDUAL_HIDDEN_COLS } from "./hooks/useTableColumns";
 import { weeksArray } from "@/lib/utils/fiscal";
 import { FilterPicker, userToFilterOption, EmptyState, FiscalPeriodPicker, type FiscalQuarter, type ExportSelection } from "@quikit/ui";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
@@ -220,6 +220,9 @@ export default function IndividualKPIPage() {
     ...weeksArray(weekCount).map((w) => ({ key: `week${w}`, label: `Week ${w}` })),
   ];
   const visibleColKeys = moduleColumns.filter((c) => !hiddenCols.has(c.key)).map((c) => c.key);
+  // Global Export defaults to EVERY column (not just grid-visible ones) so no
+  // field is silently dropped from the sheet; the user can still uncheck any.
+  const allColKeys = moduleColumns.map((c) => c.key);
 
   // Export handler — pulls rows per scope, formats via runExport
   const handleExport = useCallback(async (sel: ExportSelection) => {
@@ -516,7 +519,7 @@ export default function IndividualKPIPage() {
             clearSelectionTrigger={clearSelectionTrigger}
             onHiddenColsChange={handleHiddenColsChange}
             showColTrigger={showColTrigger}
-            hideColumns={["quarterlyGoal", "qtdGoal", "qtdAchieved", "weeklyGoal", "teamHead", "kpiOwner"]}
+            hideColumns={INDIVIDUAL_HIDDEN_COLS}
             canDelete={canDelete}
             canUpdate={canUpdate}
             numberFormat={numberFormat}
@@ -542,7 +545,7 @@ export default function IndividualKPIPage() {
         onClose={() => setGlobalExportOpen(false)}
         title="Export Individual KPI"
         columns={moduleColumns}
-        defaultCheckedKeys={visibleColKeys}
+        defaultCheckedKeys={allColKeys}
         rangeMode="quarter"
         quarterCtx={{ years: availableYears, defaultYear: currentYear, defaultQuarter: currentQuarter, formatYear: fiscalYearLabel }}
         onExport={handleGlobalExport}

@@ -93,7 +93,12 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
     ];
   }
 
-  const { orderBy } = parseSort(request, HUDDLE_SORT_WHITELIST, mapHuddleSort);
+  const { sortBy, orderBy: sortedOrderBy } = parseSort(request, HUDDLE_SORT_WHITELIST, mapHuddleSort);
+  // Manual (drag-to-reorder) mode when no column sort is chosen.
+  const orderBy: Prisma.ClientDailyHuddleOrderByWithRelationInput | Prisma.ClientDailyHuddleOrderByWithRelationInput[] =
+    sortBy === "__default"
+      ? [{ position: { sort: "asc", nulls: "first" } }, { createdAt: "desc" }]
+      : sortedOrderBy;
   const { page, limit, skip, take } = parsePagination(request);
   const [rows, total] = await Promise.all([
     db.clientDailyHuddle.findMany({

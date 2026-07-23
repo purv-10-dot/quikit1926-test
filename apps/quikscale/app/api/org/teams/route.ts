@@ -5,7 +5,7 @@ const withOrgAuth = withOrgAuthForModule("orgSetup.teams");
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { createTeamSchema } from "@/lib/schemas/teamSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
-import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
+import { rateLimitAsync, LIMITS } from "@/lib/api/rateLimit";
 
 // GET /api/org/teams — all teams with member count and head info.
 // Default: returns only active teams (deletedAt = null).
@@ -86,7 +86,7 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
 
 // POST /api/org/teams — create team
 export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
-  const rl = rateLimit({
+  const rl = await rateLimitAsync({
     routeKey: "team:create",
     clientKey: `${orgId}:${userId}`,
     limit: LIMITS.mutation.limit,

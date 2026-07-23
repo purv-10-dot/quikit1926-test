@@ -4,7 +4,7 @@ import {
   countCompanies,
   createCompany,
 } from "@/lib/masters/companies-repository";
-import { paginateDb } from "@/lib/http/pagination";
+import { paginateDb, parseSort } from "@/lib/http/pagination";
 import {
   withListRoute,
   withMutationRoute,
@@ -27,9 +27,14 @@ export async function GET(req: NextRequest) {
       createdBy: ctx.userId,
       search: searchParams.get("search") ?? "",
     };
+    const { orderBy } = parseSort(
+      searchParams,
+      ["name", "legalName", "gstin", "pan", "city", "state", "status", "createdAt"],
+      { field: "createdAt", order: "desc" },
+    );
     return paginateDb(
       pagination,
-      (paging) => listCompanies({ ...baseOpts, ...paging }),
+      (paging) => listCompanies({ ...baseOpts, ...paging, orderBy }),
       () => countCompanies(baseOpts),
     );
   });

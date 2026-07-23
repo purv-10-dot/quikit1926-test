@@ -147,15 +147,16 @@ model Org {
   cnCustomers              CnCustomer[]
   cnDepartments            CnDepartment[]
   cnDieselLogs             CnDieselLog[]
-  cnFinancialYears         CnFinancialYear[]
   cnGstCodes               CnGSTCode[]
   cnGatePasses             CnGatePass[]
   cnGoodReturns            CnGoodReturn[]
   cnGRNs                   CnGoodsReceiptNote[]
   cnHindrances             CnHindrance[]
-  cnInternalReturns        CnInternalReturn[]
   cnItems                  CnItem[]
   cnItemGroups             CnItemGroup[]
+  cnLabourCategories       CnLabourCategory[]
+  cnLabourRates            CnLabourRate[]
+  cnWorkmen                CnWorkman[]
   cnLocations              CnLocation[]
   cnMachinery              CnMachinery[]
   cnEquipmentLogs          CnEquipmentLog[]
@@ -652,6 +653,11 @@ model KPI {
   scaledDisplay      Boolean          @default(false)
   reverseColor       Boolean          @default(false)
   frequency          String           @default("weekly")
+  // Classification of the KPI's role in the metric chain: "Leading" (predictive,
+  // an input you can act on now) vs "Lagging" (outcome, measured after the fact).
+  // "NA" = unclassified (default). Plain string + app-level enum validation,
+  // matching every other KPI single-select (never a Prisma enum).
+  kpiType            String           @default("NA")
   // True when this KPI was created via the OPSP "Export → Create KPIs" flow.
   // Display-only (shown in the KPI grid); never edited from the Add/Edit form.
   importedFromOpsp   Boolean          @default(false)
@@ -672,7 +678,11 @@ model KPI {
   notes              KPINote[]
   weeklyValues       KPIWeeklyValue[]
 
+  // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
+  position           Float?
+
   @@index([orgId])
+  @@index([orgId, position])
   @@index([orgId, deletedAt])
   @@index([orgId, kpiLevel, deletedAt])
   @@index([owner])
@@ -838,7 +848,11 @@ model Priority {
   team             QsTeam?                @relation(fields: [teamId], references: [id])
   weeklyStatuses   PriorityWeeklyStatus[]
 
+  // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
+  position         Float?
+
   @@index([orgId])
+  @@index([orgId, position])
   @@index([orgId, deletedAt])
   @@index([orgId, year, quarter, deletedAt])
   @@index([owner])
@@ -888,7 +902,11 @@ model WWWItem {
   revisionLogs     WWWRevisionLog[]
   noteEntries      WWWNote[]
 
+  // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
+  position         Float?
+
   @@index([orgId])
+  @@index([orgId, position])
   @@index([who])
   @@index([when])
   @@index([status])
@@ -952,11 +970,19 @@ model CategoryMaster {
   /// Fill mode — "Manual" requires the user to enter every cell;
   /// "Automatic" lets `calculateBreakdown` distribute Projected across periods.
   breakdownType String   @default("Automatic")
+  /// Soft-delete tombstone. Null = active; set = in Trash (restorable). Mirrors
+  /// the KPI/Priority/WWW soft-delete convention.
+  deletedAt     DateTime?
+  /// Fractional manual sort position for drag-to-reorder. Null rows fall back to
+  /// createdAt ordering. Mirrors the reorderable-grid `position` convention.
+  position      Float?
   org           Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, nameKey, dataType, currency], name: "category_tenant_name_type_currency_uniq")
   @@index([orgId])
   @@index([dataType])
+  @@index([orgId, deletedAt])
+  @@index([orgId, position])
   @@schema("app_quikscale")
 }
 
@@ -972,10 +998,16 @@ model UnitMaster {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   createdBy   String
+  /// Soft-delete tombstone. Null = active; set = in Trash (restorable).
+  deletedAt   DateTime?
+  /// Fractional manual sort position for drag-to-reorder (null → createdAt order).
+  position    Float?
   org         Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, nameKey], name: "unit_tenant_name_uniq")
   @@index([orgId])
+  @@index([orgId, deletedAt])
+  @@index([orgId, position])
   @@schema("app_quikscale")
 }
 
@@ -1075,6 +1107,10 @@ model UserTablePreference {
   hiddenCols String?
   sort       String?
   colWidths  String?
+  // JSON-stringified string[] of column keys in the user's chosen drag-and-drop
+  // order. Null = default order. Unknown/removed keys are pruned and any new
+  // columns are appended in their default position at read time (forward-compat).
+  colOrder   String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1109,8 +1145,12 @@ model Client {
   teamMembers     ClientTeamMember[]
   weeklyMeetings  ClientWeeklyMeeting[]
 
+  // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
+  position        Float?
+
   @@unique([orgId, name])
   @@index([orgId])
+  @@index([orgId, position])
   @@index([orgId, isActive])
   @@index([deletedAt])
   @@schema("app_quikscale")
@@ -1175,7 +1215,11 @@ model ClientMember {
   weeklyDashboardNA ClientWeeklyMeetingTeamDashboardNA[]
   weeklyScores      ClientWeeklyMemberScore[]
 
+  // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
+  position          Float?
+
   @@index([orgId])
+  @@index([orgId, position])
   @@index([orgId, deletedAt])
   @@index([email])
   @@schema("app_quikscale")
@@ -1211,7 +1255,11 @@ model ClientDailyHuddle {
   absentMembers       ClientDailyHuddleAbsence[]
   absentTeamMembers   ClientDailyHuddleTeamAbsence[]
 
+  // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
+  position            Float?
+
   @@index([orgId])
+  @@index([orgId, position])
   @@index([orgId, deletedAt])
   @@index([clientId])
   @@index([meetingDate])
@@ -1297,7 +1345,11 @@ model ClientWeeklyMeeting {
   dashboardNATeamMembers ClientWeeklyMeetingTeamDashboardNA[]
   memberScores           ClientWeeklyMemberScore[]
 
+  // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
+  position               Float?
+
   @@index([orgId])
+  @@index([orgId, position])
   @@index([orgId, deletedAt])
   @@index([clientId])
   @@index([meetingDate])
@@ -2346,7 +2398,6 @@ model CnCompany {
   createdBy   String
   updatedBy   String
 
-  finYears CnFinancialYear[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -2506,7 +2557,6 @@ model CnUOM {
   materialIssueLines  CnMaterialIssueLine[]
   stockTransferLines  CnStockTransferLine[]
   reconciliationLines CnStockReconciliationLine[]
-  internalReturnLines CnInternalReturnLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -2514,6 +2564,101 @@ model CnUOM {
   @@unique([orgId, code])
   @@index([orgId])
   @@map("Uoms")
+  @@schema("app_quikinfra")
+}
+
+// ============================================================================
+// LABOUR MASTERS (Section 1)
+// Category + Rate are separate tables (one category has many dated rates).
+// Workman references category/contractor by plain FK id (repository-scoped).
+// ============================================================================
+
+model CnLabourCategory {
+  id           String   @id @default(cuid())
+  orgId        String
+  code         String // e.g. MASON-SK — immutable after create (enforced in repo)
+  name         String
+  skillLevel   String // UNSKILLED | SEMI_SKILLED | SKILLED | HIGHLY_SKILLED
+  trade        String? // free-text family: Masonry, Shuttering, Rebar
+  defaultUomId String? // FK CnUOM (usually DAY)
+  description  String?
+  status       String   @default("active")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  createdBy    String
+  updatedBy    String
+
+  // --- grafted: cross-schema relations (Org/User) ---
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, code])
+  @@index([orgId])
+  @@map("Labour_categories")
+  @@schema("app_quikinfra")
+}
+
+model CnLabourRate {
+  id               String    @id @default(cuid())
+  orgId            String
+  labourCategoryId String // FK CnLabourCategory
+  projectId        String? // FK CnProject; null = tenant-wide default
+  rateType         String // DAILY_WAGE | HOURLY_WAGE
+  rate             Decimal   @db.Decimal(18, 2)
+  effectiveFrom    DateTime  @db.Date
+  effectiveTo      DateTime? @db.Date // null = open-ended
+  approvalStatus   String    @default("DRAFT") // DRAFT | PENDING | APPROVED | REJECTED
+  approvalId       String? // in-flight CnApprovalInstance
+  status           String    @default("active")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  createdBy        String
+  updatedBy        String
+
+  // --- grafted: cross-schema relations (Org/User) ---
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([orgId, labourCategoryId, projectId, effectiveFrom])
+  @@map("Labour_rates")
+  @@schema("app_quikinfra")
+}
+
+model CnWorkman {
+  id                  String    @id @default(cuid())
+  orgId               String
+  workmanCode         String // auto WM-<seq>, tenant-unique
+  fullName            String
+  fatherOrSpouse      String?
+  gender              String? // M | F | O
+  dateOfBirth         DateTime? @db.Date
+  phone               String?
+  photoFileId         String? // CnFileObject (entityType = "workman")
+  idProofType         String? // AADHAAR | VOTER_ID | DL | OTHER
+  idProofLast4        String? // store ONLY last 4 chars; never the full number
+  labourCategoryId    String // FK CnLabourCategory
+  engagementType      String // CONTRACTOR | DEPARTMENTAL
+  contractorId        String? // required when engagementType = CONTRACTOR
+  dailyWage           Decimal?  @db.Decimal(18, 2) // override; else resolve CnLabourRate
+  bankAccountLast4    String?
+  ifsc                String?
+  joiningDate         DateTime? @db.Date
+  exitDate            DateTime? @db.Date
+  projectIds          String[] // projects the workman is inducted to
+  safetyInductionDone Boolean   @default(false)
+  status              String    @default("active")
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  createdBy           String
+  updatedBy           String
+
+  // --- grafted: cross-schema relations (Org/User) ---
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, workmanCode])
+  @@index([orgId])
+  @@index([orgId, labourCategoryId])
+  @@index([orgId, contractorId])
+  @@map("Workmen")
   @@schema("app_quikinfra")
 }
 
@@ -2575,7 +2720,6 @@ model CnItem {
   materialIssueLines  CnMaterialIssueLine[]
   stockTransferLines  CnStockTransferLine[]
   reconciliationLines CnStockReconciliationLine[]
-  internalReturnLines CnInternalReturnLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -2685,7 +2829,6 @@ model CnLocation {
   transfersFrom   CnStockTransfer[]       @relation("StockTransferFrom")
   transfersTo     CnStockTransfer[]       @relation("StockTransferTo")
   reconciliations CnStockReconciliation[]
-  internalReturns CnInternalReturn[]
   dieselLogs      CnDieselLog[]
 
   // --- grafted: cross-schema relations (Org/User) ---
@@ -2771,29 +2914,6 @@ model CnTermsCondition {
   @@schema("app_quikinfra")
 }
 
-model CnFinancialYear {
-  id        String   @id @default(cuid())
-  orgId     String
-  companyId String
-  label     String
-  startDate DateTime
-  endDate   DateTime
-  isCurrent Boolean  @default(false)
-  status    String   @default("active")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  createdBy String
-  updatedBy String
-
-  company CnCompany @relation(fields: [companyId], references: [id])
-
-  // --- grafted: cross-schema relations (Org/User) ---
-  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  @@index([orgId])
-  @@map("Financial_years")
-  @@schema("app_quikinfra")
-}
 
 model CnProject {
   id               String    @id @default(cuid())
@@ -2827,7 +2947,6 @@ model CnProject {
   costCenters                CnCostCenter[]
   machinery                  CnMachinery[]
   assets                     CnAsset[]
-  boqItems                   CnBOQItem[]
   purchaseReqs               CnPurchaseRequisition[]
   indents                    CnPurchaseIndent[]
   pos                        CnPurchaseOrder[]
@@ -2852,7 +2971,6 @@ model CnProject {
   fixedAssetTransactionsTo   CnFixedAssetTransaction[] @relation("FaTxnDestination")
   gatePasses                 CnGatePass[]
   goodReturns                CnGoodReturn[]
-  internalReturns            CnInternalReturn[]
   boqRev2Items               CnBOQItemV2[]
   boqImportBatches           CnBOQImportBatch[]
   boqLockState               CnBOQLockState?
@@ -3477,7 +3595,6 @@ model CnGRNLine {
   amount            Decimal @db.Decimal(18, 2)
   qualityStatus     String  @default("pending") // pending | accepted | rejected | conditional
   batchNo           String?
-  heatNo            String?
   condition         String?
   testCertRef       String?
   shortDeliveryNote String?
@@ -3584,7 +3701,6 @@ model CnMaterialIssue {
   project         CnProject             @relation(fields: [projectId], references: [id])
   location        CnLocation?           @relation(fields: [locationId], references: [id])
   lines           CnMaterialIssueLine[]
-  internalReturns CnInternalReturn[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -3828,52 +3944,7 @@ model CnGoodReturnLine {
   @@schema("app_quikinfra")
 }
 
-model CnInternalReturn {
-  id           String   @id @default(cuid())
-  orgId        String
-  returnNumber String
-  projectId    String
-  locationId   String
-  returnedById String
-  issueId      String?
-  returnDate   DateTime
-  status       String   @default("draft")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  createdBy    String
-  updatedBy    String
 
-  project  CnProject              @relation(fields: [projectId], references: [id])
-  issue    CnMaterialIssue?       @relation(fields: [issueId], references: [id])
-  location CnLocation             @relation(fields: [locationId], references: [id])
-  lines    CnInternalReturnLine[]
-
-  // --- grafted: cross-schema relations (Org/User) ---
-  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  @@unique([orgId, returnNumber])
-  @@index([orgId])
-  @@map("Internal_returns")
-  @@schema("app_quikinfra")
-}
-
-model CnInternalReturnLine {
-  id          String  @id @default(cuid())
-  returnId    String
-  itemId      String
-  returnedQty Decimal @db.Decimal(18, 4)
-  uomId       String
-  condition   String?
-  remarks     String?
-
-  internalReturn CnInternalReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
-  item           CnItem           @relation(fields: [itemId], references: [id])
-  uom            CnUOM            @relation(fields: [uomId], references: [id])
-
-  @@index([returnId])
-  @@map("Internal_return_lines")
-  @@schema("app_quikinfra")
-}
 
 model CnStockTransfer {
   id                     String    @id @default(cuid())
@@ -4053,43 +4124,6 @@ model CnDieselLog {
   @@schema("app_quikinfra")
 }
 
-model CnBOQItem {
-  id              String   @id @default(cuid())
-  orgId           String
-  projectId       String
-  parentId        String?
-  depth           Int      @default(0)
-  sortOrder       Int      @default(0)
-  isLeaf          Boolean  @default(true)
-  category        String? // Civil | Electrical | Road | Non-SOR
-  itemCode        String?
-  description     String
-  uomId           String?
-  quantity        Decimal? @db.Decimal(18, 4)
-  contractRate    Decimal? @db.Decimal(18, 2)
-  workingRate     Decimal? @db.Decimal(18, 2)
-  contractAmount  Decimal? @db.Decimal(18, 2)
-  workingAmount   Decimal? @db.Decimal(18, 2)
-  executedQty     Decimal  @default(0) @db.Decimal(18, 4)
-  executedAmount  Decimal  @default(0) @db.Decimal(18, 2)
-  progressPercent Decimal  @default(0) @db.Decimal(5, 2)
-  status          String   @default("active")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  createdBy       String
-  updatedBy       String
-
-  project  CnProject   @relation(fields: [projectId], references: [id])
-  parent   CnBOQItem?  @relation("BOQHierarchy", fields: [parentId], references: [id])
-  children CnBOQItem[] @relation("BOQHierarchy")
-
-  @@index([orgId])
-  @@index([projectId])
-  @@index([parentId])
-  @@map("Boq_items")
-  @@schema("app_quikinfra")
-}
-
 model CnHindrance {
   id                   String    @id @default(cuid())
   orgId                String
@@ -4174,13 +4208,11 @@ model CnWorkOrderLine {
   amount         Decimal @db.Decimal(18, 2)
 
   // Labour-only work order fields (null for "boq" lines)
-  lineDate       DateTime?
-  activityName   String?
-  workCategoryId String?
-
-  // Labour-only manpower counts — array of { type, count }, one per selected
-  // trade. JSON so new trades never require a schema change.
-  labourCounts Json?
+  lineDate         DateTime?
+  activityName     String?
+  workCategoryId   String?
+  labourCategoryId String? // FK CnLabourCategory — labour day-rate lines
+  labourCount      Decimal? @db.Decimal(18, 4) // workers on this line; amount = count × days(quantity) × rate
 
   workOrder CnWorkOrder @relation(fields: [woId], references: [id], onDelete: Cascade)
 
@@ -4688,6 +4720,7 @@ model CnDPRWorkItem {
   todayQty      Decimal  @db.Decimal(18, 4)
   cumulativeQty Decimal  @db.Decimal(18, 4)
   uomId         String
+  location      String?
   remarks       String?
   images        String[] @default([])
 
@@ -5134,6 +5167,7 @@ model CnBOQProgressLedger {
   qty            Decimal  @db.Decimal(18, 4)
   direction      Int // +1 for apply, -1 for reverse
   workType       String // "sub_contractor" | "self"
+  workOrderId    String? // labour WO this progress was executed under (labour RAB link)
   dprId          String?
   dprLineId      String?
   overrideFlag   Boolean  @default(false)
@@ -5145,6 +5179,7 @@ model CnBOQProgressLedger {
   @@index([projectId, boqNo])
   @@index([boqItemId])
   @@index([dprId])
+  @@index([workOrderId])
   @@index([createdAt])
   @@map("Boq_progress_ledger")
   @@schema("app_quikinfra")

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
@@ -47,9 +47,30 @@ export default function HindrancePage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { canAdd } = useMenuActions("/projects/hindrance");
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("dateFrom");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
+  useEffect(() => {
+    setPage(1);
+  }, [activeTab, search, sortBy, sortOrder, pageSize]);
+
   const { data: result, isLoading } = useQuery({
-    queryKey: ["projects-hindrance"],
-    queryFn: () => fetch(`/api/projects/hindrance`).then(r => r.json()),
+    queryKey: ["projects-hindrance", { activeTab, page, pageSize, search, sortBy, sortOrder }],
+    queryFn: () => {
+      const qs = new URLSearchParams({
+        page: String(page),
+        pageSize: String(pageSize),
+        sortBy,
+        sortOrder,
+      });
+      if (activeTab !== "all") qs.set("status", activeTab);
+      if (search) qs.set("search", search);
+      return fetch(`/api/projects/hindrance?${qs.toString()}`).then((r) => r.json());
+    },
+    placeholderData: (prev) => prev,
   });
 
   const { data: projectsData } = useProjects();
@@ -58,11 +79,11 @@ export default function HindrancePage() {
     (projectsData?.data ?? []).map((p) => [p.id, p.name]),
   );
 
-  const allData = ((result?.data ?? []) as unknown as HindranceRow[]).map((r) => ({
+  const data = ((result?.data ?? []) as unknown as HindranceRow[]).map((r) => ({
     ...r,
     projectName: r.projectName ?? (r.projectId ? projectNameById.get(r.projectId) ?? "" : ""),
   }));
-  const data = activeTab === "all" ? allData : allData.filter((r) => r.status === activeTab);
+  const total: number = result?.total ?? 0;
 
   const config = {
     title: "Report Hindrance",
@@ -105,7 +126,7 @@ export default function HindrancePage() {
 
   const columns: ColDef<HindranceRow>[] = [
     { key: "hindranceNo", label: "Hindrance No", sortable: true, searchable: true },
-    { key: "projectName", label: "Project", sortable: true, searchable: true },
+    { key: "projectName", label: "Project", sortable: false, searchable: true },
     { key: "dateFrom", label: "Date From", type: "date", sortable: true },
     { key: "dateTo", label: "Date To", type: "date", render: (row) => row.dateTo || "Ongoing" },
     { key: "daysLost", label: "Days Lost", type: "number", sortable: true },
@@ -117,7 +138,7 @@ export default function HindrancePage() {
         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700">{row.category}</span>
       ),
     },
-    { key: "description", label: "Description", searchable: true },
+    { key: "description", label: "Description", sortable: false, searchable: true },
     {
       key: "status", label: "Status", type: "select",
       options: ["Active", "Resolved"],
@@ -139,6 +160,18 @@ export default function HindrancePage() {
           id="projects-hindrance"
           columns={columns}
           data={data}
+          loading={isLoading}
+          serverMode
+          serverTotal={total}
+          serverPage={page}
+          serverPageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          onSearchChange={setSearch}
+          onSortChange={(key, dir) => {
+            setSortBy(key);
+            setSortOrder(dir);
+          }}
           onAdd={canAdd ? () => setDrawerOpen(true) : undefined}
           addLabel="Report Hindrance"
         />

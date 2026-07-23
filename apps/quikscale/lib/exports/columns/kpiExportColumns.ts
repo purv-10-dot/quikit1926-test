@@ -21,6 +21,8 @@ export interface KpiExportRow {
   teamName: string;
   teamHeadName: string;
   measurementUnit: string | null;
+  kpiType: string | null;
+  divisionType: string | null;
   /** Currency-display metadata so numeric columns render exactly like the KPI
    *  module's `formatScaledKpiValue` (₹4 Cr / $9 M / 795.6K / "16 lb"). */
   currency: string | null;
@@ -45,6 +47,8 @@ export interface KpiExportRow {
   weekMap: Record<number, number | null>;
   /** weekNumber → the week's target (drives the traffic-light color). */
   weekTargetMap: Record<number, number>;
+  /** weekNumber → that week's note (drives the Excel hover comment). */
+  weekNoteMap: Record<number, string>;
   /** KPI reverse-color flag (lower-is-better). */
   reverseColor: boolean;
 }
@@ -55,6 +59,13 @@ export interface KpiExportColumn {
   value: (row: KpiExportRow) => Cell;
   /** Optional cell fill (ARGB) — used by the weekly traffic-light columns. */
   fill?: (row: KpiExportRow) => string | undefined;
+  /** Optional Excel hover comment — used by the notes-bearing columns. */
+  note?: (row: KpiExportRow) => string | undefined;
+}
+
+/** True once any weekly value is entered — gates the traffic-light color, same as the grid. */
+function hasAnyWeeklyValue(row: KpiExportRow): boolean {
+  return Object.values(row.weekMap).some((v) => v != null);
 }
 
 function fmtDate(d: Date | null): string {
@@ -92,14 +103,24 @@ const STATIC_COLUMNS: KpiExportColumn[] = [
   { key: "teamHead", label: "Team Head", value: (r) => r.teamHeadName },
   { key: "kpiOwner", label: "KPI Owner", value: (r) => r.ownerName },
   { key: "measurementUnit", label: "Measurement Unit", value: (r) => r.measurementUnit ?? "" },
+  { key: "kpiType", label: "KPI Type", value: (r) => (r.kpiType && r.kpiType !== "NA" ? r.kpiType : "") },
+  { key: "divisionType", label: "Division Type", value: (r) => r.divisionType ?? "" },
   { key: "targetValue", label: "Target Value", value: (r) => fmtVal(r, r.target) },
   { key: "quarterlyGoal", label: "Quarterly Goal", value: (r) => fmtVal(r, r.quarterlyGoal) },
   { key: "qtdGoal", label: "QTD Goal", value: (r) => fmtVal(r, r.qtdGoal) },
   // QTD Achieved shows "0" (not blank) when null — matches the module's cell.
-  { key: "qtdAchieved", label: "QTD Achieved", value: (r) => fmtVal(r, r.qtdAchieved ?? 0) },
+  // Fill mirrors the grid's traffic-light: QTD achieved vs QTD goal (falling
+  // back to target), colored only once a weekly value is entered.
+  {
+    key: "qtdAchieved",
+    label: "QTD Achieved",
+    value: (r) => fmtVal(r, r.qtdAchieved ?? 0),
+    fill: (r) => kpiWeekArgb(r.qtdAchieved ?? 0, r.qtdGoal ?? r.target ?? 0, hasAnyWeeklyValue(r), r.reverseColor),
+  },
   { key: "weeklyGoal", label: "Weekly Goal", value: (r) => fmtVal(r, r.weeklyGoal) },
   { key: "description", label: "Description", value: (r) => r.description ?? "" },
-  { key: "lastNotes", label: "Last Notes", value: (r) => r.lastNotes ?? "" },
+  // Value = latest weekly note (resolved server-side), also surfaced as a hover comment.
+  { key: "lastNotes", label: "Last Notes", value: (r) => r.lastNotes ?? "", note: (r) => r.lastNotes || undefined },
   { key: "importedFromOpsp", label: "Imported from OPSP", value: (r) => (r.importedFromOpsp ? "Yes" : "No") },
   { key: "createdBy", label: "Created By", value: (r) => r.createdByName },
   { key: "updatedBy", label: "Updated By", value: (r) => r.updatedByName },
@@ -120,6 +141,16 @@ export function kpiWeekColumns(weeks: number[]): KpiExportColumn[] {
       const updated = raw != null;
       const value = typeof raw === "number" ? raw : 0;
       return kpiWeekArgb(value, r.weekTargetMap[w] ?? 0, updated, r.reverseColor);
+    },
+    // Excel hover comment mirroring the grid's week-cell tooltip: "Total
+    // achieved: <value>" plus the week's note when present. Only cells with an
+    // entered value get a comment (blank weeks stay blank, like the grid).
+    note: (r: KpiExportRow) => {
+      const raw = r.weekMap[w];
+      const note = r.weekNoteMap[w];
+      if (raw == null) return note || undefined; // no value: only comment if a note exists
+      const achieved = `Total achieved: ${fmtVal(r, raw)}`;
+      return note ? `${achieved}\n${note}` : achieved;
     },
   }));
 }

@@ -45,14 +45,27 @@ function parseWidths(json: string | null | undefined): Record<string, number> {
   }
 }
 
+// Column order is a JSON-stringified string[]. Same defensive parse as
+// hiddenCols — malformed / legacy-null rows come back as [] (default order).
+function parseOrder(json: string | null | undefined): string[] {
+  if (!json) return [];
+  try {
+    const arr = JSON.parse(json);
+    return Array.isArray(arr) ? arr.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 interface TablePrefShape {
   frozenCol: string | null;
   hiddenCols: string[];
   sort: string | null;
   colWidths: Record<string, number>;
+  colOrder: string[];
 }
 
-const EMPTY: TablePrefShape = { frozenCol: null, hiddenCols: [], sort: null, colWidths: {} };
+const EMPTY: TablePrefShape = { frozenCol: null, hiddenCols: [], sort: null, colWidths: {}, colOrder: [] };
 
 // GET /api/settings/table-preferences — returns one entry per supported table
 // key. Tables the user hasn't customized yet come back as EMPTY defaults so
@@ -66,6 +79,7 @@ export const GET = withOrgAuth(async ({ userId, orgId }) => {
       hiddenCols: true,
       sort: true,
       colWidths: true,
+      colOrder: true,
     },
   });
 
@@ -76,6 +90,7 @@ export const GET = withOrgAuth(async ({ userId, orgId }) => {
       hiddenCols: parseHidden(r.hiddenCols),
       sort: r.sort,
       colWidths: parseWidths(r.colWidths),
+      colOrder: parseOrder(r.colOrder),
     });
   }
 
@@ -94,7 +109,7 @@ export const PATCH = withOrgAuth(async ({ userId, orgId }, request) => {
   const parsed = updateTablePreferencesSchema.safeParse(body);
   if (!parsed.success) return validationError(parsed);
 
-  const { table, frozenCol, hiddenCols, sort, colWidths } = parsed.data;
+  const { table, frozenCol, hiddenCols, sort, colWidths, colOrder } = parsed.data;
 
   // Build a partial update payload — only fields explicitly present.
   const updateData: Record<string, string | null> = {};
@@ -105,6 +120,9 @@ export const PATCH = withOrgAuth(async ({ userId, orgId }, request) => {
   if (sort !== undefined) updateData.sort = sort;
   if (colWidths !== undefined) {
     updateData.colWidths = colWidths ? JSON.stringify(colWidths) : null;
+  }
+  if (colOrder !== undefined) {
+    updateData.colOrder = colOrder ? JSON.stringify(colOrder) : null;
   }
 
   // On first touch for this (user, org, table) the row doesn't exist yet —
@@ -124,11 +142,12 @@ export const PATCH = withOrgAuth(async ({ userId, orgId }, request) => {
       hiddenCols: hiddenCols ? JSON.stringify(hiddenCols) : null,
       sort: sort ?? null,
       colWidths: colWidths ? JSON.stringify(colWidths) : null,
+      colOrder: colOrder ? JSON.stringify(colOrder) : null,
     },
   });
 
   return NextResponse.json({
     success: true,
-    data: { table, frozenCol, hiddenCols, sort, colWidths },
+    data: { table, frozenCol, hiddenCols, sort, colWidths, colOrder },
   });
 }, { fallbackErrorMessage: "Failed to update preferences" });

@@ -50,17 +50,25 @@ export interface ListTDSOptions {
   /** Pagination — passed straight through to Prisma findMany. */
   take?: number;
   skip?: number;
+  /** Status view. Omit for legacy picker behavior (all non-deleted). */
+  status?: "active" | "inactive" | "all";
+  /** Server-side sort (from `parseSort`). Defaults to the repo default. */
+  orderBy?: Array<Record<string, "asc" | "desc">>;
 }
 
 function buildTDSCodesWhere(
-  opts: Pick<ListTDSOptions, "orgId" | "search">,
+  opts: Pick<ListTDSOptions, "orgId" | "search" | "status">,
 ): Record<string, unknown> {
   const q = (opts.search ?? "").trim();
   return {
     orgId: opts.orgId,
     // "deleted" rows are removed from the UI entirely; "inactive" rows are
     // still returned so they can show under the Inactive tab.
-    status: { not: "deleted" },
+    ...(opts.status === "inactive"
+      ? { status: "inactive" }
+      : opts.status === "active"
+        ? { status: { notIn: ["inactive", "deleted"] } }
+        : { status: { not: "deleted" } }),
     ...(q
       ? {
           OR: [
@@ -75,7 +83,7 @@ function buildTDSCodesWhere(
 export async function listTDSCodes(opts: ListTDSOptions): Promise<TDSCodeRecord[]> {
   const rows = await db.cnTDSCode.findMany({
     where: buildTDSCodesWhere(opts),
-    orderBy: { createdAt: "desc" },
+    orderBy: opts.orderBy ?? { createdAt: "desc" },
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
   });
@@ -83,7 +91,7 @@ export async function listTDSCodes(opts: ListTDSOptions): Promise<TDSCodeRecord[
 }
 
 export async function countTDSCodes(
-  opts: Pick<ListTDSOptions, "orgId" | "search">,
+  opts: Pick<ListTDSOptions, "orgId" | "search" | "status">,
 ): Promise<number> {
   return db.cnTDSCode.count({ where: buildTDSCodesWhere(opts) });
 }

@@ -17,7 +17,7 @@ export default function DashboardError({ error, reset }: { error: Error & { dige
           <div className="flex-1 min-w-0">
             <h2 className="text-sm font-semibold text-red-900">Something broke on this page</h2>
             <p className="text-xs text-red-800 mt-1 break-words">{error.message}</p>
-            {error.digest && <p className="text-[10px] text-red-600 font-mono mt-1">ref: {error.digest}</p>}
+            {error.digest && <p className="text-[10px] text-red-600 mt-1">ref: {error.digest}</p>}
           </div>
         </div>
         <div className="mt-4 flex gap-2">

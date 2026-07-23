@@ -250,7 +250,7 @@ export function JobCardForm({ embedded = false, onSaved, onCancel }: Props) {
           <button
             type="button"
             onClick={() => setSpares((prev) => [...prev, emptySpare()])}
-            className="inline-flex items-center gap-1 text-sm font-medium text-orange-600 hover:text-orange-700"
+            className="inline-flex items-center gap-1 text-sm font-medium text-accent-600 hover:text-accent-700"
           >
             <Plus className="w-4 h-4" />
             Add spare

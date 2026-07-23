@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useCreatePriority } from "@/lib/hooks/usePriority";
+import { useCreatePriorityMulti } from "@/lib/hooks/usePriority";
 import { useInfiniteUsers } from "@/lib/hooks/useInfiniteUsers";
 import { fiscalYearLabel, ALL_QUARTERS, getFiscalYear, getWeekDateRange, weeksArray } from "@/lib/utils/fiscal";
 import { useTeams } from "@/lib/hooks/useTeams";
-import { UserPicker, RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton, DropdownPicker } from "@quikit/ui";
+import { validatePriorityForm } from "@/lib/utils/priorityFormValidation";
+import { UserSelect, RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton, DropdownPicker } from "@quikit/ui";
 import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
 import { TeamSelect } from "./TeamSelect";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
@@ -28,7 +29,8 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
   const [form, setForm] = useState({
     name: "",
     description: "",
-    owner: "",
+    // Multi-owner: the server fans out one Priority row per selected owner.
+    ownerIds: [] as string[],
     teamId: "",
     quarter: defaultQuarter ?? "Q1",
     year: String(defaultYear ?? CURRENT_YEAR),
@@ -75,11 +77,11 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
   // Owner dropdown filtering:
   //   - Team selected → fetch members of that team (API filters server-side).
   //   - No team → fetch all tenant users so the Owner picker is never empty.
-  // When user changes team, we clear `form.owner` if they're not in the
-  // new team's member list (handled in handleTeamChange).
+  // When user changes team, we clear the selected owners (handled in
+  // handleTeamChange) since they may not belong to the new team.
   // Owner picker — DB-level infinite (25/page) + server search, team-aware.
-  // This modal is create-only (owner starts empty), so no selected-owner seed
-  // is needed; the picked owner is always in the loaded set.
+  // This modal is create-only (owners start empty), so no selected-owner seed
+  // is needed; the picked owners are always in the loaded/seen set.
   const [ownerSearch, setOwnerSearch] = useState("");
   const {
     users,
@@ -89,11 +91,16 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
     fetchNextPage: fetchMoreOwners,
   } = useInfiniteUsers(form.teamId || undefined, ownerSearch);
   const { data: teams = [] } = useTeams();
-  const createPriority = useCreatePriority();
+  const createPriority = useCreatePriorityMulti();
 
   function set(key: string, val: string) {
     setForm(f => ({ ...f, [key]: val }));
     setErrors(e => { const n = { ...e }; delete n[key]; return n; });
+  }
+
+  function setOwners(ids: string[]) {
+    setForm(f => ({ ...f, ownerIds: ids }));
+    setErrors(e => { const n = { ...e }; delete n.ownerIds; return n; });
   }
 
   // Start Week change auto-bumps End Week if it would become invalid (< startWeek).
@@ -108,49 +115,53 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
     setErrors(e => { const n = { ...e }; delete n.startWeek; delete n.endWeek; return n; });
   }
 
-  // Custom handler for team changes — clears owner if the current owner
-  // isn't in the new team's members. Empty team = no filtering, keep owner.
+  // Custom handler for team changes — clears the selected owners since they may
+  // not belong to the new team. Empty team = no filtering, keep the selection.
   function handleTeamChange(newTeamId: string) {
     setForm(f => {
-      // If no team selected or owner is blank, just update team
-      if (!newTeamId || !f.owner) return { ...f, teamId: newTeamId };
-      // Owner may or may not be in the new team — we won't know until the
-      // next useUsers query resolves. Clear defensively; user re-picks.
-      return { ...f, teamId: newTeamId, owner: "" };
+      // If no team selected or nothing picked yet, just update team.
+      if (!newTeamId || f.ownerIds.length === 0) return { ...f, teamId: newTeamId };
+      // Owners may or may not be in the new team — we won't know until the next
+      // useInfiniteUsers query resolves. Clear defensively; the user re-picks.
+      return { ...f, teamId: newTeamId, ownerIds: [] };
     });
-    setErrors(e => { const n = { ...e }; delete n.teamId; delete n.owner; return n; });
-  }
-
-  function validate() {
-    const errs: Record<string, string> = {};
-    if (!form.name.trim()) errs.name = "Priority name is required";
-    if (!form.owner) errs.owner = "Owner is required";
-    if (!form.quarter) errs.quarter = "Quarter is required";
-    if (!form.startWeek) errs.startWeek = "Start week is required";
-    if (!form.endWeek) errs.endWeek = "End week is required";
-    const sw = parseInt(form.startWeek);
-    const ew = parseInt(form.endWeek);
-    if (sw && ew && sw > ew) errs.endWeek = "End week must be >= start week";
-    return errs;
+    setErrors(e => { const n = { ...e }; delete n.teamId; delete n.ownerIds; return n; });
   }
 
   async function handleSubmit() {
-    const errs = validate();
+    const errs = validatePriorityForm({
+      name: form.name,
+      ownerIds: form.ownerIds,
+      quarter: form.quarter,
+      startWeek: form.startWeek,
+      endWeek: form.endWeek,
+    });
     if (Object.keys(errs).length) { setErrors(errs); return; }
     setSaving(true);
     try {
-      await createPriority.mutateAsync({
+      const result = await createPriority.mutateAsync({
         name: form.name.trim(),
         description: form.description || undefined,
-        owner: form.owner,
+        ownerIds: form.ownerIds,
         teamId: form.teamId || undefined,
         quarter: form.quarter,
         year: parseInt(form.year),
         startWeek: parseInt(form.startWeek),
         endWeek: parseInt(form.endWeek),
         overallStatus: PRIORITY_DEFAULT_STATUS,
-      } as any);
-      notify.saved("Priority", "created");
+      });
+      // Report the fan-out result: N created, and any skipped as duplicates.
+      const { created, skipped } = result;
+      if (skipped > 0) {
+        notify.success(
+          `Created ${created} ${created === 1 ? "priority" : "priorities"}`,
+          { description: `${skipped} skipped — an identical priority already exists for that owner.` },
+        );
+      } else if (created > 1) {
+        notify.success(`Created ${created} priorities`);
+      } else {
+        notify.saved("Priority", "created");
+      }
       onSuccess();
     } catch (err: unknown) {
       setErrors({ _: humanizeApiError(err, { context: "Priority", fallback: "Couldn't save the Priority. Please try again." }) });
@@ -224,18 +235,20 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 Owner <span className="text-red-500">*</span>
               </label>
-              <UserPicker
-                value={form.owner}
-                onChange={v => set("owner", v)}
+              <UserSelect
+                mode="multi"
+                values={form.ownerIds}
+                onChange={setOwners}
                 users={users}
+                placeholder="Select owner(s)…"
                 onSearchChange={setOwnerSearch}
                 onLoadMore={fetchMoreOwners}
                 hasMore={ownersHasMore}
                 loadingMore={ownersLoadingMore}
                 loading={ownersLoading}
-                error={!!errors.owner}
+                error={!!errors.ownerIds}
               />
-              {errors.owner && <p className="text-[10px] text-red-500 mt-0.5">{errors.owner}</p>}
+              {errors.ownerIds && <p className="text-[10px] text-red-500 mt-0.5">{errors.ownerIds}</p>}
             </div>
           </div>
 

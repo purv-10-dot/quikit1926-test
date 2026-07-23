@@ -361,7 +361,15 @@ export default function RegisterPage() {
         {/* ── Right form panel ── */}
         <main className="auth-main">
           <div className="auth-main-top">
-            <a href="/" className="auth-logo" aria-label={BRAND_NAME}>{BRAND_NAME}</a>
+            <a href="/" className="auth-logo" aria-label={BRAND_NAME}>
+              {/* Theme-aware QuikIT lockup: dark UI → light (white) logo, light UI → dark logo. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={theme === "dark" ? "/brand/quikit-wordmark-light.svg" : "/brand/quikit-wordmark-dark.svg"}
+                alt={BRAND_NAME}
+                style={{ height: 24, width: "auto", display: "block" }}
+              />
+            </a>
             <div className="auth-main-top-right">
               <a href="/login" className="auth-top-link">Sign in</a>
               <button type="button" className="auth-theme"

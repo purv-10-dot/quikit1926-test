@@ -152,7 +152,7 @@ function ScaleButton({
       onClick={onClick}
       className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-semibold border transition-colors ${
         active
-          ? "bg-orange-50 border-orange-300 text-orange-700"
+          ? "bg-accent-50 border-accent-300 text-accent-700"
           : "bg-white border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50"
       }`}
     >

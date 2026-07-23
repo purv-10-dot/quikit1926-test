@@ -322,6 +322,44 @@ export function weeklyGoalFor(
 }
 
 /**
+ * The Stats-drawer "Weekly Goal" tile: the LAST COMPLETED week's
+ * `{ week, value, target }`, or `null` when no week has completed yet.
+ *
+ * The completed week is derived from the QTD *reference* week (`qtdWeek`),
+ * NOT the clamped display week. `qtdReferenceWeek` returns `weekCount + 1`
+ * for a fully-past quarter, so `qtdWeek - 1` is:
+ *   - past quarter   → the final week `weekCount` (all weeks are complete)
+ *   - current quarter → `currentWeek - 1` (this week is still in progress)
+ *   - future / not started (`qtdWeek <= 1`) → null
+ *
+ * Using the clamped display week here was the bug: a finished quarter clamps
+ * `useCurrentWeek` to its last week, and subtracting 1 dropped that final
+ * week (e.g. showed Week 12 instead of Week 13). See StatsTab.
+ *
+ * `target` matches the tile's prior math: the explicit `weeklyTargets[week]`
+ * when a per-week breakdown exists, else the flat `target / weeksPerQuarter`
+ * split (0 when there is no quarterly target).
+ */
+export function weeklyGoalTile(
+  kpi: KPIRow,
+  qtdWeek: number | null,
+  weeksPerQuarter: number = DEFAULT_WEEKS_PER_QUARTER,
+): { week: number; value: number | null; target: number } | null {
+  const week = qtdWeek != null && qtdWeek > 1 ? qtdWeek - 1 : null;
+  if (week == null) return null;
+
+  const value = (kpi.weeklyValues ?? []).find((v) => v.weekNumber === week)?.value ?? null;
+
+  const raw = kpi.weeklyTargets?.[String(week)];
+  const flat = kpi.target && kpi.target > 0 ? kpi.target / weeksPerQuarter : 0;
+  // Use the saved per-week target as-is (including an explicit 0); fall back to
+  // the flat average only when no per-week breakdown exists (undefined).
+  const target = typeof raw === "number" ? raw : flat;
+
+  return { week, value, target };
+}
+
+/**
  * Aggregated stat bundle for the KPI EXPORT — the four numeric columns that were
  * previously dumped straight from the stored DB aggregates (`kpi.qtdGoal`,
  * `kpi.qtdAchieved`, `kpi.progressPercent`) and so disagreed with the KPI table

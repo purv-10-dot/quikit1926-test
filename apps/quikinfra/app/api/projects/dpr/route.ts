@@ -6,9 +6,10 @@ import { Prisma } from "@quikit/database";
 import { BOQError } from "@/lib/boq";
 import { tenantCreate, hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
-import { parsePagination } from "@/lib/http/pagination";
+import { parsePagination, parseSort } from "@/lib/http/pagination";
 import { parseStoredWeatherDetail } from "@/lib/weather/dpr-weather";
 import { canActOnCurrentStep } from "@/lib/approvals/workflow-rbac";
+import { resolveMaterialMeta } from "@/lib/projects/dpr-material-meta";
 import { persistDprImages } from "@/lib/dpr/dpr-images";
 
 /**
@@ -42,6 +43,7 @@ interface DprWorkItemRow {
   todayQty?: Numericish;
   cumulativeQty?: Numericish;
   uomId?: string | null;
+  location?: string | null;
   remarks?: string | null;
 }
 interface DprLabourRow {
@@ -108,12 +110,15 @@ interface DprRow {
 interface DprBodyWorkItem {
   boqItemId?: string;
   boqNo?: string;
+  // Contractor/WO selector: the form sends `workOrderId`; accept `woId` too.
+  workOrderId?: string | null;
   woId?: string | null;
   description?: string;
   todayQty?: number | string;
   qty?: number | string;
   cumulativeQty?: number | string;
   uomId?: string;
+  location?: string | null;
   remarks?: string | null;
   images?: unknown;
   imageKeys?: unknown;
@@ -183,6 +188,10 @@ function enrichDPR(
   row: DprRow,
   project?: DprProject,
   boqNoById?: Map<string, string>,
+  matMeta?: {
+    itemNameById: Map<string, string>;
+    uomCodeById: Map<string, string>;
+  },
 ) {
   const workItems = (row.workItems ?? []).map((w: DprWorkItemRow) => ({
     id: w.id,
@@ -193,6 +202,7 @@ function enrichDPR(
     todayQty: w.todayQty?.toString?.() ?? "0",
     cumulativeQty: w.cumulativeQty?.toString?.() ?? "0",
     uomId: w.uomId ?? "",
+    location: w.location ?? "",
     remarks: w.remarks ?? "",
   }));
   const labour = (row.labourEntries ?? []).map((l: DprLabourRow) => ({
@@ -224,8 +234,10 @@ function enrichDPR(
   const materials = (row.materialEntries ?? []).map((m: DprMaterialRow) => ({
     id: m.id,
     itemId: m.itemId ?? "",
+    itemName: matMeta?.itemNameById.get(m.itemId ?? "") ?? "",
     consumedQty: m.consumedQty?.toString?.() ?? "0",
     uomId: m.uomId ?? "",
+    uomCode: matMeta?.uomCodeById.get(m.uomId ?? "") ?? "",
     remarks: m.remarks ?? null,
   }));
 
@@ -282,7 +294,58 @@ export async function GET(req: NextRequest) {
   where.status = { not: "inactive" };
   if (status && status !== "all") where.status = status;
   if (projectId) where.projectId = projectId;
+  // Push search into the DB so it stays correct under pagination (the old
+  // in-memory filter dropped matches once take/skip were applied).
+  const q = search.trim();
+  if (q) {
+    where.OR = [
+      { dprNumber: { contains: q, mode: "insensitive" } },
+      { remarks: { contains: q, mode: "insensitive" } },
+      { project: { is: { name: { contains: q, mode: "insensitive" } } } },
+    ];
+  }
 
+  // KPI tiles (Total / Approved / Pending / Halted) over the filtered set,
+  // ignoring any specific status filter so the tiles reflect all statuses.
+  if (searchParams.get("stats") === "1") {
+    const statsWhere: Record<string, unknown> = { ...where, status: { not: "inactive" } };
+    const groups = await db.cnDailyProgressReport.groupBy({
+      by: ["status"],
+      where: statsWhere,
+      _count: { _all: true },
+    });
+    // `workHalted` isn't persisted in the current schema (enrichDPR always
+    // returns false), so the Halted tile is always 0 — mirror that here.
+    const halted = 0;
+    let total = 0;
+    let approved = 0;
+    let pending = 0;
+    for (const g of groups) {
+      const c = g._count._all;
+      total += c;
+      if (g.status === "approved") approved += c;
+      if (g.status === "submitted" || g.status === "approved_l1") pending += c;
+    }
+    return NextResponse.json({ stats: { total, approved, pending, halted } });
+  }
+
+  // Date-range filter (calendar view fetches one month at a time instead of
+  // pulling every DPR). Applied after the stats block so KPI tiles stay
+  // scope-wide, not month-scoped.
+  const fromDate = searchParams.get("fromDate") ?? "";
+  const toDate = searchParams.get("toDate") ?? "";
+  if (fromDate || toDate) {
+    const range: Record<string, Date> = {};
+    if (fromDate) range.gte = new Date(fromDate);
+    if (toDate) range.lte = new Date(`${toDate}T23:59:59.999Z`);
+    where.reportDate = range;
+  }
+
+  const { orderBy } = parseSort(
+    searchParams,
+    ["dprNumber", "reportDate", "status", "createdAt"],
+    { field: "reportDate", order: "desc" },
+  );
   const p = parsePagination(req);
   const rows = await db.cnDailyProgressReport.findMany({
     where,
@@ -293,7 +356,7 @@ export async function GET(req: NextRequest) {
       machineryEntries: true,
       materialEntries: true,
     },
-    orderBy: [{ reportDate: "desc" }, { createdAt: "desc" }],
+    orderBy,
     ...(p.paginated ? { take: p.take, skip: p.skip } : {}),
   });
 
@@ -320,7 +383,15 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  let data = rows.map((r) => enrichDPR(r, r.project, boqNoById));
+  // Batch-resolve material item names + uom codes across every DPR's
+  // material entries (denormalized onto each material line for the UI).
+  const matMeta = await resolveMaterialMeta(
+    ctx.orgId,
+    rows.flatMap((r) => (r.materialEntries ?? []).map((m) => m.itemId)),
+    rows.flatMap((r) => (r.materialEntries ?? []).map((m) => m.uomId)),
+  );
+
+  let data = rows.map((r) => enrichDPR(r, r.project, boqNoById, matMeta));
 
   // Per-row Approve/Reject visibility — driven by the workflow's current
   // step, not the caller's role. Batch-load every pending instance + its
@@ -356,20 +427,14 @@ export async function GET(req: NextRequest) {
     };
   });
 
-  if (search) {
-    data = data.filter((d) =>
-      [d.dprNumber, d.projectName, d.siteRemarks]
-        .some((v) => typeof v === "string" && v.toLowerCase().includes(search))
-    );
-  }
-
   if (p.paginated) {
+    const total = await db.cnDailyProgressReport.count({ where });
     return NextResponse.json({
       data,
-      total: data.length,
+      total,
       page: p.page,
       pageSize: p.pageSize,
-      hasMore: data.length === p.pageSize,
+      hasMore: p.skip + data.length < total,
     });
   }
   return NextResponse.json({ data, total: data.length });
@@ -459,11 +524,12 @@ export async function POST(req: NextRequest) {
         workItems: {
           create: workItems.map((w: DprBodyWorkItem, i: number) => ({
             boqItemId: String(w.boqItemId ?? w.boqNo ?? ""),
-            woId: w.woId ?? null,
+            woId: w.workOrderId ?? w.woId ?? null,
             description: String(w.description ?? ""),
             todayQty: String(Number(w.todayQty ?? w.qty ?? 0)),
             cumulativeQty: String(Number(w.cumulativeQty ?? w.todayQty ?? w.qty ?? 0)),
             uomId: String(w.uomId ?? ""),
+            location: w.location ?? null,
             remarks: w.remarks ?? null,
             images: workItemImageKeys[i] ?? [],
           })),
