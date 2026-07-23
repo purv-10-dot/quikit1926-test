@@ -8,7 +8,6 @@ import { Modal } from "@/components/hrms/modal";
 import { useToast } from "@/components/hrms/toast";
 import { Plus, Home, Calendar, Clock, CheckCircle2, XCircle, MessageSquare, X, Trash2, Briefcase, ListChecks } from "lucide-react";
 import { clsx } from "clsx";
-import { WfhTabs } from "../_components/wfh-tabs";
 import { PageHeader } from "@/components/hrms/ui/page-header";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 
@@ -121,7 +120,6 @@ export default function MyWfhPage() {
           </>
         }
       />
-      <div className="mb-5"><WfhTabs /></div>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
         <StatCard label="Total" value={stats.total} icon={<Home size={18} />} color="blue" />

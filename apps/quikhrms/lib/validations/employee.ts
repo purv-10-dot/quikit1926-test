@@ -152,6 +152,7 @@ const employeeBaseSchema = z.object({
   confirmationDate: z.string().optional(),
   probationEndDate: z.string().optional(),
   noticePeriodDays: z.number().int().default(0),
+  noticePeriodId: z.string().nullish(),
   previousExperience: z.number().int().default(0),
   sourceOfHire: z.enum(["Referral", "JobPortal", "LinkedIn", "Agency", "Campus", "Direct", "Other"]).optional(),
   referredById: z.string().optional(),

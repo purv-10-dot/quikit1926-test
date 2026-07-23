@@ -4,7 +4,6 @@ import { withAuth } from "@/lib/with-auth";
 import { successResponse, notFound, validationError, conflict, internalError, errorResponse } from "@/lib/api-response";
 import { ErrorCode } from "@/lib/types/api";
 import { generateEmployeeCode } from "@/lib/utils/employee-code";
-import { seedDefaultOnboardingTasks } from "@/lib/utils/default-onboarding-tasks";
 import { createAuditLog } from "@/lib/utils/audit";
 
 /**
@@ -176,7 +175,8 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
         },
       });
 
-      // Create onboarding instance + default task checklist.
+      // Create an empty onboarding instance — no system-default checklist. Tasks
+      // are added from a template or manually on the onboarding page.
       const startDate = new Date();
       const onboarding = await tx.onboardingInstance.create({
         data: {
@@ -188,10 +188,44 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
           updatedBy: userId,
         },
       });
-      await seedDefaultOnboardingTasks(tx, orgId, onboarding.id, startDate);
+      void onboarding; void startDate;
 
       return emp;
     });
+
+    // Copy the candidate's approved recruitment documents into the new
+    // employee's central Documents vault (best-effort — never block onboarding).
+    try {
+      const reqs = await prisma.candidateDocumentRequest.findMany({
+        where: { orgId, applicationId: application.id, deletedAt: null, status: { not: "Cancelled" } },
+        select: {
+          uploads: {
+            where: { deletedAt: null, status: "Approved" },
+            select: { fileUrl: true, fileName: true, fileSize: true, customLabel: true, documentType: { select: { name: true } } },
+          },
+        },
+      });
+      const uploads = reqs.flatMap((r) => r.uploads);
+      if (uploads.length) {
+        await prisma.document.createMany({
+          data: uploads.map((u) => ({
+            orgId,
+            employeeId: employee.id,
+            title: u.documentType?.name ?? u.customLabel ?? u.fileName ?? "Recruitment document",
+            category: "Other" as const,
+            fileUrl: u.fileUrl,
+            fileType: "application/octet-stream",
+            fileSize: u.fileSize ?? 0,
+            status: "Active" as const,
+            uploadedBy: userId,
+            createdBy: userId,
+            updatedBy: userId,
+          })),
+        });
+      }
+    } catch (e) {
+      console.error("copy recruitment docs to vault failed:", e);
+    }
 
     if (force) {
       // Loud audit trail — force-onboards bypass the doc-approval gate.

@@ -2,7 +2,6 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, notFound, internalError } from "@/lib/api-response";
-import { seedDefaultOnboardingTasks } from "@/lib/utils/default-onboarding-tasks";
 
 export const GET = withAuth(async (_req: NextRequest, { orgId, userId }, params) => {
   try {
@@ -33,7 +32,8 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId }, params)
           updatedBy: userId,
         },
       });
-      await seedDefaultOnboardingTasks(prisma, orgId, created.id, startDate);
+      // No system-default tasks — the checklist comes from a template or is added
+      // manually. A self-healed instance starts empty.
 
       instance = await prisma.onboardingInstance.findFirst({
         where: { id: created.id },

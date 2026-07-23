@@ -7,7 +7,6 @@ import { Modal } from "@/components/hrms/modal";
 import { useToast } from "@/components/hrms/toast";
 import { Home, Calendar, CheckCircle2, X as XIcon, Inbox, User } from "lucide-react";
 import { clsx } from "clsx";
-import { WfhTabs } from "../_components/wfh-tabs";
 import { PageHeader } from "@/components/hrms/ui/page-header";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 
@@ -94,7 +93,6 @@ export default function WfhTeamPage() {
           </>
         }
       />
-      <div className="mb-5"><WfhTabs /></div>
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         {isLoading ? (

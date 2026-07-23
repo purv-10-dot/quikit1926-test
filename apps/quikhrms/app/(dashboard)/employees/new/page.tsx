@@ -48,6 +48,10 @@ interface Department { id: string; name: string; }
 interface Designation { id: string; title: string; }
 interface Location { id: string; name: string; }
 interface Employee { id: string; firstName: string; lastName: string; }
+
+type NoticePeriodOption = { id: string; name: string; duration: number; unit: "Days" | "Weeks" | "Months" };
+/** Convert a configured notice period to whole days (same math as offboarding). */
+const periodToDays = (p: NoticePeriodOption) => p.unit === "Months" ? p.duration * 30 : p.unit === "Weeks" ? p.duration * 7 : p.duration;
 interface Role { id: string; code: string; name: string; }
 interface SalaryTemplate { id: string; name: string; code: string; }
 
@@ -166,6 +170,7 @@ function NewEmployeePageInner() {
     workLocation: "Office" as WorkLocation,
     dateOfJoining: "",
     noticePeriodDays: null as number | null,
+    noticePeriodId: "" as string,
     previousExperience: null as number | null,
     status: "Active" as EmployeeStatus,
     bankName: "",
@@ -238,6 +243,8 @@ function NewEmployeePageInner() {
   const { data: desigs } = useDesignations();
   const { data: locs } = useLocations();
   const { data: managers } = useQuery({ queryKey: ["employees-mgrs"], queryFn: () => api.get<Employee[]>("/api/v1/hrms/employees?limit=100") });
+  const { data: noticePeriodsData } = useQuery({ queryKey: ["notice-periods", "all"], queryFn: () => api.get<NoticePeriodOption[]>("/api/v1/hrms/offboarding/notice-periods?limit=100") });
+  const noticePeriods = noticePeriodsData?.data ?? [];
   const { data: roles } = useRoles();
   const { data: salaryTemplates, isLoading: salaryTemplatesLoading } = useSalaryTemplates();
   const noSalaryTemplates = !salaryTemplatesLoading && (salaryTemplates?.data?.length ?? 0) === 0;
@@ -302,9 +309,14 @@ function NewEmployeePageInner() {
     }
     // Emergency-contact number: any filled row's Contact Number must be 10 digits.
     for (const ec of form.emergencyContacts) {
-      const filled = ec.name.trim() || ec.relationship.trim() || ec.phone.trim();
+      const filled = ec.name.trim() || ec.relationship.trim() || ec.phone.trim() || ec.email.trim();
       if (filled && phoneDigits(ec.phone).length !== 10) {
         toast.error("Invalid contact number", "Emergency contact number must be exactly 10 digits.");
+        scrollToStep("contact");
+        return;
+      }
+      if (ec.email.trim() && !emailPattern.test(ec.email.trim())) {
+        toast.error("Invalid contact email", "Emergency contact email is invalid.");
         scrollToStep("contact");
         return;
       }
@@ -321,6 +333,11 @@ function NewEmployeePageInner() {
     }
     if (!form.reportingManagerId) {
       toast.error("Reporting Manager required", "Pick a manager in Employment step.");
+      scrollToStep("employment");
+      return;
+    }
+    if (!form.noticePeriodId) {
+      toast.error("Notice Period required", "Select a notice period in Employment step.");
       scrollToStep("employment");
       return;
     }
@@ -439,6 +456,7 @@ function NewEmployeePageInner() {
       employmentType: form.employmentType,
       workLocation: form.workLocation,
       dateOfJoining: form.dateOfJoining,
+      noticePeriodId: form.noticePeriodId || undefined,
       noticePeriodDays: form.noticePeriodDays ?? undefined,
       previousExperience: form.previousExperience ?? undefined,
       status: form.status,
@@ -940,8 +958,16 @@ function NewEmployeePageInner() {
                     options={WORK_LOCS.map((w) => ({ value: w, label: w }))}
                   />
                 </Field>
-                <Field label="Notice Period (days)">
-                  <NumberInput allowDecimal={false} value={form.noticePeriodDays} onChange={(v) => setForm({ ...form, noticePeriodDays: v })} className={inputCls} />
+                <Field label="Notice Period" required>
+                  <Select
+                    value={form.noticePeriodId}
+                    onChange={(v) => {
+                      const p = noticePeriods.find((n) => n.id === v);
+                      setForm({ ...form, noticePeriodId: v, noticePeriodDays: p ? periodToDays(p) : null });
+                    }}
+                    placeholder={noticePeriods.length ? "Select notice period" : "No notice periods — add in Offboarding"}
+                    options={noticePeriods.map((n) => ({ value: n.id, label: `${n.name} (${n.duration} ${n.unit})` }))}
+                  />
                 </Field>
                 <Field label="Previous Experience (months)">
                   <NumberInput allowDecimal={false} value={form.previousExperience} onChange={(v) => setForm({ ...form, previousExperience: v })} className={inputCls} />
@@ -1324,6 +1350,22 @@ function AddressBlock({
   onChange: (key: keyof Address, v: string) => void;
   required?: boolean;
 }) {
+  const api = useApiClient();
+  // Enter a 6-digit PIN → auto-fill City / State / Country from India Post.
+  const onPin = (raw: string) => {
+    const pin = raw.replace(/\D/g, "").slice(0, 6);
+    onChange("postalCode", pin);
+    if (pin.length !== 6) return;
+    api.get<{ city: string; state: string; country: string }>(`/api/v1/hrms/util/pincode?pin=${pin}`)
+      .then((res) => {
+        const d = res.data;
+        if (!d) return;
+        onChange("city", d.city);
+        onChange("state", d.state);
+        onChange("country", d.country === "India" ? "IN" : d.country || "IN");
+      })
+      .catch(() => { /* leave fields as-is on lookup failure */ });
+  };
   // When `required`, show labels with a red asterisk on the mandatory fields.
   const Lbl = ({ text, star }: { text: string; star?: boolean }) =>
     required ? (
@@ -1362,7 +1404,7 @@ function AddressBlock({
       </div>
       <div className="col-span-2">
         <Lbl text="Postal Code" star />
-        <FormInput placeholder="Postal Code" value={value.postalCode} onChange={(e) => onChange("postalCode", e.target.value)} />
+        <FormInput placeholder="6-digit PIN — auto-fills city/state" inputMode="numeric" maxLength={6} value={value.postalCode} onChange={(e) => onPin(e.target.value)} />
       </div>
     </div>
   );

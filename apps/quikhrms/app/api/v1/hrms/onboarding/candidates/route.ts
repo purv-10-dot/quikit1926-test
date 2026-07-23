@@ -105,6 +105,7 @@ const addCandidateSchema = z.object({
 type TaskTpl = {
   title: string; description?: string; assigneeRole: string;
   dueInDays: number; category: string; isMandatory: boolean; sortOrder: number;
+  stepType?: string; config?: Record<string, unknown> | null;
 };
 
 export const GET = withAuth(async (req: NextRequest, { orgId }) => {
@@ -239,6 +240,25 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     });
     if (!role) return validationError("Selected role not found.");
 
+    // Validate salary structure + onboarding template BEFORE creating anything,
+    // so a validation failure can never leave an orphan employee behind (the
+    // create steps below are not a single transaction).
+    const structure = await prisma.salaryStructure.findFirst({
+      where: { id: d.salaryTemplateId, orgId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!structure) return validationError("Salary template not found");
+
+    let templateTasks: TaskTpl[] = [];
+    let resolvedTemplateId: string | null = null;
+    if (!d.saveDraft) {
+      if (!d.templateId) return validationError("An onboarding template is required. Pick a template, or use Save Draft to add tasks later.");
+      const template = await prisma.onboardingTemplate.findFirst({ where: { id: d.templateId, orgId, deletedAt: null } });
+      if (!template) return validationError("Onboarding template not found");
+      templateTasks = (template.tasks as unknown as TaskTpl[]) ?? [];
+      resolvedTemplateId = template.id;
+    }
+
     const employeeCode = await generateEmployeeCode(orgId);
     const joining = d.dateOfJoining || d.tentativeJoiningDate || new Date().toISOString();
     const startDate = new Date(joining);
@@ -297,14 +317,8 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       });
     }
 
-    // Salary assignment — always created (required on submit).
-    const structure = await prisma.salaryStructure.findFirst({
-      where: { id: d.salaryTemplateId, orgId, deletedAt: null },
-      select: { id: true },
-    });
-    if (!structure) {
-      return validationError("Salary template not found");
-    }
+    // Salary assignment — always created (required on submit). Structure was
+    // validated up-front.
     await prisma.employeeSalary.create({
       data: {
         orgId,
@@ -319,28 +333,6 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     });
 
     if (!d.saveDraft) {
-      let tasks: TaskTpl[] = [];
-      let resolvedTemplateId: string | null = null;
-      if (d.templateId) {
-        const template = await prisma.onboardingTemplate.findFirst({
-          where: { id: d.templateId, orgId, deletedAt: null },
-        });
-        if (template) {
-          tasks = template.tasks as unknown as TaskTpl[];
-          resolvedTemplateId = template.id;
-        }
-      }
-
-      if (tasks.length === 0) {
-        tasks = [
-          { title: "Upload ID proof (PAN/Aadhaar)", assigneeRole: "EmployeeRole", dueInDays: 2, category: "Documentation", isMandatory: true, sortOrder: 1 },
-          { title: "Sign offer letter", assigneeRole: "EmployeeRole", dueInDays: 3, category: "Documentation", isMandatory: true, sortOrder: 2 },
-          { title: "Provision email + SSO", assigneeRole: "ITRole", dueInDays: 1, category: "ItSetup", isMandatory: true, sortOrder: 3 },
-          { title: "Issue laptop", assigneeRole: "ITRole", dueInDays: 1, category: "ItSetup", isMandatory: true, sortOrder: 4 },
-          { title: "Orientation session", assigneeRole: "HRRole", dueInDays: 1, category: "Introduction", isMandatory: true, sortOrder: 5 },
-        ];
-      }
-
       const instance = await prisma.onboardingInstance.create({
         data: {
           orgId,
@@ -351,7 +343,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
           createdBy: userId,
           updatedBy: userId,
           tasks: {
-            create: tasks.map((t, idx) => ({
+            create: templateTasks.map((t, idx) => ({
               orgId,
               title: t.title,
               description: t.description,
@@ -360,6 +352,8 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
               dueDate: addDays(startDate, t.dueInDays ?? 7),
               isMandatory: t.isMandatory ?? true,
               sortOrder: t.sortOrder ?? idx,
+              stepType: t.stepType ?? null,
+              config: (t.config ?? undefined) as never,
             })),
           },
         },

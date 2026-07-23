@@ -89,4 +89,4 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     console.error("GET /offboarding/attrition error:", error);
     return internalError();
   }
-}, { requiredPermissions: ["hrms.employee.read", "hrms.offboarding.read"], anyPermission: true });
+}, { requiredPermissions: ["hrms.offboarding.attrition.read"] });

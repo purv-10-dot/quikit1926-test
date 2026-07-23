@@ -7,7 +7,7 @@ import { Modal } from "@/components/hrms/modal";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import {
   Calendar, ChevronLeft, ChevronRight, Play, Pause, List, LayoutGrid,
-  Filter, CalendarDays,
+  CalendarDays,
   Clock4, LogIn, LogOut, Eye, X,
 } from "lucide-react";
 import { clsx } from "clsx";
@@ -231,7 +231,6 @@ function AttendanceSummary() {
               </button>
             </Tooltip>
           </div>
-          <button className="p-2 surface-card hover:bg-gray-50"><Filter size={12} className="text-gray-600" /></button>
           <ExcelExportButton filename="attendance" sheetName="Attendance" columns={ATTENDANCE_EXPORT_COLUMNS} rows={exportRows} label="Excel" />
         </div>
       </div>

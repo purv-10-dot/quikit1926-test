@@ -50,9 +50,38 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
         confirmationDate: confirmDate,
         status: employee.status === "PreBoarding" ? "Active" : employee.status,
         ...(data.revisedDesignation ? { jobTitle: data.revisedDesignation } : {}),
+        ...(data.nextReviewDate ? { nextReviewDate: new Date(data.nextReviewDate) } : {}),
         updatedBy: userId,
       },
     });
+
+    // Apply the revised CTC to payroll: close the current active salary and
+    // open a new active revision effective from the confirmation date.
+    if (data.revisedCTC != null) {
+      const current = await prisma.employeeSalary.findFirst({
+        where: { orgId, employeeId: employee.id, isActive: true, deletedAt: null },
+        orderBy: { effectiveFrom: "desc" },
+      });
+      if (current) {
+        await prisma.employeeSalary.update({
+          where: { id: current.id },
+          data: { isActive: false, effectiveTo: confirmDate, updatedBy: userId },
+        });
+      }
+      await prisma.employeeSalary.create({
+        data: {
+          orgId,
+          employeeId: employee.id,
+          structureId: current?.structureId ?? null,
+          ctc: data.revisedCTC,
+          effectiveFrom: confirmDate,
+          isActive: true,
+          revisionReason: "Confirmation — salary revision",
+          createdBy: userId,
+          updatedBy: userId,
+        },
+      });
+    }
 
     // Log EmploymentHistory
     await prisma.employmentHistory.create({

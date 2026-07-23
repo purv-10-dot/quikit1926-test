@@ -40,7 +40,7 @@ export const POST = withAuth(async (req: NextRequest, ctx, params) => {
       return conflict(`This resignation is not pending approval (status: ${instance.resignationApprovalStatus ?? "n/a"}).`);
     }
 
-    const isHr = permissions.includes("*") || permissions.includes("hrms.offboarding.write");
+    const isHr = permissions.includes("*") || permissions.includes("hrms.offboarding.write") || permissions.includes("hrms.offboarding.approve");
     const callerEmployeeId = await resolveEmployeeId(orgId, userId);
     const isApprover = !!callerEmployeeId && callerEmployeeId === instance.resignationApproverId;
     if (!isHr && !isApprover) {
@@ -50,6 +50,24 @@ export const POST = withAuth(async (req: NextRequest, ctx, params) => {
     const now = new Date();
 
     if (action === "approve") {
+      // The approver may set/adjust the notice period at approval time; if so,
+      // recompute the last working date and sync it to the employee record.
+      let newLwd: Date | null = null;
+      const noticePeriodId = body?.noticePeriodId ? String(body.noticePeriodId) : null;
+      if (noticePeriodId) {
+        const np = await prisma.noticePeriod.findFirst({
+          where: { id: noticePeriodId, orgId, deletedAt: null },
+          select: { id: true, duration: true, unit: true },
+        });
+        if (!np) return validationError("Invalid notice period");
+        const days = periodToDays(np);
+        newLwd = new Date(instance.resignationDate);
+        newLwd.setDate(newLwd.getDate() + days);
+        await prisma.employee.update({
+          where: { id: instance.employeeId },
+          data: { noticePeriodId: np.id, noticePeriodDays: days, lastWorkingDate: newLwd, updatedBy: userId },
+        }).catch(() => null);
+      }
       const updated = await prisma.offboardingInstance.update({
         where: { id: instance.id },
         data: {
@@ -57,6 +75,7 @@ export const POST = withAuth(async (req: NextRequest, ctx, params) => {
           resignationDecisionById: callerEmployeeId ?? userId,
           resignationDecisionAt: now,
           resignationRejectionReason: null,
+          ...(newLwd ? { lastWorkingDate: newLwd } : {}),
           updatedBy: userId,
         },
       });
@@ -100,6 +119,11 @@ export const POST = withAuth(async (req: NextRequest, ctx, params) => {
     return internalError();
   }
 });
+
+/** Convert a linked notice period to whole days (same math as the forms). */
+function periodToDays(p: { duration: number; unit: string }): number {
+  return p.unit === "Months" ? p.duration * 30 : p.unit === "Weeks" ? p.duration * 7 : p.duration;
+}
 
 async function notifyEmployee(
   orgId: string, employeeId: string, title: string, message: string,

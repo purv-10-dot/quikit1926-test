@@ -10493,7 +10493,9 @@ model Employee {
   tentativeJoiningDate DateTime?      @db.Date
   confirmationDate     DateTime?
   probationEndDate     DateTime?
+  nextReviewDate       DateTime?      @db.Date
   noticePeriodDays     Int            @default(0)
+  noticePeriodId       String?
   lastWorkingDate      DateTime?
   previousExperience   Int            @default(0) // months
   sourceOfHire         SourceOfHire?
@@ -10563,6 +10565,7 @@ model Employee {
   // Relations
   department        Department?     @relation("EmployeeDepartment", fields: [departmentId], references: [id])
   team              HrmsTeam?       @relation("EmployeeTeam", fields: [teamId], references: [id])
+  noticePeriodRef   NoticePeriod?   @relation("EmployeeNoticePeriod", fields: [noticePeriodId], references: [id])
   designation       Designation?    @relation("EmployeeDesignation", fields: [designationId], references: [id])
   grade             Grade?          @relation("EmployeeGrade", fields: [gradeId], references: [id])
   officeLocation    OfficeLocation? @relation("EmployeeOfficeLocation", fields: [officeLocationId], references: [id])
@@ -12988,6 +12991,14 @@ enum OffboardingReason {
   @@schema("app_quikhrms")
 }
 
+enum NoticePeriodUnit {
+  Days
+  Weeks
+  Months
+
+  @@schema("app_quikhrms")
+}
+
 enum OffboardingTaskCategory {
   AssetReturn
   AccessRevoke
@@ -13079,6 +13090,12 @@ model OnboardingTask {
   notes        String?
   sortOrder    Int                    @default(0)
   isMandatory  Boolean                @default(true)
+
+  // Workflow step type (e.g. SendEmail, Approval, DocumentUpload) + its
+  // type-specific settings, carried from the onboarding template so the tracker
+  // can render type-aware actions. Null = a plain task.
+  stepType String?
+  config   Json?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -13184,11 +13201,58 @@ enum ResignationApprovalStatus {
   @@schema("app_quikhrms")
 }
 
+model NoticePeriod {
+  id          String           @id @default(cuid())
+  orgId       String
+  name        String
+  description String?
+  duration    Int              @default(0)
+  unit        NoticePeriodUnit @default(Days)
+  createdBy   String?
+  updatedBy   String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  deletedAt   DateTime?
+
+  offboardingInstances OffboardingInstance[]
+  employees            Employee[]            @relation("EmployeeNoticePeriod")
+
+  @@index([orgId])
+  @@index([orgId, deletedAt])
+  @@schema("app_quikhrms")
+}
+
+model OffboardingTemplate {
+  id    String @id @default(cuid())
+  orgId String
+
+  name          String
+  description   String?
+  departmentId  String?
+  designationId String?
+  tasks         Json
+  isActive      Boolean @default(true)
+
+  createdBy String?
+  updatedBy String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  instances OffboardingInstance[]
+
+  @@index([orgId])
+  @@index([orgId, deletedAt])
+  @@index([orgId, departmentId])
+  @@schema("app_quikhrms")
+}
+
 model OffboardingInstance {
-  id         String  @id @default(cuid())
-  orgId      String
-  employeeId String
-  templateId String?
+  id             String  @id @default(cuid())
+  orgId          String
+  employeeId     String
+  templateId     String?
+  noticePeriodId String?
 
   resignationDate    DateTime          @db.Date
   lastWorkingDate    DateTime          @db.Date
@@ -13213,7 +13277,9 @@ model OffboardingInstance {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  tasks OffboardingTask[]
+  tasks        OffboardingTask[]
+  noticePeriod NoticePeriod?     @relation(fields: [noticePeriodId], references: [id])
+  template     OffboardingTemplate? @relation(fields: [templateId], references: [id])
 
   @@unique([orgId, employeeId])
   @@index([orgId])
@@ -13222,6 +13288,7 @@ model OffboardingInstance {
   @@index([orgId, employeeId])
   @@index([orgId, resignationApprovalStatus])
   @@index([orgId, resignationApproverId])
+  @@index([orgId, noticePeriodId])
   @@schema("app_quikhrms")
 }
 

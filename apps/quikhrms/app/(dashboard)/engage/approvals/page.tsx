@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
@@ -78,6 +79,30 @@ export default function EngagementApprovalsPage() {
   const [tab, setTab] = useState<Tab>(tabParam);
   const [statusFilter, setStatusFilter] = useState<"Pending" | "Approved" | "Rejected">("Pending");
 
+  // Announcements / Posts / Recognition are gated by hrms.engage.approve;
+  // Feedback moderation is a separate grant (hrms.feedback.approve).
+  const { hasPermission, navKeys, permissions } = useDashboardConfig();
+  const canEngage = hasPermission("hrms.engage.approve");
+  const canFeedback = hasPermission("hrms.feedback.approve");
+
+  // Per-approval navigation allow-list (mirrors the sidebar). Default-allow — a
+  // role with no configured navKeys (or super-admin) sees every approval type
+  // its permissions allow. Legacy "engage.approvals" key grants all four.
+  const isSuper = permissions.includes("*");
+  const navSet = new Set(navKeys);
+  const navConfigured = !isSuper && navSet.size > 0;
+  const legacyAll = navSet.has("engage.approvals");
+  const navAllowed = (key: string) => !navConfigured || legacyAll || navSet.has(key);
+
+  const tabAllowed = (t: Tab) => (t === "feedback" ? canFeedback : canEngage) && navAllowed(`engage.approvals.${t}`);
+  const visibleTabs = TABS.filter((t) => tabAllowed(t.value));
+
+  // Snap to the first permitted tab if the current one isn't allowed.
+  useEffect(() => {
+    if (!tabAllowed(tab) && visibleTabs.length > 0) setTab(visibleTabs[0].value);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, canEngage, canFeedback]);
+
   const switchTab = (t: Tab) => {
     setTab(t);
     const params = new URLSearchParams(searchParams.toString());
@@ -117,6 +142,16 @@ export default function EngagementApprovalsPage() {
     actMut.mutate({ id, action: "reject", reason: reason || undefined });
   };
 
+  if (visibleTabs.length === 0) {
+    return (
+      <EmptyState
+        variant="folder"
+        title="You don't have approval access"
+        description="Content and feedback moderation is restricted. Contact your administrator if you need access."
+      />
+    );
+  }
+
   return (
     <div className="w-full px-5 py-4">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
@@ -132,7 +167,7 @@ export default function EngagementApprovalsPage() {
       {/* Tabs */}
       <div className="border-b border-gray-200 mb-4">
         <div className="flex gap-4 overflow-x-auto">
-          {TABS.map((t) => (
+          {visibleTabs.map((t) => (
             <button
               key={t.value}
               onClick={() => switchTab(t.value)}

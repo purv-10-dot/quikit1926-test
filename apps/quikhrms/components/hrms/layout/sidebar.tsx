@@ -31,6 +31,8 @@ import {
   MoreVertical,
   Receipt,
   Home,
+  Menu,
+  X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -40,8 +42,8 @@ import { withBasePath } from "@/lib/utils/base-path";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 import { Tooltip } from "@/components/hrms/tooltip";
 
-interface NavLeaf { label: string; href: string; roles?: string[]; perms?: string[]; hideForSuperAdmin?: boolean; navKey?: string }
-interface NavChild {
+export interface NavLeaf { label: string; href: string; roles?: string[]; perms?: string[]; hideForSuperAdmin?: boolean; navKey?: string }
+export interface NavChild {
   label: string;
   href?: string;
   roles?: string[];
@@ -50,9 +52,9 @@ interface NavChild {
   children?: NavLeaf[];
 }
 
-type Section = "core" | "hr" | "finance" | "growth" | "assets" | "settings";
+export type Section = "core" | "hr" | "finance" | "growth" | "assets" | "settings";
 
-interface NavItem {
+export interface NavItem {
   label: string;
   href?: string;
   icon: React.ReactNode;
@@ -74,7 +76,11 @@ const SECTION_LABELS: Record<Section, string> = {
 
 const SECTION_ORDER: Section[] = ["core", "hr", "finance", "growth", "assets", "settings"];
 
-const navigation: NavItem[] = [
+// Sentinel for `openGroup`: the user explicitly collapsed the active group
+// (distinct from `null`, which means "no interaction yet, use the route").
+const COLLAPSED = "__collapsed__";
+
+export const navigation: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: <LayoutDashboard size={18} />, section: "core", navKey: "dashboard" },
   // AI Copilot hidden for now.
   // { label: "AI Copilot", href: "/ai-copilot", icon: <Sparkles size={18} />, section: "core", perms: ["hrms.employee.read", "hrms.performance.read"] },
@@ -90,6 +96,7 @@ const navigation: NavItem[] = [
       { label: "Delegations", href: "/delegations", perms: ["hrms.employee.read", "hrms.employee.read_team"], navKey: "people.delegations" },
       { label: "Onboarding", href: "/onboarding", perms: ["hrms.onboarding.read", "hrms.onboarding.write"], navKey: "people.onboarding" },
       { label: "Offboarding", href: "/offboarding", perms: ["hrms.offboarding.read", "hrms.offboarding.write"], navKey: "people.offboarding" },
+      { label: "Resignation Approvals", href: "/offboarding/resignation-approvals", perms: ["hrms.offboarding.approve"], navKey: "people.resignation-approvals" },
       { label: "New Requisition", href: "/recruit/raise", roles: ["admin"], navKey: "people.requisition" },
       { label: "Approve Requisitions", href: "/recruit/approvals", roles: ["admin"], navKey: "people.requisition-approvals" },
     ],
@@ -120,11 +127,15 @@ const navigation: NavItem[] = [
   },
   {
     label: "Work From Home",
-    href: "/wfh/my-requests",
     icon: <Home size={18} />,
     section: "hr",
     perms: ["hrms.employee.read_self"],
-    navKey: "wfh",
+    children: [
+      { label: "My WFH", href: "/wfh/my-requests", navKey: "wfh.my" },
+      { label: "Team Approvals", href: "/wfh/team", navKey: "wfh.approvals" },
+      { label: "Quota Groups", href: "/settings/wfh-quota", perms: ["hrms.employee.write"], navKey: "wfh.quota" },
+      { label: "Employees In Group", href: "/wfh/groups", perms: ["hrms.employee.write"], navKey: "wfh.groups" },
+    ],
   },
   {
     // Top-level Claims & Declarations — single home for Reimbursements,
@@ -186,6 +197,7 @@ const navigation: NavItem[] = [
     section: "growth",
     perms: ["hrms.recruit.read", "hrms.recruit.write"],
     children: [
+      { label: "Dashboard", href: "/recruit/dashboard", navKey: "recruit.dashboard" },
       { label: "Job Openings", href: "/recruit/requisitions", navKey: "recruit.requisitions" },
       { label: "Candidates", href: "/recruit/candidates", navKey: "recruit.candidates" },
       { label: "Hiring Pipeline", href: "/recruit/pipeline", navKey: "recruit.pipeline" },
@@ -213,6 +225,7 @@ const navigation: NavItem[] = [
     perms: ["hrms.document.read", "hrms.document.read_self", "hrms.document.read_team"],
     children: [
       { label: "Company Documents", href: "/documents", perms: ["hrms.document.read"], navKey: "documents.company" },
+      { label: "Employee Documents", href: "/documents/employees", perms: ["hrms.document.read"], navKey: "documents.employees" },
       { label: "My Vault", href: "/documents/my-vault", perms: ["hrms.document.read_self"], navKey: "documents.my-vault" },
     ],
   },
@@ -245,7 +258,7 @@ const navigation: NavItem[] = [
   },
 ];
 
-function childHasActive(child: NavChild, pathname: string): boolean {
+export function childHasActive(child: NavChild, pathname: string): boolean {
   if (child.href && pathname === child.href) return true;
   return child.children?.some((c) => pathname === c.href) ?? false;
 }
@@ -255,10 +268,12 @@ export function Sidebar() {
   const router = useRouter();
   const api = useApiClient();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  // Which module group is expanded — only one open at a time (accordion).
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(true);
   const [mounted, setMounted] = useState(false);
   const { roles } = useRoles();
-  const { hasAnyPermission, permissions, navKeys, employee, preBoarding } = useDashboardConfig();
+  const { hasAnyPermission, permissions, navKeys, employee, role, preBoarding } = useDashboardConfig();
   const isSuper = permissions.includes("*");
   const pathname = mounted ? rawPathname : "";
 
@@ -268,22 +283,22 @@ export function Sidebar() {
   // (e.g. parent groups) are never restricted here.
   const navSet = useMemo(() => new Set(navKeys), [navKeys]);
   const navConfigured = !isSuper && navSet.size > 0;
-  const navAllowed = (key?: string) => !navConfigured || !key || navSet.has(key);
+  const navAllowed = (key?: string) => {
+    if (!navConfigured || !key) return true;
+    if (navSet.has(key)) return true;
+    // A parent link (e.g. "leave.policies") stays visible when any of its child
+    // tab keys ("leave.policies.types", …) is granted.
+    for (const k of navSet) if (k.startsWith(`${key}.`)) return true;
+    return false;
+  };
 
   useEffect(() => {
     setMounted(true);
-    if (typeof window === "undefined") return;
-    const stored = localStorage.getItem("hrms.sidebarCollapsed");
-    if (stored !== null) setCollapsed(stored === "true");
   }, []);
 
-  const toggleCollapsed = () => {
-    setCollapsed((c) => {
-      const next = !c;
-      if (typeof window !== "undefined") localStorage.setItem("hrms.sidebarCollapsed", String(next));
-      return next;
-    });
-  };
+  const toggleCollapsed = () => setCollapsed((c) => !c);
+  // Auto-close the sidebar after picking a module (it opens on demand only).
+  const closeSidebar = () => setCollapsed(true);
 
   const nodeVisible = (n: { roles?: string[]; perms?: string[]; hideForSuperAdmin?: boolean }) => {
     if (n.hideForSuperAdmin && isSuper) return false;
@@ -358,260 +373,150 @@ export function Sidebar() {
     return map;
   }, [visibleNav]);
 
-  return (
-    <aside className={clsx(
-      "relative bg-white text-slate-700 border-r border-slate-200 flex flex-col h-screen shrink-0 font-[var(--font-sans)] transition-[width] duration-200",
-      collapsed ? "w-[72px]" : "w-[260px]",
-    )}>
-      {/* Brand */}
-      <div className={clsx("pt-4 pb-3 flex items-start gap-2", collapsed ? "px-3 justify-center" : "px-4")}>
-        <Link href="/dashboard" className="flex items-center gap-2.5 group flex-1 min-w-0">
-          {companyLogo ? (
-            <div className="w-10 h-10 rounded-lg bg-white overflow-hidden shrink-0">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={withBasePath(companyLogo)} alt={companyName} className="w-full h-full object-cover" />
-            </div>
-          ) : (
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center shrink-0">
-              <span className="text-white text-[13px] font-extrabold tracking-tight leading-none">
-                {companyName.split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase()}
-              </span>
-            </div>
+  // The group the current route lives in (open by default until the user
+  // clicks another). `openGroup` overrides it once the user interacts.
+  const activeGroupLabel = navigation.find((it) => it.children?.some((c) => childHasActive(c, pathname)))?.label ?? null;
+  // `openGroup === null` means "no user interaction yet" → fall back to the
+  // active route's group. `COLLAPSED` is an explicit user-triggered close, so
+  // clicking the active group collapses it instead of snapping back open.
+  const effectiveOpen = openGroup === COLLAPSED ? null : (openGroup ?? activeGroupLabel);
+
+  const renderItem = (item: NavItem) => {
+    // Leaf item — a simple icon + label row.
+    if (!item.children) {
+      const active = pathname === item.href;
+      return (
+        <Link
+          key={item.href}
+          href={item.href!}
+          className={clsx(
+            "flex items-center gap-2.5 px-3 py-2.5 rounded-[10px] text-[14px] transition-colors",
+            active ? "bg-[#eaf1fe] text-[#1f2937] font-semibold" : "text-[#374151] font-medium hover:bg-gray-100",
           )}
-          {!collapsed && (
-            <div className="min-w-0">
-              <div className="font-bold text-[14px] text-slate-900 truncate leading-tight">{companyName}</div>
-              <div className="text-[10px] text-slate-400 font-semibold tracking-[0.15em] uppercase mt-0.5">HRMS Platform</div>
-            </div>
-          )}
+        >
+          <span className={clsx("shrink-0 [&>svg]:w-[18px] [&>svg]:h-[18px]", active && "text-[#2563eb]")}>{item.icon}</span>
+          <span className="truncate">{item.label}</span>
         </Link>
-        {!collapsed && (
-          <button
-            onClick={toggleCollapsed}
-            aria-label="Collapse sidebar"
-            className="shrink-0 w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition"
-          >
-            <ChevronsLeft size={15} />
-          </button>
-        )}
-        {collapsed && (
-          <button
-            onClick={toggleCollapsed}
-            aria-label="Expand sidebar"
-            className="absolute -right-3 top-7 z-50 w-6 h-6 rounded-full bg-white text-slate-700 shadow-md ring-1 ring-slate-300 hover:bg-green-500 hover:text-white transition flex items-center justify-center"
-          >
-            <ChevronsRight size={13} />
-          </button>
-        )}
-      </div>
+      );
+    }
 
-      {/* Nav */}
-      <nav className={clsx(
-        "flex-1 overflow-y-auto pb-3 [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]",
-        collapsed ? "px-2 pt-3" : "px-3 pt-1",
-      )}>
-        {(() => {
-          const manualTop = Object.keys(expanded).find((k) => !k.includes(">") && expanded[k] === true);
-          const anyExplicitFalse = Object.entries(expanded).some(([k, v]) => !k.includes(">") && v === false);
-          const renderItem = (item: NavItem) => {
-          if (item.children) {
-            const isChildActive = item.children.some((c) => childHasActive(c, pathname));
-            const explicit = expanded[item.label];
-            const isOpen = manualTop
-              ? manualTop === item.label
-              : (explicit === false || anyExplicitFalse ? false : isChildActive);
-
-            if (collapsed) {
-              // Collapsed: show as icon-only button, click navigates to first child href
-              const firstChild = item.children[0];
-              const target = firstChild?.children?.[0]?.href ?? firstChild?.href ?? "#";
-              return (
-                <Tooltip key={item.label} content={item.label} placement="right" delay={150}>
-                  <Link
-                    href={target}
-                    className={clsx(
-                      "relative flex items-center justify-center w-12 h-12 mx-auto rounded-xl transition-all",
-                      isChildActive
-                        ? "bg-green-50 text-green-700"
-                        : "text-slate-700 hover:text-slate-900 hover:bg-slate-100",
-                    )}
-                  >
-                    {isChildActive && <span className="absolute right-0 top-2 bottom-2 w-1 rounded-l bg-green-500" />}
-                    {item.icon}
-                  </Link>
-                </Tooltip>
-              );
-            }
-
-            const firstChildHref = (() => {
-              for (const c of item.children) {
-                if (c.href) return c.href;
-                if (c.children?.[0]?.href) return c.children[0].href;
-              }
-              return null;
-            })();
-            return (
-              <div key={item.label} className="space-y-0.5">
-                <button
-                  onClick={() => {
-                    toggle(item.label);
-                    if (firstChildHref) router.push(firstChildHref);
-                  }}
-                  title={item.label}
-                  className={clsx(
-                    "relative w-full flex items-center gap-3 px-3 py-2.5 text-[13.5px] rounded-xl transition-all",
-                    isChildActive
-                      ? "text-green-700 bg-green-50 font-semibold"
-                      : isOpen
-                        ? "text-slate-900 bg-slate-100 font-semibold"
-                        : "text-slate-700 hover:text-slate-900 hover:bg-slate-100 font-medium",
-                  )}
-                >
-                  {isChildActive && <span className="absolute right-0 top-2 bottom-2 w-1 rounded-l bg-green-500" />}
-                  <span className={clsx("flex-shrink-0", isOpen ? "text-green-600" : "text-slate-500")}>
-                    {item.icon}
-                  </span>
-                  <span className="flex-1 text-left truncate">{item.label}</span>
-                  <ChevronRight
-                    size={14}
-                    className={clsx(
-                      "flex-shrink-0 transition-transform duration-200",
-                      isOpen ? "text-green-600" : "text-slate-400",
-                      isOpen && "rotate-90",
-                    )}
-                  />
-                </button>
-                {isOpen && (
-                  <div className="ml-[22px] pl-2 border-l border-slate-200 space-y-0.5 pt-0.5">
-                    {item.children.map((child) => {
-                      if (child.children) {
-                        const groupKey = `${item.label}>${child.label}`;
-                        const groupActive = child.children.some((g) => pathname === g.href);
-                        const groupOpen = expanded[groupKey] ?? groupActive;
-                        return (
-                          <div key={groupKey}>
-                            <button
-                              onClick={() => toggle(groupKey)}
-                              className={clsx(
-                                "w-full flex items-center gap-2 px-3 py-1.5 text-[12.5px] rounded-lg transition",
-                                groupActive
-                                  ? "text-green-700 bg-green-50 font-semibold"
-                                  : "text-slate-700 hover:text-slate-900 hover:bg-slate-100 font-medium",
-                              )}
-                            >
-                              <span className="flex-1 text-left truncate">{child.label}</span>
-                              <ChevronRight size={11} className={clsx("text-slate-400 transition-transform", groupOpen && "rotate-90")} />
-                            </button>
-                            {groupOpen && (
-                              <div className="ml-3 pl-2 border-l border-slate-200 space-y-0.5 pt-0.5">
-                                {child.children.map((g) => {
-                                  const isActive = pathname === g.href;
-                                  return (
-                                    <Link
-                                      key={g.href}
-                                      href={g.href}
-                                      className={clsx(
-                                        "block px-3 py-1.5 text-[12.5px] rounded-lg transition-all",
-                                        isActive
-                                          ? "bg-green-50 text-green-700 font-semibold"
-                                          : "text-slate-700 hover:text-slate-900 hover:bg-slate-100 font-medium",
-                                      )}
-                                    >
-                                      {g.label}
-                                    </Link>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      }
-                      const isActive = pathname === child.href;
+    // Group — expands inline (accordion). Children indented with a tree line.
+    const isChildActive = item.children.some((c) => childHasActive(c, pathname));
+    const isOpen = effectiveOpen === item.label;
+    return (
+      <div key={item.label}>
+        <button
+          onClick={() => setOpenGroup(isOpen ? COLLAPSED : item.label)}
+          className={clsx(
+            "w-full flex items-center gap-2.5 px-3 py-2.5 rounded-[10px] text-[14px] transition-colors",
+            isChildActive ? "text-[#2563eb] font-semibold" : "text-[#374151] font-medium hover:bg-gray-100",
+          )}
+        >
+          <span className={clsx("shrink-0 [&>svg]:w-[18px] [&>svg]:h-[18px]", isChildActive && "text-[#2563eb]")}>{item.icon}</span>
+          <span className="flex-1 text-left truncate">{item.label}</span>
+          <ChevronRight size={15} className={clsx("shrink-0 text-slate-400 transition-transform", isOpen && "rotate-90")} />
+        </button>
+        {isOpen && (
+          <div className="ml-[22px] pl-3 my-0.5 border-l border-slate-200 space-y-0.5">
+            {item.children.map((child) => {
+              if (child.children) {
+                const subActive = child.children.some((g) => pathname === g.href);
+                return (
+                  <div key={child.label}>
+                    <div className={clsx("px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide", subActive ? "text-[#2563eb]" : "text-slate-400")}>{child.label}</div>
+                    {child.children.map((g) => {
+                      const a = pathname === g.href;
                       return (
                         <Link
-                          key={child.href}
-                          href={child.href!}
+                          key={g.href}
+                          href={g.href}
                           className={clsx(
-                            "block px-3 py-1.5 text-[12.5px] rounded-lg transition-all",
-                            isActive
-                              ? "bg-green-50 text-green-700 font-semibold"
-                              : "text-slate-700 hover:text-slate-900 hover:bg-slate-100 font-medium",
+                            "block px-3 py-2 rounded-[9px] text-[13.5px] transition-colors",
+                            a ? "bg-[#eaf1fe] text-[#1f2937] font-semibold" : "text-slate-500 font-medium hover:bg-gray-100 hover:text-[#374151]",
                           )}
                         >
-                          {child.label}
+                          {g.label}
                         </Link>
                       );
                     })}
                   </div>
-                )}
-              </div>
-            );
-          }
-
-          const isActive = pathname === item.href;
-          if (collapsed) {
-            return (
-              <Tooltip key={item.href} content={item.label} placement="right" delay={150}>
+                );
+              }
+              const a = pathname === child.href;
+              return (
                 <Link
-                  href={item.href!}
+                  key={child.href}
+                  href={child.href!}
                   className={clsx(
-                    "relative flex items-center justify-center w-12 h-12 mx-auto rounded-xl transition-all",
-                    isActive
-                      ? "bg-green-50 text-green-700"
-                      : "text-slate-700 hover:text-slate-900 hover:bg-slate-100",
+                    "block px-3 py-2 rounded-[9px] text-[13.5px] transition-colors",
+                    a ? "bg-[#eaf1fe] text-[#1f2937] font-semibold" : "text-slate-500 font-medium hover:bg-gray-100 hover:text-[#374151]",
                   )}
                 >
-                  {isActive && <span className="absolute right-0 top-2 bottom-2 w-1 rounded-l bg-green-500" />}
-                  {item.icon}
+                  {child.label}
                 </Link>
-              </Tooltip>
-            );
-          }
-          return (
-            <Link
-              key={item.href}
-              href={item.href!}
-              title={item.label}
-              className={clsx(
-                "relative flex items-center gap-3 px-3 py-2.5 text-[13.5px] rounded-xl transition-all",
-                isActive
-                  ? "bg-green-50 text-green-700 font-semibold"
-                  : "text-slate-700 hover:text-slate-900 hover:bg-slate-100 font-medium",
-              )}
-            >
-              {isActive && <span className="absolute right-0 top-2 bottom-2 w-1 rounded-l bg-green-500" />}
-              <span className={clsx("flex-shrink-0", isActive ? "text-green-600" : "text-slate-500")}>
-                {item.icon}
-              </span>
-              <span className="truncate">{item.label}</span>
-            </Link>
-          );
-        };
-
-        return (
-          <>
-            {SECTION_ORDER.map((sec) => {
-              const items = grouped[sec];
-              if (!items || items.length === 0) return null;
-              return (
-                <div key={sec} className={clsx(collapsed ? "mb-2" : "mb-3")}>
-                  {!collapsed && (
-                    <div className="px-3 pt-3 pb-1.5 text-[10px] font-bold tracking-[0.18em] uppercase text-slate-400">
-                      {SECTION_LABELS[sec]}
-                    </div>
-                  )}
-                  <div className="space-y-1">
-                    {items.map(renderItem)}
-                  </div>
-                </div>
               );
             })}
+          </div>
+        )}
+      </div>
+    );
+  };
 
-          </>
-        );
-        })()}
+  return (
+    <aside className="w-[248px] shrink-0 h-screen bg-white text-[#374151] border-r border-slate-200 flex flex-col font-[var(--font-sans)]">
+      {/* Brand */}
+      <Link href="/dashboard" className="flex items-center gap-2.5 px-4 pt-4 pb-3 border-b border-slate-100">
+        {companyLogo ? (
+          <div className="w-10 h-10 rounded-lg bg-white overflow-hidden shrink-0">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={withBasePath(companyLogo)} alt={companyName} className="w-full h-full object-cover" />
+          </div>
+        ) : (
+          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center shrink-0">
+            <span className="text-white text-[13px] font-extrabold tracking-tight leading-none">
+              {companyName.split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase()}
+            </span>
+          </div>
+        )}
+        <span className="font-bold text-[15px] text-slate-900 truncate">{companyName}</span>
+      </Link>
+
+      {/* Profile */}
+      <Link
+        href={employee?.id ? `/employees/${employee.id}` : "/dashboard"}
+        title={employee?.name ?? ""}
+        className="flex flex-col items-center pt-3 pb-3 border-b border-slate-100"
+      >
+        {employee?.profilePhoto ? (
+          <div className="w-14 h-14 rounded-full overflow-hidden ring-2 ring-slate-100 bg-slate-100 shrink-0">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={withBasePath(employee.profilePhoto)} alt={employee.name} className="w-full h-full object-cover" />
+          </div>
+        ) : (
+          <div className="w-14 h-14 rounded-full ring-2 ring-slate-100 bg-gradient-to-br from-green-500 to-green-600 text-white flex items-center justify-center text-lg font-bold shrink-0">
+            {(employee?.name ?? companyName).split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase()}
+          </div>
+        )}
+        {employee?.name && (
+          <div className="mt-2 text-[13px] font-bold text-slate-900 text-center leading-tight px-2 truncate max-w-full">{employee.name}</div>
+        )}
+        {role?.name && (
+          <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400 mt-0.5">{role.name}</div>
+        )}
+      </Link>
+
+      {/* Nav */}
+      <nav className="flex-1 overflow-y-auto px-2.5 py-3 [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]">
+        {SECTION_ORDER.map((sec) => {
+          const items = grouped[sec];
+          if (!items || items.length === 0) return null;
+          return (
+            <div key={sec} className="mb-0.5 space-y-0.5">
+              {items.map(renderItem)}
+            </div>
+          );
+        })}
       </nav>
-
     </aside>
   );
 }

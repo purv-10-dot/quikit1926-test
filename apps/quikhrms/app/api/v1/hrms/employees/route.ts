@@ -298,6 +298,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         confirmationDate: data.confirmationDate ? new Date(data.confirmationDate) : undefined,
         probationEndDate: data.probationEndDate ? new Date(data.probationEndDate) : undefined,
         noticePeriodDays: data.noticePeriodDays,
+        noticePeriodId: data.noticePeriodId ?? null,
         previousExperience: data.previousExperience,
         sourceOfHire: data.sourceOfHire,
         referredById: data.referredById,

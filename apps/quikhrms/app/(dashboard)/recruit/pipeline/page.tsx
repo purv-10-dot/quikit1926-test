@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import Link from "next/link";
@@ -10,7 +11,7 @@ import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { clsx } from "clsx";
-import { User, Users, ArrowRight, UserPlus, CheckCircle, Check, Star, MessageSquare, X, Search, Mail, Clock, ThumbsUp, ThumbsDown, LayoutGrid, List, Download, CalendarPlus, MapPin, Link2, FileCheck2, FileText, Briefcase, Calendar, FileCheck, Copy, ExternalLink, SkipForward, FastForward, Phone, Video, Award, Send, BellRing, Info, AlertTriangle, ChevronDown, Save, HelpCircle, ClipboardList } from "lucide-react";
+import { User, Users, ArrowRight, UserPlus, CheckCircle, Check, Star, MessageSquare, X, Search, Mail, Clock, ThumbsUp, ThumbsDown, Download, CalendarPlus, MapPin, Link2, FileCheck2, FileText, Briefcase, Calendar, FileCheck, Copy, ExternalLink, SkipForward, FastForward, Phone, Video, Award, Send, BellRing, Info, AlertTriangle, ChevronDown, Save, HelpCircle, ClipboardList, MoreHorizontal } from "lucide-react";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { SendOfferWizard } from "./_components/send-offer-wizard";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
@@ -244,7 +245,12 @@ export default function PipelinePage() {
   // Popup shown when HR tries to advance to Offer while requested docs are unapproved.
   const [docBlockApp, setDocBlockApp] = useState<ApplicationItem | null>(null);
 
-  const [viewMode, setViewMode] = useState<"kanban" | "list">("kanban");
+  const [viewMode] = useState<"kanban" | "list">("list");
+  // Overflow (···) row-actions menu — fixed-positioned so it escapes the table's
+  // horizontal-scroll container (overflow-x-auto also promotes overflow-y to auto,
+  // which would otherwise add a stray vertical scrollbar). Holds the open row id
+  // plus viewport coordinates.
+  const [menu, setMenu] = useState<{ id: string; top: number; left: number } | null>(null);
 
   const [docRequestApp, setDocRequestApp] = useState<{ app: ApplicationItem; bundle: "PreOffer" | "PostOffer" } | null>(null);
   const [docRequestSelected, setDocRequestSelected] = useState<Set<string>>(new Set());
@@ -835,14 +841,6 @@ export default function PipelinePage() {
     toast.success("Exported", `${apps.length} application${apps.length === 1 ? "" : "s"} downloaded as CSV.`);
   };
 
-  const toggleStage = (s: string) => {
-    setStageFilters((prev) => {
-      const next = new Set(prev);
-      if (next.has(s)) next.delete(s);
-      else next.add(s);
-      return next;
-    });
-  };
 
   const toggleRequisition = (id: string) => {
     setRequisitionFilters((prev) => {
@@ -858,28 +856,6 @@ export default function PipelinePage() {
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <h1 className="text-page-title text-gray-900">Hiring pipeline</h1>
         <div className="flex items-center gap-2">
-          <div className="inline-flex rounded-lg border border-[var(--border)] bg-white overflow-hidden shadow-sm">
-            <button
-              onClick={() => setViewMode("kanban")}
-              className={clsx("inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition",
-                viewMode === "kanban"
-                  ? "bg-green-600 text-white"
-                  : "bg-white text-gray-600 hover:bg-gray-50")}
-              title="Kanban view"
-            >
-              <LayoutGrid size={13} /> Kanban
-            </button>
-            <button
-              onClick={() => setViewMode("list")}
-              className={clsx("inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-l border-gray-300 transition",
-                viewMode === "list"
-                  ? "bg-green-600 text-white"
-                  : "bg-white text-gray-600 hover:bg-gray-50")}
-              title="List view"
-            >
-              <List size={13} /> List
-            </button>
-          </div>
           <button
             onClick={exportCsv}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-sm"
@@ -901,23 +877,37 @@ export default function PipelinePage() {
         </div>
       </div>
 
-      {/* Stat cards — Total + per-stage counts; click to filter by stage. */}
+      {/* Stage counter bar — connected segments with a colored top rule, count,
+          and label. Click a stage to view its candidates. */}
       {allApps.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5 mb-4">
-          <StatCard label="Total Candidates" value={allApps.length} icon={<Users size={16} />} color="bg-green-50 text-green-600"
-            active={stageFilters.size === 0} onClick={() => setStageFilters(new Set())} />
-          {STAGES.map((stage) => {
+        <div className="flex items-stretch overflow-x-auto no-scrollbar bg-white border border-gray-200 rounded-xl shadow-sm mb-4">
+          {STAGES.map((stage, i) => {
             const value = allApps.filter((a) => (a.currentStage ?? STAGES[0]) === stage).length;
-            const meta = stageMeta(stage);
+            const on = stageFilters.has(stage);
             return (
-              <StatCard key={stage} label={prettyStage(stage)} value={value} icon={meta.icon} color={meta.color}
-                active={stageFilters.has(stage)} onClick={() => toggleStage(stage)} />
+              <button
+                key={stage}
+                type="button"
+                onClick={() => setStageFilters(on ? new Set() : new Set([stage]))}
+                title={prettyStage(stage)}
+                className={clsx(
+                  "relative flex-1 min-w-[110px] px-3 pt-3 pb-2.5 text-center border-t-4 transition",
+                  i < STAGES.length - 1 && "border-r border-gray-200",
+                  stageBorder(stage),
+                  on ? "bg-green-50" : "hover:bg-gray-50",
+                )}
+              >
+                <div className={clsx("text-2xl font-bold leading-none tabular-nums", on ? "text-green-700" : "text-gray-900")}>{value}</div>
+                <div className={clsx("text-[12px] mt-1.5 truncate", on ? "text-gray-900 font-semibold" : "text-gray-500 font-medium")}>{prettyStage(stage)}</div>
+                {on && <span className="absolute inset-x-0 bottom-0 h-[3px] bg-green-500" />}
+              </button>
             );
           })}
         </div>
       )}
 
-      {/* Compact filter bar */}
+      {/* Compact filter bar — shown only once a stage is selected */}
+      {stageFilters.size > 0 && (
       <div className="flex flex-wrap items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2 shadow-sm mb-4">
         <div className="relative flex-1 min-w-[220px]">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -956,6 +946,7 @@ export default function PipelinePage() {
           <button onClick={clearFilters} className="ml-auto px-2 py-1 text-[11px] text-[#22c55e] hover:underline font-medium">Clear all</button>
         )}
       </div>
+      )}
 
       {/* Active requisition chips */}
       {requisitionFilters.size > 0 && (
@@ -969,10 +960,28 @@ export default function PipelinePage() {
         </div>
       )}
 
+      {/* Selected-stage header (list view) — mirrors the stage bar selection. */}
+      {viewMode === "list" && stageFilters.size === 1 && (
+        <div className="flex items-center gap-2 mb-2 px-0.5">
+          <h2 className="text-sm font-bold text-gray-900">{prettyStage(Array.from(stageFilters)[0])}</h2>
+          <span className="text-[11.5px] font-semibold text-green-700 bg-green-50 rounded-full px-2 py-0.5">
+            {apps.length} candidate{apps.length === 1 ? "" : "s"}
+          </span>
+        </div>
+      )}
+
       {isLoading ? (
         <SkeletonTable rows={6} cols={5} />
+      ) : stageFilters.size === 0 ? (
+        <div className="bg-white border border-dashed border-gray-300 rounded-2xl px-6 py-16 text-center">
+          <div className="w-12 h-12 rounded-2xl bg-green-50 text-green-600 flex items-center justify-center mx-auto mb-3">
+            <Users size={22} />
+          </div>
+          <p className="text-sm font-semibold text-gray-800">Select a stage to view candidates</p>
+          <p className="text-xs text-gray-500 mt-1">Pick a stage from the bar above to see everyone currently in it.</p>
+        </div>
       ) : viewMode === "list" ? (
-        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-x-auto">
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-x-auto overflow-y-hidden">
           <table className="min-w-full text-sm">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr className="text-left text-table-head font-semibold text-slate-600 uppercase tracking-wide">
@@ -980,7 +989,6 @@ export default function PipelinePage() {
                 <th className="px-3 py-2.5">Requisition</th>
                 <th className="px-3 py-2.5">Stage</th>
                 <th className="px-3 py-2.5">Applied</th>
-                <th className="px-3 py-2.5">Exp</th>
                 <th className="px-3 py-2.5">Expected CTC</th>
                 <th className="px-3 py-2.5 text-center">Feedback</th>
                 <th className="px-3 py-2.5 text-right">Actions</th>
@@ -988,14 +996,14 @@ export default function PipelinePage() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {apps.length === 0 && (
-                <tr><td colSpan={8} className="text-center py-8 text-slate-400 text-sm">No applications match current filters.</td></tr>
+                <tr><td colSpan={7} className="text-center py-8 text-slate-400 text-sm">No applications match current filters.</td></tr>
               )}
               {apps.map((app, i) => {
                 const stageName = app.currentStage ?? "—";
                 const si = STAGES.indexOf(stageName);
                 const isHired = stageName === "Hired";
                 return (
-                  <tr key={app.id} className="row-stagger hover:bg-slate-50/60 transition" style={{ ["--i" as never]: Math.min(i, 10) }}>
+                  <tr key={app.id} onClick={() => router.push(`/recruit/candidates/${app.candidate.id}`)} className="row-stagger hover:bg-slate-50/60 transition cursor-pointer" style={{ ["--i" as never]: Math.min(i, 10) }}>
                     <td className="px-3 py-2.5">
                       <div className="flex items-center gap-2">
                         <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#dcfce7] to-[#86efac] text-[#16a34a] flex items-center justify-center text-[11px] font-bold shrink-0">
@@ -1032,9 +1040,6 @@ export default function PipelinePage() {
                       {app.appliedDate ? new Date(app.appliedDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" }) : "—"}
                     </td>
                     <td className="px-3 py-2.5 text-slate-600 text-xs">
-                      {app.candidate.totalExperience ? `${(app.candidate.totalExperience / 12).toFixed(1)}y` : "—"}
-                    </td>
-                    <td className="px-3 py-2.5 text-slate-600 text-xs">
                       {app.candidate.expectedCTC ? `₹ ${Number(app.candidate.expectedCTC).toLocaleString("en-IN")}` : "—"}
                     </td>
                     <td className="px-3 py-2.5 text-center">
@@ -1046,7 +1051,7 @@ export default function PipelinePage() {
                         <span className="text-[11px] text-slate-400">—</span>
                       )}
                     </td>
-                    <td className="px-3 py-2.5">
+                    <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
                         {!isHired && (() => {
                           const pending = isPendingSchedule(app);
@@ -1073,50 +1078,22 @@ export default function PipelinePage() {
                             </button>
                           );
                         })()}
-                        {!isHired && isInterviewStage(app.currentStage ?? "") && canMoveForward(app.currentStage) && (
-                          <button
-                            onClick={() => { setFeedback({ ...BLANK_FEEDBACK }); setSkipTarget(getNextStage(app.currentStage) ?? ""); setSkipApp(app); prefillFeedback(app).then(setFeedback); }}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-slate-50 text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100 rounded text-[11px] font-semibold"
-                            title="Move forward to a later stage">
-                            <SkipForward size={10} /> Skip
-                          </button>
-                        )}
-                        {!isHired && canMoveForward(app.currentStage) && (
-                          <button
-                            onClick={() => {
-                              if ((app._count.scorecards ?? 0) === 0) {
-                                toast.warning("Feedback required", `Provide feedback for "${stageName}" before moving to the next stage.`);
-                                setFeedback({ overallRating: 7, recommendation: "", strengths: "", concerns: "", overallComments: "" });
-                                setFeedbackApp(app);
-                                return;
-                              }
-                              moveMut.mutate({ id: app.id, stage: STAGES[si + 1] });
-                            }}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-[#dcfce7] text-[#16a34a] ring-1 ring-[#bbf7d0] hover:bg-[#dcfce7] rounded text-[11px] font-semibold" title="Next stage">
-                            <ArrowRight size={10} /> Next
-                          </button>
-                        )}
-                        {showScreening(app) && (
-                          <button onClick={() => setScreeningApp(app)}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-teal-50 text-teal-700 ring-1 ring-teal-200 hover:bg-teal-100 rounded text-[11px] font-semibold" title="Screening questions">
-                            <ClipboardList size={10} /> Screening
-                          </button>
-                        )}
-                        <button onClick={() => setHistoryApp(app)}
-                          className="inline-flex items-center gap-1 px-2 py-1 bg-green-50 text-green-700 ring-1 ring-green-200 hover:bg-green-100 rounded text-[11px] font-semibold" title="Feedback history">
-                          <Clock size={10} /> History
-                        </button>
-                        {isHired ? (
+                        {isHired && (
                           <button onClick={() => onboardMut.mutate(app.id)} disabled={onboardMut.isPending}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded text-[11px] font-semibold shadow-sm disabled:opacity-50">
-                            <UserPlus size={10} /> Onboard
-                          </button>
-                        ) : (
-                          <button onClick={() => { setRejectReason(""); setRejectApp(app); }}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-red-50 text-red-700 ring-1 ring-red-200 hover:bg-red-100 rounded text-[11px] font-semibold" title="Reject">
-                            <X size={10} /> Reject
+                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-md text-[11px] font-semibold shadow-sm disabled:opacity-50">
+                            <UserPlus size={11} /> Onboard
                           </button>
                         )}
+                        <button
+                          onClick={(e) => {
+                            if (menu?.id === app.id) { setMenu(null); return; }
+                            const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                            setMenu({ id: app.id, top: r.bottom + 8, left: Math.max(8, r.right - 208) });
+                          }}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+                          title="More actions" aria-haspopup="menu" aria-expanded={menu?.id === app.id}>
+                          <MoreHorizontal size={15} />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -1209,17 +1186,11 @@ export default function PipelinePage() {
                         );
                       }
                       if (o.status === "OfferSent") {
+                        // The candidate accepts/declines from their emailed link;
+                        // HR just sees the pending state here.
                         return (
-                          <div className="grid grid-cols-2 gap-1.5">
-                            <button onClick={() => { if (app.docGate?.blocking) { setDocBlockApp(app); return; } setOfferFb({ ...emptyOfferFb, recommendation: "Hire" }); setOfferDecision({ app, kind: "accept" }); }}
-                              title={app.docGate?.blocking ? "Approve all requested documents before accepting the offer" : "Accept the offer"}
-                              className="inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium shadow-sm transition bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white">
-                              <Check size={13} /> Accept
-                            </button>
-                            <button onClick={() => { setOfferFb({ ...emptyOfferFb, recommendation: "NoHire" }); setOfferDecision({ app, kind: "decline" }); }}
-                              className="inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium transition bg-red-50/60 text-red-600 ring-1 ring-red-200 hover:bg-red-50">
-                              <X size={13} /> Reject
-                            </button>
+                          <div className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-amber-50 text-amber-700 ring-1 ring-amber-200">
+                            <Clock size={13} /> Pending candidate acceptance
                           </div>
                         );
                       }
@@ -1314,7 +1285,59 @@ export default function PipelinePage() {
         </div>
       )}
 
-      {/* Full stage list — overflow from a capped Kanban column */}
+      {/* Row-actions overflow menu — rendered at the page root (not inside the
+          transformed table rows) so its fixed positioning anchors to the viewport. */}
+      {menu && (() => {
+        const app = allApps.find((a) => a.id === menu.id);
+        if (!app) return null;
+        const stageName = app.currentStage ?? "—";
+        const si = STAGES.indexOf(stageName);
+        const isHired = stageName === "Hired";
+        return createPortal(
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setMenu(null)} />
+            <div style={{ top: menu.top, left: menu.left }} className="fixed z-50 w-52 rounded-xl border border-gray-200 bg-white shadow-xl p-1.5">
+              <div className="absolute -top-1.5 right-4 w-3 h-3 bg-white border-l border-t border-gray-200 rotate-45" />
+              {!isHired && canMoveForward(app.currentStage) && (
+                <div className="px-2 pt-1 pb-1 text-[10px] font-bold tracking-[0.09em] uppercase text-gray-400">Move</div>
+              )}
+              {!isHired && isInterviewStage(app.currentStage ?? "") && canMoveForward(app.currentStage) && (
+                <MenuItem icon={<SkipForward size={14} />} label="Skip stage"
+                  onClick={() => { setMenu(null); setFeedback({ ...BLANK_FEEDBACK }); setSkipTarget(getNextStage(app.currentStage) ?? ""); setSkipApp(app); prefillFeedback(app).then(setFeedback); }} />
+              )}
+              {!isHired && canMoveForward(app.currentStage) && (
+                <MenuItem icon={<ArrowRight size={14} />} label="Move to next"
+                  onClick={() => {
+                    setMenu(null);
+                    if ((app._count.scorecards ?? 0) === 0) {
+                      toast.warning("Feedback required", `Provide feedback for "${stageName}" before moving to the next stage.`);
+                      setFeedback({ overallRating: 7, recommendation: "", strengths: "", concerns: "", overallComments: "" });
+                      setFeedbackApp(app);
+                      return;
+                    }
+                    moveMut.mutate({ id: app.id, stage: STAGES[si + 1] });
+                  }} />
+              )}
+              <div className="px-2 pt-1.5 pb-1 text-[10px] font-bold tracking-[0.09em] uppercase text-gray-400">Review</div>
+              {showScreening(app) && (
+                <MenuItem icon={<ClipboardList size={14} />} label="Screening sheet"
+                  onClick={() => { setMenu(null); setScreeningApp(app); }} />
+              )}
+              <MenuItem icon={<Clock size={14} />} label="History"
+                onClick={() => { setMenu(null); setHistoryApp(app); }} />
+              {!isHired && (
+                <>
+                  <div className="h-px bg-gray-100 my-1" />
+                  <MenuItem danger icon={<X size={14} />} label="Reject candidate"
+                    onClick={() => { setMenu(null); setRejectReason(""); setRejectApp(app); }} />
+                </>
+              )}
+            </div>
+          </>,
+          document.body,
+        );
+      })()}
+
       {/* Reject candidate — capture a reason before rejecting */}
       <Modal open={!!rejectApp} onClose={() => !rejectMut.isPending && setRejectApp(null)} title="Reject candidate" size="md">
         {rejectApp && (
@@ -2462,18 +2485,26 @@ function stageBorder(stage: string): string {
   return map[key] ?? "border-t-gray-300";
 }
 
-function StatCard({ label, value, icon, color, active, onClick }: {
-  label: string; value: number; icon: React.ReactNode; color: string; active: boolean; onClick: () => void;
+/** A single row in the pipeline row-actions overflow (···) menu. */
+function MenuItem({ icon, label, onClick, danger }: {
+  icon: React.ReactNode; label: string; onClick: () => void; danger?: boolean;
 }) {
   return (
-    <button type="button" onClick={onClick}
-      className={clsx("flex items-center gap-2.5 bg-white rounded-2xl border p-3 text-left transition shadow-sm hover:shadow",
-        active ? "border-green-500 ring-1 ring-green-500/30" : "border-gray-200 hover:border-gray-300")}>
-      <span className={clsx("w-9 h-9 rounded-full flex items-center justify-center shrink-0", color)}>{icon}</span>
-      <span className="min-w-0">
-        <span className="block text-xl font-bold text-gray-900 leading-none">{value}</span>
-        <span className="block text-[11px] text-gray-500 truncate mt-0.5">{label}</span>
-      </span>
+    <button
+      type="button"
+      onClick={onClick}
+      className={clsx(
+        "group flex items-center gap-2.5 w-full px-2 py-1.5 rounded-lg text-[13px] font-medium text-left transition",
+        danger ? "text-red-600 hover:bg-red-50" : "text-gray-700 hover:bg-green-50 hover:text-green-800",
+      )}
+    >
+      <span className={clsx(
+        "w-6 h-6 rounded-md grid place-items-center shrink-0 transition",
+        danger
+          ? "bg-red-50 text-red-500 group-hover:bg-red-600 group-hover:text-white"
+          : "bg-gray-50 text-gray-400 group-hover:bg-green-600 group-hover:text-white",
+      )}>{icon}</span>
+      {label}
     </button>
   );
 }

@@ -7,6 +7,12 @@ import { fireWorkflow } from "@/lib/workflows/executor";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { resolveAndSend } from "@/lib/email/resolve";
 import { buildResignationNoticeEmail } from "@/lib/email-templates/resignation-notice";
+import { resolveApprovalChainLevels } from "@/lib/services/approval-chain";
+
+/** Convert a linked notice period to whole days (same math as the forms). */
+function periodToDays(p: { duration: number; unit: string }): number {
+  return p.unit === "Months" ? p.duration * 30 : p.unit === "Weeks" ? p.duration * 7 : p.duration;
+}
 
 /**
  * POST /api/v1/hrms/offboarding/resign
@@ -27,6 +33,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         id: true, firstName: true, lastName: true, status: true, noticePeriodDays: true,
         employeeCode: true, jobTitle: true, reportingManagerId: true,
         department: { select: { name: true } },
+        noticePeriodRef: { select: { duration: true, unit: true } },
       },
     });
     if (!employee) return notFound("Employee record not found");
@@ -50,7 +57,11 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     const userNotes = body.notes ? String(body.notes).trim() : null;
 
     const resignationDate = new Date();
-    const noticeDays = Math.max(0, employee.noticePeriodDays ?? 0);
+    // Prefer the linked notice period (single source of truth) so editing a
+    // period updates the calculation everywhere; fall back to the cached number.
+    const noticeDays = Math.max(0, employee.noticePeriodRef
+      ? periodToDays(employee.noticePeriodRef)
+      : (employee.noticePeriodDays ?? 0));
     const defaultLwd = new Date(resignationDate);
     defaultLwd.setDate(defaultLwd.getDate() + noticeDays);
 
@@ -70,10 +81,14 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       `Submitted by employee via self-service.`,
     ].filter(Boolean).join("\n");
 
-    // Approval routing: the employee's direct reporting manager approves. If
-    // there's no manager, there's nobody to approve → auto-approve so behaviour
-    // matches the pre-approval flow.
-    const approverId = employee.reportingManagerId ?? null;
+    // Approval routing: use the configured Offboarding approval chain
+    // (Settings → Approval Chains) — level 1 is the first approver. If no chain
+    // is configured, fall back to the employee's direct reporting manager. If
+    // neither resolves, auto-approve (nobody to route to).
+    let approverId: string | null = null;
+    const chain = await resolveApprovalChainLevels(orgId, "Offboarding", employeeId);
+    if (chain.ok) approverId = chain.levels[0]?.approverId ?? null;
+    if (!approverId) approverId = employee.reportingManagerId ?? null;
     const approvalStatus = approverId ? "Pending" : "Approved";
 
     const resignData = {

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
@@ -72,6 +73,7 @@ const statusColors: Record<string, string> = {
 
 export default function OnboardingCandidatesPage() {
   const api = useApiClient();
+  const router = useRouter();
   const toast = useToast();
 
   const [showAdd, setShowAdd] = useState(false);
@@ -116,7 +118,6 @@ export default function OnboardingCandidatesPage() {
     dateOfJoining: string;
     jobTitle: string | null;
   }
-  const [mailConfirm, setMailConfirm] = useState<NewJoinee | null>(null);
 
   const qs = new URLSearchParams();
   qs.set("limit", "100");
@@ -127,11 +128,6 @@ export default function OnboardingCandidatesPage() {
     queryFn: () => api.get<Candidate[]>(`/api/v1/hrms/onboarding/candidates?${qs.toString()}`),
   });
 
-  const sendWelcomeMailMut = useMutation({
-    mutationFn: ({ employeeId }: { employeeId: string }) =>
-      api.post("/api/v1/hrms/mail/welcome", { employeeId }),
-    onSuccess: () => { setMailConfirm(null); },
-  });
 
   const candidates = data?.data ?? [];
   const filteredCandidates = candidates.filter((c) => {
@@ -223,9 +219,6 @@ export default function OnboardingCandidatesPage() {
   return (
     <div className="w-full px-5 py-4">
       <h1 className="text-page-title text-gray-900 mb-5">Onboarding</h1>
-      <div className="border-b border-gray-100 mb-4">
-        <button className="text-[13px] text-[#22c55e] font-semibold border-b-2 border-[#22c55e] py-2 -mb-px">Candidate</button>
-      </div>
 
       <div className="">
         <div className="flex items-center justify-end mb-4 gap-3 flex-wrap">
@@ -297,9 +290,9 @@ export default function OnboardingCandidatesPage() {
                 ) : filteredCandidates.length === 0 ? (
                   <tr><td colSpan={12} className="text-center py-12 text-gray-500">{activeFilterCount > 0 ? "No candidates match filters." : "No candidates. Click \"Onboard Candidate\" to get started."}</td></tr>
                 ) : filteredCandidates.map((c, i) => (
-                  <tr key={c.id} className="row-stagger hover:bg-gray-50" style={{ ["--i" as never]: Math.min(i, 10) }}>
+                  <tr key={c.id} onClick={() => router.push(`/onboarding/${c.id}`)} className="row-stagger hover:bg-gray-50 cursor-pointer" style={{ ["--i" as never]: Math.min(i, 10) }}>
                     <td className="px-4 py-2.5"></td>
-                    <td className="px-4 py-2.5">
+                    <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
                       <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggle(c.id)} />
                     </td>
                     <td className="px-4 py-2.5">
@@ -356,59 +349,9 @@ export default function OnboardingCandidatesPage() {
       <AddCandidateWizard
         open={showAdd}
         onClose={() => setShowAdd(false)}
-        onCreated={(emp, draft) => { if (!draft) setMailConfirm(emp); }}
+        onCreated={() => setShowAdd(false)}
       />
 
-      {mailConfirm && (() => {
-        const e = mailConfirm;
-        const to = e.personalEmail || e.workEmail;
-        return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center">
-            <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm"
-              onClick={() => !sendWelcomeMailMut.isPending && setMailConfirm(null)} />
-            <div className="relative bg-white rounded-xl shadow-2xl ring-1 ring-slate-200 w-full max-w-md mx-4 overflow-hidden">
-              <div className="p-4">
-                <div className="flex items-start gap-4">
-                  <div className="shrink-0 flex items-center justify-center w-12 h-12 rounded-full ring-4 bg-emerald-50 ring-emerald-50/60">
-                    <Mail className="w-6 h-6 text-emerald-600" />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-lg font-semibold text-slate-900">Send Welcome Email?</h3>
-                    <p className="mt-1.5 text-xs text-slate-500 leading-relaxed">New joinee will receive a welcome email with employee code, joining date and onboarding details.</p>
-                    <div className="mt-3 text-xs bg-slate-50 border border-slate-100 rounded-md px-2.5 py-2 text-slate-600 space-y-0.5">
-                      <div className="font-semibold text-slate-800">{e.firstName} {e.lastName}</div>
-                      <div className="text-[11px] text-slate-500">To: {to}</div>
-                      <div className="text-[11px] text-slate-500">Employee Code: {e.employeeCode}</div>
-                      {e.jobTitle && <div className="text-[11px] text-slate-500">Role: {e.jobTitle}</div>}
-                      <div className="text-[11px] text-slate-500">Date of Joining: {new Date(e.dateOfJoining).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="flex justify-end gap-2 px-5 py-4 bg-slate-50 border-t border-slate-100">
-                <button type="button" onClick={() => setMailConfirm(null)} disabled={sendWelcomeMailMut.isPending}
-                  className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-                  Skip
-                </button>
-                <button type="button"
-                  onClick={() => toast.promise(sendWelcomeMailMut.mutateAsync({ employeeId: e.id }), {
-                    loading: "Sending welcome email…",
-                    success: "Welcome email sent",
-                    error: "Couldn't send the welcome email",
-                  })}
-                  disabled={sendWelcomeMailMut.isPending}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-white rounded-lg text-xs font-medium shadow-sm disabled:opacity-50 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700">
-                  <Send size={13} />
-                  {sendWelcomeMailMut.isPending ? "Sending..." : "Send Welcome Email"}
-                </button>
-              </div>
-              {sendWelcomeMailMut.isError && (
-                <div className="px-6 pb-3 text-xs text-red-600">Mail send failed. Check SMTP config.</div>
-              )}
-            </div>
-          </div>
-        );
-      })()}
     </div>
   );
 }

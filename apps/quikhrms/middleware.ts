@@ -31,6 +31,8 @@ const centralMiddleware = createMiddleware({
     "/candidate-portal",
     "/candidate-documents",
     "/interview-feedback",
+    "/offer", // tokenised candidate offer accept/decline links
+    "/doc-upload", // tokenised candidate onboarding document upload links
   ],
   postLoginRoute: "/dashboard",
   // Unauthenticated users go to the central auth login (bridged to the launcher

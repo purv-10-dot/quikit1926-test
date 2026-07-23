@@ -122,7 +122,7 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId, permissi
       "currentAddress", "permanentAddress", "emergencyContacts", "jobTitle",
       "departmentId", "teamId", "designationId", "gradeId", "reportingManagerId",
       "dottedLineManagerId", "employmentType", "workerType", "workLocation",
-      "officeLocationId", "noticePeriodDays", "previousExperience", "sourceOfHire",
+      "officeLocationId", "noticePeriodDays", "noticePeriodId", "previousExperience", "sourceOfHire",
       "referredById", "identityDocuments", "bankAccounts", "panNumber", "aadhaarNumber",
       "taxIdentificationNumber", "skills", "certifications", "languages", "educations",
       "pastExperiences", "customFields", "status",

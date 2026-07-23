@@ -168,6 +168,38 @@ function InfoRow({ label, value }: { label: string; value: string | null | undef
   );
 }
 
+interface EmpDoc { id: string; title: string; category: string; fileUrl: string; fileType: string; createdAt: string; }
+
+/** All documents on file for one employee (from the central vault). Access is
+ *  enforced by the API — a viewer without document permission sees nothing. */
+function EmployeeDocuments({ employeeId }: { employeeId: string }) {
+  const api = useApiClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ["employee-documents", employeeId],
+    queryFn: () =>
+      api.get<EmpDoc[]>(`/api/v1/hrms/documents?employeeId=${employeeId}&limit=100`).catch(() => ({ data: [] as EmpDoc[] })),
+  });
+  const docs = data?.data ?? [];
+
+  if (isLoading) return <div className="py-6 text-center text-xs text-gray-400">Loading documents…</div>;
+  if (docs.length === 0) return <div className="py-6 text-center text-xs text-gray-400">No documents on file yet.</div>;
+
+  return (
+    <ul className="divide-y divide-gray-100">
+      {docs.map((d) => (
+        <li key={d.id} className="flex items-center gap-3 py-2.5">
+          <span className="w-8 h-8 rounded-lg bg-gray-50 text-gray-400 grid place-items-center shrink-0"><FileText size={15} /></span>
+          <div className="flex-1 min-w-0">
+            <div className="text-[13px] font-medium text-gray-900 truncate">{d.title}</div>
+            <div className="text-[11px] text-gray-400">{d.category} · {formatDate(d.createdAt)}</div>
+          </div>
+          <Link href={`/documents/${d.id}`} className="shrink-0 text-[12px] font-semibold text-[#22c55e] hover:underline">View</Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 interface RoleLite { id: string; code: string; name: string; priority: number; isSystem: boolean; }
 
 export default function EmployeeProfilePage() {
@@ -535,7 +567,7 @@ function EmployeeProfilePageInner() {
               { label: "Apply Leave", icon: Palmtree, href: `/leaves/my-leaves?employeeId=${emp.id}` },
               { label: "Attendance", icon: Clock, href: `/attendance?employeeId=${emp.id}` },
               { label: "Tasks", icon: CheckSquare, href: "/tasks" },
-              { label: "Docs", icon: FileText, href: "/documents/my-vault" },
+              { label: "Docs", icon: FileText, href: "#employee-documents" },
             ].map((t) => (
               <Link
                 key={t.label}
@@ -558,6 +590,12 @@ function EmployeeProfilePageInner() {
 
       {/* Grid layout */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* All documents for this employee (recruitment → onboarding → exit) */}
+        <div id="employee-documents" className="lg:col-span-2 scroll-mt-20">
+          <Section title="Documents" icon={<FileText size={16} />}>
+            <EmployeeDocuments employeeId={emp.id} />
+          </Section>
+        </div>
         {/* Contact */}
         <Section title="Contact Information" icon={<Mail size={16} />}>
           <dl className="grid grid-cols-2 gap-4">

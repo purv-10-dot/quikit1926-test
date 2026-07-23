@@ -78,4 +78,4 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     console.error("GET /leaves/dashboard error:", error);
     return internalError();
   }
-}, { requiredPermissions: ["hrms.leave.manage"] });
+}, { requiredPermissions: ["hrms.leave.manage", "hrms.leave.dashboard.read"], anyPermission: true });

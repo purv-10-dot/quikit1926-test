@@ -206,6 +206,10 @@ export default function NewCandidatePage() {
         toast.warning("CTC (LPA) required", "Enter annual CTC in lakhs in Professional step.");
         return;
       }
+      if (!form.templateId) {
+        toast.warning("Onboarding template required", "Pick an onboarding template in the Professional step (or save as draft).");
+        return;
+      }
     }
 
     const profilePhoto = isValidUrl(form.profilePhoto) ? form.profilePhoto : undefined;
@@ -660,9 +664,9 @@ export default function NewCandidatePage() {
                     <FormInput type="date" value={form.tentativeJoiningDate} min={todayInput()}
                       onChange={(e) => setForm({ ...form, tentativeJoiningDate: e.target.value, dateOfJoining: form.dateOfJoining || e.target.value })} />
                   </FormField>
-                  <FormField label="Onboarding Template">
+                  <FormField label="Onboarding Template" required>
                     <Select value={form.templateId} onChange={(v) => setForm({ ...form, templateId: v })}
-                      placeholder="Default (5 steps)" searchable clearable
+                      placeholder="Select a template" searchable clearable
                       options={(templates?.data ?? []).map((t) => ({
                         value: t.id, label: t.name,
                         description: `${Array.isArray(t.tasks) ? t.tasks.length : 0} tasks`,

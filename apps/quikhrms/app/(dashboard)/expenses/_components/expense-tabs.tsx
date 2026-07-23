@@ -12,11 +12,19 @@ export function ExpenseTabs() {
   const api = useApiClient();
   const pathname = usePathname() ?? "";
   const activeTab = useSearchParams()?.get("tab") ?? "";
-  const { permissions } = useDashboardConfig();
+  const { permissions, navKeys } = useDashboardConfig();
   const isSuper = permissions.includes("*");
   const canManage = isSuper || permissions.includes("hrms.expense.manage");
   const canReadAll = isSuper || permissions.includes("hrms.expense.read");
   const canApprove = isSuper || permissions.includes("hrms.expense.approve");
+
+  // Per-tab navigation allow-list (mirrors the sidebar). Default-allow — a role
+  // with no configured navKeys (or super-admin) sees every tab. Legacy
+  // "expenses" key grants all tabs for older role configs.
+  const navSet = new Set(navKeys);
+  const navConfigured = !isSuper && navSet.size > 0;
+  const legacyAll = navSet.has("expenses");
+  const navAllowed = (key: string) => !navConfigured || legacyAll || navSet.has(key);
 
   // Count of claims awaiting THIS user's approval — powers the tab badge.
   const { data: pending } = useQuery({
@@ -31,10 +39,10 @@ export function ExpenseTabs() {
   const approvalCount = Array.isArray(pending?.data) ? pending.data.length : 0;
 
   const tabs = [
-    { href: "/expenses", label: "Claims", icon: <Receipt size={13} />, show: true, isApprovals: false },
-    { href: "/expenses?tab=approvals", label: "Approvals", icon: <CheckSquare size={13} />, show: canApprove, isApprovals: true },
-    { href: "/expenses/policies", label: "Policies", icon: <ShieldCheck size={13} />, show: canManage, isApprovals: false },
-    { href: "/expenses/reports", label: "Reports", icon: <FileBarChart size={13} />, show: canReadAll, isApprovals: false },
+    { href: "/expenses", label: "Claims", icon: <Receipt size={13} />, show: navAllowed("expenses.claims"), isApprovals: false },
+    { href: "/expenses?tab=approvals", label: "Approvals", icon: <CheckSquare size={13} />, show: canApprove && navAllowed("expenses.approvals"), isApprovals: true },
+    { href: "/expenses/policies", label: "Policies", icon: <ShieldCheck size={13} />, show: canManage && navAllowed("expenses.policies"), isApprovals: false },
+    { href: "/expenses/reports", label: "Reports", icon: <FileBarChart size={13} />, show: canReadAll && navAllowed("expenses.reports"), isApprovals: false },
   ];
 
   return (

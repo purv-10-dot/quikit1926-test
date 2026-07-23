@@ -222,13 +222,24 @@ export default function OrgChartPage() {
   const api = useApiClient();
   const qc = useQueryClient();
   const dialog = useDialog();
-  const { hasPermission, isLoading: permsLoading } = useDashboardConfig();
+  const { hasPermission, isLoading: permsLoading, navKeys, permissions } = useDashboardConfig();
   // People directory access — same gate as the rest of the app. Users without
   // it may still view the Org Chart, but must not reach the Directory tab.
   const canViewDirectory =
     hasPermission("hrms.employee.read") ||
     hasPermission("hrms.employee.read_team") ||
     hasPermission("hrms.org.read");
+
+  // Per-tab navigation allow-list (mirrors the sidebar). Default-allow — a role
+  // with no configured navKeys (or super-admin) sees both tabs. Legacy
+  // "people.directory" key grants the whole page for older role configs.
+  const isSuper = permissions.includes("*");
+  const navSet = new Set(navKeys);
+  const navConfigured = !isSuper && navSet.size > 0;
+  const legacyAll = navSet.has("people.directory");
+  const navAllowed = (key: string) => !navConfigured || legacyAll || navSet.has(key);
+  const showDirectory = canViewDirectory && navAllowed("people.directory.list");
+  const showOrgChart = navAllowed("people.directory.orgchart");
   const [editMode, setEditMode] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
@@ -247,17 +258,20 @@ export default function OrgChartPage() {
       ? "orgchart"
       : "directory",
   );
-  // Once permissions load, lock users without directory access to the Org Chart.
+  // Once permissions load, keep the active tab within what the user can see.
   useEffect(() => {
-    if (!permsLoading && !canViewDirectory) setTopTab("orgchart");
+    if (permsLoading) return;
+    if (topTab === "directory" && !showDirectory && showOrgChart) setTopTab("orgchart");
+    else if (topTab === "orgchart" && !showOrgChart && showDirectory) setTopTab("directory");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [permsLoading, canViewDirectory]);
+  }, [permsLoading, topTab, showDirectory, showOrgChart]);
   const [directoryView, setDirectoryView] = useState<"list" | "grid">("list");
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [exporting, setExporting] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("chain");
   const [departmentId, setDepartmentId] = useState("");
   const [roleId, setRoleId] = useState("");
+  const [reportingManagerId, setReportingManagerId] = useState("");
   const [search, setSearch] = useState("");
   const [zoom, setZoom] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -348,9 +362,19 @@ export default function OrgChartPage() {
 
   const byId = useMemo(() => new Map(all.map((e) => [e.id, e])), [all]);
 
+  // Managers available for the "Reporting Manager" filter — anyone who is
+  // someone's reporting manager, sorted by name.
+  const managerOptions = useMemo(() => {
+    const managerIds = new Set(all.map((e) => e.reportingManagerId).filter(Boolean) as string[]);
+    return all
+      .filter((e) => managerIds.has(e.id))
+      .sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`));
+  }, [all]);
+
   const matchesFilters = (e: OrgEmployee): boolean => {
     if (departmentId && e.department?.id !== departmentId) return false;
     if (roleId && e.roleId !== roleId) return false;
+    if (reportingManagerId && e.reportingManagerId !== reportingManagerId) return false;
     if (statusFilter && e.status !== statusFilter) return false;
     if (search) {
       const q = search.toLowerCase().trim();
@@ -359,8 +383,10 @@ export default function OrgChartPage() {
     }
     return true;
   };
-  const hasActiveFilter = Boolean(departmentId || roleId || search || statusFilter);
-  const clearFilters = () => { setDepartmentId(""); setRoleId(""); setSearch(""); setStatusFilter(""); };
+  const hasActiveFilter = Boolean(departmentId || roleId || reportingManagerId || search || statusFilter);
+  const clearFilters = () => { setDepartmentId(""); setRoleId(""); setReportingManagerId(""); setSearch(""); setStatusFilter(""); };
+  // Live count of employees matching the current filters (drives the filter-bar badge).
+  const filteredCount = hasActiveFilter ? all.filter(matchesFilters).length : all.length;
 
   const exportDirectory = async () => {
     if (exporting) return;
@@ -594,15 +620,18 @@ export default function OrgChartPage() {
     return "";
   })();
 
+  if (!permsLoading && !showDirectory && !showOrgChart) {
+    return (
+      <div className="bg-white rounded-lg border border-gray-200 p-12 text-center text-gray-500 text-xs">
+        You don&apos;t have access to this section.
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="flex items-start justify-between mb-3 gap-3 flex-wrap">
-        <div className="flex items-center gap-3">
-          <h1 className="text-base font-semibold text-gray-900">Directory</h1>
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#dcfce7] text-[#16a34a] ring-1 ring-[#bbf7d0] text-[11px] font-semibold">
-            <UsersIcon size={12} /> {all.length}
-          </span>
-        </div>
+        <div />
         {topTab === "directory" ? (
           <div className="flex items-center gap-2">
             <Link
@@ -636,7 +665,7 @@ export default function OrgChartPage() {
 
       {/* Top tabs — Directory vs Org Chart */}
       <div className="bg-white rounded-lg border border-gray-200 p-1 inline-flex items-center gap-1 mb-3 shadow-sm">
-        {canViewDirectory && (
+        {showDirectory && (
         <button
           onClick={() => setTopTab("directory")}
           className={clsx(
@@ -653,6 +682,7 @@ export default function OrgChartPage() {
           </span>
         </button>
         )}
+        {showOrgChart && (
         <button
           onClick={() => setTopTab("orgchart")}
           className={clsx(
@@ -664,6 +694,7 @@ export default function OrgChartPage() {
         >
           <GitBranch size={14} /> Org Chart
         </button>
+        )}
       </div>
 
       {/* Filter bar */}
@@ -720,6 +751,37 @@ export default function OrgChartPage() {
             />
           </div>
 
+          <div className="min-w-[160px]">
+            <Select
+              value={roleId}
+              onChange={setRoleId}
+              placeholder="All roles"
+              size="sm"
+              options={[
+                { value: "", label: "All roles" },
+                ...roles.map((r) => ({ value: r.id, label: r.name })),
+              ]}
+            />
+          </div>
+
+          <div className="min-w-[180px]">
+            <Select
+              value={reportingManagerId}
+              onChange={setReportingManagerId}
+              placeholder="All managers"
+              size="sm"
+              options={[
+                { value: "", label: "All managers" },
+                ...managerOptions.map((m) => ({ value: m.id, label: `${m.firstName} ${m.lastName}` })),
+              ]}
+            />
+          </div>
+
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#dcfce7] text-[#16a34a] ring-1 ring-[#bbf7d0] text-[11px] font-semibold whitespace-nowrap">
+            {filteredCount} {filteredCount === 1 ? "result" : "results"}
+            {hasActiveFilter && <span className="text-[#16a34a]/70 font-normal">of {all.length}</span>}
+          </span>
+
           {hasActiveFilter && (
             <button
               onClick={clearFilters}
@@ -750,7 +812,7 @@ export default function OrgChartPage() {
         </div>
       </div>
 
-      {topTab === "directory" && canViewDirectory ? (
+      {topTab === "directory" && showDirectory ? (
         <DirectoryView
           employees={activeEmployees}
           hasActiveFilter={hasActiveFilter}

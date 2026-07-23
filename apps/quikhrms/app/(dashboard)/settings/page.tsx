@@ -77,6 +77,7 @@ const SECTIONS: Section[] = [
     icon: <Palette size={16} />,
     items: [
       { label: "Onboarding Templates", href: "/onboarding/templates", icon: <ClipboardList size={14} />, perms: ["hrms.onboarding.write"], keywords: "joining checklist" },
+      { label: "Offboarding Templates", href: "/offboarding/templates", icon: <ClipboardList size={14} />, perms: ["hrms.offboarding.write"], keywords: "exit clearance checklist" },
       { label: "Offer Letter Branding", href: "/settings/branding", icon: <Palette size={14} />, perms: ["hrms.settings.write"], keywords: "brand logo colour theme" },
       { label: "Report Templates", href: "/reports", icon: <BarChart3 size={14} />, perms: ["hrms.reports.manage"], keywords: "analytics export" },
       { label: "Email Templates", href: "/settings/email-templates", icon: <Mail size={14} />, perms: ["hrms.settings.write"], keywords: "mail notification message" },

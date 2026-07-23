@@ -31,6 +31,10 @@ interface Designation { id: string; title: string; }
 interface Location { id: string; name: string; }
 interface Employee { id: string; firstName: string; lastName: string; }
 
+type NoticePeriodOption = { id: string; name: string; duration: number; unit: "Days" | "Weeks" | "Months" };
+/** Convert a configured notice period to whole days (same math as offboarding). */
+const periodToDays = (p: NoticePeriodOption) => p.unit === "Months" ? p.duration * 30 : p.unit === "Weeks" ? p.duration * 7 : p.duration;
+
 interface BankAccount {
   bankName?: string;
   accountNumber?: string;
@@ -51,7 +55,7 @@ interface EmployeeData {
   jobTitle: string | null;
   departmentId: string | null; designationId: string | null; officeLocationId: string | null; reportingManagerId: string | null;
   employmentType: EmploymentType; workLocation: WorkLocation;
-  dateOfJoining: string; noticePeriodDays: number | null; previousExperience: number | null;
+  dateOfJoining: string; noticePeriodDays: number | null; noticePeriodId: string | null; previousExperience: number | null;
   status: EmployeeStatus;
   isHandicapped?: boolean;
   // Statutory applicability — defaults to true server-side if absent.
@@ -152,6 +156,8 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
   const { data: desigs } = useDesignations();
   const { data: locs } = useLocations();
   const { data: managers } = useQuery({ queryKey: ["employees-mgrs"], queryFn: () => api.get<Employee[]>("/api/v1/hrms/employees?limit=100") });
+  const { data: noticePeriodsData } = useQuery({ queryKey: ["notice-periods", "all"], queryFn: () => api.get<NoticePeriodOption[]>("/api/v1/hrms/offboarding/notice-periods?limit=100") });
+  const noticePeriods = noticePeriodsData?.data ?? [];
 
   const toast = useToast();
   const dialog = useDialog();
@@ -321,6 +327,7 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
       employmentType: form.employmentType,
       workLocation: form.workLocation,
       dateOfJoining: form.dateOfJoining,
+      noticePeriodId: form.noticePeriodId ?? null,
       noticePeriodDays: form.noticePeriodDays ?? undefined,
       previousExperience: form.previousExperience ?? undefined,
       status: form.status,
@@ -602,8 +609,16 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
                     options={WORK_LOCS.map((w) => ({ value: w, label: w }))}
                   />
                 </Field>
-                <Field label="Notice Period (days)">
-                  <NumberInput allowDecimal={false} value={form.noticePeriodDays} onChange={(v) => update({ noticePeriodDays: v })} className={inputCls} />
+                <Field label="Notice Period">
+                  <Select
+                    value={form.noticePeriodId ?? ""}
+                    onChange={(v) => {
+                      const p = noticePeriods.find((n) => n.id === v);
+                      update({ noticePeriodId: v || null, noticePeriodDays: p ? periodToDays(p) : null });
+                    }}
+                    placeholder={noticePeriods.length ? "Select notice period" : "No notice periods — add in Offboarding"}
+                    options={noticePeriods.map((n) => ({ value: n.id, label: `${n.name} (${n.duration} ${n.unit})` }))}
+                  />
                 </Field>
                 <Field label="Previous Experience (months)">
                   <NumberInput allowDecimal={false} value={form.previousExperience} onChange={(v) => update({ previousExperience: v })} className={inputCls} />

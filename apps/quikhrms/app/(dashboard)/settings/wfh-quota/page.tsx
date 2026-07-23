@@ -26,7 +26,6 @@ function initials(first?: string | null, last?: string | null) {
   return s || "?";
 }
 import { clsx } from "clsx";
-import { WfhTabs } from "../../wfh/_components/wfh-tabs";
 import { PageHeader } from "@/components/hrms/ui/page-header";
 
 type GroupMode = "Department" | "Employee";
@@ -233,7 +232,6 @@ export default function WfhQuotaPage() {
           </button>
         }
       />
-      <div className="mb-5"><WfhTabs /></div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-1 space-y-2">

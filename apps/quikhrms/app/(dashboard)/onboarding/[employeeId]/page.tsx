@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
-import { ArrowLeft, CheckCircle, Clock, PauseCircle, SkipForward, Check, Trophy, X, AlertTriangle, Upload, Paperclip, Shield, BadgeCheck, Plus, Trash2, Sparkles, Loader2, ChevronDown, ChevronUp, Banknote } from "lucide-react";
+import { ArrowLeft, CheckCircle, Clock, PauseCircle, SkipForward, Check, Trophy, X, AlertTriangle, Upload, Paperclip, Shield, BadgeCheck, Plus, Trash2, Sparkles, Loader2, ChevronDown, ChevronUp, Banknote, Send, UserCog } from "lucide-react";
 import { BankDetailsFields } from "@/components/hrms/bank-details-fields";
 import { useToast } from "@/components/hrms/toast";
 import { clsx } from "clsx";
@@ -15,8 +15,32 @@ import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { SkeletonLine } from "@/components/hrms/skeleton";
 import { todayInput } from "@/lib/utils/date-input";
+import { withBasePath } from "@/lib/utils/base-path";
 
 type TaskStatus = "TaskPending" | "TaskInProgress" | "TaskCompleted" | "TaskSkipped" | "TaskBlocked";
+
+// Friendly labels + a one-line settings summary for workflow step types carried
+// from the onboarding template onto the live task.
+const STEP_TYPE_LABEL: Record<string, string> = {
+  CustomTask: "Custom Task", CompleteProfile: "Complete Profile", DocumentUpload: "Document Upload", SendEmail: "Send Email", Approval: "Approval",
+  FillForm: "Fill Form", ESign: "E-Sign", ReadPolicy: "Read Policy", Training: "Training",
+  ITProvisioning: "IT Provisioning", AssetAssignment: "Asset Assignment", Notification: "Notification", ExternalLink: "External Link",
+};
+function stepSummary(stepType?: string | null, config?: Record<string, unknown> | null): string | null {
+  if (!stepType || !config) return null;
+  const g = (k: string) => { const v = config[k]; return v != null && v !== "" ? String(v) : null; };
+  const join = (...parts: (string | null)[]) => parts.filter(Boolean).join(" · ") || null;
+  switch (stepType) {
+    case "SendEmail": return join(g("template") && `Template: ${g("template")}`, g("recipient") && `To: ${g("recipient")}`);
+    case "Approval": return join(g("approver") && `Approver: ${g("approver")}`, g("autoApprove") && `Auto-approve: ${g("autoApprove")}`);
+    case "DocumentUpload": return join(g("allowedTypes") && `Types: ${g("allowedTypes")}`, g("maxSize") && `Max: ${g("maxSize")}`);
+    case "AssetAssignment": return join(g("asset") && `Asset: ${g("asset")}`, g("quantity") && `Qty: ${g("quantity")}`);
+    case "Training": return join(g("course") && `Course: ${g("course")}`, g("duration") && `Duration: ${g("duration")}`);
+    case "ITProvisioning": return join(g("system") && `Access: ${g("system")}`, g("owner") && `Owner: ${g("owner")}`);
+    case "Notification": return g("message") && `Message: ${g("message")}`;
+    default: return null;
+  }
+}
 
 type DocCategory = "OfferLetter" | "Policy" | "IdProof" | "Certificate" | "Contract" | "AppointmentLetter" | "ExperienceLetter" | "RelievingLetter" | "NDA" | "Other";
 
@@ -37,6 +61,7 @@ function guessCategory(title: string): DocCategory {
 interface Task {
   id: string; title: string; description: string | null; assigneeId: string | null; assigneeRole: string;
   category: string; dueDate: string | null; status: TaskStatus; completedAt: string | null; notes: string | null;
+  stepType?: string | null; config?: Record<string, unknown> | null;
   sortOrder: number; isMandatory: boolean;
 }
 
@@ -51,6 +76,7 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
   const { employeeId } = params;
   const api = useApiClient();
   const qc = useQueryClient();
+  const toast = useToast();
   const { employee: meEmp, hasPermission } = useDashboardConfig();
   // Self-view: the employee is looking at their own onboarding page. Hide
   // tasks assigned to other roles (IT/HR/Manager) — they can't act on those.
@@ -67,6 +93,7 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
   const [bankTask, setBankTask] = useState<Task | null>(null);
   const [bankForm, setBankForm] = useState({ bankName: "", bankAccountNumber: "", bankIfsc: "", bankBranch: "" });
   const [bankError, setBankError] = useState<string | null>(null);
+  const [profileTask, setProfileTask] = useState<Task | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["onboarding", employeeId],
@@ -77,6 +104,34 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
     mutationFn: ({ taskId, status }: { taskId: string; status: TaskStatus }) =>
       api.put(`/api/v1/hrms/onboarding/tasks/${taskId}`, { status }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["onboarding", employeeId] }),
+  });
+
+  // "Send now" for Send Email / Notification steps — sends the email, then marks
+  // the step In Progress (NOT complete) so the button disables/persists. A failed
+  // send throws before the status update, so the step stays Pending for a retry.
+  const sendEmailMut = useMutation({
+    mutationFn: async (taskId: string) => {
+      await api.post("/api/v1/hrms/mail/welcome", { employeeId });
+      await api.put(`/api/v1/hrms/onboarding/tasks/${taskId}`, { status: "TaskInProgress" });
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["onboarding", employeeId] }); toast.success("Email sent", "Mark the step complete when done."); },
+    onError: (e: unknown) => toast.error("Couldn't send email", e instanceof Error ? e.message : undefined),
+  });
+
+  // Document Upload step — email the candidate a secure upload link.
+  const docRequestMut = useMutation({
+    mutationFn: (taskId: string) => api.post(`/api/v1/hrms/onboarding/tasks/${taskId}/doc-request`, {}),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["onboarding", employeeId] }); toast.success("Request sent", "The candidate has been emailed an upload link."); },
+    onError: (e: unknown) => toast.error("Couldn't send request", e instanceof Error ? e.message : undefined),
+  });
+
+  // HR reviews the candidate's uploaded documents (approve / reject).
+  const [reviewTask, setReviewTask] = useState<Task | null>(null);
+  const docReviewMut = useMutation({
+    mutationFn: (v: { taskId: string; docName: string; action: "approve" | "reject"; reason?: string }) =>
+      api.post(`/api/v1/hrms/onboarding/tasks/${v.taskId}/doc-review`, { docName: v.docName, action: v.action, reason: v.reason }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["onboarding", employeeId] }); },
+    onError: (e: unknown) => toast.error("Review failed", e instanceof Error ? e.message : undefined),
   });
 
   const completeMut = useMutation({
@@ -210,7 +265,7 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
     inst.employeeId;
 
   return (
-    <div className="max-w-5xl">
+    <div className="w-full">
       <Link href="/onboarding" className="inline-flex items-center gap-1 text-xs text-[#22c55e] hover:underline mb-4">
         <ArrowLeft size={14} /> Back to dashboard
       </Link>
@@ -264,17 +319,14 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
             <span className="font-medium text-gray-900">{inst.completedTasks}/{inst.totalTasks} ({inst.progress}%)</span>
           </div>
           <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-            <div className="h-full bg-[#dcfce7]0 transition-all" style={{ width: `${inst.progress}%` }} />
+            <div className="h-full bg-green-500 transition-all" style={{ width: `${inst.progress}%` }} />
           </div>
         </div>
       </div>
 
-      {/* Provisions (laptop / SSO / software) are an IT-admin concern.
-          Employees viewing their own page don't see this. */}
-      {(!isSelfView || isAdminViewer) && <ProvisionsPanel employeeId={employeeId} />}
       <ConfirmationPanel employeeId={employeeId} pendingMandatory={pendingMandatoryCount} />
 
-      <div className="space-y-2">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
         {(isSelfView && !isAdminViewer
           ? inst.tasks.filter((t) => t.assigneeRole === "EmployeeRole")
           : inst.tasks
@@ -287,15 +339,59 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
                 <div className="flex items-center gap-2 mb-1">
                   <h3 className={clsx("text-[13px] font-semibold", t.status === "TaskCompleted" ? "line-through text-gray-400" : "text-gray-900")}>{t.title}</h3>
                   {t.isMandatory && <span className="text-red-500 text-xs">*</span>}
-                  <span className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded-full text-[11px] font-medium">{t.category}</span>
+                  {t.stepType
+                    ? <span className="px-2 py-0.5 bg-sky-50 text-sky-700 rounded-full text-[11px] font-medium">{STEP_TYPE_LABEL[t.stepType] ?? t.stepType}</span>
+                    : <span className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded-full text-[11px] font-medium">{t.category}</span>}
                   <span className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded-full text-[11px] font-medium">{t.assigneeRole}</span>
                 </div>
                 {t.description && <p className="text-xs text-gray-500 mb-1">{t.description}</p>}
+                {(() => { const s = stepSummary(t.stepType, t.config); return s ? <div className="text-[11px] text-gray-500 mb-1">{s}</div> : null; })()}
+                {t.stepType === "ExternalLink" && t.config && typeof t.config.url === "string" && t.config.url && (
+                  <a href={t.config.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#16a34a] mb-1 hover:underline">Open link ↗</a>
+                )}
                 {t.dueDate && <div className="text-xs text-gray-500">Due: {new Date(t.dueDate).toLocaleDateString("en-IN")}</div>}
                 {t.notes && <div className="text-xs text-gray-600 mt-1">{t.notes}</div>}
               </div>
               <div className="flex items-center gap-1">
-                {t.category === "Documentation" && t.status !== "TaskCompleted" && !isBankTask(t.title) && (
+                {(t.stepType === "SendEmail" || t.stepType === "Notification") && (t.status === "TaskPending" || t.status === "TaskInProgress") && (
+                  <Tooltip content={t.status === "TaskInProgress" ? "Email already sent" : "Send email now"}>
+                    <button onClick={() => sendEmailMut.mutate(t.id)} disabled={sendEmailMut.isPending || t.status === "TaskInProgress"}
+                      className={clsx("inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold disabled:opacity-60",
+                        t.status === "TaskInProgress" ? "bg-green-100 text-green-700 cursor-default" : "bg-green-600 text-white hover:bg-green-700")}>
+                      <Send size={11} /> {t.status === "TaskInProgress" ? "Sent" : sendEmailMut.isPending ? "Sending…" : "Send now"}
+                    </button>
+                  </Tooltip>
+                )}
+                {t.stepType === "DocumentUpload" && (() => {
+                  const uploads = ((t.config as Record<string, unknown> | null)?.uploads ?? {}) as Record<string, unknown>;
+                  const uploadCount = Object.keys(uploads).length;
+                  return (
+                    <>
+                      {uploadCount > 0 && (
+                        <button onClick={() => setReviewTask(t)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-gray-200 text-gray-700 hover:bg-gray-50">
+                          <BadgeCheck size={11} /> Review ({uploadCount})
+                        </button>
+                      )}
+                      {t.status !== "TaskCompleted" && (
+                        <button onClick={() => docRequestMut.mutate(t.id)} disabled={docRequestMut.isPending}
+                          className={clsx("inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold disabled:opacity-60",
+                            (t.config as Record<string, unknown> | null)?.requestSentAt ? "bg-amber-50 text-amber-700 ring-1 ring-amber-200 hover:bg-amber-100" : "bg-green-600 text-white hover:bg-green-700")}>
+                          <Send size={11} /> {docRequestMut.isPending ? "Sending…" : ((t.config as Record<string, unknown> | null)?.requestSentAt ? "Resend request" : "Send document request")}
+                        </button>
+                      )}
+                    </>
+                  );
+                })()}
+                {t.stepType === "CompleteProfile" && t.status !== "TaskCompleted" && (
+                  <Tooltip content="Fill the employee's mandatory profile details">
+                    <button onClick={() => setProfileTask(t)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-violet-600 text-white text-[11px] font-semibold hover:bg-violet-700">
+                      <UserCog size={11} /> Complete Profile
+                    </button>
+                  </Tooltip>
+                )}
+                {t.category === "Documentation" && t.status !== "TaskCompleted" && !isBankTask(t.title) && t.stepType !== "DocumentUpload" && (
                   <Tooltip content="Upload document">
                     <button onClick={() => openUpload(t)}
                       className="p-2 rounded-lg border border-[#bbf7d0] text-[#22c55e] hover:bg-[#dcfce7]">
@@ -311,20 +407,15 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
                     </button>
                   </Tooltip>
                 )}
-                <Tooltip content="Mark in progress">
-                  <button onClick={() => updateMut.mutate({ taskId: t.id, status: "TaskInProgress" })}
-                    disabled={t.status === "TaskInProgress"}
-                    className={clsx("p-2 rounded-lg border text-xs", t.status === "TaskInProgress" ? "bg-yellow-100 border-yellow-300 text-yellow-700" : "border-gray-300 text-gray-600 hover:bg-gray-50")}>
-                    <Clock size={12} />
-                  </button>
-                </Tooltip>
-                <Tooltip content="Mark complete">
-                  <button onClick={() => updateMut.mutate({ taskId: t.id, status: "TaskCompleted" })}
-                    disabled={t.status === "TaskCompleted"}
-                    className={clsx("p-2 rounded-lg border text-xs", t.status === "TaskCompleted" ? "bg-green-100 border-green-300 text-green-700" : "border-gray-300 text-gray-600 hover:bg-green-50")}>
-                    <CheckCircle size={12} />
-                  </button>
-                </Tooltip>
+                {!(t.category === "Documentation" || isBankTask(t.title)) && t.stepType !== "CompleteProfile" && (
+                  <Tooltip content="Mark complete">
+                    <button onClick={() => updateMut.mutate({ taskId: t.id, status: "TaskCompleted" })}
+                      disabled={t.status === "TaskCompleted"}
+                      className={clsx("p-2 rounded-lg border text-xs", t.status === "TaskCompleted" ? "bg-green-100 border-green-300 text-green-700" : "border-gray-300 text-gray-600 hover:bg-green-50")}>
+                      <CheckCircle size={12} />
+                    </button>
+                  </Tooltip>
+                )}
                 <Tooltip content="Skip task">
                   <button onClick={() => updateMut.mutate({ taskId: t.id, status: "TaskSkipped" })}
                     className="p-2 rounded-lg border border-[var(--border)] text-gray-600 hover:bg-gray-50">
@@ -342,6 +433,60 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
           </div>
         ))}
       </div>
+
+      {/* HR document review */}
+      {reviewTask && (() => {
+        const rt = inst.tasks.find((t) => t.id === reviewTask.id) ?? reviewTask;
+        const cfg = (rt.config ?? {}) as Record<string, unknown>;
+        const docs = Array.isArray(cfg.documents) ? (cfg.documents as string[]).filter(Boolean) : [];
+        const uploads = (cfg.uploads ?? {}) as Record<string, { url: string; fileName: string; review: string; rejectReason?: string }>;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setReviewTask(null)} />
+            <div className="relative bg-white rounded-xl shadow-2xl ring-1 ring-slate-200 w-full max-w-lg overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100">
+                <div><h3 className="text-sm font-bold text-gray-900">Review documents</h3><p className="text-[11px] text-gray-500">{rt.title}</p></div>
+                <button onClick={() => setReviewTask(null)} className="text-gray-400 hover:text-gray-700"><X size={18} /></button>
+              </div>
+              <div className="p-4 max-h-[70vh] overflow-y-auto space-y-2.5">
+                {docs.map((doc) => {
+                  const up = uploads[doc];
+                  const review = up?.review ?? "missing";
+                  return (
+                    <div key={doc} className="rounded-lg border border-gray-200 p-3">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[13px] font-semibold text-gray-900 truncate">{doc}</div>
+                          <div className="text-[11px] text-gray-400 truncate">{up ? up.fileName : "Not uploaded yet"}</div>
+                        </div>
+                        {up && (
+                          <a href={withBasePath(up.url)} target="_blank" rel="noreferrer" className="shrink-0 text-[11px] font-semibold text-green-700 hover:underline">View</a>
+                        )}
+                        <span className={clsx("shrink-0 px-2 py-0.5 rounded-full text-[10px] font-semibold",
+                          review === "approved" ? "bg-green-100 text-green-700" :
+                          review === "rejected" ? "bg-red-100 text-red-700" :
+                          review === "pending" ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-500")}>
+                          {review === "missing" ? "Not uploaded" : review}
+                        </span>
+                      </div>
+                      {up?.rejectReason && review === "rejected" && <div className="mt-1.5 text-[11px] text-red-600">Reason: {up.rejectReason}</div>}
+                      {up && review !== "approved" && (
+                        <div className="flex gap-2 mt-2.5">
+                          <button onClick={() => docReviewMut.mutate({ taskId: rt.id, docName: doc, action: "approve" })} disabled={docReviewMut.isPending}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-green-600 text-white hover:bg-green-700 disabled:opacity-60"><Check size={11} /> Approve</button>
+                          <button onClick={() => { const reason = window.prompt("Reason for rejection (optional):") ?? undefined; docReviewMut.mutate({ taskId: rt.id, docName: doc, action: "reject", reason }); }} disabled={docReviewMut.isPending}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-red-50 text-red-600 ring-1 ring-red-200 hover:bg-red-100 disabled:opacity-60"><X size={11} /> Reject</button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="px-5 py-3 border-t border-gray-100 bg-gray-50 text-[11px] text-gray-500">The task completes automatically once every document is approved.</div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Complete Confirmation */}
       {confirmComplete && (
@@ -544,6 +689,15 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
             </div>
           </div>
         </div>
+      )}
+
+      {profileTask && (
+        <ProfileModal
+          employeeId={employeeId}
+          task={profileTask}
+          onClose={() => setProfileTask(null)}
+          onSaved={() => { setProfileTask(null); qc.invalidateQueries({ queryKey: ["onboarding", employeeId] }); toast.success("Profile saved", "The step is now complete."); }}
+        />
       )}
 
       {/* Cancel Confirmation */}
@@ -887,6 +1041,169 @@ function ProvisionsPanel({ employeeId }: { employeeId: string }) {
   );
 }
 
+// ─── Complete Profile modal ──────────────────────────────
+// Fills the mandatory employee fields the recruit → onboard path leaves blank
+// (DOB, gender, address, emergency contact, PAN/Aadhaar, reporting manager),
+// saves them to the employee, then marks the onboarding step complete.
+
+const GENDERS = ["Male", "Female", "Transgender", "NonBinary", "PreferNotToSay"];
+const PINPUT = "w-full border border-slate-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500";
+
+interface EmpProfile {
+  dateOfBirth?: string | null; gender?: string | null; personalPhone?: string | null;
+  panNumber?: string | null; aadhaarNumber?: string | null; reportingManagerId?: string | null;
+  currentAddress?: { line1?: string; city?: string; state?: string; country?: string; zipCode?: string } | null;
+  emergencyContacts?: Array<{ name?: string; relationship?: string; phone?: string }> | null;
+}
+
+function ProfileModal({ employeeId, task, onClose, onSaved }: { employeeId: string; task: Task; onClose: () => void; onSaved: () => void }) {
+  const api = useApiClient();
+
+  const { data: empResp, isLoading } = useQuery({
+    queryKey: ["employee-profile", employeeId],
+    queryFn: () => api.get<EmpProfile>(`/api/v1/hrms/employees/${employeeId}`),
+  });
+  const { data: peopleResp } = useQuery({
+    queryKey: ["org-chart"],
+    queryFn: () => api.get<{ employees: { id: string; firstName: string; lastName: string }[] }>("/api/v1/hrms/org-chart"),
+  });
+  const managerOpts = (peopleResp?.data?.employees ?? [])
+    .filter((e) => e.id !== employeeId)
+    .map((e) => ({ value: e.id, label: `${e.firstName} ${e.lastName}`.trim() }));
+
+  const [form, setForm] = useState({
+    dateOfBirth: "", gender: "", personalPhone: "", panNumber: "", aadhaarNumber: "", reportingManagerId: "",
+    line1: "", city: "", state: "", country: "", zipCode: "",
+    ecName: "", ecRelationship: "", ecPhone: "",
+  });
+  const [error, setError] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    const e = empResp?.data;
+    if (!e || ready) return;
+    const a = e.currentAddress ?? {};
+    const ec = (e.emergencyContacts ?? [])[0] ?? {};
+    setForm((f) => ({
+      ...f,
+      dateOfBirth: e.dateOfBirth ? String(e.dateOfBirth).slice(0, 10) : "",
+      gender: e.gender ?? "",
+      personalPhone: e.personalPhone ?? "",
+      panNumber: e.panNumber ?? "",
+      aadhaarNumber: e.aadhaarNumber ?? "",
+      reportingManagerId: e.reportingManagerId ?? "",
+      line1: a.line1 ?? "", city: a.city ?? "", state: a.state ?? "", country: a.country ?? "", zipCode: a.zipCode ?? "",
+      ecName: ec.name ?? "", ecRelationship: ec.relationship ?? "", ecPhone: ec.phone ?? "",
+    }));
+    setReady(true);
+  }, [empResp?.data, ready]);
+
+  const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+  const saveMut = useMutation({
+    mutationFn: async () => {
+      if (!form.dateOfBirth) throw new Error("Date of birth is required");
+      if (!form.reportingManagerId) throw new Error("Reporting manager is required");
+
+      const addrFilled = [form.line1, form.city, form.state, form.country, form.zipCode].some((x) => x.trim());
+      if (addrFilled && ![form.line1, form.city, form.state, form.country, form.zipCode].every((x) => x.trim())) {
+        throw new Error("Fill the full current address (all fields) or leave it blank");
+      }
+      const ecFilled = [form.ecName, form.ecRelationship, form.ecPhone].some((x) => x.trim());
+      if (ecFilled && ![form.ecName, form.ecRelationship, form.ecPhone].every((x) => x.trim())) {
+        throw new Error("Fill the full emergency contact (name, relationship, phone) or leave it blank");
+      }
+
+      const payload: Record<string, unknown> = {
+        dateOfBirth: form.dateOfBirth,
+        reportingManagerId: form.reportingManagerId,
+      };
+      if (form.gender) payload.gender = form.gender;
+      if (form.personalPhone.trim()) payload.personalPhone = form.personalPhone.trim();
+      if (form.panNumber.trim()) payload.panNumber = form.panNumber.trim();
+      if (form.aadhaarNumber.trim()) payload.aadhaarNumber = form.aadhaarNumber.trim();
+      if (addrFilled) payload.currentAddress = { line1: form.line1.trim(), city: form.city.trim(), state: form.state.trim(), country: form.country.trim(), zipCode: form.zipCode.trim() };
+      if (ecFilled) payload.emergencyContacts = [{ name: form.ecName.trim(), relationship: form.ecRelationship.trim(), phone: form.ecPhone.trim() }];
+
+      await api.patch(`/api/v1/hrms/employees/${employeeId}`, payload);
+      await api.put(`/api/v1/hrms/onboarding/tasks/${task.id}`, { status: "TaskCompleted" });
+    },
+    meta: { suppressGlobalError: true },
+    onSuccess: onSaved,
+    onError: (e: Error) => setError(e.message),
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => !saveMut.isPending && onClose()} />
+      <div className="relative bg-white rounded-xl shadow-2xl ring-1 ring-slate-200 w-full max-w-2xl mx-4 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div className="flex items-start gap-4 p-4 border-b border-slate-100">
+          <div className="shrink-0 flex items-center justify-center w-12 h-12 rounded-full bg-violet-50 ring-4 ring-violet-50/60">
+            <UserCog className="w-6 h-6 text-violet-600" />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-lg font-semibold text-slate-900">Complete Profile</h3>
+            <p className="mt-1 text-xs text-slate-500">Fill the new hire&apos;s mandatory details. Saved to their employee record.</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+        </div>
+
+        {isLoading ? (
+          <div className="p-8 flex items-center justify-center text-slate-400"><Loader2 className="animate-spin" size={20} /></div>
+        ) : (
+          <div className="p-4 max-h-[70vh] overflow-y-auto space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div><label className="block text-[11px] font-semibold text-slate-600 mb-1">Date of Birth <span className="text-red-500">*</span></label>
+                <input type="date" value={form.dateOfBirth} onChange={(e) => set("dateOfBirth", e.target.value)} className={PINPUT} /></div>
+              <div><label className="block text-[11px] font-semibold text-slate-600 mb-1">Gender</label>
+                <Select size="sm" value={form.gender} onChange={(v) => set("gender", v)} options={[{ value: "", label: "Select…" }, ...GENDERS.map((g) => ({ value: g, label: g }))]} /></div>
+              <div><label className="block text-[11px] font-semibold text-slate-600 mb-1">Personal Phone</label>
+                <input value={form.personalPhone} onChange={(e) => set("personalPhone", e.target.value)} placeholder="+91…" className={PINPUT} /></div>
+              <div><label className="block text-[11px] font-semibold text-slate-600 mb-1">Reporting Manager <span className="text-red-500">*</span></label>
+                <Select size="sm" value={form.reportingManagerId} onChange={(v) => set("reportingManagerId", v)} searchable options={[{ value: "", label: "Select manager…" }, ...managerOpts]} /></div>
+              <div><label className="block text-[11px] font-semibold text-slate-600 mb-1">PAN Number</label>
+                <input value={form.panNumber} onChange={(e) => set("panNumber", e.target.value.toUpperCase())} placeholder="ABCDE1234F" className={PINPUT} /></div>
+              <div><label className="block text-[11px] font-semibold text-slate-600 mb-1">Aadhaar Number</label>
+                <input value={form.aadhaarNumber} onChange={(e) => set("aadhaarNumber", e.target.value)} placeholder="12-digit" className={PINPUT} /></div>
+            </div>
+
+            <div>
+              <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-2">Current Address</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="sm:col-span-2"><input value={form.line1} onChange={(e) => set("line1", e.target.value)} placeholder="Address line" className={PINPUT} /></div>
+                <input value={form.city} onChange={(e) => set("city", e.target.value)} placeholder="City" className={PINPUT} />
+                <input value={form.state} onChange={(e) => set("state", e.target.value)} placeholder="State" className={PINPUT} />
+                <input value={form.country} onChange={(e) => set("country", e.target.value)} placeholder="Country" className={PINPUT} />
+                <input value={form.zipCode} onChange={(e) => set("zipCode", e.target.value)} placeholder="PIN / ZIP" className={PINPUT} />
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-2">Emergency Contact</div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <input value={form.ecName} onChange={(e) => set("ecName", e.target.value)} placeholder="Name" className={PINPUT} />
+                <input value={form.ecRelationship} onChange={(e) => set("ecRelationship", e.target.value)} placeholder="Relationship" className={PINPUT} />
+                <input value={form.ecPhone} onChange={(e) => set("ecPhone", e.target.value)} placeholder="Phone" className={PINPUT} />
+              </div>
+            </div>
+
+            {error && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-md px-2.5 py-1.5">{error}</p>}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 px-4 py-3 border-t border-slate-100 bg-white">
+          <button type="button" onClick={onClose} disabled={saveMut.isPending}
+            className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">Cancel</button>
+          <button onClick={() => { setError(null); saveMut.mutate(); }} disabled={saveMut.isPending || isLoading}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-xs font-medium shadow-sm disabled:opacity-50">
+            {saveMut.isPending ? "Saving…" : <><UserCog size={13} /> Save &amp; Complete</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Confirmation Panel ──────────────────────────────────
 
 function ConfirmationPanel({ employeeId, pendingMandatory }: { employeeId: string; pendingMandatory: number }) {
@@ -907,9 +1224,27 @@ function ConfirmationPanel({ employeeId, pendingMandatory }: { employeeId: strin
 
   const { data: empData } = useQuery({
     queryKey: ["employee", employeeId],
-    queryFn: () => api.get<{ id: string; firstName: string; lastName: string; workEmail: string; confirmationDate: string | null; probationEndDate: string | null; dateOfJoining: string; status: string }>(`/api/v1/hrms/employees/${employeeId}`),
+    queryFn: () => api.get<{ id: string; firstName: string; lastName: string; workEmail: string; jobTitle: string | null; confirmationDate: string | null; probationEndDate: string | null; dateOfJoining: string; status: string }>(`/api/v1/hrms/employees/${employeeId}`),
   });
   const emp = empData?.data;
+
+  // Pre-fill the form from what we already know once the employee loads:
+  // Confirmation Date = probation end date, Revised Designation = current title,
+  // Next Review Date = 6 months after confirmation. All stay editable.
+  useEffect(() => {
+    if (!emp) return;
+    const conf = emp.probationEndDate ? emp.probationEndDate.slice(0, 10) : todayIso;
+    const rev = new Date(`${conf}T00:00:00`);
+    rev.setMonth(rev.getMonth() + 6);
+    const revIso = new Date(rev.getTime() - rev.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    setForm((f) => ({
+      ...f,
+      confirmationDate: emp.probationEndDate ? conf : f.confirmationDate,
+      revisedDesignation: f.revisedDesignation || (emp.jobTitle ?? ""),
+      nextReviewDate: f.nextReviewDate || revIso,
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emp?.id]);
 
   const router = useRouter();
   const confirmMut = useMutation({

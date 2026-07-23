@@ -23,11 +23,27 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     });
     if (!employee) return validationError("Employee not found.");
 
+    // Last working date is derived from the chosen notice period master:
+    // resignation date + (duration × unit). Raw SQL so this works without
+    // regenerating the Prisma client.
+    const npRows = await prisma.$queryRaw<Array<{ duration: number; unit: string }>>`
+      SELECT duration, unit::text AS unit
+      FROM "app_quikhrms"."NoticePeriod"
+      WHERE id = ${parsed.data.noticePeriodId} AND "orgId" = ${orgId} AND "deletedAt" IS NULL
+      LIMIT 1
+    `;
+    if (!npRows.length) return validationError("Notice period not found.");
+    const noticePeriod = npRows[0];
+
     const resignationDate = new Date(parsed.data.resignationDate);
-    const lastWorkingDate = new Date(parsed.data.lastWorkingDate);
-    if (lastWorkingDate < resignationDate) {
-      return validationError("Last working date cannot be before the resignation date.");
+    const lastWorkingDate = new Date(resignationDate);
+    if (noticePeriod.unit === "Months") {
+      lastWorkingDate.setMonth(lastWorkingDate.getMonth() + noticePeriod.duration);
+    } else {
+      const days = noticePeriod.unit === "Weeks" ? noticePeriod.duration * 7 : noticePeriod.duration;
+      lastWorkingDate.setDate(lastWorkingDate.getDate() + days);
     }
+
     if (employee.dateOfJoining && lastWorkingDate < new Date(employee.dateOfJoining)) {
       return validationError("Last working date cannot be before the joining date.");
     }
@@ -37,7 +53,22 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     });
     if (existing) return conflict("Employee already has an offboarding instance");
 
-    const tasks = parsed.data.tasks && parsed.data.tasks.length > 0 ? parsed.data.tasks : DEFAULT_OFFBOARDING_TASKS;
+    // Task source priority: explicit tasks → chosen template's tasks → defaults.
+    let templateTasks: typeof DEFAULT_OFFBOARDING_TASKS | null = null;
+    if (parsed.data.templateId) {
+      const rows = await prisma.$queryRaw<Array<{ tasks: unknown }>>`
+        SELECT tasks FROM "app_quikhrms"."OffboardingTemplate"
+        WHERE id = ${parsed.data.templateId} AND "orgId" = ${orgId} AND "deletedAt" IS NULL
+        LIMIT 1
+      `;
+      if (!rows.length) return validationError("Offboarding template not found.");
+      templateTasks = Array.isArray(rows[0].tasks) ? (rows[0].tasks as typeof DEFAULT_OFFBOARDING_TASKS) : null;
+    }
+    const tasks = parsed.data.tasks && parsed.data.tasks.length > 0
+      ? parsed.data.tasks
+      : templateTasks && templateTasks.length > 0
+        ? templateTasks
+        : DEFAULT_OFFBOARDING_TASKS;
 
     const instance = await prisma.offboardingInstance.create({
       data: {
@@ -65,6 +96,14 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       include: { tasks: { orderBy: { sortOrder: "asc" } } },
     });
 
+    // Link the chosen notice period via raw SQL (column not in the current
+    // generated client).
+    await prisma.$executeRaw`
+      UPDATE "app_quikhrms"."OffboardingInstance"
+      SET "noticePeriodId" = ${parsed.data.noticePeriodId}, "templateId" = ${parsed.data.templateId ?? null}
+      WHERE id = ${instance.id}
+    `;
+
     await prisma.employee.update({
       where: { id: parsed.data.employeeId },
       data: { status: "OnNotice", lastWorkingDate },
@@ -79,7 +118,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         employeeId: parsed.data.employeeId,
         instanceId: instance.id,
         resignationDate: parsed.data.resignationDate,
-        lastWorkingDate: parsed.data.lastWorkingDate,
+        lastWorkingDate: lastWorkingDate.toISOString().slice(0, 10),
         reason: parsed.data.reason,
       },
     });

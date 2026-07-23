@@ -6,6 +6,7 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
 import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
+import { SalaryBreakdown } from "@/components/hrms/salary-breakdown";
 import { useDepartments, useDesignations, useLocations, useRoles, useSalaryTemplates } from "@/lib/hooks/use-ref-data";
 import { clsx } from "clsx";
 import {
@@ -33,6 +34,12 @@ const emptyCert = (): Certification => ({ name: "", courseName: "", issuingAutho
 
 const SOURCES = ["Referral", "JobPortal", "LinkedIn", "Agency", "Campus", "Direct", "Other"];
 const RELATIONS = ["Spouse", "Child", "Father", "Mother", "Sibling", "Guardian", "Other"];
+
+// Local (client-side) validation helpers.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const isEmail = (s: string) => EMAIL_RE.test(s.trim());
+const isHttpUrl = (s: string) => /^https?:\/\/\S+$/i.test(s.trim());
+const digits = (s: string) => s.replace(/\D/g, "");
 
 const STEPS: { title: string; subtitle: string; icon: LucideIcon }[] = [
   { title: "Personal Details", subtitle: "Basic contact information", icon: User },
@@ -187,8 +194,25 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
 
   const missingRequired = () => {
     if (!form.firstName.trim() || !form.lastName.trim() || !form.workEmail.trim()) return { step: 0, msg: "First name, last name and work email are required." };
+    if (!isEmail(form.workEmail)) return { step: 0, msg: "Enter a valid work email address." };
+    if (form.personalEmail.trim() && !isEmail(form.personalEmail)) return { step: 0, msg: "Enter a valid personal email address." };
+    if (form.personalPhone.trim() && digits(form.personalPhone).length !== 10) return { step: 0, msg: "Personal phone must be a 10-digit number." };
+    if (form.profilePhoto.trim() && !isHttpUrl(form.profilePhoto)) return { step: 0, msg: "Profile photo must be a valid URL (https://…)." };
+    if (form.panNumber.trim() && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(form.panNumber.trim())) return { step: 1, msg: "PAN must be in the format ABCDE1234F." };
+    if (form.aadhaarNumber.trim() && digits(form.aadhaarNumber).length !== 12) return { step: 1, msg: "Aadhaar must be a 12-digit number." };
+    for (const c of emergency) {
+      if (!(c.name || c.relationship || c.phone || c.email || c.address)) continue;
+      if (c.email.trim() && !isEmail(c.email)) return { step: 3, msg: "Emergency contact email is invalid." };
+      if (c.phone.trim() && digits(c.phone).length !== 10) return { step: 3, msg: "Emergency contact phone must be a 10-digit number." };
+    }
+    if (form.offerLetterUrl.trim() && !isHttpUrl(form.offerLetterUrl)) return { step: 4, msg: "Offer letter must be a valid URL (https://…)." };
+    for (const c of certs) {
+      if (c.credentialUrl.trim() && !isHttpUrl(c.credentialUrl)) return { step: 8, msg: "Certification credential URL must be a valid URL (https://…)." };
+    }
     if (!form.reportingManagerId || !form.roleId || !form.salaryTemplateId || !(form.ctcLpa && form.ctcLpa > 0))
       return { step: 4, msg: "Reporting manager, role, salary template and CTC (LPA) are required." };
+    if (!form.templateId)
+      return { step: 4, msg: "An onboarding template is required. Pick one in the Employment step (or use Save Draft)." };
     return null;
   };
 
@@ -206,7 +230,8 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
   const Section = STEPS[step];
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-gradient-to-br from-white via-[#f7faf8] to-[#eef4f0]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 bg-black/40">
+      <div className="relative w-full max-w-6xl h-[98vh] max-h-[98vh] flex flex-col overflow-hidden rounded-2xl shadow-2xl bg-gradient-to-br from-white via-[#f7faf8] to-[#eef4f0]">
       {/* Header */}
       <header className="shrink-0 flex items-center justify-between px-6 py-4 bg-white/80 backdrop-blur border-b border-gray-100">
         <div className="flex items-center gap-3">
@@ -262,7 +287,7 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
 
         {/* Main content */}
         <main className="flex-1 min-h-0 overflow-y-auto px-6 lg:px-10 py-8">
-          <div className="max-w-4xl mx-auto">
+          <div className="max-w-5xl mx-auto">
             <div className="flex items-start justify-between gap-4 mb-6">
               <div className="flex items-start gap-3.5">
                 <div className="w-12 h-12 rounded-xl bg-green-50 text-[#16a34a] flex items-center justify-center shrink-0">
@@ -291,7 +316,7 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
                   <F label="Last Name *"><input className={inputCls} placeholder="Enter last name" value={form.lastName} onChange={(e) => set("lastName", e.target.value)} /></F>
                   <F label="Work Email *"><input type="email" className={inputCls} placeholder="name@company.com" value={form.workEmail} onChange={(e) => set("workEmail", e.target.value)} /></F>
                   <F label="Personal Email"><input type="email" className={inputCls} placeholder="name@gmail.com" value={form.personalEmail} onChange={(e) => set("personalEmail", e.target.value)} /></F>
-                  <F label="Personal Phone"><input className={inputCls} placeholder="+91…" value={form.personalPhone} onChange={(e) => set("personalPhone", e.target.value)} /></F>
+                  <F label="Personal Phone"><input className={inputCls} inputMode="numeric" maxLength={10} placeholder="10-digit mobile number" value={form.personalPhone} onChange={(e) => set("personalPhone", e.target.value.replace(/\D/g, "").slice(0, 10))} /></F>
                   <F label="Profile Photo URL"><input className={inputCls} placeholder="https://…" value={form.profilePhoto} onChange={(e) => set("profilePhoto", e.target.value)} /></F>
                 </Grid2>
               </Card>
@@ -300,8 +325,8 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
             {step === 1 && (
               <Card>
                 <Grid2>
-                  <F label="PAN Number"><input className={clsx(inputCls, "font-mono uppercase")} maxLength={10} placeholder="ABCDE1234F" value={form.panNumber} onChange={(e) => set("panNumber", e.target.value.toUpperCase())} /></F>
-                  <F label="Aadhaar Number"><input className={clsx(inputCls, "font-mono")} maxLength={12} placeholder="XXXX XXXX XXXX" value={form.aadhaarNumber} onChange={(e) => set("aadhaarNumber", e.target.value)} /></F>
+                  <F label="PAN Number"><input className={clsx(inputCls, "font-mono uppercase")} maxLength={10} placeholder="ABCDE1234F" value={form.panNumber} onChange={(e) => set("panNumber", e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10))} /></F>
+                  <F label="Aadhaar Number"><input className={clsx(inputCls, "font-mono")} inputMode="numeric" maxLength={12} placeholder="XXXX XXXX XXXX" value={form.aadhaarNumber} onChange={(e) => set("aadhaarNumber", e.target.value.replace(/\D/g, "").slice(0, 12))} /></F>
                 </Grid2>
               </Card>
             )}
@@ -333,7 +358,7 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
                     <>
                       <input className={inputCls} placeholder="Enter full name" value={row.name} onChange={(e) => updateAt(setEmergency, emergency, i, { name: e.target.value })} />
                       <input className={inputCls} placeholder="e.g. Spouse" value={row.relationship} onChange={(e) => updateAt(setEmergency, emergency, i, { relationship: e.target.value })} />
-                      <input className={inputCls} placeholder="+91…" value={row.phone} onChange={(e) => updateAt(setEmergency, emergency, i, { phone: e.target.value })} />
+                      <input className={inputCls} inputMode="numeric" maxLength={10} placeholder="10-digit mobile" value={row.phone} onChange={(e) => updateAt(setEmergency, emergency, i, { phone: e.target.value.replace(/\D/g, "").slice(0, 10) })} />
                       <input className={inputCls} placeholder="email (optional)" value={row.email} onChange={(e) => updateAt(setEmergency, emergency, i, { email: e.target.value })} />
                     </>
                   )}
@@ -354,10 +379,19 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
                   <F label="Role *"><Select value={form.roleId} onChange={(v) => set("roleId", v)} searchable placeholder="Select…" options={roleOpts} /></F>
                   <F label="Salary Template *"><Select value={form.salaryTemplateId} onChange={(v) => set("salaryTemplateId", v)} searchable placeholder="Select…" options={salaryOpts} /></F>
                   <F label="CTC (LPA) *"><NumberInput min={0} value={form.ctcLpa} onChange={(v) => set("ctcLpa", v)} className={inputCls} /></F>
+                  {form.salaryTemplateId && (() => {
+                    const tpl = (templatesData?.data ?? []).find((s) => s.id === form.salaryTemplateId);
+                    if (!tpl) return null;
+                    return (
+                      <div className="md:col-span-2">
+                        <SalaryBreakdown components={tpl.components ?? []} annualCTC={(form.ctcLpa ?? 0) * 100000} />
+                      </div>
+                    );
+                  })()}
                   <F label="Source of Hire"><Select value={form.sourceOfHire} onChange={(v) => set("sourceOfHire", v)} options={SOURCES.map((s) => ({ value: s, label: s }))} /></F>
                   <F label="Previous Experience (months)"><NumberInput allowDecimal={false} min={0} value={form.previousExperience} onChange={(v) => set("previousExperience", v)} className={inputCls} /></F>
                   <F label="Date of Joining"><input type="date" className={inputCls} value={form.dateOfJoining} onChange={(e) => set("dateOfJoining", e.target.value)} /></F>
-                  <F label="Onboarding Template"><Select value={form.templateId} onChange={(v) => set("templateId", v)} searchable placeholder="Use default tasks" options={onbOpts} /></F>
+                  <F label="Onboarding Template *"><Select value={form.templateId} onChange={(v) => set("templateId", v)} searchable placeholder="Select a template" options={onbOpts} /></F>
                   <F label="Highest Qualification"><input className={inputCls} placeholder="e.g. B.Tech" value={form.highestQualification} onChange={(e) => set("highestQualification", e.target.value)} /></F>
                   <F label="Skills (comma-separated)"><input className={inputCls} placeholder="React, SQL…" value={form.skillSet} onChange={(e) => set("skillSet", e.target.value)} /></F>
                 </Grid2>
@@ -500,6 +534,7 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
           </button>
         </div>
       </footer>
+      </div>
     </div>
   );
 }
@@ -520,14 +555,34 @@ function F({ label, children }: { label: string; children: React.ReactNode }) {
   return <div><label className={labelCls}>{label}</label>{children}</div>;
 }
 function AddressFields({ value, onChange }: { value: Addr; onChange: (a: Addr) => void }) {
+  const api = useApiClient();
+  const [looking, setLooking] = useState(false);
   const u = (patch: Partial<Addr>) => onChange({ ...value, ...patch });
+
+  // Enter a 6-digit PIN → auto-fill City / State / Country from India Post.
+  const onPin = async (raw: string) => {
+    const pin = raw.replace(/\D/g, "").slice(0, 6);
+    u({ postalCode: pin });
+    if (pin.length !== 6) return;
+    setLooking(true);
+    try {
+      const res = await api.get<{ city: string; state: string; country: string }>(`/api/v1/hrms/util/pincode?pin=${pin}`);
+      const d = res.data;
+      if (d) onChange({ ...value, postalCode: pin, city: d.city, state: d.state, country: d.country });
+    } catch {
+      /* leave fields as-is if lookup fails */
+    } finally {
+      setLooking(false);
+    }
+  };
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">
       <F label="Address Line 1"><input className={inputCls} value={value.line1} onChange={(e) => u({ line1: e.target.value })} /></F>
       <F label="Address Line 2"><input className={inputCls} value={value.line2} onChange={(e) => u({ line2: e.target.value })} /></F>
+      <F label="Postal Code"><input className={inputCls} inputMode="numeric" maxLength={6} placeholder="6-digit PIN — auto-fills city/state" value={value.postalCode} onChange={(e) => onPin(e.target.value)} /></F>
       <F label="City"><input className={inputCls} value={value.city} onChange={(e) => u({ city: e.target.value })} /></F>
-      <F label="State"><input className={inputCls} value={value.state} onChange={(e) => u({ state: e.target.value })} /></F>
-      <F label="Postal Code"><input className={inputCls} value={value.postalCode} onChange={(e) => u({ postalCode: e.target.value })} /></F>
+      <F label={looking ? "State (looking up…)" : "State"}><input className={inputCls} value={value.state} onChange={(e) => u({ state: e.target.value })} /></F>
       <F label="Country"><input className={inputCls} value={value.country} onChange={(e) => u({ country: e.target.value })} /></F>
     </div>
   );

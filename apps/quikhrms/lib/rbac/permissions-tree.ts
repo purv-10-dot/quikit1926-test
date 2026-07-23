@@ -69,6 +69,7 @@ export const PERMISSION_TREE: PermModule[] = [
       { resource: "Leave.Approve", label: "Approve Leave",       actions: { view: NO, create: NO, update: c("hrms.leave.approve"), delete: NO } },
       { resource: "Leave.Policy",  label: "Manage Leave Policies", actions: { view: c("hrms.leave_policy.read"), create: c("hrms.leave_policy.write"), update: c("hrms.leave.manage"), delete: NO } },
       { resource: "Leave.Policy.Approve", label: "Approve Leave Policy", actions: { view: NO, create: NO, update: c("hrms.leave_policy.approve"), delete: NO } },
+      { resource: "Leave.Dashboard", label: "Leave Dashboard", actions: { view: c("hrms.leave.dashboard.read"), create: NO, update: NO, delete: NO } },
     ],
   },
   {
@@ -139,6 +140,8 @@ export const PERMISSION_TREE: PermModule[] = [
     leaves: [
       { resource: "Onboarding",  label: "Onboarding",  actions: { view: c("hrms.onboarding.read"),  create: c("hrms.onboarding.write"),  update: c("hrms.onboarding.write"), delete: NO } },
       { resource: "Offboarding", label: "Offboarding", actions: { view: c("hrms.offboarding.read"), create: c("hrms.offboarding.write"), update: c("hrms.offboarding.write"), delete: NO } },
+      { resource: "Offboarding.Attrition", label: "Attrition Analytics", actions: { view: c("hrms.offboarding.attrition.read"), create: NO, update: NO, delete: NO } },
+      { resource: "Offboarding.Approve", label: "Approve Resignations", actions: { view: NO, create: NO, update: c("hrms.offboarding.approve"), delete: NO } },
     ],
   },
   {
@@ -217,32 +220,49 @@ export const NAV_TREE: NavGroup[] = [
     items: [
       { key: "dashboard", label: "Dashboard" },
       { key: "tasks", label: "Todo" },
-      { key: "wfh", label: "Work From Home" },
       { key: "claims", label: "Claims & Declarations" },
-      { key: "expenses", label: "Expenses" },
+    ],
+  },
+  {
+    key: "expenses",
+    label: "Expenses",
+    // One sidebar link opening a tabbed page; each tab below is individually
+    // grantable (gated in expenses/_components/expense-tabs.tsx).
+    items: [
+      { key: "expenses.claims", label: "Claims" },
+      { key: "expenses.approvals", label: "Approvals" },
+      { key: "expenses.policies", label: "Policies" },
+      { key: "expenses.reports", label: "Reports" },
     ],
   },
   {
     key: "people",
     label: "People",
     items: [
-      { key: "people.directory", label: "People" },
-      { key: "people.history", label: "Employment History" },
+      // Directory is one sidebar link opening a tabbed page (gated in org-chart/page.tsx).
+      { key: "people.directory.list", label: "Directory" },
+      { key: "people.directory.orgchart", label: "Org Chart" },
+      { key: "people.history", label: "Employment Logs" },
       { key: "people.delegations", label: "Delegations" },
       { key: "people.onboarding", label: "Onboarding" },
-      { key: "people.offboarding", label: "Offboarding" },
-      { key: "people.requisition", label: "Raise Requisition" },
-      { key: "people.requisition-approvals", label: "Requisition Approvals" },
+      // Offboarding is one sidebar link opening a tabbed page (gated in offboarding/page.tsx).
+      { key: "people.offboarding.active", label: "Offboarding" },
+      { key: "people.offboarding.exited", label: "Exited Employees" },
+      { key: "people.offboarding.attrition", label: "Attrition" },
+      { key: "people.offboarding.notice", label: "Notice Period" },
+      { key: "people.resignation-approvals", label: "Resignation Approvals" },
+      { key: "people.requisition", label: "New Requisition" },
+      { key: "people.requisition-approvals", label: "Approve Requisitions" },
     ],
   },
   {
     key: "time",
     label: "Time & Attendance",
     items: [
-      { key: "time.attendance", label: "Attendance" },
-      { key: "time.attendance-admin", label: "Admin Attendance" },
-      { key: "time.regularizations", label: "Regularization Approvals" },
-      { key: "time.roster", label: "Duty Roster" },
+      { key: "time.attendance", label: "My Attendance" },
+      { key: "time.attendance-admin", label: "Team Attendance" },
+      { key: "time.regularizations", label: "Approve Regularizations" },
+      { key: "time.roster", label: "Shift Roster" },
       { key: "time.shifts", label: "Shifts" },
     ],
   },
@@ -252,8 +272,23 @@ export const NAV_TREE: NavGroup[] = [
     items: [
       { key: "leave.my", label: "My Leaves" },
       { key: "leave.team", label: "Team Leaves" },
-      { key: "leave.calendar", label: "Leave & Holiday Calendar" },
-      { key: "leave.policies", label: "Leave Types" },
+      { key: "leave.calendar", label: "Leave Calendar" },
+      // Leave Settings is a single sidebar link that opens a tabbed page; each
+      // tab below is individually grantable (gated in leaves/policies/page.tsx).
+      { key: "leave.policies.types", label: "Leave Types" },
+      { key: "leave.policies.groups", label: "Leave Groups" },
+      { key: "leave.policies.members", label: "Employees In Leave Group" },
+      { key: "leave.policies.dashboard", label: "Leave Dashboard" },
+    ],
+  },
+  {
+    key: "wfh",
+    label: "Work From Home",
+    items: [
+      { key: "wfh.my", label: "My WFH" },
+      { key: "wfh.approvals", label: "Team Approvals" },
+      { key: "wfh.quota", label: "Quota Groups" },
+      { key: "wfh.groups", label: "Employees In Group" },
     ],
   },
   {
@@ -263,15 +298,15 @@ export const NAV_TREE: NavGroup[] = [
       { key: "payroll.analytics", label: "Analytics" },
       { key: "payroll.runs", label: "Pay Runs" },
       { key: "payroll.salaries", label: "Employee Salaries" },
-      { key: "payroll.approvals", label: "Approvals" },
+      { key: "payroll.approvals", label: "Payroll Approvals" },
       { key: "payroll.tax-filings", label: "Tax Filings" },
       { key: "payroll.tds", label: "TDS & Challans" },
-      { key: "payroll.one-time", label: "One-Time Pay & Deductions" },
-      { key: "payroll.full-final", label: "Full & Final" },
+      { key: "payroll.one-time", label: "One-Time Pay" },
+      { key: "payroll.full-final", label: "Final Settlement" },
       { key: "payroll.reports", label: "Reports" },
-      { key: "payroll.my", label: "My Payroll" },
+      { key: "payroll.my", label: "My Payslips" },
       { key: "payroll.advances", label: "Loans & Giving" },
-      { key: "payroll.prior", label: "Mid-year Joiners" },
+      { key: "payroll.prior", label: "Prior Payroll" },
     ],
   },
   {
@@ -279,22 +314,23 @@ export const NAV_TREE: NavGroup[] = [
     label: "Performance",
     items: [
       { key: "perf.goals", label: "Goals" },
-      { key: "perf.kra-templates", label: "KRA/KPI Templates" },
-      { key: "perf.kra-assignments", label: "KRA Assignments" },
-      { key: "perf.reviews", label: "Reviews" },
-      { key: "perf.feedback", label: "Feedback" },
-      { key: "perf.pip", label: "PIP" },
+      { key: "perf.kra-templates", label: "Scorecard Templates" },
+      { key: "perf.kra-assignments", label: "Assign KRAs" },
+      { key: "perf.reviews", label: "Appraisals" },
+      { key: "perf.feedback", label: "Continuous Feedback" },
+      { key: "perf.pip", label: "Improvement Plans" },
     ],
   },
   {
     key: "recruit",
-    label: "Recruit",
+    label: "Recruitment",
     items: [
-      { key: "recruit.requisitions", label: "Requisitions" },
+      { key: "recruit.dashboard", label: "Dashboard" },
+      { key: "recruit.requisitions", label: "Job Openings" },
       { key: "recruit.candidates", label: "Candidates" },
-      { key: "recruit.pipeline", label: "Pipeline" },
+      { key: "recruit.pipeline", label: "Hiring Pipeline" },
       { key: "recruit.interviews", label: "Interviews" },
-      { key: "recruit.candidate-doc-types", label: "Candidate Document Types" },
+      { key: "recruit.candidate-doc-types", label: "Document Types" },
     ],
   },
   {
@@ -305,7 +341,18 @@ export const NAV_TREE: NavGroup[] = [
       { key: "engage.announcements", label: "Announcements" },
       { key: "engage.surveys", label: "Surveys" },
       { key: "engage.recognition", label: "Recognition" },
-      { key: "engage.approvals", label: "Approvals" },
+    ],
+  },
+  {
+    key: "engage-approvals",
+    label: "Engage Approvals",
+    // One sidebar link ("Approvals") opening a tabbed page; each approval type
+    // below is individually grantable (gated in engage/approvals/page.tsx).
+    items: [
+      { key: "engage.approvals.announcement", label: "Announcements" },
+      { key: "engage.approvals.post", label: "Posts" },
+      { key: "engage.approvals.recognition", label: "Recognition" },
+      { key: "engage.approvals.feedback", label: "Feedback" },
     ],
   },
   {
@@ -313,6 +360,7 @@ export const NAV_TREE: NavGroup[] = [
     label: "Documents",
     items: [
       { key: "documents.company", label: "Company Documents" },
+      { key: "documents.employees", label: "Employee Documents" },
       { key: "documents.my-vault", label: "My Vault" },
     ],
   },
@@ -335,6 +383,14 @@ export const NAV_TREE: NavGroup[] = [
   },
 ];
 
+/**
+ * Legacy single-item nav keys that were later split into per-tab keys. Kept
+ * valid so older saved role configs survive the config-route filter and still
+ * grant the whole tabbed page (each page treats these as "show all tabs").
+ */
+const LEGACY_NAV_KEYS = new Set(["leave.policies", "people.directory", "people.offboarding", "expenses", "engage.approvals"]);
+
 export function isValidNavKey(key: string): boolean {
+  if (LEGACY_NAV_KEYS.has(key)) return true;
   return NAV_TREE.some((g) => g.items.some((i) => i.key === key));
 }

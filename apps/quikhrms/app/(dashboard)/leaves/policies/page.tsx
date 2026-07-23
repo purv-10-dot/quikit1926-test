@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { LeaveRulesWizard, type LeaveTypeRules } from "../_components/leave-rules-wizard";
@@ -178,13 +178,38 @@ interface Role {
 
 export default function LeavePoliciesPage() {
   const [tab, setTab] = useState<"types" | "groups" | "members" | "dashboard">("types");
-  const { hasPermission, isLoading: permsLoading } = useDashboardConfig();
+  const { hasPermission, isLoading: permsLoading, navKeys, permissions } = useDashboardConfig();
   // Managing leave types & groups requires hrms.leave.manage (also enforced by
-  // the API). Employees / self-service roles get a read-blocked state instead
-  // of the management UI.
+  // the API). The Leave Dashboard is separately grantable via
+  // hrms.leave.dashboard.read, so a read-only analytics role can see it without
+  // the full management UI. Managers implicitly get the dashboard too.
   const canManage = hasPermission("hrms.leave.manage");
+  const canViewDashboard = canManage || hasPermission("hrms.leave.dashboard.read");
 
-  if (!permsLoading && !canManage) {
+  // Per-tab navigation allow-list (mirrors the sidebar): each Leave Settings tab
+  // is individually grantable in Roles → Navigation. Default-allow — a role with
+  // no configured navKeys (or super-admin) sees every tab its permissions allow.
+  // Legacy "leave.policies" key grants the whole page for older role configs.
+  const isSuper = permissions.includes("*");
+  const navSet = new Set(navKeys);
+  const navConfigured = !isSuper && navSet.size > 0;
+  const legacyAll = navSet.has("leave.policies");
+  const navAllowed = (key: string) => !navConfigured || legacyAll || navSet.has(key);
+
+  const showTypes = canManage && navAllowed("leave.policies.types");
+  const showGroups = canManage && navAllowed("leave.policies.groups");
+  const showMembers = canManage && navAllowed("leave.policies.members");
+  const showDashboard = canViewDashboard && navAllowed("leave.policies.dashboard");
+  const firstVisibleTab = showTypes ? "types" : showGroups ? "groups" : showMembers ? "members" : showDashboard ? "dashboard" : null;
+
+  // Land on (and stay on) the first tab the user can actually see.
+  const visibleMap = { types: showTypes, groups: showGroups, members: showMembers, dashboard: showDashboard };
+  useEffect(() => {
+    if (!permsLoading && !visibleMap[tab] && firstVisibleTab) setTab(firstVisibleTab);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [permsLoading, tab, showTypes, showGroups, showMembers, showDashboard, firstVisibleTab]);
+
+  if (!permsLoading && !firstVisibleTab) {
     return (
       <EmptyState
         variant="folder"
@@ -197,15 +222,15 @@ export default function LeavePoliciesPage() {
   return (
     <div className="space-y-4">
       <div className="surface-card p-1 inline-flex items-center gap-1 flex-wrap">
-        <TabButton active={tab === "types"} onClick={() => setTab("types")} icon={<Tag size={14} />} label="Leave Types" />
-        <TabButton active={tab === "groups"} onClick={() => setTab("groups")} icon={<Layers size={14} />} label="Leave Groups" />
-        <TabButton active={tab === "members"} onClick={() => setTab("members")} icon={<Users size={14} />} label="Employees In Leave Group" />
-        <TabButton active={tab === "dashboard"} onClick={() => setTab("dashboard")} icon={<LayoutDashboard size={14} />} label="Leave Dashboard" />
+        {showTypes && <TabButton active={tab === "types"} onClick={() => setTab("types")} icon={<Tag size={14} />} label="Leave Types" />}
+        {showGroups && <TabButton active={tab === "groups"} onClick={() => setTab("groups")} icon={<Layers size={14} />} label="Leave Groups" />}
+        {showMembers && <TabButton active={tab === "members"} onClick={() => setTab("members")} icon={<Users size={14} />} label="Employees In Leave Group" />}
+        {showDashboard && <TabButton active={tab === "dashboard"} onClick={() => setTab("dashboard")} icon={<LayoutDashboard size={14} />} label="Leave Dashboard" />}
       </div>
-      {tab === "types" && <LeaveTypesTab />}
-      {tab === "groups" && <LeaveGroupsTab />}
-      {tab === "members" && <EmployeesInGroupTab />}
-      {tab === "dashboard" && <LeaveDashboardTab />}
+      {tab === "types" && showTypes && <LeaveTypesTab />}
+      {tab === "groups" && showGroups && <LeaveGroupsTab />}
+      {tab === "members" && showMembers && <EmployeesInGroupTab />}
+      {tab === "dashboard" && showDashboard && <LeaveDashboardTab />}
     </div>
   );
 }

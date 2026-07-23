@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 import { useToast } from "@/components/hrms/toast";
+import { useDialog } from "@/components/hrms/dialog";
 import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
@@ -193,6 +194,7 @@ export default function RequisitionsPage() {
   // Creating / editing / deleting requisitions requires recruit write (also
   // enforced by the API). Viewers reach this page via the dashboard "View All".
   const canManage = hasPermission("hrms.recruit.write");
+  const dialog = useDialog();
   const [showCreate, setShowCreate] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [viewReq, setViewReq] = useState<ReqItem | null>(null);
@@ -357,35 +359,42 @@ export default function RequisitionsPage() {
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 mb-4">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 px-1 mr-1">
-              <Filter size={15} /> Status
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500"><Filter size={15} /> Status</span>
+              <Select
+                value={statusFilter}
+                onChange={(v) => setStatusFilter(v)}
+                size="sm"
+                className="w-40"
+                placeholder="All statuses"
+                options={[
+                  { value: "", label: "All statuses" },
+                  { value: "ReqDraft", label: "Draft" },
+                  { value: "ReqOpen", label: "Open" },
+                  { value: "ReqOnHold", label: "On Hold" },
+                  { value: "ReqClosed", label: "Closed" },
+                  { value: "ReqCancelled", label: "Cancelled" },
+                ]}
+              />
             </div>
-            {[
-              { value: "", label: "All" },
-              { value: "ReqDraft", label: "Draft" },
-              { value: "ReqOpen", label: "Open" },
-              { value: "ReqOnHold", label: "On Hold" },
-              { value: "ReqClosed", label: "Closed" },
-              { value: "ReqCancelled", label: "Cancelled" },
-            ].map((s) => {
-              const active = statusFilter === s.value;
-              return (
-                <button
-                  key={s.value || "all"}
-                  onClick={() => setStatusFilter(s.value)}
-                  className={clsx(
-                    "inline-flex items-center gap-1 px-4 py-1.5 rounded-full text-[13px] font-semibold border transition",
-                    active
-                      ? "bg-green-100 border-green-200 text-green-700"
-                      : "bg-white border-gray-200 text-gray-600 hover:border-green-500/40 hover:text-green-700",
-                  )}
-                >
-                  {s.label}
-                  {active && s.value && <X size={12} className="ml-0.5" />}
-                </button>
-              );
-            })}
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500"><Filter size={15} /> Priority</span>
+              <Select
+                value={priorityFilter}
+                onChange={(v) => setPriorityFilter(v)}
+                size="sm"
+                className="w-36"
+                placeholder="All priorities"
+                options={[
+                  { value: "", label: "All priorities" },
+                  { value: "Urgent", label: "Urgent" },
+                  { value: "High", label: "High" },
+                  { value: "Medium", label: "Medium" },
+                  { value: "Low", label: "Low" },
+                ]}
+              />
+            </div>
           </div>
           {canManage && (
             <button onClick={() => { setForm(emptyForm); setEditId(null); setShowCreate(true); }}
@@ -393,36 +402,6 @@ export default function RequisitionsPage() {
               <Plus size={13} /> New requisition
             </button>
           )}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-gray-100">
-          <div className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 px-1 mr-1">
-            <Filter size={15} /> Priority
-          </div>
-          {[
-            { value: "", label: "All" },
-            { value: "Urgent", label: "Urgent" },
-            { value: "High", label: "High" },
-            { value: "Medium", label: "Medium" },
-            { value: "Low", label: "Low" },
-          ].map((p) => {
-            const active = priorityFilter === p.value;
-            return (
-              <button
-                key={p.value || "all"}
-                onClick={() => setPriorityFilter(p.value)}
-                className={clsx(
-                  "inline-flex items-center gap-1 px-4 py-1.5 rounded-full text-[13px] font-semibold border transition",
-                  active
-                    ? "bg-green-100 border-green-200 text-green-700"
-                    : "bg-white border-gray-200 text-gray-600 hover:border-green-500/40 hover:text-green-700",
-                )}
-              >
-                {p.label}
-                {active && p.value && <X size={12} className="ml-0.5" />}
-              </button>
-            );
-          })}
         </div>
       </div>
 
@@ -507,11 +486,25 @@ export default function RequisitionsPage() {
                       )}
                       {r.status === "ReqOpen" && (
                         <ActionBtn title="Close" variant="slate" icon={<XCircle size={12} />}
-                          onClick={() => updateMut.mutate({ id: r.id, status: "ReqClosed" })} />
+                          onClick={async () => {
+                            const ok = await dialog.confirm({
+                              title: "Close this requisition?",
+                              description: "Hiring for this role will stop. You can reopen it later.",
+                              confirmLabel: "Close",
+                            });
+                            if (ok) updateMut.mutate({ id: r.id, status: "ReqClosed" });
+                          }} />
                       )}
                       {(r.status === "ReqOpen" || r.status === "ReqApproved" || r.status === "ReqDraft") && (
                         <ActionBtn title="On Hold" variant="amber" icon={<Pause size={12} />}
-                          onClick={() => updateMut.mutate({ id: r.id, status: "ReqOnHold" })} />
+                          onClick={async () => {
+                            const ok = await dialog.confirm({
+                              title: "Put this requisition on hold?",
+                              description: "Applications pause until you resume it. Candidates stay in the pipeline.",
+                              confirmLabel: "Put on hold",
+                            });
+                            if (ok) updateMut.mutate({ id: r.id, status: "ReqOnHold" });
+                          }} />
                       )}
                       {r.status === "ReqOnHold" && (
                         <ActionBtn title="Resume" variant="blue" icon={<Play size={12} />}
