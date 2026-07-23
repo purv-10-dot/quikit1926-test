@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRevalidateOnFocus } from "@/lib/hooks/useRevalidateOnFocus";
 import { Loader2, Package, CalendarDays, ShieldCheck, Wrench } from "lucide-react";
 import { RequirePerm } from "@/components/require-perm";
 import { cn } from "@/lib/utils";
@@ -69,6 +70,8 @@ function MyAssets() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useRevalidateOnFocus(load);
 
   async function handleRequestRepair(payload: RequestRepairPayload) {
     const res = await fetch("/api/repair-requests", {

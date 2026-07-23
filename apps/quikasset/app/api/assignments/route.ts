@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { resolveAssigneeEmployeeId } from "@/lib/api/resolveAssignee";
+import { resolveActorNames } from "@/lib/api/actorNames";
 
 const auth = withOrgAuthForResource("Assignment");
 
@@ -30,7 +31,15 @@ export const GET = auth.view(async ({ orgId }, req) => {
       user: true,
     },
   });
-  return NextResponse.json({ success: true, data: assignments });
+
+  // Resolve "Assigned by" names (the actor) in one batched User lookup.
+  const actorNames = await resolveActorNames(assignments.map((a) => a.assignedByUserId));
+  const data = assignments.map((a) => ({
+    ...a,
+    assignedByName: a.assignedByUserId ? actorNames.get(a.assignedByUserId) ?? null : null,
+  }));
+
+  return NextResponse.json({ success: true, data });
 });
 
 export const POST = auth.create(async ({ orgId, userId: actorId, userEmail }, req) => {
@@ -72,6 +81,7 @@ export const POST = auth.create(async ({ orgId, userId: actorId, userEmail }, re
         assignedAt: new Date(assignedDate),
         expectedReturn: expectedReturn || null,
         notes: notes || null,
+        assignedByUserId: actorId,
       },
       include: {
         asset: { include: { baseCategory: true, category: true } },

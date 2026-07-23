@@ -8,6 +8,16 @@ Most recent first. Each entry: **date · what changed · why · migration · sig
 
 ---
 
+## 2026-07-20 — Actor attribution columns
+
+- **Added (all nullable, no FK — same convention as `AstAssetRequest.requesterUserId`):**
+  - `AstAsset.createdByUserId` (table `assets`) — platform `User.id` of who added the asset ("Added by").
+  - `AstAssignment.assignedByUserId` (table `assignments`) — platform `User.id` of who performed the assignment ("Assigned by"); distinct from `userId`, which is the assignee.
+  - `AstRepair.createdByUserId` (table `repairs`) — platform `User.id` of who logged/sent the repair ("Sent to repair by").
+- **Why:** surface "who performed this action" in the Assignments, Asset Inventory, and Repair & Recovery UIs. The actor was previously only in `AstAuditLog`; these columns make it a first-class, indexed-by-record field. Populated in the create handlers (which already hold the session user id); existing rows backfilled one-time from `AstAuditLog` (entityId→actorId).
+- **Migration:** `prisma/migrations/20260720130000_add_actor_attribution/`
+- **Sign-off:** Proceeded ahead of the usual cross-team check-in, due to the July 20 release timeline. On branch `merge_asset02`.
+
 ## 2026-07-20 — Employee Repair Request feature
 
 - **Added:**

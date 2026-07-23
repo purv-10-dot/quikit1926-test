@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import { useRevalidateOnFocus } from "@/lib/hooks/useRevalidateOnFocus"
 import { Search, Download, RefreshCw, Loader2, ClipboardList } from "lucide-react"
 import { cn } from "@/lib/utils"
 import * as XLSX from "xlsx"
@@ -76,6 +77,7 @@ export default function AuditLogPage() {
   }, [tab, search, from, to])
 
   useEffect(() => { load() }, [load])
+  useRevalidateOnFocus(load)
 
   function downloadExcel() {
     const rows = logs.map((l) => ({

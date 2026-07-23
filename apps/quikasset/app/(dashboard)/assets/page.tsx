@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useMemo, useEffect, useCallback } from "react"
+import { useRevalidateOnFocus } from "@/lib/hooks/useRevalidateOnFocus"
 import ImportAssetModal from "@/components/assets/ImportAssetModal"
 import AddEditAssetModal from "@/components/assets/AddEditAssetModal"
 import { Upload, Plus, Search, Pencil, Trash2, CheckCircle2, X, AlertTriangle, Download, FileText, Loader2, Laptop, Smartphone, Monitor, Printer, Server, HardDrive, Camera, Car, Wrench, Cpu, Wifi, Headphones, Package, Box, Tablet, BookOpen, Armchair, SlidersHorizontal, ChevronUp, Wallet, ChevronRight } from "lucide-react"
@@ -107,6 +108,7 @@ function AssetInventory() {
   }, [showToast])
 
   useEffect(() => { loadAssets() }, [loadAssets])
+  useRevalidateOnFocus(loadAssets)
 
   const loadFiscalBudgets = useCallback(async () => {
     try {
@@ -628,6 +630,9 @@ function AssetInventory() {
                           <div className="min-w-0">
                             <p className="font-semibold text-gray-800 truncate">{asset.itemName}</p>
                             <p className="text-gray-400 text-[10px] font-mono">{asset.itemCode}</p>
+                            {asset.addedByName && (
+                              <p className="text-gray-400 text-[10px] truncate">Added by {asset.addedByName}</p>
+                            )}
                           </div>
                         </div>
                       </td>
