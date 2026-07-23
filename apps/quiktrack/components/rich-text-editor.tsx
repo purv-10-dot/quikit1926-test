@@ -58,6 +58,7 @@ import {
   Check,
   Smile,
   Paperclip,
+  Loader2,
 } from "lucide-react";
 import { useEffect, useCallback, useState, useRef } from "react";
 import { FileAttachment } from "@/components/editor/file-attachment";
@@ -293,17 +294,33 @@ export function RichTextEditor({
   // Attach a non-image file: upload, then insert a download chip. Surfaces the
   // server's error (unsupported type / too large) as a toast.
   const [fileUploading, setFileUploading] = useState(false);
-  const insertFile = useCallback(
-    async (file: File) => {
-      if (!editor || !uploadFile) return;
+  // Progress for the inline "Uploading…" banner (current index / total).
+  const [fileProgress, setFileProgress] = useState<{ done: number; total: number } | null>(null);
+  // Upload + insert one or more files. Uploaded sequentially so insertion order
+  // matches selection order and we don't fire many parallel GCS requests; each
+  // file's own error surfaces as a toast without aborting the rest.
+  const insertFiles = useCallback(
+    async (files: File[]) => {
+      if (!editor || !uploadFile || files.length === 0) return;
       setFileUploading(true);
+      setFileProgress({ done: 0, total: files.length });
       try {
-        const { url, fileName, mimeType, size } = await uploadFile(file);
-        editor.chain().focus().setFileAttachment({ href: url, fileName, mimeType, size }).run();
-      } catch (err: unknown) {
-        showToast(err instanceof Error ? err.message : "File upload failed", "error");
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i]!;
+          try {
+            const { url, fileName, mimeType, size } = await uploadFile(file);
+            editor.chain().focus().setFileAttachment({ href: url, fileName, mimeType, size }).run();
+          } catch (err: unknown) {
+            showToast(
+              err instanceof Error ? err.message : `Couldn't upload ${file.name}`,
+              "error",
+            );
+          }
+          setFileProgress({ done: i + 1, total: files.length });
+        }
       } finally {
         setFileUploading(false);
+        setFileProgress(null);
       }
     },
     [editor, uploadFile],
@@ -313,14 +330,15 @@ export function RichTextEditor({
     if (!editor || !uploadFile) return;
     const input = document.createElement("input");
     input.type = "file";
+    input.multiple = true;
     input.accept =
       ".pdf,.csv,.txt,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,image/*,application/pdf,text/csv,text/plain,application/zip";
     input.onchange = () => {
-      const file = input.files?.[0];
-      if (file) void insertFile(file);
+      const files = Array.from(input.files ?? []);
+      if (files.length) void insertFiles(files);
     };
     input.click();
-  }, [editor, uploadFile, insertFile]);
+  }, [editor, uploadFile, insertFiles]);
 
   const openEmojiPicker = useCallback(
     (anchorEl?: HTMLElement | null) => {
@@ -548,6 +566,22 @@ export function RichTextEditor({
           "[&_.ProseMirror_img]:max-w-full [&_.ProseMirror_img]:h-auto [&_.ProseMirror_img]:rounded-md [&_.ProseMirror_img]:my-2",
         )}
       />
+
+      {/* Upload progress banner — visible while files (or an image) upload, so
+          it's clear something is happening (esp. for multi-file selections). */}
+      {(fileUploading || imageUploading) && (
+        <div
+          className={cn(
+            "flex items-center gap-2 text-xs text-gray-600 bg-blue-50 border border-blue-100 rounded px-3 py-1.5 mb-2",
+            chromeless ? "mx-10" : "mx-3",
+          )}
+        >
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600" />
+          {fileProgress
+            ? `Uploading ${fileProgress.done}/${fileProgress.total} file${fileProgress.total === 1 ? "" : "s"}…`
+            : "Uploading…"}
+        </div>
+      )}
 
       {/* Link dialog */}
       {showLinkDialog && (

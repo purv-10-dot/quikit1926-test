@@ -61,7 +61,7 @@ export function EditableFilterTable({
     () => issues.map((i) => i.project?.id).filter((v): v is string => !!v),
     [issues],
   );
-  const { statusesByProject, membersByProject } = useProjectMeta(projectIds);
+  const { statusesByProject, membersByProject, editableByProject } = useProjectMeta(projectIds);
 
   const columns = useMemo(
     () => withProjectColumn(resolveColumns(colPrefs.order, colPrefs.hidden)),
@@ -73,9 +73,16 @@ export function EditableFilterTable({
     [issues, overrides],
   );
 
+  // A row is inline-editable only when it's a real issue AND the viewer can
+  // manage its project (member / space admin / admin — i.e. the members fetch
+  // succeeded). Rows in projects the viewer can't manage render read-only, so
+  // no empty assignee/status dropdowns appear.
   const isEditable = useCallback(
-    (issue: FilterListIssue) => issue.type !== "IDEA" && !!issue.project,
-    [],
+    (issue: FilterListIssue) =>
+      issue.type !== "IDEA" &&
+      !!issue.project &&
+      editableByProject[issue.project.id] === true,
+    [editableByProject],
   );
 
   const handlePatchIssue = useCallback(
