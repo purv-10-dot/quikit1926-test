@@ -17,7 +17,9 @@ export type NotificationType =
   /** The stage of a lead the recipient owns changed. */
   | "lead_stage_changed"
   /** A lead the recipient owns was converted into a contact / opportunity. */
-  | "lead_converted";
+  | "lead_converted"
+  /** A customer reply synced into a record whose mailbox the recipient owns. */
+  | "email_received";
 
 export type NotificationCategory = "lead" | "task" | "automation" | "system";
 

@@ -25,6 +25,12 @@ import {
   Briefcase,
   PanelLeftClose,
   PanelLeftOpen,
+  Mail,
+  Inbox,
+  Send,
+  Mails,
+  PenSquare,
+  Target,
   type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -52,6 +58,14 @@ const ACTIVITIES_ITEMS: NavItem[] = [
   { href: "/reports", label: "Reports", icon: BarChart3 },
 ];
 
+// "My Activity Target" appears last in the Activities group, but ONLY for a
+// user who has an assigned target (see useHasActivityTarget).
+const MY_ACTIVITY_TARGET_ITEM: NavItem = {
+  href: "/my-activity-target",
+  label: "MAT",
+  icon: Target,
+};
+
 interface NavGroupConfig {
   label: string;
   icon: LucideIcon;
@@ -71,6 +85,21 @@ const ACTIVITIES_GROUP: NavGroupConfig = {
   icon: Folder,
   items: ACTIVITIES_ITEMS,
   storageKey: "quikcrm.sidebar.activities.expanded",
+};
+
+const MAILBOX_ITEMS: NavItem[] = [
+  { href: "/mailbox/compose", label: "Compose", icon: PenSquare },
+  { href: "/mailbox/inbox", label: "Inbox", icon: Inbox },
+  { href: "/mailbox/sent", label: "Sent", icon: Send },
+  { href: "/mailbox/drafts", label: "Drafts", icon: FileText },
+  { href: "/mailbox/all", label: "All Emails", icon: Mails },
+];
+
+const MAILBOX_GROUP: NavGroupConfig = {
+  label: "Mailbox",
+  icon: Mail,
+  items: MAILBOX_ITEMS,
+  storageKey: "quikcrm.sidebar.mailbox.expanded",
 };
 
 const NAV_TOP: NavItem[] = [
@@ -461,6 +490,30 @@ function CollapsibleNavGroup({
   );
 }
 
+/**
+ * Whether the logged-in user has an assigned Activity Target. Drives whether
+ * the "My Activity Target" submenu shows. Uses the same self-service endpoint
+ * the page consumes — { assigned: boolean }. Fails closed (hidden) on error.
+ */
+function useHasActivityTarget(): boolean {
+  const [assigned, setAssigned] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/activity-target/me", { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (!cancelled) setAssigned(json?.success === true && json.data?.assigned === true);
+      })
+      .catch(() => {
+        if (!cancelled) setAssigned(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return assigned;
+}
+
 function SidebarNav({
   pathname,
   collapsed,
@@ -469,6 +522,12 @@ function SidebarNav({
   collapsed: boolean;
 }) {
   const { isAdmin } = usePermissions();
+  const hasActivityTarget = useHasActivityTarget();
+
+  // Append "My Activity Target" to the Activities group only when assigned.
+  const activitiesGroup: NavGroupConfig = hasActivityTarget
+    ? { ...ACTIVITIES_GROUP, items: [...ACTIVITIES_ITEMS, MY_ACTIVITY_TARGET_ITEM] }
+    : ACTIVITIES_GROUP;
 
   return (
     <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-3">
@@ -488,12 +547,17 @@ function SidebarNav({
         />
       ) : null}
       <CollapsibleNavGroup
+        config={MAILBOX_GROUP}
+        pathname={pathname}
+        collapsed={collapsed}
+      />
+      <CollapsibleNavGroup
         config={INVENTORY_GROUP}
         pathname={pathname}
         collapsed={collapsed}
       />
       <CollapsibleNavGroup
-        config={ACTIVITIES_GROUP}
+        config={activitiesGroup}
         pathname={pathname}
         collapsed={collapsed}
       />
