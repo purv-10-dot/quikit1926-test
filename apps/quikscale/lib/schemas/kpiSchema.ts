@@ -18,9 +18,12 @@ const kpiBaseFields = {
   quarter: z.enum(["Q1", "Q2", "Q3", "Q4"]),
   year: z.number().int().min(2020).max(2099),
   measurementUnit: z.enum(["Number", "Percentage", "Currency", "Ratio"]),
-  target: z.number().positive().optional().nullable(),
-  quarterlyGoal: z.number().positive().optional().nullable(),
-  qtdGoal: z.number().positive().optional().nullable(),
+  // `.nonnegative()` (min 0), not `.positive()` — a target of 0 is valid (e.g.
+  // a "zero defects" reverse KPI). Negatives are still rejected. The breakdown
+  // and calculation stack already handle target = 0 safely.
+  target: z.number().nonnegative().optional().nullable(),
+  quarterlyGoal: z.number().nonnegative().optional().nullable(),
+  qtdGoal: z.number().nonnegative().optional().nullable(),
   status: z.enum(["active", "paused", "completed"]).default("active"),
   divisionType: z.enum(["Cumulative", "Standalone"]).default("Cumulative"),
   weeklyTargets: z.record(z.string(), z.number()).optional().nullable(),
@@ -99,9 +102,10 @@ export const updateKPISchema = z
     quarter: z.enum(["Q1", "Q2", "Q3", "Q4"]).optional(),
     year: z.number().int().min(2020).max(2099).optional(),
     measurementUnit: z.enum(["Number", "Percentage", "Currency", "Ratio"]).optional(),
-    target: z.number().positive().optional().nullable(),
-    quarterlyGoal: z.number().positive().optional().nullable(),
-    qtdGoal: z.number().positive().optional().nullable(),
+    // See createKPISchema: 0 is a valid target, negatives are rejected.
+    target: z.number().nonnegative().optional().nullable(),
+    quarterlyGoal: z.number().nonnegative().optional().nullable(),
+    qtdGoal: z.number().nonnegative().optional().nullable(),
     status: z.enum(["active", "paused", "completed"]).optional(),
     divisionType: z.enum(["Cumulative", "Standalone"]).optional(),
     weeklyTargets: z.record(z.string(), z.number()).optional().nullable(),

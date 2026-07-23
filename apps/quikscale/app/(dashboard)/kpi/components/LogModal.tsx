@@ -312,6 +312,9 @@ function EditTab({
     ? (parseFloat(form.target) || 0) * getMultiplier(form.currency, form.targetScale)
     : parseFloat(form.target) || 0;
   const targetNum = scaledTarget;
+  // Show the weekly Target-Breakdown grid whenever a valid non-negative target
+  // is entered — including exactly 0 (a zero goal spreads 0 across every week).
+  const showBreakdown = form.target.trim() !== "" && !isNaN(parseFloat(form.target)) && scaledTarget >= 0;
 
   // Scaled-display: breakdown cells show/accept the scale unit when the toggle
   // is on; form.weeklyBreakdown stays RAW. Passthrough otherwise.
@@ -619,7 +622,7 @@ function EditTab({
           className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 resize-none" />
       </div>
 
-      {targetNum > 0 && (
+      {showBreakdown && (
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-2">
             Target Breakdown (Weekly)
@@ -922,6 +925,13 @@ function UpdatesTab({
   const targetForWeek = (w: number): number =>
     savedWeeklyTargets?.[String(w)] ?? weeklyTarget;
 
+  // A zero-target KPI (whole-KPI target of 0, e.g. "zero defects") is a valid,
+  // trackable KPI: every week's target is 0. Unlike a single 0-target week
+  // inside a positive KPI (which stays locked), its weeks must be editable and
+  // display "0" rather than "—" / "No target set". Distinguish by the KPI-level
+  // target, not the per-week value.
+  const isZeroTargetKPI = (liveFormTarget ?? kpi.qtdGoal ?? kpi.target ?? 0) === 0;
+
   // Scaled-display for the Updates tab. Weekly target + actual are stored RAW;
   // when the KPI's toggle is on they're shown + typed in the scale unit (e.g.
   // Cr). Passthrough otherwise. `valBuf` preserves in-progress decimals.
@@ -1036,7 +1046,7 @@ function UpdatesTab({
                             <div className="w-16 flex-shrink-0 text-center">
                               <div className="text-[9px] text-gray-400 leading-none">Target{unitU ? ` (${unitU})` : ""}</div>
                               <div className="text-xs font-medium text-gray-700 mt-0.5">
-                                {ownerWeekTarget > 0 ? fmtTargetU(ownerWeekTarget) : "—"}
+                                {ownerWeekTarget > 0 || isZeroTargetKPI ? fmtTargetU(ownerWeekTarget) : "—"}
                               </div>
                             </div>
                             <input
@@ -1095,7 +1105,9 @@ function UpdatesTab({
                 // When a week has no target (target = 0 or unset), lock the input
                 // so nothing new can be entered — but keep any existing historical
                 // value visible so previously entered data is not hidden.
-                const hasTarget = targetForWeek(w) > 0;
+                // Exception: a zero-target KPI is trackable, so its 0-target weeks
+                // stay editable and display "0" rather than being locked.
+                const hasTarget = isZeroTargetKPI || targetForWeek(w) > 0;
                 const noTargetLocked = !hasTarget;
                 return (
                 <WeekRow
@@ -1255,7 +1267,9 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
       quarter: kpi.quarter,
       year: String(kpi.year),
       measurementUnit,
-      target: displayTarget > 0 ? String(displayTarget) : "",
+      // Show the saved target — including exactly 0 (a valid zero goal). A bare
+      // `> 0` check blanked the Edit tab for zero-target KPIs.
+      target: kpi.target != null ? String(displayTarget) : "",
       quarterlyGoal: kpi.quarterlyGoal?.toString() ?? "",
       qtdGoal: kpi.qtdGoal?.toString() ?? "",
       status: kpi.status ?? "active",
