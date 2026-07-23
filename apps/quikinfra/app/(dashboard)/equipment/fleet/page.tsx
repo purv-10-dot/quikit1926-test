@@ -80,7 +80,7 @@ export default function FleetDashboardPage() {
         <div>
           <Link
             href={`/equipment/machines/${row.id}`}
-            className="font-medium text-orange-600 hover:text-orange-800"
+            className="font-medium text-accent-600 hover:text-accent-800"
             onClick={(e) => e.stopPropagation()}
           >
             {row.code}
@@ -190,7 +190,7 @@ export default function FleetDashboardPage() {
             onClick={() => setTab("dashboard")}
             className={`pb-3 text-sm font-medium border-b-2 transition-colors ${
               tab === "dashboard"
-                ? "border-orange-500 text-orange-600"
+                ? "border-accent-500 text-accent-600"
                 : "border-transparent text-slate-500 hover:text-slate-700"
             }`}
           >
@@ -201,7 +201,7 @@ export default function FleetDashboardPage() {
             onClick={() => setTab("cost-sheet")}
             className={`pb-3 text-sm font-medium border-b-2 transition-colors ${
               tab === "cost-sheet"
-                ? "border-orange-500 text-orange-600"
+                ? "border-accent-500 text-accent-600"
                 : "border-transparent text-slate-500 hover:text-slate-700"
             }`}
           >
@@ -306,7 +306,7 @@ export default function FleetDashboardPage() {
                         {costSheet.operatorDays} Operator-Day(s)
                       </p>
                     </div>
-                    <TrendingUp className="h-8 w-8 text-orange-400" />
+                    <TrendingUp className="h-8 w-8 text-accent-400" />
                   </div>
                 </div>
 
@@ -329,12 +329,12 @@ export default function FleetDashboardPage() {
                       </div>
                     </div>
                   ))}
-                  <div className="flex items-center justify-between bg-orange-50 px-5 py-4">
+                  <div className="flex items-center justify-between bg-accent-50 px-5 py-4">
                     <div className="flex items-center gap-2 font-semibold text-slate-900">
-                      <IndianRupee className="h-5 w-5 text-orange-600" />
+                      <IndianRupee className="h-5 w-5 text-accent-600" />
                       Net Machine Cost
                     </div>
-                    <div className="tabular-nums text-xl font-bold text-orange-600">
+                    <div className="tabular-nums text-xl font-bold text-accent-600">
                       {formatCurrency(costSheet.netMachineCost)}
                     </div>
                   </div>

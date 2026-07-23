@@ -67,14 +67,14 @@ interface PageHeaderProps {
 
 export function PageHeader({ title, subtitle, breadcrumbs, actions, onBack }: PageHeaderProps) {
   return (
-    <div className="sticky top-0 z-10 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 border-b border-slate-200 px-6 py-4">
+    <div className="sticky top-0 z-10 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] border-b border-slate-200 px-6 py-4">
       {breadcrumbs && breadcrumbs.length > 0 && (
         <nav className="flex items-center gap-1.5 text-xs text-slate-500 mb-2">
           {breadcrumbs.map((crumb, i) => (
             <span key={i} className="flex items-center gap-1.5">
               {i > 0 && <span className="text-slate-300">/</span>}
               {crumb.href ? (
-                <a href={crumb.href} className="hover:text-orange-600 transition-colors">
+                <a href={crumb.href} className="hover:text-accent-600 transition-colors">
                   {crumb.label}
                 </a>
               ) : (
@@ -89,7 +89,7 @@ export function PageHeader({ title, subtitle, breadcrumbs, actions, onBack }: Pa
           {onBack && (
             <button
               onClick={onBack}
-              className="p-1.5 rounded-lg hover:bg-orange-50 hover:text-orange-700 text-slate-500 transition-colors"
+              className="p-1.5 rounded-lg hover:bg-accent-50 hover:text-accent-700 text-slate-500 transition-colors"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -97,7 +97,7 @@ export function PageHeader({ title, subtitle, breadcrumbs, actions, onBack }: Pa
             </button>
           )}
           <div className="flex items-center gap-2.5">
-            <span aria-hidden className="hidden sm:block w-1 h-6 rounded-full bg-gradient-to-b from-orange-500 to-orange-600" />
+            <span aria-hidden className="hidden sm:block w-1 h-6 rounded-full bg-gradient-to-b from-accent-500 to-accent-600" />
             <div>
               <h1 className="text-lg font-semibold text-slate-900 tracking-tight">{title}</h1>
               {subtitle && <p className="text-sm text-slate-500 mt-0.5">{subtitle}</p>}
@@ -120,7 +120,7 @@ const CHIP_TONE = {
   warn:    "bg-amber-50 text-amber-700 border-amber-200",
   success: "bg-emerald-50 text-emerald-700 border-emerald-200",
   danger:  "bg-rose-50 text-rose-700 border-rose-200",
-  brand:   "bg-orange-50 text-orange-700 border-orange-200",
+  brand:   "bg-accent-50 text-accent-700 border-accent-200",
 } as const;
 
 const STATUS_COLORS: Record<string, string> = {
@@ -225,7 +225,7 @@ interface KPICardProps {
  * map into this palette — no per-page changes needed.
  */
 const KPI_TONE: Record<string, { gradient: string; ring: string }> = {
-  brand:   { gradient: "from-orange-500 to-orange-600",    ring: "ring-orange-100" },
+  brand:   { gradient: "from-accent-500 to-accent-600",    ring: "ring-accent-100" },
   info:    { gradient: "from-slate-500 to-slate-700",      ring: "ring-slate-100" },
   success: { gradient: "from-emerald-500 to-emerald-600",  ring: "ring-emerald-100" },
   danger:  { gradient: "from-rose-500 to-rose-600",        ring: "ring-rose-100" },
@@ -262,9 +262,9 @@ export function KPICard({
     return (
       <div
         onClick={onClick}
-        className={`group relative overflow-hidden rounded-xl border border-orange-100/90 bg-white/90 p-4 shadow-sm backdrop-blur-sm sm:p-5 ${
+        className={`group relative overflow-hidden rounded-xl border border-accent-100 bg-white/90 p-4 shadow-sm backdrop-blur-sm sm:p-5 ${
           onClick
-            ? "cursor-pointer transition-all duration-200 hover:border-orange-200 hover:bg-white hover:shadow-md"
+            ? "cursor-pointer transition-all duration-200 hover:border-accent-200 hover:bg-white hover:shadow-md"
             : ""
         }`}
       >
@@ -298,7 +298,7 @@ export function KPICard({
     <div
       onClick={onClick}
       className={`group relative bg-white rounded-xl border border-slate-200 p-5 shadow-soft overflow-hidden ${
-        onClick ? "cursor-pointer hover:shadow-md hover:border-orange-200 transition-all" : ""
+        onClick ? "cursor-pointer hover:shadow-md hover:border-accent-200 transition-all" : ""
       }`}
     >
       {/* subtle accent stripe */}
@@ -371,7 +371,7 @@ export function SectionHeader({ title, actions }: { title: string; actions?: Rea
       <h3 className="text-sm font-semibold text-slate-900 tracking-tight flex items-center gap-2.5">
         <span
           aria-hidden
-          className="inline-block w-1 h-4 rounded-full bg-gradient-to-b from-orange-400 to-orange-600"
+          className="inline-block w-1 h-4 rounded-full bg-gradient-to-b from-accent-400 to-accent-600"
         />
         {title}
       </h3>
@@ -400,7 +400,7 @@ export function PrimaryButton({
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-b from-[#FFAF55] to-[#ea580c] px-4 py-2 text-sm font-semibold text-white shadow-brand transition-all hover:from-[#f5a245] hover:to-[#c2410c] active:translate-y-[1px] disabled:cursor-not-allowed disabled:opacity-50 ${className ?? ""}`}
+      className={`inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-b from-accent-300 to-accent-600 px-4 py-2 text-sm font-semibold text-white shadow-brand transition-all hover:from-accent-400 hover:to-accent-700 active:translate-y-[1px] disabled:cursor-not-allowed disabled:opacity-50 ${className ?? ""}`}
     >
       {children}
     </button>
@@ -422,7 +422,7 @@ export function SecondaryButton({
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium text-slate-700 bg-white border border-slate-300 hover:bg-orange-50 hover:border-orange-300 hover:text-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${className ?? ""}`}
+      className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium text-slate-700 bg-white border border-slate-300 hover:bg-accent-50 hover:border-accent-300 hover:text-accent-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${className ?? ""}`}
     >
       {children}
     </button>
@@ -448,14 +448,14 @@ export function TabBar({
           onClick={() => onTabChange(tab.key)}
           className={`inline-flex items-start gap-0.5 px-3 py-2.5 text-sm font-medium border-b-2 transition-colors ${
             activeTab === tab.key
-              ? "border-orange-600 text-orange-700"
-              : "border-transparent text-slate-500 hover:text-orange-600"
+              ? "border-accent-600 text-accent-700"
+              : "border-transparent text-slate-500 hover:text-accent-600"
           }`}
         >
           {tab.label}
           {tab.count !== undefined && tab.count > 0 && (
             <span className={`-mt-0.5 text-[9px] font-bold leading-none ${
-              activeTab === tab.key ? "text-orange-500" : "text-slate-400"
+              activeTab === tab.key ? "text-accent-500" : "text-slate-400"
             }`}>
               {tab.count}
             </span>

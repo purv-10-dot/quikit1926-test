@@ -108,7 +108,7 @@ export default function ComparativeStatementPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by RFQ No or Project..."
-              className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+              className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-accent-500"
             />
           </div>
         </div>
@@ -152,7 +152,7 @@ export default function ComparativeStatementPage() {
                           onClick={() =>
                             router.push(`/purchase/quote-analysis/${r.id}`)
                           }
-                          className="text-orange-600 font-medium hover:underline"
+                          className="text-accent-600 font-medium hover:underline"
                         >
                           {r.rfqNumber ?? r.id}
                         </button>
@@ -182,7 +182,7 @@ export default function ComparativeStatementPage() {
                           onClick={() =>
                             router.push(`/purchase/quote-analysis/${r.id}`)
                           }
-                          className="inline-flex items-center gap-1 px-3 py-1 rounded-md text-xs font-medium text-orange-700 bg-white border border-orange-200 hover:bg-orange-50"
+                          className="inline-flex items-center gap-1 px-3 py-1 rounded-md text-xs font-medium text-accent-700 bg-white border border-accent-200 hover:bg-accent-50"
                         >
                           Details
                         </button>

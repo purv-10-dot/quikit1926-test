@@ -63,7 +63,7 @@ export default function PurchaseIndexPage() {
               <div key={step.label} className="flex items-center gap-2 min-w-0">
                 <button
                   onClick={() => step.href !== "#" && router.push(step.href)}
-                  className="flex flex-col items-center p-4 rounded-xl bg-gray-50 hover:bg-orange-50 border border-gray-200 hover:border-orange-200 transition-all min-w-[140px]"
+                  className="flex flex-col items-center p-4 rounded-xl bg-gray-50 hover:bg-accent-50 border border-gray-200 hover:border-accent-200 transition-all min-w-[140px]"
                 >
                   <span className="text-xs font-semibold text-gray-900">{step.label}</span>
                   <span className="text-[10px] text-gray-500 mt-0.5">{step.sublabel}</span>

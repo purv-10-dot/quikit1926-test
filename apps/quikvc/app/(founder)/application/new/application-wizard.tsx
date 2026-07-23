@@ -23,7 +23,6 @@ const STEPS = [
   { id: 5, label: "Review" },
 ];
 
-
 export default function ApplicationWizard({ verticals }: { verticals: Vertical[] }) {
   const router = useRouter();
   const [step, setStep] = useState(1);

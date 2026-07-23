@@ -223,7 +223,7 @@ export function PoSubmitPreviewModal({
               className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
                 v.skipReason
                   ? "bg-amber-50 text-amber-600"
-                  : "bg-orange-50 text-orange-600"
+                  : "bg-accent-50 text-accent-600"
               }`}
             >
               <Building2 className="w-4 h-4" />
@@ -323,7 +323,7 @@ export function PoSubmitPreviewModal({
                           <a
                             href={pdfUrl}
                             download={pdfFileName}
-                            className="inline-flex items-center gap-1 text-orange-600 hover:text-orange-700 font-medium"
+                            className="inline-flex items-center gap-1 text-accent-600 hover:text-accent-700 font-medium"
                             title="Download PDF"
                           >
                             <Download className="w-3.5 h-3.5" />
@@ -343,7 +343,7 @@ export function PoSubmitPreviewModal({
                         type="button"
                         onClick={handleResetEmail}
                         disabled={submitting}
-                        className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-500 hover:text-orange-600 disabled:opacity-40"
+                        className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-500 hover:text-accent-600 disabled:opacity-40"
                         title="Reset to default email"
                       >
                         <RotateCcw className="w-3 h-3" /> Reset
@@ -358,7 +358,7 @@ export function PoSubmitPreviewModal({
                       if (!edited) setEdited(true);
                     }}
                     spellCheck
-                    className="px-6 py-5 text-sm text-gray-800 leading-relaxed min-h-[200px] focus:outline-none focus:bg-orange-50/30 focus:ring-1 focus:ring-inset focus:ring-orange-200"
+                    className="px-6 py-5 text-sm text-gray-800 leading-relaxed min-h-[200px] focus:outline-none focus:bg-accent-50 focus:ring-1 focus:ring-inset focus:ring-accent-200"
                   />
                 </div>
                 {v.skipReason && (
@@ -387,7 +387,7 @@ export function PoSubmitPreviewModal({
                       <a
                         href={pdfUrl}
                         download={pdfFileName}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-orange-600 hover:text-orange-700 hover:bg-orange-50 rounded-md transition-colors"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-accent-600 hover:text-accent-700 hover:bg-accent-50 rounded-md transition-colors"
                         title="Download PDF"
                       >
                         <Download className="w-3.5 h-3.5" />
@@ -464,7 +464,7 @@ function TabButton({
       onClick={onClick}
       className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-t-lg border-b-2 transition-colors ${
         active
-          ? "text-orange-600 border-orange-500 bg-white"
+          ? "text-accent-600 border-accent-500 bg-white"
           : "text-gray-500 border-transparent hover:text-gray-700"
       }`}
     >

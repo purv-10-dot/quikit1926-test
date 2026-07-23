@@ -176,7 +176,7 @@ export function SearchSelect({
         type="button"
         disabled={disabled}
         onClick={() => !disabled && setOpen((o) => !o)}
-        className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg border border-gray-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-orange-500 ${
+        className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg border border-gray-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-accent-500 ${
           disabled ? "opacity-50 cursor-not-allowed" : ""
         }`}
       >
@@ -245,8 +245,8 @@ export function SearchSelect({
                     onClick={() => pick(opt)}
                     onMouseEnter={() => setActiveIndex(i)}
                     className={`w-full text-left px-2.5 py-2 flex items-center gap-2 ${
-                      active ? "bg-orange-50" : ""
-                    } ${opt.disabled ? "opacity-40 cursor-not-allowed" : "hover:bg-orange-50"}`}
+                      active ? "bg-accent-50" : ""
+                    } ${opt.disabled ? "opacity-40 cursor-not-allowed" : "hover:bg-accent-50"}`}
                   >
                     <div className="flex-1 min-w-0">
                       {renderOption ? (
@@ -265,7 +265,7 @@ export function SearchSelect({
                         {opt.badge}
                       </span>
                     )}
-                    {isSelected && <Check className="w-3.5 h-3.5 text-orange-600 shrink-0" />}
+                    {isSelected && <Check className="w-3.5 h-3.5 text-accent-600 shrink-0" />}
                   </button>
                 );
               })

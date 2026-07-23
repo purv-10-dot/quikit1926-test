@@ -82,6 +82,39 @@ describe("DEFAULT_ACTIVITY_TYPES — data contract", () => {
     expect(direction?.fieldType).toBe("Select");
     expect(direction?.options).toEqual(["Incoming", "Outgoing"]);
   });
+
+  it("Call includes Contact Name + Phone Number as Text (Phone type is unsupported for activities)", () => {
+    const call = DEFAULT_ACTIVITY_TYPES.find((t) => t.code === "call");
+    const contact = call?.fields.find((f) => f.key === "contact_name");
+    const phone = call?.fields.find((f) => f.key === "phone_number");
+    expect(contact?.fieldType).toBe("Text");
+    // Phone Number MUST be Text — the Phone field type is rejected by
+    // writeActivityFieldValues, so seeding it as Phone would break Call logging.
+    expect(phone?.fieldType).toBe("Text");
+  });
+
+  it("Call includes the optional telephony metadata fields", () => {
+    const call = DEFAULT_ACTIVITY_TYPES.find((t) => t.code === "call");
+    const keys = new Set(call?.fields.map((f) => f.key));
+    for (const k of ["call_status", "dialed_number", "recording_url", "telephony_provider", "call_id"]) {
+      expect(keys.has(k), `call is missing field "${k}"`).toBe(true);
+    }
+    const status = call?.fields.find((f) => f.key === "call_status");
+    expect(status?.fieldType).toBe("Select");
+    expect(status?.options).toEqual(["Completed", "Missed", "Busy", "No Answer"]);
+  });
+
+  it("existing Call fields keep their original leading positions (no sortOrder shift on re-seed)", () => {
+    // ensure-defaults derives sortOrder from array index; the original four
+    // fields must stay at indexes 0-3 so already-seeded orgs don't collide.
+    const call = DEFAULT_ACTIVITY_TYPES.find((t) => t.code === "call");
+    expect(call?.fields.slice(0, 4).map((f) => f.key)).toEqual([
+      "direction",
+      "duration_minutes",
+      "outcome",
+      "call_date_time",
+    ]);
+  });
 });
 
 describe("ensureDefaultActivityTypes", () => {

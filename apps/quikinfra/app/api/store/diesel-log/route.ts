@@ -2,10 +2,12 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { dieselCreateSchema } from "@/lib/schemas/procurement-3b";
+import { parsePagination } from "@/lib/http/pagination";
 
 const withOrgAuth = withOrgAuthForModule("store");
 
-export const GET = withOrgAuth(async ({ orgId }) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
+  const p = parsePagination(req);
   const list = await db.cnDieselLog.findMany({
     where: { orgId },
     include: {
@@ -14,6 +16,7 @@ export const GET = withOrgAuth(async ({ orgId }) => {
       machinery: { select: { id: true, code: true, name: true } },
     },
     orderBy: { logDate: "desc" },
+    ...(p.paginated ? { take: p.take, skip: p.skip } : {}),
   });
   return NextResponse.json({ success: true, data: list });
 }, { permission: { resource: "construction.diesel", action: "view" } });

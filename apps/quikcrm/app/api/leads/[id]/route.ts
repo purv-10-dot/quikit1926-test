@@ -16,6 +16,7 @@ import {
 import { listLeadFields } from "@/lib/services/fields/repo";
 import { validateDynamicFields } from "@/lib/services/fields/validate";
 import { updateCrmLead } from "@/lib/services/leads/create-record";
+import { relinkStandaloneEmailsForRecord } from "@/lib/services/email/relink";
 import { assertCanAssignLeadTo } from "@/lib/services/leads/lead-assignment";
 import {
   shouldUseAutoLeadScore,
@@ -131,6 +132,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       before: existing as unknown as Record<string, unknown>,
       after: updated as unknown as Record<string, unknown>,
     });
+
+    // If a primary/secondary email changed, retroactively link any standalone
+    // emails already sent to the new address(es). Only fires on an actual email
+    // change (idempotent + avoids needless scans on unrelated edits).
+    const emailChanged =
+      updated.email !== existing.email || updated.secondaryEmail !== existing.secondaryEmail;
+    if (emailChanged) {
+      void relinkStandaloneEmailsForRecord({
+        orgId: user.orgId,
+        kind: "Lead",
+        recordId: updated.id,
+        emails: [updated.email, updated.secondaryEmail],
+      }).catch((err: unknown) => console.error("[email:relink] lead update failed", err));
+    }
 
     // Global Activities feed: emit user-visible CrmActivity rows for the edit.
     // Stage / Status / Owner changes each get their own dedicated entry so they

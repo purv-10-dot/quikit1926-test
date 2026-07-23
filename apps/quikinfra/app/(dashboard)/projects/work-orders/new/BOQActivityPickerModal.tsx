@@ -176,7 +176,7 @@ export function BOQActivityPickerModal({
                   <div className="grid grid-cols-2 gap-y-3 text-sm">
                     <div>
                       <div className="text-[11px] text-orange-700 font-bold uppercase tracking-wider">BOQ No</div>
-                      <div className="text-gray-900 font-semibold font-mono">
+                      <div className="text-gray-900 font-semibold">
                         {selectedLeaf.boq_no}
                       </div>
                     </div>

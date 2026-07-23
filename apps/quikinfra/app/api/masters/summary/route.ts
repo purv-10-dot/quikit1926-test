@@ -28,7 +28,6 @@ const MASTER_MODELS: Record<string, string> = {
   costCenters: "cnCostCenter",
   machinery: "cnMachinery",
   companies: "cnCompany",
-  financialYears: "cnFinancialYear",
   terms: "cnTermsCondition",
 };
 
@@ -55,7 +54,6 @@ const COUNT_FINDERS: Record<string, (where: MasterCountWhere) => Promise<number>
   cnCostCenter: (where) => db.cnCostCenter.count({ where }),
   cnMachinery: (where) => db.cnMachinery.count({ where }),
   cnCompany: (where) => db.cnCompany.count({ where }),
-  cnFinancialYear: (where) => db.cnFinancialYear.count({ where }),
   cnTermsCondition: (where) => db.cnTermsCondition.count({ where }),
 };
 

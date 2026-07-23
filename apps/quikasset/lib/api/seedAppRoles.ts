@@ -185,6 +185,29 @@ export async function ensureUserOnRole(
   }
 }
 
+/**
+ * First-time bootstrap: assign `defaultRoleId` ONLY if the user holds no
+ * QuikAsset role yet. Safe to call on every dashboard load — once a role
+ * exists (default OR an explicitly-assigned one like admin / Asset Manager),
+ * this is a no-op. This is the guard the dashboard layout needs: it must never
+ * override or duplicate a role a manager has already set (the role-reversion
+ * bug came from unconditionally re-ensuring Member for non-admin-tier users).
+ */
+export async function ensureDefaultRoleIfNone(
+  userId: string,
+  orgId: string,
+  defaultRoleId: string,
+): Promise<void> {
+  const appId = await getQuikAssetAppId();
+  if (!appId) return;
+  const existing = await db.astUserAppRole.findFirst({
+    where: { userId, orgId, role: { appId } },
+    select: { id: true },
+  });
+  if (existing) return; // already has a QuikAsset role — leave it untouched
+  await ensureUserOnRole(userId, orgId, defaultRoleId);
+}
+
 /* ───────────────────────── orchestrator ───────────────────────── */
 
 const seededOrgs = new Map<string, number>();

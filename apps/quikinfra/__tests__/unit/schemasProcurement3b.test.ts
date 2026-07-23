@@ -4,7 +4,6 @@ import {
   rfqCreateSchema,
   gatePassCreateSchema,
   goodReturnCreateSchema,
-  internalReturnCreateSchema,
   transferCreateSchema,
   reconCreateSchema,
   dieselCreateSchema,
@@ -58,7 +57,7 @@ describe("gatePassCreateSchema", () => {
   });
 });
 
-describe("goodReturnCreateSchema / internalReturnCreateSchema", () => {
+describe("goodReturnCreateSchema", () => {
   it("good return requires grnId + lines", () => {
     const valid = {
       returnNumber: "GR-1",
@@ -71,19 +70,6 @@ describe("goodReturnCreateSchema / internalReturnCreateSchema", () => {
     };
     expect(goodReturnCreateSchema.safeParse(valid).success).toBe(true);
     expect(goodReturnCreateSchema.safeParse({ ...valid, grnId: "" }).success).toBe(false);
-  });
-  it("internal return requires issueId + returnedBy", () => {
-    const valid = {
-      returnNumber: "IR-1",
-      issueId: "mi1",
-      projectId: "p1",
-      locationId: "l1",
-      returnDate: "2025-01-01",
-      returnedBy: "u1",
-      lines: [{ itemId: "i1", returnQty: 2, uomId: "u1", unitRate: 10 }],
-    };
-    expect(internalReturnCreateSchema.safeParse(valid).success).toBe(true);
-    expect(internalReturnCreateSchema.safeParse({ ...valid, returnedBy: "" }).success).toBe(false);
   });
 });
 

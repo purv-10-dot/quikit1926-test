@@ -49,7 +49,7 @@ export function DocDetailLayout<T>({
       <div className="flex items-center justify-between mb-3">
         <Link
           href={backHref}
-          className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-orange-700 transition-colors"
+          className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-accent-700 transition-colors"
         >
           <ArrowLeft className="h-3 w-3" /> {backLabel}
         </Link>
@@ -82,7 +82,7 @@ export function DocDetailLayout<T>({
       {lineColumns.length > 0 && (
         <section className="rounded-xl border border-slate-200 bg-white overflow-hidden mb-5">
           <table className="w-full text-sm">
-            <thead className="bg-orange-50/60 text-xs text-slate-600">
+            <thead className="bg-accent-50 text-xs text-slate-600">
               <tr>
                 {lineColumns.map((c) => (
                   <th

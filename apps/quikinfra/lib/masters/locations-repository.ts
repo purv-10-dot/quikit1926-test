@@ -9,6 +9,13 @@
 import { db } from "@/lib/db";
 import { Prisma } from "@quikit/database";
 
+export interface LocationItemMeta {
+  id: string;
+  code: string;
+  name: string;
+  uomCode: string | null;
+}
+
 export interface LocationRecord {
   id: string;
   orgId: string;
@@ -26,11 +33,40 @@ export interface LocationRecord {
   itemGroupName: string | null;
   itemIds: string[];
   itemQtyByItemId: Record<string, string> | null;
+  /**
+   * Read-time denormalized metadata for the selected items — lets the list
+   * "Items" column and the edit-form qty chips render item code/name/uom
+   * without the client bulk-loading the whole item master.
+   */
+  itemsMeta: LocationItemMeta[];
   status: string;
   createdAt: string;
   updatedAt: string;
   createdBy: string;
   updatedBy: string;
+}
+
+/**
+ * Batch-resolve item metadata for a set of item ids in a single query.
+ * Called once per list page (bounded by pageSize × items-per-location), so
+ * the client never has to load the full item master to label selected items.
+ */
+export async function resolveLocationItemMeta(
+  orgId: string,
+  itemIds: string[],
+): Promise<Map<string, LocationItemMeta>> {
+  const ids = Array.from(new Set(itemIds.filter(Boolean)));
+  if (ids.length === 0) return new Map();
+  const rows = await db.cnItem.findMany({
+    where: { orgId, id: { in: ids } },
+    select: { id: true, code: true, name: true, uom: { select: { code: true } } },
+  });
+  return new Map(
+    rows.map((r) => [
+      r.id,
+      { id: r.id, code: r.code, name: r.name, uomCode: r.uom?.code ?? null },
+    ]),
+  );
 }
 
 function toRecord(
@@ -40,6 +76,7 @@ function toRecord(
       project: { select: { id: true; name: true } };
     };
   }>,
+  metaById?: Map<string, LocationItemMeta>,
 ): LocationRecord {
   const rawQty = row.itemQtyByItemId;
   const qty: Record<string, string> | null =
@@ -51,6 +88,12 @@ function toRecord(
           ]),
         )
       : null;
+  const itemIds = Array.isArray(row.itemIds) ? row.itemIds : [];
+  const itemsMeta: LocationItemMeta[] = metaById
+    ? (itemIds
+        .map((id) => metaById.get(id))
+        .filter(Boolean) as LocationItemMeta[])
+    : [];
   return {
     id: row.id,
     orgId: row.orgId,
@@ -66,8 +109,9 @@ function toRecord(
     capacity: row.capacity ?? null,
     itemGroupId: row.itemGroupId ?? null,
     itemGroupName: row.itemGroup?.name ?? null,
-    itemIds: Array.isArray(row.itemIds) ? row.itemIds : [],
+    itemIds,
     itemQtyByItemId: qty,
+    itemsMeta,
     status: row.status,
     createdAt: row.createdAt?.toISOString?.() ?? "",
     updatedAt: row.updatedAt?.toISOString?.() ?? "",
@@ -94,10 +138,14 @@ export interface ListOptions {
   /** Pagination — passed straight through to Prisma findMany. */
   take?: number;
   skip?: number;
+  /** Status view. Omit for legacy picker behavior (all non-deleted). */
+  status?: "active" | "inactive" | "all";
+  /** Server-side sort (from `parseSort`). Defaults to newest-first. */
+  orderBy?: Array<Record<string, "asc" | "desc">>;
 }
 
 function buildLocationsWhere(
-  opts: Pick<ListOptions, "orgId" | "search" | "projectId">,
+  opts: Pick<ListOptions, "orgId" | "search" | "projectId" | "status">,
 ): Record<string, unknown> {
   const q = (opts.search ?? "").trim();
   const projectFilter = opts.projectId
@@ -107,7 +155,11 @@ function buildLocationsWhere(
     orgId: opts.orgId,
     // "deleted" rows are removed from the UI entirely; "inactive" rows are
     // still returned so they can show under the Inactive tab.
-    status: { not: "deleted" },
+    ...(opts.status === "inactive"
+      ? { status: "inactive" }
+      : opts.status === "active"
+        ? { status: { notIn: ["inactive", "deleted"] } }
+        : { status: { not: "deleted" } }),
     ...projectFilter,
     ...(q
       ? {
@@ -130,15 +182,19 @@ export async function listLocations(opts: ListOptions): Promise<LocationRecord[]
       itemGroup: { select: { id: true, name: true } },
       project: { select: { id: true, name: true } },
     },
-    orderBy: { createdAt: "desc" },
+    orderBy: opts.orderBy ?? { createdAt: "desc" },
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
   });
-  return rows.map(toRecord);
+  const metaById = await resolveLocationItemMeta(
+    opts.orgId,
+    rows.flatMap((r) => (Array.isArray(r.itemIds) ? r.itemIds : [])),
+  );
+  return rows.map((r) => toRecord(r, metaById));
 }
 
 export async function countLocations(
-  opts: Pick<ListOptions, "orgId" | "search" | "projectId">,
+  opts: Pick<ListOptions, "orgId" | "search" | "projectId" | "status">,
 ): Promise<number> {
   return db.cnLocation.count({ where: buildLocationsWhere(opts) });
 }
@@ -151,7 +207,12 @@ export async function findLocationById(orgId: string, id: string): Promise<Locat
       project: { select: { id: true, name: true } },
     },
   });
-  return row ? toRecord(row) : null;
+  if (!row) return null;
+  const metaById = await resolveLocationItemMeta(
+    orgId,
+    Array.isArray(row.itemIds) ? row.itemIds : [],
+  );
+  return toRecord(row, metaById);
 }
 
 export interface CreateLocationInput {
@@ -207,7 +268,11 @@ export async function createLocation(input: CreateLocationInput): Promise<Locati
       project: { select: { id: true, name: true } },
     },
   });
-  return toRecord(row);
+  const metaById = await resolveLocationItemMeta(
+    input.orgId,
+    Array.isArray(row.itemIds) ? row.itemIds : [],
+  );
+  return toRecord(row, metaById);
 }
 
 export interface UpdateLocationInput
@@ -256,7 +321,11 @@ export async function updateLocation(
       project: { select: { id: true, name: true } },
     },
   });
-  return toRecord(row);
+  const metaById = await resolveLocationItemMeta(
+    orgId,
+    Array.isArray(row.itemIds) ? row.itemIds : [],
+  );
+  return toRecord(row, metaById);
 }
 
 export async function deleteLocation(

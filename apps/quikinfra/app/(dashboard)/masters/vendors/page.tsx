@@ -11,7 +11,7 @@ const ImportDataDrawer = dynamic(
   () => import("@/components/ImportDataDrawer").then((m) => m.ImportDataDrawer),
   { ssr: false },
 );
-import { useVendors, useCreateVendor, useUpdateVendor, useItemGroups, useDeleteVendor } from "@/hooks/use-masters";
+import { useCreateVendor, useUpdateVendor, useItemGroups, useDeleteVendor } from "@/hooks/use-masters";
 import {
   FormDrawer, FormSection, FormRow, Field,
   TextInput, NumberInput, SelectInput, MultiSelectInput, TextAreaInput, CheckboxInput, DateInput, InactiveStatusNotice,
@@ -172,7 +172,6 @@ export default function VendorsPage() {
     return unique.map((name) => ({ value: name, label: name }));
   }, [itemGroupsResult]);
 
-  const { data: result, isLoading } = useVendors();
   const { data: wb } = useQuery({
     queryKey: ["integrations", "whitebooks-config"],
     queryFn: async () => {
@@ -335,20 +334,6 @@ export default function VendorsPage() {
     setDrawerOpen(true);
   };
 
-  const allRows = result?.data ?? [];
-  // "All" = active + blacklisted (non-inactive), matching the original view.
-  // Inactive and Blacklisted are their own filters. Deleted rows are already
-  // excluded by the API.
-  const nonInactive = allRows.filter((r) => r?.status !== "inactive");
-  const inactiveCount = allRows.filter((r) => r?.status === "inactive").length;
-  const blacklistedCount = nonInactive.filter((r) => r?.status === "blacklisted").length;
-  const filteredRows =
-    statusFilter === "inactive"
-      ? allRows.filter((r) => r?.status === "inactive")
-      : statusFilter === "blacklisted"
-        ? nonInactive.filter((r) => r?.status === "blacklisted")
-        : nonInactive;
-
   return (
     <>
       <MasterListPage
@@ -357,9 +342,15 @@ export default function VendorsPage() {
         permissionUrl="/masters/vendors"
         columns={columns}
         externalStatusFilter
-        data={filteredRows}
-        total={filteredRows.length}
-        isLoading={isLoading}
+        infinite={{
+          queryKey: "vendors-infinite",
+          endpoint: "/api/masters/vendors",
+          pageSize: 25,
+          // The custom status tabs below drive this server filter.
+          filters: { status: statusFilter },
+          defaultSortBy: "createdAt",
+          defaultSortOrder: "desc",
+        }}
         historyEntityType="vendor"
         filters={
           <div className="flex items-center gap-2">
@@ -368,22 +359,22 @@ export default function VendorsPage() {
               onClick={() => setStatusFilter("all")}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${
                 statusFilter === "all"
-                  ? "bg-orange-50 text-orange-700 border-orange-200"
+                  ? "bg-accent-50 text-accent-700 border-accent-200"
                   : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
               }`}
             >
-              All ({nonInactive.length})
+              All
             </button>
             <button
               type="button"
               onClick={() => setStatusFilter("inactive")}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${
                 statusFilter === "inactive"
-                  ? "bg-orange-50 text-orange-700 border-orange-200"
+                  ? "bg-accent-50 text-accent-700 border-accent-200"
                   : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
               }`}
             >
-              Inactive ({inactiveCount})
+              Inactive
             </button>
             <button
               type="button"
@@ -394,7 +385,7 @@ export default function VendorsPage() {
                   : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
               }`}
             >
-              Blacklisted ({blacklistedCount})
+              Blacklisted
             </button>
           </div>
         }

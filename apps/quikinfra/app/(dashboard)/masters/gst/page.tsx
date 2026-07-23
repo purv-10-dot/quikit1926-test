@@ -4,7 +4,7 @@ import { toErrorMessage } from "@/lib/api/errors";
 import { useEffect, useMemo, useState } from "react";
 import { Receipt } from "lucide-react";
 import { MasterListPage, type MasterColumnDef } from "@/components/MasterListPage";
-import { useGSTCodes, useCreateGSTCode, useUpdateGSTCode, useItemGroups, useWorkCategories, useDeleteGSTCode } from "@/hooks/use-masters";
+import { useCreateGSTCode, useUpdateGSTCode, useItemGroups, useWorkCategories, useDeleteGSTCode } from "@/hooks/use-masters";
 import { FormDrawer, FormSection, FormRow, Field, TextInput, NumberInput, SelectInput, DateInput, CheckboxInput, InactiveStatusNotice } from "@/components/FormDrawer";
 import dynamic from "next/dynamic";
 import type { ImportFieldDef } from "@/components/ImportDataDrawer";
@@ -88,7 +88,6 @@ const rules: ValidationRules<typeof emptyForm> = {
 };
 
 export default function GSTPage() {
-  const { data: result, isLoading } = useGSTCodes();
   const {
     data: itemGroupsResult,
     isFetching: itemGroupsFetching,
@@ -255,7 +254,13 @@ export default function GSTPage() {
     <>
       <MasterListPage title="GST Codes" entityName="GST Code" permissionUrl="/masters/gst" columns={columns}
         showStatusTabs
-        data={(result?.data ?? []) as Row[]} total={result?.total ?? 0} isLoading={isLoading}
+        infinite={{
+          queryKey: "gst-codes-infinite",
+          endpoint: "/api/masters/gst",
+          pageSize: 25,
+          defaultSortBy: "createdAt",
+          defaultSortOrder: "desc",
+        }}
         canImport canExport
         historyEntityType="gst_code"
         onImport={() => setImportOpen(true)}

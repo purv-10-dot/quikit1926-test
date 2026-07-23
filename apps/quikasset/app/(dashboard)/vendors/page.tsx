@@ -11,6 +11,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react"
+import { useRevalidateOnFocus } from "@/lib/hooks/useRevalidateOnFocus"
 import { Loader2, Building2, Plus, Pencil, Trash2, Mail, Phone, AlertTriangle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { RequirePerm } from "@/components/require-perm"
@@ -52,6 +53,7 @@ function Vendors() {
   }, [])
 
   useEffect(() => { void load() }, [load])
+  useRevalidateOnFocus(load)
 
   async function handleAdd(payload: VendorPayload) {
     const res = await fetch("/api/vendors", {

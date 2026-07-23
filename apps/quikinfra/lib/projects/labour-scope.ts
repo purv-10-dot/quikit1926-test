@@ -1,36 +1,30 @@
 /**
  * Labour-only work order line helpers.
  *
- * Labour lines are stored as first-class columns on CnWorkOrderLine
- * (lineType = "labour", lineDate, activityName, workCategoryId) plus a
- * `labourCounts` JSON column holding an array of { type, count } — one entry
- * per selected trade. JSON (rather than a column per trade) means new labour
- * types never require a schema change. The line's `quantity` column mirrors the
- * sum of those counts. BOQ-only columns (boqItemId, uomId, negotiatedRate,
- * amount) are left empty/zero for labour rows.
+ * A labour line is stored on CnWorkOrderLine as lineType="labour" with
+ * lineDate, activityName, description, workCategoryId (group), labourCategoryId
+ * (labour category), labourCount (workers), quantity (= days), negotiatedRate
+ * (rate/day). Amount = count × days × rate. BOQ-only columns (boqItemId, uomId)
+ * are empty for labour.
  */
-
-export interface LabourTypeCount {
-  type: string;
-  count: string;
-}
-
-/** Shape stored in the `labourCounts` JSON column. */
-export interface LabourCountEntry {
-  type: string;
-  count: number;
-}
 
 export interface LabourScopeLine {
   lineDate: string;
   activityName: string;
   description: string;
   workCategoryId: string;
-  labourTypes: LabourTypeCount[];
+  labourCategoryId: string;
+  count: string;
+  days: string;
+  rate: string;
 }
 
 export function isLabourWorkType(workType: string | null | undefined): boolean {
   return (workType ?? "").trim().toLowerCase() === "labour only";
+}
+
+export function labourLineAmount(line: LabourScopeLine): number {
+  return (parseFloat(line.count) || 0) * (parseFloat(line.days) || 0) * (parseFloat(line.rate) || 0);
 }
 
 export function newLabourScopeLine(): LabourScopeLine {
@@ -39,34 +33,11 @@ export function newLabourScopeLine(): LabourScopeLine {
     activityName: "",
     description: "",
     workCategoryId: "",
-    labourTypes: [],
+    labourCategoryId: "",
+    count: "",
+    days: "",
+    rate: "",
   };
-}
-
-export function sumLabourQty(labourTypes: LabourTypeCount[]): number {
-  return labourTypes.reduce((sum, lt) => sum + (parseFloat(lt.count) || 0), 0);
-}
-
-/** Parse the raw `labourCounts` JSON value into the UI's {type, count}[] list. */
-export function parseLabourCounts(raw: unknown): LabourTypeCount[] {
-  if (!Array.isArray(raw)) return [];
-  const out: LabourTypeCount[] = [];
-  for (const entry of raw) {
-    if (!entry || typeof entry !== "object") continue;
-    const { type, count } = entry as { type?: unknown; count?: unknown };
-    if (typeof type !== "string" || !type) continue;
-    out.push({ type, count: count != null ? String(count) : "" });
-  }
-  return out;
-}
-
-/** Build the `labourCounts` JSON value from the UI's {type, count}[] list. */
-export function toLabourCounts(
-  labourTypes: LabourTypeCount[],
-): LabourCountEntry[] {
-  return labourTypes
-    .filter((lt) => lt.type && (parseFloat(lt.count) || 0) > 0)
-    .map((lt) => ({ type: lt.type, count: parseFloat(lt.count) || 0 }));
 }
 
 export function labourLineFromWoItem(item: {
@@ -74,32 +45,43 @@ export function labourLineFromWoItem(item: {
   activityName?: string | null;
   description?: string | null;
   workCategoryId?: string | null;
-  labourCounts?: unknown;
+  labourCategoryId?: string | null;
+  labourCount?: string | number | null;
+  quantity?: string | number | null;
+  rate?: string | number | null;
+  negotiatedRate?: string | number | null;
 }): LabourScopeLine {
+  const rate = item.rate ?? item.negotiatedRate;
   return {
     lineDate: item.lineDate ? String(item.lineDate).slice(0, 10) : "",
     activityName: item.activityName ?? "",
     description: item.description ?? "",
     workCategoryId: item.workCategoryId ?? "",
-    labourTypes: parseLabourCounts(item.labourCounts),
+    labourCategoryId: item.labourCategoryId ?? "",
+    count: item.labourCount != null ? String(item.labourCount) : "",
+    days: item.quantity != null ? String(item.quantity) : "",
+    rate: rate != null ? String(rate) : "",
   };
 }
 
 export function labourLineToBoqItem(line: LabourScopeLine) {
-  const qty = sumLabourQty(line.labourTypes);
+  const count = parseFloat(line.count) || 0;
+  const days = parseFloat(line.days) || 0;
+  const rate = parseFloat(line.rate) || 0;
   return {
     lineType: "labour",
     lineDate: line.lineDate || null,
     activityName: line.activityName.trim(),
     description: line.description.trim(),
     workCategoryId: line.workCategoryId,
-    labourCounts: toLabourCounts(line.labourTypes),
+    labourCategoryId: line.labourCategoryId || null,
+    labourCount: count,
     // BOQ-only fields — unused for labour lines.
     boqItemId: "",
     boqNo: "",
-    uomCode: "",
-    quantity: qty,
-    rate: 0,
-    amount: 0,
+    uomCode: "DAY",
+    quantity: days,
+    rate,
+    amount: count * days * rate,
   };
 }

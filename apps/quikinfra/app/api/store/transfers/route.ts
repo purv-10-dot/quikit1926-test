@@ -7,11 +7,12 @@ import {
   createStockTransfer,
   listStockTransfers,
   countStockTransfers,
+  stockTransferStatusCounts,
   countStockTransfersForDate,
   type StockTransferLine,
   type StockTransferAssetLine,
 } from "@/lib/store/stock-transfer-repository";
-import { parsePagination, paginateDb } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
 import { canActOnCurrentStep } from "@/lib/approvals/workflow-rbac";
 
 /**
@@ -48,9 +49,19 @@ export async function GET(req: NextRequest) {
   };
 
   // Push LIMIT/OFFSET + COUNT down into the raw SQL query.
+  if (searchParams.get("counts") === "1") {
+    const counts = await stockTransferStatusCounts(ctx.orgId, baseOpts);
+    return NextResponse.json({ counts });
+  }
+
+  const { sortBy, sortOrder } = parseSort(
+    searchParams,
+    ["transferNumber", "transferDate", "status", "sourceProjectName", "createdAt"],
+    { field: "transferDate", order: "desc" },
+  );
   const result = await paginateDb(
     parsePagination(req),
-    (paging) => listStockTransfers(ctx.orgId, { ...baseOpts, ...paging }),
+    (paging) => listStockTransfers(ctx.orgId, { ...baseOpts, ...paging, sortBy, sortOrder }),
     () => countStockTransfers(ctx.orgId, baseOpts),
   );
 

@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { Search } from "lucide-react";
 import {
   PillDropdown,
@@ -8,7 +7,13 @@ import {
   SingleSelect,
   MultiSelect,
 } from "./filter-toolbar-parts";
+import { useEffect, useMemo, useState } from "react";
 import { AssigneeMenu } from "./filter-assignee-menu";
+import { ProjectSelectMenu } from "./filter-project-menu";
+import { MoreFiltersMenu, type BuiltinKey } from "./filter-more-menu";
+import { CustomFieldChip } from "./filter-custom-field-chip";
+import type { CustomFilter } from "@/lib/customFields/filterQuery";
+import type { CustomFieldDTO } from "@/lib/services/customFields";
 
 export interface ToolbarState {
   projectId?: string;
@@ -20,6 +25,14 @@ export interface ToolbarState {
   type: string[];
   statusCategory: string[];
   resolution?: "unresolved" | "done" | "any";
+  // Custom-field value filters that carry an actual value — serialized to the
+  // `customFilters` query param by filter-view.tsx and sent to the backend.
+  customFilters?: CustomFilter[];
+  // Field ids checked in the "More filters" picker (JPD/discovery + others).
+  // A field can be enabled (chip visible) before a value is picked, so this is
+  // tracked separately from `customFilters` (which only holds valued filters).
+  // Each id is the composite (comma-joined) id from the filterable catalog.
+  enabledFieldIds?: string[];
 }
 
 interface FilterToolbarProps {
@@ -28,6 +41,8 @@ interface FilterToolbarProps {
   onClear: () => void;
   state: ToolbarState;
   onChange: (next: ToolbarState) => void;
+  /** Opens the Save-filter modal (replaces the old "Copy filter" link). */
+  onSaveFilter: () => void;
 }
 
 const TYPE_OPTIONS = [
@@ -77,22 +92,7 @@ export function defaultToolbarStateFor(filterId: string): ToolbarState {
   }
 }
 
-interface ProjectLite {
-  id: string;
-  name: string;
-  projectKey?: string;
-}
-
-export function FilterToolbar({ search, onSearchChange, onClear, state, onChange }: FilterToolbarProps) {
-  const [projects, setProjects] = useState<ProjectLite[]>([]);
-
-  useEffect(() => {
-    fetch("/api/projects?pageSize=50")
-      .then((r) => r.json())
-      .then((j) => j?.success && setProjects(j.data ?? []))
-      .catch(() => undefined);
-  }, []);
-
+export function FilterToolbar({ search, onSearchChange, onClear, state, onChange, onSaveFilter }: FilterToolbarProps) {
   // Active chips persist their own label on pick, so this fallback is only
   // hit for the "me"/"unassigned" pseudo-values.
   const userLabel = (id: string) => {
@@ -100,6 +100,53 @@ export function FilterToolbar({ search, onSearchChange, onClear, state, onChange
     if (id === "unassigned") return "Unassigned";
     return id;
   };
+
+  // Filterable-field catalog — cross-project by default (JPD/discovery fields
+  // included), narrowed to one project's fields when a Project chip is set.
+  // Lifted here so the "More filters" picker AND the active chips share it.
+  const [catalog, setCatalog] = useState<CustomFieldDTO[]>([]);
+  useEffect(() => {
+    let alive = true;
+    const url = state.projectId
+      ? `/api/projects/${state.projectId}/issue-fields`
+      : `/api/custom-fields/filterable`;
+    fetch(url)
+      .then((r) => r.json())
+      .then((j) => alive && j?.success && setCatalog(j.data ?? []))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [state.projectId]);
+
+  const customFilters = state.customFilters ?? [];
+  const enabledFieldIds = state.enabledFieldIds ?? [];
+  const enabledFields = useMemo(
+    () => enabledFieldIds.map((id) => catalog.find((f) => f.id === id)).filter((f): f is CustomFieldDTO => !!f),
+    [enabledFieldIds, catalog],
+  );
+
+  const setCustomFilters = (next: CustomFilter[]) =>
+    onChange({ ...state, customFilters: next });
+
+  const toggleBuiltin = (key: BuiltinKey, on: boolean) => {
+    if (key === "reporter") {
+      onChange(
+        on
+          ? { ...state, reporter: "me", reporterLabel: "Current User" }
+          : { ...state, reporter: undefined, reporterLabel: undefined },
+      );
+    } else {
+      onChange({ ...state, resolution: on ? "unresolved" : "any" });
+    }
+  };
+
+  const removeEnabledField = (id: string) =>
+    onChange({
+      ...state,
+      enabledFieldIds: enabledFieldIds.filter((x) => x !== id),
+      customFilters: customFilters.filter((f) => f.fieldId !== id),
+    });
 
   return (
     <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -121,10 +168,7 @@ export function FilterToolbar({ search, onSearchChange, onClear, state, onChange
           value={state.projectLabel ?? "—"}
           onClear={() => onChange({ ...state, projectId: undefined, projectLabel: undefined })}
           renderValueMenu={(close) => (
-            <SingleSelect
-              searchable
-              searchPlaceholder="Search projects…"
-              options={projects.map((p) => ({ value: p.id, label: p.name }))}
+            <ProjectSelectMenu
               selected={state.projectId}
               onPick={(value, label) => {
                 onChange({ ...state, projectId: value, projectLabel: label });
@@ -136,10 +180,7 @@ export function FilterToolbar({ search, onSearchChange, onClear, state, onChange
       ) : (
         <PillDropdown label="Project">
           {(close) => (
-            <SingleSelect
-              searchable
-              searchPlaceholder="Search projects…"
-              options={projects.map((p) => ({ value: p.id, label: p.name }))}
+            <ProjectSelectMenu
               onPick={(value, label) => {
                 onChange({ ...state, projectId: value, projectLabel: label });
                 close();
@@ -236,40 +277,44 @@ export function FilterToolbar({ search, onSearchChange, onClear, state, onChange
         />
       )}
 
+      {/* Active chips for each enabled custom field — pick values here. */}
+      {enabledFields.map((field) => (
+        <CustomFieldChip
+          key={field.id}
+          field={field}
+          projectId={state.projectId}
+          filters={customFilters}
+          onFiltersChange={setCustomFilters}
+          onRemove={() => removeEnabledField(field.id)}
+        />
+      ))}
+
       <PillDropdown label="More filters">
-        {(close) => (
-          <div className="py-1">
-            <button
-              type="button"
-              disabled={!!state.reporter && state.reporter !== "any"}
-              onClick={() => {
-                onChange({ ...state, reporter: "me", reporterLabel: "Current User" });
-                close();
-              }}
-              className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent"
-            >
-              + Reporter
-            </button>
-            <button
-              type="button"
-              disabled={!!state.resolution && state.resolution !== "any"}
-              onClick={() => {
-                onChange({ ...state, resolution: "unresolved" });
-                close();
-              }}
-              className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent"
-            >
-              + Resolution
-            </button>
-          </div>
+        {() => (
+          <MoreFiltersMenu
+            projectId={state.projectId}
+            enabledFieldIds={enabledFieldIds}
+            onToggleField={(id, on) =>
+              onChange({
+                ...state,
+                enabledFieldIds: on
+                  ? [...enabledFieldIds, id]
+                  : enabledFieldIds.filter((x) => x !== id),
+                ...(on ? {} : { customFilters: customFilters.filter((f) => f.fieldId !== id) }),
+              })
+            }
+            reporterOn={!!state.reporter && state.reporter !== "any"}
+            resolutionOn={!!state.resolution && state.resolution === "unresolved"}
+            onToggleBuiltin={toggleBuiltin}
+          />
         )}
       </PillDropdown>
 
       <button type="button" onClick={onClear} className="text-sm text-blue-600 hover:underline px-1">
         Clear filters
       </button>
-      <button type="button" className="text-sm text-blue-600 hover:underline px-1">
-        Copy filter
+      <button type="button" onClick={onSaveFilter} className="text-sm text-blue-600 hover:underline px-1">
+        Save filter
       </button>
     </div>
   );

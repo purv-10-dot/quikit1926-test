@@ -2,12 +2,20 @@ import { toErrorMessage } from "@/lib/api/errors";
 import { requireEquipmentAction } from "@/lib/auth/requireEquipmentAction";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
+import { parsePagination, parseSort } from "@/lib/http/pagination";
 import {
   createHireRate,
   getHireRentSummary,
   listHireRates,
 } from "@/lib/equipment/hire-rent-service";
 import { NextRequest, NextResponse } from "next/server";
+
+const HIRE_RATE_SORT_COLUMNS = [
+  "createdAt",
+  "rate",
+  "effectiveFrom",
+  "direction",
+] as const;
 
 export async function GET(req: NextRequest) {
   const ctxOrResp = await requireEquipmentAction(
@@ -19,16 +27,33 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const summaryOnly = searchParams.get("summary") === "true";
   const direction = searchParams.get("direction") ?? undefined;
+  const search = searchParams.get("search") ?? "";
 
   if (summaryOnly) {
     const summary = await getHireRentSummary({ orgId: ctxOrResp.orgId });
     return NextResponse.json(summary);
   }
 
+  const p = parsePagination(req);
+  const sort = parseSort(req, HIRE_RATE_SORT_COLUMNS, {
+    field: "createdAt",
+    order: "desc",
+  });
   const result = await listHireRates({
     orgId: ctxOrResp.orgId,
     direction,
+    search: search || undefined,
+    orderBy: sort.orderBy as never,
+    ...(p.paginated ? { take: p.take, skip: p.skip } : {}),
   });
+  if (p.paginated) {
+    return NextResponse.json({
+      ...result,
+      page: p.page,
+      pageSize: p.pageSize,
+      hasMore: p.skip + result.data.length < result.total,
+    });
+  }
   return NextResponse.json(result);
 }
 

@@ -40,17 +40,25 @@ export interface ListWorkCategoriesOptions {
   /** Pagination — passed straight through to Prisma findMany. */
   take?: number;
   skip?: number;
+  /** Status view. Omit for legacy picker behavior (all non-deleted). */
+  status?: "active" | "inactive" | "all";
+  /** Server-side sort (from `parseSort`). Defaults to the repo default. */
+  orderBy?: Array<Record<string, "asc" | "desc">>;
 }
 
 function buildWorkCategoriesWhere(
-  opts: Pick<ListWorkCategoriesOptions, "orgId" | "search">,
+  opts: Pick<ListWorkCategoriesOptions, "orgId" | "search" | "status">,
 ): Record<string, unknown> {
   const q = (opts.search ?? "").trim();
   return {
     orgId: opts.orgId,
     // "deleted" rows are removed from the UI entirely; "inactive" rows are
     // still returned so they can show under the Inactive tab.
-    status: { not: "deleted" },
+    ...(opts.status === "inactive"
+      ? { status: "inactive" }
+      : opts.status === "active"
+        ? { status: { notIn: ["inactive", "deleted"] } }
+        : { status: { not: "deleted" } }),
     ...(q
       ? {
           OR: [
@@ -67,7 +75,7 @@ export async function listWorkCategories(
 ): Promise<WorkCategoryRecord[]> {
   const rows = await db.cnWorkCategory.findMany({
     where: buildWorkCategoriesWhere(opts),
-    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    orderBy: opts.orderBy ?? [{ sortOrder: "asc" }, { name: "asc" }],
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
   });
@@ -75,7 +83,7 @@ export async function listWorkCategories(
 }
 
 export async function countWorkCategories(
-  opts: Pick<ListWorkCategoriesOptions, "orgId" | "search">,
+  opts: Pick<ListWorkCategoriesOptions, "orgId" | "search" | "status">,
 ): Promise<number> {
   return db.cnWorkCategory.count({
     where: buildWorkCategoriesWhere(opts),

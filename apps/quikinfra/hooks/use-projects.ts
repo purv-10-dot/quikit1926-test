@@ -124,11 +124,33 @@ export function useImportBOQ() {
  * or pass null/undefined to get everything (used by the list page which
  * no longer gates on project selection).
  */
-export function useEstimations(projectId?: string | null) {
-  const qs = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+export function useEstimations(
+  projectId?: string | null,
+  opts?: {
+    search?: string;
+    page?: number;
+    pageSize?: number;
+    sortBy?: string;
+    sortOrder?: "asc" | "desc";
+    excludeInactive?: boolean;
+  },
+) {
+  const qs = new URLSearchParams();
+  if (projectId) qs.set("projectId", projectId);
+  if (opts?.search) qs.set("search", opts.search);
+  if (opts?.page) qs.set("page", String(opts.page));
+  if (opts?.pageSize) qs.set("pageSize", String(opts.pageSize));
+  if (opts?.sortBy) qs.set("sortBy", opts.sortBy);
+  if (opts?.sortOrder) qs.set("sortOrder", opts.sortOrder);
+  if (opts?.excludeInactive) qs.set("excludeInactive", "1");
+  const query = qs.toString();
   return useQuery({
-    queryKey: ["estimations", projectId ?? "__all__"],
-    queryFn: () => fetchApi<{ data: Estimation[] }>(`/api/estimations${qs}`),
+    queryKey: ["estimations", query || "__all__"],
+    queryFn: () =>
+      fetchApi<{ data: Estimation[]; total: number }>(
+        `/api/estimations${query ? `?${query}` : ""}`,
+      ),
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -163,17 +185,46 @@ export function useUpdateEstimation() {
 
 // ─── Work Orders ───────────────────────────────────────────────────
 
-export function useWorkOrders(params?: { status?: string; projectId?: string; contractorId?: string; search?: string }) {
+export function useWorkOrders(params?: {
+  status?: string;
+  projectId?: string;
+  contractorId?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+}) {
   const qs = new URLSearchParams();
   if (params?.status && params.status !== "all") qs.set("status", params.status);
   if (params?.projectId) qs.set("projectId", params.projectId);
   if (params?.contractorId) qs.set("contractorId", params.contractorId);
   if (params?.search) qs.set("search", params.search);
+  if (params?.page) qs.set("page", String(params.page));
+  if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+  if (params?.sortBy) qs.set("sortBy", params.sortBy);
+  if (params?.sortOrder) qs.set("sortOrder", params.sortOrder);
   const query = qs.toString();
 
   return useQuery({
     queryKey: ["work-orders", query],
     queryFn: () => fetchApi<{ data: WorkOrderListRow[]; total: number }>(`/api/projects/work-orders${query ? `?${query}` : ""}`),
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useWorkOrderStats(params?: { search?: string; projectId?: string }) {
+  const qs = new URLSearchParams({ stats: "1" });
+  if (params?.search) qs.set("search", params.search);
+  if (params?.projectId) qs.set("projectId", params.projectId);
+  const query = qs.toString();
+  return useQuery({
+    queryKey: ["work-orders", "stats", query],
+    queryFn: () =>
+      fetchApi<{ stats: { total: number; active: number; totalValue: number; avgProgress: number } }>(
+        `/api/projects/work-orders?${query}`,
+      ),
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -216,18 +267,48 @@ export function useDeleteWorkOrder() {
 
 // ─── DPR ───────────────────────────────────────────────────────────
 
-export function useDPRs(params?: { status?: string; projectId?: string; fromDate?: string; toDate?: string; search?: string }) {
+export function useDPRs(params?: {
+  status?: string;
+  projectId?: string;
+  fromDate?: string;
+  toDate?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+}) {
   const qs = new URLSearchParams();
   if (params?.status && params.status !== "all") qs.set("status", params.status);
   if (params?.projectId) qs.set("projectId", params.projectId);
   if (params?.fromDate) qs.set("fromDate", params.fromDate);
   if (params?.toDate) qs.set("toDate", params.toDate);
   if (params?.search) qs.set("search", params.search);
+  if (params?.page) qs.set("page", String(params.page));
+  if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+  if (params?.sortBy) qs.set("sortBy", params.sortBy);
+  if (params?.sortOrder) qs.set("sortOrder", params.sortOrder);
   const query = qs.toString();
 
   return useQuery({
     queryKey: ["dprs", query],
     queryFn: () => fetchApi<{ data: unknown[]; total: number }>(`/api/projects/dpr${query ? `?${query}` : ""}`),
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useDPRStats(params?: { search?: string; projectId?: string }) {
+  const qs = new URLSearchParams({ stats: "1" });
+  if (params?.search) qs.set("search", params.search);
+  if (params?.projectId) qs.set("projectId", params.projectId);
+  const query = qs.toString();
+  return useQuery({
+    queryKey: ["dprs", "stats", query],
+    queryFn: () =>
+      fetchApi<{ stats: { total: number; approved: number; pending: number; halted: number } }>(
+        `/api/projects/dpr?${query}`,
+      ),
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -284,16 +365,31 @@ export function useSubmitDPR() {
 
 // ─── RAB ───────────────────────────────────────────────────────────
 
-export function useRABs(params?: { status?: string; projectId?: string; contractorId?: string }) {
+export function useRABs(params?: {
+  status?: string;
+  projectId?: string;
+  contractorId?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+}) {
   const qs = new URLSearchParams();
   if (params?.status && params.status !== "all") qs.set("status", params.status);
   if (params?.projectId) qs.set("projectId", params.projectId);
   if (params?.contractorId) qs.set("contractorId", params.contractorId);
+  if (params?.search) qs.set("search", params.search);
+  if (params?.page) qs.set("page", String(params.page));
+  if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+  if (params?.sortBy) qs.set("sortBy", params.sortBy);
+  if (params?.sortOrder) qs.set("sortOrder", params.sortOrder);
   const query = qs.toString();
 
   return useQuery({
     queryKey: ["rabs", query],
     queryFn: () => fetchApi<{ data: unknown[]; total: number }>(`/api/projects/rab${query ? `?${query}` : ""}`),
+    placeholderData: (prev) => prev,
   });
 }
 

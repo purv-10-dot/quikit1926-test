@@ -102,6 +102,71 @@ export async function listFields(opts: {
   return rows.map(serializeField);
 }
 
+/**
+ * Cross-project filterable field catalog for the saved-filters "More filters"
+ * dropdown. Discovery/JPD fields are per-project (scope="space"), so the same
+ * logical field (e.g. "Theme") exists as a separate row in each project. We
+ * merge active global fields plus all space fields the caller can see, dedupe
+ * by (name, type), and collapse the per-project copies into ONE entry whose
+ * `id` is the comma-joined list of real field ids. `customFiltersToWhere`
+ * understands that comma-joined id and filters across all of them, so a single
+ * "Theme" filter matches whichever project an issue belongs to.
+ *
+ * `projectIds = null` means "all projects in the org" (admins); otherwise it's
+ * the set of projects the caller is a member of.
+ */
+export async function listFilterableFieldsAcrossProjects(opts: {
+  orgId: string;
+  projectIds: string[] | null;
+}): Promise<CustomFieldDTO[]> {
+  const rows = await db.qtCustomField.findMany({
+    where: {
+      orgId: opts.orgId,
+      isDeleted: false,
+      status: "active",
+      OR: [
+        { scope: "global" },
+        {
+          scope: "space",
+          ...(opts.projectIds ? { projectId: { in: opts.projectIds } } : {}),
+        },
+      ],
+    },
+    include: { options: true },
+    orderBy: [{ name: "asc" }, { position: "asc" }],
+  });
+
+  const byKey = new Map<string, { field: CustomFieldDTO; ids: string[]; optionValues: Set<string> }>();
+  for (const row of rows) {
+    const dto = serializeField(row);
+    const dedupeKey = `${dto.name.trim().toLowerCase()}::${dto.type}`;
+    const existing = byKey.get(dedupeKey);
+    if (!existing) {
+      byKey.set(dedupeKey, {
+        field: dto,
+        ids: [dto.id],
+        optionValues: new Set(dto.options.map((o) => o.value)),
+      });
+      continue;
+    }
+    // Same logical field in another project — record its id and union any
+    // options it introduces (option value slugs are shared across the copies).
+    existing.ids.push(dto.id);
+    for (const o of dto.options) {
+      if (!existing.optionValues.has(o.value)) {
+        existing.optionValues.add(o.value);
+        existing.field.options.push(o);
+      }
+    }
+  }
+
+  return Array.from(byKey.values()).map(({ field, ids }) => ({
+    ...field,
+    // Composite id understood by customFiltersToWhere (splits on ",").
+    id: ids.join(","),
+  }));
+}
+
 export async function getField(orgId: string, fieldId: string): Promise<CustomFieldDTO | null> {
   const row = await db.qtCustomField.findFirst({
     where: { id: fieldId, orgId, isDeleted: false },

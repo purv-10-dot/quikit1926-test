@@ -3,7 +3,7 @@
 import { MapPin } from "lucide-react";
 
 const INPUT_WRAP =
-  "w-full rounded-lg border border-gray-300 text-sm focus-within:ring-2 focus-within:ring-orange-500 focus-within:border-transparent";
+  "w-full rounded-lg border border-gray-300 text-sm focus-within:ring-2 focus-within:ring-accent-500 focus-within:border-transparent";
 const INPUT_INNER =
   "w-full border-0 bg-transparent py-2 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-0";
 

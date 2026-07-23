@@ -147,15 +147,16 @@ model Org {
   cnCustomers              CnCustomer[]
   cnDepartments            CnDepartment[]
   cnDieselLogs             CnDieselLog[]
-  cnFinancialYears         CnFinancialYear[]
   cnGstCodes               CnGSTCode[]
   cnGatePasses             CnGatePass[]
   cnGoodReturns            CnGoodReturn[]
   cnGRNs                   CnGoodsReceiptNote[]
   cnHindrances             CnHindrance[]
-  cnInternalReturns        CnInternalReturn[]
   cnItems                  CnItem[]
   cnItemGroups             CnItemGroup[]
+  cnLabourCategories       CnLabourCategory[]
+  cnLabourRates            CnLabourRate[]
+  cnWorkmen                CnWorkman[]
   cnLocations              CnLocation[]
   cnMachinery              CnMachinery[]
   cnEquipmentLogs          CnEquipmentLog[]
@@ -230,6 +231,7 @@ model Org {
   QtUserActivity           QtUserActivity[]
   QtUserViewPref           QtUserViewPref[]
   QtReportView             QtReportView[]
+  QtSavedFilter            QtSavedFilter[]
   UserAppRole              QtUserAppRole[]
   UserPermissionExtra      QtUserPermissionExtra[]
   qsAppRoles               QsAppRole[]
@@ -2397,7 +2399,6 @@ model CnCompany {
   createdBy   String
   updatedBy   String
 
-  finYears CnFinancialYear[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -2557,7 +2558,6 @@ model CnUOM {
   materialIssueLines  CnMaterialIssueLine[]
   stockTransferLines  CnStockTransferLine[]
   reconciliationLines CnStockReconciliationLine[]
-  internalReturnLines CnInternalReturnLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -2565,6 +2565,101 @@ model CnUOM {
   @@unique([orgId, code])
   @@index([orgId])
   @@map("Uoms")
+  @@schema("app_quikinfra")
+}
+
+// ============================================================================
+// LABOUR MASTERS (Section 1)
+// Category + Rate are separate tables (one category has many dated rates).
+// Workman references category/contractor by plain FK id (repository-scoped).
+// ============================================================================
+
+model CnLabourCategory {
+  id           String   @id @default(cuid())
+  orgId        String
+  code         String // e.g. MASON-SK — immutable after create (enforced in repo)
+  name         String
+  skillLevel   String // UNSKILLED | SEMI_SKILLED | SKILLED | HIGHLY_SKILLED
+  trade        String? // free-text family: Masonry, Shuttering, Rebar
+  defaultUomId String? // FK CnUOM (usually DAY)
+  description  String?
+  status       String   @default("active")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  createdBy    String
+  updatedBy    String
+
+  // --- grafted: cross-schema relations (Org/User) ---
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, code])
+  @@index([orgId])
+  @@map("Labour_categories")
+  @@schema("app_quikinfra")
+}
+
+model CnLabourRate {
+  id               String    @id @default(cuid())
+  orgId            String
+  labourCategoryId String // FK CnLabourCategory
+  projectId        String? // FK CnProject; null = tenant-wide default
+  rateType         String // DAILY_WAGE | HOURLY_WAGE
+  rate             Decimal   @db.Decimal(18, 2)
+  effectiveFrom    DateTime  @db.Date
+  effectiveTo      DateTime? @db.Date // null = open-ended
+  approvalStatus   String    @default("DRAFT") // DRAFT | PENDING | APPROVED | REJECTED
+  approvalId       String? // in-flight CnApprovalInstance
+  status           String    @default("active")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  createdBy        String
+  updatedBy        String
+
+  // --- grafted: cross-schema relations (Org/User) ---
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([orgId, labourCategoryId, projectId, effectiveFrom])
+  @@map("Labour_rates")
+  @@schema("app_quikinfra")
+}
+
+model CnWorkman {
+  id                  String    @id @default(cuid())
+  orgId               String
+  workmanCode         String // auto WM-<seq>, tenant-unique
+  fullName            String
+  fatherOrSpouse      String?
+  gender              String? // M | F | O
+  dateOfBirth         DateTime? @db.Date
+  phone               String?
+  photoFileId         String? // CnFileObject (entityType = "workman")
+  idProofType         String? // AADHAAR | VOTER_ID | DL | OTHER
+  idProofLast4        String? // store ONLY last 4 chars; never the full number
+  labourCategoryId    String // FK CnLabourCategory
+  engagementType      String // CONTRACTOR | DEPARTMENTAL
+  contractorId        String? // required when engagementType = CONTRACTOR
+  dailyWage           Decimal?  @db.Decimal(18, 2) // override; else resolve CnLabourRate
+  bankAccountLast4    String?
+  ifsc                String?
+  joiningDate         DateTime? @db.Date
+  exitDate            DateTime? @db.Date
+  projectIds          String[] // projects the workman is inducted to
+  safetyInductionDone Boolean   @default(false)
+  status              String    @default("active")
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  createdBy           String
+  updatedBy           String
+
+  // --- grafted: cross-schema relations (Org/User) ---
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, workmanCode])
+  @@index([orgId])
+  @@index([orgId, labourCategoryId])
+  @@index([orgId, contractorId])
+  @@map("Workmen")
   @@schema("app_quikinfra")
 }
 
@@ -2626,7 +2721,6 @@ model CnItem {
   materialIssueLines  CnMaterialIssueLine[]
   stockTransferLines  CnStockTransferLine[]
   reconciliationLines CnStockReconciliationLine[]
-  internalReturnLines CnInternalReturnLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -2736,7 +2830,6 @@ model CnLocation {
   transfersFrom   CnStockTransfer[]       @relation("StockTransferFrom")
   transfersTo     CnStockTransfer[]       @relation("StockTransferTo")
   reconciliations CnStockReconciliation[]
-  internalReturns CnInternalReturn[]
   dieselLogs      CnDieselLog[]
 
   // --- grafted: cross-schema relations (Org/User) ---
@@ -2822,29 +2915,6 @@ model CnTermsCondition {
   @@schema("app_quikinfra")
 }
 
-model CnFinancialYear {
-  id        String   @id @default(cuid())
-  orgId     String
-  companyId String
-  label     String
-  startDate DateTime
-  endDate   DateTime
-  isCurrent Boolean  @default(false)
-  status    String   @default("active")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  createdBy String
-  updatedBy String
-
-  company CnCompany @relation(fields: [companyId], references: [id])
-
-  // --- grafted: cross-schema relations (Org/User) ---
-  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  @@index([orgId])
-  @@map("Financial_years")
-  @@schema("app_quikinfra")
-}
 
 model CnProject {
   id               String    @id @default(cuid())
@@ -2878,7 +2948,6 @@ model CnProject {
   costCenters                CnCostCenter[]
   machinery                  CnMachinery[]
   assets                     CnAsset[]
-  boqItems                   CnBOQItem[]
   purchaseReqs               CnPurchaseRequisition[]
   indents                    CnPurchaseIndent[]
   pos                        CnPurchaseOrder[]
@@ -2903,7 +2972,6 @@ model CnProject {
   fixedAssetTransactionsTo   CnFixedAssetTransaction[] @relation("FaTxnDestination")
   gatePasses                 CnGatePass[]
   goodReturns                CnGoodReturn[]
-  internalReturns            CnInternalReturn[]
   boqRev2Items               CnBOQItemV2[]
   boqImportBatches           CnBOQImportBatch[]
   boqLockState               CnBOQLockState?
@@ -3528,7 +3596,6 @@ model CnGRNLine {
   amount            Decimal @db.Decimal(18, 2)
   qualityStatus     String  @default("pending") // pending | accepted | rejected | conditional
   batchNo           String?
-  heatNo            String?
   condition         String?
   testCertRef       String?
   shortDeliveryNote String?
@@ -3635,7 +3702,6 @@ model CnMaterialIssue {
   project         CnProject             @relation(fields: [projectId], references: [id])
   location        CnLocation?           @relation(fields: [locationId], references: [id])
   lines           CnMaterialIssueLine[]
-  internalReturns CnInternalReturn[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -3879,52 +3945,7 @@ model CnGoodReturnLine {
   @@schema("app_quikinfra")
 }
 
-model CnInternalReturn {
-  id           String   @id @default(cuid())
-  orgId        String
-  returnNumber String
-  projectId    String
-  locationId   String
-  returnedById String
-  issueId      String?
-  returnDate   DateTime
-  status       String   @default("draft")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  createdBy    String
-  updatedBy    String
 
-  project  CnProject              @relation(fields: [projectId], references: [id])
-  issue    CnMaterialIssue?       @relation(fields: [issueId], references: [id])
-  location CnLocation             @relation(fields: [locationId], references: [id])
-  lines    CnInternalReturnLine[]
-
-  // --- grafted: cross-schema relations (Org/User) ---
-  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  @@unique([orgId, returnNumber])
-  @@index([orgId])
-  @@map("Internal_returns")
-  @@schema("app_quikinfra")
-}
-
-model CnInternalReturnLine {
-  id          String  @id @default(cuid())
-  returnId    String
-  itemId      String
-  returnedQty Decimal @db.Decimal(18, 4)
-  uomId       String
-  condition   String?
-  remarks     String?
-
-  internalReturn CnInternalReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
-  item           CnItem           @relation(fields: [itemId], references: [id])
-  uom            CnUOM            @relation(fields: [uomId], references: [id])
-
-  @@index([returnId])
-  @@map("Internal_return_lines")
-  @@schema("app_quikinfra")
-}
 
 model CnStockTransfer {
   id                     String    @id @default(cuid())
@@ -4104,43 +4125,6 @@ model CnDieselLog {
   @@schema("app_quikinfra")
 }
 
-model CnBOQItem {
-  id              String   @id @default(cuid())
-  orgId           String
-  projectId       String
-  parentId        String?
-  depth           Int      @default(0)
-  sortOrder       Int      @default(0)
-  isLeaf          Boolean  @default(true)
-  category        String? // Civil | Electrical | Road | Non-SOR
-  itemCode        String?
-  description     String
-  uomId           String?
-  quantity        Decimal? @db.Decimal(18, 4)
-  contractRate    Decimal? @db.Decimal(18, 2)
-  workingRate     Decimal? @db.Decimal(18, 2)
-  contractAmount  Decimal? @db.Decimal(18, 2)
-  workingAmount   Decimal? @db.Decimal(18, 2)
-  executedQty     Decimal  @default(0) @db.Decimal(18, 4)
-  executedAmount  Decimal  @default(0) @db.Decimal(18, 2)
-  progressPercent Decimal  @default(0) @db.Decimal(5, 2)
-  status          String   @default("active")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  createdBy       String
-  updatedBy       String
-
-  project  CnProject   @relation(fields: [projectId], references: [id])
-  parent   CnBOQItem?  @relation("BOQHierarchy", fields: [parentId], references: [id])
-  children CnBOQItem[] @relation("BOQHierarchy")
-
-  @@index([orgId])
-  @@index([projectId])
-  @@index([parentId])
-  @@map("Boq_items")
-  @@schema("app_quikinfra")
-}
-
 model CnHindrance {
   id                   String    @id @default(cuid())
   orgId                String
@@ -4225,13 +4209,11 @@ model CnWorkOrderLine {
   amount         Decimal @db.Decimal(18, 2)
 
   // Labour-only work order fields (null for "boq" lines)
-  lineDate       DateTime?
-  activityName   String?
-  workCategoryId String?
-
-  // Labour-only manpower counts — array of { type, count }, one per selected
-  // trade. JSON so new trades never require a schema change.
-  labourCounts Json?
+  lineDate         DateTime?
+  activityName     String?
+  workCategoryId   String?
+  labourCategoryId String? // FK CnLabourCategory — labour day-rate lines
+  labourCount      Decimal? @db.Decimal(18, 4) // workers on this line; amount = count × days(quantity) × rate
 
   workOrder CnWorkOrder @relation(fields: [woId], references: [id], onDelete: Cascade)
 
@@ -4739,6 +4721,7 @@ model CnDPRWorkItem {
   todayQty      Decimal  @db.Decimal(18, 4)
   cumulativeQty Decimal  @db.Decimal(18, 4)
   uomId         String
+  location      String?
   remarks       String?
   images        String[] @default([])
 
@@ -5185,6 +5168,7 @@ model CnBOQProgressLedger {
   qty            Decimal  @db.Decimal(18, 4)
   direction      Int // +1 for apply, -1 for reverse
   workType       String // "sub_contractor" | "self"
+  workOrderId    String? // labour WO this progress was executed under (labour RAB link)
   dprId          String?
   dprLineId      String?
   overrideFlag   Boolean  @default(false)
@@ -5196,6 +5180,7 @@ model CnBOQProgressLedger {
   @@index([projectId, boqNo])
   @@index([boqItemId])
   @@index([dprId])
+  @@index([workOrderId])
   @@index([createdAt])
   @@map("Boq_progress_ledger")
   @@schema("app_quikinfra")
@@ -6922,6 +6907,34 @@ model QtReportView {
   @@schema("app_quiktrack")
 }
 
+/// A user-saved work-item filter for the global Filters surface (the Jira-style
+/// "Save filter" flow). `criteria` is the opaque toolbar state blob the UI
+/// persists (search + built-in filters + customFilters) — shape owned by the
+/// client. Reuses the app's existing saved-view conventions (owner userId,
+/// JSON blob, `visibility` "private"|"shared" like QtIdeaView, `starred` like
+/// QtDashboard) rather than a bespoke viewer/editor sharing matrix.
+model QtSavedFilter {
+  id          String   @id @default(cuid())
+  orgId       String
+  userId      String
+  name        String
+  description String?
+  criteria    Json
+  visibility  String   @default("private") // "private" | "org" | "space" | "user"
+  // For "space": project ids whose members may see it. For "user": user ids.
+  // Empty for "private"/"org".
+  viewerIds   String[] @default([])
+  starred     Boolean  @default(false)
+  isDeleted   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  Org         Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, userId])
+  @@index([orgId, visibility])
+  @@schema("app_quiktrack")
+}
+
 model QtUserActivity {
   id        String   @id @default(cuid())
   orgId     String
@@ -7950,6 +7963,46 @@ model CrmLeadSource {
   @@schema("app_quikcrm")
 }
 
+// Prospects captured by the LinkedIn Chrome extension ("Save to CRM"). This is
+// a standalone capture table — it is intentionally NOT a CrmLead. The extension
+// authenticates with a Bearer JWT and posts the extracted profile to
+// /api/leads/from-linkedin, which upserts one row here per (orgId, linkedinUrl).
+model CrmProspect {
+  id             String   @id @default(cuid())
+  orgId          String
+  name           String
+  email          String?
+  phone          String?
+  title          String?
+  company        String?
+  linkedinUrl    String?
+  shortSummary   String?
+  about          String?
+  profilePicture String?
+  // Raw extracted blobs (posts, company data, experiences) kept verbatim for
+  // later enrichment — shape is owned by the extension, so stored as Json.
+  posts          Json?
+  companyData    Json?
+  experiences    Json?
+  savedById      String?
+  savedByName    String?
+  // Conversion state. "New" until the prospect is converted into a CrmLead via
+  // the Prospects page; then "Converted" with a pointer to the created lead.
+  status         String    @default("New")
+  convertedLeadId String?
+  convertedAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // One prospect per LinkedIn profile per org — re-saving the same profile
+  // updates the existing row instead of creating duplicates.
+  @@unique([orgId, linkedinUrl], name: "prospect_org_linkedin_uk")
+  @@index([orgId])
+  @@index([orgId, createdAt])
+  @@index([orgId, status])
+  @@schema("app_quikcrm")
+}
+
 model CrmOpportunity {
   id                  String                          @id @default(cuid())
   orgId               String
@@ -8664,6 +8717,163 @@ model CrmOutboundMessageLog {
   createdAt DateTime  @default(now())
 
   @@index([orgId])
+  @@schema("app_quikcrm")
+}
+
+// ─── Email integration (P1) ──────────────────────────────────────────────────
+// Per-user connected mailbox (Gmail / Microsoft 365) via OAuth. Two-way sync:
+// send from CRM records + poll inbox/sent for replies. Each synced/sent message
+// also produces a CrmActivity (type "email", sourceSystem=provider,
+// externalId=providerMessageId) so it appears on the Activity Timeline and
+// dedupes via CrmActivity's @@unique([orgId, sourceSystem, externalId]).
+// Tokens are AES-256-GCM encrypted at rest — never plaintext, never passwords.
+
+model CrmMailboxConnection {
+  id              String                @id @default(cuid())
+  orgId           String
+  userId          String
+  provider        String // "gmail" | "microsoft"
+  emailAddress    String
+  accessTokenEnc  String
+  refreshTokenEnc String
+  tokenExpiresAt  DateTime?
+  scope           String?
+  status          String                @default("active") // "active" | "error" | "disconnected"
+  historyId       String? // Gmail incremental sync cursor
+  deltaLink       String? // (legacy P1 single Graph delta cursor; superseded by deltaInbox/deltaSent)
+  // Full-history sync (P2): one-time 90-day backfill of Inbox + Sent, then
+  // incremental. Microsoft delta is per-folder, so two cursors are required.
+  syncState       String                @default("initial") // "initial" | "backfilling" | "live"
+  backfillCursor  String? // provider continuation token for the paginated backfill (Graph nextLink / Gmail pageToken)
+  backfillSince   DateTime? // low-water mark of the backfill window for this connection
+  deltaInbox      String? // Microsoft Graph inbox deltaLink
+  deltaSent       String? // Microsoft Graph sentitems deltaLink
+  deltaDrafts     String? // Microsoft Graph drafts deltaLink (P3 Mailbox module)
+  lastSyncedAt    DateTime?
+  lastError       String?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  threads         CrmEmailThread[]
+  messages        CrmEmailMessage[]
+  mailboxEmails   CrmMailboxEmail[]
+
+  @@unique([orgId, userId]) // one mailbox per user in P1
+  @@index([orgId, status])
+  @@schema("app_quikcrm")
+}
+
+model CrmEmailThread {
+  id                  String               @id @default(cuid())
+  orgId               String
+  mailboxConnectionId String
+  providerThreadId    String
+  subject             String?
+  relatedKind         String // "Lead" | "Contact" | "Account" | "Opportunity"
+  relatedObjectId     String
+  lastMessageAt       DateTime?
+  messageCount        Int                  @default(0)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  mailbox             CrmMailboxConnection @relation(fields: [mailboxConnectionId], references: [id], onDelete: Cascade)
+  messages            CrmEmailMessage[]
+
+  @@unique([orgId, mailboxConnectionId, providerThreadId])
+  @@index([orgId, relatedKind, relatedObjectId])
+  @@schema("app_quikcrm")
+}
+
+model CrmEmailMessage {
+  id                  String                @id @default(cuid())
+  orgId               String
+  mailboxConnectionId String
+  threadId            String
+  providerMessageId   String
+  rfcMessageId        String?
+  inReplyTo           String?
+  direction           String // "outbound" | "inbound"
+  fromAddress         String
+  toAddresses         String[]
+  ccAddresses         String[]
+  subject             String?
+  snippet             String?
+  bodyHtml            String?
+  bodyText            String?
+  sentAt              DateTime?
+  receivedAt          DateTime?
+  activityId          String? // linked CrmActivity.id (timeline entry)
+  relatedKind         String
+  relatedObjectId     String
+  createdAt           DateTime              @default(now())
+  mailbox             CrmMailboxConnection  @relation(fields: [mailboxConnectionId], references: [id], onDelete: Cascade)
+  thread              CrmEmailThread        @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  attachments         CrmEmailAttachment[]
+
+  @@unique([orgId, mailboxConnectionId, providerMessageId]) // dedupe on sync
+  @@index([orgId, threadId])
+  @@index([orgId, relatedKind, relatedObjectId])
+  @@schema("app_quikcrm")
+}
+
+model CrmEmailAttachment {
+  id                   String          @id @default(cuid())
+  orgId                String
+  messageId            String
+  filename             String
+  mimeType             String?
+  sizeBytes            Int?
+  providerAttachmentId String? // fetched lazily on download
+  storageUrl           String? // populated only if persisted to GCS
+  createdAt            DateTime        @default(now())
+  message              CrmEmailMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, messageId])
+  @@schema("app_quikcrm")
+}
+
+// ─── Mailbox module (P3) ──────────────────────────────────────────────────────
+// Raw per-connection mirror of EVERY email in the connected mailbox (not just
+// CRM-matched mail). Powers the in-CRM "Mailbox" module (Inbox/Sent/Drafts/All),
+// read entirely from this table — no provider call when a user opens the inbox.
+// The CRM-matched view (CrmEmailMessage/Thread/Activity/Timeline) is unchanged;
+// when an email also matches a CRM record, crmEmailMessageId cross-links the two.
+model CrmMailboxEmail {
+  id                  String               @id @default(cuid())
+  orgId               String
+  mailboxConnectionId String
+  provider            String // "google" | "microsoft"
+  providerMessageId   String
+  providerThreadId    String?
+  folder              String // "inbox" | "sent" | "drafts"
+  direction           String // "inbound" | "outbound"
+  fromAddress         String
+  fromName            String?
+  toAddresses         String[]
+  ccAddresses         String[]
+  bccAddresses        String[]
+  subject             String?
+  preview             String?
+  bodyHtml            String? // truncated to a size cap; preview always present
+  bodyText            String?
+  hasAttachments      Boolean              @default(false)
+  attachments         Json? // [{filename,mimeType,sizeBytes,providerAttachmentId}]
+  receivedAt          DateTime?
+  sentAt              DateTime?
+  isRead              Boolean              @default(false)
+  isStarred           Boolean              @default(false)
+  labels              String[] // Gmail labelIds / Graph categories
+  // Cross-link to the CRM-matched row (P1/P2), when this email was also attached.
+  crmEmailMessageId   String?
+  matchedKind         String?
+  matchedObjectId     String?
+  syncedAt            DateTime             @default(now())
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  mailbox             CrmMailboxConnection @relation(fields: [mailboxConnectionId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, mailboxConnectionId, providerMessageId]) // dedupe on sync
+  @@index([orgId, mailboxConnectionId, folder, receivedAt])
+  @@index([orgId, mailboxConnectionId, isRead])
+  @@index([orgId, mailboxConnectionId, providerThreadId])
   @@schema("app_quikcrm")
 }
 
@@ -18285,6 +18495,10 @@ model AstAsset {
   invoiceFileType      String?
   invoiceFileSize      Int?
   assetStatus          AstAssetStatus   @default(Available)
+  // Platform User.id of whoever added this asset ("Added by"). Plain string, no
+  // FK — same convention as AstAssetRequest.requesterUserId; full history lives
+  // in AstAuditLog.
+  createdByUserId      String?
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
   assignments          AstAssignment[]
@@ -18321,6 +18535,8 @@ model AstRepair {
   returnedDate     String?
   status           AstRepairStatus  @default(Pending)
   notes            String?
+  // Platform User.id of whoever logged/sent this repair ("Sent to repair by").
+  createdByUserId  String?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
   replacements     AstReplacement[]
@@ -18395,6 +18611,9 @@ model AstAssignment {
   condition      String
   expectedReturn String?
   notes          String?
+  // Platform User.id of whoever performed this assignment ("Assigned by").
+  // Distinct from `userId`, which is the AstEmployee the asset is assigned TO.
+  assignedByUserId String?
   status         AstAssignmentStatus @default(Active)
   assignedAt     DateTime            @default(now())
   returnedAt     DateTime?

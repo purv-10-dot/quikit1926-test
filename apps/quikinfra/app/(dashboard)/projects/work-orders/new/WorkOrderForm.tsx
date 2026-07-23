@@ -36,7 +36,7 @@ import {
 } from "lucide-react";
 import { PageContainer } from "@/components/PageShell";
 import { SelectInput } from "@/components/FormDrawer";
-import { useProjects, useContractors, useUOMs, useWorkCategories } from "@/hooks/use-masters";
+import { useProjects, useContractors, useUOMs, useWorkCategories, useLabourCategories } from "@/hooks/use-masters";
 import { buildLookupOptions } from "@/lib/masters/lookup";
 import {
   isLabourWorkType,
@@ -95,11 +95,13 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
   const { data: contractorsResult } = useContractors();
   const { data: uomsResult } = useUOMs();
   const { data: workCategoriesResult } = useWorkCategories();
+  const { data: labourCategoriesResult } = useLabourCategories({ status: "active" });
 
   const projects = projectsResult?.data ?? [];
   const contractors = contractorsResult?.data ?? [];
   const uoms = (uomsResult?.data ?? []) as Array<{ code?: string; status?: string }>;
   const workCategories = workCategoriesResult?.data ?? [];
+  const labourCategories = labourCategoriesResult?.data ?? [];
 
   // Basic Information state
   const [projectId, setProjectId] = useState("");
@@ -219,20 +221,22 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
     if (isLabourOnly) {
       if (labourScope.length === 0) {
         setShowLabourErrors(true);
-        return setError("Add at least one labour activity");
+        return setError("Add at least one labour line");
       }
       const invalidLabour = labourScope.find(
         (s) =>
           !s.lineDate ||
           !s.activityName.trim() ||
           !s.workCategoryId ||
-          s.labourTypes.length === 0 ||
-          s.labourTypes.some((lt) => !lt.type || !(parseFloat(lt.count) > 0))
+          !s.labourCategoryId ||
+          !(parseFloat(s.count) > 0) ||
+          !(parseFloat(s.days) > 0) ||
+          !(parseFloat(s.rate) > 0)
       );
       if (invalidLabour) {
         setShowLabourErrors(true);
         return setError(
-          "For every row fill date, activity name, group, and a count for each labour type"
+          "For every labour line fill date, activity, group, labour category, count, days, and rate"
         );
       }
     } else {
@@ -317,13 +321,13 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
         <div className="flex items-center gap-3">
           <Link
             href="/projects/work-orders"
-            className="p-1.5 rounded-lg hover:bg-orange-50 hover:text-orange-700 text-slate-500 transition-colors"
+            className="p-1.5 rounded-lg hover:bg-accent-50 hover:text-accent-700 text-slate-500 transition-colors"
             title="Back to Work Orders"
           >
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <div className="flex items-center gap-2.5">
-            <span aria-hidden className="hidden sm:block w-1 h-6 rounded-full bg-gradient-to-b from-orange-500 to-orange-600" />
+            <span aria-hidden className="hidden sm:block w-1 h-6 rounded-full bg-gradient-to-b from-accent-500 to-accent-600" />
             <div>
             <h1 className="text-lg font-semibold text-slate-900 tracking-tight">
               {isEdit ? `Edit Work Order · ${editData?.woNumber ?? ""}` : "New Work Order"}
@@ -340,7 +344,7 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
           type="button"
           onClick={handleSave}
           disabled={saving}
-          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-gradient-to-b from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 disabled:opacity-50 rounded-lg shadow-brand active:translate-y-[1px] transition-all"
+          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-gradient-to-b from-accent-500 to-accent-600 hover:from-accent-600 hover:to-accent-700 disabled:opacity-50 rounded-lg shadow-brand active:translate-y-[1px] transition-all"
         >
           {saving ? (
             <>
@@ -368,7 +372,7 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
 
         {/* ── BASIC INFORMATION ── */}
         <section className="bg-white rounded-2xl border border-slate-200 shadow-soft px-6 py-5 mb-5">
-          <h2 className="text-xs font-bold text-orange-700 uppercase tracking-wider mb-4 flex items-center gap-2">
+          <h2 className="text-xs font-bold text-accent-700 uppercase tracking-wider mb-4 flex items-center gap-2">
             <Briefcase className="w-4 h-4" /> BASIC INFORMATION
           </h2>
           <div className="mb-4">
@@ -378,7 +382,7 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
                 value={workName}
                 onChange={(e) => setWorkName(e.target.value)}
                 placeholder="e.g. Tower-2 Plumbing Rough-in (auto-derived from WO type + project if left blank)"
-                className="w-full text-sm px-3 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-400"
+                className="w-full text-sm px-3 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent-300 focus:border-accent-400"
               />
             </Field>
           </div>
@@ -454,7 +458,7 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
                     setPlannedEnd(addDays(next, 1));
                   }
                 }}
-                className="w-full text-sm px-3 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-400"
+                className="w-full text-sm px-3 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent-300 focus:border-accent-400"
               />
             </Field>
             <Field label="PLANNED END" required>
@@ -463,7 +467,7 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
                 value={plannedEnd}
                 min={plannedStart ? addDays(plannedStart, 1) : undefined}
                 onChange={(e) => setPlannedEnd(e.target.value)}
-                className="w-full text-sm px-3 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-400"
+                className="w-full text-sm px-3 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent-300 focus:border-accent-400"
               />
             </Field>
           </div>
@@ -472,7 +476,7 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
         {/* ── SCOPE: Labour table OR BOQ items ── */}
         <section className="bg-white rounded-2xl border border-slate-200 shadow-soft px-6 py-5 mb-5">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xs font-bold text-orange-700 uppercase tracking-wider flex items-center gap-2">
+            <h2 className="text-xs font-bold text-accent-700 uppercase tracking-wider flex items-center gap-2">
               <FileText className="w-4 h-4" />{" "}
               {isLabourOnly ? "WORK ORDER DETAILS" : "BOQ SCOPE"}
             </h2>
@@ -486,7 +490,7 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
                   }
                   setBoqModalOpen(true);
                 }}
-                className="inline-flex items-center gap-1.5 text-xs font-semibold text-orange-700 hover:text-orange-800 bg-orange-50 hover:bg-orange-100 border border-orange-200 px-3 py-1.5 rounded-lg transition-colors"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-accent-700 hover:text-accent-800 bg-accent-50 hover:bg-accent-100 border border-accent-200 px-3 py-1.5 rounded-lg transition-colors"
               >
                 <Plus className="w-3.5 h-3.5" /> Add BOQ Item
               </button>
@@ -498,6 +502,7 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
               lines={labourScope}
               onChange={setLabourScope}
               workCategories={workCategories}
+              labourCategories={labourCategories}
               showErrors={showLabourErrors}
             />
           ) : scope.length === 0 ? (
@@ -510,9 +515,9 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
                 }
                 setBoqModalOpen(true);
               }}
-              className="w-full border-2 border-dashed border-orange-200 bg-orange-50/30 hover:bg-orange-50/60 hover:border-orange-300 rounded-xl p-10 text-center transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-300"
+              className="w-full border-2 border-dashed border-accent-200 bg-accent-50 hover:bg-accent-50 hover:border-accent-300 rounded-xl p-10 text-center transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent-300"
             >
-              <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-orange-50 text-orange-500 mb-3 ring-4 ring-orange-50/60">
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-accent-50 text-accent-500 mb-3 ring-4 ring-accent-100">
                 <FileText className="w-6 h-6" />
               </div>
               <div className="text-sm font-semibold text-slate-800">No BOQ items added yet</div>
@@ -540,13 +545,13 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
                     const rate = parseFloat(line.rate) || 0;
                     const amount = qty * rate;
                     return (
-                      <tr key={`${line.boqItemId}-${idx}`} className="border-t border-slate-100 hover:bg-orange-50/40 transition-colors">
+                      <tr key={`${line.boqItemId}-${idx}`} className="border-t border-slate-100 hover:bg-accent-50 transition-colors">
                         <td className="px-3 py-2">
                           <input
                             type="text"
                             value={line.boqNo}
                             onChange={(e) => updateScopeLine(idx, "boqNo", e.target.value)}
-                            className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded font-mono focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400"
+                            className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent-300 focus:border-accent-400"
                           />
                         </td>
                         <td className="px-3 py-2">
@@ -556,7 +561,7 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
                             onChange={(e) =>
                               updateScopeLine(idx, "description", e.target.value)
                             }
-                            className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400"
+                            className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent-300 focus:border-accent-400"
                           />
                         </td>
                         <td className="px-3 py-2">
@@ -585,7 +590,7 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
                             onChange={(e) =>
                               updateScopeLine(idx, "quantity", e.target.value)
                             }
-                            className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded text-right focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400"
+                            className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded text-right focus:outline-none focus:ring-1 focus:ring-accent-300 focus:border-accent-400"
                           />
                         </td>
                         <td className="px-3 py-2">
@@ -595,7 +600,7 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
                             min="0"
                             value={line.rate}
                             onChange={(e) => updateScopeLine(idx, "rate", e.target.value)}
-                            className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded text-right focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400"
+                            className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded text-right focus:outline-none focus:ring-1 focus:ring-accent-300 focus:border-accent-400"
                             placeholder="0"
                           />
                         </td>
@@ -616,12 +621,12 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
                     );
                   })}
                 </tbody>
-                <tfoot className="bg-orange-50/50 border-t border-slate-200">
+                <tfoot className="bg-accent-50 border-t border-slate-200">
                   <tr>
                     <td colSpan={5} className="px-3 py-3 text-right text-xs font-bold text-slate-700 uppercase tracking-wider">
                       Total Value
                     </td>
-                    <td className="px-3 py-3 text-right text-sm font-bold text-orange-700 tabular-nums">
+                    <td className="px-3 py-3 text-right text-sm font-bold text-accent-700 tabular-nums">
                       ₹{totalValue.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
                     </td>
                     <td />
@@ -654,7 +659,7 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
             type="button"
             onClick={handleSave}
             disabled={saving}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-gradient-to-b from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 disabled:opacity-50 rounded-lg shadow-brand active:translate-y-[1px] transition-all"
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-gradient-to-b from-accent-500 to-accent-600 hover:from-accent-600 hover:to-accent-700 disabled:opacity-50 rounded-lg shadow-brand active:translate-y-[1px] transition-all"
           >
             {saving ? (
               <>

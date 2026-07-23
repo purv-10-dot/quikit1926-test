@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { StagePill } from "@/components/opportunities/stage-pill";
 import { formatGeneric, toNumber } from "@/lib/services/opportunities/currency";
 import { ActivityTimeline } from "@/components/activities/activity-timeline";
+import { EmailThreadPanel } from "@/components/email/email-thread-panel";
 import { NewQuoteFromOpportunityButton } from "@/components/quotes/new-quote-from-opportunity-button";
 import { EntityDocumentsCard } from "@/components/documents/entity-documents-card";
 
@@ -328,6 +329,11 @@ export default async function OpportunityDetailPage({
 
       <div className="mt-6 space-y-4">
         <EntityDocumentsCard refType="opportunity" entityId={o.id} />
+        <Card>
+          <CardBody>
+            <EmailThreadPanel relatedKind="Opportunity" relatedObjectId={o.id} />
+          </CardBody>
+        </Card>
         <Card>
           <CardBody>
             <ActivityTimeline relatedKind="Opportunity" relatedObjectId={o.id} />
