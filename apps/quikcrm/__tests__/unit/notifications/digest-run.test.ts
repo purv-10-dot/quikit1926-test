@@ -29,6 +29,13 @@ vi.mock("@/lib/services/workspace/digest-config", () => ({ getDigestConfig: vi.f
 vi.mock("@/lib/services/dashboard/role-metrics", () => ({ buildRoleMetrics: vi.fn() }));
 vi.mock("@/lib/services/dashboard/activity-field-aggregates", () => ({ getActivityFieldAggregates: vi.fn() }));
 vi.mock("@/lib/services/dashboard/completed-tasks", () => ({ getCompletedTasksByRep: vi.fn() }));
+// REDESIGN: per-user detail assembly is a separate, DB-touching service — mocked
+// here so this unit proves the LOOP STRUCTURE, not the detail queries (those have
+// their own test in digest-detail.test.ts).
+vi.mock("@/lib/services/notifications/digest-detail", () => ({
+  assembleUserActivityDetail: vi.fn(),
+  MAX_ROWS_PER_SECTION: 50,
+}));
 vi.mock("@/lib/services/notifications/digest-recipients", () => ({
   resolveDigestRecipients: vi.fn(),
   listActiveDigestOrgs: vi.fn(),
@@ -53,6 +60,7 @@ import { getDigestConfig } from "@/lib/services/workspace/digest-config";
 import { buildRoleMetrics } from "@/lib/services/dashboard/role-metrics";
 import { getActivityFieldAggregates } from "@/lib/services/dashboard/activity-field-aggregates";
 import { getCompletedTasksByRep } from "@/lib/services/dashboard/completed-tasks";
+import { assembleUserActivityDetail } from "@/lib/services/notifications/digest-detail";
 import { resolveDigestRecipients, listActiveDigestOrgs } from "@/lib/services/notifications/digest-recipients";
 import { sendDigestEmail } from "@/lib/services/notifications/digest-email";
 import { runDailyDigest, runWeeklyDigest } from "@/lib/services/notifications/digest-run";
@@ -73,6 +81,7 @@ beforeEach(() => {
   } as never);
   vi.mocked(getActivityFieldAggregates).mockResolvedValue([] as never);
   vi.mocked(getCompletedTasksByRep).mockResolvedValue({ perRep: [], total: 0 } as never);
+  vi.mocked(assembleUserActivityDetail).mockResolvedValue([] as never);
   vi.mocked(sendDigestEmail).mockResolvedValue(undefined as never);
   // per-org top-N type selection (a small windowed groupBy seam) — stub it
   (prismaMock.crmActivity.groupBy as unknown as { mockResolvedValue: (v: unknown) => void })
@@ -216,6 +225,32 @@ describe("runDailyDigest — GO-LIVE: yesterday-IST window wired + DEMO banner O
     // called with the per-recipient SessionUser (same scoping path as the activity metrics)
     expect(getCompletedTasksByRep).toHaveBeenCalledWith(ADMIN, { range: FIXED_RANGE });
     expect(getCompletedTasksByRep).toHaveBeenCalledWith(MGR, { range: FIXED_RANGE });
+  });
+
+  it("REDESIGN: assembleUserActivityDetail is called per recipient WITH the rolling range", async () => {
+    await runDailyDigest();
+    const calls = vi.mocked(assembleUserActivityDetail).mock.calls;
+    expect(calls.length).toBe(2); // one per recipient
+    for (const call of calls) {
+      expect(call[1]).toEqual(FIXED_RANGE); // 2nd arg = the windowed range
+    }
+    expect(assembleUserActivityDetail).toHaveBeenCalledWith(ADMIN, FIXED_RANGE);
+    expect(assembleUserActivityDetail).toHaveBeenCalledWith(MGR, FIXED_RANGE);
+  });
+
+  it("REDESIGN: userDetails from the assembler are carried onto each digest", async () => {
+    const sample = [
+      {
+        userId: "r1", userName: "Rep One",
+        calls: [], callsTotal: 3, emails: [], emailsTotal: 0,
+        meetings: [], meetingsTotal: 0, tasks: [], tasksTotal: 1,
+      },
+    ];
+    vi.mocked(assembleUserActivityDetail).mockResolvedValue(sample as never);
+    const res = await runDailyDigest();
+    for (const d of res.digests) {
+      expect(d.userDetails).toEqual(sample);
+    }
   });
 
   it("ATOMIC: isDemo is FALSE in the result AND on every assembled digest", async () => {

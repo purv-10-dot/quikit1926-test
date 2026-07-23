@@ -38,7 +38,6 @@ import {
   type LeadAiSnippetInput,
 } from "@/lib/leads/command-ai-snippets";
 import { resolvePipelineStage } from "@/lib/leads/pipeline-stage-resolve";
-import { LogActivityModal } from "@/components/activities/log-activity-modal";
 import { CallModal } from "@/components/telephony/call-modal";
 import { ConvertLeadModal, type ConvertResult } from "@/components/leads/convert-lead-modal";
 import { LeadCallDispositionModal } from "@/components/leads/call-disposition-modal";
@@ -146,7 +145,19 @@ export function LeadDashboardShell(props: LeadDashboardShellProps) {
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [editOpen, setEditOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
-  const [logActivityOpen, setLogActivityOpen] = useState(false);
+  // Log activity is now a dedicated page (/activities/log). Navigate there with
+  // the lead pre-linked (+ source/stage/owner badges) instead of opening a modal.
+  const goLogActivity = useCallback(() => {
+    const qs = new URLSearchParams({
+      relatedKind: "Lead",
+      relatedObjectId: lead.id,
+      label: lead.name,
+    });
+    if (lead.source) qs.set("source", lead.source);
+    if (lead.stage) qs.set("stage", lead.stage);
+    if (lead.ownerName) qs.set("ownerName", lead.ownerName);
+    router.push(`/activities/log?${qs.toString()}`);
+  }, [router, lead.id, lead.name, lead.source, lead.stage, lead.ownerName]);
   const [callOpen, setCallOpen] = useState(false);
   const [dispositionOpen, setDispositionOpen] = useState(false);
   const [convertOpen, setConvertOpen] = useState(false);
@@ -251,7 +262,7 @@ export function LeadDashboardShell(props: LeadDashboardShellProps) {
       setTaskOpen(true);
     },
     onLogActivity: () => {
-      setLogActivityOpen(true);
+      goLogActivity();
     },
     onConvert: () => setConvertOpen(true),
   };
@@ -293,7 +304,7 @@ export function LeadDashboardShell(props: LeadDashboardShellProps) {
         // tab is gone). It opens the type-driven Activity logger; the user
         // picks the Meeting type (if configured) from the picker like any other.
         onAddMeeting: () => {
-          setLogActivityOpen(true);
+          goLogActivity();
         },
         onCreateTask: quickHandlers.onTask,
         onAddNote: () => {
@@ -397,6 +408,7 @@ export function LeadDashboardShell(props: LeadDashboardShellProps) {
       canLogActivity,
       copyText,
       email,
+      goLogActivity,
       isTrashed,
       lead.id,
       lead.isStarred,
@@ -530,7 +542,7 @@ export function LeadDashboardShell(props: LeadDashboardShellProps) {
             conversionProbability={insights.conversionProbability}
             initialNotes={overview.notes}
             canCreateNote={canEdit && !isTrashed}
-            onLogActivity={() => setLogActivityOpen(true)}
+            onLogActivity={goLogActivity}
             onLogCall={() => setDispositionOpen(true)}
           />
         </main>
@@ -675,23 +687,6 @@ export function LeadDashboardShell(props: LeadDashboardShellProps) {
           copyLabel={aiModal.copyLabel}
         />
       ) : null}
-
-      <LogActivityModal
-        open={logActivityOpen}
-        onClose={() => setLogActivityOpen(false)}
-        onSuccess={() => {
-          setLogActivityOpen(false);
-          router.refresh();
-        }}
-        canViewLeads={canLogActivity}
-        initialLead={{
-          id: lead.id,
-          label: lead.name,
-          source: lead.source,
-          stage: lead.stage,
-          ownerName: lead.ownerName,
-        }}
-      />
 
       <CallModal
         open={callOpen}

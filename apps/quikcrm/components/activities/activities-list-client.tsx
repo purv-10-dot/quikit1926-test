@@ -18,10 +18,8 @@ import {
   SearchableSelect,
   type SearchableOption,
 } from "@/components/activities/log-activity/searchable-select";
-import { LogActivityModal } from "@/components/activities/log-activity-modal";
 import { DraftActivitiesModal } from "@/components/activities/draft-activities-modal";
 import { ActivityDetailModal } from "@/components/activities/activity-detail-modal";
-import type { NamedDraft } from "@/lib/activities/activity-drafts";
 import { ACTIVITY_QUICK_SEARCH_FIELD } from "@/lib/services/activities/filter-engine";
 import type { ActivityRow } from "@/lib/services/activities/to-list-row";
 import type { ConditionRow, FilterPayload } from "@/types/lead-filter";
@@ -214,10 +212,7 @@ export function ActivitiesListClient({ canCreate, canEdit, canDelete, canViewLea
   const [error, setError] = useState<string | null>(null);
 
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [showLog, setShowLog] = useState(false);
   const [showDrafts, setShowDrafts] = useState(false);
-  // When a draft is resumed, it opens the Log-activity composer prefilled.
-  const [resumeDraft, setResumeDraft] = useState<NamedDraft | null>(null);
   const [detail, setDetail] = useState<ActivityRow | null>(null);
 
   // Top-level toolbar filters (visible next to the search box).
@@ -450,7 +445,7 @@ export function ActivitiesListClient({ canCreate, canEdit, canDelete, canViewLea
 
         <Button
           type="button"
-          onClick={() => setShowLog(true)}
+          onClick={() => router.push("/activities/log")}
           disabled={!canCreate}
           title={canCreate ? "Log a new activity" : "You don't have permission to create activities"}
           className="ml-auto inline-flex items-center gap-1"
@@ -648,20 +643,11 @@ export function ActivitiesListClient({ canCreate, canEdit, canDelete, canViewLea
         onClose={() => setShowDrafts(false)}
         onResume={(draft) => {
           setShowDrafts(false);
-          setResumeDraft(draft);
-          setShowLog(true);
+          // Resume opens the dedicated composer page prefilled from the draft.
+          // Drafts are localStorage-backed, so we pass the id and the page
+          // resolves the draft client-side.
+          router.push(`/activities/log?draftId=${encodeURIComponent(draft.id)}`);
         }}
-      />
-
-      <LogActivityModal
-        open={showLog}
-        onClose={() => {
-          setShowLog(false);
-          setResumeDraft(null);
-        }}
-        onSuccess={() => void load()}
-        canViewLeads={canViewLeads}
-        initialDraft={resumeDraft}
       />
 
       <ActivityDetailModal

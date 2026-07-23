@@ -8,7 +8,8 @@
       "Bash(DATABASE_URL=postgresql://postgres:sa%40123@localhost:5432/quikit_dev node -e ' *)",
       "Bash(npm run *)",
       "Bash(DATABASE_URL='postgresql://postgres:sa%40123@localhost:5432/quikit_dev' npx tsx prisma/seed-moreyeahs.ts)",
-      "WebFetch(domain:unpkg.com)"
+      "WebFetch(domain:unpkg.com)",
+      "Bash(node --check linkedIn.js)"
     ],
     "additionalDirectories": [
       "c:\\wwwwwwwwww\\Authmergewithmainbranch\\QuikIT\\apps\\auth\\app\\api\\auth\\me"

@@ -41,6 +41,12 @@ export type LeaderboardRow = {
   revenueDisplay: string;
   activityScore: number;
   isTop?: boolean;
+  /**
+   * Today's activity-target status (green/yellow/red) from the shared
+   * activity-target services. null when unavailable. Additive/optional so no
+   * existing overview behavior changes.
+   */
+  targetStatus?: "green" | "yellow" | "red" | null;
 };
 
 export type ChannelRow = {
