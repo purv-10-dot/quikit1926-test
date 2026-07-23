@@ -3,8 +3,8 @@ import { db } from "@/lib/db";
 import { weeklyValueSchema } from "@/lib/schemas/kpiSchema";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 const withOrgAuth = withOrgAuthForModule("kpi");
-import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
-import { isWeekBeforeEditableWindow, earliestEditableWeek } from "@/lib/utils/weekLock";
+import { getPastWeekFlags, getWeekGateFromDB } from "@/lib/utils/featureFlags";
+import { weekEditState, earliestEditableWeek } from "@/lib/utils/weekLock";
 import { audit, requestContext } from "@/lib/audit";
 import { weeklyTargetForWeek } from "@/lib/utils/kpiHelpers";
 import { withTxRetry } from "@/lib/api/withTxRetry";
@@ -174,19 +174,21 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, {
   // No instance-level role check — RBAC v2 `KPI:update` / `TeamKPI:update`
   // (enforced by the route wrapper) is the sole authorization gate.
 
-  // ── Past-week edit enforcement ──
+  // ── Quarter-aware past/future edit enforcement ──
+  // Future quarters/weeks are always rejected (even when edit-past is on);
+  // a past quarter is rejected unless edit-past is on; in the current quarter,
+  // weeks before the editable window (current week minus grace) are rejected.
   const { canEditPastWeek } = await getPastWeekFlags(orgId);
-  if (!canEditPastWeek && kpi.quarter && kpi.year) {
-    const currentWeek = await getCurrentFiscalWeekFromDB(orgId, kpi.year, kpi.quarter);
-    if (isWeekBeforeEditableWindow(validated.weekNumber, currentWeek, canEditPastWeek)) {
-      const earliest = earliestEditableWeek(currentWeek, canEditPastWeek);
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Editing past weeks is disabled. Week ${validated.weekNumber} is before the earliest editable week (${earliest}). Enable it in Settings > Configurations.`,
-        },
-        { status: 403 }
-      );
+  if (kpi.quarter && kpi.year) {
+    const { currentWeek, quarterPosition } = await getWeekGateFromDB(orgId, kpi.year, kpi.quarter);
+    const gate = weekEditState({ quarterPosition, week: validated.weekNumber, currentWeek, canEditPastWeek, flagsLoaded: true });
+    if (gate.locked) {
+      const error = gate.isFuture
+        ? `Week ${validated.weekNumber} is in the future and can't be updated yet.`
+        : quarterPosition === "past"
+          ? `Editing past quarters is disabled. Enable it in Settings > Configurations.`
+          : `Editing past weeks is disabled. Week ${validated.weekNumber} is before the earliest editable week (${earliestEditableWeek(currentWeek, canEditPastWeek)}). Enable it in Settings > Configurations.`;
+      return NextResponse.json({ success: false, error }, { status: 403 });
     }
   }
 

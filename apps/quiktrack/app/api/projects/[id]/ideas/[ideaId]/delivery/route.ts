@@ -40,47 +40,103 @@ async function loadLinkedItems(orgId: string, ideaId: string) {
   });
   if (links.length === 0) return { items: [], progress: 0 };
 
-  const issues = await db.qtIssue.findMany({
-    where: { id: { in: links.map((l) => l.issueId) }, isDeleted: false },
-    select: {
-      id: true, key: true, title: true, type: true, storyPoints: true,
-      status: { select: { name: true, category: true } },
-      project: { select: { id: true, name: true, projectKey: true } },
-      children: {
-        where: { isDeleted: false },
-        select: { id: true, key: true, title: true, type: true, storyPoints: true, status: { select: { name: true, category: true } } },
-      },
-    },
+  // Build a nested tree so an epic → its tasks → their subtasks all expand.
+  // Descendant edges in QuikTrack: epicId (epic → tasks) and parentId (task →
+  // subtasks). We walk up to 3 levels down from each linked issue.
+  const nodeSelect = {
+    id: true, key: true, title: true, type: true, storyPoints: true,
+    assigneeId: true, dueDate: true,
+    status: { select: { name: true, category: true } },
+    sprint: { select: { name: true } },
+  } as const;
+
+  const rootIds = links.map((l) => l.issueId);
+  const roots = await db.qtIssue.findMany({
+    where: { id: { in: rootIds }, isDeleted: false },
+    select: { ...nodeSelect, project: { select: { id: true, name: true, projectKey: true } } },
   });
-  const byId = new Map(issues.map((i) => [i.id, i]));
+  const rootById = new Map(roots.map((r) => [r.id, r]));
+
+  interface Node {
+    id: string; key: string; title: string; type: string;
+    storyPoints: number | null; status: string | null; statusCategory: string | null;
+    assigneeId: string | null; assigneeName: string | null; dueDate: string | null;
+    sprint: string | null;
+    children: Node[];
+  }
+  const shape = (i: {
+    id: string; key: string; title: string; type: string; storyPoints: number | null;
+    assigneeId: string | null; dueDate: Date | null; status: { name: string; category: string } | null;
+    sprint: { name: string } | null;
+  }): Node => ({
+    id: i.id, key: i.key, title: i.title, type: i.type,
+    storyPoints: i.storyPoints, status: i.status?.name ?? null, statusCategory: i.status?.category ?? null,
+    assigneeId: i.assigneeId, assigneeName: null,
+    dueDate: i.dueDate ? i.dueDate.toISOString() : null,
+    sprint: i.sprint?.name ?? null,
+    children: [],
+  });
+
+  // Fetch descendants level-by-level (breadth-first), attaching under whichever
+  // parent edge (epicId or parentId) points at an already-loaded node.
+  const nodeById = new Map<string, Node>();
+  roots.forEach((r) => nodeById.set(r.id, shape(r)));
+  let frontier = [...rootIds];
+  for (let depth = 0; depth < 3 && frontier.length; depth++) {
+    const kids = await db.qtIssue.findMany({
+      where: {
+        isDeleted: false,
+        OR: [{ epicId: { in: frontier } }, { parentId: { in: frontier } }],
+      },
+      select: { ...nodeSelect, epicId: true, parentId: true },
+    });
+    const next: string[] = [];
+    for (const k of kids) {
+      if (nodeById.has(k.id)) continue; // avoid cycles/dupes
+      const node = shape(k);
+      const parentId = (k.parentId && nodeById.has(k.parentId)) ? k.parentId
+        : (k.epicId && nodeById.has(k.epicId)) ? k.epicId : null;
+      if (!parentId) continue;
+      nodeById.get(parentId)!.children.push(node);
+      nodeById.set(k.id, node);
+      next.push(k.id);
+    }
+    frontier = next;
+  }
+
+  // Resolve assignee display names across every node in one query.
+  const assigneeIds = [...new Set([...nodeById.values()].map((n) => n.assigneeId).filter((v): v is string => Boolean(v)))];
+  if (assigneeIds.length) {
+    const users = await db.user.findMany({
+      where: { id: { in: assigneeIds } },
+      select: { id: true, firstName: true, lastName: true, email: true },
+    });
+    const nameById = new Map(users.map((u) => [u.id, [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email]));
+    for (const n of nodeById.values()) {
+      if (n.assigneeId) n.assigneeName = nameById.get(n.assigneeId) ?? null;
+    }
+  }
 
   const items = links
     .map((l) => {
-      const i = byId.get(l.issueId);
-      if (!i) return null;
+      const r = rootById.get(l.issueId);
+      const node = nodeById.get(l.issueId);
+      if (!r || !node) return null;
       return {
         linkId: l.id,
-        id: i.id,
-        key: i.key,
-        title: i.title,
-        type: i.type,
-        storyPoints: i.storyPoints,
-        status: i.status?.name ?? null,
-        statusCategory: i.status?.category ?? null,
-        projectName: i.project?.name ?? null,
-        children: i.children.map((c) => ({
-          id: c.id, key: c.key, title: c.title, type: c.type,
-          storyPoints: c.storyPoints,
-          status: c.status?.name ?? null, statusCategory: c.status?.category ?? null,
-        })),
+        ...node,
+        projectName: r.project?.name ?? null,
       };
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);
 
-  // Progress = share of linked top-level items that are Done.
+  // Progress = share of linked top-level items that are Done. Also return the
+  // To Do / In Progress / Done breakdown for the progress-bar hover popover.
   const done = items.filter((i) => i.statusCategory === "DONE").length;
+  const inProgress = items.filter((i) => i.statusCategory === "IN_PROGRESS").length;
+  const todo = items.length - done - inProgress;
   const progress = items.length ? Math.round((done / items.length) * 100) : 0;
-  return { items, progress };
+  return { items, progress, counts: { total: items.length, todo, inProgress, done } };
 }
 
 export const GET = withProjectAccess<{ id: string; ideaId: string }>(

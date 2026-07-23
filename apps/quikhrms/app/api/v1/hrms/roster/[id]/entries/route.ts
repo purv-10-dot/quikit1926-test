@@ -38,6 +38,19 @@ export const POST = withAuth(async (req: NextRequest, ctx, params) => {
       }
     }
 
+    // Verify every referenced shift exists in this org — an invalid shiftId would
+    // otherwise throw a Prisma FK error inside the transaction → generic 500.
+    const shiftIds = [...new Set(entries.map((e) => e.shiftId).filter((id): id is string => !!id))];
+    if (shiftIds.length > 0) {
+      const found = await prisma.shiftPolicy.findMany({
+        where: { orgId, deletedAt: null, id: { in: shiftIds } },
+        select: { id: true },
+      });
+      if (found.length !== shiftIds.length) {
+        return validationError("One or more selected shifts no longer exist.");
+      }
+    }
+
     const ops = entries.map((e) =>
       e.clear
         ? prisma.rosterEntry.deleteMany({

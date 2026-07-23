@@ -84,62 +84,62 @@ export default function ReportsPage() {
     }
   };
 
-  const fmtBtn = "inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold border transition disabled:opacity-50";
+  const fmtBtn = "inline-flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium border transition disabled:opacity-50";
 
   return (
-    <div className="w-full px-6 py-6 space-y-5">
+    <div className="w-full px-5 py-4 space-y-4">
       <div>
-        <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">Reports</h1>
-        <p className="text-sm text-gray-500 mt-1">{catalog.length} reports across payroll, statutory, attendance, leave, recruitment and more. Export as CSV, Excel or PDF.</p>
+        <h1 className="text-page-title text-gray-900">Reports</h1>
+        <p className="text-xs text-gray-500 mt-1">{catalog.length} reports across payroll, statutory, attendance, leave, recruitment and more. Export as CSV, Excel or PDF.</p>
       </div>
 
       {/* Filters */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 flex flex-wrap items-end gap-4">
         <div>
-          <label className="block text-xs text-gray-500 mb-1">From</label>
-          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="border border-[var(--border)] rounded-lg px-3 py-1.5 text-sm" />
+          <label className="block text-xs font-medium text-gray-500 mb-1">From</label>
+          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" />
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">To</label>
-          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="border border-[var(--border)] rounded-lg px-3 py-1.5 text-sm" />
+          <label className="block text-xs font-medium text-gray-500 mb-1">To</label>
+          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" />
         </div>
         <div className="flex-1 min-w-[200px]">
-          <label className="block text-xs text-gray-500 mb-1">Search reports</label>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Search reports</label>
           <div className="relative">
             <Search size={14} className="absolute left-2.5 top-2.5 text-gray-400" />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="e.g. PF, CTC, attendance…" className="w-full border border-[var(--border)] rounded-lg pl-8 pr-3 py-1.5 text-sm" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="e.g. PF, CTC, attendance…" className="w-full border border-[var(--border)] rounded-lg pl-8 pr-3 py-1.5 text-xs" />
           </div>
         </div>
       </div>
 
       {isLoading ? (
-        <div className="py-16 text-center text-sm text-gray-400">Loading report catalogue…</div>
+        <div className="py-16 text-center text-xs text-gray-400">Loading report catalogue…</div>
       ) : (
         grouped.map(([category, items]) => (
           <section key={category}>
-            <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wider mb-2">{category} <span className="text-gray-400 font-medium">({items.length})</span></h2>
+            <h2 className="text-[13px] font-semibold text-gray-700 uppercase tracking-wider mb-2">{category} <span className="text-gray-400 text-[11px] font-semibold">({items.length})</span></h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {items.map((item) => (
                 <div key={item.key} className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 flex flex-col">
                   <div className="flex items-start gap-2">
-                    <FileSpreadsheet size={18} className="text-[#3b82f6] mt-0.5 shrink-0" />
+                    <FileSpreadsheet size={18} className="text-[#22c55e] mt-0.5 shrink-0" />
                     <div className="flex-1">
-                      <h3 className="font-medium text-gray-900 text-sm leading-tight">{item.label}</h3>
+                      <h3 className="text-[13px] font-semibold text-gray-900 leading-tight">{item.label}</h3>
                       <p className="text-xs text-gray-500 mt-0.5">{item.description}</p>
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-gray-100">
                     <button onClick={() => handlePreview(item)} disabled={!!busy} className={clsx(fmtBtn, "border-gray-300 text-gray-700 hover:bg-gray-50")}>
-                      <Eye size={12} /> {busy === `${item.key}:preview` ? "…" : "Preview"}
+                      <Eye size={13} /> {busy === `${item.key}:preview` ? "…" : "Preview"}
                     </button>
                     <button onClick={() => handleDownload(item, "csv")} disabled={!!busy} className={clsx(fmtBtn, "border-emerald-300 text-emerald-700 hover:bg-emerald-50")}>
-                      <FileText size={12} /> {busy === `${item.key}:csv` ? "…" : "CSV"}
+                      <FileText size={13} /> {busy === `${item.key}:csv` ? "…" : "CSV"}
                     </button>
                     <button onClick={() => handleDownload(item, "xlsx")} disabled={!!busy} className={clsx(fmtBtn, "border-green-300 text-green-700 hover:bg-green-50")}>
-                      <FileSpreadsheet size={12} /> {busy === `${item.key}:xlsx` ? "…" : "Excel"}
+                      <FileSpreadsheet size={13} /> {busy === `${item.key}:xlsx` ? "…" : "Excel"}
                     </button>
                     <button onClick={() => handleDownload(item, "pdf")} disabled={!!busy} className={clsx(fmtBtn, "border-red-300 text-red-700 hover:bg-red-50")}>
-                      <FileType size={12} /> {busy === `${item.key}:pdf` ? "…" : "PDF"}
+                      <FileType size={13} /> {busy === `${item.key}:pdf` ? "…" : "PDF"}
                     </button>
                   </div>
                 </div>
@@ -154,15 +154,15 @@ export default function ReportsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setPreview(null)}>
           <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-              <h2 className="font-semibold text-gray-900">{preview.title} — {preview.totalRows} rows</h2>
-              <button onClick={() => setPreview(null)} className="text-gray-400 hover:text-gray-700 text-sm">Close ✕</button>
+              <h2 className="text-[13px] font-semibold text-gray-900">{preview.title} — {preview.totalRows} rows</h2>
+              <button onClick={() => setPreview(null)} className="text-gray-400 hover:text-gray-700 text-xs">Close ✕</button>
             </div>
             <div className="overflow-auto">
               <table className="w-full text-xs">
                 <thead className="sticky top-0 bg-gray-50">
                   <tr className="border-b border-gray-200">
                     {preview.columns.map((c) => (
-                      <th key={c.key} className="text-left px-3 py-2 font-medium text-gray-500 uppercase whitespace-nowrap">{c.label}</th>
+                      <th key={c.key} className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em] whitespace-nowrap">{c.label}</th>
                     ))}
                   </tr>
                 </thead>
@@ -170,7 +170,7 @@ export default function ReportsPage() {
                   {preview.rows.slice(0, 100).map((row, i) => (
                     <tr key={i} className="border-b border-gray-100">
                       {preview.columns.map((c) => (
-                        <td key={c.key} className="px-3 py-1.5 text-gray-700 max-w-[240px] truncate">
+                        <td key={c.key} className="px-4 py-2.5 text-xs text-gray-700 max-w-[240px] truncate">
                           {row[c.key] == null ? "—" : typeof row[c.key] === "object" ? JSON.stringify(row[c.key]) : String(row[c.key])}
                         </td>
                       ))}

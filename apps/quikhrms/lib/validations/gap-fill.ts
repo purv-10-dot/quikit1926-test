@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { zPhoneLooseOptional } from "./identifiers";
 
 // ─── Time Logs ──────────────────────────────────────────
 
@@ -39,11 +40,19 @@ export const approveTimesheetSchema = z.object({
 
 export const DelegationTypeEnum = z.enum(["DelegationTemporary", "DelegationPermanent"]);
 export const DelegationNotifyModeEnum = z.enum(["NotifyBoth", "NotifyDelegatee"]);
+export const DelegationModuleEnum = z.enum(["Leave", "Expense", "Timesheet", "Attendance", "Recruitment"]);
+
+// A delegated module now carries the specific permission codes being handed
+// over (not just the module name), so delegation is scoped to chosen authorities.
+export const DelegationModuleSchema = z.object({
+  module: DelegationModuleEnum,
+  permissions: z.array(z.string().min(1)).min(1),
+});
 
 export const createDelegationSchema = z.object({
   delegateeId: z.string().min(1),
   type: DelegationTypeEnum.default("DelegationTemporary"),
-  modules: z.array(z.enum(["Leave", "Expense", "Timesheet", "Attendance", "Recruitment"])).min(1),
+  modules: z.array(DelegationModuleSchema).min(1),
   fromDate: z.string().min(1),
   toDate: z.string().optional().nullable(),
   notifyMode: DelegationNotifyModeEnum.default("NotifyBoth"),
@@ -74,8 +83,8 @@ export const bulkEmployeeRowSchema = z.object({
   lastName: z.string().min(1),
   workEmail: z.string().email("Invalid work email").optional().nullable(),
   personalEmail: z.string().email("Invalid personal email").optional().nullable(),
-  workPhone: z.string().optional().nullable(),
-  personalPhone: z.string().optional().nullable(),
+  workPhone: zPhoneLooseOptional.nullable(),
+  personalPhone: zPhoneLooseOptional.nullable(),
   departmentCode: z.string().optional(),
   departmentName: z.string().optional(),
   designation: z.string().optional(),
@@ -118,7 +127,7 @@ export const bulkEmployeeRowSchema = z.object({
   // Emergency contact (single primary)
   emergencyContactName: z.string().optional(),
   emergencyContactRelation: z.string().optional(),
-  emergencyContactPhone: z.string().optional(),
+  emergencyContactPhone: zPhoneLooseOptional,
   emergencyContactEmail: z.string().optional(),
   // Bank
   bankName: z.string().optional(),
@@ -181,8 +190,8 @@ export const bulkEmployeeRowSchema = z.object({
   extraEmergencyContacts: z.array(z.object({
     name: z.string().optional(),
     relationship: z.string().optional(),
-    phone: z.string().optional(),
-    alternatePhone: z.string().optional(),
+    phone: zPhoneLooseOptional,
+    alternatePhone: zPhoneLooseOptional,
     email: z.string().optional(),
     address: z.string().optional(),
   })).optional(),

@@ -13,6 +13,35 @@ import { Select } from "@/components/hrms/ui/select";
 import { FormField, FormInput, FormTextarea, FormActions } from "@/components/hrms/form";
 import { DocumentSourcePicker } from "@/components/hrms/document-source-picker";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
+import { todayInput } from "@/lib/utils/date-input";
+import { withBasePath } from "@/lib/utils/base-path";
+
+/**
+ * Internal uploads are served from an auth-guarded API path (/api/v1/hrms/...).
+ * Opening them in a new tab needs the app's basePath prepended, or the tab
+ * resolves to the wrong root and 404s. External links (google-drive / pasted
+ * URLs) are absolute http(s) and pass through unchanged.
+ */
+function docHref(url: string): string {
+  return url.startsWith("/") ? withBasePath(url) : url;
+}
+
+/**
+ * Force a real download (not inline preview) for internal proxy files by adding
+ * `?dl=1&name=<title.ext>` — the proxy then returns Content-Disposition: attachment.
+ * External (absolute http) URLs can't be forced cross-origin, so open as-is.
+ */
+function downloadHref(d: DocItem): string {
+  const base = docHref(d.fileUrl);
+  if (!d.fileUrl.startsWith("/")) return base;
+  const keyMatch = d.fileUrl.match(/[?&]key=([^&]+)/);
+  const key = keyMatch ? decodeURIComponent(keyMatch[1]) : "";
+  const ext = (key.split(".").pop() || "").toLowerCase();
+  const safe = (d.title || "document").replace(/[^\w.-]+/g, "_");
+  const name = ext && !safe.toLowerCase().endsWith(`.${ext}`) ? `${safe}.${ext}` : safe;
+  const sep = base.includes("?") ? "&" : "?";
+  return `${base}${sep}dl=1&name=${encodeURIComponent(name)}`;
+}
 
 interface DocItem {
   id: string;
@@ -77,7 +106,6 @@ export default function MyVaultPage() {
       setShowUpload(false);
       setForm({ title: "", description: "", category: "IdProof", fileUrl: "", fileType: "", fileSize: 0, expiryDate: "" });
     },
-    onError: (e: Error) => toast.error("Upload failed", e.message),
   });
 
   const updateMut = useMutation({
@@ -87,7 +115,6 @@ export default function MyVaultPage() {
       await qc.refetchQueries({ queryKey: ["documents"] });
       setEditDoc(null);
     },
-    onError: (e: Error) => toast.error("Update failed", e.message),
   });
 
   const deleteMut = useMutation({
@@ -97,7 +124,6 @@ export default function MyVaultPage() {
       await qc.refetchQueries({ queryKey: ["documents"] });
       setDeleteDoc(null);
     },
-    onError: (e: Error) => toast.error("Delete failed", e.message),
   });
 
   const openEdit = (d: DocItem) => {
@@ -111,6 +137,14 @@ export default function MyVaultPage() {
       expiryDate: d.expiryDate ? d.expiryDate.slice(0, 10) : "",
     });
     setEditDoc(d);
+  };
+
+  // Always open the upload modal on a CLEAN form — the same `form` state is
+  // shared with the edit modal, so without this reset a previously
+  // viewed/edited document's data would carry over into a new upload.
+  const openUpload = () => {
+    setForm({ title: "", description: "", category: "IdProof", fileUrl: "", fileType: "", fileSize: 0, expiryDate: "" });
+    setShowUpload(true);
   };
 
   const submit = (e: React.FormEvent) => {
@@ -141,13 +175,13 @@ export default function MyVaultPage() {
   }, {});
 
   return (
-    <div className="w-full px-6 py-6">
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+    <div className="w-full px-5 py-4">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div className="flex items-start gap-3">
-          <FolderLock size={28} className="text-[#16243A] mt-1.5" />
-          <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">My document vault</h1>
+          <FolderLock size={28} className="text-[#166534] mt-1.5" />
+          <h1 className="text-page-title text-gray-900">My document vault</h1>
         </div>
-        <button onClick={() => setShowUpload(true)} className="btn btn-primary">
+        <button onClick={openUpload} className="btn btn-primary">
           <Plus size={14} /> Upload document
         </button>
       </div>
@@ -171,28 +205,28 @@ export default function MyVaultPage() {
         <div className="surface-card p-8 text-center text-gray-500">
           <FileText size={32} className="mx-auto mb-2 text-gray-300" />
           <p>No documents in your vault yet.</p>
-          <button onClick={() => setShowUpload(true)} className="btn btn-primary mt-3">
+          <button onClick={openUpload} className="btn btn-primary mt-3">
             <Plus size={14} /> Upload your first document
           </button>
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-4">
           {Object.entries(byCategory).map(([cat, items]) => (
             <section key={cat}>
               <div className="flex items-center gap-2 mb-3">
                 <h2 className="text-xs font-bold tracking-[0.18em] uppercase text-gray-500">{cat}</h2>
-                <span className="px-2 py-0.5 rounded-full bg-[#16243A]/10 text-[#16243A] text-[10px] font-bold">{items.length}</span>
+                <span className="px-2 py-0.5 rounded-full bg-[#166534]/10 text-[#166534] text-[10px] font-bold">{items.length}</span>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {items.map((d, i) => (
-                  <div key={d.id} className="row-stagger surface-card p-4 flex items-start justify-between gap-3 hover:border-[#16243A]/30 hover:shadow-md transition group" style={{ ["--i" as never]: Math.min(i, 10) }}>
+                  <div key={d.id} className="row-stagger surface-card p-4 flex items-start justify-between gap-3 hover:border-[#166534]/30 hover:shadow-md transition group" style={{ ["--i" as never]: Math.min(i, 10) }}>
                     <Link href={`/documents/${d.id}`} className="flex-1 min-w-0">
                       <div className="flex items-start gap-2.5">
-                        <div className="w-9 h-9 rounded-lg bg-[#16243A]/5 text-[#16243A] flex items-center justify-center shrink-0">
+                        <div className="w-9 h-9 rounded-lg bg-[#166534]/5 text-[#166534] flex items-center justify-center shrink-0">
                           <FileText size={16} />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="font-bold text-gray-900 text-sm truncate group-hover:text-[#16243A]">{d.title}</p>
+                          <p className="font-bold text-gray-900 text-sm truncate group-hover:text-[#166534]">{d.title}</p>
                           <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                             <span className={clsx("px-2 py-0.5 rounded-full text-[10px] font-semibold",
                               d.status === "Active" ? "bg-green-100 text-green-700" :
@@ -211,14 +245,14 @@ export default function MyVaultPage() {
                     </Link>
                     <div className="flex flex-col items-center gap-1 shrink-0">
                       {d.fileUrl && (
-                        <a href={d.fileUrl} target="_blank" rel="noreferrer"
+                        <a href={downloadHref(d)} download rel="noreferrer"
                           title="Download"
-                          className="p-2 text-gray-400 hover:text-[#16243A] hover:bg-[#16243A]/5 rounded-lg transition">
+                          className="p-2 text-gray-400 hover:text-[#166534] hover:bg-[#166534]/5 rounded-lg transition">
                           <Download size={14} />
                         </a>
                       )}
                       <button onClick={() => openEdit(d)} title="Edit"
-                        className="p-2 text-gray-400 hover:text-[#16243A] hover:bg-[#16243A]/5 rounded-lg transition">
+                        className="p-2 text-gray-400 hover:text-[#166534] hover:bg-[#166534]/5 rounded-lg transition">
                         <Pencil size={14} />
                       </button>
                       <button onClick={() => setDeleteDoc(d)} title="Delete"
@@ -252,7 +286,7 @@ export default function MyVaultPage() {
             <FormTextarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={2} placeholder="Optional notes" />
           </FormField>
           <FormField label="Expiry Date">
-            <FormInput type="date" value={form.expiryDate} onChange={(e) => setForm({ ...form, expiryDate: e.target.value })} />
+            <FormInput type="date" min={todayInput()} value={form.expiryDate} onChange={(e) => setForm({ ...form, expiryDate: e.target.value })} />
           </FormField>
           <FormActions>
             <button type="button" onClick={() => setShowUpload(false)} className="btn btn-ghost">Cancel</button>
@@ -288,11 +322,19 @@ export default function MyVaultPage() {
             <FormField label="Category" required>
               <Select value={form.category} onChange={(v) => setForm({ ...form, category: v })} options={CATEGORIES} />
             </FormField>
+            <FormField label="Source" required>
+              {/* Let the user replace the file / URL / Drive link on edit, not
+                  just the metadata. Pre-seeded with the current source. */}
+              <DocumentSourcePicker
+                value={{ fileUrl: form.fileUrl, fileType: form.fileType, fileSize: form.fileSize }}
+                onChange={(meta) => setForm({ ...form, ...meta })}
+              />
+            </FormField>
             <FormField label="Description">
               <FormTextarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={2} />
             </FormField>
             <FormField label="Expiry Date">
-              <FormInput type="date" value={form.expiryDate} onChange={(e) => setForm({ ...form, expiryDate: e.target.value })} />
+              <FormInput type="date" min={todayInput()} value={form.expiryDate} onChange={(e) => setForm({ ...form, expiryDate: e.target.value })} />
             </FormField>
             <FormActions>
               <button type="button" onClick={() => setEditDoc(null)} className="btn btn-ghost">Cancel</button>

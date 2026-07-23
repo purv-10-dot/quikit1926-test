@@ -20,7 +20,7 @@ interface EPFCfg {
   considerAllComponentsOnLOP: boolean;
 }
 
-const inputCls = "w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[#16243A] focus:border-transparent";
+const inputCls = "w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[#166534] focus:border-transparent";
 
 export function EPFTab({ onSaved }: { onSaved?: () => void } = {}) {
   const api = useApiClient();
@@ -67,7 +67,7 @@ export function EPFTab({ onSaved }: { onSaved?: () => void } = {}) {
         }}
         className="space-y-4"
       >
-        <h2 className="text-base font-bold text-gray-900">Employer&apos; Provident Fund</h2>
+        <h2 className="text-[13px] font-semibold text-gray-900">Employer&apos; Provident Fund</h2>
         <div className="grid grid-cols-2 gap-3">
           <Field label="EPF Number" required>
             <input
@@ -123,7 +123,7 @@ export function EPFTab({ onSaved }: { onSaved?: () => void } = {}) {
         </div>
 
         <div className="pt-2">
-          <p className="text-sm font-semibold text-gray-800 mb-2">PF Configuration when LOP Applied</p>
+          <p className="text-[13px] font-semibold text-gray-800 mb-2">PF Configuration when LOP Applied</p>
           <Toggle
             label="Pro-rate Restricted PF Wage"
             description="PF contribution will be pro-rated based on the number of days worked by the employee."
@@ -142,9 +142,9 @@ export function EPFTab({ onSaved }: { onSaved?: () => void } = {}) {
           <button
             type="submit"
             disabled={saveMut.isPending}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 text-white rounded-md text-sm font-semibold shadow-sm"
+            className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-md text-xs font-medium shadow-sm"
           >
-            <Save size={14} /> {form.enabled ? "Save" : "Enable"}
+            <Save size={13} /> {form.enabled ? "Save" : "Enable"}
           </button>
         </div>
       </form>
@@ -167,7 +167,7 @@ function Field({ label, required, children }: { label: string; required?: boolea
 function Toggle({ label, description, checked, onChange }: { label: string; description?: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
     <label className="flex items-start gap-2 text-sm text-gray-700 cursor-pointer">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="mt-0.5 text-[#3b82f6] rounded" />
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="mt-0.5 text-[#22c55e] rounded" />
       <span>
         <span>{label}</span>
         {description && <p className="text-xs text-gray-500 mt-0.5">{description}</p>}

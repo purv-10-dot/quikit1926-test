@@ -4,7 +4,7 @@ import { toErrorMessage } from "@/lib/api/errors";
 import { useState } from "react";
 import { CreditCard } from "lucide-react";
 import { MasterListPage, type MasterColumnDef } from "@/components/MasterListPage";
-import { useTDSCodes, useCreateTDSCode, useUpdateTDSCode, useDeleteTDSCode } from "@/hooks/use-masters";
+import { useCreateTDSCode, useUpdateTDSCode, useDeleteTDSCode } from "@/hooks/use-masters";
 import { FormDrawer, FormSection, FormRow, Field, TextInput, NumberInput, SelectInput, InactiveStatusNotice } from "@/components/FormDrawer";
 import dynamic from "next/dynamic";
 import type { ImportFieldDef } from "@/components/ImportDataDrawer";
@@ -58,7 +58,6 @@ const rules: ValidationRules<typeof emptyForm> = {
 };
 
 export default function TDSPage() {
-  const { data: result, isLoading } = useTDSCodes();
   const createMutation = useCreateTDSCode();
   const updateMutation = useUpdateTDSCode();
   const deleteMutation = useDeleteTDSCode();
@@ -113,7 +112,13 @@ export default function TDSPage() {
     <>
       <MasterListPage title="TDS Codes" entityName="TDS Code" permissionUrl="/masters/tds" columns={columns}
         showStatusTabs
-        data={(result?.data ?? []) as Row[]} total={result?.total ?? 0} isLoading={isLoading}
+        infinite={{
+          queryKey: "tds-codes-infinite",
+          endpoint: "/api/masters/tds",
+          pageSize: 25,
+          defaultSortBy: "createdAt",
+          defaultSortOrder: "desc",
+        }}
         canImport canExport
         historyEntityType="tds_code"
         onImport={() => setImportOpen(true)}

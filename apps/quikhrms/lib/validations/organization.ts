@@ -45,14 +45,22 @@ export type UpdateDesignationInput = z.infer<typeof updateDesignationSchema>;
 
 // ─── Grade ──────────────────────────────────────────────
 
-export const createGradeSchema = z.object({
+const gradeBase = z.object({
   name: z.string().min(1, "Name required"),
   level: z.number().int().default(0),
   minSalary: z.number().optional(),
   maxSalary: z.number().optional(),
 });
 
-export const updateGradeSchema = createGradeSchema.partial();
+const gradeSalaryCheck = (d: { minSalary?: number; maxSalary?: number }, ctx: z.RefinementCtx) => {
+  if (d.minSalary != null && d.maxSalary != null && d.minSalary > d.maxSalary) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Min salary can’t be greater than max salary", path: ["maxSalary"] });
+  }
+};
+
+export const createGradeSchema = gradeBase.superRefine(gradeSalaryCheck);
+
+export const updateGradeSchema = gradeBase.partial().superRefine(gradeSalaryCheck);
 
 export type CreateGradeInput = z.infer<typeof createGradeSchema>;
 export type UpdateGradeInput = z.infer<typeof updateGradeSchema>;

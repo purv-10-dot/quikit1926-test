@@ -48,13 +48,6 @@ export async function GET(req: NextRequest) {
     prefill?.lastName ||
     (token.oauthLastName as string | undefined) ||
     null;
-  console.log("[me/profile.GET] userId=", userId, {
-    dbFirst: user.firstName,
-    dbLast: user.lastName,
-    suggestedFirst,
-    suggestedLast,
-    prefillHit: prefill !== null,
-  });
   return NextResponse.json({
     success: true,
     firstName: user.firstName,

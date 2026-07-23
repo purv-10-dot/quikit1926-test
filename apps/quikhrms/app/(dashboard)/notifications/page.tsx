@@ -10,7 +10,7 @@ import { SkeletonCards } from "@/components/hrms/skeleton";
 interface Notif { id: string; type: string; title: string; message: string; link: string | null; isRead: boolean; createdAt: string; entityType: string | null; entityId: string | null; }
 
 const icons: Record<string, React.ReactNode> = {
-  Info: <Info size={14} className="text-[#3b82f6]" />,
+  Info: <Info size={14} className="text-[#22c55e]" />,
   Warning: <AlertTriangle size={14} className="text-yellow-500" />,
   Success: <CheckCircle size={14} className="text-green-500" />,
   Error: <XCircle size={14} className="text-red-500" />,
@@ -52,14 +52,14 @@ export default function NotificationCenterPage() {
 
   return (
     <div className="max-w-3xl">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <Bell className="text-[#3b82f6]" />
-          <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">Notifications</h1>
+          <Bell className="text-[#22c55e]" />
+          <h1 className="text-page-title text-gray-900">Notifications</h1>
           {unreadCount > 0 && <span className="px-2 py-0.5 bg-red-500 text-white rounded-full text-xs font-medium">{unreadCount}</span>}
         </div>
         {unreadCount > 0 && (
-          <button onClick={() => readAllMut.mutate()} className="flex items-center gap-1 text-sm text-[#3b82f6] hover:underline">
+          <button onClick={() => readAllMut.mutate()} className="flex items-center gap-1 text-sm text-[#22c55e] hover:underline">
             <CheckCheck size={14} /> Mark all read
           </button>
         )}
@@ -75,25 +75,25 @@ export default function NotificationCenterPage() {
             <div
               key={n.id}
               onClick={() => handleOpen(n)}
-              className={clsx("row-stagger p-4 flex items-start gap-3 cursor-pointer hover:bg-gray-50", !n.isRead && "bg-[#dbeafe]/30")}
+              className={clsx("row-stagger p-4 flex items-start gap-3 cursor-pointer hover:bg-gray-50", !n.isRead && "bg-[#dcfce7]/30")}
               style={{ ["--i" as never]: Math.min(i, 10) }}
             >
               <div className="mt-0.5">{icons[n.type] ?? <Bell size={14} />}</div>
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <h3 className={clsx("text-sm", !n.isRead ? "font-semibold text-gray-900" : "text-gray-700")}>{n.title}</h3>
-                  {!n.isRead && <span className="w-2 h-2 bg-blue-500 rounded-full" />}
+                  {!n.isRead && <span className="w-2 h-2 bg-green-500 rounded-full" />}
                 </div>
                 <p className="text-sm text-gray-600 mt-0.5">{n.message}</p>
                 <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
                   <span>{new Date(n.createdAt).toLocaleString("en-IN")}</span>
-                  {n.link && <span className="text-[#3b82f6]">Open →</span>}
+                  {n.link && <span className="text-[#22c55e]">Open →</span>}
                 </div>
               </div>
               {!n.isRead && (
                 <button
                   onClick={(ev) => { ev.stopPropagation(); readOneMut.mutate(n.id); }}
-                  className="text-xs text-[#3b82f6] hover:underline"
+                  className="text-xs text-[#22c55e] hover:underline"
                 >
                   Mark read
                 </button>

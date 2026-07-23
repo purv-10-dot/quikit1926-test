@@ -7,6 +7,7 @@ import {
 // Stub resolver — stands in for the page's item-master reconciliation.
 const resolve = (l: IndentSeedLine) => ({
   itemId: `item-for-${l.id ?? l.lineId ?? "x"}`,
+  itemName: `name-for-${l.id ?? l.lineId ?? "x"}`,
   prefillGroupId: "grp-1",
   uomCode: "NOS",
 });
@@ -26,6 +27,18 @@ describe("buildRfqLinesFromIndent", () => {
     expect(seeded).toHaveLength(2);
     expect(seeded[0].sourceIndentLineId).toBe("il-1");
     expect(seeded[1].sourceIndentLineId).toBe("il-2");
+  });
+
+  it("carries itemId + itemName so the (lazy) material picker prefills + labels", () => {
+    // Regression: the seed dropped itemName, so an RFQ created from an
+    // approved indent showed "Select material…" (blank) even though the
+    // qty/uom prefilled.
+    const seeded = buildRfqLinesFromIndent(
+      [{ id: "il-1", quantity: 14, uomCode: "BKT" }],
+      resolve,
+    );
+    expect(seeded[0].itemId).toBe("item-for-il-1");
+    expect(seeded[0].itemName).toBe("name-for-il-1");
   });
 
   it("falls back to lineId when id is absent, else null", () => {

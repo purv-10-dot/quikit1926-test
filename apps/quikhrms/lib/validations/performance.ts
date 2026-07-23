@@ -2,11 +2,28 @@ import { z } from "zod";
 
 // ─── Goals ──────────────────────────────────────────────
 
+// The public API / UI use the goal type "Team", but the Prisma `GoalType` enum
+// stores it as "HrmsTeam" (prefixed to avoid a name clash in the shared central
+// schema). Translate at the route boundary so "Team" never reaches Prisma
+// (which would reject it with an enum error → 500) and DB reads surface "Team".
+type GoalTypeDb = "Individual" | "HrmsTeam" | "Department" | "Organization";
+export function goalTypeToDb(t: string): GoalTypeDb;
+export function goalTypeToDb(t: string | undefined): GoalTypeDb | undefined;
+export function goalTypeToDb(t: string | undefined): GoalTypeDb | undefined {
+  return (t === "Team" ? "HrmsTeam" : t) as GoalTypeDb | undefined;
+}
+export function goalTypeFromDb<T extends { type?: unknown } | null | undefined>(goal: T): T {
+  if (goal && (goal as { type?: unknown }).type === "HrmsTeam") {
+    (goal as { type: string }).type = "Team";
+  }
+  return goal;
+}
+
 const keyResultSchema = z.object({
   title: z.string().min(1),
   targetValue: z.number().default(0),
   unit: z.string().optional(),
-  weight: z.number().default(0),
+  weight: z.number().min(0, "Weight can’t be negative").max(100, "Weight can’t exceed 100%").default(0),
 });
 
 export const createGoalSchema = z.object({
@@ -19,13 +36,16 @@ export const createGoalSchema = z.object({
   metric: z.string().optional(),
   targetValue: z.number().default(0),
   unit: z.string().optional(),
-  weight: z.number().default(0),
+  weight: z.number().min(0, "Weight can’t be negative").max(100, "Weight can’t exceed 100%").default(0),
   startDate: z.string().min(1),
   dueDate: z.string().min(1),
   alignedTo: z.string().optional(),
   visibility: z.enum(["Private", "TeamVisible", "DepartmentVisible", "OrganizationVisible"]).default("TeamVisible"),
   keyResults: z.array(keyResultSchema).optional(),
-});
+}).refine(
+  (d) => d.dueDate >= d.startDate,
+  { message: "Due date must be on or after the start date", path: ["dueDate"] },
+);
 
 export const updateGoalSchema = z.object({
   title: z.string().optional(),
@@ -43,7 +63,7 @@ export const goalCheckInSchema = z.object({
 
 // ─── Appraisal Cycles ───────────────────────────────────
 
-export const createAppraisalCycleSchema = z.object({
+const appraisalCycleBase = z.object({
   name: z.string().min(1),
   type: z.enum(["Annual", "BiAnnual", "Quarterly", "Probation", "Confirmation", "PIPReview"]).default("Annual"),
   startDate: z.string().min(1),
@@ -63,7 +83,23 @@ export const createAppraisalCycleSchema = z.object({
   })).optional(),
 });
 
-export const updateAppraisalCycleSchema = createAppraisalCycleSchema.partial();
+const appraisalCycleChecks = (
+  d: { startDate?: string; endDate?: string; stages?: { name: string; startDate: string; endDate: string }[] },
+  ctx: z.RefinementCtx,
+) => {
+  if (d.startDate && d.endDate && d.endDate < d.startDate) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "End date must be on or after the start date", path: ["endDate"] });
+  }
+  d.stages?.forEach((s, i) => {
+    if (s.startDate && s.endDate && s.endDate < s.startDate) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Stage "${s.name || i + 1}" end date must be on or after its start date`, path: ["stages", i, "endDate"] });
+    }
+  });
+};
+
+export const createAppraisalCycleSchema = appraisalCycleBase.superRefine(appraisalCycleChecks);
+
+export const updateAppraisalCycleSchema = appraisalCycleBase.partial().superRefine(appraisalCycleChecks);
 
 // ─── Employee Appraisal ─────────────────────────────────
 
@@ -95,7 +131,9 @@ export const createReviewFormSchema = z.object({
     questions: z.array(z.object({
       text: z.string().min(1),
       type: z.enum(["Rating", "Text", "MultiChoice", "Scale"]),
-      ratingScale: z.object({ min: z.number(), max: z.number(), labels: z.array(z.string()) }).optional(),
+      ratingScale: z.object({ min: z.number(), max: z.number(), labels: z.array(z.string()) })
+        .refine((r) => r.max > r.min, { message: "Rating scale max must be greater than min", path: ["max"] })
+        .optional(),
       isRequired: z.boolean().default(true),
     })),
   })).min(1),
@@ -130,7 +168,10 @@ export const createPIPSchema = z.object({
     status: z.string().default("Pending"),
   })).optional(),
   supportProvided: z.array(z.string()).optional(),
-});
+}).refine(
+  (d) => d.endDate >= d.startDate,
+  { message: "End date must be on or after the start date", path: ["endDate"] },
+);
 
 export const updatePIPSchema = z.object({
   status: z.enum(["PIPActive", "PIPExtended", "PIPCompletedSuccess", "PIPFailed", "PIPWithdrawn"]).optional(),

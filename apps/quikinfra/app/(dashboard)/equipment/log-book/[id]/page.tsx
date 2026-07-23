@@ -309,7 +309,7 @@ export default function EquipmentLogDetailPage() {
             {/* Approval Timeline */}
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
               <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <span className="inline-block w-1 h-3.5 bg-orange-500 rounded-sm" />
+                <span className="inline-block w-1 h-3.5 bg-accent-500 rounded-sm" />
                 Approval Timeline
               </h3>
               {isDraft ? (
@@ -431,7 +431,7 @@ function Card({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
       <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-2">
-        <span className="inline-block w-1 h-3.5 bg-orange-500 rounded-sm" />
+        <span className="inline-block w-1 h-3.5 bg-accent-500 rounded-sm" />
         {title}
       </h3>
       {children}

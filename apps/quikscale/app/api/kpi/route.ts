@@ -10,7 +10,7 @@ import {
   validateIndividualKPICreate,
   validateParentKPI,
 } from "@/lib/api/kpiCreateValidation";
-import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
+import { rateLimitAsync, LIMITS } from "@/lib/api/rateLimit";
 import { notifyKPIAssignment } from "@/lib/services/kpiNotifications";
 import { buildKpiScopeWhere } from "@/lib/api/kpiListQuery";
 import { fetchAuditUserMap, decorateAudit } from "@/lib/api/auditUsers";
@@ -79,6 +79,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       { name: { contains: q, mode: "insensitive" } },
       { description: { contains: q, mode: "insensitive" } },
       { measurementUnit: { contains: q, mode: "insensitive" } },
+      { divisionType: { contains: q, mode: "insensitive" } },
       { lastNotes: { contains: q, mode: "insensitive" } },
       { team: { is: { name: { contains: q, mode: "insensitive" } } } },
       // Weekly note text (the "Last Notes" column surfaces a weekly note) —
@@ -120,6 +121,12 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
     }
   }
 
+  // Manual (drag-to-reorder) mode: when the client sends no column sort, order
+  // by the shared `position` rank (falling back to createdAt desc, which the
+  // migration backfilled position to match, so the default view is unchanged
+  // until someone drags a row). A real column sort keeps the relation-aware
+  // ordering below untouched.
+  const manualOrder = !searchParams.get("sortBy");
   // Relation-aware orderBy. `owner` is a userId string column, so sorting on
   // it ranks users by id (meaningless). The user-visible "Owner" column shows
   // owner_user.firstName + lastName, so we sort the relation instead.
@@ -132,12 +139,16 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       : validated.sortBy === "team"
         ? { team: { name: dir } }
         : { [validated.sortBy]: dir };
-  const orderBy: Array<Record<string, unknown>> = [primary];
-  if (validated.sortBy === "owner") orderBy.push({ owner_user: { lastName: dir } });
+  // `nulls: "first"` so a freshly-created (unpositioned) row shows on top —
+  // newest-first, matching today's default — until it's dragged and stamped.
+  const orderBy: Array<Record<string, unknown>> = manualOrder
+    ? [{ position: { sort: "asc", nulls: "first" } }, { createdAt: "desc" }]
+    : [primary];
+  if (!manualOrder && validated.sortBy === "owner") orderBy.push({ owner_user: { lastName: dir } });
   // Team KPI groups rows by team in the UI — secondary sort by KPI name keeps
   // each team's rows ordered and the grouping deterministic across pages.
-  if (validated.sortBy === "team") orderBy.push({ name: "asc" });
-  if (validated.sortBy !== "createdAt") orderBy.push({ createdAt: "desc" });
+  if (!manualOrder && validated.sortBy === "team") orderBy.push({ name: "asc" });
+  if (!manualOrder && validated.sortBy !== "createdAt") orderBy.push({ createdAt: "desc" });
 
   const total = await db.kPI.count({ where });
 
@@ -175,6 +186,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       scaledDisplay: true,
       reverseColor: true,
       frequency: true,
+      kpiType: true,
       importedFromOpsp: true,
       createdAt: true,
       updatedAt: true,
@@ -290,7 +302,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
 // POST /api/kpi - Create KPI
 export const POST = auth.create(async ({ orgId, userId }, req) => {
   // Rate limit: 30 KPI writes / minute per user (prevents bulk-insert abuse)
-  const rl = rateLimit({
+  const rl = await rateLimitAsync({
     routeKey: "kpi:create",
     clientKey: `${orgId}:${userId}`,
     limit: LIMITS.kpiWrite.limit,
@@ -413,6 +425,7 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
       scaledDisplay: validated.scaledDisplay ?? false,
       reverseColor: validated.reverseColor ?? false,
       frequency: validated.frequency ?? "weekly",
+      kpiType: validated.kpiType ?? "NA",
       importedFromOpsp: validated.importedFromOpsp ?? false,
       createdBy: userId,
     },
@@ -434,6 +447,7 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
       status: true,
       healthStatus: true,
       reverseColor: true,
+      kpiType: true,
       createdAt: true,
       updatedAt: true,
       createdBy: true,
@@ -465,6 +479,7 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
       measurementUnit: kpi.measurementUnit,
       divisionType: validated.divisionType ?? "Cumulative",
       frequency: validated.frequency ?? "weekly",
+      kpiType: validated.kpiType ?? "NA",
       quarter: kpi.quarter,
       year: kpi.year,
       description: kpi.description,
@@ -528,6 +543,7 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
           scaledDisplay: validated.scaledDisplay ?? false,
           reverseColor: validated.reverseColor ?? false,
           frequency: validated.frequency ?? "weekly",
+          kpiType: validated.kpiType ?? "NA",
           createdBy: userId,
         },
         select: { id: true },
@@ -566,6 +582,7 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
           target: childTarget,
           contributionPct: pct,
           measurementUnit: validated.measurementUnit,
+          kpiType: validated.kpiType ?? "NA",
           quarter: validated.quarter,
           year: validated.year,
           weeklyTargets: childWeekly,

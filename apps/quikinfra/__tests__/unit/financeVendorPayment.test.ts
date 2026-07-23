@@ -79,10 +79,11 @@ describe("createVendorPayment — duplicate guard", () => {
     try {
       await createVendorPayment(ctx, input({ invoiceNo: "INV-DUP", vendor: "DupVendor" }));
       throw new Error("should have thrown");
-    } catch (e: any) {
-      expect(e.code).toBe("CONFLICT");
-      expect(e.httpStatus).toBe(409);
-      expect(e.message).toContain("INV-DUP");
+    } catch (e: unknown) {
+      const err = e as { code: string; httpStatus: number; message: string };
+      expect(err.code).toBe("CONFLICT");
+      expect(err.httpStatus).toBe(409);
+      expect(err.message).toContain("INV-DUP");
     }
   });
 

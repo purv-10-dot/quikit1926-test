@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { queueEmail } from "@/lib/services/mailer";
+import { resolveAndSend } from "@/lib/email/resolve";
 import { buildInterviewFeedbackRequestEmail } from "@/lib/email-templates/interview-feedback-request";
 import { stageNames } from "@/lib/services/pipeline-stages";
 import { whereEmployeeHasAnyRole, sortByMaxRolePriorityDesc, appRolesNameSelect } from "@/lib/rbac/queries";
@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
         where: { orgId: iv.orgId }, select: { companyName: true },
       });
 
-      const tpl = buildInterviewFeedbackRequestEmail({
+      const fbData = {
         interviewerName: `${iv.interviewer.firstName} ${iv.interviewer.lastName}`.trim(),
         candidateName: `${iv.application.candidate.firstName} ${iv.application.candidate.lastName}`.trim(),
         jobTitle: iv.application.requisition.title,
@@ -123,15 +123,15 @@ export async function POST(req: NextRequest) {
         companyName: company?.companyName ?? "Our Company",
         isReminder: true,
         reminderLevel: tier.level,
-      });
+      };
 
       // sent = queued; the email worker handles delivery + retries.
-      await queueEmail(iv.orgId, {
+      await resolveAndSend(iv.orgId, {
+        key: "interview.feedback-reminder",
         to: iv.interviewer.workEmail,
-        subject: tpl.subject,
-        html: tpl.html,
+        vars: { ...fbData, reminderLevel: tier.level },
+        fallback: () => buildInterviewFeedbackRequestEmail(fbData),
         cc: ccList.length ? ccList : undefined,
-        kind: "interview.feedback-reminder",
       });
 
       await prisma.interview.update({

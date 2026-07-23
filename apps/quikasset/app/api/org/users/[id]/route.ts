@@ -3,6 +3,9 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/api/requireAdmin";
+import { getQuikAssetAppId, isAdminRole } from "@/lib/api/permissions";
+import { ensureLinkedEmployee } from "@/lib/api/employeeLink";
+import { audit } from "@/lib/audit";
 
 const patchSchema = z.object({
   firstName: z.string().trim().min(1).max(64).optional(),
@@ -11,6 +14,11 @@ const patchSchema = z.object({
   password: z.string().min(8).max(128).optional(),
   /** Membership status flip. */
   status: z.enum(["active", "inactive"]).optional(),
+  // Linked-employee fields (identity bridge). Nullable so a value can be cleared.
+  contact: z.string().trim().max(64).nullable().optional(),
+  department: z.string().trim().max(128).nullable().optional(),
+  designation: z.string().trim().max(128).nullable().optional(),
+  joiningDate: z.string().trim().max(32).nullable().optional(),
 });
 
 // GET /api/org/users/[id] — admin fetches a single member's editable state:
@@ -73,7 +81,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         { status: 400 },
       );
     }
-    const { firstName, lastName, password, status } = parsed.data;
+    const { firstName, lastName, password, status, contact, department, designation, joiningDate } =
+      parsed.data;
 
     // Tenant isolation: confirm the target is an org member here.
     const membership = await db.orgMember.findUnique({
@@ -101,6 +110,40 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       await db.orgMember.update({ where: { id: membership.id }, data: { status } });
     }
 
+    // ─── Linked employee fields (identity bridge) ───
+    const empPatch: Record<string, string | null> = {};
+    if (contact !== undefined) empPatch.contact = contact;
+    if (department !== undefined) empPatch.department = department;
+    if (designation !== undefined) empPatch.designation = designation;
+    if (joiningDate !== undefined) empPatch.joiningDate = joiningDate;
+    if (Object.keys(empPatch).length > 0) {
+      const emp = await db.astEmployee.findFirst({
+        where: { orgId, userId: params.id },
+        select: { id: true },
+      });
+      if (emp) {
+        await db.astEmployee.update({ where: { id: emp.id }, data: empPatch });
+      } else {
+        // Legacy login with no employee yet → create + link one from the values.
+        const u = await db.user.findUnique({
+          where: { id: params.id },
+          select: { email: true, firstName: true, lastName: true },
+        });
+        if (u) {
+          await ensureLinkedEmployee({
+            orgId,
+            userId: params.id,
+            email: u.email,
+            name: `${u.firstName} ${u.lastName}`.trim(),
+            contact: contact ?? undefined,
+            department: department ?? undefined,
+            designation: designation ?? undefined,
+            joiningDate: joiningDate ?? undefined,
+          });
+        }
+      }
+    }
+
     const updated = await db.user.findUnique({
       where: { id: params.id },
       select: {
@@ -115,6 +158,75 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ success: true, data: updated });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to update user";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}
+
+// DELETE /api/org/users/[id] — SOFT-remove a person from QuikAsset: record a
+// removal marker (AstUserRemoval). They're hidden from the Users list and denied
+// access at the auth layer, but no row is deleted — every User/OrgMember/
+// UserAppAccess/AstUserAppRole/AstEmployee record is retained for audit/history.
+// Admin-lockout guarded; tenant-scoped.
+export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const auth = await requireAdmin();
+    if ("error" in auth && auth.error) return auth.error;
+    const { orgId, userId: actorId } = auth as { orgId: string; userId: string };
+
+    const membership = await db.orgMember.findUnique({
+      where: { orgId_userId: { orgId, userId: params.id } },
+      select: { user: { select: { firstName: true, lastName: true, email: true } } },
+    });
+    if (!membership) {
+      return NextResponse.json({ success: false, error: "User not in organisation" }, { status: 404 });
+    }
+
+    const appId = await getQuikAssetAppId();
+    if (!appId) {
+      return NextResponse.json({ success: false, error: "QuikAsset app not registered" }, { status: 500 });
+    }
+
+    // Admin-lockout guard — never strip QuikAsset's last admin.
+    const currentRoles = await db.astUserAppRole.findMany({
+      where: { userId: params.id, orgId, role: { appId } },
+      select: { role: { select: { id: true, isSystem: true, name: true } } },
+    });
+    if (currentRoles.some((ur) => isAdminRole(ur.role))) {
+      const adminCount = await db.astUserAppRole.count({
+        where: { orgId, role: { appId, isSystem: true, name: "admin" } },
+      });
+      if (adminCount <= 1) {
+        return NextResponse.json(
+          { success: false, error: "Cannot remove the last admin from QuikAsset." },
+          { status: 409 },
+        );
+      }
+    }
+
+    // Soft-remove: record a removal marker. Idempotent. NOTHING is hard-deleted
+    // — User, OrgMember, UserAppAccess, AstUserAppRole and AstEmployee (incl. any
+    // asset history) all stay for audit/history. Access is denied via the auth
+    // layer and the user is hidden from the merged Users list.
+    await db.astUserRemoval.upsert({
+      where: { orgId_userId: { orgId, userId: params.id } },
+      create: { orgId, userId: params.id, removedBy: actorId },
+      update: { removedAt: new Date(), removedBy: actorId },
+    });
+
+    const name =
+      `${membership.user.firstName} ${membership.user.lastName}`.trim() || membership.user.email;
+    await audit({
+      orgId,
+      module: "Users",
+      action: "Removed from QuikAsset",
+      entityId: params.id,
+      entityName: name,
+      actorId,
+    });
+
+    return NextResponse.json({ success: true, data: { removed: true } });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to remove user";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

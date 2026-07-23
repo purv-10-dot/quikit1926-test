@@ -97,7 +97,7 @@ export function Form12BBSubmissions() {
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-semibold text-gray-900">All Form 12BB submissions</p>
+          <p className="text-[13px] font-semibold text-gray-900">All Form 12BB submissions</p>
           <p className="text-xs text-gray-500">
             {isLoading ? "Loading…" : `${rows.length} employees submitted for FY ${fy}`}
           </p>
@@ -120,13 +120,13 @@ export function Form12BBSubmissions() {
         ) : rows.length === 0 ? (
           <div className="py-12 text-center">
             <Inbox size={32} className="mx-auto text-gray-300" />
-            <p className="text-sm text-gray-600 mt-2">No submissions yet for FY {fy}</p>
+            <p className="text-xs text-gray-600 mt-2">No submissions yet for FY {fy}</p>
             <p className="text-xs text-gray-500 mt-0.5">Release IT Declaration above to let employees submit.</p>
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50/60">
+              <tr className="text-table-head font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50/60">
                 <th className="w-6" />
                 <th className="text-left py-2 px-3">Employee</th>
                 <th className="text-right py-2 px-3">HRA</th>
@@ -151,7 +151,7 @@ export function Form12BBSubmissions() {
                         {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                       </td>
                       <td className="py-2.5 px-3">
-                        <p className="font-medium text-gray-900">
+                        <p className="text-[13px] font-medium text-gray-900">
                           {r.employee ? `${r.employee.firstName} ${r.employee.lastName}` : "—"}
                         </p>
                         <p className="text-[11px] text-gray-500">{r.employee?.employeeCode ?? "—"}</p>
@@ -171,7 +171,7 @@ export function Form12BBSubmissions() {
                       <td className="py-2.5 px-3 text-center">
                         <span className={clsx(
                           "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium",
-                          docs > 0 ? "bg-blue-50 text-blue-700" : "bg-gray-100 text-gray-500",
+                          docs > 0 ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-500",
                         )}>
                           <Paperclip size={10} /> {docs}
                         </span>
@@ -204,7 +204,7 @@ function StatusBadge({ status }: { status: AdminForm12BBRow["status"] }) {
     status === "Rejected" ? "bg-rose-50 text-rose-700 border-rose-200" :
     "bg-amber-50 text-amber-700 border-amber-200";
   return (
-    <span className={clsx("inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold border", cls)}>
+    <span className={clsx("inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium border", cls)}>
       {status}
     </span>
   );
@@ -247,7 +247,7 @@ function ExpandedDetail({ row }: { row: AdminForm12BBRow }) {
         {Number(row.section80TTA) > 0  && <DetailRow label="80TTA"      value={inr(row.section80TTA)} />}
         {row.signedFileUrl && (
           <div className="pt-2 border-t border-gray-200 mt-2">
-            <a href={row.signedFileUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-blue-700 hover:underline">
+            <a href={row.signedFileUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-green-700 hover:underline">
               <FileText size={11} /> Signed Form 12BB
             </a>
           </div>
@@ -267,10 +267,10 @@ function ExpandedDetail({ row }: { row: AdminForm12BBRow }) {
                 {s.items.map((d, i) => (
                   <li key={`${d.url}-${i}`} className="flex items-center gap-2 text-[11px] bg-white border border-gray-200 rounded px-2 py-1">
                     <Paperclip size={10} className="text-gray-400" />
-                    <a href={d.url} target="_blank" rel="noreferrer" className="font-medium text-gray-900 hover:text-blue-600 hover:underline truncate flex-1">
+                    <a href={d.url} target="_blank" rel="noreferrer" className="font-medium text-gray-900 hover:text-green-600 hover:underline truncate flex-1">
                       {d.name}
                     </a>
-                    {d.label && <span className="px-1 py-0.5 rounded bg-blue-50 text-blue-700 text-[9px] font-medium shrink-0">{d.label}</span>}
+                    {d.label && <span className="px-1 py-0.5 rounded bg-green-50 text-green-700 text-[10px] font-medium shrink-0">{d.label}</span>}
                   </li>
                 ))}
               </ul>

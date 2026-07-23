@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
+import { resolveAssigneeEmployeeId } from "@/lib/api/resolveAssignee";
 
 const auth = withOrgAuthForResource("Replacement");
 
@@ -48,8 +49,13 @@ export const POST = auth.create(async ({ orgId, userId: actorId, userEmail }, re
   if (!repairOwned) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   const assetOwned = await db.astAsset.findFirst({ where: { id: assetId, orgId }, select: { id: true } });
   if (!assetOwned) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
-  const employeeOwned = await db.astEmployee.findFirst({ where: { id: userId, orgId }, select: { id: true } });
-  if (!employeeOwned) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+  // Manual picker sends a platform User.id; the repairs auto-fill reuses the
+  // original assignment's AstEmployee.id. Resolve either to an AstEmployee.id —
+  // the stored value is later reused verbatim as the assignment FK during
+  // recovery (repairs/[id] makePermanent / returnAndReassign).
+  const resolved = await resolveAssigneeEmployeeId({ orgId, ref: userId });
+  if ("error" in resolved) return resolved.error;
+  const employeeId = resolved.employeeId;
 
   const replacement = await db.$transaction(async (tx) => {
     const created = await tx.astReplacement.create({
@@ -57,7 +63,7 @@ export const POST = auth.create(async ({ orgId, userId: actorId, userEmail }, re
         orgId,
         repairId,
         assetId,
-        userId,
+        userId: employeeId,
         type,
         startDate,
         endDate: endDate || null,

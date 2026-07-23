@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
-import { FileStack, ChevronLeft, Save, Plus, Trash2, Info, X, Search } from "lucide-react";
+import { FileStack, Save, Plus, Trash2, Info, X, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
@@ -47,7 +47,7 @@ interface InitialValues {
   }[];
 }
 
-const inputCls = "w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[#16243A] focus:border-transparent";
+const inputCls = "w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[#166534] focus:border-transparent";
 const INR = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
 
 export function SalaryTemplateForm({ initial }: { initial?: InitialValues }) {
@@ -132,6 +132,7 @@ export function SalaryTemplateForm({ initial }: { initial?: InitialValues }) {
       router.refresh();
       router.push("/payroll/setup/salary-templates");
     },
+    meta: { suppressGlobalError: true },
     onError: (e: Error) => setErr(e.message),
   });
 
@@ -267,7 +268,7 @@ export function SalaryTemplateForm({ initial }: { initial?: InitialValues }) {
                 step="0.01"
                 value={typeof r.amountValue === "number" ? r.amountValue : (r.amountValue == null ? null : Number(r.amountValue))}
                 onChange={(v) => setRows(rows.map((x, i) => i === r.originalIdx ? { ...x, amountValue: v ?? 0 } : x))}
-                className="w-24 px-2 py-1.5 text-sm border border-[var(--border)] rounded focus:outline-none focus:ring-1 focus:ring-[#16243A]"
+                className="w-24 px-2 py-1.5 text-sm border border-[var(--border)] rounded focus:outline-none focus:ring-1 focus:ring-[#166534]"
               />
             )}
             {isTypeLocked(r.component) ? (
@@ -312,17 +313,13 @@ export function SalaryTemplateForm({ initial }: { initial?: InitialValues }) {
 
   return (
     <form onSubmit={submit} className="max-w-5xl mx-auto space-y-4">
-      <Link href="/payroll/setup/salary-templates" className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-[#3b82f6]">
-        <ChevronLeft size={14} /> Back to Salary Templates
-      </Link>
-
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
-        <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
-          <FileStack size={18} className="text-[#3b82f6]" />
-          <h1 className="text-lg font-bold text-gray-900">{initial ? "Edit Salary Template" : "New Salary Template"}</h1>
+        <div className="flex items-center gap-2 px-4 py-4 border-b border-gray-100">
+          <FileStack size={18} className="text-[#22c55e]" />
+          <h1 className="text-base font-semibold text-gray-900">{initial ? "Edit Salary Template" : "New Salary Template"}</h1>
         </div>
 
-        <div className="p-5 space-y-4">
+        <div className="p-4 space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">
@@ -348,18 +345,18 @@ export function SalaryTemplateForm({ initial }: { initial?: InitialValues }) {
             </div>
             <div className="flex items-end gap-4 text-sm text-gray-700">
               <label className="flex items-center gap-1.5">
-                <input type="checkbox" checked={isDefault} onChange={(e) => setIsDefault(e.target.checked)} className="text-[#3b82f6] rounded" />
+                <input type="checkbox" checked={isDefault} onChange={(e) => setIsDefault(e.target.checked)} className="text-[#22c55e] rounded" />
                 Default template
               </label>
               <label className="flex items-center gap-1.5">
-                <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} className="text-[#3b82f6] rounded" />
+                <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} className="text-[#22c55e] rounded" />
                 Active
               </label>
             </div>
           </div>
 
           <div className="rounded-lg border border-gray-200 p-4 bg-gray-50/40">
-            <div className="flex items-center gap-6 mb-4">
+            <div className="flex items-center gap-4 mb-4">
               <label className="text-sm font-medium text-gray-800">Annual CTC</label>
               <div className="flex items-center border border-[var(--border)] rounded-md overflow-hidden bg-white w-80">
                 <span className="px-3 py-2 bg-gray-50 text-gray-500 text-sm border-r border-gray-300">₹</span>
@@ -376,7 +373,7 @@ export function SalaryTemplateForm({ initial }: { initial?: InitialValues }) {
             <div className="overflow-hidden rounded-md border border-gray-200 bg-white">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-[10px] font-bold text-gray-500 uppercase tracking-wider bg-[#dbeafe]/60 border-b border-gray-200">
+                  <tr className="text-table-head font-bold text-gray-500 uppercase tracking-wider bg-[#dcfce7]/60 border-b border-gray-200">
                     <th className="text-left py-2.5 px-3 w-2/5">Salary Components</th>
                     <th className="text-left py-2.5 px-3">Calculation Type</th>
                     <th className="text-right py-2.5 px-3">Monthly Amount</th>
@@ -391,7 +388,7 @@ export function SalaryTemplateForm({ initial }: { initial?: InitialValues }) {
                   </tr>
                   {earningRows.map(renderRow)}
 
-                  <tr className="border-b border-gray-50 bg-blue-50/30">
+                  <tr className="border-b border-gray-50 bg-green-50/30">
                     <td className="py-3 px-3">
                       <p className="text-gray-900 font-medium flex items-center gap-1">
                         Balancing Component <Info size={11} className="text-gray-400" />
@@ -465,7 +462,7 @@ export function SalaryTemplateForm({ initial }: { initial?: InitialValues }) {
                     </>
                   )}
 
-                  <tr className="bg-[#dbeafe]/70 font-semibold">
+                  <tr className="bg-[#dcfce7]/70 font-semibold">
                     <td className="py-3 px-3 text-gray-900">Cost to Company</td>
                     <td />
                     <td className="py-3 px-3 text-right text-gray-900">₹{INR.format(Math.round(totalMonthly))}</td>
@@ -481,7 +478,7 @@ export function SalaryTemplateForm({ initial }: { initial?: InitialValues }) {
                 if (availableComponents.length > 0) {
                   return (
                     <button type="button" onClick={openPicker}
-                      className="inline-flex items-center gap-1 text-xs font-semibold text-[#16243A] hover:underline">
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-[#166534] hover:underline">
                       <Plus size={12} /> Add salary component
                     </button>
                   );
@@ -490,7 +487,7 @@ export function SalaryTemplateForm({ initial }: { initial?: InitialValues }) {
                 return (
                   <Link
                     href="/payroll/setup/salary-components"
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-[#16243A] hover:underline"
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-[#166534] hover:underline"
                     title={noComponentsAtAll ? "No components exist. Create one first." : "All components already added"}
                   >
                     <Plus size={12} />
@@ -506,13 +503,13 @@ export function SalaryTemplateForm({ initial }: { initial?: InitialValues }) {
             </div>
           </div>
 
-          {err && <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">{err}</p>}
+          {err && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">{err}</p>}
 
           <div className="flex items-center gap-2 pt-2">
-            <button type="submit" disabled={saveMut.isPending} className="inline-flex items-center gap-2 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 text-white rounded-md text-sm font-semibold shadow-sm">
-              <Save size={14} /> {saveMut.isPending ? "Saving..." : "Save"}
+            <button type="submit" disabled={saveMut.isPending} className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-md text-xs font-medium shadow-sm">
+              <Save size={13} /> {saveMut.isPending ? "Saving..." : "Save"}
             </button>
-            <Link href="/payroll/setup/salary-templates" className="px-4 py-2 border border-[var(--border)] bg-white hover:bg-gray-50 text-gray-700 rounded-md text-sm font-medium">
+            <Link href="/payroll/setup/salary-templates" className="px-3 py-1.5 border border-[var(--border)] bg-white hover:bg-gray-50 text-gray-700 rounded-md text-xs font-medium">
               Cancel
             </Link>
           </div>
@@ -529,13 +526,13 @@ export function SalaryTemplateForm({ initial }: { initial?: InitialValues }) {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-              <h3 className="text-sm font-semibold text-gray-900">Add Salary Component</h3>
+              <h3 className="text-[13px] font-semibold text-gray-900">Add Salary Component</h3>
               <button
                 type="button"
                 onClick={() => setPickerOpen(false)}
                 className="text-gray-400 hover:text-gray-600"
               >
-                <X size={16} />
+                <X size={12} />
               </button>
             </div>
             <div className="p-3 border-b border-gray-100">
@@ -546,13 +543,13 @@ export function SalaryTemplateForm({ initial }: { initial?: InitialValues }) {
                   value={pickerSearch}
                   onChange={(e) => setPickerSearch(e.target.value)}
                   placeholder="Search by name or code..."
-                  className="flex-1 text-sm outline-none"
+                  className="flex-1 text-xs outline-none"
                 />
               </div>
             </div>
             <div className="max-h-80 overflow-y-auto">
               {filteredPicker.length === 0 ? (
-                <p className="px-4 py-6 text-center text-sm text-gray-500">No components found</p>
+                <p className="px-4 py-6 text-center text-xs text-gray-500">No components found</p>
               ) : (
                 filteredPicker.map((c) => {
                   const alreadyAdded = rows.some((r) => r.componentId === c.id);
@@ -570,11 +567,11 @@ export function SalaryTemplateForm({ initial }: { initial?: InitialValues }) {
                       }
                     >
                       <div>
-                        <p className="text-sm font-medium text-gray-900 flex items-center gap-2">
+                        <p className="text-[13px] font-semibold text-gray-900 flex items-center gap-2">
                           {c.name}
                           <span className={
-                            "px-1.5 py-0.5 text-[9px] uppercase tracking-wide font-bold rounded " +
-                            (c.type === "Earning"        ? "bg-blue-50 text-blue-700" :
+                            "px-1.5 py-0.5 text-[11px] uppercase tracking-wide font-medium rounded " +
+                            (c.type === "Earning"        ? "bg-green-50 text-green-700" :
                              c.type === "Reimbursement"  ? "bg-emerald-50 text-emerald-700" :
                              c.type === "Benefit"        ? "bg-violet-50 text-violet-700" :
                              c.type === "Deduction"      ? "bg-rose-50 text-rose-700" :
@@ -586,7 +583,7 @@ export function SalaryTemplateForm({ initial }: { initial?: InitialValues }) {
                         <p className="text-[11px] text-gray-500">{c.code} · {c.category}</p>
                       </div>
                       {alreadyAdded && (
-                        <span className="text-[10px] uppercase tracking-wide font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
+                        <span className="text-[11px] uppercase tracking-wide font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
                           Added
                         </span>
                       )}

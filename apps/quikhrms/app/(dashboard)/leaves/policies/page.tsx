@@ -1,33 +1,36 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useApiClient, ApiError } from "@/lib/hooks/use-api";
+import { useApiClient } from "@/lib/hooks/use-api";
+import { LeaveRulesWizard } from "../_components/leave-rules-wizard";
 import { CrudTable, type Column } from "@/components/hrms/crud-table";
 import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { useToast } from "@/components/hrms/toast";
 import { useDialog } from "@/components/hrms/dialog";
+import { EmptyState } from "@/components/hrms/empty-state";
+import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 import {
   Layers, Plus, Trash2, Users, Shield, Tag, UserCircle, Pencil, Check, X, Search,
-  Info, CalendarDays, Hash, SlidersHorizontal, Settings2,
+  Info, CalendarDays, Hash, SlidersHorizontal, Settings2, ArrowLeft,
 } from "lucide-react";
 import { clsx } from "clsx";
 
 // Shared input styling for the Leave Type modal (matches the sectioned redesign).
-const PLAIN_INPUT = "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500";
-const ICON_INPUT = "w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500";
+const PLAIN_INPUT = "w-full border border-gray-200 rounded-lg px-3 py-1.5 text-[13px] bg-white focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500";
+const ICON_INPUT = "w-full border border-gray-200 rounded-lg pl-9 pr-3 py-1.5 text-[13px] bg-white focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500";
 
 /** Card-style grouping with an icon + title header for the Leave Type modal. */
 function FormSection({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
   return (
     <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-100">
-        <span className="text-blue-600">{icon}</span>
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-100">
+        <span className="text-green-600">{icon}</span>
         <h3 className="text-[13px] font-semibold text-gray-900">{title}</h3>
       </div>
-      <div className="p-4 space-y-3.5">{children}</div>
+      <div className="px-4 py-3 space-y-3">{children}</div>
     </div>
   );
 }
@@ -36,7 +39,7 @@ function FormSection({ icon, title, children }: { icon: React.ReactNode; title: 
 function Field({ label, required, small, children }: { label: string; required?: boolean; small?: boolean; children: React.ReactNode }) {
   return (
     <div>
-      <label className={clsx("block font-medium text-gray-600 mb-1", small ? "text-[11px]" : "text-xs")}>
+      <label className={clsx("block font-medium text-gray-600 mb-1", small ? "text-xs" : "text-xs")}>
         {label}{required && <span className="text-red-500"> *</span>}
       </label>
       {children}
@@ -44,17 +47,35 @@ function Field({ label, required, small, children }: { label: string; required?:
   );
 }
 
+// Common leave types offered in the "Select leave type to add" dropdown. Picking
+// one pre-fills Name + Short Code (both stay editable). "Other / Custom" clears
+// them for a fully manual entry.
+const LEAVE_PRESETS: { value: string; label: string; name: string; code: string }[] = [
+  { value: "casual", label: "Casual Leave", name: "Casual Leave", code: "CL" },
+  { value: "sick", label: "Sick Leave", name: "Sick Leave", code: "SL" },
+  { value: "earned", label: "Earned / Privileged Leave", name: "Earned Leave", code: "EL" },
+  { value: "maternity", label: "Maternity Leave", name: "Maternity Leave", code: "ML" },
+  { value: "paternity", label: "Paternity Leave", name: "Paternity Leave", code: "PL" },
+  { value: "bereavement", label: "Bereavement Leave", name: "Bereavement Leave", code: "BL" },
+  { value: "marriage", label: "Marriage Leave", name: "Marriage Leave", code: "MRL" },
+  { value: "compoff", label: "Comp Off", name: "Comp Off", code: "CO" },
+  { value: "lop", label: "Loss of Pay (Unpaid)", name: "Loss of Pay", code: "LOP" },
+  { value: "other", label: "Other / Custom", name: "", code: "" },
+];
+
 interface LeaveTypeItem {
   id: string;
   name: string;
   code: string;
   color: string | null;
+  description: string | null;
   isPaid: boolean;
   accrualType: string;
   accrualCount: string;
   maxBalance: number;
   applicableAfterDays: number;
   applicableGender: string | null;
+  applicableMaritalStatus: string | null;
   minConsecutiveDays: number | null;
   maxConsecutiveDays: number | null;
   maxPerMonth: number | null;
@@ -76,9 +97,23 @@ interface LeaveTypeItem {
   compOffExpiryDays: number | null;
   isDefault: boolean;
   applicableEmploymentType: string[] | null;
+  // Leave rules wizard fields
+  isUnlimited?: boolean | null;
+  noAccrualJoinAfterDay?: number | null;
+  selfApplyAllowed?: boolean | null;
+  requiresApproval?: boolean | null;
+  advanceNoticeDays?: number | null;
+  applicableAfterRef?: string | null;
+  backdateCutoffDay?: number | null;
+  blockIfBalanceLeaveTypeId?: string | null;
+  requiresComment?: boolean | null;
+  maxDaysPerMonth?: number | null;
+  applyCutoffDay?: number | null;
+  minGapDays?: number | null;
+  blockedDuringNotice?: boolean | null;
 }
 
-const EMPLOYMENT_TYPES = ["FullTime", "PartTime", "Contract", "Intern", "Freelancer", "Consultant"];
+const EMPLOYMENT_TYPES = ["FullTime", "PartTime", "Contract", "Intern"];
 
 interface LeaveGroupAssignment {
   id: string;
@@ -123,13 +158,32 @@ interface Role {
 
 export default function LeavePoliciesPage() {
   const [tab, setTab] = useState<"types" | "groups">("types");
+  const [rulesOpen, setRulesOpen] = useState(false);
+  const { hasPermission, isLoading: permsLoading } = useDashboardConfig();
+  // Managing leave types & groups requires hrms.leave.manage (also enforced by
+  // the API). Employees / self-service roles get a read-blocked state instead
+  // of the management UI.
+  const canManage = hasPermission("hrms.leave.manage");
+
+  if (!permsLoading && !canManage) {
+    return (
+      <EmptyState
+        variant="folder"
+        title="You don't have access to Leave Policies"
+        description="Managing leave types and leave groups is restricted to HR administrators. Contact your administrator if you need access."
+      />
+    );
+  }
+
   return (
     <div className="space-y-4">
-      <div className="surface-card p-1 inline-flex items-center gap-1">
-        <TabButton active={tab === "types"} onClick={() => setTab("types")} icon={<Tag size={14} />} label="Leave Types" />
-        <TabButton active={tab === "groups"} onClick={() => setTab("groups")} icon={<Layers size={14} />} label="Leave Groups" />
-      </div>
-      {tab === "types" ? <LeaveTypesTab /> : <LeaveGroupsTab />}
+      {!rulesOpen && (
+        <div className="surface-card p-1 inline-flex items-center gap-1">
+          <TabButton active={tab === "types"} onClick={() => setTab("types")} icon={<Tag size={14} />} label="Leave Types" />
+          <TabButton active={tab === "groups"} onClick={() => setTab("groups")} icon={<Layers size={14} />} label="Leave Groups" />
+        </div>
+      )}
+      {tab === "types" ? <LeaveTypesTab onRulesOpenChange={setRulesOpen} /> : <LeaveGroupsTab />}
     </div>
   );
 }
@@ -139,8 +193,8 @@ function TabButton({ active, onClick, icon, label }: { active: boolean; onClick:
     <button
       onClick={onClick}
       className={clsx(
-        "inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md text-sm font-semibold transition",
-        active ? "bg-[#16243A] text-white shadow-sm" : "text-gray-600 hover:text-[#16243A] hover:bg-gray-50",
+        "inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md text-[13px] font-semibold transition",
+        active ? "bg-green-600 text-white shadow-sm" : "text-gray-600 hover:text-[#166534] hover:bg-gray-50",
       )}
     >
       {icon} {label}
@@ -150,68 +204,40 @@ function TabButton({ active, onClick, icon, label }: { active: boolean; onClick:
 
 // ─── LEAVE TYPES TAB ─────────────────────────────────────
 
-function LeaveTypesTab() {
+function LeaveTypesTab({ onRulesOpenChange }: { onRulesOpenChange?: (open: boolean) => void }) {
   const api = useApiClient();
   const qc = useQueryClient();
   const toast = useToast();
   const [search, setSearch] = useState("");
   const [modal, setModal] = useState<{ open: boolean; item: LeaveTypeItem | null }>({ open: false, item: null });
+  // Per-leave-type rules configuration (quota, accrual, carry-forward, etc.).
+  const [rulesTarget, setRulesTarget] = useState<LeaveTypeItem | null>(null);
+  // Tell the parent to hide the page tabs while the full-width Rules view is open.
+  useEffect(() => { onRulesOpenChange?.(!!rulesTarget); }, [rulesTarget, onRulesOpenChange]);
+  useEffect(() => () => onRulesOpenChange?.(false), [onRulesOpenChange]);
   const emptyForm = {
-    name: "", code: "", isPaid: true,
-    leaveCount: 0,
-    applicableAfterDays: 0,
-    applicableGender: "All",
-    applicableEmploymentType: [] as string[],
-    isCarryForward: false, maxCarryForward: null as number | null,
-    isHalfDayAllowed: true,
-    isEncashable: false, maxEncashment: null as number | null,
-    requiresDocumentation: false, documentationAfterDays: null as number | null,
-    minConsecutiveDays: null as number | null,
-    maxConsecutiveDays: null as number | null,
-    maxPerMonth: null as number | null,
-    isOnceInLifetime: false,
-    isNegativeBalanceAllowed: false, maxNegativeBalance: null as number | null,
-    includesHolidays: false,
-    includesWeekoffs: false,
-    isHourlyAllowed: false,
-    isCompOff: false, compOffExpiryDays: null as number | null,
-    isDefault: false,
+    preset: "",
+    name: "",
+    code: "",
+    description: "",
+    allowGender: false,
+    applicableGender: "Male",
+    restrictMarital: false,
+    applicableMaritalStatus: "Single",
   };
   const [form, setForm] = useState(emptyForm);
 
-  // Server still tracks accrual semantics; we hide them from the UI and always
-  // treat the leave as Yearly (entire leaveCount credited once a year). The
-  // body maps the single "Leave Count" field to BOTH accrualCount and
-  // maxBalance so existing accrual / balance logic keeps working.
+  // The form captures only the leave type's IDENTITY + eligibility. Entitlement,
+  // accrual and the detailed rules are configured per leave type elsewhere, so
+  // we send just these fields — on edit (PATCH is partial) that leaves any
+  // existing quota/rules untouched. On create, the API applies its own defaults.
   const buildBody = (f: typeof form) => ({
-    name: f.name,
-    code: f.code,
-    isPaid: f.isPaid,
-    accrualType: "Yearly",
-    accrualCount: f.leaveCount,
-    maxBalance: f.leaveCount,
-    applicableAfterDays: f.applicableAfterDays,
-    applicableGender: f.applicableGender === "All" ? undefined : f.applicableGender,
-    applicableEmploymentType: f.applicableEmploymentType.length ? f.applicableEmploymentType : undefined,
-    isCarryForward: f.isCarryForward,
-    maxCarryForward: f.isCarryForward ? (f.maxCarryForward ?? undefined) : undefined,
-    isHalfDayAllowed: f.isHalfDayAllowed,
-    isEncashable: f.isEncashable,
-    maxEncashment: f.isEncashable ? (f.maxEncashment ?? undefined) : undefined,
-    requiresDocumentation: f.requiresDocumentation,
-    documentationAfterDays: f.requiresDocumentation ? (f.documentationAfterDays ?? undefined) : undefined,
-    minConsecutiveDays: f.minConsecutiveDays ?? undefined,
-    maxConsecutiveDays: f.maxConsecutiveDays ?? undefined,
-    maxPerMonth: f.maxPerMonth ?? undefined,
-    isOnceInLifetime: f.isOnceInLifetime,
-    isNegativeBalanceAllowed: f.isNegativeBalanceAllowed,
-    maxNegativeBalance: f.isNegativeBalanceAllowed ? (f.maxNegativeBalance ?? undefined) : undefined,
-    includesHolidays: f.includesHolidays,
-    includesWeekoffs: f.includesWeekoffs,
-    isHourlyAllowed: f.isHourlyAllowed,
-    isCompOff: f.isCompOff,
-    compOffExpiryDays: f.isCompOff ? (f.compOffExpiryDays ?? undefined) : undefined,
-    isDefault: f.isDefault,
+    name: f.name.trim(),
+    code: f.code.trim(),
+    description: f.description.trim() || null,
+    // "All" = no restriction (applies to everyone).
+    applicableGender: f.allowGender ? f.applicableGender : "All",
+    applicableMaritalStatus: f.restrictMarital ? f.applicableMaritalStatus : "All",
   });
 
   const { data, isLoading } = useQuery({
@@ -222,28 +248,20 @@ function LeaveTypesTab() {
   const createMut = useMutation({
     mutationFn: (body: typeof form) => api.post("/api/v1/hrms/leaves/types", buildBody(body)),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["leave-types"] }); setModal({ open: false, item: null }); toast.success("Leave type created"); },
-    onError: (e: Error) => toast.error(e.message),
   });
 
   const updateMut = useMutation({
     mutationFn: ({ id, body }: { id: string; body: typeof form }) => api.patch(`/api/v1/hrms/leaves/types/${id}`, buildBody(body)),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["leave-types"] }); setModal({ open: false, item: null }); toast.success("Leave type updated"); },
-    onError: (e: Error) => toast.error(e.message),
   });
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => api.delete(`/api/v1/hrms/leaves/types/${id}`),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["leave-types"] }); toast.success("Leave type deleted"); },
-    onError: (e: Error) => toast.error(e.message),
   });
 
   const columns: Column<LeaveTypeItem>[] = [
-    { key: "name", label: "Name", render: (t) => (
-      <div className="flex items-center gap-2">
-        {t.color && <div className="w-3 h-3 rounded-full" style={{ backgroundColor: t.color }} />}
-        <span>{t.name}</span>
-      </div>
-    )},
+    { key: "name", label: "Name", render: (t) => <span>{t.name}</span> },
     { key: "code", label: "Code" },
     { key: "isPaid", label: "Paid", render: (t) => t.isPaid ? "Yes" : "No" },
     { key: "maxBalance", label: "Leave Count", render: (t) => `${t.maxBalance}` },
@@ -256,31 +274,17 @@ function LeaveTypesTab() {
   };
 
   const openEdit = (item: LeaveTypeItem) => {
+    const gender = item.applicableGender ?? "All";
+    const marital = item.applicableMaritalStatus ?? "All";
     setForm({
-      name: item.name, code: item.code, isPaid: item.isPaid,
-      leaveCount: item.maxBalance,
-      applicableAfterDays: item.applicableAfterDays ?? 0,
-      applicableGender: item.applicableGender ?? "All",
-      applicableEmploymentType: item.applicableEmploymentType ?? [],
-      isCarryForward: item.isCarryForward,
-      maxCarryForward: item.maxCarryForward ?? null,
-      isHalfDayAllowed: item.isHalfDayAllowed,
-      isEncashable: item.isEncashable,
-      maxEncashment: item.maxEncashment ?? null,
-      requiresDocumentation: item.requiresDocumentation ?? false,
-      documentationAfterDays: item.documentationAfterDays ?? null,
-      minConsecutiveDays: item.minConsecutiveDays ?? null,
-      maxConsecutiveDays: item.maxConsecutiveDays ?? null,
-      maxPerMonth: item.maxPerMonth ?? null,
-      isOnceInLifetime: item.isOnceInLifetime ?? false,
-      isNegativeBalanceAllowed: item.isNegativeBalanceAllowed ?? false,
-      maxNegativeBalance: item.maxNegativeBalance ?? null,
-      includesHolidays: item.includesHolidays ?? false,
-      includesWeekoffs: item.includesWeekoffs ?? false,
-      isHourlyAllowed: item.isHourlyAllowed ?? false,
-      isCompOff: item.isCompOff ?? false,
-      compOffExpiryDays: item.compOffExpiryDays ?? null,
-      isDefault: item.isDefault ?? false,
+      preset: "",
+      name: item.name,
+      code: item.code,
+      description: item.description ?? "",
+      allowGender: gender !== "All" && !!gender,
+      applicableGender: gender !== "All" && gender ? gender : "Male",
+      restrictMarital: marital !== "All" && !!marital,
+      applicableMaritalStatus: marital !== "All" && marital ? marital : "Single",
     });
     setModal({ open: true, item });
   };
@@ -288,6 +292,41 @@ function LeaveTypesTab() {
   const filtered = (data?.data ?? []).filter((t) =>
     !search || t.name.toLowerCase().includes(search.toLowerCase()) || t.code.toLowerCase().includes(search.toLowerCase())
   );
+
+  // Rules open as a full-width section (not a modal) — like a dedicated settings
+  // page, with a back arrow to return to the leave-types list.
+  if (rulesTarget) {
+    return (
+      <div className="w-full">
+        <div className="flex items-center gap-3 mb-3">
+          <button
+            type="button"
+            onClick={() => setRulesTarget(null)}
+            title="Back to leave types"
+            className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 shrink-0"
+          >
+            <ArrowLeft size={16} />
+          </button>
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-lg bg-green-50 text-green-600 flex items-center justify-center shrink-0">
+              <SlidersHorizontal size={18} />
+            </div>
+            <div>
+              <h1 className="text-page-title text-gray-900 leading-tight">{rulesTarget.name} · Rules</h1>
+              <p className="text-xs text-gray-500">Configure entitlement, applying rules and restrictions</p>
+            </div>
+          </div>
+        </div>
+        <div className="surface-card p-4 w-full">
+          <LeaveRulesWizard
+            leaveType={rulesTarget}
+            allTypes={data?.data ?? []}
+            onClose={() => setRulesTarget(null)}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -302,198 +341,136 @@ function LeaveTypesTab() {
         search={search}
         onSearchChange={setSearch}
         searchPlaceholder="Search leave types..."
+        extraActions={(item) => (
+          <button
+            type="button"
+            onClick={() => setRulesTarget(item)}
+            title="Set rules"
+            className="w-8 h-8 inline-flex items-center justify-center text-gray-400 hover:text-[#22c55e] rounded-lg hover:bg-green-50"
+          >
+            <SlidersHorizontal size={13} />
+          </button>
+        )}
       />
 
       <Modal
         open={modal.open}
         onClose={() => setModal({ open: false, item: null })}
         title={modal.item ? "Edit Leave Type" : "Add Leave Type"}
-        subtitle="Define leave policy and rules for this leave type"
         headerIcon={<CalendarDays size={18} />}
         size="lg"
-        bodyClassName="p-5 bg-gray-50"
+        bodyClassName="p-5 overflow-y-auto"
       >
         <form
           onSubmit={(e) => { e.preventDefault(); modal.item ? updateMut.mutate({ id: modal.item.id, body: form }) : createMut.mutate(form); }}
           className="space-y-4"
         >
-          {/* ── Basic Information ── */}
-          <FormSection icon={<Info size={14} />} title="Basic Information">
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Name" required>
-                <div className="relative">
-                  <Tag size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required
-                    placeholder="e.g. Casual Leave" className={ICON_INPUT} />
-                </div>
-              </Field>
-              <Field label="Code" required>
-                <div className="relative">
-                  <Hash size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <input type="text" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} required
-                    placeholder="e.g. CL" className={ICON_INPUT} />
-                </div>
-              </Field>
-            </div>
-          </FormSection>
+          {/* Select a preset leave type — pre-fills Name + Short Code. */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-800 mb-1">
+              Select leave type to add <span className="text-red-500">*</span>
+            </label>
+            <Select
+              value={form.preset}
+              onChange={(v) => {
+                const p = LEAVE_PRESETS.find((x) => x.value === v);
+                setForm({ ...form, preset: v, name: p ? p.name : form.name, code: p ? p.code : form.code });
+              }}
+              placeholder="Select Leave Type"
+              options={LEAVE_PRESETS.map((p) => ({ value: p.value, label: p.label }))}
+            />
+          </div>
 
-          {/* ── Leave Configuration ── */}
-          <FormSection icon={<SlidersHorizontal size={14} />} title="Leave Configuration">
-            <div className="grid grid-cols-3 gap-3">
-              <Field label="Leave Count (Days)" required>
-                <NumberInput allowDecimal={false} min={0} value={form.leaveCount}
-                  onChange={(v) => setForm({ ...form, leaveCount: v ?? 0 })} className={PLAIN_INPUT} />
-              </Field>
-              <Field label="Eligible After (Days)" required>
-                <NumberInput allowDecimal={false} min={0} value={form.applicableAfterDays}
-                  onChange={(v) => setForm({ ...form, applicableAfterDays: v ?? 0 })} className={PLAIN_INPUT} />
-              </Field>
-              <Field label="Applicable To" required>
-                <Select
-                  value={form.applicableGender}
-                  onChange={(v) => setForm({ ...form, applicableGender: v })}
-                  options={[
-                    { value: "All",    label: "All employees" },
-                    { value: "Female", label: "Female only", description: "e.g. Maternity" },
-                    { value: "Male",   label: "Male only",   description: "e.g. Paternity" },
-                    { value: "Other",  label: "Other" },
-                  ]}
-                />
-              </Field>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3">
-              <Field label="Min Consecutive (Days)">
-                <NumberInput allowDecimal={false} min={0} value={form.minConsecutiveDays} placeholder="Optional"
-                  onChange={(v) => setForm({ ...form, minConsecutiveDays: v })} className={PLAIN_INPUT} />
-              </Field>
-              <Field label="Max Consecutive (Days)">
-                <NumberInput allowDecimal={false} min={0} value={form.maxConsecutiveDays} placeholder="Optional"
-                  onChange={(v) => setForm({ ...form, maxConsecutiveDays: v })} className={PLAIN_INPUT} />
-              </Field>
-              <Field label="Max per Month (Requests)">
-                <NumberInput allowDecimal={false} min={0} value={form.maxPerMonth} placeholder="Unlimited"
-                  onChange={(v) => setForm({ ...form, maxPerMonth: v })} className={PLAIN_INPUT} />
-              </Field>
-            </div>
-
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1.5">
-                Applicable Employment Types
-                <span className="ml-1 font-normal text-gray-400">— select types this leave is applicable to</span>
+              <label className="block text-sm font-semibold text-gray-800 mb-1">
+                Leave Type Name <span className="text-red-500">*</span>
               </label>
-              <div className="flex flex-wrap gap-2">
-                {EMPLOYMENT_TYPES.map((t) => {
-                  const on = form.applicableEmploymentType.includes(t);
-                  return (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() =>
-                        setForm({
-                          ...form,
-                          applicableEmploymentType: on
-                            ? form.applicableEmploymentType.filter((x) => x !== t)
-                            : [...form.applicableEmploymentType, t],
-                        })
-                      }
-                      className={clsx(
-                        "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition",
-                        on
-                          ? "border-blue-500 bg-blue-50 text-blue-700"
-                          : "border-gray-200 bg-white text-gray-600 hover:border-gray-300",
-                      )}
-                    >
-                      {on && <Check size={12} />}
-                      {t}
-                    </button>
-                  );
-                })}
-              </div>
+              <input type="text" value={form.name} required
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="Ex: Jury Duty, Privileged leave etc."
+                className={PLAIN_INPUT} />
             </div>
-          </FormSection>
-
-          {/* ── Rules & Settings ── */}
-          <FormSection icon={<Settings2 size={14} />} title="Rules & Settings">
-            <p className="text-xs text-gray-500 -mt-1">Configure additional rules available for this leave type.</p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2.5">
-              {[
-                { key: "isPaid" as const,             label: "Paid" },
-                { key: "isHalfDayAllowed" as const,   label: "Half Day" },
-                { key: "isHourlyAllowed" as const,    label: "Hourly Allowed" },
-                { key: "isCarryForward" as const,     label: "Carry Forward" },
-                { key: "isEncashable" as const,       label: "Encashable" },
-                { key: "requiresDocumentation" as const, label: "Requires Documentation" },
-                { key: "includesHolidays" as const,   label: "Includes Holidays" },
-                { key: "includesWeekoffs" as const,   label: "Includes Week-offs" },
-                { key: "isNegativeBalanceAllowed" as const, label: "Allow Negative Balance" },
-                { key: "isCompOff" as const,          label: "Comp Off" },
-                { key: "isOnceInLifetime" as const,   label: "Once in a lifetime (e.g. Marriage)" },
-                { key: "isDefault" as const,          label: "Set as Default" },
-              ].map((opt) => (
-                <label key={opt.key} className="flex items-center gap-2 text-[13px] text-gray-700 cursor-pointer">
-                  <input type="checkbox" checked={form[opt.key]} onChange={(e) => setForm({ ...form, [opt.key]: e.target.checked })}
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-                  {opt.label}
-                </label>
-              ))}
+            <div>
+              <label className="block text-sm font-semibold text-gray-800 mb-1">
+                Short Code <span className="text-red-500">*</span>
+              </label>
+              <input type="text" value={form.code} required
+                onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
+                placeholder="Ex: PTO"
+                className={PLAIN_INPUT} />
             </div>
+          </div>
 
-            {(form.isCarryForward || form.isEncashable || form.requiresDocumentation || form.isNegativeBalanceAllowed || form.isCompOff) && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-white border border-gray-200 rounded-lg p-3 mt-1">
-                {form.isCarryForward && (
-                  <Field label="Max Carry Forward" small>
-                    <NumberInput allowDecimal={false} min={0} value={form.maxCarryForward} placeholder="days"
-                      onChange={(v) => setForm({ ...form, maxCarryForward: v })} className={PLAIN_INPUT} />
-                  </Field>
-                )}
-                {form.isEncashable && (
-                  <Field label="Max Encashment" small>
-                    <NumberInput allowDecimal={false} min={0} value={form.maxEncashment} placeholder="days"
-                      onChange={(v) => setForm({ ...form, maxEncashment: v })} className={PLAIN_INPUT} />
-                  </Field>
-                )}
-                {form.requiresDocumentation && (
-                  <Field label="Docs After (days)" small>
-                    <NumberInput allowDecimal={false} min={0} value={form.documentationAfterDays} placeholder="e.g. 3"
-                      onChange={(v) => setForm({ ...form, documentationAfterDays: v })} className={PLAIN_INPUT} />
-                  </Field>
-                )}
-                {form.isNegativeBalanceAllowed && (
-                  <Field label="Max Negative Balance" small>
-                    <NumberInput allowDecimal={false} min={0} value={form.maxNegativeBalance} placeholder="days"
-                      onChange={(v) => setForm({ ...form, maxNegativeBalance: v })} className={PLAIN_INPUT} />
-                  </Field>
-                )}
-                {form.isCompOff && (
-                  <Field label="Comp-Off Expiry (days)" small>
-                    <NumberInput allowDecimal={false} min={0} value={form.compOffExpiryDays} placeholder="e.g. 90"
-                      onChange={(v) => setForm({ ...form, compOffExpiryDays: v })} className={PLAIN_INPUT} />
-                  </Field>
-                )}
-              </div>
-            )}
-          </FormSection>
+          <div>
+            <label className="block text-sm font-semibold text-gray-800 mb-1">Description</label>
+            <textarea rows={3} value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              placeholder="Type here"
+              className={clsx(PLAIN_INPUT, "resize-y")} />
+          </div>
 
-          <div className="flex items-center justify-between gap-3 pt-1">
-            <p className="text-[11px] text-gray-400 flex items-center gap-1.5">
-              <Info size={12} className="text-blue-500 shrink-0" />
-              Balance accrues <strong>yearly</strong> — leave count is credited on the yearly reset.
-            </p>
-            <div className="flex items-center gap-2 shrink-0">
-              <button type="button" onClick={() => setModal({ open: false, item: null })}
-                className="px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50">Cancel</button>
-              <button type="submit"
-                disabled={createMut.isPending || updateMut.isPending}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50">
-                {modal.item
-                  ? (updateMut.isPending ? "Updating…" : "Update Leave Type")
-                  : (createMut.isPending ? "Creating…" : "Create Leave Type")}
-              </button>
+          {/* Allow To Gender */}
+          <div className="flex items-center justify-between gap-3">
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-800 cursor-pointer">
+              <input type="checkbox" checked={form.allowGender}
+                onChange={(e) => setForm({ ...form, allowGender: e.target.checked })}
+                className="rounded border-gray-300 text-green-600 focus:ring-green-500 w-4 h-4" />
+              Allow To Gender
+            </label>
+            <div className="w-1/2">
+              <Select
+                value={form.allowGender ? form.applicableGender : ""}
+                onChange={(v) => setForm({ ...form, allowGender: true, applicableGender: v })}
+                placeholder="Select Gender"
+                options={[
+                  { value: "Male", label: "Male" },
+                  { value: "Female", label: "Female" },
+                  { value: "Other", label: "Other" },
+                ]}
+              />
             </div>
+          </div>
+
+          {/* Restrict To Marital Status */}
+          <div className="flex items-center justify-between gap-3">
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-800 cursor-pointer">
+              <input type="checkbox" checked={form.restrictMarital}
+                onChange={(e) => setForm({ ...form, restrictMarital: e.target.checked })}
+                className="rounded border-gray-300 text-green-600 focus:ring-green-500 w-4 h-4" />
+              Restrict To Employees Having Marital Status
+            </label>
+            <div className="w-1/2">
+              <Select
+                value={form.restrictMarital ? form.applicableMaritalStatus : ""}
+                onChange={(v) => setForm({ ...form, restrictMarital: true, applicableMaritalStatus: v })}
+                placeholder="Select Marital Status"
+                options={[
+                  { value: "Single", label: "Single" },
+                  { value: "Married", label: "Married" },
+                ]}
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-center gap-3 pt-2">
+            <button type="submit"
+              disabled={createMut.isPending || updateMut.isPending}
+              className="px-6 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 disabled:opacity-50">
+              {modal.item
+                ? (updateMut.isPending ? "Updating…" : "Update")
+                : (createMut.isPending ? "Submitting…" : "Submit")}
+            </button>
+            <button type="button" onClick={() => setForm(modal.item ? form : emptyForm)}
+              className="px-6 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm font-semibold hover:bg-gray-200">
+              Clear
+            </button>
           </div>
         </form>
       </Modal>
+
+      {/* Per-leave-type rules — quota, accrual, carry-forward, limits, etc.
+          Fields are added here later; for now the shell opens with the target. */}
     </>
   );
 }
@@ -516,10 +493,6 @@ function LeaveGroupsTab() {
   const deleteMut = useMutation({
     mutationFn: (id: string) => api.delete(`/api/v1/hrms/leaves/groups/${id}`),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["leave-groups"] }); toast.success("Leave group deleted"); },
-    onError: (e: Error) => {
-      if (e instanceof ApiError) toast.error(e.message);
-      else toast.error(e.message);
-    },
   });
 
   const handleDelete = async (group: LeaveGroup) => {
@@ -539,23 +512,23 @@ function LeaveGroupsTab() {
       <div className="rounded-b-lg border border-t-0 border-gray-200 bg-white p-4">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-lg font-bold text-gray-900">Leave Groups</h2>
+            <h2 className="text-[13px] font-semibold text-gray-900">Leave Groups</h2>
             <p className="text-xs text-gray-500">Bundle leave types and assign to employees or roles.</p>
           </div>
           <button
             onClick={() => setGroupModal({ open: true, group: null })}
-            className="inline-flex items-center gap-1.5 px-3 py-2 bg-[#16243A] hover:bg-[#1E3354] text-white rounded-md text-sm font-medium shadow-sm"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-xs font-medium shadow-sm"
           >
-            <Plus size={14} /> New Group
+            <Plus size={13} /> New Group
           </button>
         </div>
 
         {isLoading ? (
-          <div className="py-10 text-center text-sm text-gray-500">Loading…</div>
+          <div className="py-10 text-center text-xs text-gray-500">Loading…</div>
         ) : groups.length === 0 ? (
           <div className="py-12 text-center">
             <Layers size={28} className="mx-auto text-gray-300 mb-2" />
-            <p className="text-sm text-gray-500">No leave groups yet.</p>
+            <p className="text-xs text-gray-500">No leave groups yet.</p>
             <p className="text-xs text-gray-400">Create one to bundle leave types and assign to individuals or roles.</p>
           </div>
         ) : (
@@ -600,11 +573,11 @@ function GroupCard({ group, onEdit, onAssign, onDelete }: {
     <div className="rounded-lg border border-gray-200 bg-white hover:shadow-md transition p-4">
       <div className="flex items-start justify-between mb-2">
         <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-bold text-gray-900 truncate">{group.name}</h3>
+          <h3 className="text-[13px] font-semibold text-gray-900 truncate">{group.name}</h3>
           {group.description && <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{group.description}</p>}
         </div>
         <span className={clsx(
-          "text-[10px] font-semibold px-1.5 py-0.5 rounded",
+          "text-[11px] font-medium px-1.5 py-0.5 rounded",
           group.isActive ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"
         )}>
           {group.isActive ? "Active" : "Inactive"}
@@ -632,13 +605,13 @@ function GroupCard({ group, onEdit, onAssign, onDelete }: {
       </div>
 
       <div className="flex items-center gap-1 mt-3">
-        <button onClick={onAssign} className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 bg-[#eff6ff] hover:bg-[#dbeafe] text-[#2563eb] rounded text-xs font-semibold">
+        <button onClick={onAssign} className="flex-1 inline-flex items-center justify-center gap-1 px-2.5 py-1 bg-[#f0fdf4] hover:bg-[#dcfce7] text-[#16a34a] rounded text-xs font-normal">
           <Users size={12} /> Assign
         </button>
-        <button onClick={onEdit} className="inline-flex items-center gap-1 px-2 py-1.5 border border-gray-200 hover:bg-gray-50 text-gray-700 rounded text-xs font-semibold">
+        <button onClick={onEdit} className="inline-flex items-center gap-1 px-2.5 py-1 border border-gray-200 hover:bg-gray-50 text-gray-700 rounded text-xs font-normal">
           <Pencil size={12} /> Edit
         </button>
-        <button onClick={onDelete} className="inline-flex items-center gap-1 px-2 py-1.5 border border-red-200 hover:bg-red-50 text-red-600 rounded text-xs font-semibold">
+        <button onClick={onDelete} className="inline-flex items-center gap-1 px-2.5 py-1 border border-red-200 hover:bg-red-50 text-red-600 rounded text-xs font-normal">
           <Trash2 size={12} />
         </button>
       </div>
@@ -671,13 +644,11 @@ function LeaveGroupEditor({ group, onClose }: { group: LeaveGroup | null; onClos
   const createMut = useMutation({
     mutationFn: (body: typeof form) => api.post("/api/v1/hrms/leaves/groups", body),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["leave-groups"] }); toast.success("Leave group created"); onClose(); },
-    onError: (e: Error) => toast.error(e.message),
   });
 
   const updateMut = useMutation({
     mutationFn: (body: typeof form) => api.patch(`/api/v1/hrms/leaves/groups/${group!.id}`, body),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["leave-groups"] }); toast.success("Leave group updated"); onClose(); },
-    onError: (e: Error) => toast.error(e.message),
   });
 
   const submit = (e: React.FormEvent) => {
@@ -709,18 +680,18 @@ function LeaveGroupEditor({ group, onClose }: { group: LeaveGroup | null; onClos
       <form onSubmit={submit} className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">Group Name *</label>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Group Name *</label>
             <input
               type="text"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               required
               placeholder="e.g., Full-Time Standard, Intern Plan"
-              className="w-full border border-[var(--border)] rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]"
+              className="w-full border border-[var(--border)] rounded-md px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]"
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">Status</label>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
             <Select
               value={form.isActive ? "active" : "inactive"}
               onChange={(v) => setForm({ ...form, isActive: v === "active" })}
@@ -732,19 +703,19 @@ function LeaveGroupEditor({ group, onClose }: { group: LeaveGroup | null; onClos
           </div>
         </div>
         <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1">Description</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
           <textarea
             value={form.description ?? ""}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
             rows={2}
             placeholder="Who this group is for, special conditions, etc."
-            className="w-full border border-[var(--border)] rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]"
+            className="w-full border border-[var(--border)] rounded-md px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]"
           />
         </div>
 
         <div>
           <div className="flex items-center justify-between mb-2">
-            <label className="text-xs font-semibold text-gray-700">Leave Types in this Group *</label>
+            <label className="text-xs font-medium text-gray-700">Leave Types in this Group *</label>
             <span className="text-[11px] text-gray-500">{form.items.length} selected</span>
           </div>
           {allTypes.length === 0 ? (
@@ -761,7 +732,7 @@ function LeaveGroupEditor({ group, onClose }: { group: LeaveGroup | null; onClos
                     key={t.id}
                     className={clsx(
                       "flex items-center gap-2 rounded-md border px-2 py-1.5 transition",
-                      selected ? "border-[#3b82f6] bg-[#eff6ff]" : "border-gray-200 bg-white"
+                      selected ? "border-[#22c55e] bg-[#f0fdf4]" : "border-gray-200 bg-white"
                     )}
                   >
                     <button
@@ -769,12 +740,12 @@ function LeaveGroupEditor({ group, onClose }: { group: LeaveGroup | null; onClos
                       onClick={() => toggleType(t.id)}
                       className={clsx(
                         "w-4 h-4 rounded border flex items-center justify-center flex-shrink-0",
-                        selected ? "border-[#2563eb] bg-[#2563eb] text-white" : "border-gray-300"
+                        selected ? "border-[#16a34a] bg-[#16a34a] text-white" : "border-gray-300"
                       )}
                     >
                       {selected && <Check size={11} />}
                     </button>
-                    {t.color && <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: t.color }} />}
+                    <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 ring-1 ring-inset ring-black/10" style={{ backgroundColor: t.color || "#cbd5e1" }} />
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-semibold text-gray-900 truncate">{t.name}</div>
                       <div className="text-[10px] text-gray-500">{t.code} · {t.maxBalance} days/yr</div>
@@ -786,7 +757,7 @@ function LeaveGroupEditor({ group, onClose }: { group: LeaveGroup | null; onClos
                         value={item?.overrideQuota ?? null}
                         onChange={(v) => updateQuota(t.id, v)}
                         style={{ width: "70px" }}
-                        className="shrink-0 border border-[var(--border)] rounded px-1.5 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-[#16243A]"
+                        className="shrink-0 border border-[var(--border)] rounded px-1.5 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-[#166534]"
                       />
                     )}
                   </div>
@@ -798,11 +769,11 @@ function LeaveGroupEditor({ group, onClose }: { group: LeaveGroup | null; onClos
         </div>
 
         <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
-          <button type="button" onClick={onClose} className="px-4 py-2 border border-[var(--border)] rounded-md text-sm text-gray-700 hover:bg-gray-50">Cancel</button>
+          <button type="button" onClick={onClose} className="px-3 py-1.5 border border-[var(--border)] rounded-md text-xs font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
           <button
             type="submit"
             disabled={createMut.isPending || updateMut.isPending}
-            className="px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 text-white rounded-md text-sm font-semibold"
+            className="px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-md text-xs font-medium"
           >
             {group ? "Save Changes" : "Create Group"}
           </button>
@@ -833,6 +804,25 @@ function AssignmentEditor({ group, onClose }: { group: LeaveGroup; onClose: () =
     enabled: mode === "Employee",
   });
 
+  // An employee can only belong to ONE leave group. Map each employee already
+  // in a *different* group → that group's name, so we can disable them in the
+  // picker (the server also enforces this).
+  const { data: allGroupsData } = useQuery({
+    queryKey: ["leave-groups"],
+    queryFn: () => api.get<LeaveGroup[]>("/api/v1/hrms/leaves/groups"),
+    enabled: mode === "Employee",
+  });
+  const otherGroupByEmp = useMemo(() => {
+    const m = new Map<string, string>();
+    (allGroupsData?.data ?? []).forEach((g) => {
+      if (g.id === group.id) return;
+      g.assignments.forEach((a) => {
+        if (a.assigneeType === "Employee" && a.employeeId) m.set(a.employeeId, g.name);
+      });
+    });
+    return m;
+  }, [allGroupsData, group.id]);
+
   const { data: rolesData } = useQuery({
     queryKey: ["roles", "for-group-assign"],
     queryFn: () => api.get<Role[]>("/api/v1/hrms/settings/roles"),
@@ -848,7 +838,6 @@ function AssignmentEditor({ group, onClose }: { group: LeaveGroup; onClose: () =
       setPicked(new Set());
       toast.success("Assigned");
     },
-    onError: (e: Error) => toast.error(e.message),
   });
 
   const removeMut = useMutation({
@@ -859,7 +848,6 @@ function AssignmentEditor({ group, onClose }: { group: LeaveGroup; onClose: () =
       qc.invalidateQueries({ queryKey: ["leave-groups"] });
       toast.success("Removed");
     },
-    onError: (e: Error) => toast.error(e.message),
   });
 
   const current = full?.data ?? group;
@@ -903,7 +891,7 @@ function AssignmentEditor({ group, onClose }: { group: LeaveGroup; onClose: () =
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={mode === "Employee" ? "Search employees…" : "Search roles…"}
-              className="w-full pl-7 pr-3 py-1.5 text-xs border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[#16243A]"
+              className="w-full pl-7 pr-3 py-1.5 text-xs border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[#166534]"
             />
           </div>
 
@@ -913,19 +901,25 @@ function AssignmentEditor({ group, onClose }: { group: LeaveGroup; onClose: () =
                 <div className="py-6 text-center text-xs text-gray-400">No matching employees</div>
               ) : emps.map((e) => {
                 const checked = picked.has(e.id);
+                const otherGroup = otherGroupByEmp.get(e.id);
+                const locked = !!otherGroup;
                 return (
                   <button
                     key={e.id}
                     type="button"
-                    onClick={() => togglePick(e.id)}
+                    disabled={locked}
+                    title={locked ? `Already in "${otherGroup}" — an employee can only be in one leave group` : undefined}
+                    onClick={() => { if (!locked) togglePick(e.id); }}
                     className={clsx(
                       "w-full flex items-center gap-2 px-2 py-1.5 rounded transition text-left",
-                      checked ? "bg-[#eff6ff] border border-[#bfdbfe]" : "hover:bg-gray-50 border border-transparent"
+                      locked ? "opacity-60 cursor-not-allowed border border-transparent"
+                        : checked ? "bg-[#f0fdf4] border border-[#bbf7d0]" : "hover:bg-gray-50 border border-transparent"
                     )}
                   >
                     <div className={clsx("w-4 h-4 rounded border flex items-center justify-center flex-shrink-0",
-                      checked ? "border-[#2563eb] bg-[#2563eb] text-white" : "border-gray-300")}>
-                      {checked && <Check size={11} />}
+                      locked ? "border-gray-200 bg-gray-100" :
+                      checked ? "border-[#16a34a] bg-[#16a34a] text-white" : "border-gray-300")}>
+                      {checked && !locked && <Check size={11} />}
                     </div>
                     {e.profilePhoto ? (
                       <img src={e.profilePhoto} alt="" className="w-6 h-6 rounded-full object-cover" />
@@ -936,7 +930,9 @@ function AssignmentEditor({ group, onClose }: { group: LeaveGroup; onClose: () =
                     )}
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-semibold text-gray-900 truncate">{e.firstName} {e.lastName}</div>
-                      <div className="text-[10px] text-gray-500">{e.employeeCode}{e.jobTitle ? ` · ${e.jobTitle}` : ""}</div>
+                      <div className="text-[10px] text-gray-500 truncate">
+                        {locked ? `In "${otherGroup}"` : `${e.employeeCode}${e.jobTitle ? ` · ${e.jobTitle}` : ""}`}
+                      </div>
                     </div>
                   </button>
                 );
@@ -953,11 +949,11 @@ function AssignmentEditor({ group, onClose }: { group: LeaveGroup; onClose: () =
                     onClick={() => togglePick(r.id)}
                     className={clsx(
                       "w-full flex items-center gap-2 px-2 py-1.5 rounded transition text-left",
-                      checked ? "bg-[#eff6ff] border border-[#bfdbfe]" : "hover:bg-gray-50 border border-transparent"
+                      checked ? "bg-[#f0fdf4] border border-[#bbf7d0]" : "hover:bg-gray-50 border border-transparent"
                     )}
                   >
                     <div className={clsx("w-4 h-4 rounded border flex items-center justify-center flex-shrink-0",
-                      checked ? "border-[#2563eb] bg-[#2563eb] text-white" : "border-gray-300")}>
+                      checked ? "border-[#16a34a] bg-[#16a34a] text-white" : "border-gray-300")}>
                       {checked && <Check size={11} />}
                     </div>
                     <Shield size={14} className="text-[#7c3aed] flex-shrink-0" />
@@ -975,9 +971,9 @@ function AssignmentEditor({ group, onClose }: { group: LeaveGroup; onClose: () =
             type="button"
             onClick={doAssign}
             disabled={picked.size === 0 || addMut.isPending}
-            className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-50 text-white rounded-md text-sm font-semibold"
+            className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-md text-xs font-medium"
           >
-            <Plus size={14} /> Assign {picked.size > 0 ? `(${picked.size})` : ""}
+            <Plus size={13} /> Assign {picked.size > 0 ? `(${picked.size})` : ""}
           </button>
         </div>
 
@@ -1037,7 +1033,7 @@ function AssignmentEditor({ group, onClose }: { group: LeaveGroup; onClose: () =
       </div>
 
       <div className="flex justify-end pt-3 border-t border-gray-100 mt-3">
-        <button type="button" onClick={onClose} className="px-4 py-2 border border-[var(--border)] rounded-md text-sm text-gray-700 hover:bg-gray-50">Close</button>
+        <button type="button" onClick={onClose} className="px-3 py-1.5 border border-[var(--border)] rounded-md text-xs font-medium text-gray-700 hover:bg-gray-50">Close</button>
       </div>
     </Modal>
   );
@@ -1050,8 +1046,8 @@ function SubTab({ active, onClick, icon, label }: { active: boolean; onClick: ()
       onClick={onClick}
       data-active={active}
       className={clsx(
-        "tab-underline inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold -mb-px",
-        active ? "text-[#2563eb]" : "text-gray-500 hover:text-gray-800",
+        "tab-underline inline-flex items-center gap-1 px-2.5 py-1.5 text-[13px] font-semibold -mb-px",
+        active ? "text-[#16a34a]" : "text-gray-500 hover:text-gray-800",
       )}
     >
       {icon} {label}

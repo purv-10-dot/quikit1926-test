@@ -52,11 +52,20 @@ export default function TakeSurveyPage() {
       };
       return api.post(`/api/v1/hrms/engage/surveys/${params.id}/respond`, payload);
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       setSubmitted(true);
       toast.success("Thanks for your response");
+      // Redirect: straight to the dashboard when nothing else is pending,
+      // otherwise back to the list to take the next survey. Exclude the survey
+      // just submitted (anonymous ones stay flagged un-responded server-side).
+      try {
+        const res = await api.get<{ id: string; hasResponded: boolean }[]>("/api/v1/hrms/engage/surveys/my");
+        const pending = (res.data ?? []).filter((s) => !s.hasResponded && s.id !== params.id);
+        router.push(pending.length === 0 ? "/dashboard" : "/engage/surveys/my");
+      } catch {
+        router.push("/engage/surveys/my");
+      }
     },
-    onError: (e: Error) => toast.error("Submission failed", e.message),
   });
 
   const requiredMissing = questions.some((q, i) => q.isRequired !== false && (answers[i] === undefined || answers[i] === null || answers[i] === ""));
@@ -70,9 +79,9 @@ export default function TakeSurveyPage() {
   if (survey.status !== "SurveyActive") {
     return (
       <div className="surface-card p-10 text-center">
-        <p className="font-serif-display text-xl font-bold text-gray-900">Not accepting responses</p>
-        <p className="text-sm text-gray-500 mt-2">This survey is {survey.status.replace("Survey", "").toLowerCase()}.</p>
-        <Link href="/engage/surveys/my" className="inline-block mt-4 text-sm text-blue-600 hover:underline">← Back to my surveys</Link>
+        <p className="font-serif-display text-[13px] font-semibold text-gray-900">Not accepting responses</p>
+        <p className="text-xs text-gray-500 mt-2">This survey is {survey.status.replace("Survey", "").toLowerCase()}.</p>
+        <Link href="/engage/surveys/my" className="inline-block mt-4 text-xs text-green-600 hover:underline">← Back to my surveys</Link>
       </div>
     );
   }
@@ -83,9 +92,9 @@ export default function TakeSurveyPage() {
         <div className="w-16 h-16 rounded-2xl bg-emerald-50 flex items-center justify-center mx-auto mb-4">
           <CheckCircle2 size={28} className="text-emerald-600" />
         </div>
-        <h2 className="font-serif-display text-2xl font-bold text-gray-900">Response received</h2>
-        <p className="text-sm text-gray-500 mt-2">Thanks for taking the time. Your input helps shape what comes next.</p>
-        <Link href="/engage/surveys/my" className="inline-flex items-center gap-1 mt-6 px-4 py-2 rounded-lg bg-[#16243A] text-white text-sm font-semibold hover:bg-[#1E3354]">
+        <h2 className="font-serif-display text-[13px] font-semibold text-gray-900">Response received</h2>
+        <p className="text-xs text-gray-500 mt-2">Thanks for taking the time. Your input helps shape what comes next.</p>
+        <Link href="/engage/surveys/my" className="inline-flex items-center gap-1 mt-6 px-3 py-1.5 rounded-lg bg-green-600 text-white text-xs font-medium hover:bg-[#15803d]">
           Back to my surveys
         </Link>
       </div>
@@ -94,19 +103,19 @@ export default function TakeSurveyPage() {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <Link href="/engage/surveys/my" className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900 mb-4">
+      <Link href="/engage/surveys/my" className="inline-flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 mb-4">
         <ArrowLeft size={14} /> My surveys
       </Link>
 
       {/* Header */}
-      <div className="surface-card p-6 mb-5">
+      <div className="surface-card p-4 mb-4">
         <div className="flex items-start gap-4">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1E3A8A] to-[#2563EB] flex items-center justify-center shrink-0 text-white shadow-md">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#14532d] to-[#16a34a] flex items-center justify-center shrink-0 text-white shadow-md">
             <ClipboardList size={20} />
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold uppercase tracking-wider ring-1 ring-blue-200">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-green-50 text-green-700 text-[10px] font-bold uppercase tracking-wider ring-1 ring-green-200">
                 {survey.type.replace("Survey", "")}
               </span>
               {survey.isAnonymous && (
@@ -115,7 +124,7 @@ export default function TakeSurveyPage() {
                 </span>
               )}
             </div>
-            <h1 className="font-serif-display text-2xl font-bold text-gray-900 mt-1.5">{survey.title}</h1>
+            <h1 className="text-page-title text-gray-900 mt-1.5">{survey.title}</h1>
             <p className="text-xs text-gray-500 mt-1">
               {questions.length} {questions.length === 1 ? "question" : "questions"} · Closes{" "}
               {new Date(survey.endDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
@@ -136,13 +145,13 @@ export default function TakeSurveyPage() {
         className="space-y-4"
       >
         {questions.map((q, i) => (
-          <div key={i} className="surface-card p-5">
+          <div key={i} className="surface-card p-4">
             <div className="flex items-start gap-3 mb-4">
-              <span className="w-7 h-7 rounded-full bg-blue-50 text-blue-700 text-xs font-bold flex items-center justify-center shrink-0">
+              <span className="w-7 h-7 rounded-full bg-green-50 text-green-700 text-xs font-bold flex items-center justify-center shrink-0">
                 {i + 1}
               </span>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-gray-900">
+                <p className="text-[13px] font-semibold text-gray-900">
                   {q.text}
                   {q.isRequired !== false && <span className="text-rose-500 ml-1">*</span>}
                 </p>
@@ -161,9 +170,9 @@ export default function TakeSurveyPage() {
           <button
             type="submit"
             disabled={requiredMissing || submitMut.isPending}
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-[#1E3A8A] to-[#2563EB] text-white rounded-lg text-sm font-semibold shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            className="inline-flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-[#14532d] to-[#16a34a] text-white rounded-lg text-xs font-medium shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           >
-            <Send size={14} />
+            <Send size={13} />
             {submitMut.isPending ? "Submitting…" : "Submit response"}
           </button>
         </div>
@@ -213,7 +222,7 @@ function QuestionInput({
             type="button"
             onClick={() => onChange(n)}
             className={`min-w-[40px] h-10 px-3 rounded-lg border-2 text-sm font-semibold transition ${
-              v === n ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-600 hover:border-gray-300"
+              v === n ? "border-green-500 bg-green-50 text-green-700" : "border-gray-200 text-gray-600 hover:border-gray-300"
             }`}
           >
             {n}
@@ -261,16 +270,16 @@ function QuestionInput({
           <label
             key={opt}
             className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition ${
-              value === opt ? "border-blue-500 bg-blue-50/60" : "border-gray-200 hover:border-gray-300"
+              value === opt ? "border-green-500 bg-green-50/60" : "border-gray-200 hover:border-gray-300"
             }`}
           >
             <input
               type="radio"
               checked={value === opt}
               onChange={() => onChange(opt)}
-              className="text-blue-600"
+              className="text-green-600"
             />
-            <span className="text-sm text-gray-800">{opt}</span>
+            <span className="text-xs text-gray-800">{opt}</span>
           </label>
         ))}
       </div>
@@ -291,16 +300,16 @@ function QuestionInput({
             <label
               key={opt}
               className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition ${
-                checked ? "border-blue-500 bg-blue-50/60" : "border-gray-200 hover:border-gray-300"
+                checked ? "border-green-500 bg-green-50/60" : "border-gray-200 hover:border-gray-300"
               }`}
             >
               <input
                 type="checkbox"
                 checked={checked}
                 onChange={() => toggle(opt)}
-                className="rounded text-blue-600"
+                className="rounded text-green-600"
               />
-              <span className="text-sm text-gray-800">{opt}</span>
+              <span className="text-xs text-gray-800">{opt}</span>
             </label>
           );
         })}
@@ -315,7 +324,7 @@ function QuestionInput({
       onChange={(e) => onChange(e.target.value)}
       rows={3}
       placeholder="Type your answer…"
-      className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 resize-none"
+      className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500 resize-none"
     />
   );
 }

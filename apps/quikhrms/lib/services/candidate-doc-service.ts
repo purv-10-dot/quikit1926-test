@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import type { DocumentBundle } from "@quikit/database";
 import { generateCandidateDocToken, CANDIDATE_DOC_EXPIRY_DAYS } from "@/lib/services/candidate-doc-token";
-import { queueEmail } from "@/lib/services/mailer";
+import { resolveAndSend } from "@/lib/email/resolve";
 import { buildCandidateDocRequestEmail } from "@/lib/email-templates/candidate-document-request";
 import { ensureCandidateDocDefaults } from "@/lib/services/candidate-doc-setup";
 import { whereEmployeeHasAnyRole, sortByMaxRolePriorityDesc, appRolesNameSelect } from "@/lib/rbac/queries";
@@ -19,8 +19,15 @@ export async function triggerCandidateDocBundle(
   bundle: DocumentBundle,
   actorUserId?: string | null,
   documentTypeIds?: string[] | null,
+  submissionDeadline?: Date | string | null,
 ): Promise<TriggerResult> {
   await ensureCandidateDocDefaults(orgId, actorUserId ?? undefined);
+
+  // undefined → caller didn't send a deadline (leave as-is); null/empty → clear;
+  // value → set. Kept separate so we can spread it conditionally into writes.
+  const deadlineVal: Date | null | undefined =
+    submissionDeadline === undefined ? undefined : (submissionDeadline ? new Date(submissionDeadline) : null);
+  const deadlineData = deadlineVal !== undefined ? { submissionDeadline: deadlineVal } : {};
 
   const app = await prisma.jobApplication.findFirst({
     where: { id: applicationId, orgId, deletedAt: null },
@@ -42,6 +49,21 @@ export async function triggerCandidateDocBundle(
     reused = true;
   }
 
+  // Existing PENDING request → this call is an "update / re-request": refresh the
+  // selected doc list and deadline before we regenerate the link + re-send mail.
+  if (request && request.status === "Pending") {
+    request = await prisma.candidateDocumentRequest.update({
+      where: { id: request.id },
+      data: {
+        ...(documentTypeIds && documentTypeIds.length
+          ? { selectedDocTypeIds: documentTypeIds as unknown as object }
+          : {}),
+        ...deadlineData,
+        updatedBy: actorUserId ?? null,
+      },
+    });
+  }
+
   if (!request || request.status !== "Pending") {
     if (request) {
       // Regenerate token on a resend for Pending-only; for Completed don't recreate
@@ -60,6 +82,7 @@ export async function triggerCandidateDocBundle(
             token: placeholder,
             tokenExpiresAt: new Date(Date.now() + CANDIDATE_DOC_EXPIRY_DAYS * 86400000),
             selectedDocTypeIds: selectedPayload ? (selectedPayload as unknown as object) : undefined,
+            ...deadlineData,
           },
         })
       : await prisma.candidateDocumentRequest.create({
@@ -69,6 +92,7 @@ export async function triggerCandidateDocBundle(
             token: placeholder,
             tokenExpiresAt: new Date(Date.now() + CANDIDATE_DOC_EXPIRY_DAYS * 86400000),
             selectedDocTypeIds: selectedPayload ? (selectedPayload as unknown as object) : undefined,
+            ...deadlineData,
             createdBy: actorUserId ?? null,
             updatedBy: actorUserId ?? null,
           },
@@ -114,7 +138,7 @@ export async function triggerCandidateDocBundle(
   const base = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "";
   const portalUrl = `${base}/candidate-documents/${token}`;
 
-  const tpl = buildCandidateDocRequestEmail({
+  const docData = {
     candidateName: `${app.candidate.firstName} ${app.candidate.lastName}`.trim(),
     jobTitle: app.requisition.title,
     bundle,
@@ -122,16 +146,40 @@ export async function triggerCandidateDocBundle(
     expiryDays: CANDIDATE_DOC_EXPIRY_DAYS,
     docs: docs.map((d) => ({ name: d.name, isRequired: d.isRequired, helpText: d.helpText })),
     companyName: company?.companyName ?? "Our Company",
+    submissionDeadline: request.submissionDeadline
+      ? new Date(request.submissionDeadline).toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" })
+      : null,
     senderName: hr ? `${hr.firstName} ${hr.lastName}`.trim() : "HR Department",
     senderPhone: hr?.workPhone ?? null,
     startDate: app.offerJoiningDate ? new Date(app.offerJoiningDate).toLocaleDateString("en-IN", { weekday: "long", day: "2-digit", month: "long", year: "numeric" }) : null,
     location: addressBits || null,
     acceptanceDeadline: app.offerExpiresAt ? new Date(app.offerExpiresAt).toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" }) : null,
-  });
+  };
+  const docsListHtml = `<ul>${docData.docs
+    .map((d) => `<li>${d.name}${d.isRequired ? "" : " (optional)"}</li>`)
+    .join("")}</ul>`;
 
   // mailed = queued onto the email queue; the worker handles delivery + retries.
   try {
-    await queueEmail(orgId, { to: app.candidate.email, subject: tpl.subject, html: tpl.html, kind: "candidate-doc.request" });
+    await resolveAndSend(orgId, {
+      key: "candidate-doc.request",
+      to: app.candidate.email,
+      vars: {
+        candidateName: docData.candidateName,
+        jobTitle: docData.jobTitle,
+        bundle: docData.bundle,
+        portalUrl: docData.portalUrl,
+        expiryDays: docData.expiryDays,
+        senderName: docData.senderName,
+        senderPhone: docData.senderPhone ?? "",
+        startDate: docData.startDate ?? "",
+        location: docData.location ?? "",
+        submissionDeadline: docData.submissionDeadline ?? "",
+        docsListHtml,
+        companyName: docData.companyName,
+      },
+      fallback: () => buildCandidateDocRequestEmail(docData),
+    });
     return { requestId: request.id, reused, mailed: true };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "enqueue failed";
@@ -226,7 +274,8 @@ export async function sendCandidateDocReminder(
   const base = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "";
   const portalUrl = `${base}/candidate-documents/${token}`;
 
-  const tpl = buildCandidateDocRequestEmail({
+  const reminderLevel = ((request.reminderCount ?? 0) >= 2 ? 3 : (request.reminderCount ?? 0) === 1 ? 2 : 1) as 1 | 2 | 3;
+  const docData = {
     candidateName: `${app.candidate.firstName} ${app.candidate.lastName}`.trim(),
     jobTitle: app.requisition.title,
     bundle,
@@ -234,19 +283,40 @@ export async function sendCandidateDocReminder(
     expiryDays: CANDIDATE_DOC_EXPIRY_DAYS,
     docs: pendingDocs.map((d) => ({ name: d.name, isRequired: d.isRequired, helpText: d.helpText })),
     companyName: company?.companyName ?? "Our Company",
+    submissionDeadline: request.submissionDeadline
+      ? new Date(request.submissionDeadline).toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" })
+      : null,
     senderName: hr ? `${hr.firstName} ${hr.lastName}`.trim() : "HR Department",
     senderPhone: hr?.workPhone ?? null,
     startDate: app.offerJoiningDate ? new Date(app.offerJoiningDate).toLocaleDateString("en-IN", { weekday: "long", day: "2-digit", month: "long", year: "numeric" }) : null,
     location: addressBits || null,
     acceptanceDeadline: app.offerExpiresAt ? new Date(app.offerExpiresAt).toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" }) : null,
     isReminder: true,
-    reminderLevel: ((request.reminderCount ?? 0) >= 2 ? 3 : (request.reminderCount ?? 0) === 1 ? 2 : 1) as 1 | 2 | 3,
-  });
+    reminderLevel,
+  };
+  const docsListHtml = `<ul>${docData.docs
+    .map((d) => `<li>${d.name}${d.isRequired ? "" : " (optional)"}</li>`)
+    .join("")}</ul>`;
 
   let mailed = true;
   let mailError: string | undefined;
   try {
-    await queueEmail(orgId, { to: app.candidate.email, subject: tpl.subject, html: tpl.html, kind: "candidate-doc.reminder" });
+    await resolveAndSend(orgId, {
+      key: "candidate-doc.reminder",
+      to: app.candidate.email,
+      vars: {
+        candidateName: docData.candidateName,
+        jobTitle: docData.jobTitle,
+        bundle: docData.bundle,
+        portalUrl: docData.portalUrl,
+        expiryDays: docData.expiryDays,
+        reminderLevel,
+        submissionDeadline: docData.submissionDeadline ?? "",
+        docsListHtml,
+        companyName: docData.companyName,
+      },
+      fallback: () => buildCandidateDocRequestEmail(docData),
+    });
   } catch (err) {
     mailed = false;
     mailError = err instanceof Error ? err.message : "enqueue failed";

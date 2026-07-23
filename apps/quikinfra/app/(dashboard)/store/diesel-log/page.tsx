@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PageHeader, PageContainer } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { useDieselLogs } from "@/hooks/use-store";
@@ -22,8 +22,25 @@ export default function DieselLogPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { canAdd } = useMenuActions("/store/diesel-log");
 
-  const { data: result, isLoading } = useDieselLogs({});
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("logDate");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, sortBy, sortOrder, pageSize]);
+
+  const { data: result, isLoading } = useDieselLogs({
+    search: search || undefined,
+    page,
+    pageSize,
+    sortBy,
+    sortOrder,
+  });
   const data = result?.data ?? [];
+  const total = result?.total ?? 0;
 
   const { data: projectsData } = useProjects();
   const { data: machineryData } = useMachinery();
@@ -155,20 +172,20 @@ export default function DieselLogPage() {
 
   const columns: ColDef<DieselLogRow>[] = [
     { key: "logDate", label: "Date", type: "date", sortable: true },
-    { key: "machineryName", label: "Machine", sortable: true, searchable: true },
-    { key: "projectName", label: "Project", sortable: true, searchable: true },
-    { key: "openingReading", label: "Opening", type: "number", render: (row) => row.openingReading ?? "—" },
-    { key: "closingReading", label: "Closing", type: "number", render: (row) => row.closingReading ?? "—" },
+    { key: "machineryName", label: "Machine", sortable: false, searchable: true },
+    { key: "projectName", label: "Project", sortable: false, searchable: true },
+    { key: "openingReading", label: "Opening", type: "number", sortable: false, render: (row) => row.openingReading ?? "—" },
+    { key: "closingReading", label: "Closing", type: "number", sortable: false, render: (row) => row.closingReading ?? "—" },
     { key: "quantityIssued", label: "Qty", type: "number", sortable: true },
     {
-      key: "unitRate", label: "Rate", type: "number",
+      key: "unitRate", label: "Rate", type: "number", sortable: false,
       render: (row) => row.unitRate ? `₹ ${Number(row.unitRate).toLocaleString("en-IN")}` : "—",
     },
     {
-      key: "totalCost", label: "Cost", type: "number", sortable: true,
+      key: "totalCost", label: "Cost", type: "number", sortable: false,
       render: (row) => row.totalCost ? `₹ ${Number(row.totalCost).toLocaleString("en-IN")}` : "—",
     },
-    { key: "operatorName", label: "Operator", render: (row) => row.operatorName ?? "—" },
+    { key: "operatorName", label: "Operator", sortable: false, render: (row) => row.operatorName ?? "—" },
   ];
 
   return (
@@ -183,6 +200,18 @@ export default function DieselLogPage() {
           id="store-diesel-log"
           columns={columns}
           data={data as DieselLogRow[]}
+          loading={isLoading}
+          serverMode
+          serverTotal={total}
+          serverPage={page}
+          serverPageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          onSearchChange={setSearch}
+          onSortChange={(key, dir) => {
+            setSortBy(key);
+            setSortOrder(dir);
+          }}
           onAdd={canAdd ? () => setDrawerOpen(true) : undefined}
           addLabel="Log Entry"
         />

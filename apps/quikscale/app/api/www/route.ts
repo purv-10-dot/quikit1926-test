@@ -9,7 +9,7 @@ import { validationError } from "@/lib/api/validationError";
 import { findWWWDuplicate, wwwDuplicateMessage } from "@/lib/api/wwwDuplicate";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { audit, requestContext } from "@/lib/audit";
-import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
+import { rateLimitAsync, LIMITS } from "@/lib/api/rateLimit";
 import { notifyWWWAssignment } from "@/lib/services/wwwNotifications";
 import { isFeatureFlagEnabled } from "@/lib/utils/featureFlags";
 import { buildWwwScopeWhere } from "@/lib/api/wwwListQuery";
@@ -21,7 +21,8 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   const searchParams = req.nextUrl.searchParams;
   const search = searchParams.get("search") || undefined;
   const status = searchParams.get("status") || undefined;
-  const sortBy = searchParams.get("sortBy") || "createdAt";
+  const sortByParam = searchParams.get("sortBy");
+  const sortBy = sortByParam || "createdAt";
   // Default to newest-first so freshly created items land at the top of page 1
   // (matches KPI). Explicit ?sortOrder= from the client still wins.
   const sortOrder = (searchParams.get("sortOrder") || "desc") as "asc" | "desc";
@@ -77,8 +78,11 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
     createdAt: { createdAt: sortOrder },
   };
   // Stable `id` tie-breaker so equal-sort rows keep a deterministic order
-  // across pages.
-  const orderBy = [sortMap[sortBy] || { createdAt: sortOrder }, { id: "desc" }];
+  // across pages. Manual (drag-to-reorder) mode when no column sort is chosen:
+  // order by the shared `position` rank (nulls first so new rows stay on top).
+  const orderBy: Prisma.WWWItemOrderByWithRelationInput[] = sortByParam
+    ? [sortMap[sortBy] || { createdAt: sortOrder }, { id: "desc" }]
+    : [{ position: { sort: "asc", nulls: "first" } }, { createdAt: "desc" }, { id: "desc" }];
 
   const [items, total] = await Promise.all([
     db.wWWItem.findMany({
@@ -125,7 +129,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
 
 // POST /api/www — create a WWWItem
 export const POST = auth.create(async ({ orgId, userId }, req) => {
-  const rl = rateLimit({
+  const rl = await rateLimitAsync({
     routeKey: "www:create",
     clientKey: `${orgId}:${userId}`,
     limit: LIMITS.mutation.limit,

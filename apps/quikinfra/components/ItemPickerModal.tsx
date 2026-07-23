@@ -172,7 +172,7 @@ export function ItemPickerModal({
                       <span
                         className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
                           checked
-                            ? "bg-orange-500 border-orange-500 text-white"
+                            ? "bg-accent-500 border-accent-500 text-white"
                             : "bg-white border-gray-300"
                         }`}
                       >

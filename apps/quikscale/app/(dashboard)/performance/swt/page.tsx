@@ -226,7 +226,7 @@ export default function SWTPage() {
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
             <div className="px-6 pt-5 pb-3 border-b border-gray-100 flex-shrink-0">
               <h2 className="text-sm font-semibold text-gray-900">
-                {editingId ? "Edit entry" : `Add ${SWT_TYPE_CONFIG[modalType].label.slice(0, -1)}`}
+                {editingId ? "Edit entry" : `Add ${SWT_TYPE_CONFIG[modalType].singularLabel}`}
               </h2>
               <p className="text-[11px] text-gray-500 mt-0.5 italic leading-snug">{BOOK_QUESTION[modalType]}</p>
             </div>
@@ -244,24 +244,6 @@ export default function SWTPage() {
                     modalType === "strength" ? "e.g. Strong brand recognition in the SMB market"
                     : modalType === "weakness" ? "e.g. Limited enterprise sales capability"
                     : "e.g. AI adoption accelerating across our target segments"
-                  }
-                  className="w-full text-xs border border-gray-200 rounded-md px-2.5 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-accent-400"
-                />
-              </div>
-
-              {/* Impact / why (contextual label, optional) */}
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">
-                  {IMPACT_LABEL[modalType]} <span className="text-gray-400 font-normal">(optional)</span>
-                </label>
-                <textarea
-                  value={formImpact}
-                  onChange={(e) => setFormImpact(e.target.value)}
-                  rows={3}
-                  placeholder={
-                    modalType === "strength" ? "Why this matters — what success it has driven."
-                    : modalType === "weakness" ? "Why it's structural / unlikely to change soon."
-                    : "How this trend lands on your industry or organization."
                   }
                   className="w-full text-xs border border-gray-200 rounded-md px-2.5 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-accent-400"
                 />
@@ -286,7 +268,7 @@ export default function SWTPage() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Direction</label>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Trend Type</label>
                     <div className="flex gap-2">
                       {(["positive", "negative", "neutral"] as TrendDirection[]).map((dir) => {
                         const dcfg = TREND_DIRECTION_CONFIG[dir];
@@ -307,6 +289,21 @@ export default function SWTPage() {
                         );
                       })}
                     </div>
+                  </div>
+
+                  {/* Trend-only "last question" — strengths & weaknesses have no
+                      why/impact prompt (just the content field). */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      {IMPACT_LABEL.trend} <span className="text-gray-400 font-normal">(optional)</span>
+                    </label>
+                    <textarea
+                      value={formImpact}
+                      onChange={(e) => setFormImpact(e.target.value)}
+                      rows={3}
+                      placeholder="How this trend lands on your industry or organization."
+                      className="w-full text-xs border border-gray-200 rounded-md px-2.5 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-accent-400"
+                    />
                   </div>
                 </>
               )}
@@ -389,7 +386,7 @@ function SectionCard({
           onClick={onAdd}
           className="w-full flex items-center justify-center gap-1.5 py-2 border border-dashed border-gray-200 rounded-lg text-xs text-gray-400 hover:border-gray-300 hover:text-gray-600 transition-colors mt-1"
         >
-          <Plus className="h-3.5 w-3.5" /> Add {cfg.label.slice(0, -1)}
+          <Plus className="h-3.5 w-3.5" /> Add {cfg.singularLabel}
         </button>
       </div>
     </div>

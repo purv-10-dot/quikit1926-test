@@ -104,6 +104,8 @@ export interface ListJobCardsOptions {
   equipmentId?: string;
   status?: string;
   projectIds?: string[];
+  search?: string;
+  orderBy?: Prisma.CnMaintenanceJobCardOrderByWithRelationInput[];
   take?: number;
   skip?: number;
 }
@@ -116,6 +118,16 @@ function buildWhere(opts: ListJobCardsOptions): Prisma.CnMaintenanceJobCardWhere
   if (opts.projectId) where.projectId = opts.projectId;
   if (opts.equipmentId) where.equipmentId = opts.equipmentId;
   if (opts.status && opts.status !== "all") where.status = opts.status;
+  const search = opts.search?.trim();
+  if (search) {
+    where.OR = [
+      { jobNumber: { contains: search, mode: "insensitive" } },
+      { reportedProblem: { contains: search, mode: "insensitive" } },
+      { remarks: { contains: search, mode: "insensitive" } },
+      { equipment: { code: { contains: search, mode: "insensitive" } } },
+      { equipment: { name: { contains: search, mode: "insensitive" } } },
+    ];
+  }
   return where;
 }
 
@@ -125,7 +137,7 @@ export async function listJobCards(opts: ListJobCardsOptions) {
     db.cnMaintenanceJobCard.findMany({
       where,
       include: cardInclude,
-      orderBy: [{ serviceDate: "desc" }, { createdAt: "desc" }],
+      orderBy: opts.orderBy ?? [{ serviceDate: "desc" }, { createdAt: "desc" }],
       ...(opts.take != null ? { take: opts.take, skip: opts.skip ?? 0 } : {}),
     }),
     db.cnMaintenanceJobCard.count({ where }),

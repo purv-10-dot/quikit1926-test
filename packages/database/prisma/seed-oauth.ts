@@ -267,6 +267,22 @@ const APPS = [
       scopes: ["openid", "profile", "email", "tenant"],
     },
   },
+  {
+    slug: "quikchat",
+    name: "QuikChat",
+    description: "Team messaging — channels, DMs, calls, notifications, calendar.",
+    baseUrl: resolveAppUrl("QUIKCHAT_URL", "http://localhost:3011"),
+    iconUrl: `${QUIKIT_BASE}/app-icons/quikchat.svg`,
+    status: "active",
+    oauth: {
+      clientId: "quikchat",
+      clientSecretPlain: resolveClientSecret("QUIKCHAT_OAUTH_CLIENT_SECRET", "quikchat-dev-secret-change-in-prod"),
+      redirectUris: [
+        "http://localhost:3011/api/auth/callback/quikit",
+      ],
+      scopes: ["openid", "profile", "email", "tenant"],
+    },
+  },
 ];
 
 async function main() {

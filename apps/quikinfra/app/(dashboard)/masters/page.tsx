@@ -9,7 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   FolderKanban, Package, Boxes, Truck, HardHat, Building2,
   MapPin, Calculator, Receipt, CreditCard,
-  Users, ListTodo, BarChart3, Hammer, Globe, CalendarCheck, FileText,
+  Users, ListTodo, BarChart3, Hammer, Globe, FileText,
   ArrowUpRight,
 } from "lucide-react";
 import { PageHeader, PageContainer } from "@/components/PageShell";
@@ -30,7 +30,6 @@ const MASTERS = [
   { key: "costCenters",    label: "Cost Centers",      href: "/masters/cost-centers",     icon: BarChart3 },
   { key: "machinery",      label: "Machinery",         href: "/masters/machinery",        icon: Hammer },
   { key: "companies",      label: "Companies",         href: "/masters/companies",        icon: Globe },
-  { key: "financialYears", label: "Financial Years",   href: "/masters/financial-years",  icon: CalendarCheck },
   { key: "terms",          label: "Terms & Conditions",href: "/masters/terms",            icon: FileText },
 ];
 
@@ -63,18 +62,18 @@ export default function MastersIndexPage() {
             <button
               key={m.href}
               onClick={() => router.push(m.href)}
-              className="group relative flex flex-col items-start gap-3 p-5 rounded-xl bg-white border border-slate-200 shadow-soft hover:shadow-md hover:border-orange-200 hover:-translate-y-0.5 transition-all text-left overflow-hidden"
+              className="group relative flex flex-col items-start gap-3 p-5 rounded-xl bg-white border border-slate-200 shadow-soft hover:shadow-md hover:border-accent-200 hover:-translate-y-0.5 transition-all text-left overflow-hidden"
             >
               {/* hover-revealed accent stripe */}
               <span
                 aria-hidden
-                className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-orange-400 via-orange-500 to-orange-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-accent-400 via-accent-500 to-accent-600 opacity-0 group-hover:opacity-100 transition-opacity"
               />
               <div className="flex w-full items-start justify-between">
-                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-orange-50 to-orange-100 text-orange-600 flex items-center justify-center ring-1 ring-orange-100 group-hover:from-orange-500 group-hover:to-orange-600 group-hover:text-white group-hover:ring-orange-300 transition-colors">
+                <div className="w-11 h-11 rounded-xl bg-gradient-to-br bg-accent-50 text-accent-600 flex items-center justify-center ring-1 ring-accent-100 group-hover:from-accent-500 group-hover:to-accent-600 group-hover:text-white group-hover:ring-accent-300 transition-colors">
                   <m.icon className="w-5 h-5" />
                 </div>
-                <ArrowUpRight className="w-4 h-4 text-slate-300 group-hover:text-orange-500 transition-colors" />
+                <ArrowUpRight className="w-4 h-4 text-slate-300 group-hover:text-accent-500 transition-colors" />
               </div>
               <div>
                 <p className="text-sm font-semibold text-slate-900">{m.label}</p>

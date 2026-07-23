@@ -82,13 +82,13 @@ export default function GivingPage() {
   const totalExempt = rows.filter((r) => r.status === "Verified").reduce((s, r) => s + Number(r.exemptAmount ?? 0), 0);
 
   return (
-    <div className="w-full px-6 py-6 space-y-4">
+    <div className="w-full px-5 py-4 space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-start gap-3">
-          <Heart size={28} className="text-[#3b82f6] mt-1.5" />
+          <Heart size={28} className="text-[#22c55e] mt-1.5" />
           <div>
-            <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900 leading-tight">Giving</h1>
-            <p className="text-sm text-gray-500 mt-1">Section 80G donations — tax deductions on charitable contributions.</p>
+            <h1 className="text-page-title text-gray-900 leading-tight">Giving</h1>
+            <p className="text-xs text-gray-500 mt-1">Section 80G donations — tax deductions on charitable contributions.</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -104,14 +104,14 @@ export default function GivingPage() {
           />
           <button
             onClick={() => setNewOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#16243A] hover:bg-[#1E3354] text-white rounded-md text-sm font-semibold shadow-sm"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-xs font-medium shadow-sm"
           >
-            <Plus size={14} /> Record Donation
+            <Plus size={13} /> Record Donation
           </button>
         </div>
       </div>
 
-      <div className="rounded-md border border-[#dbeafe] bg-[#dbeafe] px-4 py-3 text-xs text-[#1d4ed8] flex items-start gap-2">
+      <div className="rounded-md border border-[#dcfce7] bg-[#dcfce7] px-4 py-3 text-xs text-[#15803d] flex items-start gap-2">
         <Info size={14} className="mt-0.5 shrink-0" />
         <div>
           <p className="font-semibold">Section 80G</p>
@@ -126,7 +126,7 @@ export default function GivingPage() {
       </div>
 
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
           <div className="flex gap-2">
             {STATUSES.map((s) => (
               <button
@@ -134,7 +134,7 @@ export default function GivingPage() {
                 onClick={() => setStatus(s)}
                 className={clsx(
                   "px-3 py-1 text-xs rounded-full border transition",
-                  status === s ? "bg-[#16243A] text-white border-[#3b82f6]" : "bg-white text-gray-600 border-gray-300 hover:border-[#93c5fd]",
+                  status === s ? "bg-green-600 text-white border-[#22c55e]" : "bg-white text-gray-600 border-gray-300 hover:border-[#86efac]",
                 )}
               >{s}</button>
             ))}
@@ -147,11 +147,11 @@ export default function GivingPage() {
         {isLoading ? (
           <SkeletonTable rows={5} cols={5} />
         ) : rows.length === 0 ? (
-          <div className="py-10 text-center text-sm text-gray-500">No {status.toLowerCase()} donations for FY {fy}.</div>
+          <div className="py-10 text-center text-xs text-gray-500">No {status.toLowerCase()} donations for FY {fy}.</div>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full text-xs">
             <thead>
-              <tr className="text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">
+              <tr className="text-table-head font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">
                 <th className="text-left py-2 px-3">Employee</th>
                 <th className="text-left py-2 px-3">Donee</th>
                 <th className="text-left py-2 px-3">Date</th>
@@ -167,7 +167,7 @@ export default function GivingPage() {
               {rows.map((r, i) => (
                 <tr key={r.id} className="row-stagger border-b border-gray-50 hover:bg-gray-50" style={{ ["--i" as never]: Math.min(i, 10) }}>
                   <td className="py-3 px-3">
-                    <p className="font-medium text-gray-900">{r.employee ? `${r.employee.firstName} ${r.employee.lastName}` : "Unknown"}</p>
+                    <p className="text-[13px] font-medium text-gray-900">{r.employee ? `${r.employee.firstName} ${r.employee.lastName}` : "Unknown"}</p>
                     <p className="text-xs text-gray-500">{r.employee?.employeeCode} · PAN {r.donorPAN ?? "—"}</p>
                   </td>
                   <td className="py-3 px-3">
@@ -175,14 +175,14 @@ export default function GivingPage() {
                     <p className="text-xs text-gray-500">PAN {r.doneePAN ?? "—"}</p>
                   </td>
                   <td className="py-3 px-3 text-gray-700">{new Date(r.donationDate).toLocaleDateString("en-IN")}</td>
-                  <td className="py-3 px-3 text-right text-gray-900">₹{INR.format(Number(r.amount))}</td>
+                  <td className="py-3 px-3 text-right text-sm text-gray-900">₹{INR.format(Number(r.amount))}</td>
                   <td className="py-3 px-3 text-right text-gray-700">{Number(r.exemptionPercent)}%</td>
-                  <td className="py-3 px-3 text-right text-gray-900 font-semibold">
+                  <td className="py-3 px-3 text-right text-sm text-gray-900 font-semibold">
                     {r.exemptAmount != null ? `₹${INR.format(Number(r.exemptAmount))}` : "—"}
                   </td>
                   <td className="py-3 px-3 text-xs text-gray-600">{r.receiptNumber ?? "—"}</td>
                   <td className="py-3 px-3">
-                    <span className={clsx("text-xs font-semibold px-2 py-0.5 rounded", statusCls(r.status))}>{r.status}</span>
+                    <span className={clsx("text-[11px] font-medium px-2 py-0.5 rounded", statusCls(r.status))}>{r.status}</span>
                   </td>
                   <td className="py-3 px-3 text-right">
                     {r.status === "Submitted" && (
@@ -222,7 +222,7 @@ export default function GivingPage() {
               setRejectTarget(null);
             }
           }}
-          className="p-5 space-y-3"
+          className="p-4 space-y-3"
         >
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Rejection reason <span className="text-red-500">*</span></label>
@@ -233,12 +233,12 @@ export default function GivingPage() {
               autoFocus
               required
               placeholder="Explain why this donation is being rejected..."
-              className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[#16243A]"
+              className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[#166534]"
             />
           </div>
           <div className="flex justify-end gap-2 pt-1">
-            <button type="button" onClick={() => setRejectTarget(null)} className="px-3 py-1.5 text-sm border border-[var(--border)] rounded-md hover:bg-gray-50">Cancel</button>
-            <button type="submit" disabled={!rejectReason.trim() || verifyMut.isPending} className="px-4 py-1.5 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50">
+            <button type="button" onClick={() => setRejectTarget(null)} className="px-3 py-1.5 text-xs font-medium border border-[var(--border)] rounded-md hover:bg-gray-50">Cancel</button>
+            <button type="submit" disabled={!rejectReason.trim() || verifyMut.isPending} className="px-3 py-1.5 text-xs font-medium bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50">
               {verifyMut.isPending ? "Rejecting..." : "Reject"}
             </button>
           </div>
@@ -281,6 +281,7 @@ function NewDonationForm({ defaultFY, onCancel, onCreated }: { defaultFY: string
   const mut = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.post("/api/v1/hrms/payroll/giving", body),
     onSuccess: onCreated,
+    meta: { suppressGlobalError: true },
     onError: (e: Error) => setErr(e.message),
   });
 
@@ -298,7 +299,7 @@ function NewDonationForm({ defaultFY, onCancel, onCreated }: { defaultFY: string
         fileUrl: form.fileUrl || null,
         notes: form.notes || null,
       });
-    }} className="p-5 space-y-3">
+    }} className="p-4 space-y-3">
       <div className="grid grid-cols-2 gap-3">
         <EmployeeSelect
           label="Employee"
@@ -378,11 +379,11 @@ function NewDonationForm({ defaultFY, onCancel, onCreated }: { defaultFY: string
         <span>Cash donations above ₹2,000 are not eligible for 80G deduction (Section 80G(5D)). Use cheque/bank transfer/digital payment.</span>
       </div>
 
-      {err && <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">{err}</p>}
+      {err && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">{err}</p>}
 
       <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
-        <button type="button" onClick={onCancel} className="px-4 py-2 border border-[var(--border)] bg-white hover:bg-gray-50 text-gray-700 rounded-md text-sm font-medium">Cancel</button>
-        <button type="submit" disabled={mut.isPending} className="px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 text-white rounded-md text-sm font-semibold shadow-sm">
+        <button type="button" onClick={onCancel} className="px-3 py-1.5 border border-[var(--border)] bg-white hover:bg-gray-50 text-gray-700 rounded-md text-xs font-medium">Cancel</button>
+        <button type="submit" disabled={mut.isPending} className="px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-md text-xs font-medium shadow-sm">
           {mut.isPending ? "Saving..." : "Submit"}
         </button>
       </div>

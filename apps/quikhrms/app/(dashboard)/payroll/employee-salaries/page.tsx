@@ -23,7 +23,7 @@ interface Row {
 interface Template { id: string; name: string; code: string; isDefault: boolean; }
 
 const INR = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
-const inputCls = "w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[#16243A] focus:border-transparent";
+const inputCls = "w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[#166534] focus:border-transparent";
 
 export default function EmployeeSalariesPage() {
   const api = useApiClient();
@@ -39,13 +39,13 @@ export default function EmployeeSalariesPage() {
   const assigned = rows.filter((r) => r.salary).length;
 
   return (
-    <div className="w-full px-6 py-6 space-y-4">
+    <div className="w-full px-5 py-4 space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-start gap-3">
-          <Users size={28} className="text-[#3b82f6] mt-1.5" />
+          <Users size={28} className="text-[#22c55e] mt-1.5" />
           <div>
-            <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900 leading-tight">Employee salaries</h1>
-            <p className="text-sm text-gray-500 mt-1">{assigned}/{rows.length} employees have a salary assigned.</p>
+            <h1 className="text-page-title text-gray-900 leading-tight">Employee salaries</h1>
+            <p className="text-xs text-gray-500 mt-1">{assigned}/{rows.length} employees have a salary assigned.</p>
           </div>
         </div>
       </div>
@@ -58,36 +58,36 @@ export default function EmployeeSalariesPage() {
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">
-                <th className="text-left py-2 px-3">Employee</th>
-                <th className="text-left py-2 px-3">Department</th>
-                <th className="text-left py-2 px-3">Designation</th>
-                <th className="text-left py-2 px-3">Template</th>
-                <th className="text-right py-2 px-3">CTC (Annual)</th>
-                <th className="text-left py-2 px-3">Effective From</th>
+              <tr className="text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em] border-b border-gray-200">
+                <th className="text-left py-2.5 px-4">Employee</th>
+                <th className="text-left py-2.5 px-4">Department</th>
+                <th className="text-left py-2.5 px-4">Designation</th>
+                <th className="text-left py-2.5 px-4">Template</th>
+                <th className="text-right py-2.5 px-4">CTC (Annual)</th>
+                <th className="text-left py-2.5 px-4">Effective From</th>
                 <th className="w-24" />
               </tr>
             </thead>
             <tbody>
               {rows.map((r, i) => (
                 <tr key={r.employeeId} className="row-stagger border-b border-gray-50 hover:bg-gray-50" style={{ ["--i" as never]: Math.min(i, 10) }}>
-                  <td className="py-3 px-3">
-                    <p className="font-medium text-gray-900">{r.name}</p>
+                  <td className="py-2.5 px-4">
+                    <p className="text-[13px] font-medium text-gray-900">{r.name}</p>
                     <p className="text-xs text-gray-500">{r.employeeCode} · {r.workEmail}</p>
                   </td>
-                  <td className="py-3 px-3 text-gray-700">{r.department ?? "—"}</td>
-                  <td className="py-3 px-3 text-gray-700">{r.designation ?? "—"}</td>
-                  <td className="py-3 px-3 text-gray-700">{r.salary?.structure?.name ?? <span className="text-gray-400">—</span>}</td>
-                  <td className="py-3 px-3 text-right text-gray-900">
+                  <td className="py-2.5 px-4 text-xs text-gray-700">{r.department ?? "—"}</td>
+                  <td className="py-2.5 px-4 text-xs text-gray-700">{r.designation ?? "—"}</td>
+                  <td className="py-2.5 px-4 text-xs text-gray-700">{r.salary?.structure?.name ?? <span className="text-gray-400">—</span>}</td>
+                  <td className="py-2.5 px-4 text-right text-gray-900">
                     {r.salary ? `₹${INR.format(Number(r.salary.ctc))}` : <span className="text-gray-400">—</span>}
                   </td>
-                  <td className="py-3 px-3 text-gray-700">
+                  <td className="py-2.5 px-4 text-xs text-gray-700">
                     {r.salary ? new Date(r.salary.effectiveFrom).toLocaleDateString("en-IN") : "—"}
                   </td>
-                  <td className="py-3 px-3 text-right">
+                  <td className="py-2.5 px-4 text-right">
                     <button
                       onClick={() => setAssignTarget(r)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs bg-[#16243A] hover:bg-[#1E3354] text-white rounded shadow-sm"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-normal bg-green-600 hover:bg-green-700 text-white rounded shadow-sm"
                     >
                       {r.salary ? "Revise" : <><Plus size={12} /> Assign</>}
                     </button>
@@ -144,6 +144,7 @@ function AssignForm({ row, onCancel, onSaved }: { row: Row; onCancel: () => void
   const mut = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.post("/api/v1/hrms/payroll/employee-salaries", body),
     onSuccess: onSaved,
+    meta: { suppressGlobalError: true },
     onError: (e: Error) => setErr(e.message),
   });
 
@@ -161,7 +162,7 @@ function AssignForm({ row, onCancel, onSaved }: { row: Row; onCancel: () => void
           revisionReason: form.revisionReason || null,
         });
       }}
-      className="p-5 space-y-4"
+      className="p-4 space-y-4"
     >
       <div className="rounded bg-gray-50 border border-gray-200 p-3 text-xs">
         <p className="font-semibold text-gray-900">{row.name}</p>
@@ -214,9 +215,9 @@ function AssignForm({ row, onCancel, onSaved }: { row: Row; onCancel: () => void
       {err && <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">{err}</p>}
 
       <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
-        <button type="button" onClick={onCancel} className="px-4 py-2 border border-[var(--border)] bg-white hover:bg-gray-50 text-gray-700 rounded-md text-sm font-medium">Cancel</button>
-        <button type="submit" disabled={mut.isPending} className="inline-flex items-center gap-1 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 text-white rounded-md text-sm font-semibold shadow-sm">
-          <Check size={14} /> {mut.isPending ? "Saving..." : "Save"}
+        <button type="button" onClick={onCancel} className="px-3 py-1.5 border border-[var(--border)] bg-white hover:bg-gray-50 text-gray-700 rounded-md text-xs font-medium">Cancel</button>
+        <button type="submit" disabled={mut.isPending} className="inline-flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-md text-xs font-medium shadow-sm">
+          <Check size={13} /> {mut.isPending ? "Saving..." : "Save"}
         </button>
       </div>
     </form>
@@ -257,7 +258,7 @@ function StatutoryPreview({
     <div className="rounded-lg ring-1 ring-gray-200 bg-gray-50/60 p-3">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-1.5">
-          <ShieldCheck size={13} className="text-[#16243A]" />
+          <ShieldCheck size={13} className="text-[#166534]" />
           <span className="text-xs font-bold text-gray-800 uppercase tracking-wide">
             Estimated monthly statutory deductions
           </span>
@@ -323,7 +324,7 @@ function DualPreviewCard({
       <div className="flex items-center justify-between mb-1.5">
         <span className="text-[10px] font-bold text-gray-600 uppercase tracking-wide">{title}</span>
         {!applicable && (
-          <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-700">
+          <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700">
             <XIcon size={8} /> Excluded
           </span>
         )}
@@ -360,13 +361,13 @@ function SinglePreviewCard({
       <div className="flex items-center justify-between mb-1.5">
         <span className="text-[10px] font-bold text-gray-600 uppercase tracking-wide">{title}</span>
         {!applicable && (
-          <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-700">
+          <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700">
             <XIcon size={8} /> Excluded
           </span>
         )}
       </div>
       <div className="flex-1 flex flex-col items-center justify-center text-center">
-        <p className={clsx("text-lg font-bold tabular-nums", applicable ? "text-gray-900" : "text-gray-400")}>
+        <p className={clsx("text-base font-bold tabular-nums", applicable ? "text-gray-900" : "text-gray-400")}>
           ₹{INR.format(amount)}
         </p>
         <p className="text-[10px] text-gray-500 mt-0.5">{subtitle}</p>

@@ -252,6 +252,7 @@ export async function POST(
               {
                 dprId: dpr.id,
                 dprLineId: line.id,
+                workOrderId: line.woId ?? undefined,
                 overrideFlag: false,
               },
             );

@@ -11,7 +11,7 @@ const ImportDataDrawer = dynamic(
   { ssr: false },
 );
 import { ProjectFormDrawer } from "./ProjectFormDrawer";
-import { useProjects, useUpdateProject, useDeleteProject, useCreateProject, useCompanies, useCustomers } from "@/hooks/use-masters";
+import { useUpdateProject, useDeleteProject, useCreateProject, useCompanies, useCustomers } from "@/hooks/use-masters";
 
 interface ProjectRow {
   id: string;
@@ -79,7 +79,9 @@ export default function ProjectsPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editItem, setEditItem] = useState<ProjectRow | null>(null);
   const [importOpen, setImportOpen] = useState(false);
-  const { data: result, isLoading } = useProjects();
+  // Fetch inactive rows too so the Inactive/All tabs can surface soft-deleted
+  // Rows now come from MasterListPage's server pager (infinite); pickers
+  // elsewhere still call useProjects() (active-only).
   const { data: customersResp } = useCustomers();
   const updateMutation = useUpdateProject();
   const deleteMutation = useDeleteProject();
@@ -166,9 +168,14 @@ export default function ProjectsPage() {
         entityName="Project"
         permissionUrl="/masters/projects"
         columns={columns}
-        data={result?.data ?? []}
-        total={result?.total ?? 0}
-        isLoading={isLoading}
+        showStatusTabs
+        infinite={{
+          queryKey: "projects-infinite",
+          endpoint: "/api/masters/projects",
+          pageSize: 25,
+          defaultSortBy: "createdAt",
+          defaultSortOrder: "desc",
+        }}
         onAdd={() => { setEditItem(null); setDrawerOpen(true); }}
         onEdit={(item) => { setEditItem(item); setDrawerOpen(true); }}
         onDelete={handleDelete}
@@ -177,7 +184,7 @@ export default function ProjectsPage() {
           <>
             Delete project{" "}
             <span className="font-semibold text-gray-900">“{item.name}”</span>
-            {item.code ? <> (<span className="font-mono">{item.code}</span>)</> : null}?
+            {item.code ? <> (<span className="">{item.code}</span>)</> : null}?
             <br />
             It will be hidden from the list. You can restore it later from the
             “Show deleted” view.

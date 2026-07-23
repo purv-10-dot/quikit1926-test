@@ -4,8 +4,8 @@ import { withAuth } from "@/lib/with-auth";
 import { successResponse, notFound, validationError, internalError, conflict } from "@/lib/api-response";
 import { updateApplicationSchema } from "@/lib/validations/recruit";
 import { fireWorkflow } from "@/lib/workflows/executor";
-import { queueEmail } from "@/lib/services/mailer";
-import { buildRejectionEmail } from "@/lib/email-templates/application-rejected";
+import { resolveAndSend } from "@/lib/email/resolve";
+import { sendRejectionEmail } from "@/lib/recruit/rejection-mail";
 import { buildInterviewInviteEmail } from "@/lib/email-templates/interview-invite";
 import { buildOfferEmail } from "@/lib/email-templates/offer";
 import { triggerCandidateDocBundle } from "@/lib/services/candidate-doc-service";
@@ -71,7 +71,7 @@ async function fireStageMail(
     });
     if (!interview) return { template, skipped: "No scheduled interview. Schedule one from Interviews page." };
     const dt = new Date(interview.scheduledAt);
-    const { subject, html } = buildInterviewInviteEmail({
+    const inviteData = {
       candidateName,
       jobTitle,
       interviewDate: dt.toLocaleDateString("en-IN", { weekday: "long", day: "2-digit", month: "long", year: "numeric" }),
@@ -82,8 +82,13 @@ async function fireStageMail(
       meetingLink: interview.meetingLink,
       location: interview.location,
       companyName,
+    };
+    await resolveAndSend(orgId, {
+      key: "recruit.interview-invite",
+      to: app.candidate.email,
+      vars: { ...inviteData, meetingLink: inviteData.meetingLink ?? "", location: inviteData.location ?? "" },
+      fallback: () => buildInterviewInviteEmail(inviteData),
     });
-    await queueEmail(orgId, { to: app.candidate.email, subject, html, kind: "recruit.interview-invite" });
     return { template, to: app.candidate.email };
   }
 
@@ -137,7 +142,7 @@ async function fireStageMail(
         signatoryDesignation: company?.signatoryDesignation ?? null,
         footer: company?.offerLetterFooter ?? null,
       });
-      const { subject, html } = buildOfferEmail({
+      const offerData = {
         candidateName,
         jobTitle,
         designation: offer.designation ?? "",
@@ -146,12 +151,22 @@ async function fireStageMail(
         joiningBonus: offer.joiningBonus ? Number(offer.joiningBonus) : null,
         expiresAt: offer.expiresAt ? fmtDate(offer.expiresAt) : null,
         companyName,
-      });
+      };
       const pdfName = `Offer-${app.candidate.firstName}-${app.candidate.lastName}.pdf`.replace(/\s+/g, "");
-      await queueEmail(orgId, {
-        to: app.candidate.email, subject, html,
+      await resolveAndSend(orgId, {
+        key: "recruit.offer-branded",
+        to: app.candidate.email,
+        vars: {
+          candidateName, jobTitle,
+          designation: offerData.designation,
+          offeredCTC: `₹${Number(offer.offeredCTC).toLocaleString("en-IN")}`,
+          joiningDate: offerData.joiningDate,
+          joiningBonus: offer.joiningBonus ? `₹${Number(offer.joiningBonus).toLocaleString("en-IN")}` : "",
+          expiresAt: offerData.expiresAt ?? "",
+          companyName,
+        },
+        fallback: () => buildOfferEmail(offerData),
         attachments: [{ filename: pdfName, content: pdfBuffer, contentType: "application/pdf" }],
-        kind: "recruit.offer-branded",
       });
       await prisma.jobApplication.update({
         where: { id: applicationId },
@@ -161,7 +176,7 @@ async function fireStageMail(
     }
 
     // offer-default: content-only letter, no PDF
-    const { subject, html } = buildOfferDefaultEmail({
+    const offerDefaultData = {
       candidateName,
       jobTitle,
       designation: offer.designation ?? "",
@@ -176,8 +191,27 @@ async function fireStageMail(
       signatoryName: company?.signatoryName ?? null,
       signatoryDesignation: company?.signatoryDesignation ?? null,
       letterDate: fmtDate(new Date()),
+    };
+    await resolveAndSend(orgId, {
+      key: "recruit.offer-default",
+      to: app.candidate.email,
+      vars: {
+        candidateName, jobTitle,
+        designation: offerDefaultData.designation,
+        offeredCTC: `₹${Number(offer.offeredCTC).toLocaleString("en-IN")}`,
+        joiningDate: offerDefaultData.joiningDate,
+        joiningBonus: offer.joiningBonus ? `₹${Number(offer.joiningBonus).toLocaleString("en-IN")}` : "",
+        expiresAt: offerDefaultData.expiresAt ?? "",
+        department: offerDefaultData.department ?? "",
+        reportingTo: offerDefaultData.reportingTo ?? "",
+        companyAddress: offerDefaultData.companyAddress ?? "",
+        signatoryName: offerDefaultData.signatoryName ?? "",
+        signatoryDesignation: offerDefaultData.signatoryDesignation ?? "",
+        letterDate: offerDefaultData.letterDate,
+        companyName,
+      },
+      fallback: () => buildOfferDefaultEmail(offerDefaultData),
     });
-    await queueEmail(orgId, { to: app.candidate.email, subject, html, kind: "recruit.offer-default" });
     await prisma.jobApplication.update({
       where: { id: applicationId },
       data: { offerStatus: "OfferSent", offerSentAt: new Date(), updatedBy: userId },
@@ -205,7 +239,7 @@ async function fireStageMail(
         : Promise.resolve(null),
     ]);
 
-    const { subject, html } = buildJoiningLetterEmail({
+    const joiningData = {
       candidateName,
       jobTitle,
       designation: offer.designation ?? "",
@@ -219,8 +253,27 @@ async function fireStageMail(
       signatoryName: company?.signatoryName ?? null,
       signatoryDesignation: company?.signatoryDesignation ?? null,
       letterDate: fmtDate(new Date()),
+    };
+    await resolveAndSend(orgId, {
+      key: "recruit.joining-letter",
+      to: app.candidate.email,
+      vars: {
+        candidateName, jobTitle,
+        designation: joiningData.designation,
+        offeredCTC: offer.offeredCTC ? `₹${Number(offer.offeredCTC).toLocaleString("en-IN")}` : "",
+        joiningDate: joiningData.joiningDate,
+        department: joiningData.department ?? "",
+        reportingTo: joiningData.reportingTo ?? "",
+        workLocation: "",
+        companyAddress: joiningData.companyAddress ?? "",
+        signatoryName: joiningData.signatoryName ?? "",
+        signatoryDesignation: joiningData.signatoryDesignation ?? "",
+        letterDate: joiningData.letterDate,
+        employeeCode: "",
+        companyName,
+      },
+      fallback: () => buildJoiningLetterEmail(joiningData),
     });
-    await queueEmail(orgId, { to: app.candidate.email, subject, html, kind: "recruit.joining-letter" });
     return { template, to: app.candidate.email };
   }
 
@@ -309,16 +362,47 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
     if (data.currentStage) {
       updateData.currentStage = data.currentStage;
       const history = (existing.stageHistory as Array<unknown>) ?? [];
-      history.push({ stage: data.currentStage, date: new Date().toISOString(), movedBy: userId });
+      history.push({ stage: data.currentStage, date: new Date().toISOString(), movedBy: userId, ...(data.moveReason ? { reason: data.moveReason } : {}) });
       updateData.stageHistory = JSON.parse(JSON.stringify(history));
+      // Advancing an On-Hold candidate clears the hold (unless this same
+      // request explicitly sets another status like Rejected/Hired).
+      if (existing.status === "AppOnHold" && !data.status) {
+        updateData.status = "AppActive";
+      }
+      // Moving through stages means the candidate is actively in the pipeline
+      // (a terminal status set below in this same request will override this).
+      await prisma.candidate.update({
+        where: { id: existing.candidateId },
+        data: { status: "InPipeline" },
+      }).catch(() => null);
     }
     if (data.status) {
       updateData.status = data.status;
       if (data.status === "AppRejected") {
         updateData.rejectionReason = data.rejectionReason;
         updateData.rejectionStage = existing.currentStage;
+        // Reflect the rejection on the candidate so the Candidates list stops
+        // showing them as "In Pipeline" and they can be filtered as Rejected.
+        await prisma.candidate.update({
+          where: { id: existing.candidateId },
+          data: { status: "CandRejected" },
+        }).catch(() => null);
+        // Cancel any upcoming interviews — a rejected candidate has none pending.
+        await prisma.interview.updateMany({
+          where: { orgId, applicationId: existing.id, status: "IntScheduled", deletedAt: null },
+          data: { status: "IntCancelled" },
+        }).catch(() => null);
       }
       if (data.status === "AppHired") {
+        // Don't over-fill a requisition — surface a clear message instead of
+        // silently incrementing past the sanctioned headcount.
+        const req = await prisma.jobRequisition.findFirst({
+          where: { id: existing.requisitionId, orgId, deletedAt: null },
+          select: { positions: true, filledPositions: true },
+        });
+        if (req && req.filledPositions >= req.positions) {
+          return conflict("All positions for this requisition are already filled.");
+        }
         await Promise.all([
           prisma.candidate.update({ where: { id: existing.candidateId }, data: { status: "Hired" } }),
           prisma.jobRequisition.update({
@@ -436,12 +520,14 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
 
     let mailFired: MailFiredResult = null;
     if (stageChanged && data.currentStage) {
-      try {
-        mailFired = await fireStageMail(orgId, userId, app.id, data.currentStage);
-      } catch (err) {
+      // Send the stage-change email in the BACKGROUND so a slow SMTP server can't
+      // make this request hit the client's 20s timeout ("Request timed out after
+      // 20000ms") — the move itself already succeeded.
+      const stageForMail = data.currentStage;
+      void fireStageMail(orgId, userId, app.id, stageForMail).catch((err) => {
         console.error("[mail] stage-change mail failed:", err);
-        mailFired = { template: "unknown", skipped: err instanceof Error ? err.message : "error" };
-      }
+      });
+      mailFired = { template: "queued" };
 
       // Auto-trigger candidate document bundles on stage transitions
       // Pre-offer: fired when stage name matches /offer/i (e.g. "Offer") BUT not final-offer-stage
@@ -471,28 +557,22 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
 
     if (data.status === "AppRejected" && existing.status !== "AppRejected") {
       void (async () => {
-        try {
-          const [candidate, company, requisition] = await Promise.all([
-            prisma.candidate.findUnique({
-              where: { id: existing.candidateId },
-              select: { firstName: true, lastName: true, email: true },
-            }),
-            prisma.companySettings.findUnique({ where: { orgId }, select: { companyName: true } }),
-            prisma.jobRequisition.findUnique({
-              where: { id: existing.requisitionId },
-              select: { title: true },
-            }),
-          ]);
-          if (!candidate?.email) return;
-          const { subject, html } = buildRejectionEmail({
-            candidateName: `${candidate.firstName} ${candidate.lastName}`.trim(),
-            jobTitle: requisition?.title ?? "the role",
-            companyName: company?.companyName ?? "QuikIT HRMS",
-          });
-          await queueEmail(orgId, { to: candidate.email, subject, html, kind: "recruit.rejection" });
-        } catch (err) {
-          console.error("[mail] rejection email failed:", err);
-        }
+        const [candidate, requisition] = await Promise.all([
+          prisma.candidate.findUnique({
+            where: { id: existing.candidateId },
+            select: { firstName: true, lastName: true, email: true },
+          }),
+          prisma.jobRequisition.findUnique({
+            where: { id: existing.requisitionId },
+            select: { title: true },
+          }),
+        ]);
+        if (!candidate?.email) return;
+        await sendRejectionEmail(orgId, {
+          to: candidate.email,
+          candidateName: `${candidate.firstName} ${candidate.lastName}`.trim(),
+          jobTitle: requisition?.title ?? "the role",
+        });
       })();
     }
 

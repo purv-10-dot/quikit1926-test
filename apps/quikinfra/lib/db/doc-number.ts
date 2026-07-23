@@ -26,7 +26,6 @@ const PREFIXES: Record<string, { model: string; field: string; prefix: string }>
   issue: { model: "cnMaterialIssue", field: "issueNumber", prefix: "ISS" },
   gatepass: { model: "cnGatePass", field: "gatePassNumber", prefix: "GP" },
   return_vendor: { model: "cnGoodReturn", field: "returnNumber", prefix: "GR" },
-  return_internal: { model: "cnInternalReturn", field: "returnNumber", prefix: "IR" },
   transfer: { model: "cnStockTransfer", field: "transferNumber", prefix: "TRF" },
   reconciliation: { model: "cnStockReconciliation", field: "reconciliationNumber", prefix: "REC" },
   wo: { model: "cnWorkOrder", field: "woNumber", prefix: "WO" },

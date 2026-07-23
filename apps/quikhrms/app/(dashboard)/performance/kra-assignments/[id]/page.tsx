@@ -1,16 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
 import { useDialog } from "@/components/hrms/dialog";
-import {
-  ChevronLeft, Save, Briefcase, Building2, Calendar,
-  CheckCircle2, XCircle, AlertCircle, Target, ChevronDown, MessageSquare,
-} from "lucide-react";
+import { Save, Briefcase, Building2, Calendar, CheckCircle2, XCircle, AlertCircle, Target, ChevronDown, MessageSquare } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonLine } from "@/components/hrms/skeleton";
 
@@ -111,7 +107,6 @@ export default function KraAssignmentDetailPage() {
       toast.success("Saved");
       router.push("/performance/kra-assignments");
     },
-    onError: (e: Error) => toast.error("Save failed", e.message),
   });
 
   const statusMut = useMutation({
@@ -123,7 +118,6 @@ export default function KraAssignmentDetailPage() {
       toast.success("Status updated");
       router.push("/performance/kra-assignments");
     },
-    onError: (e: Error) => toast.error("Update failed", e.message),
   });
 
   if (isLoading || !data) {
@@ -176,25 +170,18 @@ export default function KraAssignmentDetailPage() {
 
   return (
     <div className="w-full max-w-5xl mx-auto pb-28">
-      <Link
-        href="/performance/kra-assignments"
-        className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-[#3b82f6] mb-3"
-      >
-        <ChevronLeft size={14} /> Back to assignments
-      </Link>
-
       {/* Simple header — Who · What · Score */}
-      <div className="rounded-2xl bg-white ring-1 ring-gray-200 px-5 py-4 flex items-center gap-4 mb-5">
+      <div className="rounded-2xl bg-white ring-1 ring-gray-200 px-4 py-4 flex items-center gap-4 mb-5">
         {a.employee?.profilePhoto ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={a.employee.profilePhoto} alt="" className="w-12 h-12 rounded-full object-cover shrink-0" />
         ) : (
-          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center text-base font-bold shrink-0">
+          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-green-500 to-green-600 text-white flex items-center justify-center text-base font-bold shrink-0">
             {initials}
           </div>
         )}
         <div className="flex-1 min-w-0">
-          <p className="text-base font-bold text-gray-900 truncate">
+          <p className="text-[13px] font-semibold text-gray-900 truncate">
             {a.employee ? `${a.employee.firstName} ${a.employee.lastName}` : "—"}
             <span className="ml-2 text-xs font-mono text-gray-400">{a.employee?.employeeCode}</span>
           </p>
@@ -204,7 +191,7 @@ export default function KraAssignmentDetailPage() {
             {a.employee?.department?.name}
           </p>
           <p className="text-xs text-gray-600 mt-1 inline-flex items-center gap-1">
-            <Target size={11} className="text-blue-500" />
+            <Target size={11} className="text-green-500" />
             <span className="font-semibold">{snapshot.scorecardName}</span>
             <span className="text-gray-400">·</span>
             <Calendar size={10} />
@@ -215,9 +202,9 @@ export default function KraAssignmentDetailPage() {
 
         {/* Big score number */}
         <div className="text-right shrink-0 pl-4 border-l border-gray-200">
-          <p className="font-serif-display text-4xl font-bold text-gray-900 leading-none tabular-nums">
+          <p className="font-serif-display text-3xl font-bold text-gray-900 leading-none tabular-nums">
             {liveComposite != null ? liveComposite.toFixed(1) : "—"}
-            <span className="text-lg text-gray-400 font-normal"> / 5</span>
+            <span className="text-base text-gray-400 font-normal"> / 5</span>
           </p>
           <p className="text-[11px] text-gray-500 mt-1">
             {scoredKpis} of {totalKpis} rated
@@ -227,21 +214,21 @@ export default function KraAssignmentDetailPage() {
 
       {/* Instructional row — only when nothing scored yet */}
       {scoredKpis === 0 && a.status === "Active" && (
-        <div className="mb-4 rounded-lg ring-1 ring-blue-100 bg-blue-50/60 px-4 py-2.5 text-sm text-blue-900">
+        <div className="mb-4 rounded-lg ring-1 ring-green-100 bg-green-50/60 px-4 py-2.5 text-xs text-green-900">
           <strong>How to use this page:</strong> rate each item below using the 1–5 buttons.
           1 = Poor · 5 = Outstanding. The overall score updates automatically.
         </div>
       )}
 
       {/* KRAs — flat list of KPIs grouped by KRA */}
-      <div className="space-y-5">
+      <div className="space-y-4">
         {snapshot.kras.map((kra, kraIdx) => {
           const kraScoredCount = kra.kpis.filter((p) => liveProgress[p.id]?.score != null).length;
           return (
             <section key={kra.id}>
               {/* KRA heading */}
               <div className="flex items-baseline justify-between gap-3 mb-2 px-1">
-                <h3 className="text-sm font-bold text-gray-900">
+                <h3 className="text-[13px] font-semibold text-gray-900">
                   <span className="text-gray-400 font-normal mr-1.5">KRA {kraIdx + 1}</span>
                   {kra.title}
                 </h3>
@@ -272,8 +259,8 @@ export default function KraAssignmentDetailPage() {
       {/* Sticky footer */}
       <div className="sticky bottom-4 z-10 mt-5 flex items-center justify-between gap-3 bg-white border border-gray-200 rounded-xl shadow-md px-4 py-3">
         <div className="flex items-center gap-2">
-          <span className={clsx("inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold",
-            a.status === "Active" ? "bg-blue-100 text-blue-700"
+          <span className={clsx("inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium",
+            a.status === "Active" ? "bg-green-100 text-green-700"
               : a.status === "Completed" ? "bg-emerald-100 text-emerald-700"
                 : "bg-gray-100 text-gray-600")}>
             {a.status}
@@ -297,7 +284,7 @@ export default function KraAssignmentDetailPage() {
                 });
                 if (ok) statusMut.mutate("Completed");
               }}
-              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 rounded-md"
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50 rounded-md"
             >
               <CheckCircle2 size={13} /> Mark completed
             </button>
@@ -306,7 +293,7 @@ export default function KraAssignmentDetailPage() {
             <button
               type="button"
               onClick={() => statusMut.mutate("Active")}
-              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50 rounded-md"
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-50 rounded-md"
             >
               Reopen
             </button>
@@ -323,7 +310,7 @@ export default function KraAssignmentDetailPage() {
                 });
                 if (ok) statusMut.mutate("Cancelled");
               }}
-              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 rounded-md"
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 rounded-md"
             >
               <XCircle size={13} /> Cancel
             </button>
@@ -332,7 +319,7 @@ export default function KraAssignmentDetailPage() {
             type="button"
             disabled={!hasUnsavedChanges || saveMut.isPending || a.status === "Cancelled"}
             onClick={() => saveMut.mutate()}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md text-sm font-semibold"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md text-xs font-medium"
           >
             {saveMut.isPending && <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
             <Save size={13} /> {saveMut.isPending ? "Saving…" : "Save progress"}
@@ -371,7 +358,7 @@ function KpiCard({
         {/* Question */}
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-gray-900">{kpi.title}</p>
+            <p className="text-[13px] font-semibold text-gray-900">{kpi.title}</p>
             {(kpi.target || kpi.measurementMethod) && (
               <p className="text-[11px] text-gray-500 mt-0.5">
                 {kpi.target && <>Target: <span className="text-gray-700 font-medium">{kpi.target}{kpi.unit ? ` ${kpi.unit}` : ""}</span></>}
@@ -400,7 +387,7 @@ function KpiCard({
                 )}
                 title={s.full}
               >
-                <span className="text-base font-bold leading-none">{s.value}</span>
+                <span className="text-sm font-bold leading-none">{s.value}</span>
                 <span className="text-[10px] mt-0.5 leading-none">{s.short}</span>
               </button>
             );
@@ -421,12 +408,12 @@ function KpiCard({
         <button
           type="button"
           onClick={() => setShowDetails((s) => !s)}
-          className="mt-2.5 inline-flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-[#16243A]"
+          className="mt-2.5 inline-flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-[#166534]"
         >
           <MessageSquare size={11} />
           {showDetails ? "Hide details" : "Add notes / value"}
           {(entry.notes || entry.currentValue) && !showDetails && (
-            <span className="ml-1 inline-flex items-center justify-center w-4 h-4 rounded-full bg-blue-100 text-blue-700 text-[9px]">✓</span>
+            <span className="ml-1 inline-flex items-center justify-center w-4 h-4 rounded-full bg-green-100 text-green-700 text-[10px]">✓</span>
           )}
           <ChevronDown
             size={11}
@@ -445,7 +432,7 @@ function KpiCard({
                 onChange={(e) => onCurrentValue(e.target.value)}
                 placeholder={kpi.unit ? `e.g. 4.5 ${kpi.unit}` : "e.g. 4.5"}
                 disabled={disabled}
-                className="w-full px-2.5 py-1.5 text-sm border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-[#16243A]/20 focus:border-[#16243A] disabled:bg-gray-50"
+                className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-[#166534]/20 focus:border-[#166534] disabled:bg-gray-50"
               />
             </div>
             <div>
@@ -458,7 +445,7 @@ function KpiCard({
                 onChange={(e) => onNotes(e.target.value)}
                 placeholder="What went well / what didn't"
                 disabled={disabled}
-                className="w-full px-2.5 py-1.5 text-sm border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-[#16243A]/20 focus:border-[#16243A] disabled:bg-gray-50 resize-none"
+                className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-[#166534]/20 focus:border-[#166534] disabled:bg-gray-50 resize-none"
               />
             </div>
           </div>

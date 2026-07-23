@@ -122,8 +122,6 @@ export async function cascadeHardDeleteEmployee(
     run("keyResult",            prisma.keyResult.deleteMany({ where: { goal: { orgId, employeeId } } })),
     run("goalCheckIn",          prisma.goalCheckIn.deleteMany({ where: { updatedById: employeeId } })),
     run("offboardingTask",      prisma.offboardingTask.deleteMany({ where: { instance: { orgId, employeeId } } })),
-    run("ticketActivity",       prisma.ticketActivity.deleteMany({ where: { orgId, actorId: employeeId } })),
-    run("ticketComment",        prisma.ticketComment.deleteMany({ where: { orgId, userId: employeeId } })),
     // Scorecard data lives on the Interview row now; it's removed when the
     // interviewer's interviews are deleted in Phase 2 below.
     run("requisitionApproval",  prisma.requisitionApproval.deleteMany({ where: { orgId, approverId: employeeId } })),
@@ -141,7 +139,6 @@ export async function cascadeHardDeleteEmployee(
     run("employeeLoan",         prisma.employeeLoan.deleteMany({ where: { orgId, employeeId } })),
     run("goal",                 prisma.hrmsGoal.deleteMany({ where: { orgId, employeeId } })),
     run("offboardingInstance",  prisma.offboardingInstance.deleteMany({ where: { orgId, employeeId } })),
-    run("ticket",               prisma.ticket.deleteMany({ where: { orgId, OR: [{ raisedById: employeeId }, { assignedToId: employeeId }] } })),
     run("interview",            prisma.interview.deleteMany({ where: { orgId, interviewerId: employeeId } })),
     run("jobRequisition",       prisma.jobRequisition.deleteMany({ where: { orgId, OR: [{ createdById: employeeId }, { hiringManagerId: employeeId }, { recruiterId: employeeId }, { raisedById: employeeId }] } })),
     run("document",             prisma.document.deleteMany({ where: { orgId, employeeId } })),
@@ -170,7 +167,6 @@ export async function cascadeHardDeleteEmployee(
     run("gratuityRecord",       prisma.gratuityRecord.deleteMany({ where: { orgId, employeeId } })),
     run("fullAndFinalSettlement", prisma.fullAndFinalSettlement.deleteMany({ where: { orgId, employeeId } })),
     run("employeeSalary",       prisma.employeeSalary.deleteMany({ where: { orgId, employeeId } })),
-    run("assetAssignment",      prisma.assetAssignment.deleteMany({ where: { orgId, employeeId } })),
     run("onboardingInstance",   prisma.onboardingInstance.deleteMany({ where: { orgId, employeeId } })),
     run("employeeProvision",    prisma.employeeProvision.deleteMany({ where: { orgId, employeeId } })),
     run("timeLog",              prisma.timeLog.deleteMany({ where: { orgId, employeeId } })),

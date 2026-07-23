@@ -11,10 +11,11 @@ import { signOut } from "next-auth/react";
 import { clearClientSessionState } from "@/lib/auth/client-cleanup";
 import { clsx } from "clsx";
 import { AppSwitcher } from "@/components/hrms/layout/app-switcher";
+import { NavSearch } from "@/components/hrms/layout/nav-search";
 import {
-  Search, Bell, BellRing, ChevronDown, CheckCheck,
+  Bell, BellRing, ChevronDown, CheckCheck,
   User as UserIcon, FolderLock, Settings, DoorOpen, LogOut,
-  Info, AlertCircle, CheckCircle2, AlertTriangle, Moon, Sun,
+  Info, AlertCircle, CheckCircle2, AlertTriangle,
 } from "lucide-react";
 
 interface Me {
@@ -48,25 +49,24 @@ export function TopBar() {
   // mismatch → hydration error. Render a stable value on the server + initial
   // client paint, then swap in the localized greeting post-hydration.
   const [greeting, setGreeting] = useState("Welcome");
+  const [today, setToday] = useState("");
   useEffect(() => {
-    const hour = new Date().getHours();
+    const now = new Date();
+    const hour = now.getHours();
     setGreeting(hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening");
+    setToday(now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" }));
   }, []);
 
   return (
     <div className="flex items-center justify-between gap-4">
-      <h1 className="text-base font-bold text-gray-800">
-        {greeting}, {firstName}! <span>👋</span>
-      </h1>
+      <div>
+        <p className="text-[11px] font-medium text-gray-400">{today || " "}</p>
+        <h1 className="text-base font-bold text-gray-800">
+          {greeting}, {firstName}
+        </h1>
+      </div>
       <div className="flex items-center gap-3">
-        <div className="relative hidden md:block">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search anything..."
-            className="w-64 pl-9 pr-3 py-2 rounded-full text-sm bg-white ring-1 ring-gray-200 focus:ring-blue-300 focus:outline-none placeholder:text-gray-400"
-          />
-        </div>
+        <NavSearch />
         <AppSwitcher />
         <NotificationBell />
         <UserMenu me={me} />
@@ -86,7 +86,7 @@ interface NotificationItem {
 }
 
 const NOTIF_THEME: Record<NotificationItem["type"], { Icon: LucideIcon; bg: string; color: string }> = {
-  Info: { Icon: Info, bg: "bg-blue-50", color: "text-blue-600" },
+  Info: { Icon: Info, bg: "bg-green-50", color: "text-green-600" },
   Success: { Icon: CheckCircle2, bg: "bg-emerald-50", color: "text-emerald-600" },
   Warning: { Icon: AlertTriangle, bg: "bg-amber-50", color: "text-amber-600" },
   Error: { Icon: AlertCircle, bg: "bg-rose-50", color: "text-rose-600" },
@@ -114,7 +114,15 @@ function NotificationBell() {
   const { data: countRes } = useQuery({
     queryKey: ["notifications", "unread-count"],
     queryFn: () => api.get<{ count: number }>("/api/v1/hrms/notifications/unread-count"),
-    staleTime: 60_000,
+    // No SSE/push channel exists for notifications, so poll to keep the badge
+    // live: incoming notifications otherwise never bump the count until a full
+    // reload. Short staleTime + interval + refetch-on-focus keeps it fresh
+    // without a socket. `refetchIntervalInBackground: false` pauses polling when
+    // the tab is hidden so we don't hammer the endpoint on idle tabs.
+    staleTime: 20_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
   });
   const count = countRes?.data?.count ?? 0;
 
@@ -188,10 +196,9 @@ function NotificationBell() {
       }
       return { prevCount, prevList };
     },
-    onError: (e: Error, _v, ctx) => {
+    onError: (_e: Error, _v, ctx) => {
       if (ctx?.prevCount) qc.setQueryData(["notifications", "unread-count"], ctx.prevCount);
       if (ctx?.prevList) qc.setQueryData(["notifications", "list"], ctx.prevList);
-      toast.error("Failed", e.message);
     },
     onSuccess: () => toast.success("All marked as read"),
     onSettled: refetch,
@@ -208,7 +215,7 @@ function NotificationBell() {
         onClick={() => setOpen((o) => !o)}
         className="relative w-9 h-9 rounded-full bg-white ring-1 ring-gray-200 hover:bg-gray-50 flex items-center justify-center text-gray-600"
       >
-        {count > 0 ? <BellRing size={16} className="text-blue-600" /> : <Bell size={16} />}
+        {count > 0 ? <BellRing size={16} className="text-green-600" /> : <Bell size={16} />}
         {count > 0 && (
           <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center">
             {count > 99 ? "99+" : count}
@@ -218,7 +225,7 @@ function NotificationBell() {
 
       {open && (
         <div className="absolute z-50 right-0 top-full mt-2 w-80 bg-white rounded-xl shadow-2xl ring-1 ring-slate-200 overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-[#eff6ff] to-white flex items-center justify-between">
+          <div className="px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-[#f0fdf4] to-white flex items-center justify-between">
             <div>
               <p className="text-sm font-semibold text-slate-900">Notifications</p>
               <p className="text-[11px] text-slate-500">{count > 0 ? `${count} unread` : "All caught up"}</p>
@@ -227,7 +234,7 @@ function NotificationBell() {
               <button
                 onClick={() => markAllMut.mutate()}
                 disabled={markAllMut.isPending}
-                className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-60"
+                className="inline-flex items-center gap-1 text-[11px] font-semibold text-green-600 hover:text-green-700 disabled:opacity-60"
               >
                 <CheckCheck size={12} /> Mark all
               </button>
@@ -250,7 +257,7 @@ function NotificationBell() {
                   const theme = NOTIF_THEME[n.type] ?? NOTIF_THEME.Info;
                   const Icon = theme.Icon;
                   const body = (
-                    <div className={clsx("flex items-start gap-2.5 px-3 py-3 transition", !n.isRead && "bg-blue-50/40", "hover:bg-slate-50")}>
+                    <div className={clsx("flex items-start gap-2.5 px-3 py-3 transition", !n.isRead && "bg-green-50/40", "hover:bg-slate-50")}>
                       <div className={clsx("w-8 h-8 rounded-full flex items-center justify-center shrink-0", theme.bg)}>
                         <Icon size={14} className={theme.color} />
                       </div>
@@ -261,7 +268,7 @@ function NotificationBell() {
                         <p className="text-[11px] text-gray-500 line-clamp-2 mt-0.5">{n.message}</p>
                         <p className="text-[10px] text-gray-400 mt-1">{timeAgo(n.createdAt)}</p>
                       </div>
-                      {!n.isRead && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-2 shrink-0" />}
+                      {!n.isRead && <span className="w-1.5 h-1.5 rounded-full bg-green-500 mt-2 shrink-0" />}
                     </div>
                   );
                   return n.link ? (
@@ -282,7 +289,7 @@ function NotificationBell() {
             <Link
               href="/settings/notifications"
               onClick={() => setOpen(false)}
-              className="block px-4 py-2.5 text-center text-[12px] font-semibold text-blue-600 hover:bg-slate-100"
+              className="block px-4 py-2.5 text-center text-[12px] font-semibold text-green-600 hover:bg-slate-100"
             >
               View all notifications
             </Link>
@@ -295,7 +302,6 @@ function NotificationBell() {
 
 function UserMenu({ me }: { me: Me | undefined }) {
   const [open, setOpen] = useState(false);
-  const [dark, setDark] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -305,17 +311,6 @@ function UserMenu({ me }: { me: Me | undefined }) {
     if (open) document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
   }, [open]);
-
-  useEffect(() => {
-    setDark(document.documentElement.classList.contains("dark"));
-  }, []);
-
-  const toggleTheme = () => {
-    const next = !dark;
-    setDark(next);
-    localStorage.setItem("hrms.theme", next ? "dark" : "light");
-    document.documentElement.classList.toggle("dark", next);
-  };
 
   const initials = me ? `${me.firstName[0] ?? ""}${me.lastName[0] ?? ""}`.toUpperCase() : "?";
   const fullName = me ? (me.displayName ?? `${me.firstName} ${me.lastName}`) : "";
@@ -350,7 +345,7 @@ function UserMenu({ me }: { me: Me | undefined }) {
 
       {open && me && (
         <div className="absolute z-50 right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-2xl ring-1 ring-slate-200 overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-[#eff6ff] to-white">
+          <div className="px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-[#f0fdf4] to-white">
             <p className="text-sm font-semibold text-slate-900 truncate">{fullName}</p>
             <p className="text-[11px] text-slate-500 truncate">{subtitle}</p>
           </div>
@@ -360,34 +355,12 @@ function UserMenu({ me }: { me: Me | undefined }) {
                 key={m.href}
                 href={m.href}
                 onClick={() => setOpen(false)}
-                className="flex items-center gap-2.5 px-3 py-2 text-[13px] text-gray-700 hover:bg-slate-50 hover:text-blue-600 transition"
+                className="flex items-center gap-2.5 px-3 py-2 text-[13px] text-gray-700 hover:bg-slate-50 hover:text-green-600 transition"
               >
                 <span className="text-gray-400">{m.icon}</span>
                 {m.label}
               </Link>
             ))}
-            <button
-              onClick={toggleTheme}
-              className="w-full flex items-center justify-between gap-2.5 px-3 py-2 text-[13px] text-gray-700 hover:bg-slate-50 hover:text-blue-600 transition"
-            >
-              <span className="flex items-center gap-2.5">
-                <span className="text-gray-400">{dark ? <Sun size={13} /> : <Moon size={13} />}</span>
-                {dark ? "Light mode" : "Dark mode"}
-              </span>
-              <span
-                className={clsx(
-                  "relative w-8 h-4 rounded-full transition-colors",
-                  dark ? "bg-blue-600" : "bg-gray-300",
-                )}
-              >
-                <span
-                  className={clsx(
-                    "absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform",
-                    dark ? "translate-x-4" : "translate-x-0.5",
-                  )}
-                />
-              </span>
-            </button>
           </div>
           <div className="py-1 border-t border-slate-100">
             <button

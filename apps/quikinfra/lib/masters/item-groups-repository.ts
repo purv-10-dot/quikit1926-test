@@ -15,6 +15,10 @@ export interface ItemGroupRecord {
   sortOrder: number;
   workCategoryId: string | null;
   status: string;
+  /** Active items assigned to this group (matches the material picker's
+   *  lazy list filter). Populated by {@link listItemGroups}; defaults to 0
+   *  on single-fetch paths that don't compute it. */
+  itemCount: number;
   createdAt: string;
   updatedAt: string;
   createdBy: string;
@@ -31,6 +35,7 @@ function toRecord(row: Prisma.CnItemGroupGetPayload<Record<string, never>>): Ite
     sortOrder: row.sortOrder ?? 0,
     workCategoryId: row.workCategoryId ?? null,
     status: row.status,
+    itemCount: 0,
     createdAt: row.createdAt?.toISOString?.() ?? "",
     updatedAt: row.updatedAt?.toISOString?.() ?? "",
     createdBy: row.createdBy,
@@ -87,7 +92,21 @@ export async function listItemGroups(opts: ListOptions): Promise<ItemGroupRecord
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
   });
-  return rows.map(toRecord);
+  const records = rows.map(toRecord);
+
+  // Attach active-item counts per group so material pickers can show
+  // "N materials" without bulk-loading the item master. Uses the same
+  // active filter (not inactive/deleted) as the lazy items list, so the
+  // badge matches what the user sees after opening the group.
+  const grouped = await db.cnItem.groupBy({
+    by: ["groupId"],
+    where: { orgId: opts.orgId, status: { notIn: ["inactive", "deleted"] } },
+    _count: { _all: true },
+  });
+  const countByGroup = new Map(grouped.map((g) => [g.groupId, g._count._all]));
+  for (const r of records) r.itemCount = countByGroup.get(r.id) ?? 0;
+
+  return records;
 }
 
 export async function countItemGroups(

@@ -6,7 +6,7 @@ import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { createPrioritySchema } from "@/lib/schemas/prioritySchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { audit, requestContext } from "@/lib/audit";
-import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
+import { rateLimitAsync, LIMITS } from "@/lib/api/rateLimit";
 import { getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 import { notifyPriorityAssignment } from "@/lib/services/priorityNotifications";
 import { findPriorityDuplicate, priorityDuplicateMessage } from "@/lib/api/priorityDuplicate";
@@ -118,7 +118,11 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
     createdAt: { createdAt: sortOrder },
     updatedAt: { updatedAt: sortOrder },
   };
-  const orderBy = [sortMap[sortBy] || { createdAt: sortOrder }, { id: "desc" }];
+  // Manual (drag-to-reorder) mode when no column sort is chosen: order by the
+  // shared `position` rank (nulls first so new rows stay on top until dragged).
+  const orderBy = sortByParam
+    ? [sortMap[sortBy] || { createdAt: sortOrder }, { id: "desc" }]
+    : [{ position: { sort: "asc", nulls: "first" } }, { createdAt: "desc" }, { id: "desc" }];
 
   const [priorities, total] = await Promise.all([
     db.priority.findMany({
@@ -141,7 +145,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
 
 // POST /api/priority — create a priority
 export const POST = auth.create(async ({ orgId, userId }, req) => {
-  const rl = rateLimit({
+  const rl = await rateLimitAsync({
     routeKey: "priority:create",
     clientKey: `${orgId}:${userId}`,
     limit: LIMITS.mutation.limit,
@@ -160,22 +164,42 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
     const error = parsed.error.errors[0]?.message ?? "Invalid input";
     return NextResponse.json({ success: false, error }, { status: 400 });
   }
-  const { name, description, owner, teamId, quarter, year, startWeek, endWeek, overallStatus, importedFromOpsp } = parsed.data;
+  const { name, description, owner, ownerIds, teamId, quarter, year, startWeek, endWeek, overallStatus, importedFromOpsp } = parsed.data;
 
-  // Deterministic duplicate guard for the manual "Add New Priority" form: block
-  // an exact match on name + owner + team + period (quarter/year) + start week.
-  // The OPSP "Export → Priority" flow (importedFromOpsp) has its own AI-advisory
-  // + Replace handling, so it's intentionally exempt from this hard block.
+  // Resolve the owner list. Zod's refine guarantees at least one of
+  // `owner`/`ownerIds` is present. Dedupe so an accidental repeat selection in
+  // the multi-owner picker doesn't create duplicate rows for the same person.
+  const resolvedOwners = Array.from(
+    new Set((ownerIds && ownerIds.length > 0) ? ownerIds : (owner ? [owner] : [])),
+  );
+
+  // Deterministic duplicate guard for the manual "Add New Priority" form: an
+  // exact match on name + owner + team + period (quarter/year) + start week is a
+  // duplicate. With multi-owner fan-out we check EACH owner independently and
+  // SKIP the ones that already have an identical priority, creating the rest —
+  // one existing dup for a single owner shouldn't block the whole batch. If
+  // every selected owner is a duplicate we return 409 (nothing to create).
+  // The OPSP "Export → Priority" flow (importedFromOpsp) has its own
+  // AI-advisory + Replace handling, so it's intentionally exempt.
+  let ownersToCreate = resolvedOwners;
+  let skippedOwners: string[] = [];
   if (!importedFromOpsp) {
-    const dup = await findPriorityDuplicate(db, orgId, {
-      name,
-      owner,
-      teamId: teamId ?? null,
-      quarter,
-      year,
-      startWeek: startWeek ?? null,
-    });
-    if (dup) {
+    const checks = await Promise.all(
+      resolvedOwners.map(async (o) => ({
+        owner: o,
+        dup: await findPriorityDuplicate(db, orgId, {
+          name,
+          owner: o,
+          teamId: teamId ?? null,
+          quarter,
+          year,
+          startWeek: startWeek ?? null,
+        }),
+      })),
+    );
+    ownersToCreate = checks.filter((c) => !c.dup).map((c) => c.owner);
+    skippedOwners = checks.filter((c) => c.dup).map((c) => c.owner);
+    if (ownersToCreate.length === 0) {
       return NextResponse.json(
         { success: false, error: priorityDuplicateMessage() },
         { status: 409 },
@@ -183,85 +207,126 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
     }
   }
 
-  const created = await db.priority.create({
-    data: {
-      orgId,
-      name,
-      description: description ?? null,
-      owner,
-      teamId: teamId ?? null,
-      quarter,
-      year,
-      startWeek: startWeek ?? null,
-      endWeek: endWeek ?? null,
-      overallStatus: overallStatus ?? "not-yet-started",
-      importedFromOpsp: importedFromOpsp ?? false,
-      createdBy: userId,
-    },
-    select: PRIORITY_SELECT,
-  });
+  // Fan out: one Priority row per owner, atomically. Each row is identical
+  // except for `owner`, mirroring the WWW "one row = one assignee" shape so
+  // each owner independently tracks their own weekly status + notes.
+  const createdRows = await db.$transaction(
+    ownersToCreate.map((o) =>
+      db.priority.create({
+        data: {
+          orgId,
+          name,
+          description: description ?? null,
+          owner: o,
+          teamId: teamId ?? null,
+          quarter,
+          year,
+          startWeek: startWeek ?? null,
+          endWeek: endWeek ?? null,
+          overallStatus: overallStatus ?? "not-yet-started",
+          importedFromOpsp: importedFromOpsp ?? false,
+          createdBy: userId,
+        },
+        select: PRIORITY_SELECT,
+      }),
+    ),
+  );
 
-  // Seed weekly statuses across [startWeek..endWeek]:
+  // Seed weekly statuses across [startWeek..endWeek] for every created row:
   //   week <  currentWeek  → "not-yet-started"  (past)
   //   week >= currentWeek  → "not-applicable"   (current + future)
   // Only seed when both bounds are set; otherwise leave the priority bare so
   // existing list/detail flows behave unchanged.
-  let priority = created;
+  let priorities = createdRows;
   if (startWeek != null && endWeek != null && startWeek <= endWeek) {
     const currentWeek = await getCurrentFiscalWeekFromDB(orgId, year, quarter);
     const seeds = [];
-    for (let w = startWeek; w <= endWeek; w++) {
-      seeds.push({
-        priorityId: created.id,
-        weekNumber: w,
-        status: w < currentWeek ? "not-yet-started" : "not-applicable",
-        updatedBy: userId,
-      });
+    for (const row of createdRows) {
+      for (let w = startWeek; w <= endWeek; w++) {
+        seeds.push({
+          priorityId: row.id,
+          weekNumber: w,
+          status: w < currentWeek ? "not-yet-started" : "not-applicable",
+          updatedBy: userId,
+        });
+      }
     }
     if (seeds.length) {
       await db.priorityWeeklyStatus.createMany({ data: seeds, skipDuplicates: true });
-      const refreshed = await db.priority.findUnique({
-        where: { id: created.id },
-        select: PRIORITY_SELECT,
-      });
-      if (refreshed) priority = refreshed;
+      priorities = await Promise.all(
+        createdRows.map(async (row) => {
+          const refreshed = await db.priority.findUnique({
+            where: { id: row.id },
+            select: PRIORITY_SELECT,
+          });
+          return refreshed ?? row;
+        }),
+      );
     }
   }
 
-  await writeAuditLog({
-    orgId,
-    actorId: userId,
-    action: "CREATE",
-    entityType: "Priority",
-    entityId: priority.id,
-    newValues: priority,
-  });
+  // One audit event per created row (legacy + centralized dual-write). Both
+  // helpers swallow their own errors and the response doesn't depend on their
+  // completion order, so they run in parallel.
+  const ctx = requestContext(req);
+  await Promise.all(
+    priorities.map(async (priority) => {
+      await writeAuditLog({
+        orgId,
+        actorId: userId,
+        action: "CREATE",
+        entityType: "Priority",
+        entityId: priority.id,
+        newValues: priority,
+      });
+      // ── Centralized audit (dual-write) ── one CREATE event with the full
+      // post-state snapshot (incl. seeded weekly statuses) so the Change
+      // History Create card renders the complete spec + week-status breakdown.
+      await audit.log({
+        entityType: "PRIORITY",
+        entityId: priority.id,
+        action: "CREATE",
+        actor: { userId, orgId, teamId: priority.teamId },
+        snapshot: priority,
+        ...ctx,
+      });
+    }),
+  );
 
-  // ── Centralized audit (dual-write) ── one CREATE event with the full
-  // post-state snapshot (incl. seeded weekly statuses) so the Change History
-  // Create card can render the complete spec + week-status breakdown.
-  await audit.log({
-    entityType: "PRIORITY",
-    entityId: priority.id,
-    action: "CREATE",
-    actor: { userId, orgId, teamId: priority.teamId },
-    snapshot: priority,
-    ...requestContext(req),
-  });
-
-  if (priority.owner) {
-    notifyPriorityAssignment({
-      orgId,
-      priorityId: priority.id,
-      priorityName: priority.name,
-      quarter: priority.quarter,
-      year: priority.year,
-      creatorUserId: userId,
-      ownerUserId: priority.owner,
-    }).catch((err) => {
-      console.error("[POST /api/priority] notifyPriorityAssignment failed:", err);
-    });
+  // One assignment notification per owner, scoped to their own row.
+  for (const priority of priorities) {
+    if (priority.owner) {
+      notifyPriorityAssignment({
+        orgId,
+        priorityId: priority.id,
+        priorityName: priority.name,
+        quarter: priority.quarter,
+        year: priority.year,
+        creatorUserId: userId,
+        ownerUserId: priority.owner,
+      }).catch((err) => {
+        console.error("[POST /api/priority] notifyPriorityAssignment failed:", err);
+      });
+    }
   }
 
-  return NextResponse.json({ success: true, data: priority }, { status: 201 });
+  // Return the first row in the existing single-item envelope so the useCreate
+  // hook keeps working; `meta` carries the fan-out counts so the client can
+  // report how many were created and how many were skipped as duplicates.
+  const primary = priorities[0]!;
+  return NextResponse.json(
+    {
+      success: true,
+      data: primary,
+      meta: {
+        created: priorities.length,
+        requested: resolvedOwners.length,
+        skipped: skippedOwners.length,
+      },
+      message: priorities.length > 1
+        ? `Created ${priorities.length} priorities`
+        : "Priority created",
+    },
+    { status: 201 },
+  );
 });

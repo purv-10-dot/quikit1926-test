@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, validationError, notFound, internalError } from "@/lib/api-response";
-import { sendMail } from "@/lib/services/mailer";
+import { resolveAndSend } from "@/lib/email/resolve";
 import { buildWelcomeEmail } from "@/lib/email-templates/welcome";
 
 const bodySchema = z.object({
@@ -43,7 +43,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId }) => {
         : Promise.resolve(null),
     ]);
 
-    const { subject, html } = buildWelcomeEmail({
+    const welcomeData = {
       employeeName: `${employee.firstName} ${employee.lastName}`.trim(),
       employeeCode: employee.employeeCode,
       jobTitle: employee.jobTitle,
@@ -54,9 +54,23 @@ export const POST = withAuth(async (req: NextRequest, { orgId }) => {
       managerName: manager ? `${manager.firstName} ${manager.lastName}`.trim() : null,
       companyName: company?.companyName ?? "Our Company",
       portalUrl: parsed.data.portalUrl,
-    });
+    };
 
-    const result = await sendMail({ to, subject, html });
+    const result = await resolveAndSend(orgId, {
+      key: "employee.welcome",
+      to,
+      vars: {
+        employeeName: welcomeData.employeeName,
+        employeeCode: welcomeData.employeeCode,
+        jobTitle: welcomeData.jobTitle ?? "",
+        department: welcomeData.department ?? "",
+        dateOfJoining: welcomeData.dateOfJoining,
+        managerName: welcomeData.managerName ?? "",
+        portalUrl: welcomeData.portalUrl ?? "",
+        companyName: welcomeData.companyName,
+      },
+      fallback: () => buildWelcomeEmail(welcomeData),
+    });
     if (!result.sent) return internalError(`Mail send failed: ${result.error}`);
 
     return successResponse({ sent: true, employeeId: employee.id, to });

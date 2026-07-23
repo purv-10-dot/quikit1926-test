@@ -236,6 +236,12 @@ export async function actOnApproval(
         stepOrder: instance.currentStepOrder,
         action,
         actionById: ctx.userId,
+        // Write the timestamp app-side (UTC) instead of relying on the DB
+        // `@default(now())`. The Postgres server clock lands in a tz-naive
+        // column and, when the DB session isn't UTC, drifts by the session
+        // offset — leaving approval-history times out of sync with the
+        // app-written createdAt/updatedAt. new Date() keeps them consistent.
+        actionAt: new Date(),
         comments: comments || null,
       },
     });

@@ -54,9 +54,7 @@ const TEMPLATES: Template[] = [
     description: "Prioritize ideas then connect them from discovery through to delivery.",
     badge: { label: "RECOMMENDED", tone: "purple" },
     Illustration: WebDesignIllustration,
-    // Temporarily hidden from the gallery (pending owner sign-off). The
-    // discovery template/route still works if reached directly.
-    enabled: false,
+    enabled: true,
     product: "QuikTrack",
   },
   {

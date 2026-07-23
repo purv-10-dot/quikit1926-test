@@ -19,9 +19,9 @@ import { findIndentById } from "@/lib/purchase/indent-repository";
 import { findVendorsByIds } from "@/lib/masters/vendors-repository";
 import { assertVendorGstActiveForPo } from "@/lib/integrations/whitebooks-gst";
 import { findProjectById } from "@/lib/masters/projects-repository";
-import { listPOs, createPO } from "@/lib/purchase/po-repository";
+import { listPOs, countPOs, poStatusCounts, createPO } from "@/lib/purchase/po-repository";
 import { db } from "@/lib/db";
-import { parsePagination } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
 
 interface PoVendorRowInput {
   vendorId?: string;
@@ -129,7 +129,7 @@ export async function GET(req: NextRequest) {
   const fyEnd = searchParams.get("fyEnd") ?? undefined;
 
   const p = parsePagination(req);
-  const data = await listPOs({
+  const baseOpts = {
     orgId: ctx.orgId,
     projectIds: ctx.projectIds ?? null,
     projectId,
@@ -137,18 +137,22 @@ export async function GET(req: NextRequest) {
     search,
     fyStart,
     fyEnd,
-    ...(p.paginated ? { take: p.take, skip: p.skip } : {}),
-  });
-  if (p.paginated) {
-    return NextResponse.json({
-      data,
-      total: data.length,
-      page: p.page,
-      pageSize: p.pageSize,
-      hasMore: data.length === p.pageSize,
-    });
+  };
+  if (searchParams.get("counts") === "1") {
+    const counts = await poStatusCounts(baseOpts);
+    return NextResponse.json({ counts });
   }
-  return NextResponse.json({ data, total: data.length });
+  const { orderBy } = parseSort(
+    searchParams,
+    ["poNumber", "poDate", "status", "totalAmount", "createdAt"],
+    { field: "poDate", order: "desc" },
+  );
+  const result = await paginateDb(
+    p,
+    (paging) => listPOs({ ...baseOpts, ...paging, orderBy }),
+    () => countPOs(baseOpts),
+  );
+  return NextResponse.json(result);
 }
 
 export async function POST(req: NextRequest) {

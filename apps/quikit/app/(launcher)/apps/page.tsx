@@ -3,9 +3,9 @@
 /**
  * App Launcher + Org Selector — /apps
  *
- * Visual language mirrors the marketing site / login modal (warm paper,
- * ink, sand accent, DM Serif Display headings, soft layered shadows) so
- * marketing → modal → launcher is one continuous product. Motion via
+ * Visual language mirrors the redesigned dark login / app-library
+ * (near-black surfaces, light-on-dark ink, hairline borders, sand accent
+ * for highlights) so login → launcher is one continuous product. Motion via
  * Framer Motion only (staggered entrance, hover lift, reduced-motion
  * aware) — deliberately no 3D: this is a scan-and-click surface.
  *
@@ -28,11 +28,12 @@ import {
   Star,
   Check,
   Target,
-  MessageSquare,
   Users,
   Mail,
   Megaphone,
   LayoutGrid,
+  ArrowUpRight,
+  Plus,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -41,29 +42,44 @@ import { UserMenu, globalSignOut } from "@quikit/ui";
 import { HIDDEN_APP_SLUGS } from "@quikit/shared";
 import { APP_DETAILS } from "../_data/app-details";
 import { SurpriseGiftPopup } from "../_components/surprise-gift-popup";
+import { CreateOrgModal, type CreatedOrg } from "../_components/create-org-modal";
 
-/* ── Brand tokens (mirror the marketing site + login modal) ── */
-const PAPER = "#F7F7F4";
-const CARD = "#FFFFFF";
-const INK = "#0D1117";
+/* ── Brand tokens (dark, mirroring the redesigned login / app-library) ──
+   INK is the primary (light-on-dark) foreground; PAPER is the page base;
+   CARD is a panel surface. Kept the original names so the ~1300 lines of
+   inline styles below flip to dark by re-pointing these constants. */
+const PAPER = "#050505";
+const CARD = "#101010";
+const CARD_BORDER = "#242424";
+const INK = "#F4F4F4";
 const ACCENT = "#CDB18B";
-const ACCENT_DIM = "#F2E4CF";
-const MUTED = "#6B7280";
-const HAIRLINE = "rgba(13,17,23,0.08)";
-const SERIF = "'DM Serif Display', Georgia, serif";
-const SANS = "'Inter', system-ui, sans-serif";
+const ACCENT_DIM = "rgba(205,177,139,0.14)";
+const MUTED = "#9A9A9A";
+const SURFACE = "rgba(255,255,255,0.04)";
+const HAIRLINE = "rgba(255,255,255,0.12)";
+/* Dark-mode modal elevation. The old light-theme shadow used near-black
+   at low alpha, which is invisible on the near-black backdrop — dark UI
+   needs a deeper black shadow to lift the card off the scrim. */
+const MODAL_SHADOW = "0 1px 3px rgba(0,0,0,0.4), 0 30px 70px rgba(0,0,0,0.55)";
+const SANS = "'Gilroy', 'Helvetica Neue', Arial, system-ui, -apple-system, sans-serif";
 
 /* Brand icons for the launcher tiles — local assets override the DB
-   iconUrl so the launcher always renders the current brand logos. */
+   iconUrl so the launcher always renders the current brand logos.
+   This page renders on a dark surface (see PAPER), so per the brand rule we
+   serve the LIGHT monogram (white badge) for every tile — the dark badge
+   blends into the near-black backdrop. */
 const LAUNCHER_ICONS: Record<string, string> = {
-  admin: "/app-icons/admin.svg",
-  quikcrm: "/app-icons/quikcrm.svg",
-  quikinfra: "/app-icons/quikinfra.svg",
-  quikscale: "/app-icons/quikscale.svg",
-  quiktrack: "/app-icons/quiktrack.svg",
-  quiksocial: "/app-icons/quiksocial.svg",
-  quiksupport: "/app-icons/quiksupport.svg",
-  quikflow: "/app-icons/quikflow.svg",
+  admin: "/app-icons/admin-light.svg",
+  quikasset: "/app-icons/quikasset-light.svg",
+  quikchat: "/app-icons/quikchat-light.svg",
+  quikcrm: "/app-icons/quikcrm-light.svg",
+  quikfinance: "/app-icons/quikfinance-light.svg",
+  quikhrms: "/app-icons/quikhrms-light.svg",
+  quikinfra: "/app-icons/quikinfra-light.svg",
+  quikscale: "/app-icons/quikscale-light.svg",
+  quiktrack: "/app-icons/quiktrack-light.svg",
+  quiksocial: "/app-icons/quiksocial-light.svg",
+  quiksupport: "/app-icons/quiksupport-light.svg",
 };
 
 interface AppInfo {
@@ -85,17 +101,16 @@ interface AppInfo {
 /** Coming-soon apps shown in the launcher's "Upcoming" section (not in the
  *  catalog yet — purely informational, non-launchable). Each has a gradient
  *  icon tile + glyph mirroring the marketing design. */
-const UPCOMING_APPS: { name: string; description: string; icon: LucideIcon; gradient: string }[] = [
+const UPCOMING_APPS: { name: string; description: string; icon: LucideIcon; gradient: string; logo?: string }[] = [
   { name: "QuikGoals", icon: Target, gradient: "linear-gradient(135deg,#FB923C,#F97316)", description: "Define targets, measure progress, and align every team around the numbers that matter." },
-  { name: "QuikChat", icon: MessageSquare, gradient: "linear-gradient(135deg,#2DD4BF,#14B8A6)", description: "Manage customer conversations across every channel with full context and smart routing." },
-  { name: "QuikHR", icon: Users, gradient: "linear-gradient(135deg,#FB7185,#F43F5E)", description: "Run hiring, onboarding, payroll, and performance reviews end to end in one HR system." },
-  { name: "QuikEmail", icon: Mail, gradient: "linear-gradient(135deg,#818CF8,#6366F1)", description: "Build, send, and automate email campaigns with templates, sequences, and open tracking built in." },
-  { name: "QuikSEO", icon: Search, gradient: "linear-gradient(135deg,#34D399,#10B981)", description: "Find keyword opportunities, monitor rankings, and get AI-driven content recommendations." },
+  { name: "QuikHR", icon: Users, gradient: "linear-gradient(135deg,#FB7185,#F43F5E)", logo: "/app-icons/quikhrms-light.svg", description: "Run hiring, onboarding, payroll, and performance reviews end to end in one HR system." },
+  { name: "QuikEmail", icon: Mail, gradient: "linear-gradient(135deg,#818CF8,#6366F1)", logo: "/app-icons/quikmail-light.svg", description: "Build, send, and automate email campaigns with templates, sequences, and open tracking built in." },
+  { name: "QuikSEO", icon: Search, gradient: "linear-gradient(135deg,#34D399,#10B981)", logo: "/app-icons/quikseo-light.svg", description: "Find keyword opportunities, monitor rankings, and get AI-driven content recommendations." },
   { name: "QuikMarketing", icon: Megaphone, gradient: "linear-gradient(135deg,#F87171,#EF4444)", description: "Run AI-powered campaigns across every marketing channel from a single workspace." },
-  { name: "QuikStudio", icon: LayoutGrid, gradient: "linear-gradient(135deg,#60A5FA,#3B82F6)", description: "Build custom apps and automations for your business. No code required." },
+  { name: "QuikStudio", icon: LayoutGrid, gradient: "linear-gradient(135deg,#60A5FA,#3B82F6)", logo: "/app-icons/quikstudio-light.svg", description: "Build custom apps and automations for your business. No code required." },
 ];
 
-const GRID_CLS = "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5";
+const GRID_CLS = "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4";
 
 /* Section panel — rounded translucent container (mirrors marketing .apps-section). */
 function SectionPanel({
@@ -107,26 +122,20 @@ function SectionPanel({
   muted?: boolean;
   children: React.ReactNode;
 }) {
+  // Bare section (no container box) with a monospace uppercase heading, matching
+  // the app-library design's `.apps__section-heading`.
+  void muted;
   return (
-    <section
-      style={{
-        background: muted ? "rgba(255,255,255,0.32)" : "rgba(255,255,255,0.5)",
-        border: "1px solid rgba(0,0,0,0.06)",
-        borderRadius: 22,
-        padding: "24px 24px 26px",
-        WebkitBackdropFilter: "blur(6px)",
-        backdropFilter: "blur(6px)",
-        boxShadow: "0 10px 40px -28px rgba(0,0,0,0.25)",
-      }}
-    >
+    <section style={{ marginBottom: 44 }}>
       <h2
         style={{
-          fontSize: 13,
-          fontWeight: 700,
-          letterSpacing: "0.1em",
+          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+          fontSize: 12,
+          fontWeight: 400,
+          letterSpacing: "0.14em",
           textTransform: "uppercase",
-          color: muted ? MUTED : INK,
-          margin: "0 0 16px",
+          color: MUTED,
+          margin: "0 0 18px",
         }}
       >
         {title}
@@ -140,9 +149,9 @@ function SectionPanel({
 function TrialPill({ state, daysLeft }: { state?: string; daysLeft?: number | null }) {
   if (state !== "trialing" && state !== "expired") return null;
   const expired = state === "expired";
-  const color = expired ? "#CE3A3D" : "#9A6217";
-  const bg = expired ? "rgba(206,58,61,0.10)" : "rgba(154,98,23,0.10)";
-  const border = expired ? "rgba(206,58,61,0.22)" : "rgba(154,98,23,0.22)";
+  const color = expired ? "#F87171" : "#E0A53A";
+  const bg = expired ? "rgba(248,113,113,0.12)" : "rgba(224,165,58,0.12)";
+  const border = expired ? "rgba(248,113,113,0.30)" : "rgba(224,165,58,0.30)";
   return (
     <span
       className="inline-flex items-center"
@@ -158,12 +167,13 @@ const iconFallbackStyle: React.CSSProperties = {
   width: 44,
   height: 44,
   borderRadius: 12,
-  background: ACCENT_DIM,
-  color: "#7c5e2e",
+  background: SURFACE,
+  border: `1px solid ${HAIRLINE}`,
+  color: INK,
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  fontFamily: SERIF,
+  fontFamily: SANS,
   fontSize: 20,
 };
 
@@ -206,6 +216,8 @@ export default function AppLauncherPage() {
   // closed) + the granted trial length, plus the slug whose claim is in flight.
   const [surpriseApp, setSurpriseApp] = useState<AppInfo | null>(null);
   const [claimingGift, setClaimingGift] = useState<string | null>(null);
+  // "Create Organization" modal (profile-menu action → create an additional org).
+  const [createOrgOpen, setCreateOrgOpen] = useState(false);
   // Gate the header entrance animation until after mount so SSR and the first
   // client render share the same (hidden) state — otherwise framer-motion
   // hydrates the header at its `animate` style and React warns that the
@@ -249,11 +261,21 @@ export default function AppLauncherPage() {
     const launcherUrl =
       process.env.NEXT_PUBLIC_QUIKIT_URL?.replace(/\/+$/, "") ??
       (typeof window !== "undefined" ? window.location.origin : "");
+    // After logout, land on the public marketing site instead of the launcher
+    // root — but only on the UAT launcher (uatapps.quikit.ai → uat.quikit.ai).
+    // Every other environment (incl. prod apps.quikit.ai) keeps landing on the
+    // launcher root. Decided at runtime from the browser host so no build-arg /
+    // Dockerfile wiring is needed. NOTE: the target origin must be in the
+    // launcher's /api/auth/signout-global allow-list or that hop rejects it.
+    const host =
+      typeof window !== "undefined" ? window.location.hostname : "";
+    const postLogoutRedirect =
+      host === "uatapps.quikit.ai" ? "https://uat.quikit.ai" : `${launcherUrl}/`;
     await globalSignOut({
       authUrl: process.env.NEXT_PUBLIC_AUTH_URL,
       quikitUrl: launcherUrl,
       localSignOut: () => signOut({ redirect: false }),
-      postLogoutRedirect: `${launcherUrl}/`,
+      postLogoutRedirect,
     });
   }
 
@@ -349,6 +371,44 @@ export default function AppLauncherPage() {
     setSelectedOrg(org);
     setOrgDropdownOpen(false);
     await selectOrgInSession(org.orgId, org.role);
+  }
+
+  // After the "Create Organization" modal creates a new org, drop the user
+  // straight into it: refresh the switcher list, move the active org onto the
+  // JWT (so app activation works), and let the selectedOrg effect reload the
+  // (empty) catalog. Net effect matches a fresh signup into the new workspace.
+  async function handleOrgCreated(created: CreatedOrg) {
+    const newOrg: OrgInfo = {
+      orgId: created.orgId,
+      name: "",
+      slug: created.slug,
+      role: created.role,
+      plan: "startup",
+      status: "active",
+    };
+    // Refresh memberships so the header switcher lists the new org; prefer the
+    // server's copy (it has the real name/plan) but fall back to newOrg.
+    try {
+      const r = await fetch("/api/org/memberships");
+      const j = await r.json();
+      if (j.success) {
+        const all: OrgInfo[] = j.data;
+        setOrgs(all);
+        const fromServer = all.find((o) => o.orgId === created.orgId);
+        if (fromServer) {
+          setSelectedOrg(fromServer);
+          await selectOrgInSession(fromServer.orgId, fromServer.role);
+          setCreateOrgOpen(false);
+          return;
+        }
+      }
+    } catch {
+      // best-effort — fall through to the optimistic newOrg below
+    }
+    setOrgs((prev) => [...prev, newOrg]);
+    setSelectedOrg(newOrg);
+    await selectOrgInSession(newOrg.orgId, newOrg.role);
+    setCreateOrgOpen(false);
   }
 
   async function handleLaunch(app: AppInfo, to: string = "/") {
@@ -512,50 +572,57 @@ export default function AppLauncherPage() {
     return <span style={iconFallbackStyle}>{initialOf(app.name)}</span>;
   }
 
+  // Card surface — sharp-cornered bordered panel per the app-library design
+  // (no rounding, no drop shadow; hover lift handled by the `.applib-card` class).
   const cardStyle: React.CSSProperties = {
     background: CARD,
-    border: `1px solid ${HAIRLINE}`,
-    borderRadius: 24,
-    boxShadow: "0 1px 3px rgba(13,17,23,0.04), 0 10px 30px rgba(13,17,23,0.06)",
-    minHeight: 196,
+    border: `1px solid ${CARD_BORDER}`,
+    borderRadius: 0,
+    minHeight: 210,
   };
   const btnPrimary: React.CSSProperties = {
-    fontWeight: 700,
-    color: "#fff",
+    fontWeight: 600,
+    color: PAPER,
     background: INK,
     borderRadius: 12,
     fontSize: 13,
   };
-  // Outline card button (white bg + dark text + border) — matches the launcher
-  // card design. Background/hover via Tailwind so :hover works; border/color
-  // inline. Used for Open app / Claim Your Surprise Gift / Start free trial.
+  // Ghost card button (surface bg + hairline border + light text, medium weight)
+  // with a diagonal shine sweep on hover (`.applib-btn`). Background/hover via
+  // Tailwind so :hover works. Used for Open app / Claim Surprise Gift / Start trial.
   const cardBtnCls =
-    "flex-1 py-2.5 rounded-xl text-sm font-bold transition-colors bg-white hover:bg-[#F2F1ED] disabled:opacity-60";
+    "applib-btn flex-1 h-11 rounded-xl text-sm font-medium transition-colors bg-white/[0.04] hover:bg-white/[0.10] disabled:opacity-60";
   const cardBtnStyle: React.CSSProperties = { color: INK, border: `1px solid ${HAIRLINE}` };
   const eyeBtnStyle: React.CSSProperties = {
     border: `1px solid ${HAIRLINE}`,
-    background: CARD,
-    color: MUTED,
+    background: SURFACE,
+    color: INK,
     borderRadius: 12,
     width: 44,
+    height: 44,
     flexShrink: 0,
   };
 
   // Card for an ACTIVATED app (Active section): trial pill + Open app / Upgrade.
   function renderActiveCard(app: AppInfo) {
-    const desc = (app.description ?? "").split(/(?<=[.!?])\s+/)[0];
+    const desc = app.description ?? "";
     const expired = app.trialState === "expired";
+    const showPill = app.trialState === "trialing" || app.trialState === "expired";
     return (
-      <motion.div key={app.id} variants={tileV} className="p-5 flex flex-col" style={cardStyle}>
-        <div className="flex items-start justify-between gap-2 mb-3.5">
+      <motion.div key={app.id} variants={tileV} className="applib-card flex flex-col" style={{ ...cardStyle, padding: "26px 24px 22px" }}>
+        <div className="flex items-center" style={{ gap: 12 }}>
           <AppIcon app={app} />
-          <TrialPill state={app.trialState} daysLeft={app.daysLeft} />
+          <h3 className="truncate" style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em", color: INK }}>{app.name}</h3>
+          {showPill ? (
+            <span className="ml-auto flex-shrink-0"><TrialPill state={app.trialState} daysLeft={app.daysLeft} /></span>
+          ) : (
+            <ArrowUpRight className="applib-card__arrow ml-auto flex-shrink-0" style={{ width: 18, height: 18, color: MUTED }} />
+          )}
         </div>
-        <h3 className="truncate" style={{ fontSize: 16, fontWeight: 700, color: INK }}>{app.name}</h3>
-        <p className="line-clamp-2 mt-1" style={{ fontSize: 13, color: MUTED, lineHeight: 1.5, flex: 1 }}>
+        <p style={{ fontSize: 14.5, color: MUTED, lineHeight: 1.6, marginTop: 18, flex: 1 }}>
           {desc || "Open this app in your workspace."}
         </p>
-        <div className="flex items-center gap-2 mt-4">
+        <div className="flex items-center" style={{ gap: 10, marginTop: 22 }}>
           {expired ? (
             <button
               onClick={() => handleClaimGift(app)}
@@ -574,8 +641,8 @@ export default function AppLauncherPage() {
               Open app
             </button>
           )}
-          <button onClick={() => openDetail(app)} className="py-2.5 flex items-center justify-center" style={eyeBtnStyle} title="App details">
-            <Eye className="h-4 w-4 mx-auto" />
+          <button onClick={() => openDetail(app)} className="flex items-center justify-center" style={eyeBtnStyle} title="App details">
+            <Eye className="h-4 w-4" />
           </button>
         </div>
       </motion.div>
@@ -584,22 +651,23 @@ export default function AppLauncherPage() {
 
   // Card for a NOT-activated app (Other Tools section): Start trial + info eye.
   function renderOtherCard(app: AppInfo) {
-    const desc = (app.description ?? "").split(/(?<=[.!?])\s+/)[0];
+    const desc = app.description ?? "";
     return (
-      <motion.div key={app.id} variants={tileV} className="p-5 flex flex-col" style={cardStyle}>
-        <div className="flex items-center gap-3 mb-3.5">
+      <motion.div key={app.id} variants={tileV} className="applib-card flex flex-col" style={{ ...cardStyle, padding: "26px 24px 22px" }}>
+        <div className="flex items-center" style={{ gap: 12 }}>
           <AppIcon app={app} />
-          <h3 className="truncate" style={{ fontSize: 16, fontWeight: 700, color: INK }}>{app.name}</h3>
+          <h3 className="truncate" style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em", color: INK }}>{app.name}</h3>
+          <ArrowUpRight className="applib-card__arrow ml-auto flex-shrink-0" style={{ width: 18, height: 18, color: MUTED }} />
         </div>
-        <p className="line-clamp-2" style={{ fontSize: 13, color: MUTED, lineHeight: 1.5, flex: 1 }}>
+        <p style={{ fontSize: 14.5, color: MUTED, lineHeight: 1.6, marginTop: 18, flex: 1 }}>
           {desc || "Start a free trial of this app."}
         </p>
-        <div className="flex items-center gap-2 mt-4">
+        <div className="flex items-center" style={{ gap: 10, marginTop: 22 }}>
           <button onClick={() => openDetail(app)} className={cardBtnCls} style={cardBtnStyle}>
             Start free trial
           </button>
-          <button onClick={() => openDetail(app)} className="py-2.5 flex items-center justify-center" style={eyeBtnStyle} title="App details">
-            <Eye className="h-4 w-4 mx-auto" />
+          <button onClick={() => openDetail(app)} className="flex items-center justify-center" style={eyeBtnStyle} title="App details">
+            <Eye className="h-4 w-4" />
           </button>
         </div>
       </motion.div>
@@ -626,9 +694,44 @@ export default function AppLauncherPage() {
           inset: 0,
           zIndex: 0,
           pointerEvents: "none",
-          background: "url('/launcher-bg.webp') center top / cover no-repeat",
+          background:
+            "radial-gradient(90% 55% at 50% 0%, rgba(255,255,255,0.05), transparent 70%)",
         }}
       />
+
+      {/* Animated background guides (vertical hairlines + falling beams) —
+          mirrors the app-library design's background layer. */}
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+            .qk-launch-guides { position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
+            .qk-launch-guides::before, .qk-launch-guides::after { content:""; position:absolute; top:0; bottom:0; width:1px; background:rgba(255,255,255,0.06); }
+            .qk-launch-guides::before { left:12%; }
+            .qk-launch-guides::after { right:12%; }
+            .qk-launch-guides__drop { position:absolute; top:0; width:1px; height:90px; background:linear-gradient(to bottom, transparent 0%, transparent 10%, rgba(255,255,255,0.55) 100%); opacity:0.65; box-shadow:0 0 6px 0.5px rgba(255,255,255,0.18); animation:qkLaunchGuideFall 6s linear infinite; }
+            .qk-launch-guides__drop--left { left:12%; }
+            .qk-launch-guides__drop--right { right:12%; animation-delay:3s; }
+            @keyframes qkLaunchGuideFall { 0% { transform:translateY(-120px); opacity:0; } 8% { opacity:0.55; } 92% { opacity:0.55; } 100% { transform:translateY(100vh); opacity:0; } }
+            @media (prefers-reduced-motion: reduce) { .qk-launch-guides__drop { display:none; } }
+
+            /* App-library card: hover border/background lift + corner arrow reveal */
+            .applib-card { transition:border-color .2s ease, background .2s ease; }
+            .applib-card:hover { border-color:rgba(255,255,255,0.22); background:#141414; }
+            .applib-card__arrow { opacity:0.35; transition:opacity .2s ease, transform .2s ease; }
+            .applib-card:hover .applib-card__arrow { opacity:1; transform:translate(2px,-2px); }
+            /* Ghost card button with diagonal shine sweep on hover */
+            .applib-btn { position:relative; overflow:hidden; isolation:isolate; }
+            .applib-btn::before { content:""; position:absolute; top:-60%; bottom:-60%; left:-90%; width:65%; background:linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.14) 45%, rgba(255,255,255,0.14) 55%, transparent 100%); transform:skewX(-20deg); opacity:0; pointer-events:none; }
+            .applib-btn:hover:not(:disabled)::before { animation:qkLaunchShine 0.85s cubic-bezier(0.3,0.5,0.2,1); }
+            @keyframes qkLaunchShine { 0% { left:-90%; opacity:0; } 10% { opacity:1; } 90% { opacity:1; } 100% { left:150%; opacity:0; } }
+            @media (prefers-reduced-motion: reduce) { .applib-btn::before { display:none; } }
+          `,
+        }}
+      />
+      <div className="qk-launch-guides" aria-hidden>
+        <span className="qk-launch-guides__drop qk-launch-guides__drop--left" />
+        <span className="qk-launch-guides__drop qk-launch-guides__drop--right" />
+      </div>
 
       {/* Floating sticky header — translucent + blurred, stays fixed on scroll. */}
       <motion.header
@@ -639,10 +742,10 @@ export default function AppLauncherPage() {
           position: "sticky",
           top: 0,
           zIndex: 50,
-          background: "rgba(247,247,244,0.72)",
+          background: "rgba(12,12,12,0.72)",
           backdropFilter: "saturate(150%) blur(14px)",
           WebkitBackdropFilter: "saturate(150%) blur(14px)",
-          borderBottom: "1px solid rgba(13,17,23,0.04)",
+          borderBottom: `1px solid ${HAIRLINE}`,
         }}
       >
         <div className="max-w-7xl mx-auto px-4 md:px-6 py-5">
@@ -650,7 +753,7 @@ export default function AppLauncherPage() {
             <div className="flex items-center gap-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src="/brand/quikit.svg"
+                src="/brand/quikit-light.svg"
                 alt="QuikIT"
                 width={36}
                 height={36}
@@ -665,7 +768,7 @@ export default function AppLauncherPage() {
               <div>
                 <h1
                   style={{
-                    fontFamily: SERIF,
+                    fontFamily: SANS,
                     fontSize: 22,
                     lineHeight: 1.1,
                     color: INK,
@@ -673,11 +776,6 @@ export default function AppLauncherPage() {
                 >
                   QuikIT
                 </h1>
-                <p style={{ fontSize: 12, color: MUTED }}>
-                  {session?.user?.name
-                    ? `Welcome, ${session.user.name.split(" ")[0]}`
-                    : "Your platform"}
-                </p>
               </div>
             </div>
 
@@ -687,24 +785,25 @@ export default function AppLauncherPage() {
                 <div className="relative">
                   <button
                     onClick={() => setOrgDropdownOpen(!orgDropdownOpen)}
-                    className="flex items-center gap-2 px-3 py-2 text-sm rounded-xl transition-colors"
+                    className="flex items-center gap-2 px-3.5 h-10 text-sm rounded-full transition-colors hover:bg-white/[0.08]"
                     style={{
                       border: `1px solid ${HAIRLINE}`,
-                      background: CARD,
+                      background: SURFACE,
                       color: INK,
                     }}
                   >
                     <Building2 className="h-4 w-4" style={{ color: MUTED }} />
-                    <span style={{ fontWeight: 600 }}>
+                    <span style={{ fontWeight: 500 }}>
                       {selectedOrg?.name ?? "Select org"}
                     </span>
                     {selectedOrg && (
                       <span
                         style={{
+                          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
                           fontSize: 10,
                           color: MUTED,
                           textTransform: "uppercase",
-                          letterSpacing: "0.06em",
+                          letterSpacing: "0.1em",
                         }}
                       >
                         {selectedOrg.role}
@@ -729,8 +828,10 @@ export default function AppLauncherPage() {
                             background: CARD,
                             border: `1px solid ${HAIRLINE}`,
                             borderRadius: 16,
+                            WebkitBackdropFilter: "blur(10px)",
+                            backdropFilter: "blur(10px)",
                             boxShadow:
-                              "0 1px 3px rgba(13,17,23,0.05), 0 24px 60px rgba(13,17,23,0.16)",
+                              "0 1px 3px rgba(0,0,0,0.4), 0 24px 60px rgba(0,0,0,0.55)",
                           }}
                         >
                           {orgs.map((org) => {
@@ -747,11 +848,13 @@ export default function AppLauncherPage() {
                                     ? undefined
                                     : `Membership ${org.status} — not yet accessible`
                                 }
-                                className="w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors"
+                                className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${
+                                  isActive && !selected ? "hover:bg-white/[0.05]" : ""
+                                }`}
                                 style={{
                                   opacity: isActive ? 1 : 0.5,
                                   cursor: isActive ? "pointer" : "not-allowed",
-                                  background: selected ? ACCENT_DIM : "transparent",
+                                  ...(selected ? { background: ACCENT_DIM } : {}),
                                 }}
                               >
                                 <Building2
@@ -778,7 +881,7 @@ export default function AppLauncherPage() {
                                       <span
                                         style={{
                                           marginLeft: 4,
-                                          color: "#B45309",
+                                          color: "#E0A53A",
                                           textTransform: "none",
                                           fontWeight: 700,
                                         }}
@@ -809,9 +912,9 @@ export default function AppLauncherPage() {
                   href="/organizations"
                   className="flex items-center gap-2 px-3 py-2 text-sm rounded-xl transition-colors"
                   style={{
-                    border: "1px solid rgba(180,83,9,0.25)",
-                    background: "rgba(180,83,9,0.08)",
-                    color: "#92400E",
+                    border: "1px solid rgba(224,165,58,0.30)",
+                    background: "rgba(224,165,58,0.10)",
+                    color: "#E0A53A",
                     fontWeight: 600,
                   }}
                   title="Open Super Admin Portal"
@@ -820,14 +923,6 @@ export default function AppLauncherPage() {
                   <span>Super Admin</span>
                 </Link>
               )}
-
-              <UserMenu
-                user={{ name: userFullName, email: userEmail }}
-                isImpersonating={isImpersonating}
-                onSignOut={handleSignOut}
-                onExitImpersonation={handleExitImpersonation}
-                avatarClassName="bg-[#CDB18B] text-white"
-              />
 
               <div className="relative flex-1 sm:flex-none min-w-[140px]">
                 <Search
@@ -847,23 +942,41 @@ export default function AppLauncherPage() {
                   }}
                 />
               </div>
+
+              <UserMenu
+                user={{ name: userFullName, email: userEmail }}
+                isImpersonating={isImpersonating}
+                onSignOut={handleSignOut}
+                onExitImpersonation={handleExitImpersonation}
+                items={[
+                  {
+                    label: "Create Organization",
+                    icon: Plus,
+                    onClick: () => setCreateOrgOpen(true),
+                  },
+                ]}
+                avatarClassName="bg-[#CDB18B]"
+                dark
+              />
             </div>
           </div>
         </div>
       </motion.header>
 
       {/* Sectioned app launcher: Active / Other Tools / Upcoming */}
-      <main className="relative max-w-7xl mx-auto px-4 md:px-6 py-10 space-y-8">
+      <main className="relative max-w-7xl mx-auto px-4 md:px-6 py-10">
         <h1
           style={{
-            fontFamily: SERIF,
-            fontSize: 40,
-            lineHeight: 1.08,
+            fontFamily: SANS,
+            fontSize: "clamp(24px, 3vw, 38px)",
+            fontWeight: 400,
+            letterSpacing: "-0.02em",
+            lineHeight: 1.1,
             color: INK,
-            margin: "4px 0 8px",
+            margin: "4px 0 32px",
           }}
         >
-          One Platform to Run Your <em style={{ fontStyle: "italic" }}>Entire Business</em>.
+          Your apps <em style={{ fontStyle: "normal", color: MUTED }}>— everything connected, in one place.</em>
         </h1>
 
         {(loadingApps || loadingOrgs) && (
@@ -906,37 +1019,50 @@ export default function AppLauncherPage() {
               {UPCOMING_APPS.map((u) => {
                 const Icon = u.icon;
                 return (
-                  <div key={u.name} className="p-5 flex flex-col" style={{ ...cardStyle, minHeight: 188 }}>
-                    <div
-                      className="flex items-center justify-center mb-3.5"
-                      style={{ width: 44, height: 44, borderRadius: 12, background: u.gradient }}
-                    >
-                      <Icon className="h-5 w-5" style={{ color: "#fff" }} />
-                    </div>
-                    <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                      <h3 style={{ fontSize: 16, fontWeight: 700, color: INK }}>{u.name}</h3>
+                  <div key={u.name} className="applib-card flex flex-col" style={{ ...cardStyle, padding: "26px 24px 22px" }}>
+                    <div className="flex items-center" style={{ gap: 12 }}>
+                      {u.logo ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={u.logo}
+                          alt={u.name}
+                          width={44}
+                          height={44}
+                          style={{ width: 44, height: 44, borderRadius: 12, objectFit: "cover" }}
+                        />
+                      ) : (
+                        <div
+                          className="flex items-center justify-center"
+                          style={{ width: 44, height: 44, borderRadius: 12, background: u.gradient, flexShrink: 0 }}
+                        >
+                          <Icon className="h-5 w-5" style={{ color: "#fff" }} />
+                        </div>
+                      )}
+                      <h3 className="truncate" style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em", color: INK }}>{u.name}</h3>
                       <span
+                        className="ml-auto flex-shrink-0"
                         style={{
-                          fontSize: 9.5,
-                          fontWeight: 700,
-                          letterSpacing: "0.06em",
-                          color: "#9A6217",
-                          background: "rgba(154,98,23,0.10)",
-                          border: "1px solid rgba(154,98,23,0.18)",
+                          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                          fontSize: 10,
+                          letterSpacing: "0.12em",
+                          textTransform: "uppercase",
+                          color: MUTED,
+                          background: SURFACE,
+                          border: `1px solid ${HAIRLINE}`,
                           borderRadius: 999,
-                          padding: "3px 7px",
+                          padding: "4px 9px",
                         }}
                       >
-                        COMING SOON
+                        Coming soon
                       </span>
                     </div>
-                    <p className="line-clamp-2" style={{ fontSize: 13, color: MUTED, lineHeight: 1.5, flex: 1 }}>
+                    <p style={{ fontSize: 14.5, color: MUTED, lineHeight: 1.6, marginTop: 18, flex: 1 }}>
                       {u.description}
                     </p>
                     <button
                       disabled
-                      className="mt-4 w-full py-2.5 text-sm rounded-xl"
-                      style={{ fontWeight: 600, color: MUTED, background: PAPER, border: `1px solid ${HAIRLINE}`, cursor: "not-allowed", opacity: 0.7 }}
+                      className="w-full h-11 text-sm rounded-xl"
+                      style={{ marginTop: 22, fontWeight: 500, color: MUTED, background: SURFACE, border: `1px solid ${HAIRLINE}`, cursor: "not-allowed", opacity: 0.7 }}
                     >
                       Notify me
                     </button>
@@ -975,8 +1101,7 @@ export default function AppLauncherPage() {
                 background: CARD,
                 border: `1px solid ${HAIRLINE}`,
                 borderRadius: 24,
-                boxShadow:
-                  "0 1px 3px rgba(13,17,23,0.05), 0 30px 70px rgba(13,17,23,0.22)",
+                boxShadow: MODAL_SHADOW,
               }}
             >
               <div className="flex items-center gap-3 mb-4">
@@ -985,8 +1110,8 @@ export default function AppLauncherPage() {
                     width: 44,
                     height: 44,
                     borderRadius: 12,
-                    background: "rgba(220,38,38,0.10)",
-                    color: "#DC2626",
+                    background: "rgba(248,113,113,0.16)",
+                    color: "#F87171",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -997,7 +1122,7 @@ export default function AppLauncherPage() {
                 </span>
                 <h3
                   id="org-suspended-title"
-                  style={{ fontFamily: SERIF, fontSize: 22, color: INK, lineHeight: 1.15 }}
+                  style={{ fontFamily: SANS, fontSize: 22, color: INK, lineHeight: 1.15 }}
                 >
                   Organization suspended
                 </h3>
@@ -1022,7 +1147,7 @@ export default function AppLauncherPage() {
                   className="px-5 py-2.5 text-sm transition-colors"
                   style={{
                     fontWeight: 700,
-                    color: "#fff",
+                    color: PAPER,
                     background: INK,
                     borderRadius: 12,
                   }}
@@ -1057,13 +1182,13 @@ export default function AppLauncherPage() {
               transition={{ duration: 0.22, ease }}
               onClick={(e) => e.stopPropagation()}
               className="w-full max-w-md p-7"
-              style={{ background: CARD, border: `1px solid ${HAIRLINE}`, borderRadius: 24, boxShadow: "0 1px 3px rgba(13,17,23,0.05), 0 30px 70px rgba(13,17,23,0.22)" }}
+              style={{ background: CARD, border: `1px solid ${HAIRLINE}`, borderRadius: 24, boxShadow: MODAL_SHADOW }}
             >
               <div className="flex items-center gap-3 mb-4">
-                <span style={{ width: 44, height: 44, borderRadius: 12, background: "rgba(180,83,9,0.10)", color: "#B45309", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <span style={{ width: 44, height: 44, borderRadius: 12, background: "rgba(224,165,58,0.16)", color: "#E0A53A", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                   <AlertTriangle className="h-5 w-5" />
                 </span>
-                <h3 id="trial-expired-title" style={{ fontFamily: SERIF, fontSize: 22, color: INK, lineHeight: 1.15 }}>
+                <h3 id="trial-expired-title" style={{ fontFamily: SANS, fontSize: 22, color: INK, lineHeight: 1.15 }}>
                   {upgradeApp.name} trial has ended
                 </h3>
               </div>
@@ -1079,7 +1204,7 @@ export default function AppLauncherPage() {
                   onClick={() => handleClaimGift(upgradeApp)}
                   disabled={claimingGift === upgradeApp.slug}
                   className="px-5 py-2.5 text-sm transition-colors disabled:opacity-60"
-                  style={{ fontWeight: 700, color: "#fff", background: INK, borderRadius: 12 }}
+                  style={{ fontWeight: 700, color: PAPER, background: INK, borderRadius: 12 }}
                 >
                   {claimingGift === upgradeApp.slug ? "Claiming…" : "Claim Your Surprise Gift"}
                 </button>
@@ -1088,6 +1213,16 @@ export default function AppLauncherPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Create Organization — profile-menu action for an authenticated user to
+          spin up an additional workspace without leaving the launcher. */}
+      <CreateOrgModal
+        open={createOrgOpen}
+        onClose={() => setCreateOrgOpen(false)}
+        fullName={userFullName}
+        email={userEmail}
+        onCreated={handleOrgCreated}
+      />
 
       {/* Per-app detail screen — opened by the eye / "Start free trial". Content
           is sourced per-app from APP_DETAILS[slug] (falls back to the DB
@@ -1122,14 +1257,14 @@ export default function AppLauncherPage() {
                 transition={{ duration: 0.22, ease }}
                 onClick={(e) => e.stopPropagation()}
                 className="w-full max-w-3xl flex flex-col"
-                style={{ background: CARD, border: `1px solid ${HAIRLINE}`, borderRadius: 24, boxShadow: "0 1px 3px rgba(13,17,23,0.05), 0 30px 70px rgba(13,17,23,0.22)", maxHeight: "88vh" }}
+                style={{ background: CARD, border: `1px solid ${HAIRLINE}`, borderRadius: 24, boxShadow: MODAL_SHADOW, maxHeight: "88vh" }}
               >
                 {/* Header */}
                 <div className="flex items-start justify-between gap-4 p-7 pb-4" style={{ flexShrink: 0 }}>
                   <div className="flex items-center gap-3 min-w-0">
                     <AppIcon app={detailApp} />
                     <div className="min-w-0">
-                      <h3 className="truncate" style={{ fontFamily: SERIF, fontSize: 26, color: INK, lineHeight: 1.1 }}>{detailApp.name}</h3>
+                      <h3 className="truncate" style={{ fontFamily: SANS, fontSize: 26, color: INK, lineHeight: 1.1 }}>{detailApp.name}</h3>
                       {detail?.tagline && <p className="truncate" style={{ fontSize: 13, color: MUTED, marginTop: 2 }}>{detail.tagline}</p>}
                     </div>
                   </div>
@@ -1137,7 +1272,7 @@ export default function AppLauncherPage() {
                     {detailApp.activated ? (
                       <TrialPill state={detailApp.trialState} daysLeft={detailApp.daysLeft} />
                     ) : (
-                      <span style={{ fontSize: 12, fontWeight: 700, color: "#fff", background: INK, borderRadius: 999, padding: "6px 12px", whiteSpace: "nowrap" }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: PAPER, background: INK, borderRadius: 999, padding: "6px 12px", whiteSpace: "nowrap" }}>
                         14 days free trial
                       </span>
                     )}
@@ -1192,7 +1327,7 @@ export default function AppLauncherPage() {
                 <div className="px-7 py-5" style={{ overflowY: "auto", flex: 1 }}>
                   {detailTab === "overview" && (
                     <>
-                      <p style={{ fontSize: 14.5, color: "#374151", lineHeight: 1.7, marginBottom: 20 }}>
+                      <p style={{ fontSize: 14.5, color: "#C9C9C9", lineHeight: 1.7, marginBottom: 20 }}>
                         {detail?.overview || detailApp.description || "Activate this app to start a 14-day free trial across your workspace."}
                       </p>
                       <div
@@ -1232,7 +1367,7 @@ export default function AppLauncherPage() {
                   )}
 
                   {detailTab === "pricing" && (
-                    <div style={{ fontSize: 14, color: "#374151", lineHeight: 1.7 }}>
+                    <div style={{ fontSize: 14, color: "#C9C9C9", lineHeight: 1.7 }}>
                       <p style={{ marginBottom: 10 }}>
                         Start with a <strong>14-day free trial</strong> — no credit card required.
                       </p>

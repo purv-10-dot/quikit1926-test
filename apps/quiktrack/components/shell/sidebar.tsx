@@ -110,6 +110,9 @@ export function Sidebar() {
   // While the perm fetch is in flight, render the full sidebar (avoids a
   // flash of empty nav on first paint). Once loaded, filter by hasNav.
   const canSee = (key: string) => perms.loading || perms.hasNav(key);
+  // Reports are restricted to org admins (all data) and Space Admins (their own
+  // projects). Regular members — even with a Report:view grant — don't see them.
+  const canSeeReports = perms.loading || perms.isAdmin || perms.isSpaceAdmin;
   const [recentOpen, setRecentOpen] = useState(false);
   const [plansOpen, setPlansOpen] = useState(false);
   const plansAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -339,7 +342,7 @@ export function Sidebar() {
               <NavRow href="/timesheet" icon={Clock} label="Timesheet" active={isActive("/timesheet")} />
             </span>
           )}
-          {canSee("reports") && (
+          {canSeeReports && (
             <span data-tour="reports">
               <NavRow
                 icon={BarChart3}
@@ -350,7 +353,7 @@ export function Sidebar() {
               />
             </span>
           )}
-          {canSee("reports") && reportsOpen && (
+          {canSeeReports && reportsOpen && (
             <div className="pr-2 space-y-1.5 mb-1">
               <NavRow
                 href="/reports"
@@ -359,7 +362,7 @@ export function Sidebar() {
                 active={pathname === "/reports"}
                 indent
               />
-              {perms.isAdmin && (
+              {(perms.isAdmin || perms.isSpaceAdmin) && (
                 <NavRow
                   href="/reports/resource"
                   icon={Users}

@@ -88,7 +88,10 @@ export const ptSlabSchema = z.object({
   toAmount: z.number().min(0).nullable().optional(),
   taxAmount: z.number().min(0),
   gender: z.enum(["All", "Male", "Female"]).default("All"),
-});
+}).refine(
+  (d) => d.toAmount == null || d.toAmount >= d.fromAmount,
+  { message: "Slab upper amount must be greater than or equal to the lower amount", path: ["toAmount"] },
+);
 
 export const upsertPTSchema = z.object({
   enabled: z.boolean(),
@@ -219,7 +222,7 @@ export const salaryStructureComponentSchema = z.object({
   sortOrder: z.number().int().default(0),
 });
 
-export const salaryStructureSchema = z.object({
+const salaryStructureBase = z.object({
   name: z.string().min(1),
   code: z.string().min(1).max(32),
   description: z.string().nullable().optional(),
@@ -230,7 +233,15 @@ export const salaryStructureSchema = z.object({
   components: z.array(salaryStructureComponentSchema).default([]),
 });
 
-export const updateSalaryStructureSchema = salaryStructureSchema.partial();
+const ctcRangeCheck = (d: { ctcMin?: number | null; ctcMax?: number | null }, ctx: z.RefinementCtx) => {
+  if (d.ctcMin != null && d.ctcMax != null && d.ctcMin > d.ctcMax) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Min CTC can’t be greater than max CTC", path: ["ctcMax"] });
+  }
+};
+
+export const salaryStructureSchema = salaryStructureBase.superRefine(ctcRangeCheck);
+
+export const updateSalaryStructureSchema = salaryStructureBase.partial().superRefine(ctcRangeCheck);
 
 // ─── Employee Salary Assignment ─────────────────────────
 
@@ -286,7 +297,7 @@ export const adjustPayslipTdsSchema = z.object({
 
 export const LoanTypeEnum = z.enum(["Personal", "Education", "Medical", "Housing", "Vehicle", "Advance", "Other"]);
 
-export const createLoanSchema = z.object({
+const loanBase = z.object({
   employeeId: z.string().min(1),
   loanType: LoanTypeEnum.default("Personal"),
   principalAmount: z.number().positive(),
@@ -297,7 +308,19 @@ export const createLoanSchema = z.object({
   reason: z.string().optional().nullable(),
 });
 
-export const updateLoanSchema = createLoanSchema.partial();
+const loanChecks = (d: { principalAmount?: number; emiAmount?: number; tenureMonths?: number }, ctx: z.RefinementCtx) => {
+  if (d.emiAmount != null && d.principalAmount != null && d.emiAmount > d.principalAmount) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "EMI can’t exceed the loan principal", path: ["emiAmount"] });
+  }
+  // Total EMIs must at least repay the principal (interest makes real total higher).
+  if (d.emiAmount != null && d.tenureMonths != null && d.principalAmount != null && d.emiAmount * d.tenureMonths < d.principalAmount) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "EMI × tenure must be at least the principal — increase EMI or tenure", path: ["emiAmount"] });
+  }
+};
+
+export const createLoanSchema = loanBase.superRefine(loanChecks);
+
+export const updateLoanSchema = loanBase.partial().superRefine(loanChecks);
 
 export const rejectLoanSchema = z.object({
   rejectionReason: z.string().min(1),
@@ -392,6 +415,9 @@ export const employeeSubmitClaimSchema = z.object({
 }).refine(
   (v) => !!(v.componentId?.trim() || v.category?.trim()),
   { path: ["category"], message: "Pick a category or component" },
+).refine(
+  (v) => !v.billDateTo || v.billDateTo >= v.billDate,
+  { path: ["billDateTo"], message: "Bill end date must be on or after the bill date" },
 );
 
 // ─── One-Time Earning (Bonus / Arrears / Incentive) ────

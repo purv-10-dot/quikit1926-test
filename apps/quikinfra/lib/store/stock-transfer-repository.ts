@@ -261,6 +261,30 @@ export interface ListStockTransfersOptions {
   /** Pagination — push LIMIT/OFFSET down into the raw SQL. */
   take?: number;
   skip?: number;
+  /** Server-side sort — whitelisted column key + direction. */
+  sortBy?: string | null;
+  sortOrder?: "asc" | "desc" | null;
+}
+
+// Whitelist of sortable columns → safe SQL fragments.
+const ST_SORT_COLUMNS: Record<string, Prisma.Sql> = {
+  transferNumber: Prisma.sql`"transferNumber"`,
+  transferDate: Prisma.sql`"transferDate"`,
+  status: Prisma.sql`status`,
+  sourceProjectName: Prisma.sql`"sourceProjectName"`,
+  createdAt: Prisma.sql`"createdAt"`,
+};
+
+function stockTransfersOrderBy(
+  sortBy?: string | null,
+  sortOrder?: "asc" | "desc" | null,
+): Prisma.Sql {
+  const col = sortBy ? ST_SORT_COLUMNS[sortBy] : undefined;
+  if (!col) {
+    return Prisma.sql`ORDER BY "transferDate" DESC NULLS LAST, "createdAt" DESC`;
+  }
+  const dir = sortOrder === "asc" ? Prisma.sql`ASC` : Prisma.sql`DESC`;
+  return Prisma.sql`ORDER BY ${col} ${dir} NULLS LAST, "createdAt" DESC`;
 }
 
 // Build the WHERE fragment once so list and count stay in sync.
@@ -325,7 +349,7 @@ export async function listStockTransfers(
     SELECT *
     FROM app_quikinfra."Stock_transfers"
     ${where}
-    ORDER BY "transferDate" DESC NULLS LAST, "createdAt" DESC
+    ${stockTransfersOrderBy(opts.sortBy, opts.sortOrder)}
     ${limitClause}${offsetClause}
   `;
   const rows = await db.$queryRaw<StockTransferRow[]>(sql);
@@ -344,6 +368,27 @@ export async function countStockTransfers(
   const sql = Prisma.sql`SELECT COUNT(*)::bigint AS c FROM app_quikinfra."Stock_transfers"${where}`;
   const rows: Array<{ c: bigint }> = await db.$queryRaw(sql);
   return Number(rows[0]?.c ?? 0);
+}
+
+/** Per-status row counts for the list tab badges (status lower-cased to match
+ *  the LOWER(status) filter and lowercase tab keys). */
+export async function stockTransferStatusCounts(
+  orgId: string,
+  opts: Omit<ListStockTransfersOptions, "take" | "skip" | "status" | "sortBy" | "sortOrder"> = {},
+): Promise<Record<string, number>> {
+  await ensureAssetsColumn();
+  const allowed = opts.allowedProjectIds ?? null;
+  if (allowed !== null && allowed.length === 0) return {};
+  const where = buildStockTransfersWhere(orgId, { ...opts, status: null });
+  const sql = Prisma.sql`
+    SELECT LOWER(status) AS status, COUNT(*)::int AS count
+    FROM app_quikinfra."Stock_transfers"${where}
+    GROUP BY LOWER(status)
+  `;
+  const rows = await db.$queryRaw<Array<{ status: string | null; count: number }>>(sql);
+  const out: Record<string, number> = {};
+  for (const r of rows) out[String(r.status ?? "")] = Number(r.count) || 0;
+  return out;
 }
 
 export async function findStockTransferById(

@@ -44,4 +44,4 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     console.error("POST /grades error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.org.write"] });

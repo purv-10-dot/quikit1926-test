@@ -51,9 +51,9 @@ export default function PayrollReportsPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <FileBarChart2 className="text-[#16243A]" />
+        <FileBarChart2 className="text-[#166534]" />
         <div>
-          <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">Payroll reports</h1>
+          <h1 className="text-page-title text-gray-900">Payroll reports</h1>
           <p className="text-sm text-gray-500">Statutory filings, registers, and variance analysis.</p>
         </div>
       </div>
@@ -65,7 +65,7 @@ export default function PayrollReportsPage() {
             type="month"
             value={month}
             onChange={(e) => setMonth(e.target.value)}
-            className="px-3 py-2 border border-[var(--border)] rounded-md text-sm w-44 focus:outline-none focus:ring-1 focus:ring-[#16243A]"
+            className="px-3 py-2 border border-[var(--border)] rounded-md text-sm w-44 focus:outline-none focus:ring-1 focus:ring-[#166534]"
           />
         </div>
         <div>
@@ -106,7 +106,7 @@ export default function PayrollReportsPage() {
         })}
       </div>
 
-      <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wider mt-6 flex items-center gap-2">
+      <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wider mt-4 flex items-center gap-2">
         <FileCheck2 size={14} /> Statutory Returns
       </h2>
       <div className="grid grid-cols-2 gap-4">
@@ -132,17 +132,17 @@ function ReportCard({ label, description, loading, onClick }: { label: string; d
       onClick={onClick}
       disabled={loading}
       className={clsx(
-        "w-full text-left rounded-lg border border-gray-200 bg-white p-4 hover:border-[#16243A] hover:shadow-md transition group disabled:opacity-60 disabled:cursor-wait",
+        "w-full text-left rounded-lg border border-gray-200 bg-white p-4 hover:border-[#166534] hover:shadow-md transition group disabled:opacity-60 disabled:cursor-wait",
       )}
     >
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-sm font-bold text-gray-900 group-hover:text-[#16243A]">{label}</p>
+          <p className="text-sm font-bold text-gray-900 group-hover:text-[#166534]">{label}</p>
           <p className="text-xs text-gray-500 mt-1">{description}</p>
         </div>
         {loading
-          ? <Loader2 size={16} className="text-[#16243A] animate-spin" />
-          : <Download size={16} className="text-gray-400 group-hover:text-[#16243A]" />}
+          ? <Loader2 size={16} className="text-[#166534] animate-spin" />
+          : <Download size={16} className="text-gray-400 group-hover:text-[#166534]" />}
       </div>
     </button>
   );

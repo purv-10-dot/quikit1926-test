@@ -1,17 +1,17 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { withAuth } from "@/lib/with-auth";
+import { withAuth, withServiceAuth } from "@/lib/with-auth";
 import { successResponse, validationError, internalError } from "@/lib/api-response";
 import { createDocumentSchema, bulkCreateDocumentSchema } from "@/lib/validations/documents";
 import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
 import { createAuditLog } from "@/lib/utils/audit";
 import { fireWorkflow } from "@/lib/workflows/executor";
 import { extractDocumentText } from "@/lib/ai/extract-document-text";
-import { resolveScope, employeeScopeFilter } from "@/lib/rbac/scope";
+import { resolveScope, employeeScopeFilter, getCallerEmployeeId } from "@/lib/rbac/scope";
 import { forbidden } from "@/lib/api-response";
 import type { Prisma } from "@quikit/database";
 
-export const GET = withAuth(async (req: NextRequest, ctx) => {
+export const GET = withServiceAuth(async (req: NextRequest, ctx) => {
   try {
     const { orgId } = ctx;
     const { searchParams } = new URL(req.url);
@@ -24,6 +24,8 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
     const search = searchParams.get("search");
     const isTemplate = searchParams.get("isTemplate");
 
+    const sharedWithMe = searchParams.get("sharedWithMe") === "true";
+
     const scope = resolveScope(ctx, {
       all: "hrms.document.read",
       team: "hrms.document.read_team",
@@ -31,25 +33,45 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
     });
     const scopeFilter = await employeeScopeFilter(ctx, scope);
     if (!scopeFilter.allow) return forbidden("No document read permission");
+    const callerId = await getCallerEmployeeId(ctx);
 
-    const where: Prisma.DocumentWhereInput = {
-      orgId,
-      deletedAt: null,
-      ...(companyOnly ? { employeeId: null }
-        : employeeId ? { employeeId }
-        : scopeFilter.employeeIds ? {
-          OR: [{ employeeId: { in: scopeFilter.employeeIds } }, { employeeId: null }],
-        } : {}),
-      ...(category && { category: category as Prisma.EnumDocumentCategoryFilter["equals"] }),
-      ...(status && { status: status as Prisma.EnumDocumentStatusFilter["equals"] }),
-      ...(isTemplate !== null && isTemplate !== undefined && { isTemplate: isTemplate === "true" }),
-      ...(tag && { tags: { array_contains: tag } as Prisma.JsonFilter }),
-      ...(search && {
+    // Which documents the caller may see. Docs shared *with* the caller are
+    // included alongside their own + company-wide docs (that's what makes the
+    // Share feature work — previously shares were ignored by the list).
+    const accessClauses: Prisma.DocumentWhereInput[] = [];
+    if (companyOnly) {
+      accessClauses.push({ employeeId: null });
+    } else if (employeeId) {
+      accessClauses.push({ employeeId });
+    } else if (scopeFilter.employeeIds) {
+      accessClauses.push({ employeeId: { in: scopeFilter.employeeIds } });
+      accessClauses.push({ employeeId: null });
+      if (callerId) accessClauses.push({ shares: { some: { sharedWith: callerId } } });
+    }
+    // else: unrestricted (broad hrms.document.read) → no access clause.
+
+    // Combine access + search under AND so neither clobbers the other's OR
+    // (previously a `search` OR silently overwrote the scope OR).
+    const and: Prisma.DocumentWhereInput[] = [];
+    if (accessClauses.length) and.push({ OR: accessClauses });
+    if (sharedWithMe && callerId) and.push({ shares: { some: { sharedWith: callerId } } });
+    if (search) {
+      and.push({
         OR: [
           { title: { contains: search, mode: "insensitive" } },
           { description: { contains: search, mode: "insensitive" } },
         ],
-      }),
+      });
+    }
+
+    const where: Prisma.DocumentWhereInput = {
+      orgId,
+      deletedAt: null,
+      ...(category && { category: category as Prisma.EnumDocumentCategoryFilter["equals"] }),
+      ...(status && { status: status as Prisma.EnumDocumentStatusFilter["equals"] }),
+      ...(isTemplate !== null && isTemplate !== undefined && { isTemplate: isTemplate === "true" }),
+      ...(tag && { tags: { array_contains: tag } as Prisma.JsonFilter }),
+      ...(and.length ? { AND: and } : {}),
     };
 
     const [docs, total] = await Promise.all([

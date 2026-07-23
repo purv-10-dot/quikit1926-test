@@ -6,8 +6,17 @@ import { getQuikAssetAppId, isAdminRole } from "@/lib/api/permissions";
 import { seedAdminAppRole, ensureUserOnRole } from "@/lib/api/seedAppRoles";
 
 const bodySchema = z.object({
-  /** AstAppRole.id, or null to revoke. Special "admin" auto-seeds the admin role. */
-  roleId: z.string().min(1).nullable(),
+  /**
+   * AstAppRole.id to assign. Special "admin" auto-seeds the admin role.
+   *
+   * A role is MANDATORY. null/empty/whitespace is rejected so a user can never
+   * be unset to "No role" — every user stays at least Member (see the Member
+   * backfill + write-time default). The old "null = revoke" path is gone.
+   */
+  roleId: z
+    .string({ invalid_type_error: "A role is required; a user cannot be set to 'No role'." })
+    .trim()
+    .min(1, "A role is required; a user cannot be set to 'No role'."),
 });
 
 // PATCH /api/org/users/[id]/role

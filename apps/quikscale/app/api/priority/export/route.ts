@@ -92,9 +92,12 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
 
   const toRow = (p: any): PriorityExportRow => {
     const weekStatusMap: Record<number, string> = {};
+    const weekNoteMap: Record<number, string> = {};
     let latest: { weekNumber: number; notes: string | null; updatedAt: Date } | null = null;
     for (const ws of p.weeklyStatuses ?? []) {
       weekStatusMap[ws.weekNumber] = ws.status ?? "";
+      const note = typeof ws.notes === "string" ? ws.notes.trim() : "";
+      if (note) weekNoteMap[ws.weekNumber] = note;
       if (ws.notes && (!latest || ws.updatedAt > latest.updatedAt)) {
         latest = { weekNumber: ws.weekNumber, notes: ws.notes, updatedAt: ws.updatedAt };
       }
@@ -112,6 +115,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       createdAt: p.createdAt ?? null,
       updatedAt: p.updatedAt ?? null,
       weekStatusMap,
+      weekNoteMap,
     };
   };
 
@@ -126,7 +130,8 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
     const rowObjs = priorities.map(toRow);
     const rows = rowObjs.map((r) => columns.map((c) => c.value(r)));
     const fills = rowObjs.map((r) => columns.map((c) => c.fill?.(r)));
-    sheets.push({ sheetName: quarter, headers, rows, fills });
+    const notes = rowObjs.map((r) => columns.map((c) => c.note?.(r)));
+    sheets.push({ sheetName: quarter, headers, rows, fills, notes });
   }
 
   const fyBits = fiscalYearLabel(year).replace(/[^0-9-]/g, "");

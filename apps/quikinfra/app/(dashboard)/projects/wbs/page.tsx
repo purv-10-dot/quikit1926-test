@@ -227,7 +227,7 @@ export default function WbsPlanningPage() {
                 onClick={() => setScale(s)}
                 className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
                   scale === s
-                    ? "bg-orange-50 text-orange-700"
+                    ? "bg-accent-50 text-accent-700"
                     : "text-slate-500 hover:text-slate-700"
                 }`}
               >
@@ -240,7 +240,7 @@ export default function WbsPlanningPage() {
             <button
               onClick={() => setView("grid")}
               className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-                view === "grid" ? "bg-orange-50 text-orange-700" : "text-slate-500 hover:text-slate-700"
+                view === "grid" ? "bg-accent-50 text-accent-700" : "text-slate-500 hover:text-slate-700"
               }`}
             >
               <LayoutGrid className="w-3.5 h-3.5" /> Grid View
@@ -248,7 +248,7 @@ export default function WbsPlanningPage() {
             <button
               onClick={() => setView("gantt")}
               className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-                view === "gantt" ? "bg-orange-50 text-orange-700" : "text-slate-500 hover:text-slate-700"
+                view === "gantt" ? "bg-accent-50 text-accent-700" : "text-slate-500 hover:text-slate-700"
               }`}
             >
               <GanttChart className="w-3.5 h-3.5" /> Gantt View
@@ -272,7 +272,7 @@ export default function WbsPlanningPage() {
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 self-start">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
-                <ListTree className="w-4 h-4 text-orange-600" />
+                <ListTree className="w-4 h-4 text-accent-600" />
                 Add New Task
               </h3>
               <button
@@ -280,7 +280,7 @@ export default function WbsPlanningPage() {
                 title="Auto-generate the WBS code from the selected parent level"
                 className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold border transition-colors ${
                   autoAssign
-                    ? "bg-orange-50 border-orange-200 text-orange-700"
+                    ? "bg-accent-50 border-accent-200 text-accent-700"
                     : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
                 }`}
               >
@@ -320,7 +320,7 @@ export default function WbsPlanningPage() {
                   type="date"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full h-9 px-2.5 text-sm border border-slate-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400"
+                  className="w-full h-9 px-2.5 text-sm border border-slate-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400"
                 />
               </Field>
               <Field label="End Date">
@@ -328,7 +328,7 @@ export default function WbsPlanningPage() {
                   type="date"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full h-9 px-2.5 text-sm border border-slate-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400"
+                  className="w-full h-9 px-2.5 text-sm border border-slate-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400"
                 />
               </Field>
 
@@ -351,7 +351,7 @@ export default function WbsPlanningPage() {
                     onChange={(e) =>
                       setPredecessors(Array.from(e.target.selectedOptions).map((o) => o.value))
                     }
-                    className="w-full min-h-[80px] px-2.5 py-1.5 text-sm border border-slate-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400"
+                    className="w-full min-h-[80px] px-2.5 py-1.5 text-sm border border-slate-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400"
                   >
                     {predecessorOptions.length === 0 && <option disabled>No tasks yet</option>}
                     {predecessorOptions.map((o) => (
@@ -367,7 +367,7 @@ export default function WbsPlanningPage() {
             <button
               onClick={handleAdd}
               disabled={!canAdd}
-              className="mt-4 w-full inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-lg text-sm font-semibold text-white bg-gradient-to-b from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+              className="mt-4 w-full inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-lg text-sm font-semibold text-white bg-gradient-to-b from-accent-500 to-accent-600 hover:from-accent-600 hover:to-accent-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
             >
               <Plus className="w-4 h-4" />
               Add Task
@@ -478,7 +478,7 @@ function GridView({
             return (
               <tr
                 key={t.id}
-                className="hover:bg-orange-50/40 cursor-pointer"
+                className="hover:bg-accent-50 cursor-pointer"
                 onClick={() => onEdit(t.id)}
               >
                 <td className="px-4 py-3">
@@ -489,7 +489,7 @@ function GridView({
                           e.stopPropagation();
                           onToggleCollapsed(t.id);
                         }}
-                        className="p-0.5 rounded hover:bg-slate-100 text-orange-600"
+                        className="p-0.5 rounded hover:bg-slate-100 text-accent-600"
                       >
                         {isCollapsed ? (
                           <ChevronRight className="w-3.5 h-3.5" />
@@ -500,13 +500,13 @@ function GridView({
                     ) : (
                       <span className="w-[18px]" aria-hidden />
                     )}
-                    <span className="text-[12px] font-mono font-semibold text-slate-600">
+                    <span className="text-[12px] font-semibold text-slate-600">
                       {t.wbsCode}
                     </span>
                   </div>
                 </td>
                 <td className="px-4 py-3">
-                  <p className="text-sm font-semibold text-slate-900 hover:text-orange-700 hover:underline">
+                  <p className="text-sm font-semibold text-slate-900 hover:text-accent-700 hover:underline">
                     {t.name}
                   </p>
                   <p className="text-[11px] text-slate-500 mt-0.5 inline-flex items-center gap-1">
@@ -525,7 +525,7 @@ function GridView({
                       {t.predecessors.map((pid) => (
                         <span
                           key={pid}
-                          className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-slate-100 text-slate-700 border border-slate-200"
+                          className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200"
                         >
                           {wbsById.get(pid) ?? "?"}
                         </span>
@@ -763,7 +763,7 @@ function GanttView({
                     {hasKids ? (
                       <button
                         onClick={() => onToggleCollapsed(t.id)}
-                        className="p-0.5 rounded hover:bg-slate-100 text-orange-600 shrink-0"
+                        className="p-0.5 rounded hover:bg-slate-100 text-accent-600 shrink-0"
                       >
                         {isCollapsed ? (
                           <ChevronRight className="w-3.5 h-3.5" />
@@ -774,14 +774,14 @@ function GanttView({
                     ) : (
                       <span className="w-[18px] shrink-0" aria-hidden />
                     )}
-                    <span className="text-[11px] font-mono font-semibold text-orange-600 shrink-0">
+                    <span className="text-[11px] font-semibold text-accent-600 shrink-0">
                       {t.wbsCode}
                     </span>
                     <span className="text-sm text-slate-500 shrink-0">-</span>
                     <button
                       type="button"
                       onClick={() => onEdit(t.id)}
-                      className={`text-sm truncate text-left hover:text-orange-700 hover:underline ${
+                      className={`text-sm truncate text-left hover:text-accent-700 hover:underline ${
                         isParent ? "font-bold text-slate-900" : "font-medium text-slate-700"
                       }`}
                       title="Edit task"
@@ -858,7 +858,7 @@ function GanttView({
                       }}
                       title="Edit task"
                     >
-                      <span className="font-mono font-semibold text-orange-600">{t.wbsCode}</span>
+                      <span className="font-semibold text-accent-600">{t.wbsCode}</span>
                       <span className="text-slate-400 mx-1">-</span>
                       <span className="font-medium text-slate-700">{t.name}</span>
                     </button>

@@ -84,6 +84,8 @@ export interface ListOptions {
   /** Pagination — passed straight through to Prisma findMany. */
   take?: number;
   skip?: number;
+  /** Server-side sort (from `parseSort`). Defaults to newest-first. */
+  orderBy?: Array<Record<string, "asc" | "desc">>;
 }
 
 function buildAssetsWhere(
@@ -109,7 +111,7 @@ export async function listAssets(opts: ListOptions): Promise<AssetRecord[]> {
   const rows = await db.cnAsset.findMany({
     where: buildAssetsWhere(opts),
     include: { project: { select: { id: true, name: true } } },
-    orderBy: { createdAt: "desc" },
+    orderBy: opts.orderBy ?? { createdAt: "desc" },
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
   });

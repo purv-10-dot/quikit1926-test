@@ -111,11 +111,11 @@ export function PriorPayrollRecords() {
   const totalTds   = records.reduce((s, r) => s + Number(r.tds), 0);
 
   return (
-    <div className="rounded-md border border-gray-200 bg-white p-5 space-y-3">
+    <div className="rounded-md border border-gray-200 bg-white p-4 space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
-            <Database size={15} className="text-blue-600" />
+          <h3 className="text-[13px] font-semibold text-gray-900 flex items-center gap-1.5">
+            <Database size={15} className="text-green-600" />
             Saved YTD records
           </h3>
           <p className="text-xs text-gray-500 mt-0.5">

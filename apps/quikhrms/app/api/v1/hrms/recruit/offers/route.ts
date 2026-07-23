@@ -1,10 +1,10 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, validationError, conflict, internalError } from "@/lib/api-response";
+import { successResponse, validationError, conflict, notFound, internalError } from "@/lib/api-response";
 import { createOfferSchema } from "@/lib/validations/recruit";
 import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
-import { offerSelect, offerFromApplication } from "@/lib/recruit/offer-shape";
+import { offerSelect, offerFromApplication, buildOfferMeta } from "@/lib/recruit/offer-shape";
 
 export const GET = withAuth(async (req: NextRequest, { orgId }) => {
   try {
@@ -57,11 +57,14 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
 
     const data = parsed.data;
 
-    const existing = await prisma.jobApplication.findFirst({
-      where: { id: data.applicationId, orgId, deletedAt: null, offerStatus: { not: null } },
-      select: { id: true },
+    // Verify the application exists in this org first — otherwise a bad/cross-org
+    // id falls through to a bare update() that throws P2025 → generic 500.
+    const app = await prisma.jobApplication.findFirst({
+      where: { id: data.applicationId, orgId, deletedAt: null },
+      select: { id: true, offerStatus: true },
     });
-    if (existing) {
+    if (!app) return notFound("Application not found");
+    if (app.offerStatus != null) {
       return conflict("An offer already exists for this candidate. Edit the existing offer instead.");
     }
 
@@ -75,6 +78,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         offeredCTC: data.offeredCTC, offerJoiningDate: new Date(data.joiningDate),
         offerJoiningBonus: data.joiningBonus, offerRelocationBonus: data.relocationBonus, offerEquityGrant: data.equityGrant,
         offerExpiresAt: data.expiresAt ? new Date(data.expiresAt) : undefined,
+        offeredComponents: buildOfferMeta(data),
         offerCreatedAt: new Date(), offerCreatedBy: userId,
         status: "AppOffered",
         updatedBy: userId,

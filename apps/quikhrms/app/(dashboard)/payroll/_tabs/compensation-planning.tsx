@@ -51,7 +51,7 @@ export default function CompensationPlanningTab() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search employee"
-              className="pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-md w-64 focus:outline-none focus:ring-1 focus:ring-[#16243A]"
+              className="pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-md w-64 focus:outline-none focus:ring-1 focus:ring-[#166534]"
             />
           </div>
           <label className="flex items-center gap-2 text-sm text-gray-700">
@@ -70,7 +70,7 @@ export default function CompensationPlanningTab() {
           <button
             type="button"
             onClick={() => setHikes({})}
-            className="text-xs font-semibold text-[#3b82f6] hover:underline"
+            className="text-xs font-semibold text-[#22c55e] hover:underline"
           >
             Reset overrides
           </button>
@@ -79,14 +79,14 @@ export default function CompensationPlanningTab() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50">
-                <th className="text-left py-2 px-3">Employee</th>
-                <th className="text-left py-2 px-3">Department</th>
-                <th className="text-left py-2 px-3">Designation</th>
-                <th className="text-right py-2 px-3">Current CTC</th>
-                <th className="text-right py-2 px-3">Hike %</th>
-                <th className="text-right py-2 px-3">New CTC</th>
-                <th className="text-right py-2 px-3">Delta</th>
+              <tr className="text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em] border-b border-gray-200 bg-gray-50">
+                <th className="text-left px-4 py-2.5">Employee</th>
+                <th className="text-left px-4 py-2.5">Department</th>
+                <th className="text-left px-4 py-2.5">Designation</th>
+                <th className="text-right px-4 py-2.5">Current CTC</th>
+                <th className="text-right px-4 py-2.5">Hike %</th>
+                <th className="text-right px-4 py-2.5">New CTC</th>
+                <th className="text-right px-4 py-2.5">Delta</th>
               </tr>
             </thead>
             <tbody>
@@ -96,14 +96,14 @@ export default function CompensationPlanningTab() {
                 const delta = newCtc - r.ctc;
                 return (
                   <tr key={r.salaryId} className="border-b border-gray-50 hover:bg-gray-50">
-                    <td className="py-2 px-3">
-                      <p className="font-medium text-gray-900">{r.name}</p>
+                    <td className="px-4 py-2.5">
+                      <p className="text-[13px] font-medium text-gray-900">{r.name}</p>
                       <p className="text-[10px] text-gray-500">{r.code}</p>
                     </td>
-                    <td className="py-2 px-3 text-gray-700">{r.deptName}</td>
-                    <td className="py-2 px-3 text-gray-700">{r.designationName}</td>
-                    <td className="py-2 px-3 text-right tabular-nums">{INR_LAKH(r.ctc)}</td>
-                    <td className="py-2 px-3 text-right">
+                    <td className="px-4 py-2.5 text-xs text-gray-700">{r.deptName}</td>
+                    <td className="px-4 py-2.5 text-xs text-gray-700">{r.designationName}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{INR_LAKH(r.ctc)}</td>
+                    <td className="px-4 py-2.5 text-right">
                       <input
                         type="number"
                         value={hikes[r.employeeId] ?? ""}
@@ -115,8 +115,8 @@ export default function CompensationPlanningTab() {
                         step={0.5}
                       />
                     </td>
-                    <td className="py-2 px-3 text-right tabular-nums font-semibold text-gray-900">{INR_LAKH(newCtc)}</td>
-                    <td className={`py-2 px-3 text-right tabular-nums font-semibold ${delta > 0 ? "text-emerald-600" : delta < 0 ? "text-red-600" : "text-gray-400"}`}>
+                    <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-gray-900">{INR_LAKH(newCtc)}</td>
+                    <td className={`px-4 py-2.5 text-right tabular-nums font-semibold ${delta > 0 ? "text-emerald-600" : delta < 0 ? "text-red-600" : "text-gray-400"}`}>
                       {delta > 0 ? "+" : ""}{INR_LAKH(delta)}
                     </td>
                   </tr>
@@ -136,7 +136,7 @@ export default function CompensationPlanningTab() {
 
 function Loading() {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-12 text-center text-gray-400 text-sm">Loading…</div>
+    <div className="rounded-lg border border-gray-200 bg-white p-12 text-center text-gray-400 text-xs">Loading…</div>
   );
 }
 

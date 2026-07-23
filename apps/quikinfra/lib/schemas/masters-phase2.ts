@@ -75,29 +75,6 @@ export const termsCreateSchema = z.object({
 export type TermsCreateInput = z.infer<typeof termsCreateSchema>;
 export const termsUpdateSchema = termsCreateSchema.partial();
 
-export const financialYearCreateSchema = z
-  .object({
-    companyId: z.string().min(1),
-    label: z.string().min(1).max(50),
-    startDate: z.string().min(1),
-    endDate: z.string().min(1),
-    isCurrent: z.boolean().default(false),
-    status: z.enum(["active", "inactive"]).default("active"),
-  })
-  .refine((d) => new Date(d.endDate) > new Date(d.startDate), {
-    message: "endDate must be after startDate",
-    path: ["endDate"],
-  });
-export type FinancialYearCreateInput = z.infer<typeof financialYearCreateSchema>;
-export const financialYearUpdateSchema = z
-  .object({
-    companyId: z.string().min(1).optional(),
-    label: z.string().min(1).max(50).optional(),
-    startDate: z.string().min(1).optional(),
-    endDate: z.string().min(1).optional(),
-    isCurrent: z.boolean().optional(),
-    status: z.enum(["active", "inactive"]).optional(),
-  });
 
 export const projectCreateSchema = z.object({
   code: z.string().min(1).max(50),
