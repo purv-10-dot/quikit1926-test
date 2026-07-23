@@ -152,9 +152,11 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
     } catch {
       // globalSignOut navigates on success; landing here means it could not,
       // so fall back to the public landing page rather than stranding the user.
-      // NOT `/login` â€” that re-initiates SSO and would undo the sign-out.
+      // NOT `/login` â€” that re-initiates SSO and would undo the sign-out. The
+      // `?reason=logged_out` flag stops the landing bouncing a still-settling
+      // session onward (see app/(marketing)/page.tsx).
       setSigningOut(false);
-      window.location.href = '/';
+      window.location.href = '/?reason=logged_out';
     }
   }
 

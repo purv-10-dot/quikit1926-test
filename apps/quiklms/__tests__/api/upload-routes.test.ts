@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   getObjectBuffer: vi.fn(),
   presignPut: vi.fn(),
   presignGet: vi.fn(),
+  putObject: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/context', () => ({ requireAuth: h.requireAuth, requireRoles: h.requireRoles }));
@@ -16,6 +17,7 @@ vi.mock('@/lib/s3', () => ({
   getObjectBuffer: h.getObjectBuffer,
   presignPut: h.presignPut,
   presignGet: h.presignGet,
+  putObject: h.putObject,
   presignFromUrlOrKey: vi.fn(),
   buildUploadKey: (orgId: string, name: string) => `tenants/${orgId}/uploads/uuid-${name}`,
 }));
@@ -36,6 +38,16 @@ function req(url: string, body?: unknown) {
       ? { body: JSON.stringify(body), headers: { 'content-type': 'application/json' } }
       : {}),
   }) as never;
+}
+
+/**
+ * The other body shape these routes accept: the bytes themselves. Content-Type
+ * (with its boundary) is set by Request from the FormData — never by hand.
+ */
+function formReq(url: string, name: string, type: string, bytes = 3) {
+  const form = new FormData();
+  form.append('file', new File([new Uint8Array(bytes)], name, { type }));
+  return new Request(url, { method: 'POST', body: form }) as never;
 }
 
 const actor = { id: 'u1', role: 'SUPER_ADMIN', orgId: 'org-1', isActive: true };
@@ -186,4 +198,66 @@ describe('multer-limit endpoints return 413, not 400', () => {
       expect((await res.json()).message).toBe('Validation failed');
     });
   }
+});
+
+/**
+ * The proxied path — the one that made browser uploads stop depending on a
+ * bucket CORS policy. A multipart body means the server writes the bytes
+ * itself, so the response must NOT carry an uploadUrl: there is nothing left
+ * for the browser to send.
+ */
+describe('multipart bodies are stored server-side', () => {
+  const cases = [
+    { name: 'course-resource', fn: courseResourcePOST, url: 'http://x/api/upload/course-resource', prefix: 'tenants/org-1/course-resources/' },
+    { name: 'homework-resource', fn: homeworkPOST, url: 'http://x/api/upload/homework-resource', prefix: 'tenants/org-1/homework/' },
+    { name: 'non-teaching-work-resource', fn: nonTeachingPOST, url: 'http://x/api/upload/non-teaching-work-resource', prefix: 'tenants/org-1/non-teaching-work/' },
+    { name: 'course-thumbnail', fn: thumbnailPOST, url: 'http://x/api/upload/course-thumbnail', prefix: 'course-thumbnails/', type: 'image/png', file: 'a.png' },
+  ];
+
+  for (const { name, fn, url, prefix, type = 'application/pdf', file = 'a.pdf' } of cases) {
+    it(`${name} writes the bytes and returns no uploadUrl`, async () => {
+      const res = await fn(formReq(url, file, type), {});
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.success).toBe(true);
+      expect(body.data.uploadUrl).toBeUndefined();
+      expect(body.data.permanentUrl).toBe(`https://storage.googleapis.com/test-bucket/${body.data.s3Key}`);
+      expect(body.data.s3Key.startsWith(prefix)).toBe(true);
+      // Nothing was signed — the browser is never asked to talk to the bucket.
+      expect(h.presignPut).not.toHaveBeenCalled();
+    });
+
+    it(`${name} passes the real bytes and content type to storage`, async () => {
+      await fn(formReq(url, file, type, 7), {});
+
+      const [key, buffer, contentType] = h.putObject.mock.calls[0];
+      expect(key.startsWith(prefix)).toBe(true);
+      expect(Buffer.isBuffer(buffer)).toBe(true);
+      expect(buffer.length).toBe(7);
+      expect(contentType).toBe(type);
+    });
+  }
+
+  it('a multipart body with no file field is a 400, not a 500', async () => {
+    const form = new FormData();
+    form.append('fileName', 'a.pdf');
+    const res = await courseResourcePOST(
+      new Request('http://x/api/upload/course-resource', { method: 'POST', body: form }) as never,
+      {},
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).message).toBe('No file provided');
+  });
+
+  it('course-thumbnail still rejects a non-image sent as multipart', async () => {
+    // The type check must run against the REAL mime type, not a declared one.
+    const res = await thumbnailPOST(
+      formReq('http://x/api/upload/course-thumbnail', 'a.pdf', 'application/pdf'),
+      {},
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).message).toBe('Only image files are allowed');
+    expect(h.putObject).not.toHaveBeenCalled();
+  });
 });

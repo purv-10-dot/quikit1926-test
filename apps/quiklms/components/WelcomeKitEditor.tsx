@@ -155,7 +155,7 @@ export const WelcomeKitEditor: React.FC<WelcomeKitEditorProps> = ({
       // Legacy POSTed multipart FormData. This app's POST /api/upload/welcome-kit
       // is a presigned-PUT minter: JSON { fileType, fileSize } in, an `uploadUrl`
       // back that the browser PUTs the bytes to. It cannot go through
-      // `uploadViaPresign` because that helper reads `res.data.uploadUrl`, while
+      // `uploadFile` because that helper reads `res.data.uploadUrl`, while
       // this route returns `uploadUrl` at the TOP LEVEL of the body.
       const presign = await api.post<WelcomeKitPresignResponse>('/upload/welcome-kit', {
         fileName: file.name,

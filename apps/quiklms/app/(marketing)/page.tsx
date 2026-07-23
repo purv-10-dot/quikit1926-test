@@ -48,7 +48,17 @@ export default async function LandingPage({
   // landing page with an explanation instead.
   const deniedAppAccess = reason === 'no_app_access';
 
-  if (session?.user?.id && !deniedAppAccess) {
+  // Arrived from the sign-out chain (lib/global-signout.ts). The local session
+  // cookie clear and the three SLO cookie-clearing hops race the browser
+  // landing back here, so a just-signed-out user's session can still be
+  // momentarily readable. WITHOUT this guard the block below would treat them
+  // as logged in and bounce them to their dashboard → middleware sees the
+  // central session is already gone → quikit-auth. That is exactly the "QuikLMS
+  // page flashes for a second then jumps to the login" bug. Hold on the landing
+  // instead; the user clicks Sign in when they choose to.
+  const loggedOut = reason === 'logged_out';
+
+  if (session?.user?.id && !deniedAppAccess && !loggedOut) {
     const role = await resolveLmsRole(session.user);
     // A school tenant's admin belongs on /school-dashboard, not the corporate
     // one — see lib/auth/landing.ts.
@@ -66,6 +76,16 @@ export default async function LandingPage({
           Your organisation does not currently have access to QuikSkill, or your
           access has been removed. Contact your administrator if you think this
           is a mistake.
+        </div>
+      )}
+      {loggedOut && (
+        <div
+          role="status"
+          className="border-b border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-center text-sm text-emerald-100"
+        >
+          You&apos;ve been signed out. Click{' '}
+          <span className="font-semibold">Sign in</span> when you&apos;re ready
+          to return.
         </div>
       )}
       <Nav />

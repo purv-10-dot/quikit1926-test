@@ -44,11 +44,20 @@ export async function globalSignOut(finalRedirect?: string): Promise<void> {
   const canonical = (process.env.NEXT_PUBLIC_QUIKLMS_URL ?? '').replace(/\/+$/, '');
   const base = canonical || window.location.origin;
 
-  // Land on the public marketing page, not `/login`. `/login` immediately
+  // Land on the public marketing page, NOT `/login`. `/login` immediately
   // re-initiates SSO (`signIn('quikit')` on mount), so sending a just-signed-out
-  // user there would log them straight back in and the logout would look broken.
-  // `/` is in `publicRoutes`, so a signed-out visitor sees the landing page.
-  const target = finalRedirect ?? `${base}/`;
+  // user there would log them straight back into quikit-auth and the logout
+  // would look broken — this is the "the QuikLMS page flashes for a second then
+  // jumps to quikit-auth" report.
+  //
+  // `?reason=logged_out` is the important part: the landing page redirects ANY
+  // authenticated session onward to its dashboard, and the local cookie-clear
+  // can still be settling when the browser lands back here after the SLO hops —
+  // so a stale session would bounce the user off the landing (→ dashboard →
+  // middleware sees the central session is gone → quikit-auth). The flag tells
+  // the landing page to HOLD here instead, so the user stays on the QuikLMS
+  // landing and clicks Sign in themselves. See app/(marketing)/page.tsx.
+  const target = finalRedirect ?? `${base}/?reason=logged_out`;
 
   const authUrl = (process.env.NEXT_PUBLIC_AUTH_URL ?? '').trim();
   const quikitUrl = (process.env.NEXT_PUBLIC_QUIKIT_URL ?? '').trim();

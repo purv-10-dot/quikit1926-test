@@ -15,17 +15,18 @@
  * Two deltas from the original, both forced by the target app's architecture:
  *   - axios → the `@/lib/api` fetch wrapper: response bodies are returned
  *     directly, so every `res.data.data` collapses to `res.data`.
- *   - the `course-thumbnail` / `course-resource` upload endpoints are now
- *     presigned-PUT minters, so those two FormData posts go through
- *     `uploadViaPresign`. `/upload/scorm` genuinely needs the bytes server-side
- *     (it reads imsmanifest.xml), so it keeps its multipart contract.
+ *   - the `course-thumbnail` / `course-resource` upload endpoints take either a
+ *     multipart body or JSON metadata, so those two FormData posts go through
+ *     `uploadFile`, which picks the right one by size. `/upload/scorm` genuinely
+ *     needs the bytes server-side (it reads imsmanifest.xml), so it keeps its
+ *     multipart contract.
  */
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Upload, FileText, Plus, Trash2, CheckCircle, AlertCircle, ArrowRight, ArrowLeft, Eye, BookOpen, HelpCircle, Link, Building2, Check, Sparkles, Loader2, Image as ImageIcon, Pencil, ChevronDown, ChevronUp } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable, DropResult } from 'react-beautiful-dnd';
 import VideoPlayer from '@/components/VideoPlayer';
 import { api } from '@/lib/api';
-import { uploadViaPresign } from '@/lib/upload-client';
+import { uploadFile } from '@/lib/upload-client';
 
 interface CourseCreatorProps {
   onClose: () => void;
@@ -628,11 +629,11 @@ const CourseCreator: React.FC<CourseCreatorProps> = ({ onClose, onSuccess, cours
       // Otherwise, upload the file if one was selected
       else if (thumbnail) {
         try {
-          // `/upload/course-thumbnail` is a presigned-PUT minter now: POST JSON
-          // metadata, then PUT the bytes straight to S3. `uploadViaPresign` does
-          // both and returns the permanent URL that used to arrive as
-          // `thumbResponse.data.data.url`.
-          thumbnailUrl = await uploadViaPresign(thumbnail, '/upload/course-thumbnail');
+          // `uploadFile` POSTs the bytes to `/upload/course-thumbnail` and
+          // returns the permanent URL that used to arrive as
+          // `thumbResponse.data.data.url`. Thumbnails are capped at 5MB, so this
+          // always takes the proxied path — it never touches the bucket direct.
+          thumbnailUrl = await uploadFile(thumbnail, '/upload/course-thumbnail');
         } catch (thumbError: unknown) {
           console.error('Thumbnail upload error:', thumbError);
           setError(asApiError(thumbError).message || 'Failed to upload thumbnail. You can continue without it.');
@@ -677,7 +678,7 @@ const CourseCreator: React.FC<CourseCreatorProps> = ({ onClose, onSuccess, cours
                   // not report one anonymous error.
                   let fileUrl: string;
                   try {
-                    fileUrl = await uploadViaPresign(file, '/upload/course-resource');
+                    fileUrl = await uploadFile(file, '/upload/course-resource');
                   } catch (uploadErr: unknown) {
                     const detail = asApiError(uploadErr).message || 'upload failed';
                     throw new Error(`"${subModule.title || 'Untitled sub-module'}" — ${detail}`);

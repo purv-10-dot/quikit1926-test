@@ -35,6 +35,11 @@ import { globalSignOut } from '@/lib/global-signout';
 const ORIGIN = 'https://quikskill.vercel.app';
 const AUTH = 'https://auth.example';
 const QUIKIT = 'https://launcher.example';
+// The default post-logout destination. `?reason=logged_out` tells the landing
+// page to HOLD instead of bouncing a still-settling session onward to the
+// dashboard (→ middleware → quikit-auth) — the "flashes then jumps to login"
+// bug. See lib/global-signout.ts + app/(marketing)/page.tsx.
+const LANDING = `${ORIGIN}/?reason=logged_out`;
 
 let href = '';
 
@@ -83,16 +88,18 @@ describe('the chain', () => {
     expect(href.startsWith(`${AUTH}/api/auth/signout-global?callbackUrl=`)).toBe(true);
     const launcher = decodeURIComponent(href.split('callbackUrl=')[1]);
     expect(launcher.startsWith(`${QUIKIT}/api/auth/signout-global?callbackUrl=`)).toBe(true);
-    expect(decodeURIComponent(launcher.split('callbackUrl=')[1])).toBe(`${ORIGIN}/`);
+    expect(decodeURIComponent(launcher.split('callbackUrl=')[1])).toBe(LANDING);
   });
 
-  it('defaults to the landing page, NOT /login', async () => {
+  it('defaults to the landing page (held via reason=logged_out), NOT /login', async () => {
     // /login re-initiates SSO on mount, so landing there would sign the user
-    // straight back in and the logout would appear not to work.
+    // straight back in and the logout would appear not to work. The landing
+    // page is held with reason=logged_out so it doesn't bounce onward either.
     await globalSignOut();
     const launcher = decodeURIComponent(href.split('callbackUrl=')[1]);
     const final = decodeURIComponent(launcher.split('callbackUrl=')[1]);
-    expect(final).toBe(`${ORIGIN}/`);
+    expect(final).toBe(LANDING);
+    expect(final).toContain('reason=logged_out');
     expect(final).not.toContain('/login');
   });
 
@@ -123,14 +130,14 @@ describe('resilience', () => {
     vi.stubEnv('NEXT_PUBLIC_QUIKIT_URL', '');
     await globalSignOut();
     expect(href.startsWith(`${AUTH}/api/auth/signout-global?callbackUrl=`)).toBe(true);
-    expect(decodeURIComponent(href.split('callbackUrl=')[1])).toBe(`${ORIGIN}/`);
+    expect(decodeURIComponent(href.split('callbackUrl=')[1])).toBe(LANDING);
   });
 
   it('navigates straight to the destination when neither host is configured', async () => {
     vi.stubEnv('NEXT_PUBLIC_AUTH_URL', '');
     vi.stubEnv('NEXT_PUBLIC_QUIKIT_URL', '');
     await globalSignOut();
-    expect(href).toBe(`${ORIGIN}/`);
+    expect(href).toBe(LANDING);
   });
 
   it('tolerates trailing slashes on the configured hosts', async () => {
@@ -170,7 +177,7 @@ describe('the destination is the CANONICAL origin, not wherever the browser is',
     onDeploymentHost();
     vi.stubEnv('NEXT_PUBLIC_QUIKLMS_URL', ORIGIN);
     await globalSignOut();
-    expect(finalHop()).toBe(`${ORIGIN}/`);
+    expect(finalHop()).toBe(LANDING);
     expect(finalHop()).not.toContain('macck3n1x');
   });
 
@@ -178,14 +185,14 @@ describe('the destination is the CANONICAL origin, not wherever the browser is',
     onDeploymentHost();
     vi.stubEnv('NEXT_PUBLIC_QUIKLMS_URL', '');
     await globalSignOut();
-    expect(finalHop()).toBe(`${DEPLOY_ORIGIN}/`);
+    expect(finalHop()).toBe(`${DEPLOY_ORIGIN}/?reason=logged_out`);
   });
 
   it('tolerates a trailing slash on the canonical url', async () => {
     onDeploymentHost();
     vi.stubEnv('NEXT_PUBLIC_QUIKLMS_URL', `${ORIGIN}/`);
     await globalSignOut();
-    expect(finalHop()).toBe(`${ORIGIN}/`);
+    expect(finalHop()).toBe(LANDING);
   });
 
   it('an explicit destination still wins', async () => {

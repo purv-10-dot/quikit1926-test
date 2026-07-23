@@ -31,7 +31,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { api } from '@/lib/api';
-import { uploadViaPresign } from '@/lib/upload-client';
+import { uploadFile } from '@/lib/upload-client';
 import { useBranding } from '@/app/providers';
 import toast, { Toaster } from 'react-hot-toast';
 
@@ -288,7 +288,7 @@ const HomeworkPage = () => {
     setUploadingFile(true);
     setUploadError('');
     try {
-      const fileUrl = await uploadViaPresign(file, '/upload/homework-resource');
+      const fileUrl = await uploadFile(file, '/upload/homework-resource');
       if (!fileUrl) throw new Error('No URL returned');
       setFormData((prev) => ({ ...prev, attachmentUrls: [...prev.attachmentUrls, fileUrl] }));
     } catch {

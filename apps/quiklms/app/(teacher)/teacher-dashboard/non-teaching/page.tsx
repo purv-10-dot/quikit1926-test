@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import { uploadViaPresign } from '@/lib/upload-client';
+import { uploadFile } from '@/lib/upload-client';
 import { ClipboardList, CheckCircle, Clock, DollarSign, FileText, X, Loader2, Send } from 'lucide-react';
 import { useBranding } from '@/app/providers';
 
@@ -77,7 +77,7 @@ export default function TeacherNonTeachingPage() {
     setUploadingFile(true);
     setSubmitError('');
     try {
-      const fileUrl = await uploadViaPresign(file, '/upload/non-teaching-work-resource');
+      const fileUrl = await uploadFile(file, '/upload/non-teaching-work-resource');
       if (!fileUrl) throw new Error('No URL returned');
       setUploadedFiles((prev) => [...prev, fileUrl]);
     } catch {

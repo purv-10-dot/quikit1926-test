@@ -38,7 +38,14 @@ export function authThemeCss(scope: string): string {
           --cta-sheen:rgba(255,255,255,0.55); --error:#c0392b;
         }
         ${s}, ${s} *, ${s} *::before, ${s} *::after { box-sizing:border-box; }
-        ${s} { font-family:'Gilroy','Helvetica Neue',Arial,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:var(--bg); color:var(--text-primary); -webkit-font-smoothing:antialiased; min-height:100vh; min-height:100dvh; padding:2%; display:flex; }
+        /* Center the auth card in the viewport. 'justify-content:safe center'
+           centers vertically when the content is SHORTER than the window but
+           falls back to top-aligned (never clipping the top) when it is taller —
+           the fix for laptops where a full form used to overflow off-screen.
+           'vmin' padding scales with the smaller viewport axis so it never eats
+           the whole height on short/wide desktops (the old 2% was a % of
+           WIDTH, so on wide monitors it stole vertical space). */
+        ${s} { font-family:'Gilroy','Helvetica Neue',Arial,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:var(--bg); color:var(--text-primary); -webkit-font-smoothing:antialiased; min-height:100vh; min-height:100dvh; padding:clamp(16px,3.5vmin,44px); display:flex; flex-direction:column; align-items:center; justify-content:safe center; }
         ${s} a { text-decoration:none; color:inherit; }
         ${s} img { display:block; max-width:100%; }
         /* Animated background guides (vertical hairlines + falling beams) */
@@ -58,8 +65,14 @@ export function authThemeCss(scope: string): string {
         ${s} .fade-in-up.d3 { animation-delay:0.34s; }
         ${s} .fade-in-up.d4 { animation-delay:0.46s; }
 
-        /* ── Split layout ── */
-        ${s} .auth-layout { position:relative; z-index:1; flex:1; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,480px); gap:16px; min-height:0; }
+        /* ── Split layout ──
+           Height-capped and centered rather than stretched to the full
+           viewport: min-height gives the panels a comfortable desktop height
+           but caps at the available space on short laptops (so nothing spills
+           off-screen), and never exceeds ~620px on tall monitors (so the hero
+           doesn't stretch into a mostly-empty column). Width is capped at
+           1160px and centered by the wrapper. */
+        ${s} .auth-layout { position:relative; z-index:1; width:100%; max-width:1160px; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,480px); gap:16px; min-height:min(620px, calc(100dvh - 96px)); }
 
         /* ── Left brand panel ── */
         ${s} .auth-side { position:relative; overflow:hidden; background:var(--brand-bg); border:1px solid var(--brand-border); color:var(--text-primary); padding:44px; display:flex; flex-direction:column; justify-content:space-between; border-radius:24px; }
@@ -83,7 +96,13 @@ export function authThemeCss(scope: string): string {
         @media (prefers-reduced-motion: reduce) { ${s} .auth-marquee-track { animation:none; } }
 
         /* ── Right form panel ── */
-        ${s} .auth-main { display:flex; flex-direction:column; padding:28px 40px; background:var(--card-bg); border:1px solid var(--card-border); overflow:auto; border-radius:24px; }
+        /* overflow:hidden (was auto) — with the height-capped layout the form
+           panel now grows to fit its own content and the whole PAGE scrolls on
+           short viewports, so the panel never needs an inner scrollbar. The old
+           auto + auth-card margin:auto combination clipped the TOP of a tall
+           form (the heading) and made it unreachable — the classic
+           flex-auto-margin-scroll trap. */
+        ${s} .auth-main { display:flex; flex-direction:column; padding:28px 40px; background:var(--card-bg); border:1px solid var(--card-border); overflow:hidden; border-radius:24px; }
         ${s} .auth-main-top { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:8px; flex-shrink:0; }
         ${s} .auth-logo { font-size:19px; font-weight:700; letter-spacing:-0.01em; color:var(--text-primary); }
         ${s} .auth-theme { width:40px; height:40px; display:inline-flex; align-items:center; justify-content:center; border-radius:999px; background:var(--surface); border:1px solid var(--hairline); color:var(--text-primary); cursor:pointer; -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); transition:background .16s ease, transform .1s ease; }
@@ -166,7 +185,9 @@ export function authThemeCss(scope: string): string {
         @keyframes qk-spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
         @media (max-width:900px) {
           ${s} { padding:14px; }
-          ${s} .auth-layout { grid-template-columns:1fr; }
+          /* Stack the panels and let each size to its own content (drop the
+             desktop min-height so the stack isn't forced tall on phones). */
+          ${s} .auth-layout { grid-template-columns:1fr; min-height:0; }
           ${s} .auth-side { padding:28px 24px; min-height:200px; }
           ${s} .auth-side-head { gap:18px; }
           ${s} .auth-brand-subtitle, ${s} .auth-brand-desc, ${s} .auth-side-bottom { display:none; }

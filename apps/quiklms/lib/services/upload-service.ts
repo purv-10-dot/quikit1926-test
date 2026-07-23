@@ -1,12 +1,31 @@
 /**
- * Upload service — presigned-URL minting ported from UploadService.
- * Large files NEVER stream through route bodies; the browser PUTs directly to S3
- * using these presigned URLs. Key format matches the legacy backend exactly:
+ * Upload service — two ways to get bytes into the bucket, one response shape.
+ *
+ *  1. PROXIED (default, `kind: 'bytes'`). The browser POSTs multipart to our own
+ *     API route and the server writes to storage. Same-origin, so no CORS
+ *     preflight is involved at any point. This is the pattern quiktrack uses for
+ *     every upload (`apps/quiktrack/lib/storage.ts` + `/api/docs/upload`), and
+ *     it is why quiktrack never needed a bucket CORS policy.
+ *  2. PRESIGNED (`kind: 'url'`). The route mints a signed PUT and the browser
+ *     sends the bytes straight to storage.googleapis.com. Kept because a proxied
+ *     upload cannot exceed the platform's 4.5MB request-body cap, and course
+ *     resources are capped at 500MB — a 200MB lecture video has nowhere to go
+ *     but direct-to-bucket. That hop IS cross-origin and still needs the bucket
+ *     CORS policy in scripts/set-gcs-cors.mjs.
+ *
+ * Both paths write the SAME key format and return the SAME permanent URL, so
+ * nothing downstream (rendering, presign-on-read, stored rows) can tell them
+ * apart. Key format matches the legacy backend exactly:
  *   tenants/{orgId}/uploads/{uuid}-{fileName}
  * and the specialised prefixes (course-resources, homework, scorm, …).
  */
 import { randomUUID } from 'crypto';
-import { presignPut, presignGet, S3_BUCKET } from '@/lib/s3';
+import type { NextRequest } from 'next/server';
+import { z } from 'zod';
+import { presignPut, presignGet, putObject, S3_BUCKET } from '@/lib/s3';
+import { BadRequest } from '@/lib/http';
+import { parseMultipart } from '@/lib/multipart';
+import { parseBody } from '@/lib/validation';
 
 /**
  * Canonical permanent URL for a stored object.
@@ -38,18 +57,95 @@ export async function generatePresignedUrl(
 }
 
 /**
+ * Object key for a prefixed upload. Shared by both paths on purpose — a file
+ * stored by the server and one PUT by the browser must be indistinguishable.
+ */
+function buildPrefixedKey(prefix: string, fileName: string): string {
+  return `${prefix}/${Date.now()}-${safeName(fileName)}`;
+}
+
+/**
  * Mint a presigned PUT for a given S3 prefix. Used by the course-resource /
- * homework / non-teaching / thumbnail / scorm upload endpoints, which previously
- * accepted multipart bodies — now the browser uploads directly.
+ * homework / non-teaching / thumbnail / scorm upload endpoints for files too
+ * large to proxy through the route.
  */
 export async function presignForPrefix(
   prefix: string,
   fileName: string,
   fileType: string,
 ): Promise<{ uploadUrl: string; s3Key: string; permanentUrl: string }> {
-  const key = `${prefix}/${Date.now()}-${safeName(fileName)}`;
+  const key = buildPrefixedKey(prefix, fileName);
   const uploadUrl = await presignPut(key, fileType, 3600);
   return { uploadUrl, s3Key: key, permanentUrl: publicUrl(key) };
+}
+
+/**
+ * What the caller asked for: either the bytes themselves (multipart) or just
+ * metadata for a presigned URL (JSON). The four upload routes branch on nothing
+ * else — every other check they run is identical for both.
+ */
+export type UploadIntent =
+  | { kind: 'bytes'; fileName: string; fileType: string; fileSize: number; buffer: Buffer }
+  | { kind: 'url'; fileName: string; fileType: string; fileSize: number };
+
+/**
+ * Hard ceiling on a PROXIED body, independent of the per-endpoint limits below
+ * it. Those limits describe the file (500MB for a course resource); this one
+ * describes what may be buffered in a function's memory. The client never sends
+ * multipart above ~4MB, and the platform rejects a body over 4.5MB before it
+ * reaches us, so this only fires on a hand-rolled request.
+ */
+const MAX_PROXY_BYTES = 8 * 1024 * 1024;
+
+const uploadMetaSchema = z.object({
+  fileName: z.string(),
+  fileType: z.string(),
+  fileSize: z.number(),
+});
+
+/**
+ * Read either body shape off the request.
+ *
+ * The JSON branch keeps the exact zod schema the routes used before, so a body
+ * missing `fileSize` still fails validation the same way rather than silently
+ * skipping the size checks.
+ */
+export async function readUploadIntent(req: NextRequest): Promise<UploadIntent> {
+  const contentType = req.headers.get('content-type') ?? '';
+
+  if (contentType.includes('multipart/form-data')) {
+    const { file } = await parseMultipart(req, 'file', MAX_PROXY_BYTES);
+    if (!file) throw BadRequest('No file provided');
+    return {
+      kind: 'bytes',
+      fileName: file.originalname,
+      // A file picked from some OSes arrives with an empty type; the browser
+      // uses the same fallback when signing, so keep them in step.
+      fileType: file.mimetype || 'application/octet-stream',
+      fileSize: file.size,
+      buffer: file.buffer,
+    };
+  }
+
+  const meta = await parseBody(req, uploadMetaSchema);
+  return { kind: 'url', ...meta };
+}
+
+/**
+ * Store the bytes (proxied) or mint a signed PUT (direct), returning one shape.
+ * `uploadUrl` is present ONLY when the caller still has to send the bytes —
+ * its absence is how the client knows the upload is already complete.
+ */
+export async function resolveUpload(
+  prefix: string,
+  intent: UploadIntent,
+): Promise<{ uploadUrl?: string; s3Key: string; permanentUrl: string }> {
+  if (intent.kind === 'bytes') {
+    const key = buildPrefixedKey(prefix, intent.fileName);
+    await putObject(key, intent.buffer, intent.fileType);
+    return { s3Key: key, permanentUrl: publicUrl(key) };
+  }
+  return presignForPrefix(prefix, intent.fileName, intent.fileType);
 }
 
 export async function presignReadUrl(s3Key: string): Promise<string> {

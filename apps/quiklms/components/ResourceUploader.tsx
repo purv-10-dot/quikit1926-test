@@ -13,12 +13,12 @@
  * `tus-js-client` to `${VITE_API_URL}/upload` — a route that does not exist on
  * the backend (only `/upload/tus`, itself a stub), so the original could never
  * have completed an upload. It also built a FormData that was never sent. The
- * tus path is replaced with `uploadViaPresign`, the same helper the learner
- * homework page uses. Consequences, all intentional:
+ * tus path is replaced with `uploadFile`, the same helper the learner homework
+ * page uses. Consequences, all intentional:
  *   - Uploads are NO LONGER RESUMABLE, so the "Upload is resumable…" line is
  *     gone rather than left as a false promise.
- *   - `uploadViaPresign` reports no byte-level progress: the bar holds at 0%
- *     while uploading and is set to 100 on success.
+ *   - `uploadFile` reports no byte-level progress: the bar holds at 0% while
+ *     uploading and is set to 100 on success.
  *   - Cancel cannot abort the in-flight PUT (the helper takes no AbortSignal);
  *     it drops the upload from the UI and suppresses the lesson creation.
  * Everything else — props, state, the 5GB check, the accept map, every
@@ -26,7 +26,7 @@
  */
 import React, { useState, useRef } from 'react';
 import { api } from '@/lib/api';
-import { uploadViaPresign } from '@/lib/upload-client';
+import { uploadFile } from '@/lib/upload-client';
 
 interface ResourceUploaderProps {
   moduleId: string;
@@ -81,8 +81,8 @@ const ResourceUploader: React.FC<ResourceUploaderProps> = ({
     setProgress(0);
 
     try {
-      // Mint a presigned URL, PUT the bytes to S3, and get the permanent URL.
-      const fileUrl = await uploadViaPresign(file, '/upload/course-resource');
+      // Upload the bytes and get the permanent URL back.
+      const fileUrl = await uploadFile(file, '/upload/course-resource');
 
       // The user hit Cancel while the bytes were in flight — the object may
       // exist in S3, but do not create the lesson or report success.

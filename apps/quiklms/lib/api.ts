@@ -1,5 +1,17 @@
 'use client';
-const PUBLIC_PATHS = ['/login', '/verify-certificate', '/design'];
+// Routes that render for signed-OUT visitors. A 401 on one of these is the
+// expected answer, not a dead session, so the hard nav to /login below must not
+// fire — `/login` re-initiates SSO on mount and would drag the visitor into
+// quikit-auth.
+//
+// `/` is the public marketing landing, and it is where global sign-out returns
+// the user (see lib/global-signout.ts). Omitting it is what made logout look
+// broken: the landing rendered correctly with `?reason=logged_out`, then the
+// root providers' `/api/me` + `/api/tenants/current(/features)` calls 401'd a
+// beat later and bounced the just-signed-out user to /login → quikit-auth.
+// Matching below is `p === x || p.startsWith(`${x}/`)`, so `/` only ever
+// matches the root exactly — it does not make every route public.
+const PUBLIC_PATHS = ['/', '/login', '/verify-certificate', '/design'];
 
 export interface ApiError {
   statusCode: number;

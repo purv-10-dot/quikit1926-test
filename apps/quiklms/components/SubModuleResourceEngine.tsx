@@ -10,8 +10,9 @@
  * handed back to the parent through `onSave`.
  *
  * Upload paths differ by endpoint in this app:
- *   - `/upload/course-resource` was re-platformed to presigned-PUT minting, so it
- *     goes through `uploadViaPresign` (browser PUTs bytes straight to S3).
+ *   - `/upload/course-resource` goes through `uploadFile`, which POSTs the bytes
+ *     to that route and only falls back to a direct-to-bucket PUT for files too
+ *     large to proxy.
  *   - `/upload/scorm` deliberately kept its multipart contract — the server must
  *     read `imsmanifest.xml` and inject the SCORM API bridge — so it still POSTs
  *     FormData.
@@ -51,7 +52,7 @@ import {
 import { DragDropContext, Droppable, Draggable, DropResult } from 'react-beautiful-dnd';
 import { v4 as uuidv4 } from 'uuid';
 import { api } from '@/lib/api';
-import { uploadViaPresign } from '@/lib/upload-client';
+import { uploadFile } from '@/lib/upload-client';
 
 interface Resource {
   id: string;
@@ -151,11 +152,11 @@ const SubModuleResourceEngine = ({ resources: initialResources, onSave, onClose 
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
 
-        // Presigned-PUT upload: mints the URL and PUTs the bytes to S3, returning
-        // the permanent URL. fetch cannot report byte-level progress, so the bar
-        // is driven from start/finish per file.
+        // Uploads the bytes and returns the permanent URL. Neither path can
+        // report byte-level progress, so the bar is driven from start/finish per
+        // file.
         setUploadProgress(0);
-        const uploadedUrl = await uploadViaPresign(file, '/upload/course-resource');
+        const uploadedUrl = await uploadFile(file, '/upload/course-resource');
         setUploadProgress(100);
 
         // The presign helper returns only the URL, so the backend-provided type /

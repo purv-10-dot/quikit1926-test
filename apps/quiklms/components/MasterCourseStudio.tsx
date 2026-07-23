@@ -14,9 +14,9 @@
  *  - axios → the app's fetch wrapper (`@/lib/api`), which returns the response
  *    BODY directly, so every `res.data.data` collapses to `res.data`.
  *  - The thumbnail upload POSTed multipart FormData to `/upload/course-resource`.
- *    That route is presigned-PUT minting in this app (it takes JSON metadata and
- *    returns an `uploadUrl` for the browser to PUT to), so it now goes through
- *    the existing `uploadViaPresign` helper. Approved 2026-07-17.
+ *    It now goes through the shared `uploadFile` helper, which posts multipart
+ *    to that route and falls back to a presigned PUT only for files too large to
+ *    proxy. Approved 2026-07-17.
  *
  * `react-beautiful-dnd` is unmaintained and its drag silently no-ops under React
  * 18 StrictMode in dev (it works in production builds). Kept deliberately so the
@@ -68,7 +68,7 @@ import {
   Trophy,
 } from 'lucide-react';
 import { api } from '@/lib/api';
-import { uploadViaPresign } from '@/lib/upload-client';
+import { uploadFile } from '@/lib/upload-client';
 import { v4 as uuidv4 } from 'uuid';
 import QuizBuilderAdvanced from '@/components/QuizBuilderAdvanced';
 import SubModuleResourceEngine from '@/components/SubModuleResourceEngine';
@@ -494,16 +494,13 @@ const MasterCourseStudio = ({ courseId, onClose, onSuccess, isTenantAdmin = fals
 
     try {
       // The source POSTed multipart FormData to `/upload/course-resource` with an
-      // extra `type: 'course-thumbnail'` field. That route is presigned-PUT
-      // minting in this app — it takes JSON metadata and returns an `uploadUrl`
-      // for the browser to PUT the bytes to — so multipart would simply fail
-      // validation. `uploadViaPresign` performs both steps and returns the
-      // permanent URL. The `type` field has no counterpart on the presigned route
-      // and is dropped; it was never read server-side (the legacy handler derived
-      // the resource type from the filename/mimetype).
+      // extra `type: 'course-thumbnail'` field. `uploadFile` handles the upload
+      // whichever way the file's size demands and returns the permanent URL. The
+      // `type` field is dropped; it was never read server-side (the legacy
+      // handler derived the resource type from the filename/mimetype).
       // Endpoint kept as `/upload/course-resource` — the original's choice, even
       // though a `/upload/course-thumbnail` route also exists.
-      const url = await uploadViaPresign(file, '/upload/course-resource');
+      const url = await uploadFile(file, '/upload/course-resource');
 
       if (url) {
         setCourse((prev) => ({ ...prev, thumbnailUrl: url }));

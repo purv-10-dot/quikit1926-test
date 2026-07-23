@@ -5,7 +5,7 @@
  * --brand-primary/secondary CSS vars; Feature gates UI; Theme toggles dark mode.
  */
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
-import { SessionProvider } from 'next-auth/react';
+import { SessionProvider, useSession } from 'next-auth/react';
 import { api } from '@/lib/api';
 import { I18nProvider } from '@/lib/i18n';
 import type { FeatureSet } from '@/lib/features';
@@ -49,6 +49,19 @@ function shade(hex: string, percent: number): string {
 }
 
 export function Providers({ children }: { children: ReactNode }) {
+  return (
+    // SessionProvider is outermost across all QuikIT apps (see root CLAUDE.md
+    // "Provider Order"). It also has to sit ABOVE the hydration in AppProviders,
+    // which reads `useSession()` to decide whether the authenticated fetches are
+    // worth firing at all — a hook that only works inside this provider.
+    <SessionProvider>
+      <AppProviders>{children}</AppProviders>
+    </SessionProvider>
+  );
+}
+
+function AppProviders({ children }: { children: ReactNode }) {
+  const { status } = useSession();
   const [branding, setBranding] = useState<Branding>({ logo: null, primaryColor: '#3B82F6', secondaryColor: '#1E40AF', name: 'QuikSkill', tenantType: null });
   const [feature, setFeature] = useState<Omit<FeatureState, 'refresh'>>({ tenantType: null, features: {}, availableRoles: [], roleLabels: {}, config: {}, loaded: false });
   const [user, setUser] = useState<CurrentUser | null>(null);
@@ -94,15 +107,33 @@ export function Providers({ children }: { children: ReactNode }) {
     root.style.setProperty('--brand-primary-light', shade(branding.primaryColor, 40));
   }, [branding.primaryColor, branding.secondaryColor]);
 
+  // Theme is user-agnostic — the signed-out marketing landing honours it too,
+  // so this stays unconditional.
   useEffect(() => {
     const stored = localStorage.getItem('theme');
     const isDark = stored === 'dark';
     setDark(isDark);
     document.documentElement.classList.toggle('dark', isDark);
+  }, []);
+
+  // Identity / branding / features hydration, gated on an ESTABLISHED session.
+  //
+  // All three endpoints are `requireAuth`-guarded and answer 401 without one,
+  // and lib/api.ts turns a 401 into a hard nav to /login, which re-initiates
+  // SSO. Firing them unconditionally therefore bounced every signed-out visitor
+  // to the public landing page straight into quikit-auth — including the user
+  // who had just landed there FROM sign-out, which is what made logout look
+  // broken. `/` is now also exempt in lib/api.ts; this is the other half, so
+  // the landing stops making three requests that can only ever 401.
+  //
+  // `status` flips to 'authenticated' once the session resolves (and again
+  // after a fresh sign-in), so authenticated users still hydrate exactly once.
+  useEffect(() => {
+    if (status !== 'authenticated') return;
     void refreshUser();
     void refreshBranding();
     void refreshFeatures();
-  }, [refreshUser, refreshBranding, refreshFeatures]);
+  }, [status, refreshUser, refreshBranding, refreshFeatures]);
 
   const toggle = useCallback(() => {
     setDark((d) => {
@@ -114,19 +145,16 @@ export function Providers({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    // SessionProvider is outermost across all QuikIT apps (see root CLAUDE.md
-    // "Provider Order"). It exposes the centralized NextAuth session to the LMS
-    // client contexts below, which continue to hydrate via GET /api/me.
-    <SessionProvider>
-      <I18nProvider>
-        <ThemeCtx.Provider value={{ dark, toggle }}>
-          <UserCtx.Provider value={{ user, refresh: refreshUser }}>
-            <BrandingCtx.Provider value={{ branding, refresh: refreshBranding }}>
-              <FeatureCtx.Provider value={{ ...feature, refresh: refreshFeatures }}>{children}</FeatureCtx.Provider>
-            </BrandingCtx.Provider>
-          </UserCtx.Provider>
-        </ThemeCtx.Provider>
-      </I18nProvider>
-    </SessionProvider>
+    // The LMS client contexts below hydrate via GET /api/me and friends; they
+    // sit under the SessionProvider mounted by `Providers` above.
+    <I18nProvider>
+      <ThemeCtx.Provider value={{ dark, toggle }}>
+        <UserCtx.Provider value={{ user, refresh: refreshUser }}>
+          <BrandingCtx.Provider value={{ branding, refresh: refreshBranding }}>
+            <FeatureCtx.Provider value={{ ...feature, refresh: refreshFeatures }}>{children}</FeatureCtx.Provider>
+          </BrandingCtx.Provider>
+        </UserCtx.Provider>
+      </ThemeCtx.Provider>
+    </I18nProvider>
   );
 }
