@@ -43,6 +43,7 @@ import { LinkedWorkItems } from "@/components/linked-work-items";
 import { IssueActivity } from "@/components/issue-activity";
 import { IssueAttachments } from "@/components/issue-attachments";
 import { DescriptionAttachments } from "@/components/description-attachments";
+import { RichTextView } from "@/components/rich-text-view";
 import { AlertCircle } from "lucide-react";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import { formatHoursAsClock } from "@/lib/utils/timesheetPeriod";
@@ -1142,6 +1143,19 @@ export function EditIssueModal({
                       </button>
                     </div>
                   </div>
+                ) : description ? (
+                  // Clickable div (not a <button>) so the rich content — which
+                  // includes links and file-attachment cards — can nest legally.
+                  // Read-only render uses the same TipTap extensions as the
+                  // editor, so file cards render inline identically.
+                  <div
+                    onClick={() => canUpdateIssue && setDescEditing(true)}
+                    className={`text-sm text-gray-800 rounded px-3 py-2 ${
+                      canUpdateIssue ? "cursor-text hover:bg-gray-50" : "opacity-80"
+                    }`}
+                  >
+                    <RichTextView html={sanitizeRichText(description)} />
+                  </div>
                 ) : (
                   <button
                     type="button"
@@ -1151,20 +1165,9 @@ export function EditIssueModal({
                       canUpdateIssue ? "hover:bg-gray-50" : "cursor-default opacity-80"
                     }`}
                   >
-                    {description ? (
-                      <span
-                        className="prose prose-sm max-w-none text-gray-800"
-                        dangerouslySetInnerHTML={{ __html: sanitizeRichText(description) }}
-                      />
-                    ) : (
-                      "Add a description..."
-                    )}
+                    Add a description...
                   </button>
                 )}
-                {/* Files/images embedded in the description, as cards — rendered
-                    outside the read-only <button> (interactive links can't nest
-                    in a button). Only in read-only view. */}
-                {!descEditing && <DescriptionAttachments html={description} />}
               </div>
 
               {/* Subtasks — hidden for Epics (which group via epicId) and

@@ -91,7 +91,13 @@ export const FileAttachment = Node.create({
   parseHTML() {
     // Match the newer `data-file-name` chips AND older `class="qt-file-chip"`
     // chips (which have only href + a "name · size" text label).
-    return [{ tag: "a[data-file-name]" }, { tag: "a.qt-file-chip" }];
+    // `priority: 100` beats the built-in Link mark (default 50), which also
+    // matches <a> and would otherwise swallow the chip before this node —
+    // dropping the attachment card in the editor.
+    return [
+      { tag: "a[data-file-name]", priority: 100 },
+      { tag: "a.qt-file-chip", priority: 100 },
+    ];
   },
 
   renderHTML({ HTMLAttributes, node }) {
