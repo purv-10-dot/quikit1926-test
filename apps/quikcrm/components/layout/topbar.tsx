@@ -18,7 +18,9 @@ import {
   Search,
   Settings,
   ShieldCheck,
+  Target,
   User,
+  UserPlus,
   Users,
   Workflow,
   X,
@@ -26,6 +28,7 @@ import {
 import Link from "next/link";
 import { AppSwitcher } from "@quikit/ui";
 import { useAuth } from "@/hooks/use-auth";
+import { isCrmAdmin } from "@/lib/auth/is-crm-admin";
 import { useSidebar } from "@/components/layout/sidebar-context";
 import { GlobalLogActivity } from "@/components/layout/global-log-activity";
 import { NotificationBell } from "@/components/notifications/notification-bell";
@@ -87,6 +90,12 @@ const SETTINGS_MENU = [
         description: "Scoring rules, fields, stages, and sources",
       },
       {
+        href: "/settings/prospects",
+        icon: UserPlus,
+        label: "Prospects",
+        description: "LinkedIn profiles saved from the browser extension",
+      },
+      {
         href: "/settings/call-dispositions",
         icon: Phone,
         label: "Call Disposition",
@@ -104,29 +113,37 @@ const SETTINGS_MENU = [
         label: "Activity Types",
         description: "Define activity types and their custom fields",
       },
+      {
+        href: "/settings/activity-targets",
+        icon: Target,
+        label: "Activity Targets",
+        description: "Set daily activity targets for salespeople",
+        // Super Admin / Org Admin / CRM Administrator only.
+        adminOnly: true,
+      },
     ],
   },
   {
     section: "Integrations & Access",
     items: [
       {
-        href: "/settings/integrations",
+        href: "/settings/email",
         icon: Plug,
         label: "Integrations",
         description: "Connect third-party tools and services",
       },
-      {
-        href: "/settings/api-keys",
-        icon: KeyRound,
-        label: "API Keys",
-        description: "Secret keys for public API integrations",
-      },
-      {
-        href: "/settings/audit",
-        icon: ScrollText,
-        label: "Audit Log",
-        description: "Review changes and activity history",
-      },
+      // {
+      //   href: "/settings/api-keys",
+      //   icon: KeyRound,
+      //   label: "API Keys",
+      //   description: "Secret keys for public API integrations",
+      // },
+      // {
+      //   href: "/settings/audit",
+      //   icon: ScrollText,
+      //   label: "Audit Log",
+      //   description: "Review changes and activity history",
+      // },
       {
         href: "/settings/notifications",
         icon: Bell,
@@ -182,6 +199,14 @@ export function TopBar() {
 
   const fullName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || user?.email?.split("@")[0] || "User";
   const firstName = user?.firstName || fullName.split(" ")[0];
+
+  // Hide admin-only settings items (e.g. Activity Targets) for non-admins.
+  // Sections that end up empty after filtering are dropped entirely.
+  const isAdmin = isCrmAdmin(user?.role);
+  const visibleMenu = SETTINGS_MENU.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => !("adminOnly" in item && item.adminOnly) || isAdmin),
+  })).filter((section) => section.items.length > 0);
 
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-crm-border bg-white/95 px-3 backdrop-blur sm:px-4 lg:px-6">
@@ -252,7 +277,7 @@ export function TopBar() {
                 </div>
 
                 {/* Sections */}
-                {SETTINGS_MENU.map((section, si) => (
+                {visibleMenu.map((section, si) => (
                   <div key={section.section} className={si > 0 ? "border-t border-crm-border" : ""}>
                     <div className="px-4 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-crm-muted">
                       {section.section}

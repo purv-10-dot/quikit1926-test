@@ -46,16 +46,26 @@ describe("india-voice working status", () => {
   });
 
   it("updateWorkingStatus uses working_status and direction (not status or deskphone)", async () => {
-    fetchMock.mockResolvedValueOnce({
-      status: 200,
-      text: async () => JSON.stringify({ type: "success", message: "Working Status Updated Successfully." }),
-    });
+    // setAgentAvailable first calls getmemberlist_v2 (fetch #1), then
+    // update-working-status-v2 (fetch #2). Mock both so fetch never returns
+    // undefined. (Regression: previously only one mock was provided, so the
+    // second fetch returned undefined → ".finally of undefined".)
+    fetchMock
+      .mockResolvedValueOnce({
+        status: 200,
+        text: async () => JSON.stringify({ getmember: [] }),
+      })
+      .mockResolvedValueOnce({
+        status: 200,
+        text: async () => JSON.stringify({ type: "success", message: "Working Status Updated Successfully." }),
+      });
 
     const { setAgentAvailable } = await import("@/lib/services/telephony/india-voice");
     const result = await setAgentAvailable("8120833324");
 
     expect(result.ok).toBe(true);
-    const calledUrl = String(fetchMock.mock.calls[0][0]);
+    // fetch #1 is the member list; the working-status call is the last one.
+    const calledUrl = String(fetchMock.mock.calls.at(-1)![0]);
     expect(calledUrl).toContain("/api_v3/update-working-status-v2");
     expect(calledUrl).toContain("working_status=Ready");
     expect(calledUrl).toContain("direction=IVR");

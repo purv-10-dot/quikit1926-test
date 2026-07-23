@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LinkedIn CRM Extension</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="mode-select">
+
+<!-- Login View (side panel) - shown when not authenticated -->
+<div id="loginView" class="view-panel">
+  <div class="login-container">
+    <h2 class="login-title">LinkedIn CRM</h2>
+    <p class="login-subtitle">Sign in to extract and save leads</p>
+    <div id="loginErrorMessage" class="login-error"></div>
+    <div class="oauth-buttons">
+      <button type="button" id="googleLoginBtn" class="btn-oauth">
+        <img src="assets/google.png" alt="" class="oauth-icon">
+        <span>Continue with Google</span>
+      </button>
+      <button type="button" id="microsoftLoginBtn" class="btn-oauth">
+        <img src="assets/microsoft.png" alt="" class="oauth-icon">
+        <span>Continue with Microsoft</span>
+      </button>
+    </div>
+    <p class="login-hint">Only existing QuikCRM users can sign in.</p>
+  </div>
+</div>
+
+<!-- Extractor View - shown when authenticated -->
+<div id="extractorView" class="view-panel hidden">
+  <!-- Organization selector - shown only when the user has multiple orgs -->
+  <div id="orgSelection" class="mode-panel hidden">
+    <div class="container">
+      <div class="header header-with-logout">
+        <div>
+          <h2 class="title">Select Organization</h2>
+          <p class="subtitle">Choose which organization to work in</p>
+        </div>
+        <button type="button" id="logoutBtnOrg" class="btn-logout" title="Logout">Logout</button>
+      </div>
+      <div id="orgError" class="login-error"></div>
+      <form id="orgForm" class="org-form">
+        <div id="orgOptions" class="org-options"></div>
+        <button type="submit" id="orgContinueBtn" class="btn-login" disabled>Continue</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="individualView" class="mode-panel hidden">
+    <div id="notLinkedInWarning" class="view-panel hidden" style="margin: 20px; padding: 24px; background: rgba(255,255,255,0.95); border-radius: 16px;">
+      <div class="warning-message">
+        <h2>Please navigate to a LinkedIn profile page</h2>
+        <p>This extension only works on LinkedIn profile pages. Open a LinkedIn profile in this tab and use the panel again.</p>
+      </div>
+    </div>
+    <div id="linkedIndata">
+      <div class="container">
+        <div class="header header-with-logout">
+          <div>
+            <h2 class="title">LinkedIn CRM</h2>
+            <p class="subtitle">Extract and save LinkedIn profiles</p>
+          </div>
+          <button type="button" id="logoutBtnIndividual" class="btn-logout" title="Logout">Logout</button>
+        </div>
+
+        <div id="orgBadge" class="org-badge hidden">
+          <span class="org-badge-icon">🏢</span>
+          <span id="orgBadgeName" class="org-badge-name"></span>
+        </div>
+
+        <div class="sliding-warning">
+          <span>Click "Extract Data" to scrape LinkedIn profile information</span>
+        </div>
+
+        <!-- INITIAL STATE: Extract button only -->
+        <div id="fetchsection" class="fetch-section">
+          <button id="fetchData" type="button">
+            <span id="fetchDatatext">Extract Profile Data</span>
+          </button>
+          <div id="fetchDataloader" class="loading-container">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">Extracting data...</div>
+          </div>
+        </div>
+
+        <!-- AFTER EXTRACTION: Profile data + company enrichment -->
+        <div id="intialdata" class="form-container" style="display: none; padding-bottom: 100px;">
+          <form id="output">
+            <div class="form-content">
+              <!-- PROSPECT PROFILE CARD -->
+              <div style="background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+                <h3 style="margin: 0 0 16px 0; color: #1a1a1a; font-size: 16px; font-weight: 700;">Prospect Profile</h3>
+                
+                <div style="display: grid; grid-template-columns: auto 1fr; gap: 16px; margin-bottom: 20px;">
+                  <!-- Profile Picture -->
+                  <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+                    <img id="profile-picture" class="profile-image" alt="Profile Picture" style="width: 80px; height: 80px; border-radius: 8px; object-fit: cover; background: #f0f0f0;">
+                    <div id="noprofile-picture" class="no-profile" style="width: 80px; height: 80px; background: #f0f0f0; border-radius: 8px; display: none; font-size: 12px; color: #999;">No Image</div>
+                  </div>
+                  
+                  <!-- Basic Info -->
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start;">
+                    <div>
+                      <label class="form-label">First Name</label>
+                      <input type="text" id="firstName" class="form-input" style="font-size: 14px;">
+                    </div>
+                    <div>
+                      <label class="form-label">Last Name</label>
+                      <input type="text" id="lastName" class="form-input" style="font-size: 14px;">
+                    </div>
+                    <div style="grid-column: 1 / -1;">
+                      <label class="form-label">Full Name</label>
+                      <div id="fullName" class="form-display" style="padding: 10px; background: #f9fafb; border-radius: 6px; font-size: 14px; color: #374151;">–</div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Contact & Professional Info Grid -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                  <div>
+                    <label class="form-label">Email Address *</label>
+                    <input type="email" id="emailID" class="form-input" required style="font-size: 14px;">
+                      <div style="margin-top:8px;">
+                        <input type="checkbox" id="searchEmailToggle" style="margin-right:6px;">
+                        <label for="searchEmailToggle" style="font-size:13px; color:#374151;">Search for email if missing</label>
+                      </div>
+                  </div>
+                  <div>
+                    <label class="form-label">Phone Number</label>
+                    <input type="text" id="mobileNumber" class="form-input" style="font-size: 14px;">
+                  </div>
+                  <div>
+                    <label class="form-label">Job Title *</label>
+                    <input type="text" id="headline" class="form-input" required style="font-size: 14px;">
+                  </div>
+                  <div>
+                    <label class="form-label">Company</label>
+                    <input type="text" id="company" class="form-input" style="font-size: 14px;">
+                  </div>
+                  <div style="grid-column: 1 / -1;">
+                    <label class="form-label">LinkedIn URL *</label>
+                    <input type="url" id="profileURL" class="form-input" required style="font-size: 14px;">
+                  </div>
+                </div>
+
+                <!-- Short Summary -->
+                <div style="margin-top: 12px;">
+                  <label class="form-label">Short Summary *</label>
+                  <textarea id="shortSummary" class="form-input form-textarea" required rows="2" placeholder="Brief professional summary" style="font-size: 13px; resize: vertical;"></textarea>
+                </div>
+
+                <!-- About (Collapsible) -->
+                <div style="margin-top: 12px;">
+                  <button type="button" id="toggleAbout" style="background: none; border: none; padding: 8px 0; cursor: pointer; color: #4f46e5; font-weight: 500; font-size: 14px; display: flex; align-items: center; gap: 8px;">
+                    <span id="aboutToggleIcon">▶</span> About
+                  </button>
+                  <div id="aboutSection" style="display: none; margin-top: 8px;">
+                    <textarea id="about" class="form-input form-textarea" rows="3" style="font-size: 13px; resize: vertical;"></textarea>
+                  </div>
+                </div>
+
+                <!-- Recent Posts (Collapsible) -->
+                <div style="margin-top: 12px;">
+                  <button type="button" id="togglePosts" style="background: none; border: none; padding: 8px 0; cursor: pointer; color: #4f46e5; font-weight: 500; font-size: 14px; display: flex; align-items: center; gap: 8px;">
+                    <span id="postsToggleIcon">▶</span> Recent Posts
+                  </button>
+                  <div id="postsSection" style="display: none; margin-top: 8px;">
+                    <div id="postsCount" class="form-display" style="padding: 12px; background: #f9fafb; border-radius: 6px; font-size: 13px; color: #6b7280;">No posts extracted yet</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- COMPANY ENRICHMENT SECTION -->
+              <div id="companyEnrichmentSection" style="display: none;">
+                <!-- Company Extraction Card -->
+                <div style="background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%); border-radius: 12px; padding: 20px; margin-bottom: 20px; border: 1px solid #e5e7eb;">
+                  <div style="text-align: center; margin-bottom: 16px;">
+                    <h4 style="margin: 0 0 8px 0; color: #374151; font-size: 16px; font-weight: 600;">Enrich with Company Data</h4>
+                    <p style="margin: 0; color: #6b7280; font-size: 13px;">Navigate to the company profile and click below</p>
+                  </div>
+                  <button type="button" id="extractCompanyDataBtn" class="save-button" style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); width: 100%; margin-bottom: 8px;">
+                    🏢 Extract Company Details
+                  </button>
+                  <div id="companyExtractionStatus" style="font-size: 12px; color: #6b7280; text-align: center;"></div>
+                </div>
+
+                <!-- Company Data Display -->
+                <div id="companyDataDisplay" style="display: none; background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+                  <h3 style="margin: 0 0 16px 0; color: #1a1a1a; font-size: 16px; font-weight: 700;">Company Details</h3>
+                  
+                  <!-- Quick Info Grid -->
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid #e5e7eb;">
+                    <div>
+                      <label style="font-size: 11px; color: #6b7280; display: block; margin-bottom: 4px; font-weight: 600; text-transform: uppercase;">Company Name</label>
+                      <div id="companyName" style="padding: 8px; background: #f9fafb; border-radius: 4px; font-size: 14px; font-weight: 500; color: #1a1a1a;">–</div>
+                    </div>
+                    <div>
+                      <label style="font-size: 11px; color: #6b7280; display: block; margin-bottom: 4px; font-weight: 600; text-transform: uppercase;">Industry</label>
+                      <div id="companyIndustry" style="padding: 8px; background: #f9fafb; border-radius: 4px; font-size: 14px; color: #374151;">–</div>
+                    </div>
+                    <div>
+                      <label style="font-size: 11px; color: #6b7280; display: block; margin-bottom: 4px; font-weight: 600; text-transform: uppercase;">Company Size</label>
+                      <div id="companySize" style="padding: 8px; background: #f9fafb; border-radius: 4px; font-size: 14px; color: #374151;">–</div>
+                    </div>
+                    <div>
+                      <label style="font-size: 11px; color: #6b7280; display: block; margin-bottom: 4px; font-weight: 600; text-transform: uppercase;">Location</label>
+                      <div id="companyLocation" style="padding: 8px; background: #f9fafb; border-radius: 4px; font-size: 14px; color: #374151;">–</div>
+                    </div>
+                    <div style="grid-column: 1 / -1;">
+                      <label style="font-size: 11px; color: #6b7280; display: block; margin-bottom: 4px; font-weight: 600; text-transform: uppercase;">Website</label>
+                      <div id="companyWebsite" style="padding: 8px; background: #f9fafb; border-radius: 4px; font-size: 13px; color: #374151; word-break: break-all;">–</div>
+                    </div>
+                  </div>
+
+                  <!-- Collapsible: Revenue Sources -->
+                  <div style="margin-bottom: 12px;">
+                    <button type="button" class="company-collapsible-btn" data-target="revenueSources" style="background: none; border: none; padding: 8px 0; cursor: pointer; color: #374151; font-weight: 500; font-size: 13px; display: flex; align-items: center; gap: 8px; width: 100%;">
+                      <span class="company-collapsible-icon">▶</span> Revenue Sources
+                    </button>
+                    <div id="companyChallengesContainer_revenueSources" style="display: none; margin-top: 8px;">
+                      <div id="companyRevenueSources" style="padding: 10px; background: #f9fafb; border-radius: 6px; font-size: 13px; line-height: 1.5; color: #374151; max-height: 120px; overflow-y: auto;">–</div>
+                    </div>
+                  </div>
+
+                  <!-- Collapsible: Challenges & Pain Points -->
+                  <div style="margin-bottom: 12px;">
+                    <button type="button" class="company-collapsible-btn" data-target="challenges" style="background: none; border: none; padding: 8px 0; cursor: pointer; color: #374151; font-weight: 500; font-size: 13px; display: flex; align-items: center; gap: 8px; width: 100%;">
+                      <span class="company-collapsible-icon">▶</span> Challenges & Pain Points
+                    </button>
+                    <div id="companyChallengesContainer_challenges" style="display: none; margin-top: 8px;">
+                      <div id="companyChallenges" style="padding: 10px; background: #f9fafb; border-radius: 6px; font-size: 13px; line-height: 1.6; color: #374151; max-height: 150px; overflow-y: auto;">–</div>
+                    </div>
+                  </div>
+
+                  <!-- Collapsible: Competitive Landscape -->
+                  <div>
+                    <button type="button" class="company-collapsible-btn" data-target="competitive" style="background: none; border: none; padding: 8px 0; cursor: pointer; color: #374151; font-weight: 500; font-size: 13px; display: flex; align-items: center; gap: 8px; width: 100%;">
+                      <span class="company-collapsible-icon">▶</span> Competitive Landscape
+                    </button>
+                    <div id="companyChallengesContainer_competitive" style="display: none; margin-top: 8px;">
+                      <div id="companyCompetitiveLandscape" style="padding: 10px; background: #f9fafb; border-radius: 6px; font-size: 13px; line-height: 1.5; color: #374151; max-height: 120px; overflow-y: auto;">–</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </form>
+        </div>
+
+        <!-- STICKY BOTTOM ACTION BAR (Individual Mode Only) -->
+        <div id="individualActionBar" style="position: fixed; bottom: 0; left: 0; right: 0; background: white; border-top: 1px solid #e5e7eb; padding: 12px 16px; box-shadow: 0 -2px 8px rgba(0,0,0,0.08); z-index: 100; display: none;">
+          <button type="button" id="saveLinkedInData" class="save-button" style="width: 100%;">
+            💾 Save to CRM
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast messages (shared) -->
+<div id="sucesstoaster" class="toast">
+  <span id="sucessmessage"></span>
+</div>
+<div id="errortoaster" class="toast">
+  <span id="errormessage"></span>
+</div>
+
+<script src="api.js"></script>
+<script src="linkedIn.js"></script>
+</body>
+</html>

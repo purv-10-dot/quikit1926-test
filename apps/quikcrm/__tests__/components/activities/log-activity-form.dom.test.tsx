@@ -1,32 +1,30 @@
 // @vitest-environment jsdom
 /**
- * T-P3.3b — modal collapse RED.
+ * Composer contract for the dedicated "Log activity" page.
  *
- * Generic + Lead-log tabs collapse into ONE type-driven "Activity" tab; SMB
- * stays. Tab set becomes activity | smb. These tests assert the NEW contract
- * and are RED until the modal is rewritten.
+ * The composer used to live inside <LogActivityModal>; it now renders on a
+ * dedicated route via <LogActivityForm>. The modal wrapper (and its `open` /
+ * onClose / onSuccess props) is gone — the form is always mounted and reports
+ * completion via onDone. These tests carry over the modal's composer assertions
+ * verbatim, only swapping the wrapper.
  *
- * RE-POINTED from the prior committed tests (before/after shown to Rishabh):
- *  - "Generic tab" structure tests -> "Activity tab" (tabs 1,2)
- *  - record-picker test re-pointed to the Activity tab WITH TYPES PRESENT
- *    (empty list shows the CTA, which hides the picker) (test 3)
- *  - "Generic Type select defaults to Note" REPLACED by an Activity type-picker
- *    assertion (the old hardcoded Type dropdown is removed) (test 4)
- *  - "Lead-log tab" test DELETED (tab removed; the /api/activities/lead-log
- *    endpoint SURVIVES with its own API test — only the tab UI is gone)
+ * Generic + Lead-log tabs collapsed into ONE type-driven "Activity" composer;
+ * the SMB tab was removed. The /api/activities/smb-outreach + lead-log
+ * endpoints SURVIVE with their own API tests — only the SMB UI is gone.
  *
- * Fetch is mocked per-test. The Activity tab calls:
+ * Fetch is mocked per-test. The composer calls:
  *   GET /api/activities/types            -> list of active types
  *   GET /api/activities/types/[id]/fields -> a chosen type's field defs
  *   POST /api/activities                 -> { activityTypeId, fieldValues, ... }
- * SMB tab keeps fetching /api/activities/smb-outreach/meta and posting
- * /api/activities/smb-outreach.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { LogActivityModal } from "@/components/activities/log-activity-modal";
+import { LogActivityForm } from "@/components/activities/log-activity-form";
 
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ success: vi.fn(), error: vi.fn() }) }));
+// The real useToast returns a memoized (stable) object; mirror that here with a
+// singleton so the composer's toast-dependent effects don't re-run every render.
+const toastStub = { success: vi.fn(), error: vi.fn(), info: vi.fn() };
+vi.mock("@/hooks/use-toast", () => ({ useToast: () => toastStub }));
 
 const TYPE = { id: "at1", code: "upwork_connect", label: "Upwork Connect", isActive: true, sortOrder: 0 };
 const FIELDS = [
@@ -50,55 +48,56 @@ function installFetch({ types = [TYPE], fields = FIELDS }: { types?: unknown[]; 
   return calls;
 }
 
+function renderForm(props: Partial<React.ComponentProps<typeof LogActivityForm>> = {}) {
+  return render(
+    <LogActivityForm onDone={() => {}} onCancel={() => {}} {...props} />,
+  );
+}
+
 beforeEach(() => installFetch());
 afterEach(() => cleanup());
 
-describe("<LogActivityModal> — single activity composer (SMB removed)", () => {
+describe("<LogActivityForm> — single activity composer (SMB removed)", () => {
   // ---- tab/SMB removal: no tabs at all, no SMB anywhere ----
   it("renders no tabs — the activity composer is shown directly", () => {
-    render(<LogActivityModal open canViewLeads={false} onClose={() => {}} onSuccess={() => {}} />);
+    renderForm({ canViewLeads: false });
     // The segmented tab bar was removed along with SMB; there are no tabs.
     expect(screen.queryByRole("tab")).toBeNull();
   });
 
   it("does not render an SMB tab even when canViewLeads is true", () => {
-    render(<LogActivityModal open canViewLeads onClose={() => {}} onSuccess={() => {}} />);
+    renderForm({ canViewLeads: true });
     expect(screen.queryByRole("tab", { name: /SMB/i })).toBeNull();
     expect(screen.queryByText(/^SMB$/)).toBeNull();
     // The activity composer itself is present (the record-link prompt shows).
-    expect(screen.getByText(/Link to a record/i)).toBeTruthy();
+    expect(screen.getByText(/appears on that record/i)).toBeTruthy();
   });
 
   // ---- record-picker (with types present) ----
   it("reuses the record picker (asserted with types present, not empty-CTA)", async () => {
-    render(<LogActivityModal open canViewLeads onClose={() => {}} onSuccess={() => {}} />);
+    renderForm({ canViewLeads: true });
     // types present -> picker UI renders (the reused relatedKind/relatedObjectId selector)
-    await waitFor(() => expect(screen.getByText(/Link to a record/i)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Link to")).toBeTruthy());
     expect(screen.getByText("Link to")).toBeTruthy();
   });
 
-  // ---- REPLACED test (4): old "Type select defaults to Note" -> Activity type-picker ----
-  it("Activity tab shows a type-picker listing fetched types (replaces the old Note Type dropdown)", async () => {
-    render(<LogActivityModal open canViewLeads onClose={() => {}} onSuccess={() => {}} />);
+  // ---- Activity type-picker lists fetched types ----
+  it("Activity composer shows a type-picker listing fetched types", async () => {
+    renderForm({ canViewLeads: true });
     // the type-picker lists configured types from GET /api/activities/types
     await waitFor(() => expect(screen.getByText("Upwork Connect")).toBeTruthy());
   });
 
-  // ---- NEW Activity-tab behavior: pick -> fields render -> submit posts ----
+  // ---- pick -> fields render -> submit posts ----
   it("picking a type renders its fields and submitting posts activityTypeId + fieldValues", async () => {
     const calls = installFetch();
     // Pre-link a record via initialRelated so relatedObjectId is set (submit
     // requires a linked record); this keeps the test focused on type→fields→post
     // rather than driving the SearchableSelect.
-    render(
-      <LogActivityModal
-        open
-        canViewLeads
-        onClose={() => {}}
-        onSuccess={() => {}}
-        initialRelated={{ kind: "Lead", id: "L1", label: "ACME" }}
-      />,
-    );
+    renderForm({
+      canViewLeads: true,
+      initialRelated: { kind: "Lead", id: "L1", label: "ACME" },
+    });
 
     // The type-picker is a <select>; choose the type by its id value (selecting
     // an <option>'s text via click does not change a <select> in jsdom).
@@ -143,7 +142,7 @@ describe("<LogActivityModal> — single activity composer (SMB removed)", () => 
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<LogActivityModal open canViewLeads onClose={() => {}} onSuccess={() => {}} />);
+    renderForm({ canViewLeads: true });
 
     const typeSelect = (await screen.findByLabelText("Type")) as HTMLSelectElement;
 
@@ -161,16 +160,16 @@ describe("<LogActivityModal> — single activity composer (SMB removed)", () => 
   // ---- empty list -> CTA (UI half of the locked empty-state) ----
   it("renders the empty-state CTA when no activity types are configured", async () => {
     installFetch({ types: [] });
-    render(<LogActivityModal open canViewLeads onClose={() => {}} onSuccess={() => {}} />);
+    renderForm({ canViewLeads: true });
     await waitFor(() => expect(screen.getByText(/no activity types configured/i)).toBeTruthy());
     // no type-picker in the empty state
     expect(screen.queryByText("Upwork Connect")).toBeNull();
   });
 
-  // ---- SMB-REMOVAL guard: the modal must not surface SMB UI or call its API ----
+  // ---- SMB-REMOVAL guard: the composer must not surface SMB UI or call its API ----
   it("does not render SMB outreach fields nor fetch the SMB meta endpoint", async () => {
     const calls = installFetch();
-    render(<LogActivityModal open canViewLeads onClose={() => {}} onSuccess={() => {}} />);
+    renderForm({ canViewLeads: true });
 
     // Wait for the activity types to load so all open-time effects have fired.
     await waitFor(() => expect(screen.getByText("Upwork Connect")).toBeTruthy());
@@ -180,7 +179,7 @@ describe("<LogActivityModal> — single activity composer (SMB removed)", () => 
     expect(screen.queryByText(/Sub-sub-disposition/i)).toBeNull();
     expect(screen.queryByText(/Competitor/i)).toBeNull();
 
-    // And the SMB endpoints are never hit from this modal.
+    // And the SMB endpoints are never hit from this composer.
     expect(calls.some((c) => c.url.includes("/api/activities/smb-outreach"))).toBe(false);
   });
 });
