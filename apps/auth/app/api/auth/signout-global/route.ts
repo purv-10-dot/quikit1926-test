@@ -53,6 +53,21 @@ const DEFAULT_ALLOWED_ORIGINS = [
   "https://people.quikit.ai",
   "https://support.quikit.ai",
   "https://asset.quikit.ai",
+  // QuikLMS / QuikSkill. Its `globalSignOut` targets these origins, so without
+  // them the final hop failed the allow-list and dumped a signed-out LMS user
+  // on this host's own root instead of the QuikSkill landing page.
+  "https://quikskill.vercel.app",
+  "https://quikskills.quikit.ai",
+  // LIVE Vercel deployment hosts — the origins the platform ACTUALLY runs on
+  // today (NEXT_PUBLIC_QUIKIT_URL / _AUTH_URL point here). Hardcoded so the SLO
+  // chain forwards from CODE, not from an env var. It previously worked only
+  // because `AUTH_ALLOWED_RETURN_ORIGINS` happened to list the launcher; clear
+  // that var and this endpoint would reject the launcher callbackUrl and fall
+  // back to its own /login — the "logout dumps me on the QuikIT login page"
+  // report. The allow-list above still names retired domains (quik-it-auth…);
+  // these are the ones in service.
+  "https://qukit-launcher.vercel.app",
+  "https://quikit-auth-eight.vercel.app",
   // UAT custom domains (uat<app>.quikit.ai) — added alongside prod.
   "https://uatapps.quikit.ai",
   "https://uatscale.quikit.ai",
@@ -99,6 +114,12 @@ function resolveRedirect(req: NextRequest): URL {
 export async function GET(req: NextRequest) {
   const redirectTo = resolveRedirect(req);
   const response = NextResponse.redirect(redirectTo);
+
+  // A sign-out redirect must NEVER be cached. Without this, a browser (or an
+  // edge cache) that once saw this URL resolve to the /login fallback — e.g.
+  // before the launcher origin was allow-listed — can replay that stale 307 and
+  // strand the user on the login page even after the allow-list is corrected.
+  response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
 
   for (const name of NEXT_AUTH_COOKIES) {
     const isSecurePrefix =

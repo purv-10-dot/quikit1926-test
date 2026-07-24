@@ -42,7 +42,22 @@
         "SENTRY_DSN",
         "NEXT_PUBLIC_SENTRY_DSN",
         "QUIKVC_DEV_BYPASS",
-        "QUIKVC_DEV_ROLE"
+        "QUIKVC_DEV_ROLE",
+        "BASE_URL",
+        "FRONTEND_URL",
+        "JWT_SECRET",
+        "ENCRYPTION_KEY",
+        "ORG_DATABASE_URL",
+        "QUIKLMS_URL",
+        "QUIKTRACK_URL",
+        "QUIKSOCIAL_URL",
+        "QUIKHRMS_URL",
+        "SMTP_HOST",
+        "SMTP_PORT",
+        "SMTP_USER",
+        "SMTP_PASS",
+        "SMTP_FROM",
+        "NEXT_PUBLIC_*"
       ]
     },
     "dev": {

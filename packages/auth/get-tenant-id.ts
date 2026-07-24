@@ -97,9 +97,12 @@ export function createGetOrgId(authOptions: NextAuthOptions, config: GetOrgIdCon
       `firstActiveTenant:${userId}`,
       60,
       async () => {
+        // Most recent, matching the sign-in auto-select in `index.ts`. Ordering
+        // these two differently is how a freshly-invited user could be resolved
+        // into one org by the session and a different one by a request.
         const membership = await db.orgMember.findFirst({
           where: { userId, status: "active" },
-          orderBy: { createdAt: "asc" },
+          orderBy: { createdAt: "desc" },
           select: { orgId: true },
         });
         return membership?.orgId ?? null;

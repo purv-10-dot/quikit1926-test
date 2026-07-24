@@ -56,6 +56,13 @@ const DEFAULT_ALLOWED_ORIGINS = [
   "https://people.quikit.ai",
   "https://support.quikit.ai",
   "https://asset.quikit.ai",
+  // QuikLMS / QuikSkill. These were missing while the sibling signout-global
+  // allow-lists already carried them, so the bridge could log a user OUT of
+  // QuikSkill but never INTO it — any callbackUrl pointing there failed the
+  // check below and silently fell back to the launcher. That is what stranded
+  // freshly-invited LMS learners on the launcher grid.
+  "https://quikskill.vercel.app",
+  "https://quikskills.quikit.ai",
   // UAT custom domains (uat<app>.quikit.ai) — added alongside prod.
   "https://uatapps.quikit.ai",
   "https://uatscale.quikit.ai",
@@ -117,7 +124,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(launcherFallback());
   }
 
-  if (!allowedOrigins().has(target.origin)) {
+  // Local dev: sub-apps run on localhost:<port> (quiklms :3020, quikhrms :3009,
+  // …), which aren't in the prod/UAT list above. Permit any localhost origin
+  // when not in production so the bridge lands back on the originating dev app
+  // instead of the launcher — the same non-prod exemption the signout-global
+  // routes already carry. Never active in production.
+  const isLocalDev =
+    process.env.NODE_ENV !== "production" && target.hostname === "localhost";
+  if (!isLocalDev && !allowedOrigins().has(target.origin)) {
     return NextResponse.redirect(launcherFallback());
   }
 

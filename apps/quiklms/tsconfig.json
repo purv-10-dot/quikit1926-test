@@ -1,0 +1,40 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["dom", "dom.iterable", "ES2022"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [{ "name": "next" }],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./*"],
+      "@/lib/*": ["./lib/*"],
+      "@/components/*": ["./components/*"],
+      "@quikit/auth": ["../../packages/auth"],
+      "@quikit/auth/*": ["../../packages/auth/*"],
+      "@quikit/shared": ["../../packages/shared"],
+      "@quikit/shared/*": ["../../packages/shared/*"],
+      "@quikit/database": ["../../packages/database"],
+      "@quikit/ui": ["../../packages/ui"],
+      "@quikit/ui/*": ["../../packages/ui/*"]
+    }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", "../../packages/auth/types.ts"],
+  "exclude": [
+    "node_modules",
+    "worker",
+    "old_code",
+    "QuikSkillsbackend",
+    "QuikSkillsfrontend",
+    "dist"
+  ]
+}
