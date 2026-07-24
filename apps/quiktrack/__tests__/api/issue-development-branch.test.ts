@@ -3,12 +3,15 @@ import { NextRequest } from "next/server";
 import { mockDb, resetMockDb } from "../helpers/mockDb";
 import { setSession } from "../setup";
 
-// Stub the GitHub network calls so the route is testable without hitting GitHub.
+// Stub the SCM provider so the route is testable without hitting GitHub.
 vi.mock("@/lib/services/github/repo-service", () => ({
-  getInstallationToken: vi.fn().mockResolvedValue("ghs_test_token"),
-}));
-vi.mock("@/lib/services/github/client", () => ({
-  createBranch: vi.fn().mockResolvedValue({ ref: "refs/heads/QT-1-x", url: "https://api/x" }),
+  getProvider: vi.fn().mockResolvedValue({
+    system: "github",
+    createBranch: vi.fn().mockResolvedValue({
+      name: "QT-1-login",
+      url: "https://github.com/acme/app/tree/QT-1-login",
+    }),
+  }),
 }));
 
 import { POST } from "@/app/api/issues/[id]/development/branch/route";

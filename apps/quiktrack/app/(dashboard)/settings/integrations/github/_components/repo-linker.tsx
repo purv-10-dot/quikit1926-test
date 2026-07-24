@@ -1,8 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Play, Link2, Link2Off } from "lucide-react";
+import { Loader2, Play, Link2, Link2Off, ListChecks } from "lucide-react";
 import { Button } from "@quikit/ui";
+import { BackfillChecklist, type RepoBackfillStatus } from "./backfill-checklist";
 
 interface AvailableRepo {
   repoId: string;
@@ -14,6 +16,7 @@ interface LinkedRepo {
   repoId: string;
   repoFullName: string;
   isActive: boolean;
+  backfillStatus: RepoBackfillStatus | null;
 }
 interface ReposResponse {
   available: AvailableRepo[];
@@ -30,6 +33,7 @@ async function fetchRepos(installationRowId: string): Promise<ReposResponse> {
 /** Repo linking + per-repo backfill for the active installation. */
 export function RepoLinker({ installationRowId }: { installationRowId: string }) {
   const qc = useQueryClient();
+  const [checklistRepo, setChecklistRepo] = useState<LinkedRepo | null>(null);
   const { data, isLoading, error } = useQuery({
     queryKey: ["github-repos", installationRowId],
     queryFn: () => fetchRepos(installationRowId),
@@ -75,7 +79,9 @@ export function RepoLinker({ installationRowId }: { installationRowId: string })
     onSuccess: invalidate,
   });
 
-  const linkedIds = new Set((data?.linked ?? []).filter((l) => l.isActive).map((l) => l.repoId));
+  const activeLinked = (data?.linked ?? []).filter((l) => l.isActive);
+  const linkedIds = new Set(activeLinked.map((l) => l.repoId));
+  const linkedById = new Map(activeLinked.map((l) => [l.repoId, l]));
 
   return (
     <section className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
@@ -130,6 +136,12 @@ export function RepoLinker({ installationRowId }: { installationRowId: string })
                         Backfill
                       </Button>
                       <Button
+                        onClick={() => setChecklistRepo(linkedById.get(repo.repoId) ?? null)}
+                        className="border border-gray-200 bg-transparent text-gray-700 hover:bg-gray-50 inline-flex items-center gap-1.5 text-xs dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                      >
+                        <ListChecks className="h-3.5 w-3.5" /> Status
+                      </Button>
+                      <Button
                         onClick={() => unlink.mutate(repo.repoId)}
                         disabled={unlink.isPending}
                         className="border border-gray-200 bg-transparent text-gray-700 hover:bg-gray-50 inline-flex items-center gap-1.5 text-xs dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
@@ -151,6 +163,15 @@ export function RepoLinker({ installationRowId }: { installationRowId: string })
             );
           })}
         </ul>
+      )}
+
+      {checklistRepo && (
+        <BackfillChecklist
+          repoFullName={checklistRepo.repoFullName}
+          status={checklistRepo.backfillStatus}
+          running={backfill.isPending && backfill.variables === checklistRepo.repoId}
+          onClose={() => setChecklistRepo(null)}
+        />
       )}
     </section>
   );

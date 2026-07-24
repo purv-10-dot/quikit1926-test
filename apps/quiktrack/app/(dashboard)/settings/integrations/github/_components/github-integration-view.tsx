@@ -111,9 +111,39 @@ export function GithubIntegrationView() {
         )}
 
         {data && !data.configured && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-200">
-            The GitHub App is not configured on this server yet. Ask an
-            administrator to set the GitHub App environment variables.
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-100">
+            <p className="font-semibold">One-time server setup pending</p>
+            <p className="mt-1 text-amber-800 dark:text-amber-200">
+              Connecting GitHub is one click for admins — authorize and pick
+              repositories, no app to create. But that requires the QuikTrack
+              GitHub App to be registered <span className="font-medium">once,
+              by an operator</span>, and its secrets set as server environment
+              variables (the same one-time step Atlassian did for their
+              marketplace app). After that, this page shows a{" "}
+              <span className="font-medium">Connect</span> button and nobody
+              creates an app again.
+            </p>
+            <p className="mt-2 text-amber-800 dark:text-amber-200">
+              Operator, set these environment variables:
+            </p>
+            <code className="mt-1 block rounded bg-amber-100/70 px-2 py-1.5 font-mono text-[12px] text-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
+              GITHUB_APP_ID · GITHUB_APP_SLUG · GITHUB_APP_CLIENT_ID ·
+              GITHUB_APP_CLIENT_SECRET · GITHUB_APP_PRIVATE_KEY ·
+              GITHUB_APP_WEBHOOK_SECRET · GITHUB_TOKEN_ENCRYPTION_KEY
+            </code>
+            <p className="mt-2 text-amber-800 dark:text-amber-200">
+              Operator only —{" "}
+              <a
+                href="https://github.com/settings/apps/new"
+                target="_blank"
+                rel="noreferrer noopener"
+                className="font-medium underline hover:no-underline"
+              >
+                register the GitHub App once
+              </a>
+              , then map each value per the guide:
+              <span className="font-mono"> apps/quiktrack/docs/github-app-setup.md</span>
+            </p>
           </div>
         )}
 

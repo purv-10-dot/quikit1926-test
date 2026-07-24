@@ -13,8 +13,7 @@
  */
 
 import { db } from "@/lib/db";
-import { githubRequest } from "@/lib/services/github/client";
-import { getInstallationToken } from "@/lib/services/github/repo-service";
+import { getProvider } from "@/lib/services/github/repo-service";
 import { parseIssueKeys } from "@/lib/services/github/issue-key";
 import {
   handleBranchEvent,
@@ -52,7 +51,7 @@ export async function backfillRepo(
   repoId: string,
 ): Promise<BackfillResult> {
   const repo = await resolveRepo(orgId, repoId);
-  const token = await getInstallationToken(orgId, repo.installationId);
+  const provider = await getProvider(orgId, repo.installationId);
   const ref = { repoId: repo.repoId, repoFullName: repo.repoFullName };
   const result: BackfillResult = { branches: 0, commits: 0, pullRequests: 0 };
 
@@ -62,51 +61,41 @@ export async function backfillRepo(
   });
 
   try {
-    // Branches (page 1, up to 100).
-    const branches = await githubRequest<Array<{ name: string }>>(
-      token,
-      `/repos/${repo.repoFullName}/branches?per_page=100`,
-    );
+    // Branches — provider returns normalized ScmBranch[].
+    const branches = await provider.listBranches(repo.repoFullName);
     for (const b of branches) {
       if (parseIssueKeys(b.name).length === 0) continue;
       result.branches += await handleBranchEvent(orgId, ref, "branch", b.name, "created");
     }
 
-    // Recent commits (page 1, up to 100).
-    const commits = await githubRequest<
-      Array<{ sha: string; html_url: string; commit: { message: string; author?: { name?: string; date?: string } } }>
-    >(token, `/repos/${repo.repoFullName}/commits?per_page=100`);
+    // Commits — normalized ScmCommit[] mapped to the DB-writing handler shape.
+    const commits = await provider.listCommits(repo.repoFullName);
     result.commits += await handlePushEvent(
       orgId,
       ref,
       commits.map((c) => ({
         id: c.sha,
-        message: c.commit.message,
-        url: c.html_url,
-        timestamp: c.commit.author?.date,
-        author: { name: c.commit.author?.name },
+        message: c.message,
+        url: c.url ?? undefined,
+        timestamp: c.committedAt ?? undefined,
+        author: { name: c.authorName ?? undefined },
       })),
     );
 
-    // Pull requests (all states, page 1, up to 100).
-    const prs = await githubRequest<
-      Array<{
-        number: number; title: string; body: string | null; state: string;
-        merged_at: string | null; draft: boolean; html_url: string;
-        updated_at: string; user: { login: string } | null;
-      }>
-    >(token, `/repos/${repo.repoFullName}/pulls?state=all&per_page=100`);
+    // Pull requests — normalized ScmPullRequest[] (state already OPEN/MERGED/…).
+    const prs = await provider.listPullRequests(repo.repoFullName);
     for (const pr of prs) {
       result.pullRequests += await handlePullRequestEvent(orgId, ref, {
         number: pr.number,
         title: pr.title,
         body: pr.body,
-        state: pr.state,
-        merged: Boolean(pr.merged_at),
-        draft: pr.draft,
-        html_url: pr.html_url,
-        updated_at: pr.updated_at,
-        user: pr.user ?? undefined,
+        // provider already normalized state; map back to the handler's inputs.
+        merged: pr.state === "MERGED",
+        draft: pr.state === "DRAFT",
+        state: pr.state === "CLOSED" ? "closed" : "open",
+        html_url: pr.url ?? undefined,
+        updated_at: pr.updatedAt ?? undefined,
+        user: pr.authorName ? { login: pr.authorName } : undefined,
       });
     }
 

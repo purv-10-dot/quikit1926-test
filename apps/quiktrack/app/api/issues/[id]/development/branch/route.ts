@@ -12,8 +12,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { hasAdminAccess } from "@/lib/api/permissions";
-import { getInstallationToken } from "@/lib/services/github/repo-service";
-import { createBranch } from "@/lib/services/github/client";
+import { getProvider } from "@/lib/services/github/repo-service";
 
 const bodySchema = z.object({
   repoId: z.string().trim().min(1),
@@ -62,11 +61,10 @@ export const POST = withOrgAuth<{ id: string }>(
       );
     }
 
-    const token = await getInstallationToken(orgId, repo.installationId);
-    const created = await createBranch(token, repo.repoFullName, sourceBranch, branchName);
+    const provider = await getProvider(orgId, repo.installationId);
+    const created = await provider.createBranch(repo.repoFullName, sourceBranch, branchName);
 
     // Record the link immediately (don't wait for the create webhook).
-    const branchUrl = `https://github.com/${repo.repoFullName}/tree/${branchName}`;
     await db.qtDevBranch.upsert({
       where: {
         issueId_repoId_name: { issueId, repoId, name: branchName },
@@ -76,14 +74,14 @@ export const POST = withOrgAuth<{ id: string }>(
         issueId,
         repoId,
         repoFullName: repo.repoFullName,
-        name: branchName,
-        url: branchUrl,
+        name: created.name,
+        url: created.url,
       },
-      update: { url: branchUrl },
+      update: { url: created.url },
     });
 
     return NextResponse.json(
-      { success: true, data: { name: branchName, url: branchUrl, ref: created.ref } },
+      { success: true, data: { name: created.name, url: created.url } },
       { status: 201 },
     );
   },

@@ -8,10 +8,9 @@
 
 import { db } from "@/lib/db";
 import { decryptToken, encryptToken } from "@/lib/crypto/token-cipher";
-import {
-  createInstallationToken,
-  githubRequest,
-} from "@/lib/services/github/client";
+import { createInstallationToken } from "@/lib/services/github/client";
+import { makeScmProvider } from "@/lib/services/scm/provider-factory";
+import type { ScmProvider } from "@/lib/services/scm/types";
 
 /**
  * Return a valid installation access token for an org's installation, minting
@@ -47,27 +46,29 @@ export async function getInstallationToken(
   return tok.token;
 }
 
-interface GithubRepoNode {
-  id: number;
-  full_name: string;
-  default_branch: string;
+/**
+ * Build the SCM provider for an org's installation, with a fresh token. This
+ * is what services should use for repo operations — it is provider-agnostic,
+ * so GitLab/Bitbucket work here once their providers exist (see
+ * lib/services/scm/provider-factory).
+ */
+export async function getProvider(
+  orgId: string,
+  installationRowId: string,
+): Promise<ScmProvider> {
+  const token = await getInstallationToken(orgId, installationRowId);
+  // system defaults to "github"; a future column on QtGithubInstallation would
+  // select gitlab/bitbucket here.
+  return makeScmProvider({ token });
 }
 
-/** List repositories accessible to the installation (live from GitHub). */
+/** List repositories accessible to the installation (live from the provider). */
 export async function listInstallationRepos(
   orgId: string,
   installationRowId: string,
 ): Promise<Array<{ repoId: string; repoFullName: string; defaultBranch: string }>> {
-  const token = await getInstallationToken(orgId, installationRowId);
-  const data = await githubRequest<{ repositories: GithubRepoNode[] }>(
-    token,
-    "/installation/repositories?per_page=100",
-  );
-  return data.repositories.map((r) => ({
-    repoId: String(r.id),
-    repoFullName: r.full_name,
-    defaultBranch: r.default_branch,
-  }));
+  const provider = await getProvider(orgId, installationRowId);
+  return provider.listRepos();
 }
 
 export interface LinkRepoInput {
@@ -126,4 +127,20 @@ export function listLinkedRepos(orgId: string) {
     },
     orderBy: { repoFullName: "asc" },
   });
+}
+
+/**
+ * Set (or clear, with null) the Space a linked repo belongs to. Scoped by
+ * orgId; only affects an active linked repo. Returns rows affected.
+ */
+export async function setRepoProject(
+  orgId: string,
+  repoId: string,
+  projectId: string | null,
+): Promise<number> {
+  const res = await db.qtGithubRepo.updateMany({
+    where: { orgId, repoId, isActive: true },
+    data: { projectId },
+  });
+  return res.count;
 }

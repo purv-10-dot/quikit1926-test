@@ -1,4 +1,5 @@
 import { signAppJwtFromEnv } from "@/lib/services/github/app-jwt";
+import { fetchWithRetry } from "@/lib/services/github/http";
 
 /**
  * Thin GitHub REST client for the QuikTrack GitHub App.
@@ -72,7 +73,7 @@ export async function exchangeOAuthCode(
   if (!clientId || !clientSecret) {
     throw new GithubApiError("GitHub OAuth client is not configured.", 503);
   }
-  const res = await fetch("https://github.com/login/oauth/access_token", {
+  const res = await fetchWithRetry("https://github.com/login/oauth/access_token", {
     method: "POST",
     headers: {
       Accept: "application/json",
@@ -122,7 +123,7 @@ export async function createInstallationToken(
   installationId: string | number,
 ): Promise<InstallationToken> {
   const appJwt = await signAppJwtFromEnv();
-  const res = await fetch(
+  const res = await fetchWithRetry(
     `${GITHUB_API}/app/installations/${installationId}/access_tokens`,
     { method: "POST", headers: baseHeaders(appJwt) },
   );
@@ -151,7 +152,7 @@ export async function getInstallation(
   installationId: string | number,
 ): Promise<InstallationInfo> {
   const appJwt = await signAppJwtFromEnv();
-  const res = await fetch(`${GITHUB_API}/app/installations/${installationId}`, {
+  const res = await fetchWithRetry(`${GITHUB_API}/app/installations/${installationId}`, {
     headers: baseHeaders(appJwt),
   });
   if (!res.ok) {
@@ -213,7 +214,7 @@ export async function githubRequest<T>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
-  const res = await fetch(`${GITHUB_API}${path}`, {
+  const res = await fetchWithRetry(`${GITHUB_API}${path}`, {
     ...init,
     headers: { ...baseHeaders(installationToken), ...(init.headers ?? {}) },
   });

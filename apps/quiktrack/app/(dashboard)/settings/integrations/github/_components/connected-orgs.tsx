@@ -33,7 +33,7 @@ export function ConnectedOrgs({
     <section className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
       <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4 dark:border-gray-700">
         <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-          Connected organizations
+          Connected repositories
         </h2>
         <button
           onClick={onChanged}
@@ -45,10 +45,10 @@ export function ConnectedOrgs({
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-[11px] uppercase tracking-wider text-gray-500 dark:text-gray-400">
-            <th className="bg-accent-50 px-6 py-2 font-medium dark:bg-accent-900/20">Organization</th>
-            <th className="bg-accent-50 px-4 py-2 font-medium dark:bg-accent-900/20">Repo access</th>
-            <th className="bg-accent-50 px-4 py-2 font-medium dark:bg-accent-900/20">Backfill</th>
-            <th className="bg-accent-50 px-4 py-2 font-medium dark:bg-accent-900/20">Status</th>
+            <th className="bg-accent-50 px-6 py-2 font-medium dark:bg-accent-900/20">Connected organization</th>
+            <th className="bg-accent-50 px-4 py-2 font-medium dark:bg-accent-900/20">Repository access</th>
+            <th className="bg-accent-50 px-4 py-2 font-medium dark:bg-accent-900/20">Backfill status</th>
+            <th className="bg-accent-50 px-4 py-2 font-medium dark:bg-accent-900/20">Permissions</th>
           </tr>
         </thead>
         <tbody>
@@ -76,19 +76,22 @@ export function ConnectedOrgs({
                   </span>
                   {inst.backfilledFrom && (
                     <div className="mt-0.5 text-[11px] text-gray-400">
-                      from {new Date(inst.backfilledFrom).toLocaleDateString()}
+                      Backfilled from: {new Date(inst.backfilledFrom).toLocaleDateString()}
                     </div>
                   )}
                 </td>
                 <td className="px-4 py-3">
+                  {/* FULL ACCESS badge mirrors Jira's Permissions column. The
+                      GitHub App grants read/write on code/PRs/issues, so an
+                      ACTIVE, non-errored install is full access. */}
                   <span
-                    className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                      inst.status === "ACTIVE"
-                        ? "bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300"
-                        : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+                    className={`inline-block rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                      inst.status === "ACTIVE" && !inst.lastError
+                        ? "border-green-300 text-green-700 dark:border-green-500/50 dark:text-green-300"
+                        : "border-gray-300 text-gray-500 dark:border-gray-600 dark:text-gray-400"
                     }`}
                   >
-                    {inst.status}
+                    {inst.status === "ACTIVE" && !inst.lastError ? "Full access" : inst.status}
                   </span>
                   {inst.lastError && (
                     <div className="mt-0.5 max-w-[200px] truncate text-[11px] text-red-500" title={inst.lastError}>

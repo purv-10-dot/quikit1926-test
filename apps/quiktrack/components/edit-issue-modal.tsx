@@ -42,6 +42,7 @@ import { DeleteTaskModal } from "@/components/delete-task-modal";
 import { LinkedWorkItems } from "@/components/linked-work-items";
 import { IssueActivity } from "@/components/issue-activity";
 import { IssueAttachments } from "@/components/issue-attachments";
+import { IssueDevelopment } from "@/components/issue-full-view/issue-development";
 import { DescriptionAttachments } from "@/components/description-attachments";
 import { RichTextView } from "@/components/rich-text-view";
 import { AlertCircle } from "lucide-react";
@@ -1412,6 +1413,12 @@ export function EditIssueModal({
                   projectId={issue.projectId}
                   onOpenIssue={(id) => setCurrentIssueId(id)}
                 />
+              )}
+
+              {/* Development — branches/commits/PRs linked via the issue key.
+                  Same component the full-page view uses. */}
+              {issue?.id && issue.key && (
+                <IssueDevelopment issueId={issue.id} issueKey={issue.key} />
               )}
 
               {/* Separate "Attachments" section — the description's files as
