@@ -270,7 +270,7 @@ export default function AppLauncherPage() {
     const host =
       typeof window !== "undefined" ? window.location.hostname : "";
     const postLogoutRedirect =
-      host === "apps.quikit.ai" ? "https://quikit.ai" : `${launcherUrl}/`;
+      host === "uatapps.quikit.ai" ? "https://uat.quikit.ai" : `${launcherUrl}/`;
     await globalSignOut({
       authUrl: process.env.NEXT_PUBLIC_AUTH_URL,
       quikitUrl: launcherUrl,
