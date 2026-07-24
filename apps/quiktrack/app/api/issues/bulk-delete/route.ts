@@ -63,11 +63,25 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
 
   let deleted = 0;
   if (deletableIds.length > 0) {
-    const result = await db.qtIssue.updateMany({
-      where: { id: { in: deletableIds }, orgId, projectId: project.id, isDeleted: false },
-      data: { isDeleted: true, updatedBy: userId },
+    deleted = await db.$transaction(async (tx) => {
+      // Detach children so nothing is orphaned or silently cascade-deleted:
+      // subtasks of a deleted parent become standalone (parentId → null), and
+      // epic children lose their epic link (epicId → null). Mirrors the
+      // single-delete "detach" behavior.
+      await tx.qtIssue.updateMany({
+        where: { parentId: { in: deletableIds }, orgId, isDeleted: false },
+        data: { parentId: null, updatedBy: userId },
+      });
+      await tx.qtIssue.updateMany({
+        where: { epicId: { in: deletableIds }, orgId, isDeleted: false },
+        data: { epicId: null, updatedBy: userId },
+      });
+      const result = await tx.qtIssue.updateMany({
+        where: { id: { in: deletableIds }, orgId, projectId: project.id, isDeleted: false },
+        data: { isDeleted: true, updatedBy: userId },
+      });
+      return result.count;
     });
-    deleted = result.count;
   }
 
   return NextResponse.json({ success: true, deleted, skipped });

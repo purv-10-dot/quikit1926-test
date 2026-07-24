@@ -8,6 +8,7 @@
       "Bash(DATABASE_URL=postgresql://postgres:sa%40123@localhost:5432/quikit_dev node -e ' *)",
       "Bash(npm run *)",
       "Bash(DATABASE_URL='postgresql://postgres:sa%40123@localhost:5432/quikit_dev' npx tsx prisma/seed-moreyeahs.ts)",
+<<<<<<< HEAD
       "PowerShell($paths = @\\(\"C:\\\\Users\\\\user\\\\Desktop\\\\quikit\\\\quikit1926\\\\node_modules\", \"C:\\\\Users\\\\user\\\\Desktop\\\\quikit\\\\quikit1926\\\\apps\\\\quiklms\\\\node_modules\"\\); foreach \\($p in $paths\\) { if \\(Test-Path $p\\) { Write-Output \"Removing $p ...\"; try { Remove-Item -LiteralPath $p -Recurse -Force -ErrorAction Stop; Write-Output \"  OK\" } catch { Write-Output \"  FAILED: $\\($_.Exception.Message\\)\" } } else { Write-Output \"$p already gone\" } })",
       "Bash('/c/Program Files/PostgreSQL/13/bin/pg_restore' -l 'c:\\\\Users\\\\user\\\\Downloads\\\\quikit-full-23-6 \\(1\\).dump')",
       "PowerShell(Write-Output \"=== winget ===\"; try { \\(Get-Command winget -ErrorAction Stop\\).Source; winget --version } catch { Write-Output \"winget not found\" }; Write-Output \"=== choco ===\"; try { \\(Get-Command choco -ErrorAction Stop\\).Source } catch { Write-Output \"choco not found\" }; Write-Output \"=== admin? ===\"; \\([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent\\(\\)\\).IsInRole\\([Security.Principal.WindowsBuiltInRole]::Administrator\\))",
@@ -57,6 +58,10 @@
       "Bash(../../node_modules/.bin/tsc --noEmit)",
       "Bash(../../node_modules/.bin/vitest run *)",
       "WebFetch(domain:unpkg.com)"
+=======
+      "WebFetch(domain:unpkg.com)",
+      "Bash(node --check linkedIn.js)"
+>>>>>>> 03dbe0a1513432365aba7bba9d3a04f7b2eed151
     ],
     "additionalDirectories": [
       "c:\\wwwwwwwwww\\Authmergewithmainbranch\\QuikIT\\apps\\auth\\app\\api\\auth\\me"

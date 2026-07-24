@@ -10,7 +10,8 @@ import { parsePagination, parseSort } from "@/lib/http/pagination";
 /**
  * Stock Reconciliation — list + create.
  *
- * Persists to `cn_stock_reconciliations` + `cn_stock_reconciliation_lines`.
+ * Persists to `cn_stock_reconciliations`; lines live inline in the JSONB
+ * `materials` column (single-table pattern, same as issues/transfers).
  * The earlier stub stored rows in a request-scoped JS array, so creates
  * never reached Postgres and the approval flow had nothing to act on.
  *
@@ -82,8 +83,8 @@ export async function GET(req: NextRequest) {
       status: true,
       createdAt: true,
       updatedAt: true,
+      lineCount: true,
       project: { select: { name: true } },
-      _count: { select: { lines: true } },
     },
     ...(p.paginated ? { take: p.take, skip: p.skip } : {}),
   });
@@ -115,7 +116,7 @@ export async function GET(req: NextRequest) {
     conductedById: r.conductedById,
     approvedById: r.approvedById,
     status: r.status,
-    lineCount: r._count?.lines ?? 0,
+    lineCount: r.lineCount ?? 0,
     createdAt: r.createdAt?.toISOString() ?? "",
     updatedAt: r.updatedAt?.toISOString() ?? "",
   }));
@@ -200,7 +201,7 @@ export async function POST(req: NextRequest) {
           physicalQty,
           varianceQty: physicalQty - systemQty,
           uomId: uomByItemId.get(l.itemId) ?? "",
-          reason: l.varianceReason ?? l.reason ?? null,
+          reason: l.varianceReason ?? l.reason ?? "",
         };
       })
       .filter((l) => l.uomId); // drop lines whose item lookup failed
@@ -216,11 +217,11 @@ export async function POST(req: NextRequest) {
         status: body.status === "submitted" ? "submitted" : "draft",
         createdBy: ctx.userId,
         updatedBy: ctx.userId,
-        lines: linesData.length ? { create: linesData } : undefined,
+        lineCount: linesData.length,
+        materials: linesData,
       },
       include: {
         project: { select: { name: true } },
-        lines: true,
       },
     });
 
@@ -234,7 +235,7 @@ export async function POST(req: NextRequest) {
         reconciliationDate: created.reconciliationDate.toISOString().slice(0, 10),
         conductedById: created.conductedById,
         status: created.status,
-        lineCount: created.lines.length,
+        lineCount: created.lineCount,
         createdAt: created.createdAt.toISOString(),
       },
       { status: 201 },

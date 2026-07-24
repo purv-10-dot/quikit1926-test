@@ -12,6 +12,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from "react"
+import { useRevalidateOnFocus } from "@/lib/hooks/useRevalidateOnFocus"
 import { Loader2, Inbox, Check, X, PackageCheck, Wrench, Search, ShieldAlert } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions"
@@ -103,6 +104,8 @@ function EmployeeRequestsQueue() {
   useEffect(() => {
     void load()
   }, [load])
+
+  useRevalidateOnFocus(load)
 
   const visible = useMemo(
     () => rows.filter((r) => matchesType(r, filter) && matchesSearch(r, search)),

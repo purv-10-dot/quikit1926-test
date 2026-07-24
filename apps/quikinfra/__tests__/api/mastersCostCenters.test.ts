@@ -102,7 +102,7 @@ describe("POST /api/masters/cost-centers — auth", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns 403 when the user lacks construction.masters.create", async () => {
+  it("returns 403 when the user lacks construction.master_cost_center.create", async () => {
     setContext(makeUserCtx([]));
     const res = await POST(buildPOST({ code: "CC-001", name: "Ops" }));
     expect(res.status).toBe(403);
@@ -110,7 +110,7 @@ describe("POST /api/masters/cost-centers — auth", () => {
 
   it("returns 403 when the permission matrix denies add", async () => {
     setContext(
-      makeUserCtx(["construction.masters.create"], {
+      makeUserCtx(["construction.master_cost_center.create"], {
         permissionMatrix: { "master.cost_center": { add: false } },
       }),
     );

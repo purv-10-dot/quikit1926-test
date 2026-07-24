@@ -95,7 +95,7 @@ describe("PUT /api/masters/vendors/[id]", () => {
 });
 
 describe("DELETE /api/masters/vendors/[id]", () => {
-  it("returns 403 when the user lacks construction.masters.delete", async () => {
+  it("returns 403 when the user lacks construction.master_vendor.delete", async () => {
     setContext(makeUserCtx([]));
     expect((await DELETE(req("DELETE"), params)).status).toBe(403);
   });

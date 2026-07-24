@@ -17,6 +17,7 @@ export function EditUserModal({ user, onClose, onSaved, showToast }: Props) {
   const [lastName, setLastName] = useState(user.lastName);
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState(user.status);
+  const [employeeId, setEmployeeId] = useState(user.employeeId ?? "");
   const [contact, setContact] = useState(user.contact ?? "");
   const [department, setDepartment] = useState(user.department ?? "");
   const [designation, setDesignation] = useState(user.designation ?? "");
@@ -31,9 +32,14 @@ export function EditUserModal({ user, onClose, onSaved, showToast }: Props) {
       // Employee fields — sent only when the user already has an employee record
       // or the admin entered some, so editing a login-only user's name never
       // creates an empty employee row.
+      const trimmedEmployeeId = employeeId.trim();
       const touchEmployee =
-        user.employeeId || contact.trim() || department.trim() || designation.trim() || joiningDate;
+        user.employeeId || trimmedEmployeeId || contact.trim() || department.trim() || designation.trim() || joiningDate;
       if (touchEmployee) {
+        // Only send Employee ID when non-empty — the API rejects a blank one, and
+        // omitting it leaves the current value unchanged. Uniqueness is enforced
+        // server-side (clear 409 surfaced in the toast below).
+        if (trimmedEmployeeId) body.employeeId = trimmedEmployeeId;
         body.contact = contact.trim() || null;
         body.department = department.trim() || null;
         body.designation = designation.trim() || null;
@@ -127,7 +133,8 @@ export function EditUserModal({ user, onClose, onSaved, showToast }: Props) {
           </select>
         </div>
 
-        {/* Employee details (identity bridge). Employee ID is system-managed. */}
+        {/* Employee details (identity bridge). Employee ID is editable but must
+            be unique within the org (enforced server-side). */}
         <div className="border-t border-gray-100 pt-4">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
             Employee details
@@ -136,9 +143,10 @@ export function EditUserModal({ user, onClose, onSaved, showToast }: Props) {
             <div className="col-span-2">
               <label className="mb-1 block text-[11px] font-medium text-gray-500">Employee ID</label>
               <input
-                value={user.employeeId ?? "— none yet —"}
-                disabled
-                className="w-full cursor-not-allowed rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-xs text-gray-500"
+                value={employeeId}
+                onChange={(e) => setEmployeeId(e.target.value)}
+                placeholder="— none yet —"
+                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent-400"
               />
             </div>
             <div>

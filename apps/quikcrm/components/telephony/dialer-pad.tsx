@@ -71,7 +71,8 @@ export function DialerPad({
             disabled={disabled}
           />
           <p className="mt-1 text-[11px] text-crm-muted">
-            Leave blank to use the configured default agent number.
+            Required — the provider rings this number first, then dials the
+            customer. Must be a reachable phone (not an extension).
           </p>
         </div>
       )}

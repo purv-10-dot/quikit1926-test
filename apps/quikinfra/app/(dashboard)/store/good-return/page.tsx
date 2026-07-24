@@ -327,7 +327,15 @@ export default function GoodReturnPage() {
   };
 
   const columns: ColDef<GoodReturnRow>[] = [
-    { key: "returnNumber", label: "Return No", sortable: true, searchable: true },
+    {
+      key: "returnNumber", label: "Return No", sortable: true, searchable: true,
+      render: (row) => (
+        <span className="text-accent-600 cursor-pointer hover:underline font-medium"
+              onClick={() => router.push(`/store/good-return/${row.id}`)}>
+          {row.returnNumber}
+        </span>
+      ),
+    },
     { key: "projectName", label: "Project", sortable: false, searchable: true },
     { key: "vendorName", label: "Vendor", sortable: true, searchable: true },
     { key: "returnDate", label: "Date", type: "date", sortable: true },

@@ -69,16 +69,27 @@ export function customFiltersToWhere(filters: CustomFilter[]): Prisma.QtIssueWhe
   const out: Prisma.QtIssueWhereInput[] = [];
   for (const f of filters) {
     if (!f.fieldId) continue;
+    // A cross-project aggregated field carries several real field ids (the
+    // per-project copies of e.g. "Theme") joined by commas. A plain single id
+    // has no comma, so this stays backwards-compatible with the Backlog/Board.
+    const ids = f.fieldId.includes(",")
+      ? f.fieldId.split(",").map((s) => s.trim()).filter(Boolean)
+      : [f.fieldId];
+    if (ids.length === 0) continue;
+
+    const fieldIdCond: Prisma.StringFilter | string =
+      ids.length === 1 ? ids[0]! : { in: ids };
+
     if (f.op === "is_empty") {
-      out.push({ fieldValues: { none: { fieldId: f.fieldId } } });
+      out.push({ fieldValues: { none: { fieldId: fieldIdCond } } });
       continue;
     }
     if (f.op === "is_not_empty") {
-      out.push({ fieldValues: { some: { fieldId: f.fieldId } } });
+      out.push({ fieldValues: { some: { fieldId: fieldIdCond } } });
       continue;
     }
     const cond = valueCondition(f);
-    if (cond) out.push({ fieldValues: { some: { fieldId: f.fieldId, ...cond } } });
+    if (cond) out.push({ fieldValues: { some: { fieldId: fieldIdCond, ...cond } } });
   }
   return out;
 }

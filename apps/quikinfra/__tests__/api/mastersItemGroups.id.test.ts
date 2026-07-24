@@ -56,14 +56,14 @@ describe("GET /api/masters/item-groups/[id]", () => {
 });
 
 describe("PUT /api/masters/item-groups/[id]", () => {
-  it("returns 403 when the user lacks construction.masters.edit", async () => {
+  it("returns 403 when the user lacks construction.master_item_group.edit", async () => {
     setContext(makeUserCtx([]));
     expect((await PUT(req("PUT", { name: "X" }), params)).status).toBe(403);
   });
 
   it("returns 403 when the permission matrix denies edit", async () => {
     setContext(
-      makeUserCtx(["construction.masters.edit"], {
+      makeUserCtx(["construction.master_item_group.edit"], {
         permissionMatrix: { "master.item_group": { edit: false } },
       }),
     );
@@ -96,7 +96,7 @@ describe("PUT /api/masters/item-groups/[id]", () => {
 });
 
 describe("DELETE /api/masters/item-groups/[id]", () => {
-  it("returns 403 when the user lacks construction.masters.delete", async () => {
+  it("returns 403 when the user lacks construction.master_item_group.delete", async () => {
     setContext(makeUserCtx([]));
     expect((await DELETE(req("DELETE"), params)).status).toBe(403);
   });

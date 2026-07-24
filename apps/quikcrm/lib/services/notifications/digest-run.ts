@@ -24,6 +24,10 @@ import { buildRoleMetrics, type MetricsRange } from "@/lib/services/dashboard/ro
 import { getActivityFieldAggregates } from "@/lib/services/dashboard/activity-field-aggregates";
 import { getCompletedTasksByRep } from "@/lib/services/dashboard/completed-tasks";
 import {
+  assembleUserActivityDetail,
+  type UserActivityDetail,
+} from "@/lib/services/notifications/digest-detail";
+import {
   listActiveDigestOrgs,
   resolveDigestRecipients,
 } from "@/lib/services/notifications/digest-recipients";
@@ -49,6 +53,13 @@ export interface AssembledDigest {
   /** §4 — tasks COMPLETED in the rolling window, per rep (assignedToUserId), tier-scoped. */
   completedTasksByRep: { userId: string; ownerName: string | null; count: number }[];
   completedTasksTotal: number;
+  /**
+   * REDESIGN: detailed per-CRM-user activity records (calls, emails, meetings,
+   * completed tasks) for the recipient's tier scope + window. This drives the
+   * new per-user detailed sections; the aggregate fields above now feed only the
+   * compact org-wide summary strip at the top of the email.
+   */
+  userDetails: UserActivityDetail[];
   /** Which digest produced this — drives the email subject/header framing. */
   variant: "daily" | "weekly";
   isDemo: boolean;
@@ -147,6 +158,10 @@ async function assembleAndSendDigests(
       // (same scoping path as the activity metrics, keyed on assignedToUserId).
       const completedTasks = await getCompletedTasksByRep(recipient, { range });
 
+      // REDESIGN: detailed per-user activity records (calls/emails/meetings/tasks)
+      // for the recipient's tier scope + window — the new detailed body.
+      const userDetails = await assembleUserActivityDetail(recipient, range);
+
       const assembled: AssembledDigest = {
         recipient,
         activitiesByType: readActivitiesByType(metrics),
@@ -154,6 +169,7 @@ async function assembleAndSendDigests(
         fieldAggregates,
         completedTasksByRep: completedTasks.perRep,
         completedTasksTotal: completedTasks.total,
+        userDetails,
         variant: opts.variant,
         isDemo: false, // GO-LIVE: window wired → real yesterday data → DEMO banner OFF
         demoBanner: DIGEST_DEMO_BANNER, // retained on the type; renderDemoBanner gates on isDemo

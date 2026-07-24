@@ -35,6 +35,9 @@ const PENDING_APPROVAL_STATUSES = [
 type ProjectProgressRow = {
   id: string;
   name: string;
+  location: string | null;
+  startDate: string | null;
+  endDate: string | null;
   physicalPct: number;
   budgetPct: number;
   band: "on_track" | "in_progress" | "early_stage";
@@ -256,8 +259,15 @@ export async function GET() {
   const projectsTop = await db.cnProject.findMany({
     where: projectWhere,
     orderBy: { updatedAt: "desc" },
-    take: 3,
-    select: { id: true, name: true },
+    take: 12,
+    select: {
+      id: true,
+      name: true,
+      city: true,
+      state: true,
+      startDate: true,
+      expectedEndDate: true,
+    },
   });
 
   let projectProgress: ProjectProgressRow[] = [];
@@ -306,21 +316,41 @@ export async function GET() {
     }
 
     const clampPct = (n: number) => Math.min(100, Math.max(0, Math.round(n)));
-    projectProgress = projectsTop.map((p: { id: string; name: string }) => {
-      const a = aggByProject.get(p.id);
-      const estimate = a?.estimate ?? 0;
-      const physicalPct =
-        estimate > 0 ? clampPct((a!.executed / estimate) * 100) : 0;
-      const budgetPct =
-        estimate > 0 ? clampPct((a!.billed / estimate) * 100) : 0;
-      const band =
-        physicalPct >= 65
-          ? ("on_track" as const)
-          : physicalPct >= 30
-            ? ("in_progress" as const)
-            : ("early_stage" as const);
-      return { id: p.id, name: p.name, physicalPct, budgetPct, band };
-    });
+    projectProgress = projectsTop.map(
+      (p: {
+        id: string;
+        name: string;
+        city: string | null;
+        state: string | null;
+        startDate: Date | null;
+        expectedEndDate: Date | null;
+      }) => {
+        const a = aggByProject.get(p.id);
+        const estimate = a?.estimate ?? 0;
+        const physicalPct =
+          estimate > 0 ? clampPct((a!.executed / estimate) * 100) : 0;
+        const budgetPct =
+          estimate > 0 ? clampPct((a!.billed / estimate) * 100) : 0;
+        const band =
+          physicalPct >= 65
+            ? ("on_track" as const)
+            : physicalPct >= 30
+              ? ("in_progress" as const)
+              : ("early_stage" as const);
+        const location =
+          [p.city, p.state].filter(Boolean).join(", ") || null;
+        return {
+          id: p.id,
+          name: p.name,
+          location,
+          startDate: p.startDate ? p.startDate.toISOString() : null,
+          endDate: p.expectedEndDate ? p.expectedEndDate.toISOString() : null,
+          physicalPct,
+          budgetPct,
+          band,
+        };
+      },
+    );
   }
 
   return NextResponse.json({ kpis, recentActivity: { prs, pos }, projectProgress });

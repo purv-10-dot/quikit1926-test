@@ -10,7 +10,7 @@ import {
 } from "@/lib/masters/assets-repository";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const ctxOrResp = await requireMastersAction("view");
+  const ctxOrResp = await requireMastersAction("construction.master_asset", "view");
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
   const row = await findAssetById(ctx.orgId, params.id);
@@ -19,7 +19,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 }
 
 async function handleUpdate(req: NextRequest, id: string) {
-  const ctxOrResp = await requireMastersAction("edit");
+  const ctxOrResp = await requireMastersAction("construction.master_asset", "edit");
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "master.asset", "edit")) {
@@ -52,7 +52,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
-  const ctxOrResp = await requireMastersAction("delete");
+  const ctxOrResp = await requireMastersAction("construction.master_asset", "delete");
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "master.asset", "delete")) {

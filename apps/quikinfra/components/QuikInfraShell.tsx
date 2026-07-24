@@ -13,7 +13,6 @@ import { useDisabledModules } from "@/hooks/useDisabledModules";
 import { isModuleEnabled } from "@quikit/shared/moduleRegistry";
 import { UserAvatar } from "@/components/PageShell";
 import { AppSwitcher, UserMenu } from "@quikit/ui";
-import { AccentThemeApplier } from "@/components/AccentThemeApplier";
 import {
   LayoutDashboard, Database, ShoppingCart, Warehouse,
   FolderKanban, CheckCircle2, FileBarChart2, Settings,
@@ -826,7 +825,6 @@ export function QuikInfraShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex h-screen min-h-0 bg-gray-100">
-      <AccentThemeApplier />
       <aside
         className={`hidden lg:flex shrink-0 flex-col overflow-hidden transition-all duration-200 ease-out ${
           sidebarOpen ? "w-[17rem] py-4 pl-4" : "w-[5rem] py-4 pl-4"

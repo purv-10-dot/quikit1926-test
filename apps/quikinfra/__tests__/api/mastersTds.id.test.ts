@@ -91,7 +91,7 @@ describe("PUT /api/masters/tds/[id]", () => {
 });
 
 describe("DELETE /api/masters/tds/[id]", () => {
-  it("returns 403 when the user lacks construction.masters.delete", async () => {
+  it("returns 403 when the user lacks construction.org_tds.delete", async () => {
     setContext(makeUserCtx([]));
     expect((await DELETE(req("DELETE"), params)).status).toBe(403);
   });
