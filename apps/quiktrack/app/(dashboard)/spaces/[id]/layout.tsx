@@ -10,6 +10,7 @@ import {
   isProjectTabPath,
   isTabEnabled,
   enabledTabPaths,
+  selectableTabs,
 } from "@/lib/projectTabs";
 
 /**
@@ -39,7 +40,17 @@ export default function SpaceLayout({
     `/api/projects/${params.id}`,
     { select: (d) => (d as { tabConfig?: string[] | null } | null)?.tabConfig ?? null },
   );
+  const { data: templateKey } = useApiData<string | null>(
+    ["quiktrack", "project-templatekey", params.id],
+    `/api/projects/${params.id}`,
+    { select: (d) => (d as { templateKey?: string | null } | null)?.templateKey ?? null },
+  );
   const configLoaded = tabConfig !== undefined;
+
+  // Tabs valid for this project's template — a discovery-only tab (Ideas) is not
+  // a real destination on a non-discovery space even via direct URL.
+  const templateAllows = (path: string) =>
+    selectableTabs(templateKey).some((t) => t.path === path);
 
   const isSettings = pathname?.startsWith(`/spaces/${params.id}/settings`) ?? false;
   // Full-page issue view (/spaces/<id>/work/<issueId>) renders its own
@@ -53,19 +64,22 @@ export default function SpaceLayout({
   const gate = TAB_ROUTE_GATES[segment];
 
   const roleForbidden = isTab && !perms.loading && !!gate && !perms.has(gate.resource, gate.action);
-  const tabDisabled = isTab && configLoaded && !isTabEnabled(tabConfig ?? null, segment);
+  const tabDisabled =
+    isTab && configLoaded && (!isTabEnabled(tabConfig ?? null, segment) || !templateAllows(segment));
 
   // First tab that is BOTH enabled by the project AND permitted for this role —
   // the safe redirect target (avoids bouncing to a tab that's itself blocked,
   // which would loop).
   const fallbackPath = useMemo(() => {
     if (perms.loading || !configLoaded) return "summary";
+    const allowed = new Set(selectableTabs(templateKey).map((t) => t.path));
     const visible = enabledTabPaths(tabConfig ?? null).filter((p) => {
+      if (!allowed.has(p)) return false;
       const g = TAB_ROUTE_GATES[p];
       return !g || perms.has(g.resource, g.action);
     });
     return visible[0] ?? "summary";
-  }, [perms, configLoaded, tabConfig]);
+  }, [perms, configLoaded, tabConfig, templateKey]);
 
   useEffect(() => {
     if (isSettings || isWorkItem || !isTab) return;

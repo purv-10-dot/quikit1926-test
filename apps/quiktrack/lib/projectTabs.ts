@@ -50,6 +50,19 @@ const DEFAULT_TAB_PATHS: string[] = PROJECT_TABS.filter(
 /** Ordered list of every known tab path. */
 export const PROJECT_TAB_PATHS: string[] = PROJECT_TABS.map((t) => t.path);
 
+/**
+ * Tabs a project of the given template may EVER show — the universe the tab
+ * customizer offers and "Show all" selects. Discovery-only tabs (Ideas) appear
+ * only for discovery spaces; everything else is offered on non-discovery spaces.
+ * Keeps the customizer in sync with the default-tab rule above.
+ */
+export function selectableTabs(templateKey?: string | null): ProjectTab[] {
+  const isDiscovery = templateKey === "discovery";
+  return PROJECT_TABS.filter((t) =>
+    DISCOVERY_ONLY_TABS.has(t.path) ? isDiscovery : true,
+  );
+}
+
 /** Route segment → gating perm (used by the space layout's route guard). */
 export const TAB_ROUTE_GATES: Record<string, { resource: string; action: string }> =
   Object.fromEntries(

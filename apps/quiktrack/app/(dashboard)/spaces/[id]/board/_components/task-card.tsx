@@ -195,6 +195,16 @@ export function TaskCard({
                 <Network className="h-3.5 w-3.5 text-gray-500" />
               </button>
             )}
+            {/* Story-point estimate — small blue pill, shown only when set
+                (epics/subtasks aren't point-estimated). Open the card to edit. */}
+            {task.storyPoints != null && task.type !== "EPIC" && task.type !== "SUBTASK" && (
+              <span
+                className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-blue-100 px-1.5 text-[10px] font-semibold tabular-nums text-blue-700"
+                title={`${task.storyPoints} story point${task.storyPoints === 1 ? "" : "s"}`}
+              >
+                {task.storyPoints}
+              </span>
+            )}
             <P.Icon className={`h-3.5 w-3.5 ${P.color}`} />
             {task.assigneeId ? (
               <span

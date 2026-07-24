@@ -1211,6 +1211,22 @@ function IssueRow({
   const [deleting, setDeleting] = useState(false);
   const [childCount, setChildCount] = useState<number | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  // Inline story-point editing (Jira-style: click the badge to type a value).
+  const [estimateEditing, setEstimateEditing] = useState(false);
+  const [estimateDraft, setEstimateDraft] = useState("");
+
+  function commitEstimate() {
+    setEstimateEditing(false);
+    const raw = estimateDraft.trim();
+    // Empty → clear the estimate (send null); otherwise a clamped integer.
+    if (raw === "") {
+      if (issue.storyPoints != null) void patch({ storyPoints: null });
+      return;
+    }
+    const n = Math.round(Number(raw));
+    if (!Number.isFinite(n) || n < 0 || n > 1000 || n === issue.storyPoints) return;
+    void patch({ storyPoints: n });
+  }
 
   async function openConfirm() {
     setMenuOpen(false);
@@ -1485,6 +1501,45 @@ function IssueRow({
             </div>
           </PopoverPanel>
         </>
+      )}
+
+      {/* Story-point estimate badge (Jira-style). Click to edit inline; empty
+          input clears it. Subtasks/epics aren't estimated in points, so the
+          badge is hidden for them. */}
+      {fields.estimate && issue.type !== "EPIC" && issue.type !== "SUBTASK" && (
+        estimateEditing ? (
+          <input
+            autoFocus
+            type="number"
+            min={0}
+            max={1000}
+            value={estimateDraft}
+            onChange={(e) => setEstimateDraft(e.target.value)}
+            onBlur={commitEstimate}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitEstimate();
+              if (e.key === "Escape") setEstimateEditing(false);
+            }}
+            className="h-5 w-12 shrink-0 rounded border border-blue-500 px-1 text-center text-[11px] tabular-nums focus:outline-none focus:ring-1 focus:ring-blue-500"
+            aria-label="Story points"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              setEstimateDraft(issue.storyPoints == null ? "" : String(issue.storyPoints));
+              setEstimateEditing(true);
+            }}
+            title={issue.storyPoints == null ? "Add story points" : `${issue.storyPoints} story point${issue.storyPoints === 1 ? "" : "s"}`}
+            className={`inline-flex h-5 min-w-[24px] shrink-0 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold tabular-nums ${
+              issue.storyPoints == null
+                ? "bg-gray-100 text-gray-400 opacity-40 group-hover:opacity-100"
+                : "bg-blue-100 text-blue-700 hover:bg-blue-200"
+            }`}
+          >
+            {issue.storyPoints == null ? "–" : issue.storyPoints}
+          </button>
+        )
       )}
 
       {/* Status pill (clickable popover) */}
