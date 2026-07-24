@@ -6599,6 +6599,9 @@ model QtIssue {
   timesheetEntries QtTimesheetEntry[]
   attachments      QtIssueAttachment[]
   fieldValues      QtIssueFieldValue[]
+  devBranches      QtDevBranch[]
+  devCommits       QtDevCommit[]
+  devPullRequests  QtDevPullRequest[]
 
   @@unique([projectId, key])
   @@index([orgId])
@@ -6722,6 +6725,142 @@ model QtIssueLink {
   @@index([orgId])
   @@index([projectId])
   @@index([targetIssueId])
+  @@schema("app_quiktrack")
+}
+
+// ── GitHub development integration ─────────────────────────────────────────
+// One row per connected GitHub org/account. Tokens are stored encrypted
+// (AES-256-GCM via lib/crypto/token-cipher); never plaintext. Org-scoped by
+// `orgId` column (matching QtIssueComment/History/Link — no Org back-relation
+// so the shared Org model stays untouched).
+model QtGithubInstallation {
+  id                 String         @id @default(cuid())
+  orgId              String
+  /// GitHub App installation id (from the install callback).
+  installationId     String
+  /// Login of the org/user the App was installed on (e.g. "KanishkaJ19").
+  githubAccountLogin String
+  /// Numeric GitHub account id, stable across renames.
+  githubAccountId    String?
+  /// "Organization" | "User".
+  targetType         String         @default("Organization")
+  /// "ALL" | "SELECTED" — repo access chosen at install time.
+  repoSelection      String         @default("SELECTED")
+  /// Cached installation access token, encrypted; re-minted when expired.
+  accessTokenEnc     String?
+  tokenExpiresAt     DateTime?
+  /// "PENDING" | "RUNNING" | "FINISHED" | "ERROR".
+  backfillStatus     String         @default("PENDING")
+  backfilledFrom     DateTime?
+  /// "ACTIVE" | "SUSPENDED" | "DISCONNECTED".
+  status             String         @default("ACTIVE")
+  lastError          String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  createdBy          String?
+  repos              QtGithubRepo[]
+
+  @@unique([orgId, installationId])
+  @@index([orgId])
+  @@index([githubAccountLogin])
+  @@schema("app_quiktrack")
+}
+
+// A repository exposed by an installation, optionally linked to a Space.
+model QtGithubRepo {
+  id             String               @id @default(cuid())
+  orgId          String
+  installationId String
+  /// GitHub numeric repo id (stable across renames).
+  repoId         String
+  /// "owner/name" (e.g. "KanishkaJ19/LowCodeNoCode_Backend").
+  repoFullName   String
+  defaultBranch  String               @default("main")
+  /// Optional Space this repo is linked to. Null = org-wide only.
+  projectId      String?
+  /// Per-task backfill state as JSON: branches/commits/pullRequests/etc.
+  backfillStatus Json?
+  isActive       Boolean              @default(true)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  installation   QtGithubInstallation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, repoId])
+  @@index([orgId])
+  @@index([installationId])
+  @@index([projectId])
+  @@schema("app_quiktrack")
+}
+
+// A branch linked to a work item via its issue key (QT-123) parsed from the
+// branch name. Idempotent on (issueId, repoId, name).
+model QtDevBranch {
+  id           String   @id @default(cuid())
+  orgId        String
+  issueId      String
+  /// GitHub repo id (denormalized; joins to QtGithubRepo.repoId).
+  repoId       String
+  repoFullName String
+  name         String
+  url          String?
+  sourceSystem String   @default("github")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  issue        QtIssue  @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@unique([issueId, repoId, name])
+  @@index([orgId])
+  @@index([issueId])
+  @@index([repoId])
+  @@schema("app_quiktrack")
+}
+
+// A commit linked to a work item via its issue key in the commit message.
+// Idempotent on (repoId, sha).
+model QtDevCommit {
+  id           String   @id @default(cuid())
+  orgId        String
+  issueId      String
+  repoId       String
+  repoFullName String
+  sha          String
+  message      String
+  authorName   String?
+  url          String?
+  committedAt  DateTime?
+  sourceSystem String   @default("github")
+  createdAt    DateTime @default(now())
+  issue        QtIssue  @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@unique([repoId, sha])
+  @@index([orgId])
+  @@index([issueId])
+  @@schema("app_quiktrack")
+}
+
+// A pull request linked to a work item via its issue key in the title/body.
+// Idempotent on (repoId, number).
+model QtDevPullRequest {
+  id           String   @id @default(cuid())
+  orgId        String
+  issueId      String
+  repoId       String
+  repoFullName String
+  number       Int
+  title        String
+  /// "OPEN" | "MERGED" | "CLOSED" | "DRAFT".
+  state        String   @default("OPEN")
+  url          String?
+  authorName   String?
+  updatedAtGh  DateTime?
+  sourceSystem String   @default("github")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  issue        QtIssue  @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@unique([repoId, number])
+  @@index([orgId])
+  @@index([issueId])
   @@schema("app_quiktrack")
 }
 
