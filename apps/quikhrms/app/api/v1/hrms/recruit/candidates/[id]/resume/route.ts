@@ -41,7 +41,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
     console.error("GET /recruit/candidates/:id/resume error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.recruit.read"] });
 
 const bodySchema = z.object({ stage: z.string().optional() });
 

@@ -61,4 +61,4 @@ export const POST = withAuth(async (_req: NextRequest, { orgId, userId }, params
     console.error("POST /onboarding/tasks/[taskId]/doc-request error:", error);
     return internalError();
   }
-}, { requiredPermissions: ["hrms.onboarding.write"] });
+}, { requiredPermissions: ["hrms.onboarding.write"], rateLimit: { max: 10, windowSec: 60, scope: "onboarding.doc-request" } });

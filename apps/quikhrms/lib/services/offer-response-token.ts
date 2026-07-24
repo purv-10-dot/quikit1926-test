@@ -1,8 +1,9 @@
 import crypto from "crypto";
+import { resolveTokenSecret } from "./token-secret";
 
 // Stateless signed token for the public candidate offer-response page (no login
 // / no DB column needed). Mirrors the exit-interview token.
-const SECRET = process.env.OFFER_RESPONSE_TOKEN_SECRET || process.env.NEXTAUTH_SECRET || "dev-offer-response-secret-change-me";
+const SECRET = resolveTokenSecret("offer-response-token", "dev-offer-response-secret-change-me", process.env.OFFER_RESPONSE_TOKEN_SECRET, process.env.NEXTAUTH_SECRET);
 const EXPIRY_DAYS = 30;
 
 function b64u(buf: Buffer): string {

@@ -1,12 +1,15 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, notFound, validationError, internalError } from "@/lib/api-response";
+import { successResponse, notFound, forbidden, validationError, internalError } from "@/lib/api-response";
 import { updatePIPSchema } from "@/lib/validations/performance";
 import { fireWorkflow } from "@/lib/workflows/executor";
+import { getCallerEmployeeId } from "@/lib/rbac/scope";
+import { isDirectManagerOf } from "@/lib/rbac/performance-access";
 
-export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
+export const GET = withAuth(async (_req: NextRequest, ctx, params) => {
   try {
+    const { orgId } = ctx;
     const pip = await prisma.pIP.findFirst({
       where: { id: params.id, orgId, deletedAt: null },
       include: {
@@ -15,14 +18,27 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
       },
     });
     if (!pip) return notFound("PIP not found");
+
+    // Only the PIP's employee, their manager, or HR may read it.
+    const canManagePip = ctx.permissions.includes("*") || ctx.permissions.includes("hrms.performance.pip");
+    const callerId = await getCallerEmployeeId(ctx);
+    const allowed = canManagePip || pip.employeeId === callerId || (await isDirectManagerOf(ctx, pip.employeeId));
+    if (!allowed) return forbidden("You don't have access to this PIP");
     return successResponse(pip);
   } catch (error) { console.error("GET /pip/:id error:", error); return internalError(); }
 });
 
-export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
+export const PATCH = withAuth(async (req: NextRequest, ctx, params) => {
   try {
+    const { orgId, userId } = ctx;
     const existing = await prisma.pIP.findFirst({ where: { id: params.id, orgId, deletedAt: null } });
     if (!existing) return notFound("PIP not found");
+
+    // Close / fail / extend is a manager-or-HR action, never the employee's own.
+    const canManagePip = ctx.permissions.includes("*") || ctx.permissions.includes("hrms.performance.pip");
+    const allowed = canManagePip || (await isDirectManagerOf(ctx, existing.employeeId));
+    if (!allowed) return forbidden("Only a manager or HR can update a PIP.");
+
     const body = await req.json();
     const parsed = updatePIPSchema.safeParse(body);
     if (!parsed.success) return validationError("Validation failed", parsed.error.flatten().fieldErrors);

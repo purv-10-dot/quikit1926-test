@@ -66,4 +66,4 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     console.error("POST /attendance/policies error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.attendance.manage"] });

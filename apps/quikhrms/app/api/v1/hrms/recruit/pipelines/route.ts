@@ -57,7 +57,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId }) => {
 
     return successResponse(normalized);
   } catch (error) { console.error("GET /recruit/pipelines error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.read"] });
 
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
   try {
@@ -86,4 +86,4 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     });
     return successResponse({ ...pipeline, stages: normalizeStages(pipeline.stages) }, undefined, 201);
   } catch (error) { console.error("POST /recruit/pipelines error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });

@@ -16,7 +16,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
     console.error("GET /employees/[id]/history error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.employee.read", "hrms.employee.read_team"], anyPermission: true });
 
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
   try {
@@ -62,4 +62,4 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
     console.error("POST /employees/[id]/history error:", error);
     return internalError();
   }
-}, { requiredPermissions: ["hrms.employee.read"] });
+}, { requiredPermissions: ["hrms.employee.write"] });

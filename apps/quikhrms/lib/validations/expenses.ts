@@ -57,7 +57,7 @@ export const createExpenseClaimSchema = z.object({
   category: ExpenseCategoryEnum,
   title: z.string().min(1),
   description: z.string().optional(),
-  totalAmount: z.number().positive("Amount must be greater than 0"),
+  totalAmount: z.number().positive("Amount must be greater than 0").max(10_000_000, "Amount is unrealistically large"),
   currency: z.string().length(3).default("INR"),
   expenseDate: z.string().optional().nullable(),
   receiptUrl: z.string().refine(

@@ -21,7 +21,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
     if (!r) return notFound("Requisition not found");
     return successResponse(r);
   } catch (error) { console.error("GET /recruit/requisitions/:id error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.read"] });
 
 export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
   try {

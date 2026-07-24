@@ -6,8 +6,6 @@ import { initiateOnboardingSchema } from "@/lib/validations/boarding";
 import { addDays } from "@/lib/services/boarding";
 import { createAuditLog } from "@/lib/utils/audit";
 import { fireWorkflow } from "@/lib/workflows/executor";
-import { resolveAndSend } from "@/lib/email/resolve";
-import { buildOnboardingTaskAssignedEmail } from "@/lib/email-templates/onboarding-task-assigned";
 
 type TaskTpl = {
   title: string;
@@ -23,6 +21,16 @@ type TaskTpl = {
   config?: Record<string, unknown> | null;
 };
 
+// Resolve the internal employees a step is assigned to (supports multiple).
+// Returns [] for candidate-targeted steps. Falls back to the legacy single id.
+function resolveAssignees(cfg: Record<string, unknown> | null | undefined): string[] {
+  if (!cfg) return [];
+  if (cfg.assignDepartmentId === "__candidate__") return [];
+  const list = Array.isArray(cfg.assignEmployeeIds) ? (cfg.assignEmployeeIds as string[]).filter(Boolean) : [];
+  if (list.length) return list;
+  return cfg.assignEmployeeId ? [cfg.assignEmployeeId as string] : [];
+}
+
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
   try {
     const body = await req.json();
@@ -30,6 +38,16 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     if (!parsed.success) {
       return validationError("Validation failed", parsed.error.flatten().fieldErrors);
     }
+
+    // Cross-tenant guard: the target employee must belong to the caller's org.
+    // Without this, an org-A caller could initiate onboarding against an org-B
+    // employee id (the instance orgId is the caller's, so it wouldn't otherwise
+    // be caught).
+    const targetEmp = await prisma.employee.findFirst({
+      where: { id: parsed.data.employeeId, orgId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!targetEmp) return notFound("Employee not found");
 
     const existing = await prisma.onboardingInstance.findFirst({
       where: { orgId, employeeId: parsed.data.employeeId, deletedAt: null },
@@ -71,7 +89,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
             // targets "Candidate".
             assigneeId: t.config?.assignDepartmentId === "__candidate__"
               ? parsed.data.employeeId
-              : (t.config?.assignEmployeeId as string) || null,
+              : resolveAssignees(t.config)[0] || null,
             category: t.category as "Documentation",
             dueDate: addDays(startDate, t.dueInDays ?? 7),
             isMandatory: t.isMandatory,
@@ -86,60 +104,32 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       include: { tasks: { orderBy: { sortOrder: "asc" } } },
     });
 
-    // Notify each assigned employee about the onboarding task they own, linking
-    // to the tracker where they can act on / complete it.
-    const assignedTasks = instance.tasks.filter((t) => t.assigneeId);
-    if (assignedTasks.length) {
-      await prisma.hrmsNotification.createMany({
-        data: assignedTasks.map((t) => ({
-          orgId,
-          employeeId: t.assigneeId as string,
-          type: "Action" as const,
-          channel: "InApp" as const,
-          title: `Onboarding task assigned: ${t.title}`,
-          message: "You have an onboarding task to complete.",
-          link: `/onboarding/${parsed.data.employeeId}`,
-          entityType: "OnboardingTask",
-          entityId: t.id,
-        })),
-      }).catch((e) => console.error("onboarding task notify failed:", e));
+    // Notify EVERY assigned employee (a step can target multiple people) about
+    // the onboarding task they own, linking to the tracker. Candidate-targeted
+    // steps notify the new hire.
+    const notifRows = instance.tasks.flatMap((t) => {
+      const cfg = (t.config ?? {}) as Record<string, unknown>;
+      const targets = cfg.assignDepartmentId === "__candidate__" ? [parsed.data.employeeId] : resolveAssignees(cfg);
+      return targets.map((employeeId) => ({
+        orgId,
+        employeeId,
+        type: "Action" as const,
+        channel: "InApp" as const,
+        title: `Onboarding task assigned: ${t.title}`,
+        message: "You have an onboarding task to complete.",
+        link: `/onboarding/${parsed.data.employeeId}`,
+        entityType: "OnboardingTask",
+        entityId: t.id,
+      }));
+    });
+    if (notifRows.length) {
+      await prisma.hrmsNotification.createMany({ data: notifRows })
+        .catch((e) => console.error("onboarding task notify failed:", e));
     }
 
-    // Email assignees of Custom Task steps — they just do the task and mark it
-    // complete (other step types get their own action emails per type).
-    const customByEmp = new Map<string, string[]>();
-    for (const t of tasks) {
-      const empId = t.config?.assignEmployeeId as string | undefined;
-      if (!empId) continue;
-      if ((t.stepType ?? "CustomTask") !== "CustomTask") continue;
-      customByEmp.set(empId, [...(customByEmp.get(empId) ?? []), t.title]);
-    }
-    if (customByEmp.size) {
-      try {
-        const [company, emps, newHire] = await Promise.all([
-          prisma.companySettings.findUnique({ where: { orgId }, select: { companyName: true } }),
-          prisma.employee.findMany({ where: { orgId, id: { in: [...customByEmp.keys()] }, deletedAt: null }, select: { id: true, firstName: true, lastName: true, workEmail: true } }),
-          prisma.employee.findFirst({ where: { id: parsed.data.employeeId, orgId }, select: { firstName: true, lastName: true } }),
-        ]);
-        const companyName = company?.companyName ?? "Our Company";
-        const newHireName = newHire ? `${newHire.firstName} ${newHire.lastName}`.trim() : "the new hire";
-        const base = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "";
-        const link = `${base}/onboarding/${parsed.data.employeeId}`;
-        for (const e of emps) {
-          if (!e.workEmail) continue;
-          const assigneeName = `${e.firstName} ${e.lastName}`.trim();
-          const titles = customByEmp.get(e.id) ?? [];
-          await resolveAndSend(orgId, {
-            key: "onboarding.task-assigned",
-            to: e.workEmail,
-            vars: { assigneeName, companyName, newHireName },
-            fallback: () => buildOnboardingTaskAssignedEmail({ assigneeName, companyName, newHireName, tasks: titles, link }),
-          }).catch((err) => console.error("onboarding task email failed:", err));
-        }
-      } catch (e) {
-        console.error("onboarding custom-task email block failed:", e);
-      }
-    }
+    // NOTE: assignee emails are NOT sent automatically here. HR sends them on
+    // demand from the checklist ("Send to assignee") via the notify-assignees
+    // route — this keeps the in-app bell above, but no surprise auto-emails.
 
     await createAuditLog({ orgId, userId, action: "Create", entityType: "OnboardingInstance", entityId: instance.id });
 

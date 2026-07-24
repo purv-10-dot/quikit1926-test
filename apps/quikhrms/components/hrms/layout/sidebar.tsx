@@ -94,6 +94,7 @@ export const navigation: NavItem[] = [
       { label: "Directory", href: "/org-chart", perms: ["hrms.employee.read", "hrms.employee.read_team", "hrms.org.read"], navKey: "people.directory" },
       { label: "Employment Logs", href: "/employees/history", perms: ["hrms.employee.read"], navKey: "people.history" },
       { label: "Delegations", href: "/delegations", perms: ["hrms.employee.read", "hrms.employee.read_team"], navKey: "people.delegations" },
+      { label: "Pre-Onboarding", href: "/pre-onboarding", perms: ["hrms.onboarding.read", "hrms.onboarding.write"], navKey: "people.pre-onboarding" },
       { label: "Onboarding", href: "/onboarding", perms: ["hrms.onboarding.read", "hrms.onboarding.write"], navKey: "people.onboarding" },
       { label: "Offboarding", href: "/offboarding", perms: ["hrms.offboarding.read", "hrms.offboarding.write"], navKey: "people.offboarding" },
       { label: "Resignation Approvals", href: "/offboarding/resignation-approvals", perms: ["hrms.offboarding.approve"], navKey: "people.resignation-approvals" },

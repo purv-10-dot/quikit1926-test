@@ -12844,6 +12844,16 @@ model CompanySettings {
   // Editable offer-letter body template with {{dynamic}} fields (see
   // lib/recruit/offer-letter-fields.ts). Null → renderer uses the built-in default.
   offerLetterBody      String?
+  // Editable joining/appointment-letter body template with {{dynamic}} fields
+  // (see lib/recruit/joining-letter-fields.ts). Null → renderer uses the default.
+  joiningLetterBody    String?
+  // Editable resignation-acceptance-letter body template with {{dynamic}} fields
+  // (see lib/offboarding/resignation-letter-fields.ts). Read/written via raw SQL.
+  resignationLetterBody String?
+  // Editable relieving-letter + experience-letter body templates ({{dynamic}}
+  // fields, see lib/offboarding/exit-letter-fields.ts). Read/written via raw SQL.
+  relievingLetterBody  String?
+  experienceLetterBody String?
 
   // First-run org setup gate (admin onboarding). Latched true once Departments,
   // Locations, a complete Approval chain, and Payroll setup are all done — after
@@ -13126,6 +13136,9 @@ model OnboardingTemplate {
   designationId String?
   tasks         Json
   isActive      Boolean @default(true)
+  // "Onboarding" (Day-1 checklist) or "PreOnboarding" (pre-joining checklist).
+  // Read/written via raw SQL. Null/absent = Onboarding.
+  kind          String  @default("Onboarding")
 
   createdBy String?
   updatedBy String?
@@ -13151,6 +13164,12 @@ model OnboardingInstance {
   status      OnboardingStatus @default(NotStarted)
   completedAt DateTime?
   notes       String?
+  // When true, completing a step auto-sends the next sendable step's request
+  // (the "Start onboarding" automation chain). Read/written via raw SQL.
+  automated   Boolean          @default(false)
+  // "PreOnboarding" (pre-joining) or "Onboarding" (Day-1+). Read/written via raw
+  // SQL. Null/absent = Onboarding.
+  phase       String           @default("Onboarding")
 
   createdBy String?
   updatedBy String?
@@ -13373,6 +13392,9 @@ model OffboardingInstance {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
+  // Completion-chained automation ("Start offboarding"). Read/written via raw SQL.
+  automated Boolean @default(false)
+
   tasks        OffboardingTask[]
   noticePeriod NoticePeriod?     @relation(fields: [noticePeriodId], references: [id])
   template     OffboardingTemplate? @relation(fields: [templateId], references: [id])
@@ -13403,6 +13425,12 @@ model OffboardingTask {
   completedBy String?
   notes       String?
   sortOrder   Int                     @default(0)
+  dueDate     DateTime?               @db.Date
+  // Rich workflow step type (AssetReturn, AccessRevoke, SendEmail, …) + its
+  // type-specific settings, carried from the offboarding template. Read/written
+  // via raw SQL (mirrors onboarding). Null = a plain task.
+  stepType    String?
+  config      Json?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

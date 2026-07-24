@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, internalError } from "@/lib/api-response";
+import { successResponse, forbidden, notFound, internalError } from "@/lib/api-response";
 import { APP_ID, joinCode } from "@/lib/rbac/registry";
 import { PERMISSIONS } from "@/lib/rbac/permissions";
 
@@ -26,10 +26,7 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
     }
 
     if (!permissions.includes("*") && !permissions.includes("hrms.rbac.manage")) {
-      return successResponse({
-        employeeId: targetId,
-        error: "Requires hrms.rbac.manage to inspect other users",
-      });
+      return forbidden("Requires hrms.rbac.manage to inspect other users");
     }
 
     const emp = await prisma.employee.findFirst({
@@ -52,7 +49,7 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
         },
       },
     });
-    if (!emp) return successResponse({ employeeId: targetId, error: "Employee not found" });
+    if (!emp) return notFound("Employee not found");
 
     const codeSet = new Set<string>();
     for (const link of emp.appRoles) {

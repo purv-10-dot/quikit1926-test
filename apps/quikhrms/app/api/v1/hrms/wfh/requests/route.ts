@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, validationError, internalError, notFound, conflict } from "@/lib/api-response";
+import { successResponse, validationError, internalError, notFound, conflict, forbidden } from "@/lib/api-response";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { createWfhSchema } from "@/lib/validations/wfh";
 import { resolveAndSend } from "@/lib/email/resolve";
@@ -10,8 +10,14 @@ import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
 import { resolveEffectiveWfhQuotaGroup } from "@/lib/services/wfh-quota";
 import { APP_ID, rolePriority } from "@/lib/rbac/registry";
 
-export const GET = withAuth(async (req: NextRequest, { orgId, userId }) => {
+/** Thrown inside the create transaction to signal a concurrent-safe guard failure. */
+class WfhGuardError extends Error {
+  constructor(public kind: "OVERLAP" | "QUOTA") { super(kind); }
+}
+
+export const GET = withAuth(async (req: NextRequest, ctx) => {
   try {
+    const { orgId, userId } = ctx;
     const { searchParams } = new URL(req.url);
     const { page, limit } = parsePagination(searchParams);
     const status = searchParams.get("status");
@@ -26,13 +32,21 @@ export const GET = withAuth(async (req: NextRequest, { orgId, userId }) => {
     if (scope === "me") {
       where.employeeId = employeeId;
     } else if (scope === "team") {
+      // Team view: your direct reports only (self-limiting — safe for any caller).
       const reports = await prisma.employee.findMany({
         where: { orgId, deletedAt: null, reportingManagerId: employeeId },
         select: { id: true },
       });
-      where.employeeId = { in: reports.map((r) => r.id) };
+      where.employeeId = { in: [...reports.map((r) => r.id), employeeId] };
+    } else {
+      // scope=all → org-wide HR/admin view. Restricted to admins / HR (employee.read).
+      const canSeeAll =
+        ctx.permissions.includes("*") ||
+        ctx.roleCode === "admin" ||
+        ctx.permissions.includes("hrms.employee.read");
+      if (!canSeeAll) return forbidden("You can only view your own or your team's WFH requests");
+      // no employee filter
     }
-    // scope=all → no employee filter (HR / admin view)
 
     const [items, total] = await Promise.all([
       prisma.wfhRequest.findMany({
@@ -241,7 +255,9 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         approverEmail: superAdminApprover.workEmail,
       });
     } else {
-      if (employee.reportingManagerId) {
+      // Exclude a self-referential reportingManagerId so an employee who is
+      // (mis)configured as their own manager can't become their own approver.
+      if (employee.reportingManagerId && employee.reportingManagerId !== employee.id) {
         const mgr = await prisma.employee.findFirst({
           where: { id: employee.reportingManagerId, orgId, deletedAt: null },
           select: { id: true, firstName: true, lastName: true, workEmail: true },
@@ -264,25 +280,65 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       });
     }
 
-    const wfh = await prisma.wfhRequest.create({
-      data: {
-        orgId, employeeId,
-        startDate: start, endDate: end,
-        days, isHalfDay: data.isHalfDay, session: data.session,
-        reason: data.reason,
-        attachments: data.attachments ? JSON.parse(JSON.stringify(data.attachments)) : null,
-        status: autoApprove ? "Approved" : "Pending",
-        createdBy: userId, updatedBy: userId,
-      },
-    });
+    // Atomic guard: re-check overlap AND yearly quota INSIDE the transaction
+    // right before the insert, so two concurrent applies can't both slip past
+    // the earlier checks and exceed the quota / double-book the same dates.
+    let wfh;
+    try {
+      wfh = await prisma.$transaction(async (tx) => {
+        const clash = await tx.wfhRequest.findFirst({
+          where: {
+            orgId, employeeId, deletedAt: null,
+            status: { in: ["Pending", "Approved"] },
+            startDate: { lte: end }, endDate: { gte: start },
+          },
+          select: { id: true },
+        });
+        if (clash) throw new WfhGuardError("OVERLAP");
 
-    if (flow.length > 0) {
-      await prisma.wfhApproval.createMany({
-        data: flow.map((f, idx) => ({
-          orgId, wfhRequestId: wfh.id,
-          approverId: f.approverId, level: idx + 1, role: f.role, status: "Pending",
-        })),
+        if (effective.group) {
+          const yearStart = new Date(start.getFullYear(), 0, 1);
+          const yearEnd = new Date(start.getFullYear() + 1, 0, 1);
+          const rows = await tx.wfhRequest.findMany({
+            where: {
+              orgId, employeeId, deletedAt: null,
+              status: { in: ["Pending", "Approved"] },
+              startDate: { gte: yearStart, lt: yearEnd },
+            },
+            select: { days: true },
+          });
+          const used = rows.reduce((sum, r) => sum + Number(r.days), 0);
+          if (used + days > effective.group.yearlyQuota) throw new WfhGuardError("QUOTA");
+        }
+
+        const created = await tx.wfhRequest.create({
+          data: {
+            orgId, employeeId,
+            startDate: start, endDate: end,
+            days, isHalfDay: data.isHalfDay, session: data.session,
+            reason: data.reason,
+            attachments: data.attachments ? JSON.parse(JSON.stringify(data.attachments)) : null,
+            status: autoApprove ? "Approved" : "Pending",
+            createdBy: userId, updatedBy: userId,
+          },
+        });
+        if (flow.length > 0) {
+          await tx.wfhApproval.createMany({
+            data: flow.map((f, idx) => ({
+              orgId, wfhRequestId: created.id,
+              approverId: f.approverId, level: idx + 1, role: f.role, status: "Pending",
+            })),
+          });
+        }
+        return created;
       });
+    } catch (e) {
+      if (e instanceof WfhGuardError) {
+        return e.kind === "OVERLAP"
+          ? conflict("These dates overlap an existing WFH request.")
+          : validationError("WFH quota exceeded for the year.");
+      }
+      throw e;
     }
 
     // Notify first approver

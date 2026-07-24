@@ -4,6 +4,7 @@ import { withAuth } from "@/lib/with-auth";
 import { successResponse, validationError, notFound, internalError } from "@/lib/api-response";
 import { assignKraSchema } from "@/lib/validations/performance";
 import { createAuditLog } from "@/lib/utils/audit";
+import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
 import type { Prisma } from "@quikit/database";
 
 interface SnapshotKpi {
@@ -31,6 +32,7 @@ interface Snapshot {
 export const GET = withAuth(async (req: NextRequest, { orgId }) => {
   try {
     const { searchParams } = new URL(req.url);
+    const { page, limit } = parsePagination(searchParams);
     const employeeId = searchParams.get("employeeId");
     const status = searchParams.get("status");
     const scorecardId = searchParams.get("scorecardId");
@@ -43,13 +45,18 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
       ...(scorecardId && { scorecardId }),
     };
 
-    const assignments = await prisma.employeeKraAssignment.findMany({
-      where,
-      orderBy: [{ effectiveFrom: "desc" }, { createdAt: "desc" }],
-      include: {
-        scorecard: { select: { id: true, name: true, designationId: true, departmentId: true } },
-      },
-    });
+    const [assignments, total] = await Promise.all([
+      prisma.employeeKraAssignment.findMany({
+        where,
+        orderBy: [{ effectiveFrom: "desc" }, { createdAt: "desc" }],
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          scorecard: { select: { id: true, name: true, designationId: true, departmentId: true } },
+        },
+      }),
+      prisma.employeeKraAssignment.count({ where }),
+    ]);
 
     const empIds = [...new Set(assignments.map((a) => a.employeeId))];
     const employees = empIds.length
@@ -70,7 +77,7 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
       employee: empMap.get(a.employeeId) ?? null,
     }));
 
-    return successResponse(rows);
+    return successResponse(rows, paginationMeta(page, limit, total));
   } catch (e) {
     console.error("GET /performance/kra-assignments error:", e);
     return internalError();
@@ -85,6 +92,18 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       return validationError("Validation failed", parsed.error.flatten().fieldErrors);
     }
     const { scorecardId, employeeIds, effectiveFrom, effectiveTo, cycleId } = parsed.data;
+
+    // Every target must be a real, in-org employee (prevents assigning to
+    // fabricated or cross-tenant ids).
+    const validEmps = await prisma.employee.findMany({
+      where: { orgId, deletedAt: null, id: { in: employeeIds } },
+      select: { id: true },
+    });
+    const validSet = new Set(validEmps.map((e) => e.id));
+    const invalid = employeeIds.filter((id) => !validSet.has(id));
+    if (invalid.length) {
+      return validationError(`Some employees are not in your organization: ${invalid.slice(0, 5).join(", ")}`);
+    }
 
     const scorecard = await prisma.kraScorecard.findFirst({
       where: { id: scorecardId, orgId, deletedAt: null },

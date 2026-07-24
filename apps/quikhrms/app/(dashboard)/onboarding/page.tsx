@@ -6,13 +6,12 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Select } from "@/components/hrms/ui/select";
-import { Plus, Search, Eye, EyeOff, ArrowUpDown, Edit2, Send, Mail, Upload, Download } from "lucide-react";
+import { Plus, Search, Eye, EyeOff, ArrowUpDown, Edit2, Send, Mail, Upload, Download, ArrowRight, Filter } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonLine } from "@/components/hrms/skeleton";
 import { useToast } from "@/components/hrms/toast";
 import { exportCsv as exportCsvFile, fmtDate, formatGroup, formatAddress, type CsvColumn } from "@/lib/utils/csv";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
-import { AddCandidateWizard } from "./_components/add-candidate-wizard";
 
 type SourceOfHire = "Referral" | "JobPortal" | "LinkedIn" | "Agency" | "Campus" | "Direct" | "Other";
 
@@ -63,6 +62,7 @@ interface Candidate {
 }
 
 const STATUSES = ["NotStarted", "InProgress", "OnboardCompleted", "OnboardCancelled"];
+const SOURCES: SourceOfHire[] = ["Referral", "JobPortal", "LinkedIn", "Agency", "Campus", "Direct", "Other"];
 
 const statusColors: Record<string, string> = {
   NotStarted: "bg-gray-100 text-gray-600",
@@ -76,7 +76,6 @@ export default function OnboardingCandidatesPage() {
   const router = useRouter();
   const toast = useToast();
 
-  const [showAdd, setShowAdd] = useState(false);
   const [search, setSearch] = useState("");
   const [revealPan, setRevealPan] = useState(false);
   const [revealAadhaar, setRevealAadhaar] = useState(false);
@@ -221,7 +220,63 @@ export default function OnboardingCandidatesPage() {
       <h1 className="text-page-title text-gray-900 mb-5">Onboarding</h1>
 
       <div className="">
-        <div className="flex items-center justify-end mb-4 gap-3 flex-wrap">
+        <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+          <div className="flex items-center gap-2" ref={filterRef}>
+            <div className="relative">
+              <button type="button" onClick={() => setShowFilters((v) => !v)}
+                className={clsx("inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition",
+                  activeFilterCount > 0 ? "border-green-300 bg-green-50 text-green-700" : "border-gray-300 text-gray-700 hover:bg-gray-50")}>
+                <Filter size={14} /> Filters
+                {activeFilterCount > 0 && <span className="ml-0.5 px-1.5 rounded-full bg-green-600 text-white text-[10px] font-bold">{activeFilterCount}</span>}
+              </button>
+              {showFilters && (
+                <div className="absolute left-0 top-full mt-1.5 z-20 w-64 bg-white border border-gray-200 rounded-lg shadow-lg p-3 space-y-3">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">Onboarding Status</div>
+                    <div className="space-y-1">
+                      {STATUSES.map((s) => (
+                        <label key={s} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+                          <input type="checkbox" className="accent-green-600" checked={filters.status.includes(s)}
+                            onChange={() => setFilters((f) => ({ ...f, status: f.status.includes(s) ? f.status.filter((x) => x !== s) : [...f.status, s] }))} />
+                          {s}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="border-t border-gray-100 pt-2.5">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">Source of Hire</div>
+                    <div className="space-y-1">
+                      {SOURCES.map((s) => (
+                        <label key={s} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+                          <input type="checkbox" className="accent-green-600" checked={filters.source.includes(s)}
+                            onChange={() => setFilters((f) => ({ ...f, source: f.source.includes(s) ? f.source.filter((x) => x !== s) : [...f.source, s] }))} />
+                          {s}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  {activeFilterCount > 0 && (
+                    <button type="button" onClick={() => setFilters({ status: [], source: [] })}
+                      className="w-full text-center text-[11px] font-medium text-red-600 hover:underline pt-1">
+                      Clear all filters
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+            {filters.status.map((s) => (
+              <span key={`fs-${s}`} className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-green-50 text-green-700 text-[11px] font-medium">
+                {s}
+                <button onClick={() => setFilters((f) => ({ ...f, status: f.status.filter((x) => x !== s) }))} className="hover:text-green-900">×</button>
+              </span>
+            ))}
+            {filters.source.map((s) => (
+              <span key={`fr-${s}`} className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-[11px] font-medium">
+                {s}
+                <button onClick={() => setFilters((f) => ({ ...f, source: f.source.filter((x) => x !== s) }))} className="hover:text-blue-900">×</button>
+              </span>
+            ))}
+          </div>
           <div className="flex items-center gap-2">
             <button type="button" onClick={exportCsv} disabled={filteredCandidates.length === 0}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 text-xs font-medium hover:bg-gray-50 transition disabled:opacity-50">
@@ -232,125 +287,88 @@ export default function OnboardingCandidatesPage() {
               className="inline-flex items-center gap-1.5 border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 px-3 py-1.5 rounded-md text-xs font-medium shadow-sm transition">
               <Upload size={13} /> Bulk Upload
             </Link>
-            <button onClick={() => setShowAdd(true)}
-              className="inline-flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-md text-xs font-medium shadow-sm transition">
-              <Plus size={13} /> Onboard Candidate
-            </button>
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-          <div className="border-b border-gray-200 px-3 py-2 flex items-center gap-2">
-            <div className="relative flex-1 max-w-xs">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input placeholder="Search candidates..." value={search} onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]" />
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+          {([
+            ["Not Started", "NotStarted"],
+            ["In Progress", "InProgress"],
+            ["Completed", "OnboardCompleted"],
+            ["Cancelled", "OnboardCancelled"],
+          ] as const).map(([label, key]) => (
+            <div key={key} className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
+              <div className="text-xs text-gray-500 uppercase">{label}</div>
+              <div className="text-base md:text-lg font-bold text-gray-900 mt-1">
+                {candidates.filter((c) => c.onboardingStatus === key).length}
+              </div>
             </div>
-          </div>
+          ))}
+        </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead className="bg-gray-50 text-table-head text-gray-600 border-b border-gray-200">
-                <tr>
-                  <th className="w-10 px-4 py-2.5">
-                    <Edit2 size={12} className="text-gray-400" />
-                  </th>
-                  <th className="w-10 px-4 py-2.5">
-                    <input type="checkbox" checked={selected.size === filteredCandidates.length && filteredCandidates.length > 0} onChange={toggleAll} />
-                  </th>
-                  <HeaderCell label="First name" />
-                  <HeaderCell label="Last name" />
-                  <HeaderCell label="Email ID" />
-                  <HeaderCell label="Official Email" />
-                  <HeaderCell label="Onboarding Status" />
-                  <HeaderCell label="Department" />
-                  <HeaderCell label="Source of Hire" />
-                  <HeaderCell label="PAN card number" action={
-                    <button onClick={() => setRevealPan((v) => !v)} className="text-gray-400 hover:text-gray-600">
-                      {revealPan ? <EyeOff size={12} /> : <Eye size={12} />}
-                    </button>
-                  } />
-                  <HeaderCell label="Aadhaar card number" action={
-                    <button onClick={() => setRevealAadhaar((v) => !v)} className="text-gray-400 hover:text-gray-600">
-                      {revealAadhaar ? <EyeOff size={12} /> : <Eye size={12} />}
-                    </button>
-                  } />
-                  <HeaderCell label="UAN number" action={<Eye size={12} className="text-gray-400" />} />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {isLoading ? (
-                  Array.from({ length: 6 }).map((_, r) => (
-                    <tr key={`sk-${r}`}>
-                      {Array.from({ length: 12 }).map((__, c) => (
-                        <td key={c} className="px-4 py-2.5"><SkeletonLine w="80%" h={10} /></td>
-                      ))}
-                    </tr>
-                  ))
-                ) : filteredCandidates.length === 0 ? (
-                  <tr><td colSpan={12} className="text-center py-12 text-gray-500">{activeFilterCount > 0 ? "No candidates match filters." : "No candidates. Click \"Onboard Candidate\" to get started."}</td></tr>
-                ) : filteredCandidates.map((c, i) => (
-                  <tr key={c.id} onClick={() => router.push(`/onboarding/${c.id}`)} className="row-stagger hover:bg-gray-50 cursor-pointer" style={{ ["--i" as never]: Math.min(i, 10) }}>
-                    <td className="px-4 py-2.5"></td>
-                    <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
-                      <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggle(c.id)} />
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <Link href={c.onboardingInstanceId ? `/onboarding/${c.id}` : "#"} className="text-[13px] font-medium text-gray-900 hover:text-[#22c55e]">
-                        {c.firstName}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-2.5 text-gray-900">{c.lastName}</td>
-                    <td className="px-4 py-2.5">
-                      <span className="text-gray-700">{truncate(c.personalEmail ?? "", 22)}</span>
-                    </td>
-                    <td className="px-4 py-2.5 text-gray-700">{truncate(c.workEmail, 22)}</td>
-                    <td className="px-4 py-2.5">
-                      <span className={clsx("px-2 py-0.5 rounded-full text-[11px] font-medium", statusColors[c.onboardingStatus] ?? "bg-gray-100 text-gray-600")}>
-                        {c.onboardingStatus}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2.5 text-gray-700">{c.department ?? "—"}</td>
-                    <td className="px-4 py-2.5 text-gray-700">{c.sourceOfHire ?? "—"}</td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-gray-700">{mask(c.panNumber, revealPan, 10)}</td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-gray-700">{mask(c.aadhaarNumber, revealAadhaar, 10)}</td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-gray-700">{mask(c.uanNumber, false, 9)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 mb-4 flex items-center gap-2 max-w-md">
+          <Search size={14} className="text-gray-400" />
+          <input placeholder="Search candidates…" value={search} onChange={(e) => setSearch(e.target.value)}
+            className="flex-1 text-sm focus:outline-none" />
+        </div>
 
-          <div className="border-t border-gray-200 px-4 py-3 flex items-center justify-between text-xs">
-            <div>
+        {isLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="surface-card p-4 flex items-center gap-3">
+                <SkeletonLine w={40} h={40} />
+                <div className="flex-1 space-y-1.5">
+                  <SkeletonLine w="60%" h={12} />
+                  <SkeletonLine w="45%" h={10} />
+                  <SkeletonLine w="70%" h={10} />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : filteredCandidates.length === 0 ? (
+          <div className="surface-card p-8 text-center text-gray-500">
+            <Plus size={30} className="mx-auto mb-2 text-gray-300" />
+            <p>{activeFilterCount > 0 ? "No candidates match filters." : "No candidates yet."}</p>
+            <p className="text-xs mt-1">Candidates move here from Pre-Onboarding once they&rsquo;re ready for Day 1.</p>
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {filteredCandidates.map((c, i) => {
+                const name = `${c.firstName} ${c.lastName}`.trim();
+                const inits = `${c.firstName?.[0] ?? ""}${c.lastName?.[0] ?? ""}`.toUpperCase() || "?";
+                const role = c.designation ?? c.jobTitle;
+                return (
+                  <Link key={c.id} href={`/onboarding/${c.id}`}
+                    className="row-stagger surface-card p-4 flex items-center gap-3 hover:border-[#166534]/30 hover:shadow-md transition group"
+                    style={{ ["--i" as never]: Math.min(i, 10) }}>
+                    <span className="w-10 h-10 rounded-full bg-[#166534]/10 text-[#166534] grid place-items-center text-sm font-bold shrink-0">{inits}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <div className="text-[13px] font-semibold text-gray-900 truncate group-hover:text-[#166534]">{name}</div>
+                        <span className={clsx("px-2 py-0.5 rounded-full text-[10px] font-medium shrink-0", statusColors[c.onboardingStatus] ?? "bg-gray-100 text-gray-600")}>
+                          {c.onboardingStatus}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-gray-400 truncate">
+                        {c.employeeCode}{role ? ` · ${role}` : ""}
+                      </div>
+                      <div className="text-[11px] text-gray-500 mt-0.5 truncate">
+                        {c.dateOfJoining ? `Joins ${new Date(c.dateOfJoining).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}` : "Joining date TBD"}
+                        {c.department ? ` · ${c.department}` : ""}
+                      </div>
+                    </div>
+                    <ArrowRight size={15} className="text-gray-300 shrink-0 group-hover:text-[#166534]" />
+                  </Link>
+                );
+              })}
+            </div>
+            <div className="mt-4 text-xs text-gray-500">
               Total Record Count : <span className="text-[#22c55e] font-medium">{total}</span>
             </div>
-            <div className="flex items-center gap-3">
-              <Select
-                value="10"
-                onChange={() => {}}
-                size="sm"
-                options={[
-                  { value: "10", label: "10" },
-                  { value: "25", label: "25" },
-                  { value: "50", label: "50" },
-                  { value: "100", label: "100" },
-                ]}
-                className="w-20"
-              />
-              <span className="text-gray-500">1 - {Math.min(total, 10)}</span>
-              <button className="p-1 border border-[var(--border)] rounded hover:bg-gray-50">‹</button>
-              <button className="p-1 border border-[var(--border)] rounded hover:bg-gray-50">›</button>
-            </div>
-          </div>
-        </div>
+          </>
+        )}
       </div>
-
-      <AddCandidateWizard
-        open={showAdd}
-        onClose={() => setShowAdd(false)}
-        onCreated={() => setShowAdd(false)}
-      />
 
     </div>
   );

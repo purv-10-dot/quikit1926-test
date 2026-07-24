@@ -198,4 +198,4 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
     console.error("POST /employees/[id]/confirm error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.employee.write"] });

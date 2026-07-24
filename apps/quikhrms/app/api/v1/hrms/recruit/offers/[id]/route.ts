@@ -24,7 +24,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
       application: { candidate: app.candidate, requisition: app.requisition },
     });
   } catch (error) { console.error("GET /recruit/offers/:id error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.read"] });
 
 export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
   try {
@@ -101,4 +101,4 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
 
     return successResponse(offer);
   } catch (error) { console.error("PATCH /recruit/offers/:id error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });

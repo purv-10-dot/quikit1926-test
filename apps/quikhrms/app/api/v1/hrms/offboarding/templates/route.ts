@@ -49,7 +49,7 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     console.error("GET /offboarding/templates error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.offboarding.read"] });
 
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
   try {

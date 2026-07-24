@@ -7,8 +7,8 @@ import {
   Building2, Users, Shield, Sliders, Palette, ChevronRight,
   Briefcase, MapPin, Network, Award, GitBranch, CalendarDays,
   FileText, ClipboardList, LayoutGrid, Link2, RotateCcw, ShieldAlert,
-  Search, Star, Bell, Home, Mail, Clock, Receipt, UserPlus,
-  ShieldCheck, BarChart3, Landmark, Monitor, UserCog, CalendarClock,
+  Search, Star, Home, Mail, Clock, Receipt, UserPlus,
+  ShieldCheck, BarChart3, Landmark, UserCog, CalendarClock,
   X, PinOff,
 } from "lucide-react";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
@@ -76,20 +76,15 @@ const SECTIONS: Section[] = [
     accent: "purple",
     icon: <Palette size={16} />,
     items: [
+      { label: "Pre-Onboarding Templates", href: "/pre-onboarding/templates", icon: <ClipboardList size={14} />, perms: ["hrms.onboarding.write"], keywords: "pre-boarding bgv background verification pre joining checklist" },
       { label: "Onboarding Templates", href: "/onboarding/templates", icon: <ClipboardList size={14} />, perms: ["hrms.onboarding.write"], keywords: "joining checklist" },
       { label: "Offboarding Templates", href: "/offboarding/templates", icon: <ClipboardList size={14} />, perms: ["hrms.offboarding.write"], keywords: "exit clearance checklist" },
-      { label: "Offer Letter Branding", href: "/settings/branding", icon: <Palette size={14} />, perms: ["hrms.settings.write"], keywords: "brand logo colour theme" },
+      { label: "Offer Letter Branding", href: "/settings/branding", icon: <Palette size={14} />, perms: ["hrms.settings.write"], keywords: "brand logo colour theme offer letter" },
+      { label: "Joining Letter Branding", href: "/settings/joining-letter", icon: <FileText size={14} />, perms: ["hrms.settings.write"], keywords: "appointment joining letter template onboarding" },
+      { label: "Resignation Acceptance Letter", href: "/settings/resignation-letter", icon: <FileText size={14} />, perms: ["hrms.settings.write"], keywords: "resignation acceptance letter template offboarding exit" },
+      { label: "Exit Letters (Relieving / Experience)", href: "/settings/exit-letters", icon: <FileText size={14} />, perms: ["hrms.settings.write"], keywords: "relieving experience letter certificate template offboarding exit" },
       { label: "Report Templates", href: "/reports", icon: <BarChart3 size={14} />, perms: ["hrms.reports.manage"], keywords: "analytics export" },
       { label: "Email Templates", href: "/settings/email-templates", icon: <Mail size={14} />, perms: ["hrms.settings.write"], keywords: "mail notification message" },
-    ],
-  },
-  {
-    title: "Personal",
-    accent: "rose",
-    icon: <Monitor size={16} />,
-    items: [
-      { label: "Preferences", href: "/settings/preferences", icon: <Monitor size={14} />, keywords: "appearance theme dark light display" },
-      { label: "Notifications", href: "/settings/notifications", icon: <Bell size={14} />, keywords: "alerts inbox messages" },
     ],
   },
 ];
@@ -214,40 +209,6 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Pinned favourites (hidden while searching) */}
-        {!isSearching && pinsLoaded && (
-          <div className="mt-4 pt-4 border-t border-gray-100">
-            <div className="flex items-center gap-1.5 mb-2">
-              <Star size={12} className="text-amber-400 fill-amber-400" />
-              <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Pinned</span>
-            </div>
-            {pinnedItems.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5">
-                {pinnedItems.map((i) => (
-                  <span key={i.href} className="group inline-flex items-center rounded-md border border-gray-200 bg-gray-50 overflow-hidden">
-                    <Link
-                      href={i.href}
-                      className="inline-flex items-center gap-1.5 pl-2 pr-1.5 py-1 text-[11px] font-medium text-gray-600 hover:bg-[#dcfce7] hover:text-[#16a34a] transition"
-                    >
-                      {i.icon}
-                      {i.label}
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={() => togglePin(i.href)}
-                      aria-label={`Unpin ${i.label}`}
-                      className="px-1.5 py-1.5 text-gray-300 hover:text-rose-500 hover:bg-rose-50 transition"
-                    >
-                      <PinOff size={12} />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <p className="text-[11px] text-gray-400">No pinned items. Tap the ☆ on any setting below to pin it here.</p>
-            )}
-          </div>
-        )}
       </div>
 
       {/* Search results */}
@@ -283,7 +244,7 @@ export default function SettingsPage() {
             <h2 className="text-[13px] font-semibold text-gray-900">All Settings</h2>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 gap-4">
             {SECTIONS.map((s) => {
               const items = s.items.filter((i) => allow(i.perms));
               if (items.length === 0) return null;
@@ -307,19 +268,6 @@ export default function SettingsPage() {
                 </div>
               );
             })}
-          </div>
-        </div>
-      )}
-
-      {/* Tips footer */}
-      {!isSearching && (
-        <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50/50 p-4 flex items-start gap-3">
-          <div className="w-8 h-8 rounded-lg bg-[#dcfce7] flex items-center justify-center flex-shrink-0">
-            <ClipboardList size={15} className="text-[#22c55e]" />
-          </div>
-          <div className="text-xs text-gray-600">
-            <p className="font-semibold text-gray-800">Make it yours</p>
-            <p className="mt-0.5">Pin the settings you use most with the ☆ icon — they appear in the <span className="font-medium">Pinned</span> row up top. Need granular control? Use <Link href="/settings/roles" className="text-[#22c55e] font-medium hover:underline">Roles &amp; Permissions</Link> to define fine-grained access.</p>
           </div>
         </div>
       )}

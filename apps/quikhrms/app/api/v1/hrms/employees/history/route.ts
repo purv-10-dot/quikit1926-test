@@ -58,4 +58,4 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
     console.error("GET /employees/history error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.employee.read", "hrms.employee.read_team"], anyPermission: true });

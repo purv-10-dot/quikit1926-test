@@ -16,6 +16,7 @@ interface Branding {
   signatoryDesignation?: string | null;
   offerLetterFooter?: string | null;
   offerLetterBody?: string | null;
+  joiningLetterBody?: string | null;
   companyName?: string | null;
 }
 
@@ -58,7 +59,7 @@ export default function BrandingSettingsPage() {
     try {
       await api.downloadPost(
         "/api/v1/hrms/settings/branding/preview",
-        { body: form.offerLetterBody ?? "" },
+        { type: "offer", body: form.offerLetterBody ?? "" },
         "Offer-Letter-Sample.pdf",
       );
     } catch {
@@ -104,7 +105,7 @@ export default function BrandingSettingsPage() {
       <div>
         <h1 className="text-base font-semibold text-gray-900">Offer Letter Branding</h1>
         <p className="text-xs text-gray-500 mt-1">
-          Upload letterhead, seal and signature used for generated offer letters.
+          Upload letterhead, seal and signature used for generated offer letters. The same assets are used for the joining letter.
         </p>
       </div>
 
@@ -187,7 +188,7 @@ export default function BrandingSettingsPage() {
               rows={2}
               value={form.offerLetterFooter ?? ""}
               onChange={(e) => setForm(f => ({ ...f, offerLetterFooter: e.target.value }))}
-              placeholder="Printed at the bottom of every offer letter (e.g. address, CIN)."
+              placeholder="Printed at the bottom of every letter (e.g. address, CIN)."
             />
           </div>
           </div>

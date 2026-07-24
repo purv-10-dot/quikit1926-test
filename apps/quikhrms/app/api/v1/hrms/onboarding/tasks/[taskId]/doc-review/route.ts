@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, validationError, notFound, internalError } from "@/lib/api-response";
+import { successResponse, validationError, notFound, conflict, internalError } from "@/lib/api-response";
+import { advanceAutomation } from "@/lib/services/onboarding-automation";
 
 // HR reviews a candidate-uploaded document on a Document Upload task and either
 // approves or rejects it. The task completes only when every required document
@@ -28,6 +29,16 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
     const task = await prisma.onboardingTask.findFirst({ where: { id: params.taskId, orgId } });
     if (!task) return notFound("Task not found");
     if (task.stepType !== "DocumentUpload") return validationError("This task is not a document-upload step.");
+
+    // Once the onboarding is closed, documents can't be re-reviewed (no
+    // re-rejecting an approved doc after the employee was activated).
+    const closedInst = await prisma.onboardingInstance.findFirst({
+      where: { id: task.instanceId, orgId },
+      select: { status: true },
+    });
+    if (closedInst && (closedInst.status === "OnboardCompleted" || closedInst.status === "OnboardCancelled")) {
+      return conflict("This onboarding is already closed — documents can no longer be re-reviewed.");
+    }
 
     const body = await req.json().catch(() => ({}));
     const docName = String(body?.docName ?? "");
@@ -104,6 +115,8 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
           where: { id: instance.employeeId },
           data: { status: "Active", inviteStatus: "Invited", updatedBy: userId },
         }).catch(() => null);
+      } else {
+        await advanceAutomation(task.instanceId, orgId); // chain: send next step
       }
     }
 

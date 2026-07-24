@@ -56,13 +56,12 @@ const isRequiredStage = (name: string) => REQUIRED_STAGES.some((r) => r.toLowerC
 function inferTemplate(name: string): MailTemplate {
   if (/interview|phonescreen|assessment|finalround/i.test(name)) return "interview";
   if (/offer/i.test(name)) return "offer-branded";
-  if (/joining/i.test(name)) return "joining-letter";
   if (/hired/i.test(name)) return "welcome";
   return null;
 }
 
 function canHaveMail(stageName: string): boolean {
-  return /interview|phonescreen|assessment|finalround|offer|hired|joining/i.test(stageName);
+  return /interview|phonescreen|assessment|finalround|offer|hired/i.test(stageName);
 }
 
 function templateOptions(stageName: string): { value: NonNullable<MailTemplate>; label: string }[] {
@@ -72,11 +71,9 @@ function templateOptions(stageName: string): { value: NonNullable<MailTemplate>;
       { value: "offer-default", label: "Default Content Letter" },
     ];
   }
-  if (/joining/i.test(stageName)) return [{ value: "joining-letter", label: "Joining Letter" }];
   if (/hired/i.test(stageName)) {
     return [
       { value: "welcome", label: "Welcome / Onboarding" },
-      { value: "joining-letter", label: "Joining Letter" },
     ];
   }
   if (/interview|phonescreen|assessment|finalround/i.test(stageName)) return [{ value: "interview", label: "Interview Invite" }];

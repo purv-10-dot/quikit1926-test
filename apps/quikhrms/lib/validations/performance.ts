@@ -53,11 +53,11 @@ export const updateGoalSchema = z.object({
   currentValue: z.number().optional(),
   progress: z.number().min(0).max(100).optional(),
   status: z.enum(["NotStarted", "InProgress", "AtRisk", "Completed", "Exceeded", "Deferred", "Cancelled"]).optional(),
-  weight: z.number().optional(),
+  weight: z.number().min(0, "Weight can’t be negative").max(100, "Weight can’t exceed 100%").optional(),
 });
 
 export const goalCheckInSchema = z.object({
-  currentValue: z.number(),
+  currentValue: z.number().min(0, "Value can’t be negative"),
   note: z.string().optional(),
 });
 

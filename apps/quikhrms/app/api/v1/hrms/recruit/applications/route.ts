@@ -157,6 +157,7 @@ export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
             id: a.id, status: a.offerStatus, designation: a.offerDesignation,
             offeredCTC: a.offeredCTC, joiningDate: a.offerJoiningDate,
             sentAt: a.offerSentAt, respondedAt: a.offerRespondedAt,
+            expiresAt: a.offerExpiresAt,
           }
         : null,
       docRequest: docRequestMap.get(a.id) ?? null,
@@ -165,7 +166,7 @@ export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
 
     return successResponse(enriched, paginationMeta(page, limit, total));
   } catch (error) { console.error("GET /recruit/applications error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.read"] });
 
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
   try {
@@ -215,8 +216,15 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       if (lastRejected) {
         // Count from the stable rejection time; fall back to updatedAt for rows
         // rejected before rejectedAt existed.
-        const eligibleAt = new Date(lastRejected.rejectedAt ?? lastRejected.updatedAt);
+        // Add whole months, clamped to the target month's last day so a
+        // month-end rejection (e.g. Jan 31 + 1mo) lands on Feb 28/29, not Mar 3.
+        const rejectedDate = new Date(lastRejected.rejectedAt ?? lastRejected.updatedAt);
+        const rejDay = rejectedDate.getDate();
+        const eligibleAt = new Date(rejectedDate);
+        eligibleAt.setDate(1);
         eligibleAt.setMonth(eligibleAt.getMonth() + coolMonths);
+        const lastDayOfTarget = new Date(eligibleAt.getFullYear(), eligibleAt.getMonth() + 1, 0).getDate();
+        eligibleAt.setDate(Math.min(rejDay, lastDayOfTarget));
         if (Date.now() < eligibleAt.getTime()) {
           const when = eligibleAt.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
           const forRole = lastRejected.requisition?.title ? ` for "${lastRejected.requisition.title}"` : "";
@@ -391,4 +399,4 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
 
     return successResponse({ ...app, warning }, undefined, 201);
   } catch (error) { console.error("POST /recruit/applications error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });

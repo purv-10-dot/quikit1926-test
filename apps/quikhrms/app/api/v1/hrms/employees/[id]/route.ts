@@ -354,5 +354,5 @@ export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }, para
     console.error("DELETE /employees/:id error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.employee.delete"] });
 

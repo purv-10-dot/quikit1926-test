@@ -4,6 +4,8 @@ import { verifyOfferResponseToken } from "@/lib/services/offer-response-token";
 import { fireWorkflow } from "@/lib/workflows/executor";
 import { resolveAndSend } from "@/lib/email/resolve";
 import { buildOfferResponseEmail } from "@/lib/email-templates/offer-response";
+import { publishNotification } from "@/lib/services/realtime";
+import { rateLimitOrResponse, clientIp } from "@/lib/rate-limit";
 
 // PUBLIC (token-gated, no login) — the offer accept/decline page a candidate
 // opens from the emailed link. Mirrors the exit-interview token flow.
@@ -21,13 +23,15 @@ async function loadOffer(token: string) {
       id: true, orgId: true, offerStatus: true, currentStage: true, stageHistory: true,
       offerDesignation: true, offeredCTC: true, offerJoiningDate: true, offerExpiresAt: true,
       candidate: { select: { firstName: true, lastName: true, email: true } },
-      requisition: { select: { title: true } },
+      requisition: { select: { title: true, createdById: true, raisedById: true } },
     },
   });
   return app ? { app, orgId: payload.orgId } : null;
 }
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  const rl = await rateLimitOrResponse("recruit.offer-response.get", clientIp(req), 40, 60);
+  if (rl) return rl;
   const { token } = await params;
   const ctx = await loadOffer(token);
   if (!ctx) return err("INVALID_TOKEN", "This offer link is invalid or has expired.", 400);
@@ -53,6 +57,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  const rl = await rateLimitOrResponse("recruit.offer-response.post", clientIp(req), 12, 60);
+  if (rl) return rl;
   const { token } = await params;
   const ctx = await loadOffer(token);
   if (!ctx) return err("INVALID_TOKEN", "This offer link is invalid or has expired.", 400);
@@ -101,6 +107,42 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
     event: accepted ? "recruit.offer.accepted" : "recruit.offer.rejected",
     payload: { offerId: app.id, applicationId: app.id, by: "candidate" },
   });
+
+  // Notify the recruiter / requisition owner in-app (best-effort — never blocks).
+  try {
+    const candidateName = `${app.candidate.firstName} ${app.candidate.lastName}`.trim();
+    const jobTitle = app.requisition?.title ?? app.offerDesignation ?? "the role";
+    const recipients = [...new Set(
+      [app.requisition?.createdById, app.requisition?.raisedById].filter((x): x is string => !!x),
+    )];
+    if (recipients.length) {
+      await prisma.hrmsNotification.createMany({
+        data: recipients.map((employeeId) => ({
+          orgId: app.orgId,
+          employeeId,
+          type: accepted ? ("Success" as const) : ("Warning" as const),
+          channel: "InApp" as const,
+          title: accepted ? "Offer accepted" : "Offer declined",
+          message: accepted
+            ? `${candidateName} accepted the offer for ${jobTitle}. Ready to onboard.`
+            : `${candidateName} declined the offer for ${jobTitle}.`,
+          link: "/recruit/pipeline",
+          entityType: "JobApplication",
+          entityId: app.id,
+        })),
+      });
+      publishNotification(app.orgId, recipients, {
+        title: accepted ? "Offer accepted" : "Offer declined",
+        message: accepted
+          ? `${candidateName} accepted the offer for ${jobTitle}.`
+          : `${candidateName} declined the offer for ${jobTitle}.`,
+        type: accepted ? "Success" : "Warning",
+        link: "/recruit/pipeline",
+      }).catch(() => {});
+    }
+  } catch (e) {
+    console.error("[offer-response] HR notification failed:", e);
+  }
 
   // Confirmation email to the candidate (best-effort — never block the response).
   if (app.candidate.email) {

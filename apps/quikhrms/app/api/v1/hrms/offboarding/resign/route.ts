@@ -8,6 +8,7 @@ import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { resolveAndSend } from "@/lib/email/resolve";
 import { buildResignationNoticeEmail } from "@/lib/email-templates/resignation-notice";
 import { resolveApprovalChainLevels } from "@/lib/services/approval-chain";
+import { whereEmployeeHasAnyRole } from "@/lib/rbac/queries";
 
 /** Convert a linked notice period to whole days (same math as the forms). */
 function periodToDays(p: { duration: number; unit: string }): number {
@@ -83,13 +84,21 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
 
     // Approval routing: use the configured Offboarding approval chain
     // (Settings → Approval Chains) — level 1 is the first approver. If no chain
-    // is configured, fall back to the employee's direct reporting manager. If
-    // neither resolves, auto-approve (nobody to route to).
+    // is configured, fall back to the employee's direct reporting manager, then
+    // to an org admin. A resignation is NEVER silently self-approved — it always
+    // stays Pending until someone with authority decides it.
     let approverId: string | null = null;
     const chain = await resolveApprovalChainLevels(orgId, "Offboarding", employeeId);
     if (chain.ok) approverId = chain.levels[0]?.approverId ?? null;
     if (!approverId) approverId = employee.reportingManagerId ?? null;
-    const approvalStatus = approverId ? "Pending" : "Approved";
+    if (!approverId) {
+      const admin = await prisma.employee.findFirst({
+        where: { orgId, deletedAt: null, status: "Active", id: { not: employeeId }, ...whereEmployeeHasAnyRole(["admin"]) },
+        select: { id: true },
+      });
+      approverId = admin?.id ?? null;
+    }
+    const approvalStatus = "Pending";
 
     const resignData = {
       resignationDate,

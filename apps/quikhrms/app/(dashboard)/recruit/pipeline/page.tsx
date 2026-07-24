@@ -52,6 +52,7 @@ interface ApplicationItem {
     id: string; status: string; designation: string;
     offeredCTC: string; joiningDate: string;
     sentAt: string | null; respondedAt: string | null;
+    expiresAt: string | null;
   } | null;
   docRequest: {
     status: "Pending" | "Completed" | "Cancelled";
@@ -246,6 +247,7 @@ export default function PipelinePage() {
   const [docBlockApp, setDocBlockApp] = useState<ApplicationItem | null>(null);
 
   const [viewMode] = useState<"kanban" | "list">("list");
+  const [showClosed, setShowClosed] = useState(false);
   // Overflow (···) row-actions menu — fixed-positioned so it escapes the table's
   // horizontal-scroll container (overflow-x-auto also promotes overflow-y to auto,
   // which would otherwise add a stray vertical scrollbar). Holds the open row id
@@ -337,10 +339,16 @@ export default function PipelinePage() {
   const [offerFb, setOfferFb] = useState(emptyOfferFb);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["pipeline-apps", reqFilter],
+    queryKey: ["pipeline-apps", reqFilter, showClosed],
     // Include offered / on-hold candidates so the Offer stage shows the whole
     // offer lifecycle (Draft → Sent → Accept/Decline), not just AppActive.
-    queryFn: () => api.get<ApplicationItem[]>(`/api/v1/hrms/recruit/applications?status=AppActive,AppOffered,AppOnHold&limit=200${reqFilter ? `&requisitionId=${reqFilter}` : ""}`),
+    // "Show closed" also pulls declined + rejected candidates onto the board.
+    queryFn: () => {
+      const statuses = showClosed
+        ? "AppActive,AppOffered,AppOnHold,AppDeclined,AppRejected"
+        : "AppActive,AppOffered,AppOnHold";
+      return api.get<ApplicationItem[]>(`/api/v1/hrms/recruit/applications?status=${statuses}&limit=200${reqFilter ? `&requisitionId=${reqFilter}` : ""}`);
+    },
   });
 
   const { data: pipelinesData } = useQuery({
@@ -716,6 +724,24 @@ export default function PipelinePage() {
     },
   });
 
+  // Resend the offer email (regenerates the accept/decline link + resets the sent
+  // timestamp). Used when an offer has expired or the candidate lost the email.
+  const resendOfferMut = useMutation({
+    mutationFn: (app: ApplicationItem) => api.post(`/api/v1/hrms/mail/offer`, { applicationId: app.id }),
+    onSuccess: () => { invalidateAll(); toast.success("Offer resent", "A fresh accept/decline link was emailed to the candidate."); },
+    onError: (e: unknown) => toast.error("Couldn't resend offer", e instanceof Error ? e.message : undefined),
+  });
+
+  // Extend an offer's validity by 14 days from today.
+  const extendOfferMut = useMutation({
+    mutationFn: (app: ApplicationItem) => {
+      const d = new Date(); d.setDate(d.getDate() + 14);
+      return api.patch(`/api/v1/hrms/recruit/offers/${app.id}`, { expiresAt: d.toISOString().slice(0, 10) });
+    },
+    onSuccess: () => { invalidateAll(); toast.success("Offer extended", "New expiry: 14 days from today."); },
+    onError: (e: unknown) => toast.error("Couldn't extend offer", e instanceof Error ? e.message : undefined),
+  });
+
   // Re-send the pending post-offer document request reminder email.
   const remindMut = useMutation({
     mutationFn: (app: ApplicationItem) =>
@@ -967,6 +993,11 @@ export default function PipelinePage() {
           <span className="text-[11.5px] font-semibold text-green-700 bg-green-50 rounded-full px-2 py-0.5">
             {apps.length} candidate{apps.length === 1 ? "" : "s"}
           </span>
+          <label className="ml-auto inline-flex items-center gap-1.5 text-[11.5px] font-medium text-gray-600 cursor-pointer select-none">
+            <input type="checkbox" checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)}
+              className="rounded border-gray-300 text-green-600 focus:ring-green-500" />
+            Show closed (declined / rejected)
+          </label>
         </div>
       )}
 
@@ -1002,6 +1033,7 @@ export default function PipelinePage() {
                 const stageName = app.currentStage ?? "—";
                 const si = STAGES.indexOf(stageName);
                 const isHired = stageName === "Hired";
+                const isClosed = app.status === "AppRejected" || app.status === "AppDeclined";
                 return (
                   <tr key={app.id} onClick={() => router.push(`/recruit/candidates/${app.candidate.id}`)} className="row-stagger hover:bg-slate-50/60 transition cursor-pointer" style={{ ["--i" as never]: Math.min(i, 10) }}>
                     <td className="px-3 py-2.5">
@@ -1029,11 +1061,14 @@ export default function PipelinePage() {
                     <td className="px-3 py-2.5">
                       <span className={clsx(
                         "inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold ring-1",
-                        isHired ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
-                          : app.status === "AppRejected" ? "bg-red-50 text-red-700 ring-red-200"
+                        app.status === "AppRejected" ? "bg-red-50 text-red-700 ring-red-200"
+                          : app.status === "AppDeclined" ? "bg-orange-50 text-orange-700 ring-orange-200"
+                          : isHired ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
                           : "bg-[#dcfce7] text-[#16a34a] ring-[#22c55e]",
                       )}>
-                        {stageName.replace(/([A-Z])/g, " $1").trim()}
+                        {app.status === "AppRejected" ? "Rejected"
+                          : app.status === "AppDeclined" ? "Declined"
+                          : stageName.replace(/([A-Z])/g, " $1").trim()}
                       </span>
                     </td>
                     <td className="px-3 py-2.5 text-slate-600 text-xs">
@@ -1053,13 +1088,49 @@ export default function PipelinePage() {
                     </td>
                     <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
-                        {!isHired && (() => {
+                        {/* Offer stage — the full offer lifecycle lives here in the
+                            List view: Send → Pending/Expired → candidate responds
+                            (email link) → Accepted/Declined. Resend/Extend and a
+                            manual override (phone acceptance / lost email) too. */}
+                        {!isHired && !isClosed && /offer/i.test(app.currentStage ?? "") ? (() => {
+                          const o = app.latestOffer;
+                          if (!o || o.status === "OfferDraft") {
+                            return (
+                              <button onClick={() => setOfferWizardApp(app)}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold ring-1 bg-emerald-50 text-emerald-700 ring-emerald-200 hover:bg-emerald-100">
+                                <Send size={10} /> Send Offer
+                              </button>
+                            );
+                          }
+                          if (o.status === "OfferSent") {
+                            const expired = !!o.expiresAt && new Date() > new Date(o.expiresAt);
+                            return (
+                              <div className="flex items-center gap-1">
+                                <span className={clsx("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ring-1",
+                                  expired ? "bg-red-50 text-red-700 ring-red-200" : "bg-amber-50 text-amber-700 ring-amber-200")}>
+                                  {expired ? <><AlertTriangle size={10} /> Expired</> : <><Clock size={10} /> Pending</>}
+                                </span>
+                                <button title="Resend offer link" onClick={() => resendOfferMut.mutate(app)} disabled={resendOfferMut.isPending}
+                                  className="inline-flex items-center justify-center w-6 h-6 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-50"><Send size={11} /></button>
+                                <button title="Extend +14 days" onClick={() => extendOfferMut.mutate(app)} disabled={extendOfferMut.isPending}
+                                  className="inline-flex items-center justify-center w-6 h-6 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-50"><Clock size={11} /></button>
+                                <button title="Mark accepted (manual override)" onClick={() => setOfferDecision({ app, kind: "accept" })}
+                                  className="inline-flex items-center justify-center w-6 h-6 rounded border border-emerald-200 text-emerald-600 hover:bg-emerald-50"><Check size={11} /></button>
+                                <button title="Mark declined (manual override)" onClick={() => setOfferDecision({ app, kind: "decline" })}
+                                  className="inline-flex items-center justify-center w-6 h-6 rounded border border-red-200 text-red-600 hover:bg-red-50"><X size={11} /></button>
+                              </div>
+                            );
+                          }
+                          return (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ring-1 bg-emerald-50 text-emerald-700 ring-emerald-200">
+                              <CheckCircle size={10} /> Offer {o.status.replace("Offer", "")}
+                            </span>
+                          );
+                        })() : !isHired && !isClosed ? (() => {
                           const pending = isPendingSchedule(app);
-                          // #4 — at the Offer stage, feedback is blocked until offer details are filled.
-                          const needsOffer = /offer/i.test(app.currentStage ?? "") && !app.latestOffer;
                           // Feedback stays locked until the interview's start time.
                           const locked = !pending && feedbackNotYet(app);
-                          const disabled = needsOffer || locked;
+                          const disabled = locked;
                           return (
                             <button
                               onClick={() => openAction(app)}
@@ -1072,12 +1143,12 @@ export default function PipelinePage() {
                                     ? "bg-[#dcfce7] text-[#16a34a] ring-[#22c55e] hover:bg-[#bbf7d0]"
                                     : "bg-emerald-50 text-emerald-700 ring-emerald-200 hover:bg-emerald-100",
                               )}
-                              title={needsOffer ? "Fill the offer details first" : locked ? "Feedback opens at the interview start time" : pending ? "Schedule interview" : "Give feedback"}
+                              title={locked ? "Feedback opens at the interview start time" : pending ? "Schedule interview" : "Give feedback"}
                             >
                               {pending ? <><CalendarPlus size={10} /> Schedule</> : <><Star size={10} /> Feedback</>}
                             </button>
                           );
-                        })()}
+                        })() : null}
                         {isHired && (
                           <button onClick={() => onboardMut.mutate(app.id)} disabled={onboardMut.isPending}
                             className="inline-flex items-center gap-1 px-2.5 py-1 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-md text-[11px] font-semibold shadow-sm disabled:opacity-50">
@@ -1186,11 +1257,42 @@ export default function PipelinePage() {
                         );
                       }
                       if (o.status === "OfferSent") {
-                        // The candidate accepts/declines from their emailed link;
-                        // HR just sees the pending state here.
+                        // The candidate accepts/declines from their emailed link.
+                        // HR sees the pending state, an expiry warning, and a
+                        // manual-override path for phone acceptances / edge cases.
+                        const expired = !!o.expiresAt && new Date() > new Date(o.expiresAt);
                         return (
-                          <div className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-amber-50 text-amber-700 ring-1 ring-amber-200">
-                            <Clock size={13} /> Pending candidate acceptance
+                          <div className="w-full space-y-1.5">
+                            {expired ? (
+                              <div className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-red-50 text-red-700 ring-1 ring-red-200">
+                                <AlertTriangle size={13} /> Offer expired
+                              </div>
+                            ) : (
+                              <div className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-amber-50 text-amber-700 ring-1 ring-amber-200">
+                                <Clock size={13} /> Pending candidate acceptance
+                              </div>
+                            )}
+                            <div className="flex items-center gap-1.5">
+                              <button onClick={() => resendOfferMut.mutate(app)} disabled={resendOfferMut.isPending}
+                                className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50">
+                                <Send size={11} /> Resend
+                              </button>
+                              <button onClick={() => extendOfferMut.mutate(app)} disabled={extendOfferMut.isPending}
+                                className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50">
+                                <Clock size={11} /> Extend
+                              </button>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <button onClick={() => setOfferDecision({ app, kind: "accept" })}
+                                className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium text-emerald-700 hover:bg-emerald-50">
+                                <Check size={11} /> Mark accepted
+                              </button>
+                              <button onClick={() => setOfferDecision({ app, kind: "decline" })}
+                                className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium text-red-600 hover:bg-red-50">
+                                <X size={11} /> Mark declined
+                              </button>
+                            </div>
+                            <p className="text-[10px] text-gray-400 text-center leading-tight">Manual override — for phone acceptances or a lost email.</p>
                           </div>
                         );
                       }
@@ -2369,6 +2471,50 @@ function FeedbackHistoryModal({ app, onClose }: { app: ApplicationItem; onClose:
             </span>
           </div>
         </div>
+
+        {/* Stage timeline — how long the candidate spent moving between stages,
+            computed from stageHistory dates (+ applied date as the start). */}
+        {(() => {
+          const now = Date.now();
+          const fmtD = (d: string) => new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" });
+          const daysBetween = (a: string, b: number | string) =>
+            Math.max(0, Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000));
+          const moves = (app.stageHistory ?? [])
+            .filter((h): h is { stage: string; date: string } => !!h.stage && !!h.date)
+            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+          const events: { label: string; date: string }[] = [];
+          if (app.appliedDate) events.push({ label: "Applied", date: app.appliedDate });
+          for (const m of moves) events.push({ label: m.stage.replace(/([A-Z])/g, " $1").trim(), date: m.date });
+          if (events.length === 0) return null;
+          const totalDays = daysBetween(events[0].date, now);
+          const inStage = daysBetween(events[events.length - 1].date, now);
+          return (
+            <div className="border border-slate-200 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Clock size={13} className="text-green-600" />
+                <h3 className="text-xs font-bold text-slate-900">Stage Timeline</h3>
+                <span className="ml-auto text-[11px] font-semibold text-green-700 bg-green-50 rounded-full px-2 py-0.5">{totalDays}d total</span>
+              </div>
+              <ol className="space-y-2">
+                {events.map((e, i) => (
+                  <li key={i} className="flex items-center gap-2 text-xs">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
+                    <span className="font-medium text-slate-800">{e.label}</span>
+                    <span className="text-slate-400">{fmtD(e.date)}</span>
+                    {i > 0 && (
+                      <span className="ml-auto text-[11px] font-semibold text-slate-500" title="Time since the previous stage">
+                        +{daysBetween(events[i - 1].date, e.date)}d
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ol>
+              <p className="mt-3 text-[11px] text-slate-500">
+                Currently in <b className="text-slate-700">{(res?.currentStage ?? app.currentStage ?? "—").replace(/([A-Z])/g, " $1").trim()}</b> · {inStage} day{inStage === 1 ? "" : "s"} in this stage.
+              </p>
+            </div>
+          );
+        })()}
 
         {isLoading ? (
           <div className="text-center py-8 text-xs text-slate-500">Loading feedback history...</div>

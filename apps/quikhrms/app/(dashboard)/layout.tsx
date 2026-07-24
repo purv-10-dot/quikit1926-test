@@ -37,7 +37,7 @@ export default async function HRMSLayout({ children }: { children: React.ReactNo
             {/* Global nav bar — present on every /hrms page, not just the home dashboard. */}
             {/* Top bar + module sub-menu stick together as one header block. */}
             <div className="sticky top-0 z-30">
-              <div className="bg-gray-50 dark:bg-[#0b1220] px-4 lg:px-6 py-3 border-b border-gray-200/60 dark:border-white/10">
+              <div className="hrms-topbar bg-gray-50 dark:bg-[#0b1220] px-4 lg:px-6 py-3 border-b border-gray-200/60 dark:border-white/10">
                 <TopBar />
               </div>
             </div>

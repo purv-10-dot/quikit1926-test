@@ -10,6 +10,7 @@ import { FilterBar, FilterDivider, FilterField, FilterPills, FilterSearch } from
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import { TaskRow, type TaskRowData } from "./_components/task-row";
 import { NewTaskModal } from "./_components/new-task-modal";
+import { PageBackground } from "@/components/hrms/page-background";
 
 const TASK_STATUS_LABELS: Record<TaskRowData["status"], string> = {
   Open: "Open",
@@ -23,6 +24,8 @@ export default function TasksHubPage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <Link href="/dashboard" className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-[#22c55e] mb-4">
         <ChevronLeft size={14} /> Back
       </Link>

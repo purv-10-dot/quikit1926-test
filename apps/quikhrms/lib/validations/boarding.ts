@@ -132,6 +132,13 @@ export const offboardingTaskTemplateSchema = z.object({
   department: z.string().optional().nullable(),
   category: OffboardingTaskCategoryEnum.default("Clearance"),
   sortOrder: z.number().int().default(0),
+  // Rich workflow-builder fields (stored in the template's tasks JSON), mirroring
+  // onboarding. stepType is the rich type; config holds its type-specific settings.
+  stepType: z.string().optional(),
+  config: z.record(z.any()).optional().nullable(),
+  assigneeRole: z.string().optional(),
+  dueInDays: z.number().int().optional(),
+  isMandatory: z.boolean().optional(),
 });
 
 // ─── Offboarding Templates ──────────────────────────────

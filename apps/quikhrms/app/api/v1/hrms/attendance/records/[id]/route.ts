@@ -9,8 +9,9 @@ import { attendanceDayStart } from "@/lib/attendance/day";
 import { regularizationBlockReason } from "@/lib/attendance/regularization-guards";
 
 /** GET /api/v1/hrms/attendance/records/:id */
-export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
+export const GET = withAuth(async (_req: NextRequest, ctx, params) => {
   try {
+    const { orgId } = ctx;
     const record = await prisma.attendanceRecord.findFirst({
       where: { id: params.id, orgId, deletedAt: null },
       include: {
@@ -18,6 +19,17 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
       },
     });
     if (!record) return notFound("Attendance record not found");
+
+    // Scope gate: only a full-access reader, the employee themselves, or their
+    // manager may view a record (blocks cross-employee IDOR).
+    const canAll = ctx.permissions.includes("*") || ctx.permissions.includes("hrms.attendance.read");
+    if (!canAll) {
+      const callerEmpId = await getCallerEmployeeId(ctx);
+      const reportees = callerEmpId ? await getCallerReporteeIds(ctx) : [];
+      if (!callerEmpId || (callerEmpId !== record.employeeId && !reportees.includes(record.employeeId))) {
+        return forbidden("You cannot view this attendance record.");
+      }
+    }
     return successResponse(record);
   } catch (error) {
     console.error("GET /attendance/records/:id error:", error);
@@ -40,6 +52,20 @@ export const PATCH = withAuth(async (req: NextRequest, ctx, params) => {
     if (body.regularizationReason) {
       const parsed = regularizationSchema.safeParse(body);
       if (!parsed.success) return validationError("Validation failed", parsed.error.flatten().fieldErrors);
+
+      // Ownership: you can only regularize your OWN attendance record.
+      const requesterEmpId = await getCallerEmployeeId(ctx);
+      if (!requesterEmpId || requesterEmpId !== existing.employeeId) {
+        return forbidden("You can only regularize your own attendance record.");
+      }
+
+      // Duration cap — a single day can't span more than 24h.
+      if (parsed.data.checkIn && parsed.data.checkOut) {
+        const ci = new Date(parsed.data.checkIn).getTime();
+        const co = new Date(parsed.data.checkOut).getTime();
+        if (!(co > ci)) return validationError("Check-out must be after check-in.");
+        if (co - ci > 24 * 60 * 60 * 1000) return validationError("A single day's regularization can't exceed 24 hours.");
+      }
 
       // Can't regularize today (day not over yet) or a future date. Compare by
       // IST calendar date to match how attendance days are bucketed.
@@ -130,13 +156,19 @@ export const PATCH = withAuth(async (req: NextRequest, ctx, params) => {
       const parsed = regularizationActionSchema.safeParse(body);
       if (!parsed.success) return validationError("Validation failed", parsed.error.flatten().fieldErrors);
 
+      // Never approve/reject your OWN regularization, even with the approve
+      // permission — closes the self-approval leg of the payroll-fraud chain.
+      const approverEmpId = await getCallerEmployeeId(ctx);
+      if (approverEmpId && approverEmpId === existing.employeeId) {
+        return forbidden("You can't approve your own regularization request.");
+      }
+
       const isSuper = permissions.includes("*");
       const hasApprove = permissions.includes("hrms.attendance.approve");
       let allowed = isSuper || hasApprove;
       if (!allowed) {
-        const callerEmpId = await getCallerEmployeeId(ctx);
-        const reportees = callerEmpId ? await getCallerReporteeIds(ctx) : [];
-        allowed = !!callerEmpId && reportees.includes(existing.employeeId);
+        const reportees = approverEmpId ? await getCallerReporteeIds(ctx) : [];
+        allowed = !!approverEmpId && reportees.includes(existing.employeeId);
       }
       if (!allowed) return forbidden("Not authorised to approve this regularization");
 

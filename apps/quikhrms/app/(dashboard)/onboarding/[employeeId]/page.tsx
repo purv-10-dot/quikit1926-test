@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
-import { ArrowLeft, CheckCircle, Clock, PauseCircle, SkipForward, Check, Trophy, X, AlertTriangle, Upload, Paperclip, Shield, BadgeCheck, Plus, Trash2, Sparkles, Loader2, ChevronDown, ChevronUp, Banknote, Send, UserCog } from "lucide-react";
+import { ArrowLeft, CheckCircle, Clock, PauseCircle, SkipForward, Check, Trophy, X, AlertTriangle, Upload, Paperclip, Shield, BadgeCheck, Plus, Trash2, Sparkles, Loader2, ChevronDown, ChevronUp, Banknote, Send, UserCog, FileText, Play, Pause, CalendarClock } from "lucide-react";
 import { BankDetailsFields } from "@/components/hrms/bank-details-fields";
 import { useToast } from "@/components/hrms/toast";
 import { clsx } from "clsx";
@@ -16,6 +16,7 @@ import { NumberInput } from "@/components/hrms/ui/number-input";
 import { SkeletonLine } from "@/components/hrms/skeleton";
 import { todayInput } from "@/lib/utils/date-input";
 import { withBasePath } from "@/lib/utils/base-path";
+import { EMAIL_EVENT_MAP } from "@/lib/email/registry";
 
 type TaskStatus = "TaskPending" | "TaskInProgress" | "TaskCompleted" | "TaskSkipped" | "TaskBlocked";
 
@@ -23,7 +24,8 @@ type TaskStatus = "TaskPending" | "TaskInProgress" | "TaskCompleted" | "TaskSkip
 // from the onboarding template onto the live task.
 const STEP_TYPE_LABEL: Record<string, string> = {
   CustomTask: "Custom Task", CompleteProfile: "Complete Profile", DocumentUpload: "Document Upload", SendEmail: "Send Email", Approval: "Approval",
-  FillForm: "Fill Form", ESign: "E-Sign", ReadPolicy: "Read Policy", Training: "Training",
+  FillForm: "Fill Form", ESign: "E-Sign", ReadPolicy: "Policy / Training", Training: "Policy / Training",
+  BGV: "Background Verification", Clearance: "Admin / Facilities",
   ITProvisioning: "IT Provisioning", AssetAssignment: "Asset Assignment", Notification: "Notification", ExternalLink: "External Link",
 };
 function stepSummary(stepType?: string | null, config?: Record<string, unknown> | null): string | null {
@@ -31,12 +33,28 @@ function stepSummary(stepType?: string | null, config?: Record<string, unknown> 
   const g = (k: string) => { const v = config[k]; return v != null && v !== "" ? String(v) : null; };
   const join = (...parts: (string | null)[]) => parts.filter(Boolean).join(" · ") || null;
   switch (stepType) {
-    case "SendEmail": return join(g("template") && `Template: ${g("template")}`, g("recipient") && `To: ${g("recipient")}`);
+    case "SendEmail": {
+      const keys = Array.isArray(config.templates) ? (config.templates as string[]).filter(Boolean) : (config.template ? [String(config.template)] : []);
+      if (!keys.length) return null;
+      const names = keys.map((k) => (k === "onboarding.joining-letter" ? "Joining Letter" : EMAIL_EVENT_MAP[k]?.label ?? k));
+      return `${keys.length} email${keys.length === 1 ? "" : "s"}: ${names.join(" · ")}`;
+    }
     case "Approval": return join(g("approver") && `Approver: ${g("approver")}`, g("autoApprove") && `Auto-approve: ${g("autoApprove")}`);
     case "DocumentUpload": return join(g("allowedTypes") && `Types: ${g("allowedTypes")}`, g("maxSize") && `Max: ${g("maxSize")}`);
-    case "AssetAssignment": return join(g("asset") && `Asset: ${g("asset")}`, g("quantity") && `Qty: ${g("quantity")}`);
+    case "AssetAssignment": {
+      const list = Array.isArray(config.assets) ? (config.assets as { type: string; qty?: number; custom?: string }[]) : [];
+      if (list.length) return list.map((a) => `${a.type === "Custom" ? (a.custom?.trim() || "Custom") : a.type} ×${a.qty || 1}`).join(", ");
+      return join(g("asset") && `Asset: ${g("asset")}`, g("quantity") && `Qty: ${g("quantity")}`);
+    }
     case "Training": return join(g("course") && `Course: ${g("course")}`, g("duration") && `Duration: ${g("duration")}`);
-    case "ITProvisioning": return join(g("system") && `Access: ${g("system")}`, g("owner") && `Owner: ${g("owner")}`);
+    case "ReadPolicy": { const n = Array.isArray(config.files) ? config.files.length : 0; return n ? `${n} file${n === 1 ? "" : "s"} to acknowledge` : null; }
+    case "ITProvisioning": {
+      const list = Array.isArray(config.systems) ? (config.systems as string[]) : [];
+      const other = typeof config.otherSystems === "string" ? config.otherSystems.split(",").map((s) => s.trim()).filter(Boolean) : [];
+      const all = [...list, ...other];
+      if (all.length) return `Access: ${all.join(", ")}`;
+      return join(g("system") && `Access: ${g("system")}`, g("owner") && `Owner: ${g("owner")}`);
+    }
     case "Notification": return g("message") && `Message: ${g("message")}`;
     default: return null;
   }
@@ -58,6 +76,20 @@ function guessCategory(title: string): DocCategory {
   return "Other";
 }
 
+// Mirrors the server's isSendableStep — a step automation can email out.
+function sendableStep(stepType?: string | null, config?: Record<string, unknown> | null): boolean {
+  const st = stepType ?? "CustomTask";
+  const cfg = config ?? {};
+  if (st === "DocumentUpload") return Array.isArray(cfg.documents) && (cfg.documents as unknown[]).filter(Boolean).length > 0;
+  if (st === "ReadPolicy") return Array.isArray(cfg.files) && (cfg.files as unknown[]).length > 0;
+  if (st === "SendEmail") return (Array.isArray(cfg.templates) && (cfg.templates as unknown[]).filter(Boolean).length > 0) || !!cfg.template;
+  if (["CustomTask", "AssetAssignment", "ITProvisioning"].includes(st)) {
+    const ids = Array.isArray(cfg.assignEmployeeIds) ? (cfg.assignEmployeeIds as string[]).filter(Boolean) : (cfg.assignEmployeeId ? [cfg.assignEmployeeId as string] : []);
+    return ids.length > 0;
+  }
+  return false;
+}
+
 interface Task {
   id: string; title: string; description: string | null; assigneeId: string | null; assigneeRole: string;
   category: string; dueDate: string | null; status: TaskStatus; completedAt: string | null; notes: string | null;
@@ -68,8 +100,15 @@ interface Task {
 interface Instance {
   id: string; employeeId: string; startDate: string; status: string; completedAt: string | null;
   notes: string | null; progress: number; totalTasks: number; completedTasks: number;
+  automated?: boolean; phase?: string;
   tasks: Task[]; template: { id: string; name: string } | null;
-  employee: { id: string; firstName: string | null; lastName: string | null; employeeCode: string | null } | null;
+  employee: {
+    id: string; firstName: string | null; lastName: string | null; employeeCode: string | null;
+    jobTitle: string | null; dateOfJoining: string | null;
+    department: { name: string } | null;
+    designation: { title: string } | null;
+    reportingManager: { firstName: string; lastName: string } | null;
+  } | null;
 }
 
 export default function OnboardingTrackerPage({ params }: { params: { employeeId: string } }) {
@@ -110,12 +149,60 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
   // the step In Progress (NOT complete) so the button disables/persists. A failed
   // send throws before the status update, so the step stays Pending for a retry.
   const sendEmailMut = useMutation({
-    mutationFn: async (taskId: string) => {
-      await api.post("/api/v1/hrms/mail/welcome", { employeeId });
-      await api.put(`/api/v1/hrms/onboarding/tasks/${taskId}`, { status: "TaskInProgress" });
+    mutationFn: (taskId: string) => api.post<{ sent: number }>(`/api/v1/hrms/onboarding/tasks/${taskId}/send-emails`, {}),
+    onSuccess: (r) => { qc.invalidateQueries({ queryKey: ["onboarding", employeeId] }); toast.success(`${r.data.sent} email${r.data.sent === 1 ? "" : "s"} sent`, "This step is now complete."); },
+    onError: (e: unknown) => toast.error("Couldn't send emails", e instanceof Error ? e.message : undefined),
+  });
+
+  // Per-step deadline (due date) — set/clear on the checklist.
+  const dueDateMut = useMutation({
+    mutationFn: ({ taskId, dueDate }: { taskId: string; dueDate: string | null }) => api.put(`/api/v1/hrms/onboarding/tasks/${taskId}`, { dueDate }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["onboarding", employeeId] }),
+    onError: (e: unknown) => toast.error("Couldn't set deadline", e instanceof Error ? e.message : undefined),
+  });
+
+  // "Start onboarding" — completion-chained automation on/off.
+  const automationMut = useMutation({
+    mutationFn: (enabled: boolean) => api.post(`/api/v1/hrms/onboarding/${employeeId}/start-automation`, { enabled }),
+    onSuccess: (_r, enabled) => {
+      qc.invalidateQueries({ queryKey: ["onboarding", employeeId] });
+      toast.success(enabled ? "Automation started" : "Automation stopped",
+        enabled ? "The first step's request has been sent. Each step now triggers the next." : undefined);
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["onboarding", employeeId] }); toast.success("Email sent", "Mark the step complete when done."); },
-    onError: (e: unknown) => toast.error("Couldn't send email", e instanceof Error ? e.message : undefined),
+    onError: (e: unknown) => toast.error("Couldn't update automation", e instanceof Error ? e.message : undefined),
+  });
+
+  // Apply a template to an onboarding started without one (only the auto Complete Profile step).
+  const [applyTemplateId, setApplyTemplateId] = useState("");
+  const instPhase = data?.data?.phase ?? "Onboarding";
+  const { data: tplData } = useQuery({
+    queryKey: ["onboarding", "templates", "active", instPhase],
+    queryFn: () => api.get<Array<{ id: string; name: string }>>(`/api/v1/hrms/onboarding/templates?kind=${instPhase === "PreOnboarding" ? "PreOnboarding" : "Onboarding"}&limit=100`),
+  });
+  const onbTemplates = tplData?.data ?? [];
+  const applyTemplateMut = useMutation({
+    mutationFn: (templateId: string) => api.post(`/api/v1/hrms/onboarding/${employeeId}/apply-template`, { templateId }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["onboarding", employeeId] }); toast.success("Template applied", "The checklist has been populated."); },
+    onError: (e: unknown) => toast.error("Couldn't apply template", e instanceof Error ? e.message : undefined),
+  });
+  // Re-apply: rebuild the checklist from the latest version of the template.
+  const reApplyMut = useMutation({
+    mutationFn: (templateId: string) => api.post(`/api/v1/hrms/onboarding/${employeeId}/apply-template`, { templateId, replace: true }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["onboarding", employeeId] }); toast.success("Template re-applied", "The checklist was rebuilt from the latest template."); },
+    onError: (e: unknown) => toast.error("Couldn't re-apply template", e instanceof Error ? e.message : undefined),
+  });
+
+  // Pre-Onboarding: set a BGV check status, and move to Onboarding when ready.
+  const bgvMut = useMutation({
+    mutationFn: (v: { taskId: string; check: string; status: "clear" | "discrepancy" | "pending" }) =>
+      api.post(`/api/v1/hrms/onboarding/tasks/${v.taskId}/bgv`, { check: v.check, status: v.status }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["onboarding", employeeId] }),
+    onError: (e: unknown) => toast.error("Couldn't update BGV", e instanceof Error ? e.message : undefined),
+  });
+  const toOnboardingMut = useMutation({
+    mutationFn: () => api.post(`/api/v1/hrms/onboarding/${employeeId}/to-onboarding`, {}),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["onboarding", employeeId] }); toast.success("Moved to Onboarding", "Day-1 checklist has begun."); },
+    onError: (e: unknown) => toast.error("Can't move yet", e instanceof Error ? e.message : undefined),
   });
 
   // Document Upload step — email the candidate a secure upload link.
@@ -123,6 +210,21 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
     mutationFn: (taskId: string) => api.post(`/api/v1/hrms/onboarding/tasks/${taskId}/doc-request`, {}),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["onboarding", employeeId] }); toast.success("Request sent", "The candidate has been emailed an upload link."); },
     onError: (e: unknown) => toast.error("Couldn't send request", e instanceof Error ? e.message : undefined),
+  });
+
+  // Policy / Training step — email the candidate a secure read-&-acknowledge link.
+  const ackRequestMut = useMutation({
+    mutationFn: (taskId: string) => api.post(`/api/v1/hrms/onboarding/tasks/${taskId}/ack-request`, {}),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["onboarding", employeeId] }); toast.success("Request sent", "The candidate has been emailed an acknowledgement link."); },
+    onError: (e: unknown) => toast.error("Couldn't send request", e instanceof Error ? e.message : undefined),
+  });
+
+  // Staff-assigned steps (Custom Task / Asset / IT) — email the assignee(s) a
+  // one-click "Mark as done" link, on demand.
+  const notifyAssigneesMut = useMutation({
+    mutationFn: (taskId: string) => api.post(`/api/v1/hrms/onboarding/tasks/${taskId}/notify-assignees`, {}),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["onboarding", employeeId] }); toast.success("Sent", "The assignee(s) have been emailed."); },
+    onError: (e: unknown) => toast.error("Couldn't send", e instanceof Error ? e.message : undefined),
   });
 
   // HR reviews the candidate's uploaded documents (approve / reject).
@@ -259,36 +361,93 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
     (t) => t.isMandatory && t.status !== "TaskCompleted" && t.status !== "TaskSkipped",
   ).length;
 
+  // The step automation would send next — used to label the rest as "Queued".
+  const firstPendingSendableId = inst.tasks.find(
+    (t) => sendableStep(t.stepType, t.config) && t.status !== "TaskCompleted" && t.status !== "TaskSkipped",
+  )?.id ?? null;
+  const canEditDue = (!isSelfView || isAdminViewer) && inst.status !== "OnboardCompleted" && inst.status !== "OnboardCancelled";
+
+  // Pre-Onboarding gate: all steps done + BGV fully Clear → can move to Onboarding.
+  const isPreOnboarding = inst.phase === "PreOnboarding";
+  const bgvTask = inst.tasks.find((t) => t.stepType === "BGV");
+  const bgvClear = (() => {
+    if (!bgvTask) return true;
+    const cfg = (bgvTask.config ?? {}) as Record<string, unknown>;
+    const checks = Array.isArray(cfg.bgvChecks) ? (cfg.bgvChecks as string[]) : [];
+    const st = (cfg.bgvStatus ?? {}) as Record<string, string>;
+    return checks.length === 0 || checks.every((c) => st[c] === "clear");
+  })();
+  const preAllDone = inst.tasks.every((t) => t.status === "TaskCompleted" || t.status === "TaskSkipped");
+  const canMoveToOnboarding = isPreOnboarding && preAllDone && bgvClear;
+
   const employeeName =
     `${inst.employee?.firstName ?? ""} ${inst.employee?.lastName ?? ""}`.trim() ||
     inst.employee?.employeeCode ||
     inst.employeeId;
 
+  const emp = inst.employee;
+  const initials = `${emp?.firstName?.[0] ?? ""}${emp?.lastName?.[0] ?? ""}`.toUpperCase() || employeeName.slice(0, 2).toUpperCase();
+  const roleLine = [emp?.designation?.title ?? emp?.jobTitle, emp?.department?.name].filter(Boolean).join(" · ");
+  const managerName = emp?.reportingManager ? `${emp.reportingManager.firstName} ${emp.reportingManager.lastName}`.trim() : "—";
+  const fmtDate = (dt?: string | null) => (dt ? new Date(dt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—");
+  const total = inst.totalTasks, completed = inst.completedTasks, pending = Math.max(0, total - completed);
+  const todayD = new Date(new Date().toDateString());
+  const overdue = inst.tasks.filter((t) => {
+    const done = t.status === "TaskCompleted" || t.status === "TaskSkipped";
+    return !!t.dueDate && !done && new Date(t.dueDate.slice(0, 10)) < todayD;
+  }).length;
+  const R = 34, C = 2 * Math.PI * R, ringOffset = C * (1 - inst.progress / 100);
+
   return (
-    <div className="w-full">
-      <Link href="/onboarding" className="inline-flex items-center gap-1 text-xs text-[#22c55e] hover:underline mb-4">
-        <ArrowLeft size={14} /> Back to dashboard
+    <div className="w-full pb-10">
+      <Link href={isPreOnboarding ? "/pre-onboarding" : "/onboarding"} className="inline-flex items-center gap-1 text-xs text-[#22c55e] hover:underline mb-4">
+        <ArrowLeft size={14} /> {isPreOnboarding ? "Back to Pre-Onboarding" : "Back to dashboard"}
       </Link>
 
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
-        <div className="flex items-start justify-between mb-4">
-          <div>
-            <h1 className="text-page-title text-gray-900">Onboarding: <span className="text-lg text-gray-600">{employeeName}</span></h1>
-            <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
-              {inst.template && <span>Template: <b>{inst.template.name}</b></span>}
-              <span>•</span>
-              <span>Start: {new Date(inst.startDate).toLocaleDateString("en-IN")}</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 items-start">
+        <div className="space-y-4 min-w-0">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div className="flex items-center gap-4 min-w-0">
+                <div className="h-14 w-14 rounded-2xl grid place-items-center text-lg font-bold text-white flex-shrink-0" style={{ background: "linear-gradient(135deg,#16a34a,#15803d)" }}>{initials}</div>
+                <div className="min-w-0">
+                  <h1 className="text-lg font-bold text-gray-900 truncate">{employeeName}</h1>
+                  <p className="text-xs text-gray-500 truncate">{roleLine || (isPreOnboarding ? "Pre-Onboarding" : "Employee")}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+            {isPreOnboarding && <span className="px-3 py-1 rounded-full text-[11px] font-medium bg-violet-100 text-violet-700">Pre-Onboarding</span>}
             <span className={clsx("px-3 py-1 rounded-full text-[11px] font-medium",
               inst.status === "OnboardCompleted" ? "bg-green-100 text-green-700" :
               inst.status === "OnboardCancelled" ? "bg-red-100 text-red-700" :
               inst.status === "InProgress" ? "bg-[#dcfce7] text-[#16a34a]" : "bg-gray-100 text-gray-600")}>
               {inst.status}
             </span>
+            {isPreOnboarding && (!isSelfView || isAdminViewer) && (
+              <button onClick={() => toOnboardingMut.mutate()} disabled={!canMoveToOnboarding || toOnboardingMut.isPending}
+                title={canMoveToOnboarding ? "Convert to Day-1 onboarding" : "Finish all steps and clear BGV first"}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-green-600 text-white hover:bg-green-700 disabled:opacity-50">
+                {toOnboardingMut.isPending ? "Moving…" : "Move to Onboarding →"}
+              </button>
+            )}
+            <button
+              onClick={() => window.open(withBasePath(`/api/v1/hrms/onboarding/${employeeId}/joining-letter`), "_blank", "noopener")}
+              title="Open the joining (appointment) letter as a PDF"
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100">
+              <FileText size={13} /> Joining Letter
+            </button>
             {/* Admin-only controls — employee self-view doesn't see Complete /
                 Force Complete / Cancel. They just upload tasks; HR closes the loop. */}
+            {(!isSelfView || isAdminViewer) && inst.status !== "OnboardCompleted" && inst.status !== "OnboardCancelled" && (
+              <button
+                onClick={() => automationMut.mutate(!inst.automated)}
+                disabled={automationMut.isPending}
+                title={inst.automated ? "Stop auto-sending steps" : "Send step 1 now and auto-send each next step as the previous completes"}
+                className={clsx("flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50",
+                  inst.automated ? "bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100" : "bg-green-600 text-white hover:bg-green-700")}>
+                {inst.automated ? <><Pause size={13} /> Stop automation</> : <><Play size={13} /> Start onboarding</>}
+              </button>
+            )}
             {(!isSelfView || isAdminViewer) && inst.status !== "OnboardCompleted" && inst.status !== "OnboardCancelled" && (() => {
               const pendingMandatory = inst.tasks.filter((t) => t.isMandatory && t.status !== "TaskCompleted" && t.status !== "TaskSkipped").length;
               const allDone = pendingMandatory === 0;
@@ -310,23 +469,111 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
                 </>
               );
             })()}
+              </div>
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 sm:grid-cols-5 gap-px rounded-xl overflow-hidden border border-gray-100 bg-gray-100">
+              {[
+                { label: "Employee ID", value: emp?.employeeCode ?? "—" },
+                { label: "Department", value: emp?.department?.name ?? "—" },
+                { label: "Reporting Manager", value: managerName },
+                { label: "Start Date", value: fmtDate(inst.startDate) },
+                { label: "Joining Date", value: fmtDate(emp?.dateOfJoining) },
+              ].map((m) => (
+                <div key={m.label} className="bg-white px-3 py-2.5">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{m.label}</div>
+                  <div className="text-xs font-medium text-gray-900 mt-0.5 truncate" title={m.value}>{m.value}</div>
+                </div>
+              ))}
+            </div>
+
+            {inst.template && (
+              <div className="mt-3 text-[11px] text-gray-500 flex items-center gap-2 flex-wrap">
+                <span><span className="font-medium text-gray-600">Template:</span> {inst.template.name}</span>
+                {(!isSelfView || isAdminViewer) && inst.status !== "OnboardCompleted" && inst.status !== "OnboardCancelled" && (
+                  <button
+                    onClick={() => {
+                      if (window.confirm("Re-apply the latest template?\n\nThis rebuilds the checklist from the current template — existing template steps (and their progress/uploads) are replaced. The BGV / Complete Profile step is kept.")) {
+                        reApplyMut.mutate(inst.template!.id);
+                      }
+                    }}
+                    disabled={reApplyMut.isPending}
+                    title="Rebuild the checklist from the latest version of this template"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold text-green-700 border border-green-200 hover:bg-green-50 disabled:opacity-50">
+                    {reApplyMut.isPending ? "Re-applying…" : "Re-apply template"}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {inst.automated && inst.status !== "OnboardCompleted" && inst.status !== "OnboardCancelled" && (
+              <div className="mt-3 flex items-center gap-2 rounded-xl bg-green-50 border border-green-100 text-[#166534] px-3 py-2 text-xs">
+                <Sparkles size={14} /> <span><b>Automation running.</b> Each step&apos;s request is sent automatically when the previous step is completed.</span>
+              </div>
+            )}
           </div>
+
+          <div className={clsx("grid gap-4 items-stretch", (!isSelfView && isAdminViewer) ? "md:grid-cols-2" : "grid-cols-1")}>
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5 flex items-center">
+            <div className="flex items-center gap-5 flex-wrap w-full">
+              <div className="flex-1 min-w-[220px]">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[13px] font-semibold text-gray-900">{isPreOnboarding ? "Pre-Onboarding Progress" : "Onboarding Progress"}</span>
+                  <span className="text-xs font-semibold text-gray-900 tabular-nums">{completed}/{total} <span className="text-gray-400">({inst.progress}%)</span></span>
+                </div>
+                <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div className="h-full rounded-full bg-gradient-to-r from-green-500 to-emerald-600 transition-all duration-500" style={{ width: `${inst.progress}%` }} />
+                </div>
+              </div>
+              <div className="flex items-center gap-2.5">
+                {[
+                  { label: "Completed", value: completed, cls: "bg-green-50 text-green-700 border-green-100" },
+                  { label: "Pending", value: pending, cls: "bg-amber-50 text-amber-700 border-amber-100" },
+                  { label: "Overdue", value: overdue, cls: "bg-red-50 text-red-700 border-red-100" },
+                ].map((s) => (
+                  <div key={s.label} className={clsx("rounded-xl border px-4 py-2 text-center min-w-[76px]", s.cls)}>
+                    <div className="text-lg font-bold tabular-nums leading-tight">{s.value}</div>
+                    <div className="text-[10px] font-medium">{s.label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <ConfirmationPanel employeeId={employeeId} pendingMandatory={pendingMandatoryCount} />
+          </div>
+
+      {(!isSelfView || isAdminViewer) && !inst.tasks.some((t) => t.stepType !== "CompleteProfile" && t.stepType !== "BGV")
+        && inst.status !== "OnboardCompleted" && inst.status !== "OnboardCancelled" && (
+        <div className="bg-white rounded-lg shadow-sm border border-dashed border-gray-300 p-4 mb-3">
+          <div className="text-[13px] font-semibold text-gray-900 mb-1">No {isPreOnboarding ? "pre-onboarding" : "onboarding"} template applied</div>
+          <p className="text-xs text-gray-500 mb-3">
+            {isPreOnboarding
+              ? "Pick a pre-onboarding template to populate the checklist (BGV is always included)."
+              : "This onboarding was started without a template. Pick one to populate the checklist."}
+          </p>
+          {onbTemplates.length === 0 ? (
+            <Link href={isPreOnboarding ? "/pre-onboarding/templates" : "/onboarding/templates"}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-600 text-white text-xs font-semibold hover:bg-green-700">
+              <Plus size={13} /> Create a {isPreOnboarding ? "pre-onboarding" : "onboarding"} template
+            </Link>
+          ) : (
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="min-w-[240px]">
+                <Select size="sm" value={applyTemplateId} onChange={setApplyTemplateId}
+                  placeholder="Choose a template…"
+                  options={[{ value: "", label: "Choose a template…" }, ...onbTemplates.map((t) => ({ value: t.id, label: t.name }))]} />
+              </div>
+              <button onClick={() => applyTemplateMut.mutate(applyTemplateId)} disabled={!applyTemplateId || applyTemplateMut.isPending}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-600 text-white text-xs font-semibold hover:bg-green-700 disabled:opacity-60">
+                {applyTemplateMut.isPending ? "Applying…" : "Apply template"}
+              </button>
+            </div>
+          )}
         </div>
+      )}
 
-        <div>
-          <div className="flex items-center justify-between text-xs mb-1">
-            <span className="text-gray-600">Progress</span>
-            <span className="font-medium text-gray-900">{inst.completedTasks}/{inst.totalTasks} ({inst.progress}%)</span>
-          </div>
-          <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-            <div className="h-full bg-green-500 transition-all" style={{ width: `${inst.progress}%` }} />
-          </div>
-        </div>
-      </div>
-
-      <ConfirmationPanel employeeId={employeeId} pendingMandatory={pendingMandatoryCount} />
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 items-start">
         {(isSelfView && !isAdminViewer
           ? inst.tasks.filter((t) => t.assigneeRole === "EmployeeRole")
           : inst.tasks
@@ -343,25 +590,82 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
                     ? <span className="px-2 py-0.5 bg-sky-50 text-sky-700 rounded-full text-[11px] font-medium">{STEP_TYPE_LABEL[t.stepType] ?? t.stepType}</span>
                     : <span className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded-full text-[11px] font-medium">{t.category}</span>}
                   <span className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded-full text-[11px] font-medium">{t.assigneeRole}</span>
+                  {inst.automated && sendableStep(t.stepType, t.config) && t.status !== "TaskCompleted" && t.status !== "TaskSkipped"
+                    && !(t.config?.requestSentAt) && firstPendingSendableId !== t.id && (
+                    <span className="px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full text-[11px] font-medium">Queued</span>
+                  )}
                 </div>
                 {t.description && <p className="text-xs text-gray-500 mb-1">{t.description}</p>}
                 {(() => { const s = stepSummary(t.stepType, t.config); return s ? <div className="text-[11px] text-gray-500 mb-1">{s}</div> : null; })()}
+                {t.stepType === "BGV" && (() => {
+                  const cfg = (t.config ?? {}) as Record<string, unknown>;
+                  const checks = Array.isArray(cfg.bgvChecks) ? (cfg.bgvChecks as string[]) : [];
+                  const st = (cfg.bgvStatus ?? {}) as Record<string, string>;
+                  return (
+                    <div className="mt-1.5 border border-gray-100 rounded-lg p-2 bg-gray-50/60 space-y-1.5">
+                      {checks.map((c) => {
+                        const s = st[c] ?? "pending";
+                        return (
+                          <div key={c} className="flex items-center gap-2 text-[11.5px]">
+                            <span className="flex-1 text-gray-700">{c}</span>
+                            <span className={clsx("px-2 py-0.5 rounded-full text-[10px] font-bold",
+                              s === "clear" ? "bg-green-100 text-green-700" : s === "discrepancy" ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-500")}>
+                              {s === "clear" ? "Clear" : s === "discrepancy" ? "Discrepancy" : "Pending"}
+                            </span>
+                            {(!isSelfView || isAdminViewer) && t.status !== "TaskCompleted" && (
+                              <>
+                                <button onClick={() => bgvMut.mutate({ taskId: t.id, check: c, status: "clear" })}
+                                  className="px-2 py-0.5 rounded text-[10px] font-semibold border border-green-200 text-green-700 hover:bg-green-50">Clear</button>
+                                <button onClick={() => bgvMut.mutate({ taskId: t.id, check: c, status: "discrepancy" })}
+                                  className="px-2 py-0.5 rounded text-[10px] font-semibold border border-red-200 text-red-600 hover:bg-red-50">Flag</button>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
                 {t.stepType === "ExternalLink" && t.config && typeof t.config.url === "string" && t.config.url && (
                   <a href={t.config.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#16a34a] mb-1 hover:underline">Open link ↗</a>
                 )}
-                {t.dueDate && <div className="text-xs text-gray-500">Due: {new Date(t.dueDate).toLocaleDateString("en-IN")}</div>}
+                {(() => {
+                  const due = t.dueDate ? t.dueDate.slice(0, 10) : "";
+                  const done = t.status === "TaskCompleted" || t.status === "TaskSkipped";
+                  const overdue = !!due && !done && new Date(due) < new Date(new Date().toDateString());
+                  if (!canEditDue) {
+                    return t.dueDate ? (
+                      <div className={clsx("text-xs mt-1", overdue ? "text-red-600 font-medium" : "text-gray-500")}>
+                        {overdue ? "Overdue · " : "Due: "}{new Date(t.dueDate).toLocaleDateString("en-IN")}
+                      </div>
+                    ) : null;
+                  }
+                  return (
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <CalendarClock size={12} className={overdue ? "text-red-500" : "text-gray-400"} />
+                      <input type="date" value={due}
+                        onChange={(e) => dueDateMut.mutate({ taskId: t.id, dueDate: e.target.value || null })}
+                        className={clsx("bg-transparent border rounded-md px-1.5 py-0.5 text-[11px] outline-none focus:ring-1 focus:ring-green-400",
+                          overdue ? "border-red-300 text-red-600" : due ? "border-amber-200 text-amber-700" : "border-gray-200 text-gray-500")} />
+                      {overdue && <span className="text-[10px] font-bold text-red-600">OVERDUE</span>}
+                      {due && <button onClick={() => dueDateMut.mutate({ taskId: t.id, dueDate: null })} className="text-gray-300 hover:text-red-500" title="Clear deadline"><X size={11} /></button>}
+                    </div>
+                  );
+                })()}
                 {t.notes && <div className="text-xs text-gray-600 mt-1">{t.notes}</div>}
               </div>
               <div className="flex items-center gap-1">
-                {(t.stepType === "SendEmail" || t.stepType === "Notification") && (t.status === "TaskPending" || t.status === "TaskInProgress") && (
-                  <Tooltip content={t.status === "TaskInProgress" ? "Email already sent" : "Send email now"}>
-                    <button onClick={() => sendEmailMut.mutate(t.id)} disabled={sendEmailMut.isPending || t.status === "TaskInProgress"}
-                      className={clsx("inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold disabled:opacity-60",
-                        t.status === "TaskInProgress" ? "bg-green-100 text-green-700 cursor-default" : "bg-green-600 text-white hover:bg-green-700")}>
-                      <Send size={11} /> {t.status === "TaskInProgress" ? "Sent" : sendEmailMut.isPending ? "Sending…" : "Send now"}
-                    </button>
-                  </Tooltip>
-                )}
+                {(t.stepType === "SendEmail" || t.stepType === "Notification") && (t.status === "TaskPending" || t.status === "TaskInProgress") && (() => {
+                  const n = Array.isArray(t.config?.templates) ? (t.config!.templates as string[]).filter(Boolean).length : (t.config?.template ? 1 : 0);
+                  return (
+                    <Tooltip content={n === 0 ? "Select email templates in the builder first" : `Send ${n} email${n === 1 ? "" : "s"} now`}>
+                      <button onClick={() => sendEmailMut.mutate(t.id)} disabled={sendEmailMut.isPending || n === 0}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold disabled:opacity-60 bg-green-600 text-white hover:bg-green-700">
+                        <Send size={11} /> {sendEmailMut.isPending ? "Sending…" : n > 1 ? `Send ${n} now` : "Send now"}
+                      </button>
+                    </Tooltip>
+                  );
+                })()}
                 {t.stepType === "DocumentUpload" && (() => {
                   const uploads = ((t.config as Record<string, unknown> | null)?.uploads ?? {}) as Record<string, unknown>;
                   const uploadCount = Object.keys(uploads).length;
@@ -391,6 +695,41 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
                     </button>
                   </Tooltip>
                 )}
+                {t.stepType === "ReadPolicy" && (() => {
+                  const cfg = (t.config ?? {}) as Record<string, unknown>;
+                  const files = Array.isArray(cfg.files) ? (cfg.files as { url: string }[]) : [];
+                  const acks = (cfg.acks ?? {}) as Record<string, unknown>;
+                  const ackCount = files.filter((f) => acks[f.url]).length;
+                  return (
+                    <>
+                      {files.length > 0 && (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold bg-sky-50 text-sky-700">
+                          <BadgeCheck size={11} /> {ackCount}/{files.length} acknowledged
+                        </span>
+                      )}
+                      {t.status !== "TaskCompleted" && (
+                        <button onClick={() => ackRequestMut.mutate(t.id)} disabled={ackRequestMut.isPending || files.length === 0}
+                          className={clsx("inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold disabled:opacity-60",
+                            cfg.requestSentAt ? "bg-amber-50 text-amber-700 ring-1 ring-amber-200 hover:bg-amber-100" : "bg-green-600 text-white hover:bg-green-700")}>
+                          <Send size={11} /> {ackRequestMut.isPending ? "Sending…" : (cfg.requestSentAt ? "Resend request" : "Send acknowledgement request")}
+                        </button>
+                      )}
+                    </>
+                  );
+                })()}
+                {["CustomTask", "AssetAssignment", "ITProvisioning"].includes(t.stepType ?? "") && t.status !== "TaskCompleted" && (() => {
+                  const cfg = (t.config ?? {}) as Record<string, unknown>;
+                  const ids = Array.isArray(cfg.assignEmployeeIds) ? (cfg.assignEmployeeIds as string[]).filter(Boolean)
+                    : (cfg.assignEmployeeId ? [cfg.assignEmployeeId as string] : []);
+                  if (ids.length === 0) return null;
+                  return (
+                    <button onClick={() => notifyAssigneesMut.mutate(t.id)} disabled={notifyAssigneesMut.isPending}
+                      className={clsx("inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold disabled:opacity-60",
+                        cfg.requestSentAt ? "bg-amber-50 text-amber-700 ring-1 ring-amber-200 hover:bg-amber-100" : "bg-green-600 text-white hover:bg-green-700")}>
+                      <Send size={11} /> {notifyAssigneesMut.isPending ? "Sending…" : (cfg.requestSentAt ? "Resend" : `Send to assignee${ids.length > 1 ? "s" : ""}`)}
+                    </button>
+                  );
+                })()}
                 {t.category === "Documentation" && t.status !== "TaskCompleted" && !isBankTask(t.title) && t.stepType !== "DocumentUpload" && (
                   <Tooltip content="Upload document">
                     <button onClick={() => openUpload(t)}
@@ -407,31 +746,95 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
                     </button>
                   </Tooltip>
                 )}
-                {!(t.category === "Documentation" || isBankTask(t.title)) && t.stepType !== "CompleteProfile" && (
+                {!(t.category === "Documentation" || isBankTask(t.title)) && t.stepType !== "CompleteProfile" && t.stepType !== "ReadPolicy" && t.stepType !== "BGV" && (
                   <Tooltip content="Mark complete">
-                    <button onClick={() => updateMut.mutate({ taskId: t.id, status: "TaskCompleted" })}
+                    <button aria-label="Mark complete" onClick={() => updateMut.mutate({ taskId: t.id, status: "TaskCompleted" })}
                       disabled={t.status === "TaskCompleted"}
                       className={clsx("p-2 rounded-lg border text-xs", t.status === "TaskCompleted" ? "bg-green-100 border-green-300 text-green-700" : "border-gray-300 text-gray-600 hover:bg-green-50")}>
                       <CheckCircle size={12} />
                     </button>
                   </Tooltip>
                 )}
-                <Tooltip content="Skip task">
-                  <button onClick={() => updateMut.mutate({ taskId: t.id, status: "TaskSkipped" })}
-                    className="p-2 rounded-lg border border-[var(--border)] text-gray-600 hover:bg-gray-50">
-                    <SkipForward size={12} />
-                  </button>
-                </Tooltip>
-                <Tooltip content="Block task">
-                  <button onClick={() => updateMut.mutate({ taskId: t.id, status: "TaskBlocked" })}
-                    className="p-2 rounded-lg border border-[var(--border)] text-gray-600 hover:bg-red-50">
-                    <PauseCircle size={12} />
-                  </button>
-                </Tooltip>
+                {/* Complete Profile is mandatory and can ONLY be finished via its
+                    form — no skip/block escape hatch. */}
+                {t.stepType !== "CompleteProfile" && t.stepType !== "BGV" && (
+                  <>
+                    <Tooltip content="Skip task">
+                      <button aria-label="Skip task" onClick={() => updateMut.mutate({ taskId: t.id, status: "TaskSkipped" })}
+                        className="p-2 rounded-lg border border-[var(--border)] text-gray-600 hover:bg-gray-50">
+                        <SkipForward size={12} />
+                      </button>
+                    </Tooltip>
+                    <Tooltip content="Block task">
+                      <button aria-label="Block task" onClick={() => updateMut.mutate({ taskId: t.id, status: "TaskBlocked" })}
+                        className="p-2 rounded-lg border border-[var(--border)] text-gray-600 hover:bg-red-50">
+                        <PauseCircle size={12} />
+                      </button>
+                    </Tooltip>
+                  </>
+                )}
               </div>
             </div>
           </div>
         ))}
+      </div>
+        </div>
+
+        <aside className="space-y-4 lg:sticky lg:top-4">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5 text-center">
+            <div className="text-[13px] font-semibold text-gray-900 mb-3">Completion</div>
+            <div className="relative inline-grid place-items-center">
+              <svg width="96" height="96" viewBox="0 0 96 96" className="-rotate-90">
+                <circle cx="48" cy="48" r={R} fill="none" stroke="#e5e7eb" strokeWidth="8" />
+                <circle cx="48" cy="48" r={R} fill="none" stroke="#16a34a" strokeWidth="8" strokeLinecap="round" strokeDasharray={C} strokeDashoffset={ringOffset} className="transition-all duration-500" />
+              </svg>
+              <span className="absolute text-lg font-bold text-gray-900 tabular-nums">{inst.progress}%</span>
+            </div>
+            <div className="mt-3 space-y-2 text-left">
+              {[
+                { label: "Completed", value: completed, dot: "bg-green-500" },
+                { label: "Pending", value: pending, dot: "bg-amber-500" },
+                { label: "Overdue", value: overdue, dot: "bg-red-500" },
+              ].map((r) => (
+                <div key={r.label} className="flex items-center justify-between text-xs">
+                  <span className="flex items-center gap-2 text-gray-600"><span className={clsx("h-2 w-2 rounded-full", r.dot)} />{r.label}</span>
+                  <span className="font-semibold text-gray-900 tabular-nums">{r.value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5">
+            <div className="text-[13px] font-semibold text-gray-900 mb-3">Documents</div>
+            <button onClick={() => window.open(withBasePath(`/api/v1/hrms/onboarding/${employeeId}/joining-letter`), "_blank", "noopener")}
+              className="w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-gray-50 transition-colors">
+              <FileText size={14} className="text-gray-400 flex-shrink-0" />
+              <span className="text-xs font-medium text-gray-700 flex-1 truncate">Joining Letter</span>
+              <ChevronDown size={13} className="text-gray-300 flex-shrink-0 -rotate-90" />
+            </button>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5">
+            <div className="text-[13px] font-semibold text-gray-900 mb-3">Employee Summary</div>
+            <dl className="space-y-2.5 text-xs">
+              {[
+                { label: "Name", value: employeeName },
+                { label: "Employee ID", value: emp?.employeeCode ?? "—" },
+                { label: "Designation", value: emp?.designation?.title ?? emp?.jobTitle ?? "—" },
+                { label: "Department", value: emp?.department?.name ?? "—" },
+                { label: "Manager", value: managerName },
+                { label: "Start Date", value: fmtDate(inst.startDate) },
+                { label: "Joining Date", value: fmtDate(emp?.dateOfJoining) },
+                { label: "Phase", value: isPreOnboarding ? "Pre-Onboarding" : "Onboarding" },
+              ].map((r) => (
+                <div key={r.label} className="flex items-start justify-between gap-3">
+                  <dt className="text-gray-500 flex-shrink-0">{r.label}</dt>
+                  <dd className="font-medium text-gray-900 text-right">{r.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        </aside>
       </div>
 
       {/* HR document review */}
@@ -1281,8 +1684,8 @@ function ConfirmationPanel({ employeeId, pendingMandatory }: { employeeId: strin
   if (isSelfView || !canConfirm) return null;
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-4 p-4">
-      <div className="flex items-start justify-between gap-3">
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5 w-full">
+      <div className="flex items-start justify-between gap-3 h-full">
         <div className="flex items-start gap-2.5">
           <div className={clsx("w-10 h-10 rounded-lg flex items-center justify-center",
             alreadyConfirmed ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600")}>

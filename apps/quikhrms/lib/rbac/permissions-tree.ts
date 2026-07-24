@@ -244,6 +244,7 @@ export const NAV_TREE: NavGroup[] = [
       { key: "people.directory.orgchart", label: "Org Chart" },
       { key: "people.history", label: "Employment Logs" },
       { key: "people.delegations", label: "Delegations" },
+      { key: "people.pre-onboarding", label: "Pre-Onboarding" },
       { key: "people.onboarding", label: "Onboarding" },
       // Offboarding is one sidebar link opening a tabbed page (gated in offboarding/page.tsx).
       { key: "people.offboarding.active", label: "Offboarding" },

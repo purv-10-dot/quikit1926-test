@@ -7,7 +7,7 @@
 import { prisma } from "@/lib/prisma";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import mammoth from "mammoth";
-import { getObject, extractKeyFromUrl } from "@/lib/storage";
+import { getObject, extractKeyFromUrl, keyBelongsToTenant } from "@/lib/storage";
 
 const PDF_MIME = "application/pdf";
 const TEXT_PLAIN = "text/plain";
@@ -50,6 +50,7 @@ export async function extractDocumentText(documentId: string, orgId: string): Pr
     if (proxyMatch) {
       try {
         const key = decodeURIComponent(proxyMatch[1]);
+        if (!keyBelongsToTenant(key, orgId)) return { ok: false, reason: "Key outside tenant", source: "s3" };
         const obj = await getObject(key);
         if (obj.body.byteLength > MAX_FETCH_BYTES) return { ok: false, reason: `Proxy file too large (${obj.body.byteLength})`, source: "s3" };
         const buf = obj.body;
@@ -62,38 +63,26 @@ export async function extractDocumentText(documentId: string, orgId: string): Pr
       }
     }
 
-    if (!/^https?:\/\//i.test(doc.fileUrl)) return { ok: false, reason: `fileUrl not http(s) and not proxy: ${doc.fileUrl.slice(0, 80)}` };
+    // Only tenant-owned storage files are extractable. We never fetch() an
+    // arbitrary URL (that would be an SSRF vector) and never read a storage key
+    // belonging to another tenant.
+    const storageKey = extractKeyFromUrl(doc.fileUrl);
+    if (!storageKey || !keyBelongsToTenant(storageKey, orgId)) {
+      return { ok: false, reason: "Only tenant-owned storage files can be extracted" };
+    }
 
     let buf: Buffer;
     let mime = doc.fileType || "application/octet-stream";
-
-    // Prefer storage SDK fetch (handles private buckets) when URL matches our bucket.
-    const storageKey = extractKeyFromUrl(doc.fileUrl);
-
-    let source: "s3" | "http" = "http";
-    if (storageKey) {
-      source = "s3";
-      try {
-        const obj = await getObject(storageKey);
-        if (obj.body.byteLength > MAX_FETCH_BYTES) return { ok: false, reason: `Storage file too large (${obj.body.byteLength} > ${MAX_FETCH_BYTES})`, source };
-        buf = obj.body;
-        mime = doc.fileType || obj.contentType || "application/octet-stream";
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        console.error(`extractDocumentText storage fetch failed for ${doc.id}:`, e);
-        return { ok: false, reason: `Storage fetch failed: ${msg}`, source };
-      }
-    } else {
-      const res = await fetch(doc.fileUrl);
-      if (!res.ok) {
-        console.error(`extractDocumentText HTTP ${res.status} for ${doc.id} ${doc.fileUrl}`);
-        return { ok: false, reason: `HTTP ${res.status} ${res.statusText} from ${doc.fileUrl.slice(0, 60)}`, source };
-      }
-      const lenHeader = Number(res.headers.get("content-length") ?? 0);
-      if (lenHeader > MAX_FETCH_BYTES) return { ok: false, reason: `File too large (${lenHeader})`, source };
-      buf = Buffer.from(await res.arrayBuffer());
-      if (buf.byteLength > MAX_FETCH_BYTES) return { ok: false, reason: `File too large (${buf.byteLength})`, source };
-      mime = doc.fileType || res.headers.get("content-type") || "application/octet-stream";
+    const source: "s3" = "s3";
+    try {
+      const obj = await getObject(storageKey);
+      if (obj.body.byteLength > MAX_FETCH_BYTES) return { ok: false, reason: `Storage file too large (${obj.body.byteLength} > ${MAX_FETCH_BYTES})`, source };
+      buf = obj.body;
+      mime = doc.fileType || obj.contentType || "application/octet-stream";
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`extractDocumentText storage fetch failed for ${doc.id}:`, e);
+      return { ok: false, reason: `Storage fetch failed: ${msg}`, source };
     }
 
     return await runExtractor({ doc, buf, mime, source, apiKey });

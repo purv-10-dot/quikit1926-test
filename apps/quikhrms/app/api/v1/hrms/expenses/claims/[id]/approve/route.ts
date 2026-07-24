@@ -37,10 +37,10 @@ export const POST = withAuth(async (req: NextRequest, ctx, params) => {
     });
     if (!claim) return notFound("Claim not found");
 
-    // Segregation of duties: you can't approve/reject your OWN claim. Super-admin
-    // ("*") keeps an escape hatch so a solo admin isn't permanently locked out.
+    // Segregation of duties: no one — including super-admin — can approve or
+    // reject their OWN claim (matches the leave route).
     const callerEmpId = await getCallerEmployeeId(ctx);
-    if (!ctx.permissions.includes("*") && callerEmpId && claim.employeeId === callerEmpId) {
+    if (callerEmpId && claim.employeeId === callerEmpId) {
       return forbidden("You can't approve or reject your own expense claim.");
     }
 
@@ -62,16 +62,29 @@ export const POST = withAuth(async (req: NextRequest, ctx, params) => {
       (snap?.approvalChain as ExpenseChainLevel[] | undefined) ??
       ((claim.policy?.approvalChain as ExpenseChainLevel[] | null) ?? []);
     const isSuper = ctx.permissions.includes("*");
-    if (!isSuper && chain.length > 0 && (parsed.data.action === "ExpApproved" || parsed.data.action === "ExpRejected")) {
-      const levelCfg = chain.find((c) => c.level === currentLevel);
-      if (levelCfg) {
-        const callerEmployeeId = await getCallerEmployeeId(ctx);
-        const eligible = isEligibleExpenseApprover(levelCfg, ctx.roles, callerEmployeeId, {
-          reportingManagerId: claim.employee?.reportingManagerId ?? null,
-          departmentHeadId: claim.employee?.department?.headId ?? null,
-        });
+    const isDecision = parsed.data.action === "ExpApproved" || parsed.data.action === "ExpRejected";
+    const claimApprovers = {
+      reportingManagerId: claim.employee?.reportingManagerId ?? null,
+      departmentHeadId: claim.employee?.department?.headId ?? null,
+    };
+    if (!isSuper && isDecision) {
+      if (chain.length > 0) {
+        const levelCfg = chain.find((c) => c.level === currentLevel);
+        if (levelCfg) {
+          const eligible = isEligibleExpenseApprover(levelCfg, ctx.roles, callerEmpId, claimApprovers);
+          if (!eligible) {
+            return forbidden(`Level ${currentLevel} must be actioned by ${EXPENSE_APPROVER_LABEL[levelCfg.approverType]}.`);
+          }
+        }
+      } else {
+        // No approval chain configured → require a genuine approver relationship,
+        // never "any approver". Must be the employee's reporting manager or
+        // department head.
+        const eligible =
+          (!!callerEmpId && callerEmpId === claimApprovers.reportingManagerId) ||
+          (!!callerEmpId && callerEmpId === claimApprovers.departmentHeadId);
         if (!eligible) {
-          return forbidden(`Level ${currentLevel} must be actioned by ${EXPENSE_APPROVER_LABEL[levelCfg.approverType]}.`);
+          return forbidden("Only the employee's reporting manager or department head can approve this claim.");
         }
       }
     }

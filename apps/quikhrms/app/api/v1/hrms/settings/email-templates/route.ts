@@ -7,6 +7,17 @@ import { createAuditLog } from "@/lib/utils/audit";
 import { allowedVarNames, isKnownEmailKey } from "@/lib/email/registry";
 import { findUnknownVars } from "@/lib/email/validate-vars";
 
+// Strip active content from stored template HTML — <script>, inline event
+// handlers, and javascript: URIs — so a saved template can't carry an XSS
+// payload into anything that renders it (preview, in-app viewer).
+function stripDangerousHtml(s: string): string {
+  return s
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, "")
+    .replace(/<script\b[^>]*\/?>/gi, "")
+    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+    .replace(/javascript:/gi, "");
+}
+
 export const GET = withAuth(async (_req: NextRequest, { orgId }) => {
   try {
     const list = await prisma.emailTemplate.findMany({
@@ -42,21 +53,28 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       );
     }
 
+    const cleanSubject = stripDangerousHtml(parsed.data.subject);
+    const cleanBody = stripDangerousHtml(parsed.data.body);
+
     const record = await prisma.emailTemplate.upsert({
       where: { orgId_key_channel: { orgId, key: parsed.data.key, channel: parsed.data.channel } },
       update: {
-        subject: parsed.data.subject,
-        body: parsed.data.body,
+        subject: cleanSubject,
+        body: cleanBody,
         enabled: parsed.data.enabled,
         description: parsed.data.description ?? null,
+        // Revive a previously "Reset to default" (soft-deleted) template — the
+        // unique (orgId,key,channel) row still exists, so saving must clear
+        // deletedAt or the override stays hidden from the list.
+        deletedAt: null,
         updatedBy: userId,
       },
       create: {
         orgId,
         key: parsed.data.key,
         channel: parsed.data.channel,
-        subject: parsed.data.subject,
-        body: parsed.data.body,
+        subject: cleanSubject,
+        body: cleanBody,
         enabled: parsed.data.enabled,
         description: parsed.data.description ?? null,
         createdBy: userId,

@@ -165,15 +165,22 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
         data: { status: "Hired", updatedBy: userId },
       });
 
-      const newFilled = (reqn.filledPositions ?? 0) + 1;
-      await tx.jobRequisition.update({
-        where: { id: reqn.id },
-        data: {
-          filledPositions: newFilled,
-          status: newFilled >= reqn.positions ? "ReqClosed" : reqn.status,
-          updatedBy: userId,
-        },
+      // Atomic seat claim — increment ONLY if a seat is still free. Two
+      // simultaneous onboards on the last seat can't both succeed: the second
+      // UPDATE's WHERE re-evaluates against the committed row and matches 0 rows.
+      const claim = await tx.jobRequisition.updateMany({
+        where: { id: reqn.id, filledPositions: { lt: reqn.positions } },
+        data: { filledPositions: { increment: 1 }, updatedBy: userId },
       });
+      if (claim.count === 0) throw new Error("SEAT_FULL");
+      // Close the requisition once it's fully filled.
+      const after = await tx.jobRequisition.findUnique({
+        where: { id: reqn.id },
+        select: { filledPositions: true, positions: true, status: true },
+      });
+      if (after && after.filledPositions >= after.positions && after.status !== "ReqClosed") {
+        await tx.jobRequisition.update({ where: { id: reqn.id }, data: { status: "ReqClosed", updatedBy: userId } });
+      }
 
       // Create an empty onboarding instance — no system-default checklist. Tasks
       // are added from a template or manually on the onboarding page.
@@ -192,6 +199,12 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
 
       return emp;
     });
+
+    // New hires start in the PRE-ONBOARDING phase (pre-joining: BGV, docs,
+    // credentials, facilities). HR moves them to Onboarding once it's done.
+    await prisma.$executeRaw`
+      UPDATE "app_quikhrms"."OnboardingInstance" SET phase = 'PreOnboarding'
+      WHERE "employeeId" = ${employee.id} AND "orgId" = ${orgId}`;
 
     // Copy the candidate's approved recruitment documents into the new
     // employee's central Documents vault (best-effort — never block onboarding).
@@ -244,7 +257,10 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
     // the moment the invitation email goes out (see /employees/[id]/confirm).
     return successResponse({ employee, redirectUrl: `/onboarding/${employee.id}` }, undefined, 201);
   } catch (error) {
+    if (error instanceof Error && error.message === "SEAT_FULL") {
+      return conflict("All positions for this requisition are already filled.");
+    }
     console.error("POST /recruit/applications/:id/onboard error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });

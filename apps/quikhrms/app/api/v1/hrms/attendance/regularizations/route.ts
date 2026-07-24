@@ -75,6 +75,15 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
 
     if (!checkIn && !checkOut) return validationError("Enter a corrected check-in and/or check-out time");
 
+    // Duration sanity cap — a single day's regularization can't span more than
+    // 24h (blocks inflating hours, e.g. a 100h "day").
+    if (checkIn && checkOut) {
+      const ci = new Date(checkIn).getTime();
+      const co = new Date(checkOut).getTime();
+      if (!(co > ci)) return validationError("Check-out must be after check-in.");
+      if (co - ci > 24 * 60 * 60 * 1000) return validationError("A single day's regularization can't exceed 24 hours.");
+    }
+
     // IST calendar day; only past days can be regularized.
     const day = attendanceDayStart(new Date(date));
     if (day >= attendanceDayStart()) {

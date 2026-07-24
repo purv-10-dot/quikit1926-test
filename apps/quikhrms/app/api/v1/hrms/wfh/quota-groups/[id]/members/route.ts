@@ -5,7 +5,7 @@ import { successResponse, validationError, notFound, internalError, forbidden } 
 import { z } from "zod";
 
 const addSchema = z.object({
-  employeeIds: z.array(z.string().min(1)).min(1),
+  employeeIds: z.array(z.string().min(1)).min(1).max(500, "Too many employees in one request (max 500)"),
 });
 
 function canManage(roleCode: string | null, permissions: string[]): boolean {

@@ -4,6 +4,8 @@ import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { verifyDocUploadToken } from "@/lib/services/doc-upload-token";
 import { putObject } from "@/lib/storage";
+import { contentMatchesClaim } from "@/lib/utils/file-signature";
+import { rateLimitOrResponse, clientIp } from "@/lib/rate-limit";
 
 // PUBLIC (token-gated, no login) — the candidate's document-upload page.
 
@@ -30,7 +32,9 @@ async function load(token: string) {
   return { task, orgId: payload.orgId };
 }
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  const rl = await rateLimitOrResponse("onboarding.doc-upload.get", clientIp(req), 40, 60);
+  if (rl) return rl;
   const { token } = await params;
   const ctx = await load(token);
   if (!ctx) return err("INVALID_TOKEN", "This upload link is invalid or has expired.", 400);
@@ -56,6 +60,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  const rl = await rateLimitOrResponse("onboarding.doc-upload.post", clientIp(req), 10, 60);
+  if (rl) return rl;
   const { token } = await params;
   const ctx = await load(token);
   if (!ctx) return err("INVALID_TOKEN", "This upload link is invalid or has expired.", 400);
@@ -72,9 +78,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
   const documents = Array.isArray(config.documents) ? (config.documents as string[]).filter(Boolean) : [];
   if (!documents.includes(docName)) return err("BAD_DOC", "Unknown document.", 400);
 
+  // Cap total uploads per link — stop unbounded storage writes / abuse.
+  const uploadCount = (typeof config.uploadCount === "number" ? config.uploadCount : 0) + 1;
+  if (uploadCount > 50) return err("TOO_MANY", "Upload limit reached for this link. Please contact HR.", 429);
+
+  // Content check — reject files whose real bytes don't match the claimed type
+  // (e.g. an .html/.svg payload renamed .pdf). Never trust file.type alone.
+  const buf = Buffer.from(await file.arrayBuffer());
+  if (!contentMatchesClaim(buf, file.type)) {
+    return err("BAD_CONTENT", "File content doesn't match its type. Upload a genuine PDF, image, or document.", 400);
+  }
+
   const ext = (path.extname(file.name) || "").replace(/[^a-zA-Z0-9.]/g, "").slice(0, 8);
   const key = `onboarding/${orgId}/${task.id}/${randomUUID()}${ext}`;
-  await putObject(key, Buffer.from(await file.arrayBuffer()), file.type);
+  await putObject(key, buf, file.type);
   const url = `/api/v1/hrms/uploads/proxy?key=${encodeURIComponent(key)}`;
 
   const uploads = { ...((config.uploads ?? {}) as Record<string, Upload>) };
@@ -85,7 +102,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
   await prisma.onboardingTask.update({
     where: { id: task.id },
     data: {
-      config: JSON.parse(JSON.stringify({ ...config, uploads })),
+      config: JSON.parse(JSON.stringify({ ...config, uploads, uploadCount })),
       status: "TaskInProgress",
     },
   });

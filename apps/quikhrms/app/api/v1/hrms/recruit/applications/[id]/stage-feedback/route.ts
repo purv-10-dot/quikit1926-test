@@ -232,4 +232,4 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
     console.error("POST /recruit/applications/:id/stage-feedback error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });

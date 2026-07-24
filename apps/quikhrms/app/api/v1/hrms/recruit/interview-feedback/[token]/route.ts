@@ -6,6 +6,7 @@ import { resolveAndSend } from "@/lib/email/resolve";
 import { stageNames } from "@/lib/services/pipeline-stages";
 import { whereEmployeeHasAnyRole, sortByMaxRolePriorityDesc, appRolesNameSelect } from "@/lib/rbac/queries";
 import { sendRejectionEmail } from "@/lib/recruit/rejection-mail";
+import { rateLimitOrResponse, clientIp } from "@/lib/rate-limit";
 
 const ok = <T>(data: T, status = 200) => NextResponse.json({ success: true, data }, { status });
 const err = (code: string, message: string, status: number) =>
@@ -24,7 +25,9 @@ async function loadInterviewByToken(token: string) {
       interviewer: { select: { firstName: true, lastName: true, employeeCode: true, workEmail: true } },
       application: {
         include: {
-          candidate: { select: { firstName: true, lastName: true, email: true, phone: true, resumeUrl: true, currentCompany: true, currentDesignation: true, totalExperience: true } },
+          // email is used server-side for the candidate rejection email (POST);
+          // it is deliberately NOT included in the GET response (REC-015).
+          candidate: { select: { firstName: true, lastName: true, email: true, resumeUrl: true, currentCompany: true, currentDesignation: true, totalExperience: true } },
           requisition: { select: { id: true, title: true, pipelineId: true } },
         },
       },
@@ -41,7 +44,9 @@ async function loadInterviewByToken(token: string) {
  * GET /api/v1/hrms/recruit/interview-feedback/[token]
  * Public — validates token and returns interview + candidate detail for the feedback form.
  */
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  const rl = await rateLimitOrResponse("recruit.feedback-token.get", clientIp(req), 40, 60);
+  if (rl) return rl;
   const { token } = await params;
   const r = await loadInterviewByToken(token);
   if ("error" in r) return err("INVALID_TOKEN", r.error ?? "Invalid link", 400);
@@ -72,8 +77,6 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
       },
       candidate: {
         name: `${iv.application.candidate.firstName} ${iv.application.candidate.lastName}`.trim(),
-        email: iv.application.candidate.email,
-        phone: iv.application.candidate.phone,
         resumeUrl: iv.application.candidate.resumeUrl,
         currentCompany: iv.application.candidate.currentCompany,
         currentDesignation: iv.application.candidate.currentDesignation,
@@ -100,6 +103,8 @@ const submitSchema = z.object({
  * Public — interviewer submits scorecard. Token consumed on success.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  const rl = await rateLimitOrResponse("recruit.feedback-token.post", clientIp(req), 12, 60);
+  if (rl) return rl;
   const { token } = await params;
   const r = await loadInterviewByToken(token);
   if ("error" in r) return err("INVALID_TOKEN", r.error ?? "Invalid link", 400);

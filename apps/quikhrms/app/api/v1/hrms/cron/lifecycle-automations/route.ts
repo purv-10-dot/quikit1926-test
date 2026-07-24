@@ -126,9 +126,18 @@ export async function POST(req: NextRequest) {
         const tomorrow = dayRange(now, 0).lt;
         const insts = await prisma.offboardingInstance.findMany({
           where: { orgId, deletedAt: null, lastWorkingDate: { lt: tomorrow } },
-          select: { id: true, employeeId: true },
+          select: { id: true, employeeId: true, reason: true, resignationApprovalStatus: true },
         });
         for (const inst of insts) {
+          // A resignation must be APPROVED before auto-relieving — never relieve
+          // on a pending / rejected resignation just because the LWD passed.
+          if (inst.reason === "Resignation" && inst.resignationApprovalStatus !== "Approved") continue;
+          // Don't auto-relieve while clearance is incomplete — leave the employee
+          // active so HR can finish the checklist (assets stay tracked).
+          const pendingClearance = await prisma.offboardingTask.count({
+            where: { instanceId: inst.id, status: { notIn: ["TaskCompleted", "TaskSkipped"] } },
+          });
+          if (pendingClearance > 0) continue;
           const emp = await prisma.employee.findFirst({
             where: { orgId, id: inst.employeeId, deletedAt: null, status: { notIn: ["Relieved", "Absconding"] } },
             select: { id: true },

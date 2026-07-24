@@ -5,7 +5,8 @@ import { successResponse, validationError, internalError } from "@/lib/api-respo
 import { createGoalSchema, goalTypeToDb, goalTypeFromDb } from "@/lib/validations/performance";
 import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
 import { fireWorkflow } from "@/lib/workflows/executor";
-import { resolveScope, employeeScopeFilter } from "@/lib/rbac/scope";
+import { resolveScope, employeeScopeFilter, getCallerEmployeeId } from "@/lib/rbac/scope";
+import { canAccessEmployee } from "@/lib/rbac/hierarchy";
 import { forbidden } from "@/lib/api-response";
 import type { Prisma } from "@quikit/database";
 
@@ -25,11 +26,19 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
     });
     const scopeFilter = await employeeScopeFilter(ctx, scope);
     if (!scopeFilter.allow) return forbidden("No performance read permission");
+    // A supplied ?employeeId must fall inside the caller's scope — never trust
+    // it to drop the scope clause (was a scope-bypass IDOR).
+    if (employeeId && scopeFilter.employeeIds && !scopeFilter.employeeIds.includes(employeeId)) {
+      return forbidden("You don't have access to this employee's goals");
+    }
 
     const where: Prisma.HrmsGoalWhereInput = {
       orgId, deletedAt: null,
-      ...(employeeId && { employeeId }),
-      ...(scopeFilter.employeeIds && !employeeId && { employeeId: { in: scopeFilter.employeeIds } }),
+      ...(employeeId
+        ? { employeeId }
+        : scopeFilter.employeeIds
+          ? { employeeId: { in: scopeFilter.employeeIds } }
+          : {}),
       ...(status && { status: status as Prisma.HrmsGoalWhereInput["status"] }),
       ...(type && { type: goalTypeToDb(type) }),
     };
@@ -50,8 +59,9 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
   } catch (error) { console.error("GET /performance/goals error:", error); return internalError(); }
 });
 
-export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
+export const POST = withAuth(async (req: NextRequest, ctx) => {
   try {
+    const { orgId, userId } = ctx;
     const body = await req.json();
     const parsed = createGoalSchema.safeParse(body);
     if (!parsed.success) return validationError("Validation failed", parsed.error.flatten().fieldErrors);
@@ -63,6 +73,13 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       select: { id: true },
     });
     if (!employeeExists) return validationError("Invalid employee");
+
+    // Setting a goal for someone else requires them to be within the caller's
+    // team/hierarchy — not just any employee in the org.
+    const callerId = await getCallerEmployeeId(ctx);
+    if (targetEmployeeId !== callerId && !(await canAccessEmployee(ctx, targetEmployeeId))) {
+      return forbidden("You can only set goals for yourself or your team.");
+    }
 
     const goal = await prisma.hrmsGoal.create({
       data: {
