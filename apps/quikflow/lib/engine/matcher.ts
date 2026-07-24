@@ -20,3 +20,18 @@ export async function matchWorkflows(event: EngineEvent) {
     return trigger.app === event.app && trigger.event === event.event;
   });
 }
+
+/**
+ * Targeted match for scheduler-produced `schedule.tick` events: the scheduler
+ * already knows exactly which workflow is due (via `data.workflowId`), so we
+ * run just that one instead of matching every schedule.tick workflow.
+ */
+export async function matchScheduledWorkflow(event: EngineEvent) {
+  const id = event.data?.workflowId;
+  if (typeof id !== "string") return [];
+  const wf = await db.wfWorkflow.findFirst({
+    where: { id, orgId: event.orgId, status: "Active" },
+    select: { id: true, name: true, trigger: true, graphNodes: true, graphEdges: true },
+  });
+  return wf ? [wf] : [];
+}

@@ -34,18 +34,18 @@ export const ACTION_CATALOG: CatalogAction[] = [
   { id: "kpi.delete", label: "Delete a KPI", category: "KPI", doesWhat: "Delete KPI", requiredInputs: ["kpi_id"], optionalInputs: ["reason"], permission: "kpi.delete", output: "{ deleted: true }" },
   { id: "kpi.archive", label: "Archive a KPI", category: "KPI", doesWhat: "Archive KPI", requiredInputs: ["kpi_id"], optionalInputs: [], permission: "kpi.write", output: "Kpi" },
   { id: "kpi.ai.suggest", label: "Run an AI KPI suggestion", category: "KPI", doesWhat: "Run AI suggestion", requiredInputs: ["user_id", "sources[]"], optionalInputs: ["prompt"], permission: "ai.use", output: "Kpi[]" },
-  { id: "kpi.rag.set", label: "Set a KPI's RAG explicitly", category: "KPI", doesWhat: "Set RAG explicitly", requiredInputs: ["kpi_id", "rag"], optionalInputs: [], permission: "kpi.write", output: "Kpi" },
+  { id: "kpi.rag.set", label: "Set a KPI's health status (Red / Yellow / Green)", category: "KPI", doesWhat: "Set the health status explicitly", requiredInputs: ["kpi_id", "rag"], optionalInputs: [], permission: "kpi.write", output: "Kpi" },
   { id: "kpi.export", label: "Export KPI history", category: "KPI", doesWhat: "Export KPI history", requiredInputs: ["filter{}", "format"], optionalInputs: [], permission: "kpi.read", output: "{ url }" },
 
   // ── Priority ─────────────────────────────────────────────────────────────
   { id: "priority.create", label: "Create a priority", category: "Priority", doesWhat: "Create Priority", requiredInputs: ["title", "owner_id", "due_date"], optionalInputs: ["linked_kpi_id", "description"], permission: "priority.write", output: "Priority", real: true },
   { id: "priority.update", label: "Update a priority", category: "Priority", doesWhat: "Update fields", requiredInputs: ["priority_id", "fields{}"], optionalInputs: [], permission: "priority.write", output: "Priority" },
-  { id: "priority.complete", label: "Mark a priority complete", category: "Priority", doesWhat: "Mark complete", requiredInputs: ["priority_id"], optionalInputs: ["note"], permission: "priority.write", output: "Priority" },
-  { id: "priority.reassign", label: "Reassign a priority", category: "Priority", doesWhat: "Change owner", requiredInputs: ["priority_id", "new_owner_id"], optionalInputs: [], permission: "priority.write", output: "Priority" },
+  { id: "priority.complete", label: "Mark a priority complete", category: "Priority", doesWhat: "Mark complete", requiredInputs: ["priority_id"], optionalInputs: ["note"], permission: "priority.write", output: "Priority", real: true },
+  { id: "priority.reassign", label: "Reassign a priority", category: "Priority", doesWhat: "Change owner", requiredInputs: ["priority_id", "new_owner_id"], optionalInputs: [], permission: "priority.write", output: "Priority", real: true },
 
   // ── WWW ──────────────────────────────────────────────────────────────────
-  { id: "www.create", label: "Add a WWW item", category: "WWW", doesWhat: "Add WWW item", requiredInputs: ["who", "what", "when"], optionalInputs: [], permission: "www.write", output: "Www" },
-  { id: "www.complete", label: "Complete a WWW item", category: "WWW", doesWhat: "Mark done", requiredInputs: ["www_id"], optionalInputs: [], permission: "www.write", output: "Www" },
+  { id: "www.create", label: "Add a WWW item", category: "WWW", doesWhat: "Add WWW item", requiredInputs: ["who", "what", "when"], optionalInputs: [], permission: "www.write", output: "Www", real: true },
+  { id: "www.complete", label: "Complete a WWW item", category: "WWW", doesWhat: "Mark done", requiredInputs: ["www_id"], optionalInputs: [], permission: "www.write", output: "Www", real: true },
   { id: "www.bulk.import", label: "Bulk-import WWW items", category: "WWW", doesWhat: "Bulk create from AI meeting", requiredInputs: ["items[]"], optionalInputs: [], permission: "www.write", output: "Www[]" },
 
   // ── OPSP ───────────────────────────────────────────────────────────────
@@ -62,7 +62,7 @@ export const ACTION_CATALOG: CatalogAction[] = [
   { id: "pace.process.update", label: "Update a PACe process", category: "People", doesWhat: "Update process", requiredInputs: ["process_id", "fields{}"], optionalInputs: [], permission: "pace.write", output: "PaceProcess" },
 
   // ── Data / Integrations ──────────────────────────────────────────────────
-  { id: "webhook.post", label: "POST to a webhook URL", category: "Data", doesWhat: "POST to a webhook URL", requiredInputs: ["url", "payload{}"], optionalInputs: ["headers"], permission: "webhook.send", output: "{ status, body }" },
+  { id: "webhook.post", label: "POST to a webhook URL", category: "Data", doesWhat: "POST to a webhook URL", requiredInputs: ["url", "payload{}"], optionalInputs: ["headers"], permission: "webhook.send", output: "{ status, body }", real: true },
   { id: "zapier.emit", label: "Fire a Zapier hook", category: "Data", doesWhat: "Fire Zapier hook", requiredInputs: ["hook_id", "payload{}"], optionalInputs: [], permission: "integration:zapier", output: "{ emitted }" },
   { id: "integration.gsheet.append", label: "Append a row to Google Sheets", category: "Data", doesWhat: "Append row to Google Sheet", requiredInputs: ["sheet_id", "row[]"], optionalInputs: [], permission: "integration:gsheet", output: "{ row_index }" },
   { id: "integration.stripe.pull", label: "Pull a metric from Stripe", category: "Data", doesWhat: "Pull metric from Stripe", requiredInputs: ["metric", "date_range"], optionalInputs: [], permission: "integration:stripe", output: "{ value }" },

@@ -28,7 +28,7 @@ export type Operator =
   // null (+ legacy aliases exists/absent)
   | "is_null" | "is_not_null" | "exists" | "absent";
 
-interface ConditionConfig {
+interface ConditionClause {
   field?: string;
   operator?: Operator;
   value?: unknown;
@@ -36,16 +36,31 @@ interface ConditionConfig {
   unit?: string;
 }
 
-/** Resolve `trigger.value` / `value` against the event's data payload. */
-function resolveField(event: EngineEvent, field: string): unknown {
+/**
+ * A condition node holds either a single clause (legacy shape, fields inline) or
+ * a list of `clauses` joined by a `combinator` (doc §3 — "Combine conditions"
+ * with And / Or, e.g. status is Red AND category is Financial).
+ */
+interface ConditionConfig extends ConditionClause {
+  combinator?: "and" | "or";
+  clauses?: ConditionClause[];
+}
+
+/** Resolve a dotted `trigger.a.b` / `a.b` path against a data object. */
+function resolvePath(data: Record<string, unknown>, field: string): unknown {
   const path = field.startsWith("trigger.") ? field.slice("trigger.".length) : field;
   return path
     .split(".")
     .reduce<unknown>(
       (acc, key) =>
         acc && typeof acc === "object" ? (acc as Record<string, unknown>)[key] : undefined,
-      event.data,
+      data,
     );
+}
+
+/** Resolve a field against the event's (possibly record-enriched) data payload. */
+function resolveField(event: EngineEvent, field: string): unknown {
+  return resolvePath(event.data, field);
 }
 
 const UNIT_MS: Record<string, number> = {
@@ -186,12 +201,62 @@ function compare(
   }
 }
 
+/** A single clause with no usable config passes (always-true gate). */
+function evalClause(clause: ConditionClause, event: EngineEvent): boolean {
+  if (!clause.field || !clause.operator) return true;
+  return compare(resolveField(event, clause.field), clause.operator, clause.value, clause.value2, clause.unit);
+}
+
 /**
- * Evaluate a condition/if_else node. A node with no usable config passes
- * (treated as an always-true gate) so a "basic" workflow never gets stuck.
+ * Evaluate a condition/if_else node. Supports both shapes:
+ *   • multi-clause: `{ combinator: "and"|"or", clauses: [...] }` → clauses joined
+ *   • single-clause: fields inline on the config (legacy)
+ * A node with no usable config passes so a "basic" workflow never gets stuck.
  */
 export function evaluate(node: GraphNode, event: EngineEvent): boolean {
   const cfg = (node.config ?? {}) as ConditionConfig;
-  if (!cfg.field || !cfg.operator) return true;
-  return compare(resolveField(event, cfg.field), cfg.operator, cfg.value, cfg.value2, cfg.unit);
+  if (Array.isArray(cfg.clauses) && cfg.clauses.length > 0) {
+    const results = cfg.clauses.map((c) => evalClause(c, event));
+    return cfg.combinator === "or" ? results.some(Boolean) : results.every(Boolean);
+  }
+  return evalClause(cfg, event);
+}
+
+/**
+ * A saved rule (doc §6): `{ field, op, value }`. Accepts `op` (doc) or
+ * `operator` (engine) interchangeably so the same shape drives the trigger
+ * filter, the "If" condition, and future branch steps.
+ */
+export interface Rule {
+  field?: string;
+  op?: Operator;
+  operator?: Operator;
+  value?: unknown;
+  value2?: unknown;
+  unit?: string;
+}
+
+/** A rule group: rows joined by And / Or (doc §6 — "Combine conditions"). */
+export interface RuleGroup {
+  combine?: "and" | "or";
+  rules?: Rule[];
+}
+
+/**
+ * Evaluate a rule group against a data object (the trigger filter runs this on
+ * the event's record-enriched payload; an absent/empty group passes — an
+ * unfiltered trigger always matches). The single evaluator behind trigger
+ * filters, conditions, and branches.
+ */
+export function evaluateRuleGroup(
+  group: RuleGroup | undefined | null,
+  data: Record<string, unknown>,
+): boolean {
+  if (!group || !Array.isArray(group.rules) || group.rules.length === 0) return true;
+  const results = group.rules.map((r) => {
+    const op = r.op ?? r.operator;
+    if (!r.field || !op) return true;
+    return compare(resolvePath(data, r.field), op, r.value, r.value2, r.unit);
+  });
+  return group.combine === "or" ? results.some(Boolean) : results.every(Boolean);
 }

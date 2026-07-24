@@ -34,15 +34,25 @@ export const POST = withOrgAuth<Params>(async ({ orgId, userId }, _req, { params
   // actually execute on a manual test run instead of skipping for lack of data.
   // The owner is the user clicking "Run now" — a test priority/notification is
   // created for them, so the run produces a visible result.
+  //
+  // Quarter/year come from the org's FISCAL calendar (QuarterSetting), NOT naive
+  // calendar math — otherwise a test Priority lands in the wrong quarter and is
+  // hidden by the QuikScale grid's active-quarter filter. Falls back to the
+  // calendar quarter if the org has no matching QuarterSetting row.
   const now = new Date();
-  const quarter = `Q${Math.floor(now.getMonth() / 3) + 1}`;
+  const currentQuarter = await db.quarterSetting.findFirst({
+    where: { orgId, startDate: { lte: now }, endDate: { gte: now } },
+    select: { quarter: true, fiscalYear: true },
+  });
+  const quarter = currentQuarter?.quarter ?? `Q${Math.floor(now.getMonth() / 3) + 1}`;
+  const year = currentQuarter?.fiscalYear ?? now.getFullYear();
   const sampleKpiContext = {
     name: "Sample KPI (Run now)",
     value: 50,
     target: 100,
     ownerId: userId,
     quarter,
-    year: now.getFullYear(),
+    year,
     kpiId: null,
     teamId: null,
   };

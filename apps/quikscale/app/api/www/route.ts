@@ -11,6 +11,7 @@ import { writeAuditLog } from "@/lib/api/auditLog";
 import { audit, requestContext } from "@/lib/audit";
 import { rateLimitAsync, LIMITS } from "@/lib/api/rateLimit";
 import { notifyWWWAssignment } from "@/lib/services/wwwNotifications";
+import { emitWwwCreated } from "@/lib/services/workflowEvents";
 import { isFeatureFlagEnabled } from "@/lib/utils/featureFlags";
 import { buildWwwScopeWhere } from "@/lib/api/wwwListQuery";
 import { fetchAuditUserMap, decorateAudit } from "@/lib/api/auditUsers";
@@ -195,6 +196,11 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
     ),
   );
   const primaryItem = createdItems[0]!;
+
+  // QuikFlow: emit www.created per created row (fire-and-forget, flag-gated).
+  for (const it of createdItems) {
+    emitWwwCreated({ orgId, wwwId: it.id, what, owner: it.who, status: commonData.status });
+  }
 
   // Seed the note thread: if a note was entered on create, persist it as the
   // first WWWNote on each created item (the WWWItem.notes mirror already holds

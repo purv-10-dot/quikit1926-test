@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+import { emitOpspStatusChanged } from "@/lib/services/workflowEvents";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { resolveOpspOwnerOrSelf } from "@/lib/api/opspOwner";
 
@@ -52,6 +53,17 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   await db.oPSPData.update({
     where: { id: opsp.id },
     data: { status: "reviewed", updatedBy: userId },
+  });
+
+  // QuikFlow: emit opsp.stage.changed + opsp.reviewed.
+  emitOpspStatusChanged({
+    orgId,
+    opspId: opsp.id,
+    owner: ownerId,
+    quarter,
+    year,
+    before: opsp.status,
+    after: "reviewed",
   });
 
   await writeAuditLog({

@@ -5,13 +5,16 @@
  * testable. Re-exported at `@/lib/catalog`.
  */
 import { TRIGGER_CATALOG, type CatalogApp, type CatalogEvent } from "./triggers";
-import { entityForPayloadKey } from "./entities";
-import { fieldType, type FieldType } from "./conditions";
+import { type FieldType } from "./conditions";
+import { MODULES, moduleForEvent, fieldsUsableIn } from "./modules";
+import { toEngineType, type SemanticType } from "./field-types";
 
 export * from "./triggers";
 export * from "./conditions";
 export * from "./actions";
 export * from "./entities";
+export * from "./field-types";
+export * from "./modules";
 
 /** Builder step kinds (unchanged from v1). */
 export const STEP_KINDS: { kind: string; label: string; hint: string }[] = [
@@ -23,11 +26,19 @@ export const STEP_KINDS: { kind: string; label: string; hint: string }[] = [
   { kind: "approval", label: "Request approval", hint: "ask a person" },
 ];
 
-/** A selectable condition field, with the type that drives its operators. */
+/** A selectable condition field, with everything the builder needs to render
+ *  its operator list AND its value control (the data-level value picker). */
 export interface ConditionField {
   id: string;
   label: string;
+  /** Engine type → drives the operator list. */
   type: FieldType;
+  /** Builder semantic type → drives which value control renders. */
+  semanticType: SemanticType;
+  /** Dynamic options source (master:* / module:*) or undefined for free input. */
+  valueSource?: string;
+  /** Inline enum values (status / dropdown). */
+  values?: string[];
 }
 
 export function findApp(slug: string): CatalogApp | undefined {
@@ -58,40 +69,41 @@ export function findEvent(slug: string, eventId: string): CatalogEvent | undefin
   return findApp(slug)?.events.find((e) => e.id === eventId);
 }
 
-const strip = (f: string) => f.replace(/(\[\]|\{\})$/, "");
-const humanize = (f: string) =>
-  strip(f)
-    .split(/[._]/)
-    .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
-    .join(" ");
-
 /**
- * Fields a condition can test for a given event: each scalar payload field
- * directly, and each entity-shaped payload field expanded into that entity's
- * fields (e.g. payload `kpi` → `trigger.kpi.rag_status`). Deduped by id.
+ * Fields a condition can test for a given event, derived from the owning
+ * module's schema (doc §3 — "any field marked usable in condition can be
+ * filtered"). Each becomes `trigger.<fieldKey>` with the engine type that drives
+ * its operators. Conditions read the live record via the data provider, so the
+ * full condition-usable field set is offered regardless of the event payload.
  */
 export function conditionFieldsForEvent(slug: string, eventId: string): ConditionField[] {
-  const event = findEvent(slug, eventId);
-  if (!event) return [];
-  const out: ConditionField[] = [];
-  const seen = new Set<string>();
-  const push = (id: string, label: string) => {
-    if (seen.has(id)) return;
-    seen.add(id);
-    out.push({ id, label, type: fieldType(id) });
-  };
+  if (slug !== "quikscale") return [];
+  const mod = moduleForEvent(eventId);
+  if (!mod) return [];
+  return fieldsUsableIn(mod, "condition").map(toConditionField);
+}
 
-  for (const raw of event.payloadFields) {
-    const key = strip(raw);
-    const entity = entityForPayloadKey(key);
-    if (entity) {
-      for (const ef of entity.fields) {
-        const leaf = strip(ef);
-        push(`trigger.${key}.${leaf}`, `${entity.name} · ${humanize(ef)}`);
-      }
-    } else {
-      push(`trigger.${key}`, humanize(raw));
-    }
-  }
-  return out;
+/** Map a registry FieldDef to a builder ConditionField. */
+function toConditionField(f: {
+  key: string;
+  label: string;
+  type: SemanticType;
+  source?: string;
+  values?: string[];
+}): ConditionField {
+  return {
+    id: `trigger.${f.key}`,
+    label: f.label,
+    type: toEngineType(f.type),
+    semanticType: f.type,
+    valueSource: f.source,
+    values: f.values,
+  };
+}
+
+/** Every condition-usable field across all modules (for global field pickers). */
+export function allConditionFields(): (ConditionField & { module: string })[] {
+  return MODULES.flatMap((m) =>
+    fieldsUsableIn(m, "condition").map((f) => ({ ...toConditionField(f), module: m.label })),
+  );
 }

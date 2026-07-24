@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { db } from "@/lib/db";
+import { syncSchedule } from "@/lib/schedule/persist";
 
 type Params = { id: string };
 
@@ -38,5 +39,10 @@ export const PATCH = withOrgAuth<Params>(async ({ orgId, userId, isAdmin }, req,
     data: { status: parsed.data.on ? "Active" : "Paused" },
     select: { id: true, status: true },
   });
+
+  // Keep the WfSchedule row in sync for time-triggered workflows (upsert when
+  // turned Live + scheduled, remove otherwise).
+  await syncSchedule({ orgId, workflowId: params.id, trigger: wf.trigger, active: parsed.data.on });
+
   return NextResponse.json({ success: true, data: updated });
 });

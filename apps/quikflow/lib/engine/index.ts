@@ -1,6 +1,8 @@
 import type { EngineEvent, RunResult } from "./types";
-import { matchWorkflows } from "./matcher";
+import { matchWorkflows, matchScheduledWorkflow } from "./matcher";
 import { runWorkflow } from "./runner";
+import { loadContext } from "./record";
+import { evaluateRuleGroup, type RuleGroup } from "./conditions";
 
 export type { EngineEvent, RunResult } from "./types";
 
@@ -14,11 +16,24 @@ export type { EngineEvent, RunResult } from "./types";
  * workflows without colliding on WfRun's unique (orgId, dedupeKey).
  */
 export async function dispatchEvent(event: EngineEvent): Promise<RunResult[]> {
-  const workflows = await matchWorkflows(event);
+  // Load the triggering record ONCE — shared by the trigger filter of every
+  // matched workflow and by each run's condition/token evaluation.
+  const context = await loadContext(event);
+  // Scheduler ticks are pre-targeted to a single workflow; everything else
+  // fans out via app+event matching.
+  const workflows =
+    event.event === "schedule.tick"
+      ? await matchScheduledWorkflow(event)
+      : await matchWorkflows(event);
   const results: RunResult[] = [];
   for (const wf of workflows) {
+    // Trigger data filter (doc §9 step 2): drop non-matching workflows early,
+    // before spending a run. Absent filter ⇒ always matches.
+    const trigger = (wf.trigger ?? {}) as { filter?: RuleGroup };
+    if (!evaluateRuleGroup(trigger.filter, context.data)) continue;
+
     const runDedupeKey = `${event.dedupeKey}:${wf.id}`;
-    const result = await runWorkflow(wf, event, runDedupeKey);
+    const result = await runWorkflow(wf, event, runDedupeKey, context);
     if (result) results.push(result);
   }
   return results;
@@ -32,5 +47,6 @@ export async function runSingleWorkflow(
   workflow: { id: string; trigger?: unknown; graphNodes: unknown; graphEdges: unknown },
   event: EngineEvent,
 ): Promise<RunResult | null> {
-  return runWorkflow(workflow, event, event.dedupeKey);
+  const context = await loadContext(event);
+  return runWorkflow(workflow, event, event.dedupeKey, context);
 }

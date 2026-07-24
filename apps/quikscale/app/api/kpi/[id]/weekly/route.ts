@@ -8,7 +8,7 @@ import { weekEditState, earliestEditableWeek } from "@/lib/utils/weekLock";
 import { audit, requestContext } from "@/lib/audit";
 import { weeklyTargetForWeek } from "@/lib/utils/kpiHelpers";
 import { withTxRetry } from "@/lib/api/withTxRetry";
-import { emitKpiBelowTarget } from "@/lib/services/workflowEvents";
+import { emitKpiBelowTarget, emitKpiReadingLogged, emitKpiStatusChanged } from "@/lib/services/workflowEvents";
 
 
 function calcHealthStatus(progress: number, status: string): string {
@@ -326,6 +326,30 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, {
     weekNumber: validated.weekNumber,
     previousValue,
   });
+
+  // Additional QuikFlow triggers off the same save (fire-and-forget, flag-gated).
+  {
+    const weeklyInput = {
+      orgId,
+      kpiId: params.id,
+      name: kpi.name,
+      value: newWeekValue,
+      previousValue,
+      weeklyTarget: weeklyTargetForWeek(
+        { weeklyTargets: kpi.weeklyTargets as Record<string, number> | null, qtdGoal: kpi.qtdGoal, target: kpi.target },
+        validated.weekNumber,
+      ),
+      reverseColor: kpi.reverseColor,
+      ownerId: kpi.owner ?? null,
+      ownerIds: (kpi.ownerIds ?? []) as string[],
+      teamId: kpi.teamId,
+      quarter: kpi.quarter,
+      year: kpi.year,
+      weekNumber: validated.weekNumber,
+    };
+    emitKpiReadingLogged(weeklyInput);
+    emitKpiStatusChanged(weeklyInput);
+  }
 
   return NextResponse.json({ success: true, data: weeklyValue });
 }, { fallbackErrorMessage: "Failed to save weekly value" });

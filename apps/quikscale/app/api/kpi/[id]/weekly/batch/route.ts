@@ -9,7 +9,7 @@ import { weekEditState, earliestEditableWeek } from "@/lib/utils/weekLock";
 import { audit, requestContext } from "@/lib/audit";
 import { weeklyTargetForWeek } from "@/lib/utils/kpiHelpers";
 import { withTxRetry } from "@/lib/api/withTxRetry";
-import { emitKpiBelowTarget } from "@/lib/services/workflowEvents";
+import { emitKpiBelowTarget, emitKpiReadingLogged, emitKpiStatusChanged } from "@/lib/services/workflowEvents";
 
 function calcHealthStatus(progress: number, status: string): string {
   if (status === "completed") return "complete";
@@ -397,14 +397,16 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req: N
     }
   }
 
-  // ── QuikFlow: emit kpi.below_target per applied row (fire-and-forget) ──
-  // Flag-gated + only fires for RED rows; never blocks/breaks the save.
+  // ── QuikFlow: emit KPI events per applied row (fire-and-forget, flag-gated) ──
+  // below_target only fires for RED rows; reading.logged fires for every value;
+  // status.changed only on a RAG-bucket transition. Never blocks the save.
   for (const c of appliedChanges) {
-    emitKpiBelowTarget({
+    const weeklyInput = {
       orgId,
       kpiId: params.id,
       name: kpi.name,
       value: c.newValue,
+      previousValue: c.oldValue,
       weeklyTarget: weeklyTargetForWeek(
         { weeklyTargets: kpi.weeklyTargets as Record<string, number> | null, qtdGoal: kpi.qtdGoal, target: kpi.target },
         c.weekNumber,
@@ -416,8 +418,10 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req: N
       quarter: kpi.quarter,
       year: kpi.year,
       weekNumber: c.weekNumber,
-      previousValue: c.oldValue,
-    });
+    };
+    emitKpiBelowTarget(weeklyInput);
+    emitKpiReadingLogged(weeklyInput);
+    emitKpiStatusChanged(weeklyInput);
   }
 
   return NextResponse.json({

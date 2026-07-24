@@ -3,6 +3,8 @@ import { Prisma } from "@quikit/database";
 import type { EngineEvent, GraphNode, GraphEdge, RunResult, StepResult } from "./types";
 import { evaluate } from "./conditions";
 import { getActionExecutor } from "./actions";
+import { resolveParams, type TokenContext } from "./tokens";
+import type { EnrichedContext } from "./record";
 
 const MAX_STEPS = 64;
 
@@ -31,11 +33,12 @@ function pickNext(edges: GraphEdge[], fromId: string, branch?: "true" | "false")
   return outgoing[0].to;
 }
 
-/** Execute a single node → StepResult. */
+/** Execute a single node → StepResult. `event` is already record-enriched. */
 async function executeNode(
   node: GraphNode,
   event: EngineEvent,
   ctx: { orgId: string; workflowId: string; runId: string },
+  tokenCtx: TokenContext,
 ): Promise<StepResult> {
   switch (node.kind) {
     case "trigger":
@@ -50,7 +53,8 @@ async function executeNode(
     }
     case "action": {
       const executor = getActionExecutor(node.config?.actionId as string | undefined);
-      return executor({ ...ctx, event, node });
+      const params = resolveParams(node.config?.params as Record<string, unknown> | undefined, tokenCtx);
+      return executor({ ...ctx, event, node, params });
     }
     case "wait":
     case "loop":
@@ -75,22 +79,29 @@ export async function runWorkflow(
   workflow: WorkflowForRun,
   event: EngineEvent,
   runDedupeKey: string,
+  context: EnrichedContext,
 ): Promise<RunResult | null> {
   const startedAt = Date.now();
 
-  // Idempotency guard — unique (orgId, dedupeKey) on WfRun.
+  // Idempotency guard — unique (orgId, dedupeKey) on WfRun. A retried event
+  // (same eventId → same dedupeKey) never double-creates a run or its actions.
   const existing = await db.wfRun.findUnique({
     where: { orgId_dedupeKey: { orgId: event.orgId, dedupeKey: runDedupeKey } },
     select: { id: true, status: true },
   });
   if (existing) return null;
 
+  // The event the graph sees carries the record-enriched data (all columns),
+  // so conditions can test `trigger.qtdAchieved` etc. even if the raw event
+  // payload didn't include it.
+  const enrichedEvent: EngineEvent = { ...event, data: context.data };
+
   const run = await db.wfRun.create({
     data: {
       orgId: event.orgId,
       workflowId: workflow.id,
       status: "running",
-      triggerData: event.data as Prisma.InputJsonValue,
+      triggerData: context.data as Prisma.InputJsonValue,
       dedupeKey: runDedupeKey,
     },
     select: { id: true },
@@ -104,6 +115,9 @@ export async function runWorkflow(
   let current: string | null = (nodes.find((n) => n.kind === "trigger") ?? nodes[0])?.id ?? null;
 
   const visited = new Set<string>();
+  // Step outputs accumulate so later actions can reference {{steps.N.field}}.
+  const stepOutputs: Record<string, unknown>[] = [];
+  const tokenCtx: TokenContext = { trigger: context.trigger, steps: stepOutputs };
   let steps = 0;
   let failed = false;
 
@@ -116,14 +130,16 @@ export async function runWorkflow(
 
     let result: StepResult;
     try {
-      result = await executeNode(node, event, {
-        orgId: event.orgId,
-        workflowId: workflow.id,
-        runId: run.id,
-      });
+      result = await executeNode(
+        node,
+        enrichedEvent,
+        { orgId: event.orgId, workflowId: workflow.id, runId: run.id },
+        tokenCtx,
+      );
     } catch (error: unknown) {
       result = { status: "failed", error: error instanceof Error ? error.message : "Action failed" };
     }
+    stepOutputs.push(result.output ?? {});
 
     await db.wfStepLog.create({
       data: {

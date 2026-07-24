@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { ChevronLeft, Play } from "lucide-react";
+import { ChevronLeft, Play, Pencil } from "lucide-react";
 import { apiGet, apiSend } from "@/lib/client/fetcher";
 import { StatusPill } from "@/components/ui/status-pill";
 import { LoadingState, ErrorState } from "@/components/ui/page-states";
@@ -67,6 +67,13 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
             </div>
             <div className="flex items-center gap-3">
               <StatusPill status={data.status === "Active" ? "Live" : data.status} />
+              <Link
+                href={`/workflows/${id}/edit`}
+                className="flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-medium hover:bg-[var(--color-bg-secondary)]"
+              >
+                <Pencil className="h-4 w-4" />
+                Edit
+              </Link>
               <button
                 type="button"
                 onClick={() => {

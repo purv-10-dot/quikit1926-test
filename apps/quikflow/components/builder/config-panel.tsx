@@ -1,23 +1,18 @@
 "use client";
 
-import {
-  TRIGGER_CATALOG,
-  findEvent,
-  conditionFieldsForEvent,
-  operatorsForType,
-  operatorArity,
-  fieldType,
-  DURATION_UNITS,
-  actionsByCategory,
-} from "@/lib/catalog";
-import type { Step } from "@/lib/builder/types";
+import { useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
+import { TRIGGER_CATALOG, findEvent, conditionFieldsForEvent, actionsByCategory } from "@/lib/catalog";
+import type { Step, RuleGroupValue, ScheduleValue } from "@/lib/builder/types";
 import { cn } from "@/lib/utils";
+import { RuleGroupEditor } from "./rule-group-editor";
+import { ActionParams } from "./action-params";
 
 /**
  * Right-hand "Configure step" panel for the builder. Renders the trigger editor
- * (app → module → event) when the trigger node is selected, or a step editor
- * (label + action / condition config) for a selected step. Pure presentation —
- * all state lives in the builder page; this only reads props and calls back.
+ * (app → module → event + an optional "Only when…" data filter) when the trigger
+ * node is selected, or a step editor (action params / condition rule group) for
+ * a selected step. Pure presentation — all state lives in the builder page.
  */
 export function ConfigPanel({
   selected,
@@ -27,6 +22,10 @@ export function ConfigPanel({
   onAppChange,
   onModuleChange,
   onEventChange,
+  triggerFilter,
+  onTriggerFilterChange,
+  schedule,
+  onScheduleChange,
   step,
   onUpdateStep,
   onRemoveStep,
@@ -40,6 +39,10 @@ export function ConfigPanel({
   onAppChange: (v: string) => void;
   onModuleChange: (v: string) => void;
   onEventChange: (v: string) => void;
+  triggerFilter: RuleGroupValue;
+  onTriggerFilterChange: (patch: { combine?: "and" | "or"; rules?: RuleGroupValue["rules"] }) => void;
+  schedule: ScheduleValue;
+  onScheduleChange: (patch: Partial<ScheduleValue>) => void;
   step: Step | undefined;
   onUpdateStep: (patch: Partial<Step>) => void;
   onRemoveStep: () => void;
@@ -58,6 +61,7 @@ export function ConfigPanel({
     ? TRIGGER_CATALOG.find((x) => x.slug === app)?.events.filter((e) => e.module === module) ?? []
     : [];
   const selectedEvent = findEvent(app, event);
+  const fields = conditionFieldsForEvent(app, event);
 
   return (
     <aside className={cn("rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-4", className)}>
@@ -68,11 +72,7 @@ export function ConfigPanel({
       {selected === "trigger" ? (
         <div className="mt-4 space-y-4">
           <Field label="App">
-            <select
-              value={app}
-              onChange={(e) => onAppChange(e.target.value)}
-              className="w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm"
-            >
+            <select value={app} onChange={(e) => onAppChange(e.target.value)} className={SELECT_CLS}>
               {TRIGGER_CATALOG.map((a) => (
                 <option key={a.slug} value={a.slug} disabled={a.comingSoon}>
                   {a.name}
@@ -82,11 +82,7 @@ export function ConfigPanel({
             </select>
           </Field>
           <Field label="Module">
-            <select
-              value={module}
-              onChange={(e) => onModuleChange(e.target.value)}
-              className="w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm"
-            >
+            <select value={module} onChange={(e) => onModuleChange(e.target.value)} className={SELECT_CLS}>
               <option value="">Choose a module…</option>
               {modules.map((m) => (
                 <option key={m} value={m}>
@@ -96,12 +92,7 @@ export function ConfigPanel({
             </select>
           </Field>
           <Field label="Trigger event">
-            <select
-              value={event}
-              onChange={(e) => onEventChange(e.target.value)}
-              disabled={!module}
-              className="w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm disabled:opacity-50"
-            >
+            <select value={event} onChange={(e) => onEventChange(e.target.value)} disabled={!module} className={cn(SELECT_CLS, "disabled:opacity-50")}>
               <option value="">{module ? "Choose an event…" : "Pick a module first"}</option>
               {moduleEvents.map((ev) => (
                 <option key={ev.id} value={ev.id}>
@@ -117,51 +108,120 @@ export function ConfigPanel({
               won&apos;t fire until an emitter is added.
             </p>
           ) : null}
-          {selectedEvent ? (
-            <p className="text-xs text-gray-500">Fires when: {selectedEvent.firesWhen}.</p>
+          {selectedEvent ? <p className="text-xs text-gray-500">Fires when: {selectedEvent.firesWhen}.</p> : null}
+
+          {event === "schedule.tick" ? (
+            <div className="space-y-3 rounded-lg border border-[var(--color-border)] p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Schedule</p>
+              <Field label="Repeat">
+                <select
+                  value={schedule.recurrence}
+                  onChange={(e) => onScheduleChange({ recurrence: e.target.value as ScheduleValue["recurrence"] })}
+                  className={SELECT_CLS}
+                >
+                  <option value="every_day">Every day</option>
+                  <option value="every_weekday">Every weekday</option>
+                  <option value="every_week">Every week</option>
+                  <option value="every_month">Every month</option>
+                  <option value="every_quarter">Every quarter</option>
+                  <option value="every_year">Every year</option>
+                </select>
+              </Field>
+              {schedule.recurrence === "every_week" ? (
+                <Field label="Day of week">
+                  <select value={schedule.dayOfWeek ?? "mon"} onChange={(e) => onScheduleChange({ dayOfWeek: e.target.value })} className={SELECT_CLS}>
+                    {["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map((d) => (
+                      <option key={d} value={d}>
+                        {d[0].toUpperCase() + d.slice(1)}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              ) : null}
+              {schedule.recurrence === "every_month" ? (
+                <Field label="Day of month (1–28)">
+                  <input
+                    type="number"
+                    min={1}
+                    max={28}
+                    value={schedule.dayOfMonth ?? 1}
+                    onChange={(e) => onScheduleChange({ dayOfMonth: Number(e.target.value) })}
+                    className={SELECT_CLS}
+                  />
+                </Field>
+              ) : null}
+              <Field label="Time">
+                <input type="time" value={schedule.time} onChange={(e) => onScheduleChange({ time: e.target.value })} className={SELECT_CLS} />
+              </Field>
+              <p className="text-xs text-gray-500">Runs on QuikFlow&apos;s scheduler (UTC).</p>
+            </div>
+          ) : null}
+
+          {event ? (
+            <Collapsible title="Only when… (optional filter)" defaultOpen={triggerFilter.rules.length > 0}>
+              <RuleGroupEditor
+                fields={fields}
+                combine={triggerFilter.combine}
+                rules={triggerFilter.rules}
+                onChange={onTriggerFilterChange}
+                addLabel="Add filter"
+                emptyHint="No filter — the trigger fires for every matching record. Add one to narrow it (e.g. team is Sales)."
+              />
+            </Collapsible>
           ) : null}
         </div>
       ) : selected && step ? (
         <div className="mt-4 space-y-4">
           <Field label="Label">
-            <input
-              value={step.label}
-              onChange={(e) => onUpdateStep({ label: e.target.value })}
-              className="w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm"
-            />
+            <input value={step.label} onChange={(e) => onUpdateStep({ label: e.target.value })} className={SELECT_CLS} />
           </Field>
           {step.kind === "action" ? (
-            <Field label="Action">
-              <select
-                value={step.actionId ?? ""}
-                onChange={(e) => onUpdateStep({ actionId: e.target.value })}
-                className="w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm"
-              >
-                <option value="">Choose an action…</option>
-                {actionsByCategory().map((g) => (
-                  <optgroup key={g.category} label={g.category}>
-                    {g.actions.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.label}
-                        {a.real ? "" : " · simulated"}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-            </Field>
+            <>
+              <Field label="Action">
+                <select value={step.actionId ?? ""} onChange={(e) => onUpdateStep({ actionId: e.target.value, params: {} })} className={SELECT_CLS}>
+                  <option value="">Choose an action…</option>
+                  {actionsByCategory().map((g) => (
+                    <optgroup key={g.category} label={g.category}>
+                      {g.actions.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.label}
+                          {a.real ? "" : " · simulated"}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </Field>
+              {step.actionId ? (
+                <ActionParams
+                  actionId={step.actionId}
+                  tokenFields={fields}
+                  params={step.params ?? {}}
+                  onChange={(params) => onUpdateStep({ params })}
+                />
+              ) : null}
+            </>
           ) : step.kind === "condition" || step.kind === "if_else" ? (
-            <ConditionConfig app={app} event={event} step={step} onChange={onUpdateStep} />
+            <>
+              <RuleGroupEditor
+                fields={fields}
+                combine={step.combine ?? "and"}
+                rules={step.rules ?? []}
+                onChange={onUpdateStep}
+                emptyHint={event ? "Add at least one condition." : "Pick a trigger event first."}
+              />
+              <p className="text-xs text-gray-500">
+                {step.kind === "condition"
+                  ? "The run continues only if the group is true; otherwise it stops."
+                  : "Chooses the true/false branch."}
+              </p>
+            </>
           ) : (
             <p className="text-xs text-gray-500">
               Detailed configuration for {step.kind} steps arrives with the execution engine phase.
             </p>
           )}
-          <button
-            type="button"
-            onClick={onRemoveStep}
-            className="text-sm font-medium text-red-600 hover:underline"
-          >
+          <button type="button" onClick={onRemoveStep} className="text-sm font-medium text-red-600 hover:underline">
             Remove step
           </button>
         </div>
@@ -172,116 +232,7 @@ export function ConfigPanel({
   );
 }
 
-/** Type-aware condition editor: field → operator (filtered by the field's data
- *  type) → value input(s) sized to the operator's arity. */
-function ConditionConfig({
-  app,
-  event,
-  step,
-  onChange,
-}: {
-  app: string;
-  event: string;
-  step: Step;
-  onChange: (patch: Partial<Step>) => void;
-}) {
-  const fields = conditionFieldsForEvent(app, event);
-  const type = step.field ? fieldType(step.field) : "string";
-  const operators = operatorsForType(type);
-  const arity = operatorArity(step.operator);
-
-  return (
-    <>
-      <Field label="Field">
-        <select
-          value={step.field ?? ""}
-          onChange={(e) => onChange({ field: e.target.value, operator: "", value: "", value2: "", unit: "" })}
-          className="w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm"
-        >
-          <option value="">{event ? "Choose a field…" : "Pick a trigger event first"}</option>
-          {fields.map((f) => (
-            <option key={f.id} value={f.id}>
-              {f.label}
-            </option>
-          ))}
-        </select>
-      </Field>
-      <Field label="Operator">
-        <select
-          value={step.operator ?? ""}
-          onChange={(e) => onChange({ operator: e.target.value })}
-          disabled={!step.field}
-          className="w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm disabled:opacity-50"
-        >
-          <option value="">Choose an operator…</option>
-          {operators.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-      </Field>
-      {arity === "one" ? (
-        <Field label="Value">
-          <input
-            value={step.value ?? ""}
-            onChange={(e) => onChange({ value: e.target.value })}
-            placeholder={type === "date" ? "e.g. 2026-08-01" : "e.g. 50"}
-            className="w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm"
-          />
-        </Field>
-      ) : arity === "range" ? (
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="From">
-            <input
-              value={step.value ?? ""}
-              onChange={(e) => onChange({ value: e.target.value })}
-              placeholder="min"
-              className="w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm"
-            />
-          </Field>
-          <Field label="To">
-            <input
-              value={step.value2 ?? ""}
-              onChange={(e) => onChange({ value2: e.target.value })}
-              placeholder="max"
-              className="w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm"
-            />
-          </Field>
-        </div>
-      ) : arity === "duration" ? (
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="Amount">
-            <input
-              value={step.value ?? ""}
-              onChange={(e) => onChange({ value: e.target.value })}
-              placeholder="e.g. 7"
-              className="w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm"
-            />
-          </Field>
-          <Field label="Unit">
-            <select
-              value={step.unit ?? "days"}
-              onChange={(e) => onChange({ unit: e.target.value })}
-              className="w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm"
-            >
-              {DURATION_UNITS.map((u) => (
-                <option key={u} value={u}>
-                  {u}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
-      ) : null}
-      <p className="text-xs text-gray-500">
-        {step.kind === "condition"
-          ? "The run continues only if this is true; otherwise it stops."
-          : "Chooses the true/false branch."}
-      </p>
-    </>
-  );
-}
+const SELECT_CLS = "w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -289,5 +240,30 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className="mb-1 block text-sm font-medium text-gray-700">{label}</span>
       {children}
     </label>
+  );
+}
+
+function Collapsible({
+  title,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="rounded-lg border border-[var(--color-border)]">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between px-3 py-2 text-sm font-medium"
+      >
+        {title}
+        {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+      </button>
+      {open ? <div className="border-t border-[var(--color-border)] p-3">{children}</div> : null}
+    </div>
   );
 }

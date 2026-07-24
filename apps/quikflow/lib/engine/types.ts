@@ -61,6 +61,9 @@ export interface ActionContext {
   orgId: string;
   workflowId: string;
   runId: string;
+  /** The event, with its data record-enriched (see engine/record.ts). */
   event: EngineEvent;
   node: GraphNode;
+  /** The node's `config.params` with all {{tokens}} + relative dates resolved. */
+  params?: Record<string, unknown>;
 }

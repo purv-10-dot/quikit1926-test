@@ -3,6 +3,7 @@ import { z } from "zod";
 import { Prisma } from "@quikit/database";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { db } from "@/lib/db";
+import { syncSchedule } from "@/lib/schedule/persist";
 
 type Params = { id: string };
 
@@ -59,6 +60,16 @@ export const PATCH = withOrgAuth<Params>(async ({ orgId, userId, isAdmin }, req,
     where: { id: params.id },
     data: parsed.data as Prisma.WfWorkflowUpdateInput,
   });
+
+  // Re-sync the schedule when an Active workflow's trigger changes (recurrence /
+  // time edits, or switching to/from a schedule.tick trigger).
+  await syncSchedule({
+    orgId,
+    workflowId: params.id,
+    trigger: parsed.data.trigger ?? wf.trigger,
+    active: wf.status === "Active",
+  });
+
   return NextResponse.json({ success: true, data: { id: params.id } });
 });
 
