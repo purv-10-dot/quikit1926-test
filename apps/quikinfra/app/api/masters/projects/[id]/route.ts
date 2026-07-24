@@ -18,7 +18,7 @@ function outOfScope(ctxProjectIds: string[] | undefined, id: string): boolean {
 }
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const ctxOrResp = await requireMastersAction("view");
+  const ctxOrResp = await requireMastersAction("construction.project", "view");
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
   if (outOfScope(ctx.projectIds, params.id)) {
@@ -30,7 +30,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 }
 
 async function handleUpdate(req: NextRequest, id: string) {
-  const ctxOrResp = await requireMastersAction("edit");
+  const ctxOrResp = await requireMastersAction("construction.project", "edit");
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
   if (outOfScope(ctx.projectIds, id)) {
@@ -70,7 +70,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
-  const ctxOrResp = await requireMastersAction("delete");
+  const ctxOrResp = await requireMastersAction("construction.project", "delete");
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
   if (outOfScope(ctx.projectIds, params.id)) {

@@ -132,6 +132,8 @@ export default function StockRegisterPage() {
           onPageChange={setPage}
           onPageSizeChange={setPageSize}
           onSearchChange={setSearch}
+          hideFilter
+          hideColumns
         />
       </PageContainer>
     </>

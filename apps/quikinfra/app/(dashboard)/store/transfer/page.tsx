@@ -651,7 +651,15 @@ export default function StockTransferPage() {
   };
 
   const columns: ColDef<TransferRow>[] = [
-    { key: "transferNumber", label: "Transfer No", sortable: true, searchable: true },
+    {
+      key: "transferNumber", label: "Transfer No", sortable: true, searchable: true,
+      render: (row) => (
+        <span className="text-accent-600 cursor-pointer hover:underline font-medium"
+              onClick={() => router.push(`/store/transfer/${row.id}`)}>
+          {row.transferNumber}
+        </span>
+      ),
+    },
     { key: "fromLocationName", label: "From", sortable: true, searchable: true },
     { key: "toLocationName", label: "To", sortable: true, searchable: true },
     { key: "transferDate", label: "Date", type: "date", sortable: true },

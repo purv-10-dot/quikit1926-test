@@ -100,6 +100,10 @@ interface DataTableProps<T = Record<string, unknown>> {
   onSearchChange?: (q: string) => void;
   /** Sort column/direction callback (serverMode). */
   onSortChange?: (key: string, dir: 'asc' | 'desc') => void;
+  /** Hide the toolbar Filter button/dropdown. Off by default. */
+  hideFilter?: boolean;
+  /** Hide the toolbar Columns button/dropdown. Off by default. */
+  hideColumns?: boolean;
 }
 
 const PAGE_SIZES = [25, 50, 100];
@@ -974,6 +978,7 @@ export function DataTable<T extends Record<string, unknown>>({
   emptyTitle, emptyHint, loading = false,
   serverMode = false, serverTotal, serverPage, serverPageSize,
   onPageChange, onPageSizeChange, onSearchChange, onSortChange,
+  hideFilter = false, hideColumns = false,
 }: DataTableProps<T>) {
   // Merge audit cols
   const columns = useMemo(() => {
@@ -1217,6 +1222,7 @@ export function DataTable<T extends Record<string, unknown>>({
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-2 sm:shrink-0">
+            {!hideFilter && (
             <div className="relative" ref={filterRef}>
               <button
                 type="button"
@@ -1254,6 +1260,7 @@ export function DataTable<T extends Record<string, unknown>>({
               />
             </ToolbarDropdownPortal>
           </div>
+            )}
 
           {/* Group by — temporarily hidden (logic retained below)
           <div className="relative" ref={groupRef}>
@@ -1278,6 +1285,7 @@ export function DataTable<T extends Record<string, unknown>>({
           </div>
           */}
 
+          {!hideColumns && (
           <div className="relative" ref={colRef}>
             <button
               type="button"
@@ -1295,6 +1303,7 @@ export function DataTable<T extends Record<string, unknown>>({
               <ColPanel<T> columns={columns} hidden={hiddenCols} frozen={frozenCols} onToggleHide={k => setHiddenCols(p => { const s = new Set(p); s.has(k) ? s.delete(k) : s.add(k); return s; })} onToggleFreeze={k => setFrozenCols(p => { const s = new Set(p); s.has(k) ? s.delete(k) : s.add(k); return s; })} onClose={() => setShowColPanel(false)} />
             </ToolbarDropdownPortal>
           </div>
+          )}
 
             {onAdd && (
               <button
