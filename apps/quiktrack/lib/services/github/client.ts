@@ -174,6 +174,36 @@ export async function getInstallation(
 }
 
 /**
+ * Create a branch on a repo, off a source branch. GitHub has no single
+ * "create branch" call — we read the source branch's tip SHA, then create the
+ * `refs/heads/<newBranch>` ref pointing at it. Returns the new ref URL.
+ * Throws GithubApiError(422) if the branch already exists.
+ */
+export async function createBranch(
+  installationToken: string,
+  repoFullName: string,
+  sourceBranch: string,
+  newBranch: string,
+): Promise<{ ref: string; url: string }> {
+  const src = await githubRequest<{ object: { sha: string } }>(
+    installationToken,
+    `/repos/${repoFullName}/git/ref/heads/${encodeURIComponent(sourceBranch)}`,
+  );
+  const created = await githubRequest<{ ref: string; url: string }>(
+    installationToken,
+    `/repos/${repoFullName}/git/refs`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        ref: `refs/heads/${newBranch}`,
+        sha: src.object.sha,
+      }),
+    },
+  );
+  return { ref: created.ref, url: created.url };
+}
+
+/**
  * Perform an authenticated GitHub REST call with an installation token.
  * `path` is appended to the API base (e.g. `/repos/{owner}/{repo}/branches`).
  * Returns the parsed JSON; throws `GithubApiError` on a non-2xx response.
