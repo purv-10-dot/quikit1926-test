@@ -9,6 +9,7 @@
  */
 
 import { Fragment, useState, useEffect, useCallback } from "react"
+import { useRevalidateOnFocus } from "@/lib/hooks/useRevalidateOnFocus"
 import { Loader2, Wrench, Info, ChevronUp } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { RequirePerm } from "@/components/require-perm"
@@ -60,6 +61,8 @@ function MyRepairRequests() {
   useEffect(() => {
     void load()
   }, [load])
+
+  useRevalidateOnFocus(load)
 
   const pending = requests.filter((r) => r.status === "Submitted").length
 

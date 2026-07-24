@@ -19,12 +19,20 @@ export function ActivityFieldInputs({
   fields,
   values,
   onChange,
+  excludeKeys,
 }: {
   fields: ActivityFieldDefinition[];
   values: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
+  /**
+   * Field keys rendered elsewhere (e.g. the Call form's dedicated Contact/Phone
+   * picker) so they are not drawn twice here. Their VALUES still flow through
+   * the shared `values` map unchanged.
+   */
+  excludeKeys?: readonly string[];
 }) {
-  const renderable = fields.filter((f) => f.fieldType !== "Phone");
+  const exclude = new Set(excludeKeys ?? []);
+  const renderable = fields.filter((f) => f.fieldType !== "Phone" && !exclude.has(f.key));
 
   function setValue(key: string, next: unknown) {
     onChange({ ...values, [key]: next });
@@ -33,11 +41,16 @@ export function ActivityFieldInputs({
   if (renderable.length === 0) return null;
 
   return (
-    <div className="grid grid-cols-1 gap-4">
+    <div className="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
       {renderable.map((f) => {
         const required = f.requirement === "Required";
+        // Multi-line fields read better spanning the full row.
+        const fullRow = f.fieldType === "TextArea";
         return (
-          <label key={f.key} className="block text-sm">
+          <label
+            key={f.key}
+            className={`block text-sm ${fullRow ? "sm:col-span-2" : ""}`}
+          >
             <span className="mb-1 block font-medium text-crm-text">
               {f.label}
               {required && <span className="text-red-600"> *</span>}

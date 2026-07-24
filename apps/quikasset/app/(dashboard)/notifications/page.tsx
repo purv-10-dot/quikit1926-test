@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import { useRevalidateOnFocus } from "@/lib/hooks/useRevalidateOnFocus"
 import {
   Package, ArrowLeftRight, Wrench, AlertTriangle, RefreshCw,
   Users, Bell, Search, CheckCheck, Loader2,
@@ -101,6 +102,7 @@ export default function NotificationsPage() {
   }, [])
 
   useEffect(() => { load() }, [load])
+  useRevalidateOnFocus(load)
 
   const markRead = useCallback((ids: string[]) => {
     setReadIds((prev) => {

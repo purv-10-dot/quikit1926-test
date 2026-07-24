@@ -17,6 +17,7 @@ import {
   type OverviewTask,
 } from "@/components/leads/lead-dashboard-overview";
 import { UnifiedTimeline, type UnifiedTimelineSeed } from "@/components/leads/dashboard/unified-timeline";
+import { EmailThreadPanel } from "@/components/email/email-thread-panel";
 import { LeadAnalyticsTab } from "@/components/leads/dashboard/analytics-tab";
 import { LeadDashboardErrorBoundary } from "@/components/leads/dashboard/error-boundary";
 import type { LeadDashboardSnapshot } from "@/lib/services/leads/dashboard-snapshot";
@@ -25,6 +26,7 @@ import type { LeadAnalyticsBundle } from "@/lib/services/leads/lead-analytics";
 export const TABS = [
   { key: "overview", label: "Overview" },
   { key: "timeline", label: "Timeline" },
+  { key: "emails", label: "Emails" },
   { key: "analytics", label: "Analytics" },
   { key: "callDisposition", label: "Call Disposition" },
   { key: "details", label: "Record Details" },
@@ -245,6 +247,14 @@ export function LeadDetailTabs({
               conversion={conversion}
               suppressOpportunityIds={suppressOpportunityIds}
               onLogActivity={onLogActivity}
+            />
+          ) : null}
+
+          {mountedTabs.has("emails") && active === "emails" ? (
+            <EmailThreadPanel
+              relatedKind="Lead"
+              relatedObjectId={lead.id}
+              defaultTo={[lead.email, lead.secondaryEmail].filter((e): e is string => !!e)}
             />
           ) : null}
 

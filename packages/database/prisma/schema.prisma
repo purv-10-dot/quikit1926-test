@@ -231,6 +231,7 @@ model Org {
   QtUserActivity           QtUserActivity[]
   QtUserViewPref           QtUserViewPref[]
   QtReportView             QtReportView[]
+  QtSavedFilter            QtSavedFilter[]
   UserAppRole              QtUserAppRole[]
   UserPermissionExtra      QtUserPermissionExtra[]
   qsAppRoles               QsAppRole[]
@@ -6813,6 +6814,34 @@ model QtReportView {
   @@schema("app_quiktrack")
 }
 
+/// A user-saved work-item filter for the global Filters surface (the Jira-style
+/// "Save filter" flow). `criteria` is the opaque toolbar state blob the UI
+/// persists (search + built-in filters + customFilters) — shape owned by the
+/// client. Reuses the app's existing saved-view conventions (owner userId,
+/// JSON blob, `visibility` "private"|"shared" like QtIdeaView, `starred` like
+/// QtDashboard) rather than a bespoke viewer/editor sharing matrix.
+model QtSavedFilter {
+  id          String   @id @default(cuid())
+  orgId       String
+  userId      String
+  name        String
+  description String?
+  criteria    Json
+  visibility  String   @default("private") // "private" | "org" | "space" | "user"
+  // For "space": project ids whose members may see it. For "user": user ids.
+  // Empty for "private"/"org".
+  viewerIds   String[] @default([])
+  starred     Boolean  @default(false)
+  isDeleted   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  Org         Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, userId])
+  @@index([orgId, visibility])
+  @@schema("app_quiktrack")
+}
+
 model QtUserActivity {
   id        String   @id @default(cuid())
   orgId     String
@@ -7841,6 +7870,46 @@ model CrmLeadSource {
   @@schema("app_quikcrm")
 }
 
+// Prospects captured by the LinkedIn Chrome extension ("Save to CRM"). This is
+// a standalone capture table — it is intentionally NOT a CrmLead. The extension
+// authenticates with a Bearer JWT and posts the extracted profile to
+// /api/leads/from-linkedin, which upserts one row here per (orgId, linkedinUrl).
+model CrmProspect {
+  id             String   @id @default(cuid())
+  orgId          String
+  name           String
+  email          String?
+  phone          String?
+  title          String?
+  company        String?
+  linkedinUrl    String?
+  shortSummary   String?
+  about          String?
+  profilePicture String?
+  // Raw extracted blobs (posts, company data, experiences) kept verbatim for
+  // later enrichment — shape is owned by the extension, so stored as Json.
+  posts          Json?
+  companyData    Json?
+  experiences    Json?
+  savedById      String?
+  savedByName    String?
+  // Conversion state. "New" until the prospect is converted into a CrmLead via
+  // the Prospects page; then "Converted" with a pointer to the created lead.
+  status         String    @default("New")
+  convertedLeadId String?
+  convertedAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // One prospect per LinkedIn profile per org — re-saving the same profile
+  // updates the existing row instead of creating duplicates.
+  @@unique([orgId, linkedinUrl], name: "prospect_org_linkedin_uk")
+  @@index([orgId])
+  @@index([orgId, createdAt])
+  @@index([orgId, status])
+  @@schema("app_quikcrm")
+}
+
 model CrmOpportunity {
   id                  String                          @id @default(cuid())
   orgId               String
@@ -8555,6 +8624,163 @@ model CrmOutboundMessageLog {
   createdAt DateTime  @default(now())
 
   @@index([orgId])
+  @@schema("app_quikcrm")
+}
+
+// ─── Email integration (P1) ──────────────────────────────────────────────────
+// Per-user connected mailbox (Gmail / Microsoft 365) via OAuth. Two-way sync:
+// send from CRM records + poll inbox/sent for replies. Each synced/sent message
+// also produces a CrmActivity (type "email", sourceSystem=provider,
+// externalId=providerMessageId) so it appears on the Activity Timeline and
+// dedupes via CrmActivity's @@unique([orgId, sourceSystem, externalId]).
+// Tokens are AES-256-GCM encrypted at rest — never plaintext, never passwords.
+
+model CrmMailboxConnection {
+  id              String                @id @default(cuid())
+  orgId           String
+  userId          String
+  provider        String // "gmail" | "microsoft"
+  emailAddress    String
+  accessTokenEnc  String
+  refreshTokenEnc String
+  tokenExpiresAt  DateTime?
+  scope           String?
+  status          String                @default("active") // "active" | "error" | "disconnected"
+  historyId       String? // Gmail incremental sync cursor
+  deltaLink       String? // (legacy P1 single Graph delta cursor; superseded by deltaInbox/deltaSent)
+  // Full-history sync (P2): one-time 90-day backfill of Inbox + Sent, then
+  // incremental. Microsoft delta is per-folder, so two cursors are required.
+  syncState       String                @default("initial") // "initial" | "backfilling" | "live"
+  backfillCursor  String? // provider continuation token for the paginated backfill (Graph nextLink / Gmail pageToken)
+  backfillSince   DateTime? // low-water mark of the backfill window for this connection
+  deltaInbox      String? // Microsoft Graph inbox deltaLink
+  deltaSent       String? // Microsoft Graph sentitems deltaLink
+  deltaDrafts     String? // Microsoft Graph drafts deltaLink (P3 Mailbox module)
+  lastSyncedAt    DateTime?
+  lastError       String?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  threads         CrmEmailThread[]
+  messages        CrmEmailMessage[]
+  mailboxEmails   CrmMailboxEmail[]
+
+  @@unique([orgId, userId]) // one mailbox per user in P1
+  @@index([orgId, status])
+  @@schema("app_quikcrm")
+}
+
+model CrmEmailThread {
+  id                  String               @id @default(cuid())
+  orgId               String
+  mailboxConnectionId String
+  providerThreadId    String
+  subject             String?
+  relatedKind         String // "Lead" | "Contact" | "Account" | "Opportunity"
+  relatedObjectId     String
+  lastMessageAt       DateTime?
+  messageCount        Int                  @default(0)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  mailbox             CrmMailboxConnection @relation(fields: [mailboxConnectionId], references: [id], onDelete: Cascade)
+  messages            CrmEmailMessage[]
+
+  @@unique([orgId, mailboxConnectionId, providerThreadId])
+  @@index([orgId, relatedKind, relatedObjectId])
+  @@schema("app_quikcrm")
+}
+
+model CrmEmailMessage {
+  id                  String                @id @default(cuid())
+  orgId               String
+  mailboxConnectionId String
+  threadId            String
+  providerMessageId   String
+  rfcMessageId        String?
+  inReplyTo           String?
+  direction           String // "outbound" | "inbound"
+  fromAddress         String
+  toAddresses         String[]
+  ccAddresses         String[]
+  subject             String?
+  snippet             String?
+  bodyHtml            String?
+  bodyText            String?
+  sentAt              DateTime?
+  receivedAt          DateTime?
+  activityId          String? // linked CrmActivity.id (timeline entry)
+  relatedKind         String
+  relatedObjectId     String
+  createdAt           DateTime              @default(now())
+  mailbox             CrmMailboxConnection  @relation(fields: [mailboxConnectionId], references: [id], onDelete: Cascade)
+  thread              CrmEmailThread        @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  attachments         CrmEmailAttachment[]
+
+  @@unique([orgId, mailboxConnectionId, providerMessageId]) // dedupe on sync
+  @@index([orgId, threadId])
+  @@index([orgId, relatedKind, relatedObjectId])
+  @@schema("app_quikcrm")
+}
+
+model CrmEmailAttachment {
+  id                   String          @id @default(cuid())
+  orgId                String
+  messageId            String
+  filename             String
+  mimeType             String?
+  sizeBytes            Int?
+  providerAttachmentId String? // fetched lazily on download
+  storageUrl           String? // populated only if persisted to GCS
+  createdAt            DateTime        @default(now())
+  message              CrmEmailMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, messageId])
+  @@schema("app_quikcrm")
+}
+
+// ─── Mailbox module (P3) ──────────────────────────────────────────────────────
+// Raw per-connection mirror of EVERY email in the connected mailbox (not just
+// CRM-matched mail). Powers the in-CRM "Mailbox" module (Inbox/Sent/Drafts/All),
+// read entirely from this table — no provider call when a user opens the inbox.
+// The CRM-matched view (CrmEmailMessage/Thread/Activity/Timeline) is unchanged;
+// when an email also matches a CRM record, crmEmailMessageId cross-links the two.
+model CrmMailboxEmail {
+  id                  String               @id @default(cuid())
+  orgId               String
+  mailboxConnectionId String
+  provider            String // "google" | "microsoft"
+  providerMessageId   String
+  providerThreadId    String?
+  folder              String // "inbox" | "sent" | "drafts"
+  direction           String // "inbound" | "outbound"
+  fromAddress         String
+  fromName            String?
+  toAddresses         String[]
+  ccAddresses         String[]
+  bccAddresses        String[]
+  subject             String?
+  preview             String?
+  bodyHtml            String? // truncated to a size cap; preview always present
+  bodyText            String?
+  hasAttachments      Boolean              @default(false)
+  attachments         Json? // [{filename,mimeType,sizeBytes,providerAttachmentId}]
+  receivedAt          DateTime?
+  sentAt              DateTime?
+  isRead              Boolean              @default(false)
+  isStarred           Boolean              @default(false)
+  labels              String[] // Gmail labelIds / Graph categories
+  // Cross-link to the CRM-matched row (P1/P2), when this email was also attached.
+  crmEmailMessageId   String?
+  matchedKind         String?
+  matchedObjectId     String?
+  syncedAt            DateTime             @default(now())
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  mailbox             CrmMailboxConnection @relation(fields: [mailboxConnectionId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, mailboxConnectionId, providerMessageId]) // dedupe on sync
+  @@index([orgId, mailboxConnectionId, folder, receivedAt])
+  @@index([orgId, mailboxConnectionId, isRead])
+  @@index([orgId, mailboxConnectionId, providerThreadId])
   @@schema("app_quikcrm")
 }
 
@@ -18176,6 +18402,10 @@ model AstAsset {
   invoiceFileType      String?
   invoiceFileSize      Int?
   assetStatus          AstAssetStatus   @default(Available)
+  // Platform User.id of whoever added this asset ("Added by"). Plain string, no
+  // FK — same convention as AstAssetRequest.requesterUserId; full history lives
+  // in AstAuditLog.
+  createdByUserId      String?
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
   assignments          AstAssignment[]
@@ -18212,6 +18442,8 @@ model AstRepair {
   returnedDate     String?
   status           AstRepairStatus  @default(Pending)
   notes            String?
+  // Platform User.id of whoever logged/sent this repair ("Sent to repair by").
+  createdByUserId  String?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
   replacements     AstReplacement[]
@@ -18286,6 +18518,9 @@ model AstAssignment {
   condition      String
   expectedReturn String?
   notes          String?
+  // Platform User.id of whoever performed this assignment ("Assigned by").
+  // Distinct from `userId`, which is the AstEmployee the asset is assigned TO.
+  assignedByUserId String?
   status         AstAssignmentStatus @default(Active)
   assignedAt     DateTime            @default(now())
   returnedAt     DateTime?

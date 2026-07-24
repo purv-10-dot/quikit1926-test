@@ -125,6 +125,51 @@ describe("Item Code & Serial Number are required at the API", () => {
   });
 });
 
+describe("Actor attribution (Added by)", () => {
+  beforeEach(() => resetMockDb());
+
+  const base = {
+    assetType: "Fixed", baseCategoryId: "b1", categoryId: "c1", itemName: "Laptop",
+    itemCode: "LAP-9", serialNumber: "SN-9", invoiceNumber: "INV-9", price: 100,
+    purchaseDate: "2026-01-01", location: "HQ", condition: "Good", description: "x",
+  };
+
+  it("POST stamps createdByUserId with the session user", async () => {
+    setSession({ id: "admin", orgId: "org1", role: "admin" });
+    grantAll();
+    mockDb.astAsset.create.mockResolvedValue({ id: "a9", itemName: "Laptop", itemCode: "LAP-9" } as never);
+    const res = await POST(makeReq("/api/assets", { method: "POST", body: base }), { params: {} });
+    expect(res.status).toBe(201);
+    const call = mockDb.astAsset.create.mock.calls[0]?.[0] as { data: { createdByUserId: string } };
+    expect(call.data.createdByUserId).toBe("admin");
+  });
+
+  it("GET resolves addedByName from the User table (batched)", async () => {
+    setSession({ id: "admin", orgId: "org1", role: "admin" });
+    grantAll();
+    mockDb.astAsset.findMany.mockResolvedValue([{ id: "a1", createdByUserId: "admin" }] as never);
+    mockDb.user.findMany.mockResolvedValue([{ id: "admin", firstName: "Ada", lastName: "Admin", email: "ada@x.com" }] as never);
+
+    const res = await GET(makeReq("/api/assets"), { params: {} });
+    const json = await res.json();
+    expect(res.status).toBe(200);
+    expect(json.data[0].addedByName).toBe("Ada Admin");
+    const call = mockDb.user.findMany.mock.calls[0]?.[0] as { where: { id: { in: string[] } } };
+    expect(call.where.id.in).toEqual(["admin"]);
+  });
+
+  it("GET returns addedByName null for a legacy asset with no actor (no User lookup)", async () => {
+    setSession({ id: "admin", orgId: "org1", role: "admin" });
+    grantAll();
+    mockDb.astAsset.findMany.mockResolvedValue([{ id: "a1", createdByUserId: null }] as never);
+
+    const res = await GET(makeReq("/api/assets"), { params: {} });
+    const json = await res.json();
+    expect(json.data[0].addedByName).toBeNull();
+    expect(mockDb.user.findMany).not.toHaveBeenCalled();
+  });
+});
+
 describe("GET /api/assets — role-aware scoping", () => {
   beforeEach(() => resetMockDb());
 

@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Phone, History, FileText, Mail, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { LogActivityModal } from "@/components/activities/log-activity-modal";
 import type { ActivityRow } from "@/lib/services/activities/to-list-row";
 
 interface Props {
@@ -45,7 +45,6 @@ export function ActivityTimeline({
   relatedObjectId,
   relatedLabel,
   canCreate = false,
-  canViewLeads = false,
   pageSize = 50,
 }: Props) {
   const [items, setItems] = useState<ActivityRow[]>([]);
@@ -53,7 +52,20 @@ export function ActivityTimeline({
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showLog, setShowLog] = useState(false);
+
+  // Log activity is now a dedicated page (/activities/log). Deep-link with this
+  // record pre-linked when its label is known; otherwise open the plain
+  // composer — parity with the old modal, which only pre-linked when a label
+  // was supplied (and only for the Lead kind).
+  const logActivityHref = useMemo(() => {
+    if (!relatedLabel) return "/activities/log";
+    const qs = new URLSearchParams({
+      relatedKind,
+      relatedObjectId,
+      label: relatedLabel,
+    });
+    return `/activities/log?${qs.toString()}`;
+  }, [relatedKind, relatedObjectId, relatedLabel]);
 
   const filterBody = useMemo(
     () => ({
@@ -109,9 +121,9 @@ export function ActivityTimeline({
           Activity timeline
         </h3>
         {canCreate && (
-          <Button type="button" size="sm" onClick={() => setShowLog(true)}>
+          <Link href={logActivityHref} className="crm-btn-primary !px-2.5 !py-1.5 text-xs">
             + Log activity
-          </Button>
+          </Link>
         )}
       </div>
 
@@ -201,19 +213,6 @@ export function ActivityTimeline({
         </div>
       )}
 
-      {canCreate && (
-        <LogActivityModal
-          open={showLog}
-          canViewLeads={canViewLeads}
-          initialLead={
-            relatedKind === "Lead" && relatedLabel
-              ? { id: relatedObjectId, label: relatedLabel }
-              : null
-          }
-          onClose={() => setShowLog(false)}
-          onSuccess={() => void load()}
-        />
-      )}
     </div>
   );
 }
