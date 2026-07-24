@@ -7,10 +7,10 @@
     "worker"
   ],
   "scripts": {
-    "dev": "next dev -p 3020",
+    "dev": "next dev -p 3014",
     "prebuild": "prisma generate --schema=../../packages/database/prisma/schema.prisma",
     "build": "next build",
-    "start": "next start -p 3020",
+    "start": "next start -p 3014",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -29,6 +29,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@google-cloud/storage": "^7.21.0",
+    "@mediapipe/tasks-vision": "^0.10.34",
     "@prisma/client": "^5.22.0",
     "@quikit/auth": "*",
     "@quikit/database": "*",

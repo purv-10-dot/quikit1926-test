@@ -74,18 +74,22 @@ const WARN_MSGS: Record<string, string> = {
   face_too_far: 'Please move closer to the camera.',
 };
 
-// Indirect dynamic import: keeps the (optional) MediaPipe module out of the
-// static dependency graph so the build does not fail when it is not installed.
+// Literal dynamic import so the bundler resolves and code-splits MediaPipe:
+// it is only fetched when a proctored quiz actually starts, not on first paint.
+//
+// It must be a LITERAL specifier. A computed specifier with `webpackIgnore`
+// leaves a bare `import('@mediapipe/tasks-vision')` for the browser to resolve
+// at runtime, which it cannot do — that threw, was swallowed, and silently
+// disabled face proctoring entirely.
+//
+// The try/catch still keeps face proctoring optional at runtime: if the chunk
+// fails to load we degrade to DOM-only proctoring rather than blocking the quiz.
 async function loadMediaPipe(): Promise<{
   FaceLandmarker: unknown;
   FilesetResolver: unknown;
 } | null> {
   try {
-    const spec = '@mediapipe/tasks-vision';
-    const mod = (await import(/* webpackIgnore: true */ spec as string)) as {
-      FaceLandmarker?: unknown;
-      FilesetResolver?: unknown;
-    };
+    const mod = await import('@mediapipe/tasks-vision');
     if (mod?.FaceLandmarker && mod?.FilesetResolver) {
       return { FaceLandmarker: mod.FaceLandmarker, FilesetResolver: mod.FilesetResolver };
     }

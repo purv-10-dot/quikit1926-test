@@ -10,6 +10,7 @@ import { api } from '@/lib/api';
 import { DashboardScaffold } from '@/components/DashboardScaffold';
 import CoursePreviewModal from '@/components/CoursePreviewModal';
 import DeleteConfirmationModal from '@/components/DeleteConfirmationModal';
+import { PageHero, HeroAction } from '@/components/super-admin/PageHero';
 import toast, { Toaster } from 'react-hot-toast';
 
 interface MasterCourse {
@@ -193,31 +194,18 @@ export default function MasterLibraryPage() {
         )}
 
         {/* Premium Header */}
-        <div className="relative overflow-hidden bg-gradient-to-br from-indigo-600 via-violet-600 to-indigo-700 rounded-[2rem] shadow-2xl p-6 sm:p-10 lg:p-12 text-white">
-          <div
-            className="absolute inset-0 opacity-10"
-            style={{
-              backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z' fill='%23ffffff' fill-opacity='1'/%3E%3C/g%3E%3C/svg%3E")`,
-            }}
-          />
-          <div className="relative flex flex-col lg:flex-row lg:items-center lg:justify-between gap-8 text-center lg:text-left">
-            <div className="space-y-3">
-              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight leading-tight">
-                Master <span className="text-indigo-200">Library</span>
-              </h1>
-              <p className="text-indigo-100/80 text-base sm:text-lg font-medium max-w-2xl">
-                Architect complex learning journeys with 3-tier hierarchies and multi-tenant accessibility.
-              </p>
-            </div>
-            <button
-              onClick={handleCreateMasterCourse}
-              className="group bg-white text-indigo-600 hover:bg-indigo-50 px-10 py-5 rounded-2xl font-black inline-flex items-center gap-3 transition-all duration-300 shadow-xl active:scale-95 whitespace-nowrap"
-            >
-              <Layers className="w-6 h-6 transition-transform group-hover:scale-110" />
+        <PageHero
+          icon={BookOpen}
+          title="Master"
+          highlight="Library"
+          subtitle="Architect complex learning journeys with 3-tier hierarchies and multi-tenant accessibility."
+          actions={
+            <HeroAction variant="solid" onClick={handleCreateMasterCourse}>
+              <Layers className="size-4" />
               Launch Course Studio
-            </button>
-          </div>
-        </div>
+            </HeroAction>
+          }
+        />
 
         {/* Search & Stats Bar */}
         {!loading && courses.length > 0 && (

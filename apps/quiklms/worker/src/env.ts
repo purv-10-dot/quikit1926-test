@@ -2,6 +2,10 @@
 export const env = {
   PORT: Number(process.env.WORKER_PORT || 3021),
   JWT_SECRET: process.env.JWT_SECRET || 'quikskill-lms-dev',
+  // Shared cluster secret guarding POST /internal/emit. UNSET = endpoint disabled
+  // (401s everything) — never fall back to a default, or an open socket-broadcast
+  // endpoint ships to anyone who forgets the var.
+  INTERNAL_SECRET: process.env.INTERNAL_SECRET || '',
   AWS_REGION: process.env.AWS_REGION || 'ap-south-1',
   AWS_S3_BUCKET: process.env.AWS_S3_BUCKET || '',
   TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID || '',

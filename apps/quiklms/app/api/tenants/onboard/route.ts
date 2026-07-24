@@ -36,5 +36,5 @@ export const POST = route(async (req) => {
   const dto = await parseBody(req, schema);
   // Actor comes from the session, never the body — it is an audit field.
   const tenant = await onboardTenant({ ...dto, createdByUserId: actor.id } as OnboardInput);
-  return json({ success: true, data: tenant, message: 'Tenant onboarded successfully. Welcome kit email sent.' }, 201);
+  return json({ success: true, data: tenant, message: 'Tenant onboarded successfully. Invitation email sent to the admin.' }, 201);
 });

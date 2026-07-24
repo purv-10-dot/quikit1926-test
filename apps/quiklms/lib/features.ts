@@ -126,6 +126,16 @@ export function buildTenantFeaturesResponse(tenant: Tenant) {
       payoutConfig: tenant.payoutConfig ?? null,
       videoConfig: tenant.videoConfig ?? null,
       enhancementConfig: tenant.enhancementConfig ?? null,
+      // Legacy `buildClientConfig` exposed this at the TOP LEVEL of `config`
+      // (`feature-flags.service.ts:208`) and the client reads it as
+      // `config.approvalWorkflowEnabled !== false` (tenant-admin create-course
+      // and certificates pages). Omitting it made that read `undefined !== false`
+      // → permanently "approval required", so a super-admin turning the workflow
+      // off had no visible effect. Same `!== false` default: ON unless the tenant
+      // explicitly disabled it. Server-side enforcement is unchanged and still
+      // reads featureConfig directly.
+      approvalWorkflowEnabled:
+        ((tenant.featureConfig as FeatureConfig) || {}).approvalWorkflowEnabled !== false,
     },
     branding: {
       logo: tenant.logoUrl ?? undefined,

@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { resolveLmsRole } from '@/lib/auth/resolve-role';
 import { landingPathFor, resolveTenantType } from '@/lib/auth/landing';
-import { FAQS } from './layout';
+import { FAQS } from './faqs';
 import Nav from './_components/Nav';
 import Hero from './_components/Hero';
 import TrustMarquee from './_components/TrustMarquee';

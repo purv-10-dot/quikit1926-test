@@ -16,6 +16,7 @@ import {
   Edit,
   RefreshCw,
   Send,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   Cell,
@@ -33,6 +34,7 @@ import toast, { Toaster } from 'react-hot-toast';
 import { api } from '@/lib/api';
 import { DashboardScaffold } from '@/components/DashboardScaffold';
 import UpgradeEmailTemplateEditor from '@/components/UpgradeEmailTemplateEditor';
+import { PageHero, HeroAction } from '@/components/super-admin/PageHero';
 
 interface GlobalStorage {
   totalUsed: number;
@@ -252,40 +254,24 @@ export default function AuditDashboardPage() {
       <div className="space-y-6 sm:space-y-8 pb-12">
 
         {/* Premium Header with Audit Theme */}
-        <div className="relative overflow-hidden bg-gradient-to-br from-indigo-600 via-violet-600 to-indigo-700 rounded-[2rem] shadow-2xl p-6 sm:p-10 lg:p-12 text-white">
-          <div
-            className="absolute inset-0 opacity-10"
-            style={{
-              backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z' fill='%23ffffff' fill-opacity='1'/%3E%3C/g%3E%3C/svg%3E")`,
-            }}
-          ></div>
-          <div className="relative flex flex-col lg:flex-row lg:items-center lg:justify-between gap-8 text-center lg:text-left">
-            <div className="space-y-3">
-              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight leading-tight">
-                Audit <span className="text-indigo-200">& Analytics</span>
-              </h1>
-              <p className="text-indigo-100/80 text-base sm:text-lg font-medium max-w-2xl">
-                Platform-wide storage intelligence, security audit trails, and tenant resource optimization.
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center justify-center lg:justify-start gap-4">
-              <button
-                onClick={() => setShowTemplateEditor(true)}
-                className="bg-white/10 hover:bg-white/20 backdrop-blur-xl text-white px-8 py-4 rounded-2xl font-bold inline-flex items-center gap-3 transition-all duration-300 border border-white/20 hover:border-white/40 shadow-lg active:scale-95"
-              >
-                <Edit className="w-5 h-5 text-indigo-200" />
+        <PageHero
+          icon={ShieldCheck}
+          title="Audit"
+          highlight="& Analytics"
+          subtitle="Platform-wide storage intelligence, security audit trails, and tenant resource optimization."
+          actions={
+            <>
+              <HeroAction onClick={() => setShowTemplateEditor(true)}>
+                <Edit className="size-4" />
                 Templates
-              </button>
-              <button
-                onClick={loadData}
-                className="bg-white text-indigo-600 hover:bg-indigo-50 px-8 py-4 rounded-2xl font-black inline-flex items-center gap-3 transition-all duration-300 shadow-xl active:scale-95"
-              >
-                <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+              </HeroAction>
+              <HeroAction variant="solid" onClick={loadData}>
+                <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
                 Refresh
-              </button>
-            </div>
-          </div>
-        </div>
+              </HeroAction>
+            </>
+          }
+        />
 
         {/* Template Editor Modal */}
         {showTemplateEditor && (

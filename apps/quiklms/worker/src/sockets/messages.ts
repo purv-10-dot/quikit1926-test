@@ -12,6 +12,25 @@ import { verifySocketToken } from '../jwt.js';
 const RATE_LIMIT_MAX = 20;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 
+/** Socket.IO namespace this gateway owns. */
+export const MESSAGES_NAMESPACE = '/messages';
+
+/**
+ * Broadcast into a conversation room from OUTSIDE a socket handler.
+ *
+ * The Next app persists chat messages over REST (POST /api/messages), which the
+ * worker never sees, so participants sitting on the socket got no live
+ * `newMessage` for anything not sent through `sendMessage` above — half the
+ * chat traffic silently required a refresh. The internal emit endpoint in
+ * `index.ts` calls this to close that gap.
+ *
+ * `room` is the room name, e.g. `conv:<conversationId>` — same key
+ * joinConversation uses.
+ */
+export function emitToConversation(io: Server, room: string, event: string, data: unknown): void {
+  io.of(MESSAGES_NAMESPACE).to(room).emit(event, data);
+}
+
 interface MsgSocket extends Socket {
   userId?: string;
   tenantId?: string | null;

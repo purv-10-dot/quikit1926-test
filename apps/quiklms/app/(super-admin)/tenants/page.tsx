@@ -9,6 +9,7 @@ import toast, { Toaster } from 'react-hot-toast';
 import { api } from '@/lib/api';
 import TenantOnboardingWizard from '@/components/TenantOnboardingWizard';
 import WelcomeKitEditor from '@/components/WelcomeKitEditor';
+import { PageHero, HeroAction } from '@/components/super-admin/PageHero';
 
 /**
  * The tenant portal entry point. Previously read from `tenant.loginUrl`, a
@@ -229,41 +230,24 @@ export default function TenantsPage() {
     <div className="space-y-4 sm:space-y-6 lg:space-y-8 pb-12">
       <Toaster position="top-right" />
 
-      {/* Premium Header with Glassmorphism */}
-      <div className="relative overflow-hidden bg-gradient-to-br from-indigo-600 via-violet-600 to-indigo-700 rounded-[2rem] shadow-2xl p-6 sm:p-10 lg:p-12 text-white">
-        <div
-          className="absolute inset-0 opacity-10"
-          style={{
-            backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z' fill='%23ffffff' fill-opacity='1'/%3E%3C/g%3E%3C/svg%3E")`,
-          }}
-        />
-        <div className="relative flex flex-col lg:flex-row lg:items-center lg:justify-between gap-8">
-          <div className="space-y-3">
-            <h1 className="text-3xl sm:text-4xl lg:text-6xl font-black tracking-tight leading-tight">
-              Platform <span className="text-indigo-200">Partners</span>
-            </h1>
-            <p className="text-indigo-100/80 text-base sm:text-lg lg:text-xl font-medium max-w-2xl">
-              Monitor and manage tenant ecosystems, organizational compliance, and portal configurations.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-4">
-            <button
-              onClick={() => setShowWelcomeKitEditor(true)}
-              className="group relative bg-white/10 hover:bg-white/20 backdrop-blur-xl text-white px-7 py-4 rounded-2xl font-bold inline-flex items-center gap-3 transition-all duration-300 border border-white/20 hover:border-white/40 shadow-lg active:scale-95"
-            >
-              <FileText className="w-5 h-5 transition-transform group-hover:scale-110" />
+      <PageHero
+        icon={Building2}
+        title="Platform"
+        highlight="Partners"
+        subtitle="Monitor and manage tenant ecosystems, organizational compliance, and portal configurations."
+        actions={
+          <>
+            <HeroAction onClick={() => setShowWelcomeKitEditor(true)}>
+              <FileText className="size-4" />
               Portal Kit
-            </button>
-            <button
-              onClick={() => setShowWizard(true)}
-              className="group bg-white text-indigo-600 hover:bg-indigo-50 px-8 py-4 rounded-2xl font-black inline-flex items-center gap-3 transition-all duration-300 shadow-xl hover:shadow-indigo-500/20 active:scale-95"
-            >
-              <Plus className="w-5 h-5 transition-transform group-hover:rotate-90" />
+            </HeroAction>
+            <HeroAction variant="solid" onClick={() => setShowWizard(true)}>
+              <Plus className="size-4" />
               Onboard Organization
-            </button>
-          </div>
-        </div>
-      </div>
+            </HeroAction>
+          </>
+        }
+      />
 
       {/* Premium Search Bar */}
       {tenants.length > 0 && (

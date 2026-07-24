@@ -52,6 +52,12 @@ function superAdminGroups(): NavGroup[] {
       items: [
         { label: 'Tenants',         path: '/tenants',    icon: Building2 },
         { label: 'Onboard Tenant',  path: '/onboarding', icon: UserPlus },
+        // The old super-admin sidebar had a Users entry (/dashboard/users)
+        // right after Organizations. The page survives the port at
+        // /user-management and SUPER_ADMIN passes its route guard, but nothing
+        // linked to it — cross-tenant user management was reachable only by
+        // typing the URL.
+        { label: 'Users',           path: '/user-management', icon: Users },
       ],
     },
     {
@@ -70,6 +76,7 @@ function superAdminGroups(): NavGroup[] {
         { label: 'Platform Analytics', path: '/platform-analytics', icon: BarChart3 },
         { label: 'Audit & Storage',    path: '/audit',              icon: ShieldCheck },
         { label: 'System Health',      path: '/system-health',      icon: HeartPulse },
+        { label: 'Appearance',         path: '/appearance',         icon: Palette },
       ],
     },
   ];

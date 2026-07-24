@@ -169,12 +169,24 @@ function FieldError({ msg }: { msg?: string }) {
 function StepRail({ current, form }: { current: number; form: FormData }) {
   return (
     <div className="lg:sticky lg:top-6">
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-indigo-600 via-violet-600 to-indigo-700 p-6">
-        <div aria-hidden className="pointer-events-none absolute -right-12 -top-10 size-44 rounded-full bg-white/20 blur-3xl" />
+      {/* Brand-var gradient (was hardcoded indigo→violet) so the rail follows
+          the super-admin's console theme like the page heroes do. */}
+      <div
+        className="relative overflow-hidden rounded-2xl p-6"
+        style={{
+          background: 'linear-gradient(160deg, var(--brand-primary), var(--brand-secondary))',
+          color: 'var(--brand-on)',
+        }}
+      >
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -right-12 -top-10 size-44 rounded-full blur-3xl"
+          style={{ background: 'color-mix(in srgb, var(--brand-on) 20%, transparent)' }}
+        />
 
         <div className="relative">
-          <p className="text-sm font-bold text-white">New tenant</p>
-          <p className="mt-0.5 text-[11px] text-indigo-200">Step {current} of {TOTAL_STEPS}</p>
+          <p className="text-sm font-bold">New tenant</p>
+          <p className="qs-hero-sub mt-0.5 text-[11px]">Step {current} of {TOTAL_STEPS}</p>
 
           <ol className="mt-7 space-y-1">
             {STEP_META.map((s, i) => {
@@ -182,27 +194,30 @@ function StepRail({ current, form }: { current: number; form: FormData }) {
               const done = n < current;
               const active = n === current;
               const Icon = s.icon;
+              const badgeStyle = done
+                ? { backgroundColor: 'var(--brand-on)', color: 'var(--brand-on-solid-fg)' }
+                : active
+                  ? { backgroundColor: 'color-mix(in srgb, var(--brand-on) 25%, transparent)' }
+                  : { backgroundColor: 'color-mix(in srgb, var(--brand-on) 10%, transparent)' };
               return (
                 <li
                   key={s.title}
-                  className={`flex items-start gap-3 rounded-xl px-3 py-2.5 transition-colors ${active ? 'bg-white/15' : ''}`}
+                  className="flex items-start gap-3 rounded-xl px-3 py-2.5 transition-colors"
+                  style={active ? { backgroundColor: 'color-mix(in srgb, var(--brand-on) 15%, transparent)' } : undefined}
                 >
                   <span
-                    className={`mt-0.5 grid size-6 shrink-0 place-items-center rounded-lg text-[10px] font-bold ${
-                      done
-                        ? 'bg-white text-indigo-600'
-                        : active
-                          ? 'bg-white/25 text-white'
-                          : 'bg-white/10 text-indigo-200'
-                    }`}
+                    className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-lg text-[10px] font-bold"
+                    style={badgeStyle}
                   >
                     {done ? <Check className="size-3" /> : <Icon className="size-3" />}
                   </span>
                   <div className="min-w-0">
-                    <p className={`text-[13px] font-semibold leading-tight ${active || done ? 'text-white' : 'text-indigo-200'}`}>
+                    <p
+                      className={`text-[13px] font-semibold leading-tight ${active || done ? '' : 'qs-hero-sub'}`}
+                    >
                       {s.title}
                     </p>
-                    <p className="mt-0.5 text-[11px] leading-tight text-indigo-200/75">{s.rail}</p>
+                    <p className="qs-hero-sub mt-0.5 text-[11px] leading-tight">{s.rail}</p>
                   </div>
                 </li>
               );

@@ -1,7 +1,7 @@
 ﻿'use client';
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Sun, Moon, Bell, ChevronDown, Check, UserCog, LogOut, Grid3x3, ExternalLink, Loader2 } from 'lucide-react';
+import { Sun, Moon, ChevronDown, Check, UserCog, LogOut, Grid3x3, ExternalLink, Loader2 } from 'lucide-react';
 import { Sidebar } from './Sidebar';
 import { useTheme, useFeatures, useCurrentUser } from '@/app/providers';
 import { useTranslation, LOCALES, type Locale } from '@/lib/i18n';
@@ -180,7 +180,7 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
       {/* Main column */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* â”€â”€ Topbar (sticky; never scrolls with content) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
-        <header className="z-20 flex h-16 shrink-0 items-center justify-end gap-2 border-b border-line bg-surface/80 px-5 backdrop-blur">
+        <header className="qs-topbar sticky top-0 z-20 flex h-16 shrink-0 items-center justify-end gap-2 px-5">
           {/* Role badge */}
           <span
             className={cn(
@@ -202,7 +202,7 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
             value={locale}
             onChange={(e) => setLocale(e.target.value as Locale)}
             aria-label={t('common.language', 'Language')}
-            className="h-9 rounded-md border border-line-strong bg-surface px-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-[var(--brand-primary)]/30"
+            className="qs-headselect h-9 rounded-lg border border-line-strong bg-surface px-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-[var(--brand-primary)]/30"
           >
             {LOCALES.map((l) => (
               <option key={l} value={l}>{l.toUpperCase()}</option>
@@ -213,17 +213,9 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
           <button
             onClick={toggle}
             aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
-            className="grid size-9 place-items-center rounded-md border border-line-strong text-fg-muted transition-colors hover:bg-surface-muted hover:text-fg"
+            className="qs-iconbtn grid size-9 place-items-center rounded-lg border border-line-strong text-fg-muted"
           >
             {dark ? <Sun className="size-4" /> : <Moon className="size-4" />}
-          </button>
-
-          {/* Notifications */}
-          <button
-            aria-label="Notifications"
-            className="relative grid size-9 place-items-center rounded-md border border-line-strong text-fg-muted transition-colors hover:bg-surface-muted hover:text-fg"
-          >
-            <Bell className="size-4" />
           </button>
 
           {/* App switcher â€” only the apps this user is granted in this org */}
@@ -232,7 +224,7 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
               onClick={() => setAppsOpen((o) => !o)}
               aria-label="Switch app"
               aria-expanded={appsOpen}
-              className="grid size-9 place-items-center rounded-md border border-line-strong text-fg-muted transition-colors hover:bg-surface-muted hover:text-fg"
+              className="qs-iconbtn grid size-9 place-items-center rounded-lg border border-line-strong text-fg-muted"
             >
               <Grid3x3 className="size-4" />
             </button>
@@ -298,8 +290,7 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
             <button
               onClick={() => setMenuOpen((o) => !o)}
               aria-expanded={menuOpen}
-              className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-sm font-medium text-white transition-[filter] hover:brightness-110 active:scale-[0.98]"
-              style={{ backgroundColor: 'var(--brand-secondary)' }}
+              className="qs-accountbtn inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium"
             >
               <UserCog className="size-3.5" />
               <span className="max-w-[10rem] truncate">

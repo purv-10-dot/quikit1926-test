@@ -6,9 +6,13 @@
  * ObjectId|string matching needed), so each metric is recomputed with Prisma
  * queries + JS grouping. Response objects are preserved exactly.
  *
- * Cache helpers (AnalyticsCache) are ported but the public methods below do not
- * wrap themselves in caching (the legacy public methods didn't either — caching
- * was opt-in via getCached/setCache, which callers never invoked here).
+ * Caching: the `LmsAnalyticsCache` table exists, but this service deliberately
+ * implements NO cache helpers. The legacy service exposed opt-in `getCached` /
+ * `setCache` helpers that none of its public methods ever invoked, so porting
+ * them would have added dead code. Every metric below is computed live. If
+ * caching is introduced later, add the helpers here and update this note.
+ * (Expired `LmsAnalyticsCache` rows are purged by the worker's hourly TTL job,
+ * replacing the old Mongo TTL index.)
  */
 import { prisma } from '@/lib/prisma';
 

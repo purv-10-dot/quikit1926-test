@@ -8,14 +8,16 @@
  *  - One-on-one batch + class + meeting setup ported from BatchesService /
  *    SchedulingService / MeetingsService. Class generation reuses the existing
  *    lib scheduling-service.generateClasses(); meetings reuse lib meetings-service.
- *  - Email notifications are no-ops here — confirmation/rejection/completion email
- *    dispatch is owned by the worker (Phase 4); the DB state is fully preserved.
+ *  - Confirmation / rejection / completion emails are sent inline here, matching
+ *    the legacy service. Every send is best-effort: a mail failure must never
+ *    roll back the batch, credits or payout it is reporting on.
  *
  * Mongo populate() of teacher/student reproduced with manual lookups.
  */
 import type { Prisma, LmsTutoringRequestStatus as TutoringRequestStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { NotFound, BadRequest, Internal } from '@/lib/http';
+import { sendEmail } from '@/lib/email';
 import { generateClasses, validateTeacherSchedule } from '@/lib/services/scheduling-service';
 import { createMeeting } from '@/lib/services/meetings-service';
 
@@ -23,6 +25,20 @@ type Slot = { date: string; startTime: string; endTime: string };
 
 const STUDENT_SELECT = { id: true, firstName: true, lastName: true, email: true, grade: true, section: true } as const;
 const TEACHER_SELECT = { id: true, firstName: true, lastName: true, email: true } as const;
+
+/**
+ * Best-effort transactional mail. The legacy chained `.catch()` onto every
+ * `emailService.sendEmail` call for the same reason: a dead SMTP host must not
+ * undo an accepted session, a released credit hold or a created payout.
+ */
+async function trySend(input: Parameters<typeof sendEmail>[0], label: string): Promise<void> {
+  try {
+    await sendEmail(input);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(`[tutoring] ${label} email failed (non-fatal):`, err);
+  }
+}
 
 async function shapeOne(id: string) {
   const r = await prisma.lmsTutoringRequest.findUnique({ where: { id } });
@@ -311,7 +327,6 @@ export async function accept(
       },
       teacherId,
     );
-    void meeting; // join/host links are surfaced via the meeting record + worker emails
 
     // 5. Finalize the request
     await prisma.lmsTutoringRequest.update({
@@ -325,7 +340,65 @@ export async function accept(
       },
     });
 
-    // 6. Notifications — worker owns email dispatch (Phase 4).
+    // 6. Notifications — student gets the JOIN link, teacher the HOST link.
+    //    Wrapped whole: nothing in here may reach the rollback catch below.
+    try {
+      const student = await prisma.lmsUser.findUnique({ where: { id: request.studentId }, select: TEACHER_SELECT });
+      const teacher = await prisma.lmsUser.findUnique({ where: { id: teacherId }, select: TEACHER_SELECT });
+
+      if (student && teacher) {
+        const timeStr = `${dto.confirmedSlot.startTime} - ${dto.confirmedSlot.endTime}`;
+
+        await trySend(
+          {
+            to: student.email,
+            subject: 'Tutoring Session Confirmed',
+            html: `
+            <div style="font-family: Arial, sans-serif; padding: 20px;">
+              <h2>Your Tutoring Session is Confirmed!</h2>
+              <p>Hi ${student.firstName},</p>
+              <p>Your tutoring request has been accepted by <strong>${teacher.firstName} ${teacher.lastName}</strong>.</p>
+              <div style="background: #f4f7fa; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                <p><strong>Subject:</strong> ${request.subject}</p>
+                <p><strong>Date:</strong> ${dateStr}</p>
+                <p><strong>Time:</strong> ${timeStr}</p>
+              </div>
+              <p>You can join the session using the link below at the scheduled time:</p>
+              <p><a href="${meeting.joinUrl}" style="background: #667eea; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Join Session</a></p>
+            </div>
+          `,
+          },
+          'student confirmation',
+        );
+
+        // The legacy body printed the literal `Student ID: <ObjectId>` — the
+        // student record is already loaded here, so the teacher gets a name.
+        await trySend(
+          {
+            to: teacher.email,
+            subject: 'New Tutoring Session Confirmed',
+            html: `
+            <div style="font-family: Arial, sans-serif; padding: 20px;">
+              <h2>You have a new tutoring session!</h2>
+              <p>Hi ${teacher.firstName},</p>
+              <p>You have successfully accepted the tutoring request from <strong>${student.firstName} ${student.lastName}</strong>.</p>
+              <div style="background: #f4f7fa; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                <p><strong>Subject:</strong> ${request.subject}</p>
+                <p><strong>Date:</strong> ${dateStr}</p>
+                <p><strong>Time:</strong> ${timeStr}</p>
+              </div>
+              <p>Host the session using your dashboard or the link below:</p>
+              <p><a href="${meeting.hostUrl || meeting.joinUrl}" style="background: #764ba2; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Host Session</a></p>
+            </div>
+          `,
+          },
+          'teacher confirmation',
+        );
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[tutoring] confirmation notifications failed (non-fatal):', err);
+    }
   } catch {
     // Partial rollback: keep batchId AND scheduledClassId, leave request pending.
     // The legacy assigned scheduledClassId onto the document before meeting
@@ -363,7 +436,36 @@ export async function reject(
     data: { teacherId, rejectionReason: dto.rejectionReason, status: 'rejected' },
   });
 
-  // Student rejection email — worker owns dispatch (Phase 4).
+  // 3. Notify the student — the credits are already back, so say so.
+  try {
+    const student = await prisma.lmsUser.findUnique({
+      where: { id: request.studentId },
+      select: { firstName: true, email: true },
+    });
+    if (student) {
+      await trySend(
+        {
+          to: student.email,
+          subject: 'Tutoring Request Update',
+          html: `
+            <div style="font-family: Arial, sans-serif; padding: 20px;">
+              <h2>Tutoring Request Declined</h2>
+              <p>Hi ${student.firstName},</p>
+              <p>Your tutoring request for <strong>${request.subject}</strong> was declined.</p>
+              <p><strong>Reason:</strong> ${dto.rejectionReason || 'No reason provided.'}</p>
+              <p>Your <strong>${request.creditCostSnapshot || 0} credits</strong> have been returned to your account.</p>
+              <p>You can browse other teachers and try again.</p>
+            </div>
+          `,
+        },
+        'student rejection',
+      );
+    }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('[tutoring] rejection notification failed (non-fatal):', err);
+  }
+
   return shapeOne(request.id);
 }
 
@@ -383,6 +485,9 @@ export async function markCompleted(orgId: string, requestId: string) {
   }
 
   // 2. Create the teacher payout entry
+  // Hoisted out of the try because the completion email below reuses it — the
+  // legacy declared it the same way (`tutoring-requests.service.ts:426`).
+  let studentName = `Student ID: ${request.studentId}`;
   try {
     const confirmed = request.confirmedSlot as unknown as Slot | null;
     if (confirmed?.date) {
@@ -391,7 +496,7 @@ export async function markCompleted(orgId: string, requestId: string) {
       const periodEnd = new Date(new Date(confirmedDate).setHours(23, 59, 59, 999));
 
       const student = await prisma.lmsUser.findUnique({ where: { id: request.studentId }, select: { firstName: true, lastName: true } });
-      const studentName = student ? `${student.firstName} ${student.lastName}` : `Student ID: ${request.studentId}`;
+      if (student) studentName = `${student.firstName} ${student.lastName}`;
 
       await prisma.lmsTeacherPayout.create({
         data: {
@@ -419,6 +524,56 @@ export async function markCompleted(orgId: string, requestId: string) {
   // 3. Mark completed
   await prisma.lmsTutoringRequest.update({ where: { id: request.id }, data: { status: 'completed' } });
 
-  // 4. Completion emails — worker owns dispatch (Phase 4).
+  // 4. Completion emails — student (credits deducted) + teacher (payout pending).
+  try {
+    const student = await prisma.lmsUser.findUnique({
+      where: { id: request.studentId },
+      select: { firstName: true, email: true },
+    });
+    const teacher = request.teacherId
+      ? await prisma.lmsUser.findUnique({ where: { id: request.teacherId }, select: { firstName: true, email: true } })
+      : null;
+
+    if (student) {
+      await trySend(
+        {
+          to: student.email,
+          subject: 'Tutoring Session Completed',
+          html: `
+            <div style="font-family: Arial, sans-serif; padding: 20px;">
+              <h2>Your Tutoring Session is Complete!</h2>
+              <p>Hi ${student.firstName},</p>
+              <p>Your tutoring session for <strong>${request.subject}</strong> is complete.</p>
+              <p><strong>${request.creditCostSnapshot || 0} credits</strong> have been deducted from your wallet.</p>
+              <p>We hope you had a great learning experience!</p>
+            </div>
+          `,
+        },
+        'student completion',
+      );
+    }
+
+    if (teacher) {
+      await trySend(
+        {
+          to: teacher.email,
+          subject: 'Tutoring Session Completed',
+          html: `
+            <div style="font-family: Arial, sans-serif; padding: 20px;">
+              <h2>Session Completed</h2>
+              <p>Hi ${teacher.firstName},</p>
+              <p>Your session with <strong>${studentName || 'your student'}</strong> for <strong>${request.subject}</strong> is complete.</p>
+              <p>A payout of <strong>₹${request.teacherRateSnapshot || 0}</strong> is now pending approval in your dashboard.</p>
+            </div>
+          `,
+        },
+        'teacher completion',
+      );
+    }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('[tutoring] completion notifications failed (non-fatal):', err);
+  }
+
   return shapeOne(request.id);
 }

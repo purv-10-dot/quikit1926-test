@@ -24,22 +24,24 @@ function extractSubdomain(host: string): string | null {
 // /api/verify-token.
 //
 // AUTHENTICATION ONLY — this middleware answers "are you logged in?", never
-// "are you allowed?". Role authorization lives exclusively in the API guards
-// (`requireAuth` + `requireRoles` in `lib/auth/context.ts`).
+// "are you allowed?".
 //
-// An earlier version of this comment claimed authorization also lived in "the
-// route-group layouts". It does not, and never did: all nine layouts
-// ((learner), (teacher), (tenant-admin), (sub-admin), (super-admin), (manager),
-// (parent), (shared), (fullscreen)) are ~4 lines that render `<AppShell
-// role="…">` chrome with no session read and no redirect. Any authenticated
-// user can therefore LOAD any dashboard; only the XHRs it fires are refused.
+// Role authorization is enforced in TWO places, and both are live:
+//   1. API guards — `requireAuth` + `requireRoles` (`lib/auth/context.ts`).
+//   2. Route-group layouts — each of the seven role groups ((learner),
+//      (teacher), (tenant-admin), (sub-admin), (super-admin), (manager),
+//      (parent)) calls `requirePageRoles([...])` from `lib/auth/page-guard.ts`,
+//      which resolves the role with `resolveLmsRole` — the SAME resolver the
+//      API guards use, so page and route gating cannot drift. A refused user is
+//      redirected to their own landing page. (This closed TEST_REPORT.md F-001,
+//      where the layouts were chrome-only and any authenticated user could LOAD
+//      any dashboard.)
 //
-// That is survivable today because the API layer holds — every privileged
-// endpoint behind those pages 403s correctly (verified in TEST_REPORT.md
-// F-001). It stops being survivable the moment a page is built on one of the
-// ~90 routes that call `requireAuth` with no `requireRoles`. If you add page-
-// level gating later, put it in the layouts and update this comment; do not
-// let the comment describe a protection that isn't implemented.
+// (shared) and (fullscreen) intentionally stay auth-only (multi-role by
+// design); the data they render is still scoped by the API guards.
+//
+// Keep this comment truthful: if page-level gating is ever removed, say so here
+// rather than letting the comment describe a protection that isn't implemented.
 const factory = createMiddleware({
   loginRoute: '/login',
   // `/` is the public marketing landing. It must be reachable signed-out —

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Activity, Pause, Play, Users, Clock, TrendingUp, CheckCircle2, RefreshCw } from 'lucide-react';
 import { api } from '@/lib/api';
 import toast, { Toaster } from 'react-hot-toast';
+import { PageHero, HeroAction } from '@/components/super-admin/PageHero';
 
 interface Tenant {
   id: string;
@@ -95,31 +96,18 @@ const SystemHealthPage = () => {
       <Toaster position="top-right" />
       <div className="space-y-6 sm:space-y-8 pb-12">
         {/* Premium Header with System Status Theme */}
-        <div className="relative overflow-hidden bg-gradient-to-br from-indigo-600 via-violet-600 to-indigo-700 rounded-[2rem] shadow-2xl p-6 sm:p-10 lg:p-12 text-white">
-          <div
-            className="absolute inset-0 opacity-10"
-            style={{
-              backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z' fill='%23ffffff' fill-opacity='1'/%3E%3C/g%3E%3C/svg%3E")`,
-            }}
-          ></div>
-          <div className="relative flex flex-col lg:flex-row lg:items-center lg:justify-between gap-8">
-            <div className="space-y-3">
-              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight leading-tight">
-                System <span className="text-indigo-200">Health</span>
-              </h1>
-              <p className="text-indigo-100/80 text-base sm:text-lg font-medium max-w-2xl">
-                Monitor operational status, tenant performance, and platform-wide ecosystem stability.
-              </p>
-            </div>
-            <button
-              onClick={loadTenants}
-              className="group bg-white/10 hover:bg-white/20 backdrop-blur-xl text-white px-8 py-4 rounded-2xl font-bold inline-flex items-center gap-3 transition-all duration-300 border border-white/20 hover:border-white/40 shadow-lg active:scale-95"
-            >
-              <RefreshCw className={`w-5 h-5 transition-transform ${loading ? 'animate-spin' : 'group-hover:rotate-180'}`} />
+        <PageHero
+          icon={Activity}
+          title="System"
+          highlight="Health"
+          subtitle="Monitor operational status, tenant performance, and platform-wide ecosystem stability."
+          actions={
+            <HeroAction variant="solid" onClick={loadTenants}>
+              <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
               Live Refresh
-            </button>
-          </div>
-        </div>
+            </HeroAction>
+          }
+        />
 
         {/* Premium Metrics Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">

@@ -111,7 +111,10 @@ const nextConfig = {
           { key: 'X-DNS-Prefetch-Control', value: 'on' },
           {
             key: 'Permissions-Policy',
-            value: 'camera=(), microphone=(), geolocation=(), browsing-topics=()',
+            // camera=(self): required by quiz/exam face proctoring
+            // (`hooks/useFaceProctoring.ts` calls getUserMedia on this origin).
+            // An empty allowlist here blocks the webcam even for our own pages.
+            value: 'camera=(self), microphone=(), geolocation=(), browsing-topics=()',
           },
           {
             key: 'Strict-Transport-Security',

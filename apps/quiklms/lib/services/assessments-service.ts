@@ -5,9 +5,12 @@
  * embedded inside MasterCourse.modules JSON (subModule.quiz / moduleEndQuiz).
  * findOne resolves both. Scoring + progress/QuizAttempt writes are ported.
  *
- * Quiz-proctoring session manifests are NOT available in this build (the
- * quiz-proctoring module was not ported); the `sessionId` slicing path is
- * skipped and the full question bank is used, matching the no-session branch.
+ * Quiz-proctoring session manifests ARE wired: `getSessionManifest`
+ * (`lib/services/quiz-proctoring-service.ts`, Prisma-backed) is used to slice
+ * questions to the subset the proctoring session locked in, both when serving
+ * `findOne(..., sessionId)` and when scoring `submitQuiz`, so a randomized
+ * attempt is graded against exactly the questions it was shown. When no
+ * sessionId is supplied the full question set is used.
  */
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';

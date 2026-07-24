@@ -6,14 +6,21 @@
  */
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
 import { SessionProvider, useSession } from 'next-auth/react';
+import { Toaster } from 'react-hot-toast';
 import { api } from '@/lib/api';
-import { I18nProvider } from '@/lib/i18n';
+import { I18nProvider, useI18n } from '@/lib/i18n';
 import type { FeatureSet } from '@/lib/features';
 
 // ── Branding ────────────────────────────────────────────────────────────────
+// The defaults MUST match the `:root` values in globals.css (--brand-primary /
+// --brand-secondary). They used to be a blue that appeared nowhere else, so
+// every first paint flashed blue → indigo the moment the effect below ran.
+const DEFAULT_PRIMARY = '#4f46e5';
+const DEFAULT_SECONDARY = '#3730a3';
+
 interface Branding { logo: string | null; primaryColor: string; secondaryColor: string; name: string; tenantType: 'corporate' | 'school' | null }
 const BrandingCtx = createContext<{ branding: Branding; refresh: () => Promise<void> }>({
-  branding: { logo: null, primaryColor: '#3B82F6', secondaryColor: '#1E40AF', name: 'QuikSkill', tenantType: null },
+  branding: { logo: null, primaryColor: DEFAULT_PRIMARY, secondaryColor: DEFAULT_SECONDARY, name: 'QuikSkill', tenantType: null },
   refresh: async () => {},
 });
 export const useBranding = () => useContext(BrandingCtx);
@@ -38,7 +45,9 @@ const UserCtx = createContext<{ user: CurrentUser | null; refresh: () => Promise
 export const useCurrentUser = () => useContext(UserCtx);
 
 // Lighten/darken a hex colour by a percent for hover/light brand shades.
-function shade(hex: string, percent: number): string {
+// Exported so the super-admin console theme derives the same shades this
+// provider does — two implementations would drift.
+export function shade(hex: string, percent: number): string {
   const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
   if (!m) return hex;
   const clamp = (n: number) => Math.min(255, Math.max(0, n));
@@ -62,7 +71,7 @@ export function Providers({ children }: { children: ReactNode }) {
 
 function AppProviders({ children }: { children: ReactNode }) {
   const { status } = useSession();
-  const [branding, setBranding] = useState<Branding>({ logo: null, primaryColor: '#3B82F6', secondaryColor: '#1E40AF', name: 'QuikSkill', tenantType: null });
+  const [branding, setBranding] = useState<Branding>({ logo: null, primaryColor: DEFAULT_PRIMARY, secondaryColor: DEFAULT_SECONDARY, name: 'QuikSkill', tenantType: null });
   const [feature, setFeature] = useState<Omit<FeatureState, 'refresh'>>({ tenantType: null, features: {}, availableRoles: [], roleLabels: {}, config: {}, loaded: false });
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [dark, setDark] = useState(false);
@@ -73,6 +82,32 @@ function AppProviders({ children }: { children: ReactNode }) {
       const d = res.data;
       setBranding({ logo: d.branding.logo, primaryColor: d.branding.primaryColor, secondaryColor: d.branding.secondaryColor, name: d.name, tenantType: d.tenantType });
     } catch { /* not authed / no tenant */ }
+  }, []);
+
+  // PRE-AUTH branding. `/tenants/current` is `requireAuth`-guarded, so gating
+  // all branding on an established session (below) left every signed-out
+  // surface — /login, and any tenant-subdomain landing — painted in the default
+  // indigo, with no tenant logo. The old BrandingContext avoided that by
+  // hitting the PUBLIC endpoint FIRST.
+  //
+  // `/tenants/branding/public` needs no session: it resolves the tenant from
+  // where the request came from (x-tenant-key / x-tenant-subdomain / Host), so
+  // it cannot leak another tenant's branding, and it answers
+  // `{success:true, data:null}` for the apex domain and on any error — which
+  // simply leaves the defaults in place. Fields are individually nullable, so
+  // each one only overrides when actually set.
+  const refreshPublicBranding = useCallback(async () => {
+    try {
+      const res = await api.get<{ data: { logo: string | null; primaryColor: string | null; secondaryColor: string | null } | null }>('/tenants/branding/public');
+      const b = res?.data;
+      if (!b) return;
+      setBranding((prev) => ({
+        ...prev,
+        logo: b.logo ?? prev.logo,
+        primaryColor: b.primaryColor || prev.primaryColor,
+        secondaryColor: b.secondaryColor || prev.secondaryColor,
+      }));
+    } catch { /* public endpoint unavailable — keep defaults */ }
   }, []);
 
   const refreshFeatures = useCallback(async () => {
@@ -135,6 +170,15 @@ function AppProviders({ children }: { children: ReactNode }) {
     void refreshFeatures();
   }, [status, refreshUser, refreshBranding, refreshFeatures]);
 
+  // …and the signed-out half. Deliberately mutually exclusive with the effect
+  // above (`authenticated` vs `unauthenticated`, neither fires while
+  // `loading`), so the two can never race: once a session exists,
+  // `/tenants/current` remains the single source of truth for branding.
+  useEffect(() => {
+    if (status !== 'unauthenticated') return;
+    void refreshPublicBranding();
+  }, [status, refreshPublicBranding]);
+
   const toggle = useCallback(() => {
     setDark((d) => {
       const next = !d;
@@ -148,13 +192,47 @@ function AppProviders({ children }: { children: ReactNode }) {
     // The LMS client contexts below hydrate via GET /api/me and friends; they
     // sit under the SessionProvider mounted by `Providers` above.
     <I18nProvider>
+      <HtmlLangSync />
       <ThemeCtx.Provider value={{ dark, toggle }}>
         <UserCtx.Provider value={{ user, refresh: refreshUser }}>
           <BrandingCtx.Provider value={{ branding, refresh: refreshBranding }}>
-            <FeatureCtx.Provider value={{ ...feature, refresh: refreshFeatures }}>{children}</FeatureCtx.Provider>
+            <FeatureCtx.Provider value={{ ...feature, refresh: refreshFeatures }}>
+              {children}
+              {/*
+                THE app-wide toaster. `react-hot-toast` is imported by ~45
+                pages, but a `<Toaster />` was mounted per-page and only on
+                some of them — so on every other page `toast.success(...)`
+                resolved, updated the store, and rendered nowhere. Silent, and
+                indistinguishable from "the save didn't happen".
+                Position/duration match the single mount the old `App.tsx`
+                had. The per-page toasters are harmless duplicates and are
+                left alone; they can be removed opportunistically.
+              */}
+              <Toaster position="top-right" toastOptions={{ duration: 4000 }} />
+            </FeatureCtx.Provider>
           </BrandingCtx.Provider>
         </UserCtx.Provider>
       </ThemeCtx.Provider>
     </I18nProvider>
   );
+}
+
+/**
+ * Keeps `<html lang>` in step with the selected locale.
+ *
+ * The root layout is a server component and renders a static `lang="en"`,
+ * while the locale lives in localStorage on the client — so the attribute
+ * never changed. That made the `html[lang='hi']` … font-family rules in
+ * globals.css (how the self-hosted Indic faces get applied) unmatchable, and
+ * also mislabelled the page for screen readers on all six non-English locales.
+ *
+ * Written in an effect, i.e. after hydration, so it introduces no server/client
+ * markup mismatch — and <html> already carries `suppressHydrationWarning`.
+ */
+function HtmlLangSync() {
+  const { locale } = useI18n();
+  useEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
+  return null;
 }

@@ -205,7 +205,7 @@ const ProctoredQuizWrapper: React.FC<ProctoredQuizWrapperProps> = ({
                 { icon: Maximize, text: <>The quiz runs in <strong>fullscreen mode</strong>. Exiting fullscreen is recorded as a violation.</> },
                 { icon: Eye, text: <><strong>Tab switching</strong>, window switching, and navigating away will be detected and flagged.</> },
                 { icon: Lock, text: <><strong>Copy-paste</strong>, right-click, and keyboard shortcuts (Ctrl+C/V, PrintScreen) are disabled.</> },
-                { icon: Camera, text: <>Your <strong>webcam</strong> may be active. Face detection monitors for absence, multiple people, and looking away from the screen.</>, highlight: true },
+                { icon: Camera, text: <>Your <strong>webcam</strong> will be active throughout. Face detection monitors for absence, multiple people, and looking away from the screen.</>, highlight: true },
                 { icon: Keyboard, text: <>All violations are logged for <strong>admin review</strong>. Repeated violations may result in quiz invalidation.</> },
                 { icon: MousePointer2, text: <>Right-click and text selection are disabled throughout the quiz.</> },
               ].map(({ icon: Icon, text, highlight }: { icon: React.ComponentType<{ className?: string }>; text: React.ReactNode; highlight?: boolean }, i) => (
@@ -220,8 +220,8 @@ const ProctoredQuizWrapper: React.FC<ProctoredQuizWrapperProps> = ({
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-5 flex items-start gap-2.5">
             <Video className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
             <p className="text-blue-700 text-xs">
-              If webcam proctoring is enabled, your browser will ask for camera permission when you click{' '}
-              <strong>Accept & Start</strong>.
+              Your browser will ask for camera permission when you click{' '}
+              <strong>Accept & Start</strong>. You must grant it to proceed.
             </p>
           </div>
 

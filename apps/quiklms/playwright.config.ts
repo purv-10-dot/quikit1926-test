@@ -29,7 +29,7 @@ export default defineConfig({
   ],
 
   use: {
-    baseURL: process.env.E2E_BASE_URL ?? "http://localhost:3020",
+    baseURL: process.env.E2E_BASE_URL ?? "http://localhost:3014",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "off",
@@ -53,7 +53,7 @@ export default defineConfig({
 
   webServer: {
     command: "npm run dev",
-    url: "http://localhost:3020/api/health",
+    url: "http://localhost:3014/api/health",
     reuseExistingServer: true,
     timeout: 120_000,
     stdout: "ignore",

@@ -46,3 +46,25 @@ next-env.d.ts
 # /QuikSkillsfrontend
 .vercel
 .env*
+
+# ────────────────────────────────────────────────────────────────────────────
+# Local-only / not-for-server artifacts — never pushed to git or deployed.
+# Some are also enforced by the repo-root .gitignore; duplicated here so this
+# app folder documents its own exclusions.
+# ────────────────────────────────────────────────────────────────────────────
+
+# Markdown docs, plans, reports, scratch notes (repo policy: never committed).
+# Covers README.md, GAPS.md, FIX_PLAN.md, TEST_REPORT.md, SKILL*.md, docs/*.md, etc.
+*.md
+
+# Local debug / probe scratch scripts (hardcoded local paths, read .env.local secrets)
+.audit-probe.ts
+*.probe.ts
+
+# Build caches & test output (regenerated locally / in CI, not source)
+/.turbo
+/coverage
+/.vitest-cache
+/playwright-report
+/test-results
+/.playwright-cache

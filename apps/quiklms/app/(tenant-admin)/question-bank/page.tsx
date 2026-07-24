@@ -3,7 +3,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
-import { useBranding } from '@/app/providers';
+import { useBranding, useCurrentUser, useFeatures } from '@/app/providers';
+import { landingPathFor } from '@/lib/auth/landing';
 import { BookOpen, Plus, Search, Trash2, Edit, X, ChevronLeft, ChevronRight, ArrowLeft } from 'lucide-react';
 
 interface QuestionOption { text: string; isCorrect: boolean; }
@@ -43,6 +44,8 @@ const emptyQuestion = (): Partial<QuestionItem> => ({
 export default function QuestionBankPage() {
   const router = useRouter();
   const { branding } = useBranding();
+  const { user } = useCurrentUser();
+  const { tenantType } = useFeatures();
   const [questions, setQuestions] = useState<QuestionItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -225,7 +228,7 @@ export default function QuestionBankPage() {
 
   return (
     <div className="w-full space-y-4 sm:space-y-6 lg:space-y-8 pb-12 px-4 sm:px-6 lg:px-8">
-      <button onClick={() => router.push('/tenant-dashboard')} className="flex items-center gap-2 text-gray-500 hover:text-gray-700 pt-4">
+      <button onClick={() => router.push(landingPathFor(user?.role, tenantType))} className="flex items-center gap-2 text-gray-500 hover:text-gray-700 pt-4">
         <ArrowLeft className="w-4 h-4" /> Back to Dashboard
       </button>
 

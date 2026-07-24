@@ -30,6 +30,39 @@ const CORPORATE_FEATURES = {
   enableVideoClasses: false, enableParentPortal: false, enableMessaging: true, enableCertificates: true, enableAnalytics: true,
 };
 
+/**
+ * School-tenant seed configs — 1:1 with `tenants-onboard.service.ts:113-136`.
+ *
+ * The port set `featureConfig` only, so every school was onboarded with
+ * `schoolConfig` / `creditConfig` / `payoutConfig` NULL: no grade list to assign
+ * students to, no subject list, no credit-expiry or low-balance thresholds, and
+ * no default teacher rate — all of which the school modules read as their
+ * starting point.
+ */
+const SCHOOL_CONFIG = {
+  academicYearStartMonth: 3, // April
+  gradeLevels: ['LKG', 'UKG', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'],
+  subjects: ['Mathematics', 'Science', 'English', 'Hindi', 'Social Studies'],
+  defaultCreditExpiryMonths: 6,
+  defaultTeacherRatePerClass: 500,
+};
+const SCHOOL_CREDIT_CONFIG = {
+  expiryType: 'months',
+  expiryMonths: 6,
+  lowCreditThreshold: 3,
+  warningDays: 7,
+  packages: [] as unknown[],
+};
+const SCHOOL_PAYOUT_CONFIG = {
+  defaultRatePerClass: 500,
+  defaultRatePerHour: 600,
+  rateType: 'per_class',
+  payoutGenerationDay: 1,
+  autoApprove: false,
+  paymentMethods: ['bank_transfer', 'upi'],
+};
+
+
 export interface OnboardInput {
   tenantType?: 'corporate' | 'school';
   orgName: string;
@@ -128,6 +161,14 @@ export async function onboardTenant(dto: OnboardInput) {
       billingAddress: dto.billingAddress,
       storageLimit: Math.round(dto.storageLimit || 2),
       featureConfig: tenantType === 'school' ? SCHOOL_FEATURES : CORPORATE_FEATURES,
+      // School-specific default configs — legacy parity (see SCHOOL_CONFIG above).
+      ...(tenantType === 'school'
+        ? {
+            schoolConfig: SCHOOL_CONFIG,
+            creditConfig: SCHOOL_CREDIT_CONFIG,
+            payoutConfig: SCHOOL_PAYOUT_CONFIG,
+          }
+        : {}),
     },
   });
 
@@ -143,6 +184,12 @@ export async function onboardTenant(dto: OnboardInput) {
     phone: dto.phone,
   });
 
+  // The tenant admin receives exactly ONE email: the invitation dispatched by
+  // provisionLmsUser above (temp password + single-use accept link). A second
+  // "Welcome to QuikSkill LMS" kit email used to go out here too, which meant
+  // two near-identical messages arriving seconds apart; it was dropped so the
+  // account-setup mail stands alone. The welcome-kit PDF is still available on
+  // demand through GET /api/upload/welcome-kit.
   return { ...tenant, adminTempPassword: admin.tempPassword };
 }
 

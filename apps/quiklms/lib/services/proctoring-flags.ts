@@ -19,20 +19,48 @@
  */
 import { prisma } from '@/lib/prisma';
 
-/** Every counter key either service may increment. Guards the SQL interpolation. */
+/**
+ * Every counter key either service may increment. Guards the SQL interpolation.
+ *
+ * This MUST be the union of the `FLAG_FIELD_MAP` VALUES in
+ * `proctoring-service.ts` (exam) and `quiz-proctoring-service.ts` (quiz), plus
+ * `totalFlags`. A name here that no map emits is dead; a name a map emits that
+ * is missing here silently drops the event — `incrementProctoringFlags`
+ * early-returns, so neither the counter NOR `totalFlags` moves.
+ *
+ * That is exactly what happened to face proctoring: this list carried
+ * `faceNotDetected` / `multipleFaces` (plus `noiseDetected`, `devToolsOpened`,
+ * `windowResizes`, `idleWarnings`, `networkDrops` — names nothing in this repo
+ * or the legacy Mongo backend ever emitted or read), while the quiz service
+ * emits `faceNoFace` / `faceMultiple` / `faceLookingAway` / `faceLookingDown` /
+ * `faceEyesClosed` / `faceTooFar`. None matched, so every face violation was
+ * discarded: a face-only session kept `totalFlags: 0` and therefore never
+ * surfaced in `getAssessmentIncidents` / `getAllIncidents` (both filter
+ * `totalFlags > 0`) and the admin review chips all read 0.
+ *
+ * The emitted `face*` names are also what the legacy Mongo schema stored
+ * (`quiz-proctoring-session.schema.ts`) and what the review page reads, so the
+ * allow-list is widened to them rather than the emitter being renamed — stored
+ * rows already use these keys.
+ *
+ * Keep this a fixed list of literal field names. It is the only thing standing
+ * between `$executeRawUnsafe` and injection through the `{${field}}` path.
+ */
 const ALLOWED_FLAG_FIELDS = new Set([
+  // DOM-event counters — emitted by BOTH services.
   'tabSwitches',
   'fullscreenExits',
   'copyAttempts',
   'rightClicks',
   'shortcutAttempts',
-  'faceNotDetected',
-  'multipleFaces',
-  'noiseDetected',
-  'devToolsOpened',
-  'windowResizes',
-  'idleWarnings',
-  'networkDrops',
+  // Face counters — emitted by the quiz service only (MediaPipe hook).
+  'faceNoFace',
+  'faceMultiple',
+  'faceLookingAway',
+  'faceLookingDown',
+  'faceEyesClosed',
+  'faceTooFar',
+  // Aggregate. `face_camera_error` maps straight to this (bump once, not twice).
   'totalFlags',
 ]);
 

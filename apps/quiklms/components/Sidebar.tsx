@@ -1,7 +1,8 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ChevronLeft } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ChevronLeft, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { useBranding, useFeatures } from '@/app/providers';
 import { getNavGroups } from './nav-groups';
@@ -11,6 +12,9 @@ interface SidebarProps {
   collapsed?: boolean;
   onToggle?: () => void;
 }
+
+/** Per-group open/closed state, persisted so the menu shape survives reloads. */
+const GROUPS_KEY = 'qs_sidebar_groups';
 
 export function Sidebar({ role, collapsed = false, onToggle }: SidebarProps) {
   const pathname = usePathname();
@@ -22,13 +26,39 @@ export function Sidebar({ role, collapsed = false, onToggle }: SidebarProps) {
   const isActive = (path: string) =>
     pathname === path || (path !== '/' && pathname.startsWith(`${path}/`));
 
+  // Groups default to open; only explicit user toggles are stored. Reading in an
+  // effect (not during render) keeps the server and first client paint identical,
+  // so this can't produce a hydration mismatch.
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(GROUPS_KEY);
+      if (raw) setOpenGroups(JSON.parse(raw));
+    } catch { /* corrupt value — fall back to all-open */ }
+  }, []);
+
+  const toggleGroup = (id: string) => {
+    setOpenGroups((prev) => {
+      const next = { ...prev, [id]: !(prev[id] ?? true) };
+      try { localStorage.setItem(GROUPS_KEY, JSON.stringify(next)); } catch { /* private mode */ }
+      return next;
+    });
+  };
+
+  // Running index across all rendered items so the entrance stagger is smooth
+  // across group boundaries (capped so long menus don't crawl in forever).
+  let animIndex = 0;
+
   return (
     <aside
       className={cn(
-        'relative flex h-screen shrink-0 flex-col border-r border-line bg-surface transition-[width] duration-200 ease-out',
+        'qs-sidebar relative flex h-screen shrink-0 flex-col border-r border-line bg-surface transition-[width] duration-200 ease-out',
         collapsed ? 'w-[68px]' : 'w-64',
       )}
     >
+      {/* Ambient brand glow — clipped decorative layer, sits behind everything. */}
+      <div className="qs-sidebar-glow" aria-hidden="true" />
+
       {/* ── Logo / Brand ────────────────────────────────────────────────────── */}
       <div className={cn('flex h-16 shrink-0 items-center border-b border-line', collapsed ? 'justify-center px-2' : 'gap-3 px-5')}>
         {branding.logo ? (
@@ -36,10 +66,7 @@ export function Sidebar({ role, collapsed = false, onToggle }: SidebarProps) {
           <img src={branding.logo} alt={branding.name} className="h-8 w-auto max-w-full object-contain" />
         ) : (
           <div className={cn('flex items-center', collapsed ? '' : 'gap-2.5')}>
-            <div
-              className="flex size-8 shrink-0 items-center justify-center rounded-lg text-sm font-black text-white shadow-sm"
-              style={{ backgroundColor: 'var(--brand-primary)' }}
-            >
+            <div className="qs-brandmark flex size-8 shrink-0 items-center justify-center rounded-lg text-sm font-black">
               {(branding.name ?? 'Q')[0].toUpperCase()}
             </div>
             {!collapsed && (
@@ -55,7 +82,7 @@ export function Sidebar({ role, collapsed = false, onToggle }: SidebarProps) {
           onClick={onToggle}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           title={collapsed ? 'Expand' : 'Collapse'}
-          className="absolute -right-3 top-[52px] z-10 grid size-6 place-items-center rounded-full border border-line bg-surface text-fg-muted shadow-sm transition-colors hover:bg-surface-muted hover:text-fg"
+          className="qs-collapse-btn absolute -right-3 top-[52px] z-10 grid size-6 place-items-center rounded-full border border-line bg-surface text-fg-muted shadow-sm"
         >
           <ChevronLeft className={cn('size-3.5 transition-transform duration-200', collapsed && 'rotate-180')} />
         </button>
@@ -69,51 +96,75 @@ export function Sidebar({ role, collapsed = false, onToggle }: SidebarProps) {
           );
           if (!visibleItems.length) return null;
 
+          // In the icon-only rail there is no header to click, so groups always
+          // render open — the accordion only applies to the expanded sidebar.
+          const hasActive = visibleItems.some((item) => isActive(item.path));
+          const open = collapsed ? true : (openGroups[group.id] ?? true);
+
           return (
             <div key={group.id} className="mb-1">
               {/* Group label — hidden when collapsed (a divider stands in) */}
               {collapsed ? (
                 <div className="mx-3 my-2 border-t border-line/70 first:border-0" />
               ) : (
-                <p className="mb-0.5 px-4 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-subtle first:pt-2">
-                  {group.label}
-                </p>
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(group.id)}
+                  aria-expanded={open}
+                  aria-controls={`navgroup-${group.id}`}
+                  className="qs-group-btn mb-0.5 flex w-full items-center gap-1.5 px-4 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-subtle first:pt-2"
+                >
+                  <span className="truncate">{group.label}</span>
+                  {/* Shut group still holds the current page — say so. */}
+                  {!open && hasActive && (
+                    <span
+                      className="size-1.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: 'var(--brand-primary)' }}
+                    />
+                  )}
+                  <ChevronDown
+                    className={cn(
+                      'ml-auto size-3 shrink-0 transition-transform duration-200',
+                      !open && '-rotate-90',
+                    )}
+                  />
+                </button>
               )}
 
-              {visibleItems.map((item) => {
-                const active = isActive(item.path);
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.path + item.label}
-                    href={item.path}
-                    aria-current={active ? 'page' : undefined}
-                    title={collapsed ? item.label : undefined}
-                    className={cn(
-                      'group relative mx-2 flex items-center gap-3 rounded-lg py-2 text-sm transition-all duration-150',
-                      collapsed ? 'justify-center px-0' : 'px-3',
-                      active
-                        ? 'font-semibold text-[var(--brand-primary)]'
-                        : 'font-medium text-fg-muted hover:bg-surface-muted hover:text-fg',
-                    )}
-                    style={active ? { backgroundColor: 'color-mix(in srgb, var(--brand-primary) 10%, transparent)' } : undefined}
-                  >
-                    {active && (
-                      <span
-                        className="absolute inset-y-1.5 left-0 w-0.5 rounded-r-full"
-                        style={{ backgroundColor: 'var(--brand-primary)' }}
-                      />
-                    )}
-                    <Icon
-                      className={cn(
-                        'size-[17px] shrink-0 transition-colors duration-150',
-                        active ? 'text-[var(--brand-primary)]' : 'text-fg-subtle group-hover:text-fg-muted',
-                      )}
-                    />
-                    {!collapsed && <span className="truncate leading-none">{item.label}</span>}
-                  </Link>
-                );
-              })}
+              <div className="qs-nav-group" data-open={open} id={`navgroup-${group.id}`}>
+                <div>
+                  {visibleItems.map((item) => {
+                    const active = isActive(item.path);
+                    const Icon = item.icon;
+                    const delay = Math.min(animIndex++ * 28, 420);
+                    return (
+                      <Link
+                        key={item.path + item.label}
+                        href={item.path}
+                        data-active={active}
+                        aria-current={active ? 'page' : undefined}
+                        title={collapsed ? item.label : undefined}
+                        style={{ animationDelay: `${delay}ms` }}
+                        className={cn(
+                          'qs-nav-link qs-nav-enter group mx-2 flex items-center gap-3 rounded-lg py-2 text-sm',
+                          collapsed ? 'justify-center px-0' : 'px-3',
+                          active
+                            ? 'font-semibold text-[var(--brand-primary)]'
+                            : 'font-medium text-fg-muted hover:text-fg',
+                        )}
+                      >
+                        <Icon
+                          className={cn(
+                            'qs-nav-icon size-[17px] shrink-0',
+                            active ? 'text-[var(--brand-primary)]' : 'text-fg-subtle group-hover:text-fg-muted',
+                          )}
+                        />
+                        {!collapsed && <span className="truncate leading-none">{item.label}</span>}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           );
         })}
@@ -121,11 +172,8 @@ export function Sidebar({ role, collapsed = false, onToggle }: SidebarProps) {
 
       {/* ── Tenant badge ────────────────────────────────────────────────────── */}
       <div className={cn('shrink-0 border-t border-line py-3', collapsed ? 'px-2' : 'px-3')}>
-        <div className={cn('flex items-center rounded-lg bg-surface-muted', collapsed ? 'justify-center p-2' : 'gap-2.5 px-3 py-2.5')}>
-          <div
-            className="flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-bold text-white"
-            style={{ backgroundColor: 'var(--brand-secondary)' }}
-          >
+        <div className={cn('qs-tenant-card flex items-center rounded-lg', collapsed ? 'justify-center p-2' : 'gap-2.5 px-3 py-2.5')}>
+          <div className="qs-tenant-avatar flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-bold">
             {(branding.name ?? 'Q')[0].toUpperCase()}
           </div>
           {!collapsed && (

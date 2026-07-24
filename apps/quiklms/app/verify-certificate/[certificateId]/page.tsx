@@ -21,8 +21,13 @@ const VerifyCertificatePage = () => {
     try {
       setLoading(true);
       setError(null);
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? '';
-      const response = await fetch(`${apiUrl}/verify-certificate/${certificateId}`);
+      // Same-origin `/api/...`, NOT `${NEXT_PUBLIC_API_URL}/verify-certificate/...`.
+      // The route handlers live at `app/api/verify-certificate/[certificateId]`
+      // (+ `/download`), and NEXT_PUBLIC_API_URL is this app's own origin, so the
+      // old URL resolved to THIS page's HTML — `response.json()` threw and every
+      // valid certificate rendered "Certificate not found". A relative path is
+      // also env-independent, which is what a public page wants.
+      const response = await fetch(`/api/verify-certificate/${certificateId}`);
       const data = await response.json();
       if (data.success) {
         setCertificate(data.data);
@@ -37,11 +42,10 @@ const VerifyCertificatePage = () => {
   };
 
   const handleDownload = () => {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? '';
     if (certificate?.pdfUrlPresigned) {
       window.open(certificate.pdfUrlPresigned, '_blank');
     } else if (certificate?.certificateId) {
-      window.open(`${apiUrl}/verify-certificate/${certificate.certificateId}/download`, '_blank');
+      window.open(`/api/verify-certificate/${certificate.certificateId}/download`, '_blank');
     }
   };
 

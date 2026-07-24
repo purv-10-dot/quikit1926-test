@@ -7,13 +7,16 @@
  *  - Mongo `populate()` of teacher/student/batch is reproduced with manual
  *    lookups (actor refs are scalar Strings, no Prisma relations), returning
  *    the same nested object shapes the legacy API produced.
- *  - Side-effects that depended on external infra (email join links, reminder
- *    scheduling, escalation resolution) are reduced to no-ops/logs — the worker
- *    process (Phase 4) owns those. The DB state transitions are preserved.
+ *  - Student notifications (class-start join link, reschedule notice) are sent
+ *    inline, as the legacy did. Every send is best-effort — a mail failure must
+ *    never stop a class from starting or a reschedule from committing.
+ *  - Reminder (re)scheduling is the one side-effect still owned by external
+ *    infra; the DB state transitions are preserved regardless.
  */
 import type { LmsClassStatus as ClassStatus, Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { BadRequest, NotFound } from '@/lib/http';
+import { sendEmail } from '@/lib/email';
 
 type ScheduleSlot = { dayOfWeek: number; startTime: string; endTime: string; location?: string };
 
@@ -328,7 +331,18 @@ export async function startClass(orgId: string, classId: string) {
     /* non-blocking — never fail starting a class over escalation bookkeeping */
   }
 
-  // Punctuality scoring (preserved); join-link emails remain worker-owned.
+  // Send the meeting join link to every student in the batch — port of
+  // `sendJoinLinkToStudents` (`scheduling.service.ts:436-441,469-553`). Kept
+  // inline (not deferred): the teacher pressing Start IS the trigger, and
+  // without it a student is never told the class went live.
+  try {
+    await sendJoinLinkToStudents(updated);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[scheduling] failed to send join links for class', classId, err);
+  }
+
+  // Punctuality scoring (preserved).
   try {
     const classStart = new Date(updated.startTime);
     const delayMinutes = (Date.now() - classStart.getTime()) / 60000;
@@ -343,6 +357,114 @@ export async function startClass(orgId: string, classId: string) {
 
   const [shaped] = await hydrateClasses([updated], false);
   return shaped;
+}
+
+// ═══════════════ SEND JOIN LINK TO STUDENTS ═══════════════
+/** The `en-IN` long form both student notifications used in the legacy. */
+function formatClassTime(value: Date | string): string {
+  return new Date(value).toLocaleString('en-IN', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+/** Best-effort mail — a failed send must never fail the state transition. */
+async function trySend(to: string, subject: string, html: string): Promise<void> {
+  try {
+    await sendEmail({ to, subject, html });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[scheduling] email send failed (non-fatal) for', to, err);
+  }
+}
+
+/** Active students of a batch — `userModel.find({_id: {$in: batch.studentIds}, isActive: true})`. */
+async function activeBatchStudents(batchId: string) {
+  const rows = await prisma.lmsBatchStudent.findMany({ where: { batchId }, select: { studentId: true } });
+  const ids = rows.map((r) => r.studentId);
+  if (!ids.length) return [];
+  return prisma.lmsUser.findMany({
+    where: { id: { in: ids }, isActive: true },
+    select: { id: true, firstName: true, email: true },
+  });
+}
+
+/**
+ * Port of the legacy private `sendJoinLinkToStudents` (`scheduling.service.ts:469-553`).
+ *
+ * The meeting is resolved from the class's `meetingId` first and, failing that,
+ * by a reverse lookup on `scheduledClassId` — which is then back-linked onto the
+ * class, exactly as the legacy did, so subsequent lookups are direct. A class
+ * with no meeting (or no join URL) is simply skipped.
+ */
+async function sendJoinLinkToStudents(cls: {
+  id: string;
+  batchId: string;
+  teacherId: string;
+  title: string;
+  startTime: Date;
+  meetingId: string | null;
+}): Promise<void> {
+  let meeting = cls.meetingId ? await prisma.lmsMeeting.findUnique({ where: { id: cls.meetingId } }) : null;
+
+  if (!meeting) {
+    meeting = await prisma.lmsMeeting.findFirst({ where: { scheduledClassId: cls.id } });
+    if (meeting) {
+      await prisma.lmsScheduledClass
+        .update({ where: { id: cls.id }, data: { meetingId: meeting.id } })
+        .catch(() => {});
+    }
+  }
+
+  // No meeting for this class — nothing to send.
+  if (!meeting?.joinUrl) return;
+  // Copied out of the `let` so the narrowing survives into the map callback.
+  const { joinUrl, password } = meeting;
+
+  const students = await activeBatchStudents(cls.batchId);
+  if (!students.length) return;
+
+  const batch = await prisma.lmsBatch.findUnique({ where: { id: cls.batchId }, select: { subject: true } });
+  const teacher = await prisma.lmsUser.findUnique({
+    where: { id: cls.teacherId },
+    select: { firstName: true, lastName: true },
+  });
+  const teacherName = teacher ? `${teacher.firstName} ${teacher.lastName}` : 'Your Teacher';
+  const classTime = formatClassTime(cls.startTime);
+
+  await Promise.all(
+    students.map((student) =>
+      trySend(
+        student.email,
+        `Class Starting Now: ${cls.title}`,
+        `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px 10px 0 0; text-align: center;">
+              <h1 style="color: white; margin: 0; font-size: 24px;">Your Class is Starting!</h1>
+            </div>
+            <div style="background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px;">
+              <p style="font-size: 16px; color: #333;">Hi ${student.firstName},</p>
+              <p style="font-size: 14px; color: #555;">Your class <strong>${cls.title}</strong> with <strong>${teacherName}</strong> is starting now.</p>
+              <div style="background: white; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #667eea;">
+                <p style="margin: 5px 0; color: #555;"><strong>Subject:</strong> ${batch?.subject || 'N/A'}</p>
+                <p style="margin: 5px 0; color: #555;"><strong>Time:</strong> ${classTime}</p>
+                <p style="margin: 5px 0; color: #555;"><strong>Teacher:</strong> ${teacherName}</p>
+              </div>
+              <div style="text-align: center; margin: 25px 0;">
+                <a href="${joinUrl}" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 14px 40px; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: bold; display: inline-block;">Join Class Now</a>
+              </div>
+              ${password ? `<p style="font-size: 12px; color: #888; text-align: center;">Meeting Password: <strong>${password}</strong></p>` : ''}
+              <p style="font-size: 12px; color: #888; text-align: center;">If the button doesn't work, copy this link: ${joinUrl}</p>
+            </div>
+          </div>
+        `,
+      ),
+    ),
+  );
 }
 
 // ═══════════════ COMPLETE CLASS ═══════════════
@@ -412,8 +534,61 @@ export async function rescheduleClass(
     data: { status: 'rescheduled', rescheduledTo: newClass.id, rescheduleReason: dto.reason },
   });
 
-  // Reminder rescheduling + student notification → worker (Phase 4).
+  // Notify every student in the batch of the move — port of the legacy private
+  // `sendRescheduleNotification` (`scheduling.service.ts:678-730`). Awaited
+  // rather than fire-and-forget: a serverless invocation can be frozen the
+  // moment the response is returned, so a detached promise may never run.
+  // (Reminder re-scheduling remains external — nothing in this build owns it.)
+  try {
+    await sendRescheduleNotification(cls, newClass, dto.reason);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[scheduling] failed to send reschedule notifications for class', classId, err);
+  }
+
   return newClass;
+}
+
+/**
+ * Port of the legacy private `sendRescheduleNotification`. Recipients are the
+ * batch's active students only — the legacy did not copy parents here.
+ */
+async function sendRescheduleNotification(
+  oldClass: { batchId: string; title: string; startTime: Date },
+  newClass: { startTime: Date },
+  reason?: string,
+): Promise<void> {
+  const students = await activeBatchStudents(oldClass.batchId);
+  if (!students.length) return;
+
+  const oldTime = formatClassTime(oldClass.startTime);
+  const newTime = formatClassTime(newClass.startTime);
+
+  await Promise.all(
+    students.map((student) =>
+      trySend(
+        student.email,
+        `Class Rescheduled: ${oldClass.title}`,
+        `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); padding: 30px; border-radius: 10px 10px 0 0; text-align: center;">
+              <h1 style="color: white; margin: 0; font-size: 24px;">Class Rescheduled</h1>
+            </div>
+            <div style="background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px;">
+              <p style="font-size: 16px; color: #333;">Hi ${student.firstName},</p>
+              <p style="font-size: 14px; color: #555;">Your class <strong>${oldClass.title}</strong> has been rescheduled.</p>
+              <div style="background: white; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #f59e0b;">
+                <p style="margin: 5px 0; color: #888;"><s><strong>Original Time:</strong> ${oldTime}</s></p>
+                <p style="margin: 5px 0; color: #333;"><strong>New Time:</strong> ${newTime}</p>
+                ${reason ? `<p style="margin: 5px 0; color: #555;"><strong>Reason:</strong> ${reason}</p>` : ''}
+              </div>
+              <p style="font-size: 12px; color: #888; text-align: center;">You will receive a reminder before the new class time.</p>
+            </div>
+          </div>
+        `,
+      ),
+    ),
+  );
 }
 
 // ═══════════════ MARK ATTENDANCE TIMESTAMP ═══════════════
