@@ -641,6 +641,12 @@ export default function MaterialIssuePage() {
       label: "Issue No",
       sortable: true,
       searchable: true,
+      render: (row) => (
+        <span className="text-accent-600 cursor-pointer hover:underline font-medium"
+              onClick={() => router.push(`/store/issue/${row.id}`)}>
+          {row.issueNumber}
+        </span>
+      ),
     },
     { key: "projectName", label: "Project", sortable: true, searchable: true },
     {
