@@ -1,23 +1,22 @@
 /**
- * Velocity report calculation engine (Story Points variant).
+ * Velocity report calculation engine.
  *
- * Velocity compares, per sprint:
- *   - Committed  = Σ storyPoints of the issues in the sprint at START
- *   - Completed  = Σ storyPoints of those committed issues that ended DONE
+ * Jira semantics: velocity is frozen ONCE, at "Complete sprint", into a
+ * QtSprintSnapshot row, and never recomputed. Per sprint it captures:
+ *   - Committed = every scoped issue in the sprint at completion time
+ *   - Completed = the subset in a DONE status at that moment
+ * …for BOTH story points (QtIssue.storyPoints) and estimated hours
+ * (QtIssue.eta — the original estimate; logged/timesheet hours are NOT used).
  *
  * Only estimable leaf work counts. EPIC and SUBTASK are structural (epics
  * aggregate; subtasks roll up into their parent), and BUG is excluded by
  * product requirement — velocity measures planned delivery, not defect churn.
  * See {@link isVelocityScopedType}.
  *
- * These helpers are intentionally pure — callers pass plain rows, the functions
- * return plain numbers/objects. Same inputs → same output, so the logic is
- * shared by the snapshot-capture routes (sprint start / complete) and the
- * report route, and unit-tested in isolation.
- *
- * NOTE on "committed hours": the doc also describes a hours variant. QtIssue has
- * no dedicated estimated-hours field today (only `storyPoints` and `eta`), so
- * the hours toggle ships in a follow-up. This module is points-only for now.
+ * These helpers are pure — callers pass plain rows, the functions return plain
+ * numbers/objects. Same inputs → same output, so the logic is shared by the
+ * completion route (which persists the result) and unit-tested in isolation.
+ * The report route does NOT call these — it reads the stored snapshot verbatim.
  */
 
 /** Issue types that count toward velocity. Excludes EPIC, SUBTASK and BUG. */
@@ -28,85 +27,61 @@ export function isVelocityScopedType(type: string): boolean {
   return !VELOCITY_EXCLUDED_TYPES.has(type.toUpperCase());
 }
 
-/** Minimal issue shape the scope + point sums need. */
+/** Minimal issue shape the velocity sums need. */
 export interface VelocityIssue {
   id: string;
   type: string;
+  /** Story points (null → 0). */
   storyPoints: number | null;
-  /** Status category of the issue's current status ("DONE" | "IN_PROGRESS" | …). */
+  /** Estimated hours — QtIssue.eta, the original estimate (null → 0). */
+  eta: number | null;
+  /** Status category of the issue's status ("DONE" | "IN_PROGRESS" | …). */
   statusCategory: string;
 }
 
-/** The frozen "committed" scope captured at sprint start. */
-export interface CommittedScope {
+/** The full frozen velocity metric set for one sprint (both point + hour axes). */
+export interface SprintVelocityMetrics {
   committedPoints: number;
+  completedPoints: number;
+  committedHours: number;
+  completedHours: number;
   committedCount: number;
-  /** Ids of the committed (in-scope) issues — frozen so completed is computed
-   *  against the same set at close, immune to mid-sprint add/remove. */
+  completedCount: number;
+  /** Points-based completion %: round(completed/committed * 100), 0 if none. */
+  completionPct: number;
+  /** Ids of the scoped (committed) issues, frozen for audit/traceability. */
   committedIssueIds: string[];
 }
 
 /**
- * Compute the committed scope from the issues assigned to a sprint at START.
- * Filters to velocity-scoped types (drops EPIC/SUBTASK/BUG), sums storyPoints
- * (null → 0), and freezes the surviving issue ids.
+ * Compute the complete velocity metric set for a sprint at completion time.
+ * `issues` is every issue currently in the sprint (call this BEFORE moving
+ * incomplete items out). Scoped to leaf work (EPIC/SUBTASK/BUG excluded);
+ * "completed" = scoped issues in a DONE status.
  */
-export function computeCommittedScope(issues: VelocityIssue[]): CommittedScope {
+export function computeSprintVelocity(issues: VelocityIssue[]): SprintVelocityMetrics {
   const scoped = issues.filter((i) => isVelocityScopedType(i.type));
+  const done = scoped.filter((i) => i.statusCategory === "DONE");
+
+  const committedPoints = sum(scoped, (i) => i.storyPoints);
+  const completedPoints = sum(done, (i) => i.storyPoints);
+
   return {
-    committedPoints: scoped.reduce((sum, i) => sum + (i.storyPoints ?? 0), 0),
+    committedPoints,
+    completedPoints,
+    committedHours: sum(scoped, (i) => i.eta),
+    completedHours: sum(done, (i) => i.eta),
     committedCount: scoped.length,
+    completedCount: done.length,
+    completionPct: committedPoints > 0 ? Math.round((completedPoints / committedPoints) * 100) : 0,
     committedIssueIds: scoped.map((i) => i.id),
   };
 }
 
-/** The "completed" result computed at close against the committed set. */
-export interface CompletedResult {
-  completedPoints: number;
-  completedCount: number;
+function sum(issues: VelocityIssue[], pick: (i: VelocityIssue) => number | null): number {
+  return issues.reduce((acc, i) => acc + (pick(i) ?? 0), 0);
 }
 
-/**
- * Compute completed points/count: of the frozen committed set, the subset whose
- * status ended in a DONE category. `committedIssueIds` is the frozen scope;
- * `issues` are those same issues with their final status. Any committed id that
- * no longer resolves (e.g. deleted) simply doesn't count as completed.
- *
- * The type-scope filter (EPIC/SUBTASK/BUG out) is re-applied here too, so an
- * out-of-scope id that somehow made it into a snapshot (legacy/hand-seeded data)
- * can never leak into the completed tally.
- */
-export function computeCompleted(
-  committedIssueIds: string[],
-  issues: VelocityIssue[],
-): CompletedResult {
-  const committed = new Set(committedIssueIds);
-  const done = issues.filter(
-    (i) =>
-      committed.has(i.id) &&
-      i.statusCategory === "DONE" &&
-      isVelocityScopedType(i.type),
-  );
-  return {
-    completedPoints: done.reduce((sum, i) => sum + (i.storyPoints ?? 0), 0),
-    completedCount: done.length,
-  };
-}
-
-/** One sprint's velocity row, as the report API returns it. */
-export interface VelocitySprintPoint {
-  sprintId: string;
-  sprintName: string;
-  status: string;
-  committedPoints: number;
-  completedPoints: number;
-  committedCount: number;
-  completedCount: number;
-  /** True when committed/completed came from a frozen snapshot rather than a
-   *  live recompute — lets the UI mark estimated (live) vs authoritative rows. */
-  fromSnapshot: boolean;
-}
-
-// The mean of a completed-points series (the "Average" velocity line) is shared
-// with the productivity report — reuse `averageVelocity(number[])` from
+// The mean of a completed series (the "Average" velocity line) is shared with
+// the productivity report — reuse `averageVelocity(number[])` from
 // lib/reports/productivity.ts rather than duplicating the reducer here.

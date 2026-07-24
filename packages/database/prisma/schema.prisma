@@ -6471,28 +6471,40 @@ model QtSprint {
 /// it, so a closed sprint no longer knows what it originally committed to —
 /// the velocity chart reads committed vs completed from this frozen snapshot.
 ///
+/// Jira semantics: the row is written ONCE, at "Complete sprint", and is
+/// IMMUTABLE thereafter — editing issues later never changes a completed
+/// sprint's velocity. The Velocity Report reads these stored values verbatim
+/// and never recalculates. Only COMPLETED sprints have a row.
+///
 /// Scope rule (matches the velocity calc in lib/reports/velocity.ts): only
 /// estimable leaf work counts — EPIC, SUBTASK and BUG types are excluded.
-/// Points sum QtIssue.storyPoints (null → 0). `committedIssueIds` freezes the
-/// exact issue set at start so `completed*` can be computed against that same
-/// set at close, immune to items added/removed mid-sprint.
+/// Committed = every scoped issue in the sprint at completion time (before
+/// incomplete items are moved out). Completed = the subset in a DONE status.
+/// Points sum QtIssue.storyPoints (null → 0); hours sum QtIssue.eta (the
+/// original estimate, in hours — logged/timesheet hours are NOT used).
 model QtSprintSnapshot {
   id                String    @id @default(cuid())
   orgId             String
   projectId         String
   sprintId          String    @unique
-  /// Σ storyPoints of committed (non-EPIC/SUBTASK/BUG) issues at sprint start.
+  /// Σ storyPoints of committed (non-EPIC/SUBTASK/BUG) issues at completion.
   committedPoints   Int       @default(0)
-  /// Count of committed issues at sprint start.
+  /// Count of committed issues at completion.
   committedCount    Int       @default(0)
-  /// Frozen list of QtIssue ids committed at start (the velocity "scope").
+  /// Frozen list of QtIssue ids committed to the sprint (the velocity "scope").
   committedIssueIds Json      @default("[]")
-  /// Σ storyPoints of committed issues that ended in a DONE status at close.
-  /// Null until the sprint is completed.
-  completedPoints   Int?
-  /// Count of committed issues Done at close. Null until completed.
-  completedCount    Int?
-  capturedAt        DateTime  @default(now())
+  /// Σ storyPoints of committed issues that were DONE at completion.
+  completedPoints   Int       @default(0)
+  /// Count of committed issues DONE at completion.
+  completedCount    Int       @default(0)
+  /// Σ eta (estimated hours) of committed issues at completion.
+  committedHours    Float     @default(0)
+  /// Σ eta (estimated hours) of committed issues that were DONE at completion.
+  completedHours    Float     @default(0)
+  /// Points-based completion %: round(completedPoints / committedPoints * 100).
+  /// 0 when nothing was committed.
+  completionPct     Int       @default(0)
+  /// When the sprint was completed (= the frozen "sprint completed date").
   completedAt       DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt

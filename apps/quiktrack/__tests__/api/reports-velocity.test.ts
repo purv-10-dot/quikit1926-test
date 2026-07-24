@@ -13,172 +13,138 @@ function getReq() {
     method: "GET",
   });
 }
-
 function call() {
   return GET(getReq(), { params: { id: PROJECT } } as never);
 }
 
-/** Make the caller a tenant admin so withProjectAccess grants full access. */
+/** Tenant admin → withProjectAccess grants full access. */
 function asAdmin() {
   setSession({ id: USER, orgId: ORG, role: "admin" });
   mockDb.qtProject.findFirst.mockResolvedValue({ id: PROJECT } as never);
   mockDb.orgMember.findFirst.mockResolvedValue({ role: "admin" } as never);
 }
 
+/** A completed-sprint row with an attached snapshot, matching the route's select. */
+function completedSprint(over: Record<string, unknown> = {}) {
+  return {
+    id: "s1",
+    name: "Sprint 1",
+    completedAt: new Date("2026-06-15T00:00:00Z"),
+    snapshot: {
+      committedPoints: 40,
+      completedPoints: 35,
+      committedHours: 80,
+      completedHours: 70,
+      committedCount: 10,
+      completedCount: 9,
+      completionPct: 88,
+      completedAt: new Date("2026-06-15T00:00:00Z"),
+    },
+    ...over,
+  };
+}
+
 beforeEach(() => {
   resetMockDb();
   setSession(null);
-  // Sensible empty defaults; individual tests override.
   mockDb.qtSprint.findMany.mockResolvedValue([] as never);
-  mockDb.qtSprintSnapshot.findMany.mockResolvedValue([] as never);
-  mockDb.qtIssue.findMany.mockResolvedValue([] as never);
 });
 
 describe("GET /api/projects/:id/reports/velocity", () => {
   it("401 when unauthenticated", async () => {
-    const res = await call();
-    expect(res.status).toBe(401);
+    expect((await call()).status).toBe(401);
   });
 
   it("404 when the project is not in the tenant", async () => {
     setSession({ id: USER, orgId: ORG, role: "member" });
     mockDb.qtProject.findFirst.mockResolvedValue(null);
-    const res = await call();
-    expect(res.status).toBe(404);
+    expect((await call()).status).toBe(404);
   });
 
-  it("returns an empty series when there are no ACTIVE/COMPLETED sprints", async () => {
+  it("only queries COMPLETED sprints", async () => {
     asAdmin();
-    const res = await call();
-    const json = await res.json();
-    expect(res.status).toBe(200);
+    await call();
+    const arg = mockDb.qtSprint.findMany.mock.calls[0]![0] as {
+      where: { status: string };
+    };
+    expect(arg.where.status).toBe("COMPLETED");
+  });
+
+  it("returns an empty series when there are no completed sprints", async () => {
+    asAdmin();
+    const json = await (await call()).json();
     expect(json.success).toBe(true);
-    expect(json.data).toEqual({ metric: "storyPoints", sprints: [], average: 0 });
+    expect(json.data.sprints).toEqual([]);
+    expect(json.data.averagePoints).toBe(0);
+    expect(json.data.averageHours).toBe(0);
   });
 
-  it("uses frozen snapshot figures for a COMPLETED sprint", async () => {
+  it("reads the stored snapshot verbatim (no recompute) for points and hours", async () => {
     asAdmin();
-    mockDb.qtSprint.findMany.mockResolvedValue([
-      { id: "s1", name: "Sprint 1", status: "COMPLETED" },
-    ] as never);
-    mockDb.qtSprintSnapshot.findMany.mockResolvedValue([
-      {
-        sprintId: "s1",
-        committedPoints: 40,
-        committedCount: 10,
-        committedIssueIds: ["a", "b"],
-        completedPoints: 35,
-        completedCount: 9,
-      },
-    ] as never);
-    // Current issues are irrelevant once the snapshot has a completed tally.
-    mockDb.qtIssue.findMany.mockResolvedValue([] as never);
-
-    const res = await call();
-    const json = await res.json();
-    expect(res.status).toBe(200);
+    mockDb.qtSprint.findMany.mockResolvedValue([completedSprint()] as never);
+    const json = await (await call()).json();
     expect(json.data.sprints).toHaveLength(1);
     expect(json.data.sprints[0]).toMatchObject({
       sprintName: "Sprint 1",
       committedPoints: 40,
       completedPoints: 35,
-      fromSnapshot: true,
+      committedHours: 80,
+      completedHours: 70,
+      completionPct: 88,
     });
-    expect(json.data.average).toBe(35);
+    expect(json.data.sprints[0].completedAt).toBe("2026-06-15T00:00:00.000Z");
+    expect(json.data.averagePoints).toBe(35);
+    expect(json.data.averageHours).toBe(70);
   });
 
-  it("live-recomputes completed for an ACTIVE sprint whose snapshot has no close tally", async () => {
+  it("skips completed sprints that have no snapshot (legacy, pre-feature)", async () => {
     asAdmin();
     mockDb.qtSprint.findMany.mockResolvedValue([
-      { id: "s2", name: "Sprint 2", status: "ACTIVE" },
+      completedSprint(),
+      { id: "s2", name: "Legacy", completedAt: new Date(), snapshot: null },
     ] as never);
-    mockDb.qtSprintSnapshot.findMany.mockResolvedValue([
-      {
-        sprintId: "s2",
-        committedPoints: 20,
-        committedCount: 4,
-        committedIssueIds: ["i1", "i2", "i3"],
-        completedPoints: null,
-        completedCount: null,
-      },
-    ] as never);
-    mockDb.qtIssue.findMany.mockResolvedValue([
-      { id: "i1", sprintId: "s2", type: "TASK", storyPoints: 5, status: { category: "DONE" } },
-      { id: "i2", sprintId: "s2", type: "TASK", storyPoints: 3, status: { category: "IN_PROGRESS" } },
-      { id: "i3", sprintId: "s2", type: "BUG", storyPoints: 8, status: { category: "DONE" } },
-    ] as never);
-
-    const res = await call();
-    const json = await res.json();
-    const row = json.data.sprints[0];
-    // Committed comes from the frozen snapshot (20). Completed is recomputed
-    // live against the committed set: only i1 is DONE and in-scope (i3 is a BUG,
-    // excluded). i2 is not done.
-    expect(row.committedPoints).toBe(20);
-    expect(row.completedPoints).toBe(5);
-    expect(row.completedCount).toBe(1);
-    expect(row.fromSnapshot).toBe(false);
+    const json = await (await call()).json();
+    expect(json.data.sprints).toHaveLength(1);
+    expect(json.data.sprints[0].sprintName).toBe("Sprint 1");
   });
 
-  it("sets hasEstimates=false when sprints exist but carry no story points", async () => {
+  it("averages over completed sprints only", async () => {
     asAdmin();
     mockDb.qtSprint.findMany.mockResolvedValue([
-      { id: "s0", name: "No points", status: "ACTIVE" },
+      completedSprint({ id: "a", name: "A", snapshot: snap({ completedPoints: 30, completedHours: 40 }) }),
+      completedSprint({ id: "b", name: "B", snapshot: snap({ completedPoints: 50, completedHours: 60 }) }),
     ] as never);
-    mockDb.qtSprintSnapshot.findMany.mockResolvedValue([] as never);
-    mockDb.qtIssue.findMany.mockResolvedValue([
-      { id: "n1", sprintId: "s0", type: "TASK", storyPoints: null, status: { category: "DONE" } },
-      { id: "n2", sprintId: "s0", type: "TASK", storyPoints: null, status: { category: "TODO" } },
-    ] as never);
+    const json = await (await call()).json();
+    expect(json.data.averagePoints).toBe(40); // (30+50)/2
+    expect(json.data.averageHours).toBe(50); // (40+60)/2
+  });
 
-    const res = await call();
-    const json = await res.json();
+  it("flags hasEstimates/hasHours false when everything is zero", async () => {
+    asAdmin();
+    mockDb.qtSprint.findMany.mockResolvedValue([
+      completedSprint({
+        snapshot: snap({
+          committedPoints: 0, completedPoints: 0, committedHours: 0, completedHours: 0, completionPct: 0,
+        }),
+      }),
+    ] as never);
+    const json = await (await call()).json();
     expect(json.data.hasEstimates).toBe(false);
-    expect(json.data.sprints[0].committedPoints).toBe(0);
-  });
-
-  it("degrades gracefully (200, live calc) when the snapshot table is missing (P2021)", async () => {
-    asAdmin();
-    mockDb.qtSprint.findMany.mockResolvedValue([
-      { id: "s9", name: "Sprint 9", status: "ACTIVE" },
-    ] as never);
-    // Simulate an un-migrated DB: the snapshot query throws P2021.
-    mockDb.qtSprintSnapshot.findMany.mockRejectedValue(
-      Object.assign(new Error("table does not exist"), { code: "P2021" }),
-    );
-    mockDb.qtIssue.findMany.mockResolvedValue([
-      { id: "a", sprintId: "s9", type: "TASK", storyPoints: 5, status: { category: "DONE" } },
-    ] as never);
-
-    const res = await call();
-    const json = await res.json();
-    expect(res.status).toBe(200);
-    expect(json.success).toBe(true);
-    expect(json.data.sprints[0]).toMatchObject({
-      committedPoints: 5,
-      completedPoints: 5,
-      fromSnapshot: false,
-    });
-    expect(json.data.hasEstimates).toBe(true);
-  });
-
-  it("live-recomputes both figures for a legacy sprint with no snapshot", async () => {
-    asAdmin();
-    mockDb.qtSprint.findMany.mockResolvedValue([
-      { id: "s3", name: "Legacy", status: "COMPLETED" },
-    ] as never);
-    mockDb.qtSprintSnapshot.findMany.mockResolvedValue([] as never);
-    mockDb.qtIssue.findMany.mockResolvedValue([
-      { id: "x1", sprintId: "s3", type: "STORY", storyPoints: 5, status: { category: "DONE" } },
-      { id: "x2", sprintId: "s3", type: "SUBTASK", storyPoints: 2, status: { category: "DONE" } },
-    ] as never);
-
-    const res = await call();
-    const json = await res.json();
-    const row = json.data.sprints[0];
-    // SUBTASK excluded → committed = 5 (only the STORY), completed = 5.
-    expect(row.committedPoints).toBe(5);
-    expect(row.completedPoints).toBe(5);
-    expect(row.fromSnapshot).toBe(false);
+    expect(json.data.hasHours).toBe(false);
   });
 });
+
+/** Snapshot factory with sane defaults for the fields the route selects. */
+function snap(over: Record<string, unknown> = {}) {
+  return {
+    committedPoints: 10,
+    completedPoints: 10,
+    committedHours: 10,
+    completedHours: 10,
+    committedCount: 2,
+    completedCount: 2,
+    completionPct: 100,
+    completedAt: new Date("2026-06-15T00:00:00Z"),
+    ...over,
+  };
+}

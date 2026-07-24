@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { hasAdminAccess, userCanInProject } from "@/lib/api/permissions";
-import { recordCompletedSnapshot } from "@/lib/reports/sprint-snapshot";
+import { recordSprintVelocity } from "@/lib/reports/sprint-snapshot";
 
 export const POST = withOrgAuth<{ id: string }>(
   async ({ orgId, userId }, req, { params }) => {
@@ -41,6 +41,10 @@ export const POST = withOrgAuth<{ id: string }>(
     const moveOpenTo = body.moveOpenTo;
     const newSprintName = body.newSprintName?.trim() || "New sprint";
 
+    // One timestamp for both the frozen snapshot and the sprint row, so the
+    // velocity report's "completed date" matches the sprint's completedAt.
+    const completedAt = new Date();
+
     const updated = await db.$transaction(async (tx) => {
       const doneStatuses = await tx.qtIssueStatus.findMany({
         where: { projectId: sprint.projectId, category: "DONE", isDeleted: false },
@@ -48,10 +52,16 @@ export const POST = withOrgAuth<{ id: string }>(
       });
       const doneIds = doneStatuses.map((s) => s.id);
 
-      // Record the velocity "completed" tally against the frozen committed set
-      // BEFORE we move unfinished issues out below — once they're moved, the
-      // committed set can no longer be resolved from the sprint.
-      await recordCompletedSnapshot(tx, params.id);
+      // Freeze the full velocity snapshot (committed/completed points + hours,
+      // completion %, completed date) BEFORE moving unfinished issues out —
+      // once they're moved, the committed scope can't be reconstructed. This is
+      // the ONLY place velocity is calculated; the report reads it verbatim.
+      await recordSprintVelocity(tx, {
+        orgId,
+        projectId: sprint.projectId,
+        sprintId: params.id,
+        completedAt,
+      });
 
       let destinationSprintId: string | null = null;
       if (moveOpenTo === "new") {
@@ -91,7 +101,7 @@ export const POST = withOrgAuth<{ id: string }>(
 
       return tx.qtSprint.update({
         where: { id: params.id },
-        data: { status: "COMPLETED", completedAt: new Date(), updatedBy: userId },
+        data: { status: "COMPLETED", completedAt, updatedBy: userId },
       });
     });
 

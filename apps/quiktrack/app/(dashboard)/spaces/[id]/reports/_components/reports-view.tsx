@@ -27,11 +27,8 @@ const COMING_SOON = [
 
 export function ReportsView({ projectId }: { projectId: string }) {
   return (
-    <div className="mx-auto max-w-[1280px] px-10 py-6">
-      <div className="mb-5 flex items-center gap-2">
-        <BarChart3 className="h-5 w-5 text-gray-500" />
-        <h1 className="text-base font-semibold text-gray-900">Reports</h1>
-      </div>
+    <div className="mx-auto  px-10 py-6">
+     
 
       <VelocityReport projectId={projectId} />
 

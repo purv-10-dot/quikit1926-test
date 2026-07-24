@@ -1,34 +1,39 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Info } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { ChartTip } from "../../summary/_components/chart-tip";
 
-/** Shape returned by GET /api/projects/[id]/reports/velocity. */
+/** One completed sprint's frozen velocity, as GET …/reports/velocity returns. */
 interface VelocitySprint {
   sprintId: string;
   sprintName: string;
-  status: string;
+  completedAt: string | null;
   committedPoints: number;
   completedPoints: number;
+  committedHours: number;
+  completedHours: number;
   committedCount: number;
   completedCount: number;
-  fromSnapshot: boolean;
+  completionPct: number;
 }
 interface VelocityData {
-  metric: string;
   sprints: VelocitySprint[];
-  average: number;
+  averagePoints: number;
+  averageHours: number;
   hasEstimates: boolean;
+  hasHours: boolean;
 }
 
-const COMMITTED = "#93c5fd"; // blue-300 — planned scope
-const COMPLETED = "#2563eb"; // blue-600 — delivered (velocity)
+type Metric = "points" | "hours";
+
+const COMMITTED = "#93c5fd"; // blue-300 — committed scope
+const COMPLETED = "#2563eb"; // blue-600 — completed (velocity)
 
 export function VelocityReport({ projectId }: { projectId: string }) {
   const [data, setData] = useState<VelocityData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [metric, setMetric] = useState<Metric>("points");
 
   useEffect(() => {
     let alive = true;
@@ -48,11 +53,34 @@ export function VelocityReport({ projectId }: { projectId: string }) {
     };
   }, [projectId]);
 
+  const sprints = useMemo(() => data?.sprints ?? [], [data]);
+
+  // Per-metric accessors so the chart/table are metric-agnostic.
+  const committedOf = (s: VelocitySprint) =>
+    metric === "points" ? s.committedPoints : s.committedHours;
+  const completedOf = (s: VelocitySprint) =>
+    metric === "points" ? s.completedPoints : s.completedHours;
+  const average = metric === "points" ? data?.averagePoints ?? 0 : data?.averageHours ?? 0;
+  const unit = metric === "points" ? "pts" : "h";
+
+  const maxVal = useMemo(
+    () =>
+      Math.max(
+        1,
+        ...sprints.map((s) =>
+          metric === "points"
+            ? Math.max(s.committedPoints, s.completedPoints)
+            : Math.max(s.committedHours, s.completedHours),
+        ),
+      ),
+    [sprints, metric],
+  );
+
   if (loading) {
     return (
       <div className="rounded-lg border border-gray-200 bg-white p-5">
         <div className="h-4 w-32 animate-pulse rounded bg-gray-200" />
-        <div className="mt-6 h-[260px] animate-pulse rounded bg-gray-50" />
+        <div className="mt-4 h-[200px] max-w-3xl animate-pulse rounded bg-gray-50" />
       </div>
     );
   }
@@ -60,7 +88,7 @@ export function VelocityReport({ projectId }: { projectId: string }) {
   if (error) {
     return (
       <div className="rounded-lg border border-gray-200 bg-white p-5">
-        <VelocityHeader />
+        <VelocityHeader metric={metric} onMetric={setMetric} showToggle={false} />
         <EmptyState
           title="Couldn't load the velocity report"
           body="Something went wrong fetching sprint data. Refresh the page to try again."
@@ -69,41 +97,29 @@ export function VelocityReport({ projectId }: { projectId: string }) {
     );
   }
 
-  const sprints = data?.sprints ?? [];
-  const average = data?.average ?? 0;
-  const hasEstimates = data?.hasEstimates ?? false;
-
   if (sprints.length === 0) {
     return (
       <div className="rounded-lg border border-gray-200 bg-white p-5">
-        <VelocityHeader />
+        <VelocityHeader metric={metric} onMetric={setMetric} showToggle={false} />
         <EmptyState
-          title="No sprint data yet"
-          body="Start a sprint from the Backlog to begin tracking velocity. Committed story points are captured when a sprint starts; completed points are recorded when it finishes."
+          title="No completed sprints yet"
+          body="Velocity is recorded when you complete a sprint. Once you complete your first sprint from the Backlog, its committed vs completed work will appear here."
         />
       </div>
     );
   }
 
-  const maxPoints = Math.max(
-    1,
-    ...sprints.map((s) => Math.max(s.committedPoints, s.completedPoints)),
-  );
+  const hasEstimates = metric === "points" ? data?.hasEstimates : data?.hasHours;
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-5">
-      <VelocityHeader />
+      <VelocityHeader metric={metric} onMetric={setMetric} showToggle />
 
-      {/* Sprints exist but nothing is estimated → the bars would all be zero.
-          Explain why instead of showing a flat, confusing chart. */}
       {!hasEstimates && (
-        <div className="mt-4 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
-          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span>
-            These sprints have no story points assigned, so velocity is 0. Add
-            story-point estimates to work items in the Backlog to see committed
-            vs completed velocity here.
-          </span>
+        <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
+          These completed sprints have no {metric === "points" ? "story points" : "estimated hours"} recorded,
+          so velocity is 0. {metric === "points" ? "Add story-point estimates" : "Set estimated hours (ETA)"} on
+          work items before completing a sprint to see velocity here.
         </div>
       )}
 
@@ -113,26 +129,34 @@ export function VelocityReport({ projectId }: { projectId: string }) {
         <LegendSwatch color={COMPLETED} label="Completed (velocity)" />
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-0 w-4 border-t-2 border-dashed border-gray-400" />
-          Average: <span className="font-medium tabular-nums text-gray-800">{average}</span>
+          Average: <span className="font-medium tabular-nums text-gray-800">{average} {unit}</span>
         </span>
       </div>
 
-      {/* Clustered column chart — committed vs completed per sprint. Pure CSS
-          bars (matches the Summary charts; no charting dependency). The plot
-          area is a fixed 220px tall; the average line sits at its proportional
-          height and the sprint labels live in normal flow beneath it. */}
-      <div className="mt-5 overflow-x-auto">
-        <div className="min-w-max px-2">
-          <div className="relative flex h-[220px] items-end gap-6">
-            {/* Average reference line across the plot area. */}
+      {/* Clustered column chart — committed vs completed per COMPLETED sprint.
+          Pure CSS bars. NO overflow-* on this wrapper: `overflow-x-auto` forces
+          overflow-y to compute as `auto`, which clips the hover tooltip that
+          renders above the bars. Columns are flex-1 so they fit the card width
+          without needing horizontal scroll. pt-16 reserves headroom so the
+          tooltip has somewhere to render inside the card. */}
+      <div className="relative z-20 mt-2 pt-16">
+        <div className="w-full px-2">
+          <div className="relative flex h-[180px] items-end gap-6">
             {average > 0 && (
               <div
                 className="pointer-events-none absolute inset-x-0 z-10 border-t-2 border-dashed border-gray-400/70"
-                style={{ bottom: `${(average / maxPoints) * 220}px` }}
+                style={{ bottom: `${(average / maxVal) * 180}px` }}
               />
             )}
             {sprints.map((s) => (
-              <SprintColumn key={s.sprintId} sprint={s} maxPoints={maxPoints} />
+              <SprintColumn
+                key={s.sprintId}
+                sprint={s}
+                committed={committedOf(s)}
+                completed={completedOf(s)}
+                unit={unit}
+                maxVal={maxVal}
+              />
             ))}
           </div>
           <div className="border-t border-gray-200" />
@@ -142,34 +166,69 @@ export function VelocityReport({ projectId }: { projectId: string }) {
                 <span className="block max-w-[110px] truncate text-center text-[11px] text-gray-600" title={s.sprintName}>
                   {s.sprintName}
                 </span>
-                {!s.fromSnapshot && (
-                  <span className="text-[9px] font-medium uppercase tracking-wide text-amber-600">
-                    in progress
-                  </span>
-                )}
               </div>
             ))}
           </div>
         </div>
       </div>
 
-      <VelocityTable sprints={sprints} average={average} />
+      <VelocityTable sprints={sprints} committedOf={committedOf} completedOf={completedOf} average={average} unit={unit} />
     </div>
   );
 }
 
-function VelocityHeader() {
+function VelocityHeader({
+  metric,
+  onMetric,
+  showToggle,
+}: {
+  metric: Metric;
+  onMetric: (m: Metric) => void;
+  showToggle: boolean;
+}) {
   return (
     <div className="flex items-start justify-between gap-4">
       <div>
         <h2 className="text-sm font-semibold text-gray-900">Velocity report</h2>
         <p className="mt-1 text-xs text-gray-600">
-          Committed vs completed story points per sprint. Use it to predict how
-          much work the team can take on in future sprints. Bugs, epics and
-          subtasks are excluded.
+          Committed vs completed work per completed sprint. Use it to predict how
+          much the team can take on in future sprints. Only completed sprints are
+          shown; bugs, epics and subtasks are excluded.
         </p>
       </div>
+      {showToggle && (
+        <div className="flex shrink-0 rounded-md border border-gray-200 p-0.5 text-xs">
+          <MetricButton active={metric === "points"} onClick={() => onMetric("points")}>
+            Story points
+          </MetricButton>
+          <MetricButton active={metric === "hours"} onClick={() => onMetric("hours")}>
+            Est. hours
+          </MetricButton>
+        </div>
+      )}
     </div>
+  );
+}
+
+function MetricButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded px-2.5 py-1 font-medium transition-colors ${
+        active ? "bg-accent-100 text-accent-700" : "text-gray-500 hover:text-gray-700"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -193,21 +252,30 @@ function LegendSwatch({ color, label }: { color: string; label: string }) {
 
 function SprintColumn({
   sprint,
-  maxPoints,
+  committed,
+  completed,
+  unit,
+  maxVal,
 }: {
   sprint: VelocitySprint;
-  maxPoints: number;
+  committed: number;
+  completed: number;
+  unit: string;
+  maxVal: number;
 }) {
-  const committedH = (sprint.committedPoints / maxPoints) * 220;
-  const completedH = (sprint.completedPoints / maxPoints) * 220;
-  const isLive = !sprint.fromSnapshot;
   return (
     <div className="flex h-full min-w-[96px] flex-1 items-end justify-center gap-1.5">
-      <Bar color={COMMITTED} heightPx={committedH} points={sprint.committedPoints}
-        tip={<Tip name={sprint.sprintName} series="Committed" points={sprint.committedPoints} count={sprint.committedCount} live={isLive} />}
+      <Bar
+        color={COMMITTED}
+        heightPx={(committed / maxVal) * 180}
+        value={committed}
+        tip={<Tip name={sprint.sprintName} series="Committed" value={committed} unit={unit} count={sprint.committedCount} />}
       />
-      <Bar color={COMPLETED} heightPx={completedH} points={sprint.completedPoints}
-        tip={<Tip name={sprint.sprintName} series="Completed" points={sprint.completedPoints} count={sprint.completedCount} live={isLive} />}
+      <Bar
+        color={COMPLETED}
+        heightPx={(completed / maxVal) * 180}
+        value={completed}
+        tip={<Tip name={sprint.sprintName} series="Completed" value={completed} unit={unit} count={sprint.completedCount} />}
       />
     </div>
   );
@@ -216,23 +284,23 @@ function SprintColumn({
 function Bar({
   color,
   heightPx,
-  points,
+  value,
   tip,
 }: {
   color: string;
   heightPx: number;
-  points: number;
+  value: number;
   tip: React.ReactNode;
 }) {
   return (
     <ChartTip content={tip} className="flex h-full items-end">
       <div className="flex w-7 cursor-pointer flex-col items-center justify-end">
         <span className="mb-1 text-[10px] font-medium tabular-nums text-gray-600">
-          {points > 0 ? points : ""}
+          {value > 0 ? value : ""}
         </span>
         <div
           className="w-full rounded-t-sm"
-          style={{ height: `${points > 0 ? Math.max(heightPx, 3) : 0}px`, background: color }}
+          style={{ height: `${value > 0 ? Math.max(heightPx, 3) : 0}px`, background: color }}
         />
       </div>
     </ChartTip>
@@ -242,37 +310,41 @@ function Bar({
 function Tip({
   name,
   series,
-  points,
+  value,
+  unit,
   count,
-  live,
 }: {
   name: string;
   series: string;
-  points: number;
+  value: number;
+  unit: string;
   count: number;
-  live: boolean;
 }) {
   return (
     <>
       <span className="font-medium text-gray-900">{name}</span>
       <span className="flex items-center gap-2 text-gray-600">
         {series}
-        <span className="tabular-nums text-gray-900">{points} pts</span>
+        <span className="tabular-nums text-gray-900">{value} {unit}</span>
         <span className="tabular-nums text-gray-400">· {count} items</span>
       </span>
-      {live && <span className="text-[10px] text-amber-600">Live estimate — sprint not yet completed</span>}
     </>
   );
 }
 
 function VelocityTable({
   sprints,
+  committedOf,
+  completedOf,
   average,
+  unit,
 }: {
   sprints: VelocitySprint[];
+  committedOf: (s: VelocitySprint) => number;
+  completedOf: (s: VelocitySprint) => number;
   average: number;
+  unit: string;
 }) {
-  const anyLive = sprints.some((s) => !s.fromSnapshot);
   return (
     <div className="mt-6 overflow-x-auto">
       <table className="w-full text-sm">
@@ -282,43 +354,36 @@ function VelocityTable({
             <th className="bg-accent-50 py-2 pr-4 text-right font-medium">Committed</th>
             <th className="bg-accent-50 py-2 pr-4 text-right font-medium">Completed</th>
             <th className="bg-accent-50 py-2 pr-4 text-right font-medium">Completion</th>
+            <th className="bg-accent-50 py-2 pr-4 text-right font-medium">Completed on</th>
           </tr>
         </thead>
         <tbody>
-          {sprints.map((s) => {
-            const pct = s.committedPoints > 0
-              ? Math.round((s.completedPoints / s.committedPoints) * 100)
-              : 0;
-            return (
-              <tr key={s.sprintId} className="border-b border-gray-100 hover:bg-gray-50">
-                <td className="py-2 pl-3 pr-4 text-gray-800">
-                  {s.sprintName}
-                  {!s.fromSnapshot && <span className="ml-1 text-gray-400">*</span>}
-                </td>
-                <td className="py-2 pr-4 text-right tabular-nums text-gray-700">{s.committedPoints}</td>
-                <td className="py-2 pr-4 text-right tabular-nums text-gray-900">{s.completedPoints}</td>
-                <td className="py-2 pr-4 text-right tabular-nums text-gray-500">
-                  {s.committedPoints > 0 ? `${pct}%` : "—"}
-                </td>
-              </tr>
-            );
-          })}
+          {sprints.map((s) => (
+            <tr key={s.sprintId} className="border-b border-gray-100 hover:bg-gray-50">
+              <td className="py-2 pl-3 pr-4 text-gray-800">{s.sprintName}</td>
+              <td className="py-2 pr-4 text-right tabular-nums text-gray-700">{committedOf(s)}</td>
+              <td className="py-2 pr-4 text-right tabular-nums text-gray-900">{completedOf(s)}</td>
+              <td className="py-2 pr-4 text-right tabular-nums text-gray-500">
+                {s.completionPct}%
+              </td>
+              <td className="py-2 pr-4 text-right tabular-nums text-gray-500">
+                {s.completedAt ? new Date(s.completedAt).toLocaleDateString() : "—"}
+              </td>
+            </tr>
+          ))}
         </tbody>
         <tfoot>
           <tr className="text-xs text-gray-500">
             <td className="py-2 pl-3 pr-4 font-medium text-gray-700">Average velocity</td>
             <td />
-            <td className="py-2 pr-4 text-right font-semibold tabular-nums text-gray-900">{average}</td>
+            <td className="py-2 pr-4 text-right font-semibold tabular-nums text-gray-900">
+              {average} {unit}
+            </td>
+            <td />
             <td />
           </tr>
         </tfoot>
       </table>
-      {anyLive && (
-        <p className="mt-2 flex items-center gap-1.5 pl-3 text-[11px] text-gray-500">
-          <Info className="h-3 w-3" />
-          <span>* Live estimate — figures update until the sprint is completed.</span>
-        </p>
-      )}
     </div>
   );
 }

@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { hasAdminAccess, userCanInProject } from "@/lib/api/permissions";
-import { captureCommittedSnapshot } from "@/lib/reports/sprint-snapshot";
 
 export const PATCH = withOrgAuth<{ id: string }>(
   async ({ orgId, userId }, _req, { params }) => {
@@ -38,19 +37,11 @@ export const PATCH = withOrgAuth<{ id: string }>(
     // with "Another sprint is already active" — that restriction has been
     // lifted; the Jira importer also writes whatever active set the source
     // reported.)
-    // Flip to ACTIVE and freeze the velocity "committed" scope in one txn, so
-    // the sprint can never be active without a snapshot of what it committed to.
-    const updated = await db.$transaction(async (tx) => {
-      const s = await tx.qtSprint.update({
-        where: { id: params.id },
-        data: { status: "ACTIVE", startedAt: new Date(), updatedBy: userId },
-      });
-      await captureCommittedSnapshot(tx, {
-        orgId,
-        projectId: sprint.projectId,
-        sprintId: params.id,
-      });
-      return s;
+    // Velocity is NOT captured here — Jira freezes it only at "Complete sprint"
+    // (see /api/sprints/[id]/complete). Starting a sprint just flips its status.
+    const updated = await db.qtSprint.update({
+      where: { id: params.id },
+      data: { status: "ACTIVE", startedAt: new Date(), updatedBy: userId },
     });
     return NextResponse.json({ success: true, data: updated });
   },
