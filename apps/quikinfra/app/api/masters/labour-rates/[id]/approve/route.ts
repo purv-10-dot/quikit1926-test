@@ -13,7 +13,7 @@ export async function POST(
   if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
   // Approval is an admin-level action. (Dedicated construction.labour.rate.approve
   // key is registered with the manifest task; masters.edit + wildcard cover it now.)
-  if (!ctx.permissions.has("construction.masters.edit") && !ctx.permissions.has("*")) {
+  if (!ctx.permissions.has("construction.master_labour.edit") && !ctx.permissions.has("*")) {
     return envelopeErr("FORBIDDEN", "Missing permission to approve labour rates", 403);
   }
   try {

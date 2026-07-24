@@ -472,21 +472,13 @@ export async function POST(req: NextRequest) {
     const reportDateStr =
       body.reportDate ?? new Date().toISOString().split("T")[0];
     const compactDate = String(reportDateStr).replace(/-/g, "");
+    // Full sanitized project code — do NOT truncate. A short slice collapses
+    // distinct projects (e.g. AAKAR010, AAKAR011) into one slug, so the
+    // org-wide-unique dprNumber collides across projects on the same date.
     const slug =
       String(project.code ?? project.name ?? "SITE")
         .replace(/[^a-zA-Z0-9]/g, "")
-        .toUpperCase()
-        .slice(0, 6) || "SITE";
-
-    const sameDayCount = await db.cnDailyProgressReport.count({
-      where: {
-        orgId: ctx.orgId,
-        projectId: body.projectId,
-        reportDate: new Date(reportDateStr),
-      },
-    });
-    const seq = String(sameDayCount + 1).padStart(3, "0");
-    const dprNumber = body.dprNumber ?? `DPR-${slug}-${compactDate}-${seq}`;
+        .toUpperCase() || "SITE";
 
     const requestedStatus = body.status === "submitted" ? "submitted" : "draft";
 
@@ -510,84 +502,124 @@ export async function POST(req: NextRequest) {
       ),
     );
 
-    const created = await db.cnDailyProgressReport.create({
-      data: tenantCreate(ctx, {
-        dprNumber,
-        projectId: project.id,
-        reportDate: new Date(reportDateStr),
-        submittedById: ctx.userId,
-        weatherCondition: body.weatherCondition ?? body.weather ?? null,
-        weatherDetail: (parseStoredWeatherDetail(body.weatherDetail) as Prisma.InputJsonValue | null) ?? Prisma.JsonNull,
-        remarks: body.siteRemarks ?? null,
-        consumptionLocationId: body.consumptionLocationId ?? null,
-        status: requestedStatus,
-        workItems: {
-          create: workItems.map((w: DprBodyWorkItem, i: number) => ({
-            boqItemId: String(w.boqItemId ?? w.boqNo ?? ""),
-            woId: w.workOrderId ?? w.woId ?? null,
-            description: String(w.description ?? ""),
-            todayQty: String(Number(w.todayQty ?? w.qty ?? 0)),
-            cumulativeQty: String(Number(w.cumulativeQty ?? w.todayQty ?? w.qty ?? 0)),
-            uomId: String(w.uomId ?? ""),
-            location: w.location ?? null,
-            remarks: w.remarks ?? null,
-            images: workItemImageKeys[i] ?? [],
-          })),
+    // The dprNumber is org-wide unique. Counting same-day DPRs then inserting is
+    // not atomic and different projects can still race, so build the number and
+    // retry on a P2002 collision, bumping the sequence until the insert lands.
+    // A caller-supplied dprNumber is fixed — no retry, surface the conflict.
+    const MAX_DPR_NUMBER_ATTEMPTS = 10;
+    let created:
+      | Prisma.CnDailyProgressReportGetPayload<{
+          include: {
+            project: { select: { id: true; name: true; code: true } };
+            workItems: true;
+            labourEntries: true;
+            machineryEntries: true;
+            materialEntries: true;
+            staffEntries: true;
+          };
+        }>
+      | null = null;
+    for (let attempt = 1; attempt <= MAX_DPR_NUMBER_ATTEMPTS; attempt++) {
+      const sameDayCount = await db.cnDailyProgressReport.count({
+        where: {
+          orgId: ctx.orgId,
+          projectId: body.projectId,
+          reportDate: new Date(reportDateStr),
         },
-        labourEntries: {
-          create: manpower.map((l) => ({
-            category: String(l.category ?? l.role ?? ""),
-            skillType: String(l.skillType ?? l.skill ?? ""),
-            count: Number(l.count ?? l.headcount ?? 0),
-            hoursWorked: String(Number(l.hoursWorked ?? l.hours ?? 0)),
-            contractorId: l.contractorId ?? null,
-            workingArea: l.workingArea ?? null,
-            messan: toDecimalOrNull(l.messan),
-            maleHelper: toDecimalOrNull(l.maleHelper),
-            femaleHelper: toDecimalOrNull(l.femaleHelper),
-            carpenter: toDecimalOrNull(l.carpenter),
-            fitter: toDecimalOrNull(l.fitter),
-            painter: toDecimalOrNull(l.painter),
-            plumber: toDecimalOrNull(l.plumber),
-            electrician: toDecimalOrNull(l.electrician),
-            operator: toDecimalOrNull(l.operator),
-          })),
-        },
-        machineryEntries: {
-          create: machinery.map((m) => ({
-            description: String(m.description ?? ""),
-            condition: m.condition ?? null,
-            requiredQty: Number(m.requiredQty ?? 0),
-            actualQty: Number(m.actualQty ?? 0),
-            remarks: m.remarks ?? null,
-          })),
-        },
-        materialEntries: {
-          create: materials.map((m) => ({
-            itemId: String(m.itemId ?? ""),
-            consumedQty: String(Number(m.consumedQty ?? m.quantity ?? 0)),
-            uomId: String(m.uomId ?? ""),
-            remarks: m.remarks ?? null,
-          })),
-        },
-        staffEntries: {
-          create: staff.map((s) => ({
-            name: String(s.name ?? ""),
-            designation: s.designation ?? null,
-            present: s.present !== undefined ? !!s.present : true,
-            reason: s.reason ?? null,
-          })),
-        },
-      }),
-      include: {
-        project: { select: { id: true, name: true, code: true } },
-        workItems: true,
-        labourEntries: true,
-        machineryEntries: true,
-        materialEntries: true,
-        staffEntries: true,
-      },
-    });
+      });
+      const seq = String(sameDayCount + attempt).padStart(3, "0");
+      const dprNumber =
+        body.dprNumber ?? `DPR-${slug}-${compactDate}-${seq}`;
+      try {
+        created = await db.cnDailyProgressReport.create({
+          data: tenantCreate(ctx, {
+            dprNumber,
+            projectId: project.id,
+            reportDate: new Date(reportDateStr),
+            submittedById: ctx.userId,
+            weatherCondition: body.weatherCondition ?? body.weather ?? null,
+            weatherDetail: (parseStoredWeatherDetail(body.weatherDetail) as Prisma.InputJsonValue | null) ?? Prisma.JsonNull,
+            remarks: body.siteRemarks ?? null,
+            consumptionLocationId: body.consumptionLocationId ?? null,
+            status: requestedStatus,
+            workItems: {
+              create: workItems.map((w: DprBodyWorkItem, i: number) => ({
+                boqItemId: String(w.boqItemId ?? w.boqNo ?? ""),
+                woId: w.workOrderId ?? w.woId ?? null,
+                description: String(w.description ?? ""),
+                todayQty: String(Number(w.todayQty ?? w.qty ?? 0)),
+                cumulativeQty: String(Number(w.cumulativeQty ?? w.todayQty ?? w.qty ?? 0)),
+                uomId: String(w.uomId ?? ""),
+                location: w.location ?? null,
+                remarks: w.remarks ?? null,
+                images: workItemImageKeys[i] ?? [],
+              })),
+            },
+            labourEntries: {
+              create: manpower.map((l) => ({
+                category: String(l.category ?? l.role ?? ""),
+                skillType: String(l.skillType ?? l.skill ?? ""),
+                count: Number(l.count ?? l.headcount ?? 0),
+                hoursWorked: String(Number(l.hoursWorked ?? l.hours ?? 0)),
+                contractorId: l.contractorId ?? null,
+                workingArea: l.workingArea ?? null,
+                messan: toDecimalOrNull(l.messan),
+                maleHelper: toDecimalOrNull(l.maleHelper),
+                femaleHelper: toDecimalOrNull(l.femaleHelper),
+                carpenter: toDecimalOrNull(l.carpenter),
+                fitter: toDecimalOrNull(l.fitter),
+                painter: toDecimalOrNull(l.painter),
+                plumber: toDecimalOrNull(l.plumber),
+                electrician: toDecimalOrNull(l.electrician),
+                operator: toDecimalOrNull(l.operator),
+              })),
+            },
+            machineryEntries: {
+              create: machinery.map((m) => ({
+                description: String(m.description ?? ""),
+                condition: m.condition ?? null,
+                requiredQty: Number(m.requiredQty ?? 0),
+                actualQty: Number(m.actualQty ?? 0),
+                remarks: m.remarks ?? null,
+              })),
+            },
+            materialEntries: {
+              create: materials.map((m) => ({
+                itemId: String(m.itemId ?? ""),
+                consumedQty: String(Number(m.consumedQty ?? m.quantity ?? 0)),
+                uomId: String(m.uomId ?? ""),
+                remarks: m.remarks ?? null,
+              })),
+            },
+            staffEntries: {
+              create: staff.map((s) => ({
+                name: String(s.name ?? ""),
+                designation: s.designation ?? null,
+                present: s.present !== undefined ? !!s.present : true,
+                reason: s.reason ?? null,
+              })),
+            },
+          }),
+          include: {
+            project: { select: { id: true, name: true, code: true } },
+            workItems: true,
+            labourEntries: true,
+            machineryEntries: true,
+            materialEntries: true,
+            staffEntries: true,
+          },
+        });
+        break;
+      } catch (e) {
+        const isLastAttempt = attempt >= MAX_DPR_NUMBER_ATTEMPTS;
+        if (body.dprNumber || getErrorCode(e) !== "P2002" || isLastAttempt) {
+          throw e;
+        }
+      }
+    }
+    if (!created) {
+      throw new Error("Failed to allocate a unique DPR number");
+    }
 
     // Resolve boqItemId → boqNo on the freshly-created rows so the
     // client gets the human-readable BOQ ref back without a refetch.

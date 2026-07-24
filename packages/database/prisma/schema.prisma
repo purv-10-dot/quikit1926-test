@@ -2555,9 +2555,6 @@ model CnUOM {
 
   items               CnItem[]
   grnLines            CnGRNLine[]
-  materialIssueLines  CnMaterialIssueLine[]
-  stockTransferLines  CnStockTransferLine[]
-  reconciliationLines CnStockReconciliationLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -2718,9 +2715,6 @@ model CnItem {
   uom                 CnUOM                       @relation(fields: [uomId], references: [id])
   stockLedger         CnStockLedger[]
   grnLines            CnGRNLine[]
-  materialIssueLines  CnMaterialIssueLine[]
-  stockTransferLines  CnStockTransferLine[]
-  reconciliationLines CnStockReconciliationLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -3701,7 +3695,6 @@ model CnMaterialIssue {
 
   project         CnProject             @relation(fields: [projectId], references: [id])
   location        CnLocation?           @relation(fields: [locationId], references: [id])
-  lines           CnMaterialIssueLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -3714,25 +3707,6 @@ model CnMaterialIssue {
   @@index([orgId, status, issueDate(sort: Desc)])
   @@index([orgId, projectId, issueDate(sort: Desc)])
   @@map("Material_issues")
-  @@schema("app_quikinfra")
-}
-
-model CnMaterialIssueLine {
-  id        String  @id @default(cuid())
-  issueId   String
-  itemId    String
-  issuedQty Decimal @db.Decimal(18, 4)
-  uomId     String
-  unitRate  Decimal @db.Decimal(18, 2)
-  amount    Decimal @db.Decimal(18, 2)
-  remarks   String?
-
-  issue CnMaterialIssue @relation(fields: [issueId], references: [id], onDelete: Cascade)
-  item  CnItem          @relation(fields: [itemId], references: [id])
-  uom   CnUOM           @relation(fields: [uomId], references: [id])
-
-  @@index([issueId])
-  @@map("Material_issue_lines")
   @@schema("app_quikinfra")
 }
 
@@ -3851,7 +3825,6 @@ model CnGatePass {
   updatedBy          String
 
   project CnProject?       @relation(fields: [projectId], references: [id])
-  lines   CnGatePassLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -3915,7 +3888,6 @@ model CnGoodReturn {
 
   project CnProject?         @relation(fields: [projectId], references: [id])
   vendor  CnVendor?          @relation(fields: [vendorId], references: [id])
-  lines   CnGoodReturnLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -3925,23 +3897,6 @@ model CnGoodReturn {
   @@index([projectId])
   @@index([status])
   @@map("Good_returns")
-  @@schema("app_quikinfra")
-}
-
-model CnGoodReturnLine {
-  id        String  @id @default(cuid())
-  returnId  String
-  itemId    String
-  returnQty Decimal @db.Decimal(18, 4)
-  uomId     String
-  unitRate  Decimal @db.Decimal(18, 2)
-  amount    Decimal @db.Decimal(18, 2)
-  reason    String?
-
-  goodReturn CnGoodReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
-
-  @@index([returnId])
-  @@map("Good_return_lines")
   @@schema("app_quikinfra")
 }
 
@@ -4006,7 +3961,6 @@ model CnStockTransfer {
   fromProject  CnProject?            @relation(fields: [fromProjectId], references: [id])
   fromLocation CnLocation?           @relation("StockTransferFrom", fields: [fromLocationId], references: [id])
   toLocation   CnLocation?           @relation("StockTransferTo", fields: [toLocationId], references: [id])
-  lines        CnStockTransferLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -4022,24 +3976,6 @@ model CnStockTransfer {
   @@schema("app_quikinfra")
 }
 
-model CnStockTransferLine {
-  id          String   @id @default(cuid())
-  transferId  String
-  itemId      String
-  sentQty     Decimal  @db.Decimal(18, 4)
-  receivedQty Decimal? @db.Decimal(18, 4)
-  uomId       String
-  remarks     String?
-
-  transfer CnStockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
-  item     CnItem          @relation(fields: [itemId], references: [id])
-  uom      CnUOM           @relation(fields: [uomId], references: [id])
-
-  @@index([transferId])
-  @@map("Stock_transfer_lines")
-  @@schema("app_quikinfra")
-}
-
 model CnStockReconciliation {
   id                   String   @id @default(cuid())
   orgId                String
@@ -4051,6 +3987,11 @@ model CnStockReconciliation {
   approvedById         String?
   status               String   @default("draft")
   approvalId           String?
+  lineCount            Int      @default(0)
+  // Reconciliation lines are stored inline as a JSONB array (same single-table
+  // pattern as issues/transfers/gate-pass/good-return). Each element:
+  // { id?, itemId, uomId, systemQty, physicalQty, varianceQty, reason }.
+  materials            Json?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
   createdBy            String
@@ -4058,7 +3999,6 @@ model CnStockReconciliation {
 
   project  CnProject                   @relation(fields: [projectId], references: [id])
   location CnLocation                  @relation(fields: [locationId], references: [id])
-  lines    CnStockReconciliationLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -4073,24 +4013,6 @@ model CnStockReconciliation {
   @@schema("app_quikinfra")
 }
 
-model CnStockReconciliationLine {
-  id               String  @id @default(cuid())
-  reconciliationId String
-  itemId           String
-  systemQty        Decimal @db.Decimal(18, 4)
-  physicalQty      Decimal @db.Decimal(18, 4)
-  varianceQty      Decimal @db.Decimal(18, 4)
-  uomId            String
-  reason           String?
-
-  reconciliation CnStockReconciliation @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
-  item           CnItem                @relation(fields: [itemId], references: [id])
-  uom            CnUOM                 @relation(fields: [uomId], references: [id])
-
-  @@index([reconciliationId])
-  @@map("Stock_reconciliation_lines")
-  @@schema("app_quikinfra")
-}
 
 model CnDieselLog {
   id             String   @id @default(cuid())
@@ -4579,21 +4501,6 @@ model CnRfqVendor {
   @@index([rfqId])
   @@index([vendorId])
   @@map("Rfq_vendors")
-  @@schema("app_quikinfra")
-}
-
-model CnGatePassLine {
-  id         String  @id @default(cuid())
-  gatePassId String
-  itemId     String
-  quantity   Decimal @db.Decimal(18, 4)
-  uomId      String
-  remarks    String?
-
-  gatePass CnGatePass @relation(fields: [gatePassId], references: [id], onDelete: Cascade)
-
-  @@index([gatePassId])
-  @@map("Gate_pass_lines")
   @@schema("app_quikinfra")
 }
 

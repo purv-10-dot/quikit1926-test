@@ -178,7 +178,19 @@ export default function UserPermissionMatrixPage() {
       for (const k of keys) {
         const sib = MENU_CATALOG.find((m) => m.key === k);
         if (!sib || !sib.supports[action]) continue; // skip pages lacking it
-        next[k] = { ...next[k], [action]: nextValue };
+        const row = { ...next[k], [action]: nextValue };
+        // View is a prerequisite for any action: you can't add/edit/delete a
+        // page you can't see. So enabling add/edit/delete auto-enables view,
+        // and disabling view clears add/edit/delete.
+        if (nextValue && action !== "view" && sib.supports.view) {
+          row.view = true;
+        }
+        if (!nextValue && action === "view") {
+          if (sib.supports.add) row.add = false;
+          if (sib.supports.edit) row.edit = false;
+          if (sib.supports.delete) row.delete = false;
+        }
+        next[k] = row;
       }
       return next;
     });

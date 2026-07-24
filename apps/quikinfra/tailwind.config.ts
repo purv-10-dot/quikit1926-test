@@ -66,11 +66,12 @@ const config: Config = {
           700: '#334155',
           800: '#1e293b',
         },
-        // Themeable accent scale. Each shade reads a --accent-* CSS variable,
-        // but the FALLBACK is QuikInfra's own construction orange — so when no
-        // user has picked a colour (the default), `accent-*` renders the exact
-        // brand palette and the design is unchanged. AccentThemeApplier only
-        // sets the variables when a user has explicitly chosen a colour.
+        // Accent scale. Each shade reads a --accent-* CSS variable with a
+        // FALLBACK to QuikInfra's own construction orange. QuikInfra never sets
+        // those variables (it has no colour picker and does NOT apply the
+        // per-user accent shared across apps), so `accent-*` always renders the
+        // brand orange — the app stays on-brand regardless of a colour chosen
+        // in another QuikIT app.
         // (accent-300 = #FFAF55, the golden top of the primary-button gradient.)
         accent: {
           50:  'var(--accent-50, #fff7ed)',

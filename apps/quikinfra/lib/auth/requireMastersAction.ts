@@ -13,9 +13,12 @@
  *
  * with:
  *
- *   const ctxOrResp = await requireMastersAction("view");
+ *   const ctxOrResp = await requireMastersAction("construction.master_vendor", "view");
  *   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
  *   const ctx = ctxOrResp;
+ *
+ * Each masters/organization page passes its OWN resource (per-page split):
+ * e.g. Vendors → "construction.master_vendor", GST → "construction.org_gst".
  *
  * Action mapping per HTTP method:
  *   GET    → "view"
@@ -39,6 +42,7 @@ export type MastersAction =
   | "export";
 
 export async function requireMastersAction(
+  resource: string,
   action: MastersAction,
 ): Promise<TenantContext | NextResponse> {
   const ctx = await getTenantContext();
@@ -48,16 +52,18 @@ export async function requireMastersAction(
       { status: 401 },
     );
   }
-  // Masters are lookup/reference data picked across every module (PR, BOQ,
-  // GRN, stock, projects). VIEW is therefore granted to ANY authenticated
-  // user in the org — every role can populate dropdowns by default. Reads
+  // Masters/organization rows are lookup/reference data picked across every
+  // module (PR, BOQ, GRN, stock, projects). VIEW is therefore granted to ANY
+  // authenticated user in the org — gating reads per page would break the
+  // dropdowns those other modules rely on. Per-page VIEW visibility is
+  // enforced client-side (sidebar) via the permission matrix instead. Reads
   // stay scoped to ctx.orgId in each repository, so this never crosses
-  // tenants. Mutating actions (create / edit / delete / import / export)
-  // still require the explicit `construction.masters.<action>` permission.
+  // tenants. Mutating actions (create / edit / delete / import / export) are
+  // gated on the PAGE's own resource, e.g. `construction.master_vendor.edit`.
   if (action === "view") {
     return ctx;
   }
-  const key = `construction.masters.${action}`;
+  const key = `${resource}.${action}`;
   // Admin role + super-admin both hold the `*` wildcard. Honour both.
   if (!ctx.permissions.has(key) && !ctx.permissions.has("*")) {
     return NextResponse.json(

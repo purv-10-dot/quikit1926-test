@@ -96,7 +96,7 @@ describe("POST /api/masters/items — withMutationRoute", () => {
     expect((await POST(buildPOST(VALID_ITEM))).status).toBe(401);
   });
 
-  it("returns 403 when the user lacks construction.masters.create", async () => {
+  it("returns 403 when the user lacks construction.master_item.create", async () => {
     setContext(makeUserCtx([]));
     expect((await POST(buildPOST(VALID_ITEM))).status).toBe(403);
   });

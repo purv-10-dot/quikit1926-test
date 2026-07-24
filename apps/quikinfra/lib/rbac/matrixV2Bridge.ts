@@ -34,38 +34,32 @@ const MENU_SUPPORTS: Readonly<
  * was last updated).
  */
 export const MENU_TO_RESOURCE: Readonly<Record<string, string>> = {
-  // Organization (Departments / Banks / FYs / Cost Centers / Companies setup)
-  "org.company":       "construction.organization",
-  "org.department":    "construction.organization",
-  "org.gst":           "construction.organization",
-  "org.tds":           "construction.organization",
-  "org.uom":           "construction.organization",
-  "org.work_category": "construction.organization",
-  "org.terms":         "construction.organization",
-  // Masters (operational)
+  // Organization — per-page resources (per-page-permissions split, Phase 4).
+  // Each page now owns its resource and toggles independently; the routes
+  // (app/api/masters/*) gate on the matching construction.org_* resource.
+  "org.company":       "construction.org_company",
+  "org.department":    "construction.org_department",
+  "org.gst":           "construction.org_gst",
+  "org.tds":           "construction.org_tds",
+  "org.uom":           "construction.org_uom",
+  "org.work_category": "construction.org_work_category",
+  "org.terms":         "construction.org_terms",
+  // Masters — per-page resources (per-page-permissions split, Phase 4).
+  // Each page owns its own construction.master_* resource, so unchecking one
+  // no longer moves the whole cluster. Projects keeps its own
+  // construction.project (it was never part of the masters umbrella).
   "master.project":     "construction.project",
-  "master.item":        "construction.masters",
-  "master.item_group":  "construction.masters",
-  "master.vendor":      "construction.masters",
-  "master.contractor":  "construction.masters",
-  "master.customer":    "construction.masters",
-  "master.location":    "construction.masters",
-  "master.machinery":   "construction.masters",
-  // Assets/Tools is a MASTERS page — its API routes gate on
-  // `construction.masters` (requireMastersAction). It was mis-wired to
-  // `construction.stock` here, so toggling the Assets checkbox did nothing to
-  // the Assets page and instead revoked Stock Register in the STORE module —
-  // the cross-module "unchecking here unchecks Store" bug.
-  "master.asset":       "construction.masters",
-  "master.cost_center": "construction.masters",
-  // Labour Master + Workmen are MASTERS pages — their API routes gate on
-  // `construction.masters` (requireMastersAction), same as the rows above.
-  // They were added to MENU_CATALOG but never bridged here, so the matrix
-  // silently skipped them: unchecking either was a no-op that reverted on
-  // reload. Mapping them to the masters resource makes them behave like
-  // every other masters page (and toggle together with the cluster).
-  "master.labour":      "construction.masters",
-  "master.workman":     "construction.masters",
+  "master.item":        "construction.master_item",
+  "master.item_group":  "construction.master_item_group",
+  "master.vendor":      "construction.master_vendor",
+  "master.contractor":  "construction.master_contractor",
+  "master.customer":    "construction.master_customer",
+  "master.location":    "construction.master_location",
+  "master.machinery":   "construction.master_machinery",
+  "master.asset":       "construction.master_asset",
+  "master.cost_center": "construction.master_cost_center",
+  "master.labour":      "construction.master_labour",
+  "master.workman":     "construction.master_workman",
   // Purchase
   "purchase.mr":             "construction.pr",
   "purchase.indent":         "construction.indent",
