@@ -77,13 +77,6 @@ export function IssueDevelopment({
             </span>
           )}
         </button>
-        {open && (
-          <DevelopmentActions
-            issueId={issueId}
-            issueKey={issueKey}
-            onBranchCreated={() => refetch()}
-          />
-        )}
       </div>
 
       {open && (
@@ -141,6 +134,18 @@ export function IssueDevelopment({
                 </Row>
               ))}
             </Group>
+          )}
+
+          {/* Action links (Jira-style): always available at the bottom of the
+              card, whether or not there's linked activity yet. */}
+          {!isLoading && (
+            <div className="border-t border-gray-100 px-3 py-2 dark:border-gray-800">
+              <DevelopmentActions
+                issueId={issueId}
+                issueKey={issueKey}
+                onBranchCreated={() => refetch()}
+              />
+            </div>
           )}
         </div>
       )}

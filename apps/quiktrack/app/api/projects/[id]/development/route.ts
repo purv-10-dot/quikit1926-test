@@ -9,6 +9,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withProjectAccess } from "@/lib/api/withProjectAccess";
+import { computeSpaceDevMetrics } from "@/lib/services/github/space-dev-metrics";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,6 +23,7 @@ export const GET = withProjectAccess<{ id: string }>(
       select: { id: true },
     });
     const issueIds = issues.map((i) => i.id);
+    const metrics = await computeSpaceDevMetrics(orgId, projectId, issueIds, Date.now());
 
     const [repos, branches, commits, pullRequests] = await Promise.all([
       db.qtGithubRepo.findMany({
@@ -68,6 +70,7 @@ export const GET = withProjectAccess<{ id: string }>(
           commits: commits.length,
           pullRequests: pullRequests.length,
         },
+        metrics,
       },
     });
   },

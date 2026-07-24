@@ -27,10 +27,13 @@ export function DevelopmentActions({
   issueId,
   issueKey,
   onBranchCreated,
+  variant = "list",
 }: {
   issueId: string;
   issueKey: string;
   onBranchCreated: () => void;
+  /** "list" = Jira-style labeled blue links (default); "toolbar" = icon buttons. */
+  variant?: "list" | "toolbar";
 }) {
   const [dialog, setDialog] = useState<null | "branch" | "commit" | "pr" | "open">(null);
   const { data: repos = [] } = useQuery({
@@ -39,12 +42,18 @@ export function DevelopmentActions({
     staleTime: 60_000,
   });
 
+  const actions = (
+    <>
+      <ActionItem variant={variant} onClick={() => setDialog("open")} icon={Terminal} label="Open in coding tool" />
+      <ActionItem variant={variant} onClick={() => setDialog("branch")} icon={GitBranch} label="Create branch" />
+      <ActionItem variant={variant} onClick={() => setDialog("commit")} icon={Copy} label="Create commit" />
+      <ActionItem variant={variant} onClick={() => setDialog("pr")} icon={GitPullRequest} label="Create pull request" />
+    </>
+  );
+
   return (
-    <div className="flex items-center gap-1">
-      <ActionButton onClick={() => setDialog("branch")} icon={GitBranch} label="Create branch" />
-      <ActionButton onClick={() => setDialog("commit")} icon={Copy} label="Create commit" />
-      <ActionButton onClick={() => setDialog("pr")} icon={GitPullRequest} label="Create pull request" />
-      <ActionButton onClick={() => setDialog("open")} icon={Terminal} label="Open in coding tool" />
+    <div className={variant === "list" ? "flex flex-col gap-1" : "flex items-center gap-1"}>
+      {actions}
 
       {dialog === "branch" && (
         <BranchDialog
@@ -71,23 +80,38 @@ export function DevelopmentActions({
   );
 }
 
-function ActionButton({
+function ActionItem({
   onClick,
   icon: Icon,
   label,
+  variant,
 }: {
   onClick: () => void;
   icon: React.ElementType;
   label: string;
+  variant: "list" | "toolbar";
 }) {
+  if (variant === "toolbar") {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        title={label}
+        className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+      >
+        <Icon className="h-3.5 w-3.5" />
+      </button>
+    );
+  }
+  // Jira-style labeled blue link row.
   return (
     <button
       type="button"
       onClick={onClick}
-      title={label}
-      className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+      className="inline-flex items-center gap-2 rounded px-1 py-1 text-[13px] font-medium text-accent-600 hover:text-accent-700 hover:underline dark:text-accent-400"
     >
-      <Icon className="h-3.5 w-3.5" />
+      <Icon className="h-4 w-4" />
+      {label}
     </button>
   );
 }

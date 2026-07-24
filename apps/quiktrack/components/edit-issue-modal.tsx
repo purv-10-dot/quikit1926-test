@@ -1415,12 +1415,6 @@ export function EditIssueModal({
                 />
               )}
 
-              {/* Development — branches/commits/PRs linked via the issue key.
-                  Same component the full-page view uses. */}
-              {issue?.id && issue.key && (
-                <IssueDevelopment issueId={issue.id} issueKey={issue.key} />
-              )}
-
               {/* Separate "Attachments" section — the description's files as
                   cards (also shown inside Description above), plus the
                   migration-imported attachments. */}
@@ -1724,6 +1718,14 @@ export function EditIssueModal({
                 {issue.createdAt && <div>Created {fmtDateLabel(issue.createdAt)}</div>}
                 {issue.updatedAt && <div>Updated {fmtDateLabel(issue.updatedAt)}</div>}
               </div>
+
+              {/* Development — placed BELOW the Details section (Jira layout):
+                  branches/commits/PRs + action links, linked via the issue key. */}
+              {issue?.id && issue.key && (
+                <div className="mt-6">
+                  <IssueDevelopment issueId={issue.id} issueKey={issue.key} />
+                </div>
+              )}
 
               {/* Activity — Comments / History / Work log tabs. Mounted at
                   the bottom of the right rail per the reference designs. */}
