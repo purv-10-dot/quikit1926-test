@@ -155,7 +155,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     });
 
     // Walk up reporting chain → notify each manager
-    const chain: { id: string; firstName: string; lastName: string; workEmail: string | null }[] = [];
+    const mgrChain: { id: string; firstName: string; lastName: string; workEmail: string | null }[] = [];
     let cursorId: string | null = employee.reportingManagerId;
     const seen = new Set<string>([employee.id]);
     let safety = 12;
@@ -166,7 +166,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         select: { id: true, firstName: true, lastName: true, workEmail: true, reportingManagerId: true },
       });
       if (!mgr) break;
-      chain.push({ id: mgr.id, firstName: mgr.firstName, lastName: mgr.lastName, workEmail: mgr.workEmail });
+      mgrChain.push({ id: mgr.id, firstName: mgr.firstName, lastName: mgr.lastName, workEmail: mgr.workEmail });
       cursorId = mgr.reportingManagerId;
     }
 
@@ -177,7 +177,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     const resignStr = resignationDate.toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" });
 
     const mailStatus: { to: string; sent: boolean; error?: string }[] = [];
-    void Promise.all(chain.map(async (mgr, idx) => {
+    void Promise.all(mgrChain.map(async (mgr, idx) => {
       if (!mgr.workEmail) {
         mailStatus.push({ to: `${mgr.firstName} ${mgr.lastName}`, sent: false, error: "workEmail missing" });
         return;
@@ -223,7 +223,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       instance,
       employee: { id: employee.id, name: employeeName },
       noticePeriodDays: noticeDays,
-      notifiedManagers: chain.map((c) => ({ id: c.id, name: `${c.firstName} ${c.lastName}`, email: c.workEmail })),
+      notifiedManagers: mgrChain.map((c) => ({ id: c.id, name: `${c.firstName} ${c.lastName}`, email: c.workEmail })),
     }, undefined, 201);
   } catch (error) {
     console.error("POST /offboarding/resign error:", error);
