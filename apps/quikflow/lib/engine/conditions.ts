@@ -223,6 +223,28 @@ export function evaluate(node: GraphNode, event: EngineEvent): boolean {
 }
 
 /**
+ * Human-readable reason a condition stopped the run — surfaced in the step log
+ * so Run History explains WHY a workflow halted instead of showing a silent
+ * success. Flags clauses whose field resolved to empty/undefined (the most
+ * common Run-now confusion: a condition on a field the sample data didn't
+ * carry). Returns null for an empty (always-pass) config.
+ */
+export function explainStop(node: GraphNode, event: EngineEvent): string | null {
+  const cfg = (node.config ?? {}) as ConditionConfig;
+  const clauses: ConditionClause[] =
+    Array.isArray(cfg.clauses) && cfg.clauses.length > 0 ? cfg.clauses : cfg.field ? [cfg] : [];
+  if (clauses.length === 0) return null;
+  const failed = clauses.filter((c) => !evalClause(c, event));
+  const parts = failed.map((c) => {
+    const actual = c.field ? resolveField(event, c.field) : undefined;
+    const empty = actual === undefined || actual === null || actual === "";
+    const shown = empty ? "(empty)" : JSON.stringify(actual);
+    return `${c.field} ${c.operator} ${JSON.stringify(c.value)} — actual ${shown}`;
+  });
+  return `Condition not met, run stopped. Failing: ${parts.join("; ")}`;
+}
+
+/**
  * A saved rule (doc §6): `{ field, op, value }`. Accepts `op` (doc) or
  * `operator` (engine) interchangeably so the same shape drives the trigger
  * filter, the "If" condition, and future branch steps.

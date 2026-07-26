@@ -12,6 +12,8 @@ export interface Step {
   id: string;
   kind: string;
   label: string;
+  /** True once the user hand-edits the Label field — stops label auto-sync. */
+  labelCustom?: boolean;
   actionId?: string;
   // ── condition / if_else: a multi-row rule group joined by And / Or ──
   combine?: "and" | "or";

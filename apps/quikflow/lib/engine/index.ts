@@ -19,10 +19,10 @@ export async function dispatchEvent(event: EngineEvent): Promise<RunResult[]> {
   // Load the triggering record ONCE — shared by the trigger filter of every
   // matched workflow and by each run's condition/token evaluation.
   const context = await loadContext(event);
-  // Scheduler ticks are pre-targeted to a single workflow; everything else
-  // fans out via app+event matching.
+  // Events the scheduler/date-scan pre-targets carry a `workflowId` (run just
+  // that workflow); everything else fans out via app+event matching.
   const workflows =
-    event.event === "schedule.tick"
+    typeof event.data?.workflowId === "string"
       ? await matchScheduledWorkflow(event)
       : await matchWorkflows(event);
   const results: RunResult[] = [];

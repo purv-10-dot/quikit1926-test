@@ -5,6 +5,7 @@ import { getOrgId } from "@/lib/api/getOrgId";
 import { toErrorMessage } from "@/lib/api/errors";
 import { logApiCall } from "@quikit/shared/apiLogging";
 import { ADMIN_TIER_ROLES } from "@quikit/shared";
+import { isOrgAppAdmin } from "@/lib/api/appRole";
 
 /**
  * Context passed to a route handler after the auth + tenant guard succeeds.
@@ -76,9 +77,13 @@ export function withOrgAuth<Params = Record<string, never>>(
           );
         } else {
           orgIdForLog = orgId;
+          // Admin = super-admin OR legacy OrgMember tier OR a v2 "admin" AppRole
+          // grant (UserAppRole → AppRole). The `||` short-circuits, so the DB
+          // check only runs when the cheap session checks don't already answer.
           const isAdmin =
             session.user.isSuperAdmin === true ||
-            ADMIN_TIER_ROLES.has(String(session.user.membershipRole ?? ""));
+            ADMIN_TIER_ROLES.has(String(session.user.membershipRole ?? "")) ||
+            (await isOrgAppAdmin(session.user.id, orgId));
           if (options.requireAdmin && !isAdmin) {
             response = NextResponse.json(
               { success: false, error: "Admin access required" },

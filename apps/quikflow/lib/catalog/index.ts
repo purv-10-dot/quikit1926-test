@@ -6,8 +6,10 @@
  */
 import { TRIGGER_CATALOG, type CatalogApp, type CatalogEvent } from "./triggers";
 import { type FieldType } from "./conditions";
-import { MODULES, moduleForEvent, fieldsUsableIn } from "./modules";
+import { MODULES, moduleForEvent, moduleByKey, fieldsUsableIn } from "./modules";
+import { ACTION_CATALOG, ACTION_CATEGORY_ORDER, type CatalogAction } from "./actions";
 import { toEngineType, type SemanticType } from "./field-types";
+import { MAIL_APP_SLUG, MAIL_CONDITION_FIELDS } from "./mail";
 
 export * from "./triggers";
 export * from "./conditions";
@@ -77,6 +79,16 @@ export function findEvent(slug: string, eventId: string): CatalogEvent | undefin
  * full condition-usable field set is offered regardless of the event payload.
  */
 export function conditionFieldsForEvent(slug: string, eventId: string): ConditionField[] {
+  // Third-party mail events read straight off the payload — no module record.
+  if (slug === MAIL_APP_SLUG) {
+    return MAIL_CONDITION_FIELDS.map((f) => ({
+      id: f.id,
+      label: f.label,
+      type: f.type,
+      semanticType: f.semanticType,
+      values: f.values ? [...f.values] : undefined,
+    }));
+  }
   if (slug !== "quikscale") return [];
   const mod = moduleForEvent(eventId);
   if (!mod) return [];
@@ -106,4 +118,28 @@ export function allConditionFields(): (ConditionField & { module: string })[] {
   return MODULES.flatMap((m) =>
     fieldsUsableIn(m, "condition").map((f) => ({ ...toConditionField(f), module: m.label })),
   );
+}
+
+/**
+ * Actions a given module accepts, grouped by category — the builder's action
+ * picker. A module's `actionIds` is the allow-list: modules with no backing
+ * table (Teams KPI, Meeting, Review, Scorecard) don't list record-write actions,
+ * so the picker never offers an action that could only ever be simulated.
+ */
+export function actionsForModuleKey(moduleKey: string | undefined): { category: string; actions: CatalogAction[] }[] {
+  const mod = moduleKey ? moduleByKey(moduleKey) : undefined;
+  const allowed = mod ? new Set(mod.actionIds) : null;
+  return ACTION_CATEGORY_ORDER.map((category) => ({
+    category,
+    actions: ACTION_CATALOG.filter((a) => a.category === category && (!allowed || allowed.has(a.id))),
+  })).filter((g) => g.actions.length > 0);
+}
+
+/** Actions available for a trigger event, via its owning module's allow-list. */
+export function actionsForEvent(app: string, eventId: string): { category: string; actions: CatalogAction[] }[] {
+  // Mail triggers aren't tied to a QuikScale module — offer the full catalog
+  // (send a reply, create a priority, POST a webhook, …).
+  if (app === MAIL_APP_SLUG) return actionsForModuleKey(undefined);
+  if (app !== "quikscale") return [];
+  return actionsForModuleKey(moduleForEvent(eventId)?.key);
 }

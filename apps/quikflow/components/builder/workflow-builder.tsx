@@ -1,16 +1,17 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronLeft, Play, Plus, LayoutGrid, X } from "lucide-react";
-import { apiSend } from "@/lib/client/fetcher";
+import { ChevronLeft, Play, Plus, LayoutGrid, X, Users, User } from "lucide-react";
+import { apiGet, apiSend } from "@/lib/client/fetcher";
 import { STEP_KINDS, findApp, findEvent, findAction } from "@/lib/catalog";
 import { NodeCard } from "@/components/builder/node-card";
 import { Connector } from "@/components/builder/connector";
 import { StepPicker } from "@/components/builder/step-picker";
 import { ConfigPanel } from "@/components/builder/config-panel";
 import type { Step, RuleGroupValue, ScheduleValue } from "@/lib/builder/types";
-import { serializeWorkflow, maxStepSeq, DEFAULT_SCHEDULE, type BuilderState } from "@/lib/builder/serialize";
+import { serializeWorkflow, maxStepSeq, DEFAULT_SCHEDULE, DEFAULT_OFFSET_DAYS, type BuilderState } from "@/lib/builder/serialize";
+import { deriveStepLabel, displayStepLabel } from "@/lib/builder/labels";
 import { cn } from "@/lib/utils";
 
 const EMPTY_FILTER: RuleGroupValue = { combine: "and", rules: [] };
@@ -46,13 +47,23 @@ export function WorkflowBuilder({
   const [event, setEvent] = useState(initial?.event ?? "");
   const [triggerFilter, setTriggerFilter] = useState<RuleGroupValue>(initial?.triggerFilter ?? EMPTY_FILTER);
   const [schedule, setSchedule] = useState<ScheduleValue>(initial?.schedule ?? DEFAULT_SCHEDULE);
+  const [offsetDays, setOffsetDays] = useState<number>(initial?.offsetDays ?? DEFAULT_OFFSET_DAYS);
   const [steps, setSteps] = useState<Step[]>(initial?.steps ?? []);
   const [selected, setSelected] = useState<string | "trigger" | null>("trigger");
   const [configOpen, setConfigOpen] = useState(false);
   const [live, setLive] = useState(initial?.live ?? false);
+  const [scope, setScope] = useState<"org" | "personal">(initial?.scope ?? "personal");
+  const [isAdmin, setIsAdmin] = useState(false);
   const [testMsg, setTestMsg] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  // Resolve the caller's role so only admins get the "Org-wide" option.
+  useEffect(() => {
+    apiGet<{ isAdmin: boolean }>("/api/me")
+      .then((d) => setIsAdmin(d.isAdmin))
+      .catch(() => setIsAdmin(false));
+  }, []);
 
   const seqRef = useRef(maxStepSeq(initial?.steps ?? []));
   const nextId = () => `step_${(seqRef.current += 1)}`;
@@ -68,11 +79,25 @@ export function WorkflowBuilder({
   }
   function addStep(kind: string) {
     const step: Step = { id: nextId(), kind, label: STEP_KINDS.find((s) => s.kind === kind)?.label ?? kind };
+    step.label = deriveStepLabel(step);
     setSteps((s) => [...s, step]);
     openConfig(step.id);
   }
   function updateStep(id: string, patch: Partial<Step>) {
-    setSteps((s) => s.map((st) => (st.id === id ? { ...st, ...patch } : st)));
+    setSteps((s) =>
+      s.map((st) => {
+        if (st.id !== id) return st;
+        const next = { ...st, ...patch };
+        if (patch.label !== undefined) {
+          // User hand-edited the Label field → pin it, stop auto-sync.
+          next.labelCustom = true;
+        } else if (!next.labelCustom && ("actionId" in patch || "rules" in patch || "combine" in patch || "field" in patch)) {
+          // Config changed and the label isn't pinned → keep it descriptive.
+          next.label = deriveStepLabel(next);
+        }
+        return next;
+      }),
+    );
   }
   function resetFilter() {
     setTriggerFilter(EMPTY_FILTER);
@@ -96,16 +121,16 @@ export function WorkflowBuilder({
     }
     setSaving(true);
     try {
-      const { trigger, graphNodes, graphEdges } = serializeWorkflow({ app, module, event, triggerFilter, schedule, steps });
+      const { trigger, graphNodes, graphEdges } = serializeWorkflow({ app, module, event, triggerFilter, schedule, offsetDays, steps });
       if (mode === "edit" && workflowId) {
-        await apiSend(`/api/workflows/${workflowId}`, "PATCH", { name, trigger, graphNodes, graphEdges });
+        await apiSend(`/api/workflows/${workflowId}`, "PATCH", { name, scope, trigger, graphNodes, graphEdges });
         await apiSend(`/api/workflows/${workflowId}/toggle`, "PATCH", { on: live });
         router.push(`/workflows/${workflowId}`);
       } else {
         const { id } = await apiSend<{ id: string }>("/api/workflows", "POST", {
           name,
           app,
-          scope: "personal",
+          scope,
           trigger,
           graphNodes,
           graphEdges,
@@ -141,6 +166,7 @@ export function WorkflowBuilder({
           />
         </div>
         <div className="flex items-center gap-3">
+          <ScopeToggle scope={scope} onChange={setScope} canOrg={isAdmin} />
           <button
             type="button"
             onClick={runTest}
@@ -202,8 +228,8 @@ export function WorkflowBuilder({
               <div className="w-64 shrink-0">
                 <NodeCard
                   kind={s.kind}
-                  title={s.label}
-                  subtitle={s.actionId ? findAction(s.actionId)?.label ?? s.actionId : undefined}
+                  title={displayStepLabel(s)}
+                  subtitle={s.kind === "action" && s.labelCustom && s.actionId ? findAction(s.actionId)?.label ?? s.actionId : undefined}
                   selected={selected === s.id}
                   onClick={() => openConfig(s.id)}
                 />
@@ -255,6 +281,8 @@ export function WorkflowBuilder({
             onTriggerFilterChange={(patch) => setTriggerFilter((f) => ({ ...f, ...patch }))}
             schedule={schedule}
             onScheduleChange={(patch) => setSchedule((s) => ({ ...s, ...patch }))}
+            offsetDays={offsetDays}
+            onOffsetDaysChange={setOffsetDays}
             step={selectedStep}
             onUpdateStep={(patch) => selectedStep && updateStep(selectedStep.id, patch)}
             onRemoveStep={() => {
@@ -294,6 +322,45 @@ export function WorkflowBuilder({
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * "Who can use this?" segmented control. Members can only create personal
+ * ("Just me") workflows; the Org-wide option is disabled for them (server also
+ * enforces this — this is just the UX gate).
+ */
+function ScopeToggle({
+  scope,
+  onChange,
+  canOrg,
+}: {
+  scope: "org" | "personal";
+  onChange: (s: "org" | "personal") => void;
+  canOrg: boolean;
+}) {
+  const pill = (active: boolean) =>
+    cn(
+      "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+      active ? "bg-accent-600 text-white" : "text-gray-600 hover:bg-[var(--color-bg-secondary)]",
+    );
+  return (
+    <div className="flex items-center rounded-lg border border-[var(--color-border)] p-0.5" title="Who can use this workflow?">
+      <button type="button" onClick={() => onChange("personal")} className={pill(scope === "personal")}>
+        <User className="h-3.5 w-3.5" />
+        Just me
+      </button>
+      <button
+        type="button"
+        onClick={() => canOrg && onChange("org")}
+        disabled={!canOrg}
+        title={canOrg ? "Everyone in the org" : "Only App Admins can create org-wide workflows"}
+        className={cn(pill(scope === "org"), !canOrg && "cursor-not-allowed opacity-40")}
+      >
+        <Users className="h-3.5 w-3.5" />
+        Org-wide
+      </button>
     </div>
   );
 }

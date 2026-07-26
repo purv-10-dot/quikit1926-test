@@ -73,3 +73,22 @@ export const POST = withOrgAuth(
   },
   { requireAdmin: true },
 );
+
+/**
+ * DELETE /api/connections?id=... — disconnect an account (App Admin). Scoped to
+ * the caller's org via deleteMany so a cross-org id can never be removed.
+ */
+export const DELETE = withOrgAuth(
+  async ({ orgId }, req) => {
+    const id = new URL(req.url).searchParams.get("id");
+    if (!id) {
+      return NextResponse.json({ success: false, error: "Missing connection id" }, { status: 400 });
+    }
+    const result = await db.wfConnection.deleteMany({ where: { id, orgId } });
+    if (result.count === 0) {
+      return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+    }
+    return NextResponse.json({ success: true, data: { deleted: true } });
+  },
+  // Any org member may disconnect a mailbox in their org (org-scoped delete).
+);

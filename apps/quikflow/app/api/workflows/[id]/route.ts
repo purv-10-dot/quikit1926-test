@@ -29,6 +29,7 @@ export const GET = withOrgAuth<Params>(async ({ orgId, userId }, _req, { params 
 
 const updateSchema = z.object({
   name: z.string().min(1).max(200).optional(),
+  scope: z.enum(["org", "personal"]).optional(),
   trigger: z.record(z.unknown()).optional(),
   graphNodes: z.array(z.unknown()).optional(),
   graphEdges: z.array(z.unknown()).optional(),
@@ -53,6 +54,14 @@ export const PATCH = withOrgAuth<Params>(async ({ orgId, userId, isAdmin }, req,
     return NextResponse.json(
       { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" },
       { status: 400 },
+    );
+  }
+
+  // Making a workflow org-wide (visible/runnable for everyone) is an admin action.
+  if (parsed.data.scope === "org" && !isAdmin) {
+    return NextResponse.json(
+      { success: false, error: "Only App Admins can make a workflow org-wide" },
+      { status: 403 },
     );
   }
 

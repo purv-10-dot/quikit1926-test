@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { Prisma } from "@quikit/database";
 import type { EngineEvent, GraphNode, GraphEdge, RunResult, StepResult } from "./types";
-import { evaluate } from "./conditions";
+import { evaluate, explainStop } from "./conditions";
 import { getActionExecutor } from "./actions";
 import { resolveParams, type TokenContext } from "./tokens";
 import type { EnrichedContext } from "./record";
@@ -45,7 +45,12 @@ async function executeNode(
       return { status: "ok", output: { event: event.event, app: event.app } };
     case "condition": {
       const pass = evaluate(node, event);
-      return pass ? { status: "ok" } : { status: "skipped", stop: true };
+      if (pass) return { status: "ok", output: { conditionMet: true } };
+      return {
+        status: "skipped",
+        stop: true,
+        output: { conditionMet: false, reason: explainStop(node, event) ?? "Condition not met, run stopped." },
+      };
     }
     case "if_else": {
       const pass = evaluate(node, event);

@@ -5,9 +5,12 @@
  * — it reopens a saved workflow back into editable builder state.
  */
 import { findEvent, operatorArity } from "@/lib/catalog";
+import { isBeforeDateEvent } from "@/lib/schedule/date-rules";
+import { deriveStepLabel, displayStepLabel, isGenericLabel } from "./labels";
 import type { RuleRow, RuleGroupValue, ScheduleValue, Step } from "./types";
 
 export const DEFAULT_SCHEDULE: ScheduleValue = { recurrence: "every_week", time: "09:00", dayOfWeek: "mon" };
+export const DEFAULT_OFFSET_DAYS = 3;
 
 /** Coerce a raw string to a number when it looks numeric (so gapPct > 50 works). */
 export function coerce(raw: string | undefined): string | number {
@@ -64,8 +67,12 @@ export interface BuilderState {
   event: string;
   triggerFilter: RuleGroupValue;
   schedule: ScheduleValue;
+  /** "N days before" offset for before-mode date triggers (e.g. www.due.approaching). */
+  offsetDays: number;
   steps: Step[];
   live: boolean;
+  /** Who can use this workflow: "org" (everyone) or "personal" (just the owner). */
+  scope: "org" | "personal";
 }
 
 export interface SerializedGraph {
@@ -76,7 +83,10 @@ export interface SerializedGraph {
 
 /** Builder state → the persisted trigger + linear graph. */
 export function serializeWorkflow(
-  state: Pick<BuilderState, "app" | "module" | "event" | "triggerFilter" | "steps"> & { schedule?: ScheduleValue },
+  state: Pick<BuilderState, "app" | "module" | "event" | "triggerFilter" | "steps"> & {
+    schedule?: ScheduleValue;
+    offsetDays?: number;
+  },
 ): SerializedGraph {
   const { app, module, event, triggerFilter, steps } = state;
   const triggerLabel = findEvent(app, event)?.label ?? event;
@@ -92,13 +102,16 @@ export function serializeWorkflow(
   if (isSchedule && state.schedule) {
     trigger.schedule = { ...state.schedule };
   }
+  if (isBeforeDateEvent(event)) {
+    trigger.offsetDays = state.offsetDays ?? DEFAULT_OFFSET_DAYS;
+  }
   if (triggerFilter.rules.length > 0) {
     trigger.filter = { combine: triggerFilter.combine, rules: triggerFilter.rules.map(serializeRule) };
   }
 
   const graphNodes = [
     { id: "trigger", kind: "trigger", label: triggerLabel, config: { app, module, event } },
-    ...steps.map((s) => ({ id: s.id, kind: s.kind, label: s.label, config: nodeConfig(s) })),
+    ...steps.map((s) => ({ id: s.id, kind: s.kind, label: displayStepLabel(s), config: nodeConfig(s) })),
   ];
   const graphEdges = graphNodes.slice(0, -1).map((n, i) => ({ from: n.id, to: graphNodes[i + 1].id }));
   return { trigger, graphNodes, graphEdges };
@@ -107,6 +120,7 @@ export function serializeWorkflow(
 interface PersistedWorkflow {
   name?: string;
   status?: string;
+  scope?: string;
   trigger?: unknown;
   graphNodes?: unknown;
 }
@@ -149,6 +163,13 @@ export function deserializeWorkflow(wf: PersistedWorkflow): BuilderState {
           base.rules = [deserializeRule(config)];
         }
       }
+      // Reconstruct the "is this label user-set?" flag: a persisted label that is
+      // neither generic nor equal to the auto-derived one is a custom rename;
+      // otherwise re-derive so old generic labels ("Condition"/"Action") upgrade.
+      const persisted = n.label ?? "";
+      const derived = deriveStepLabel(base);
+      base.labelCustom = !isGenericLabel(persisted, n.kind) && persisted !== derived;
+      base.label = base.labelCustom ? persisted : derived;
       return base;
     });
 
@@ -167,8 +188,10 @@ export function deserializeWorkflow(wf: PersistedWorkflow): BuilderState {
     event: typeof trigger.event === "string" ? trigger.event : "",
     triggerFilter,
     schedule,
+    offsetDays: typeof trigger.offsetDays === "number" ? trigger.offsetDays : DEFAULT_OFFSET_DAYS,
     steps,
     live: wf.status === "Active",
+    scope: wf.scope === "org" ? "org" : "personal",
   };
 }
 

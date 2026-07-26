@@ -14,7 +14,12 @@ import { connection, QUEUE_NAME } from "@/lib/queue/queue";
 import { SCHEDULER_QUEUE, ensureSchedulerTick } from "@/lib/queue/scheduler";
 import { handleEvent } from "@/worker/handler";
 import { runSchedulerTick } from "@/worker/scheduler";
+import { runDateScan } from "@/worker/date-scan";
+import { runMailScan } from "@/worker/mail-scan";
 import type { EngineEvent } from "@/lib/engine/types";
+
+/** Calendar day (UTC) of the last date-scan, so it runs ~once/day, not every tick. */
+let lastDateScanDay = "";
 
 async function main() {
   const worker = new Worker<EngineEvent>(QUEUE_NAME, handleEvent, {
@@ -35,6 +40,27 @@ async function main() {
       if (fired > 0) {
         // eslint-disable-next-line no-console
         console.log(`[scheduler] fired ${fired} scheduled workflow(s)`);
+      }
+      // Inbound email: poll connected mailboxes every tick (~60s).
+      try {
+        const mail = await runMailScan();
+        if (mail.fired > 0) {
+          // eslint-disable-next-line no-console
+          console.log(`[mail-scan] enqueued ${mail.fired} inbound email event(s)`);
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("[mail-scan] failed:", err instanceof Error ? err.message : err);
+      }
+      // Relative-date triggers: heavy scan, so only once per UTC day.
+      const today = new Date().toISOString().slice(0, 10);
+      if (today !== lastDateScanDay) {
+        lastDateScanDay = today;
+        const scan = await runDateScan();
+        if (scan.fired > 0) {
+          // eslint-disable-next-line no-console
+          console.log(`[date-scan] fired ${scan.fired} date-triggered run(s)`);
+        }
       }
     },
     { connection: connection(), concurrency: 1 },

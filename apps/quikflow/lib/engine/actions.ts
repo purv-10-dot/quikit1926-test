@@ -1,5 +1,7 @@
 import type { ActionContext, StepResult } from "./types";
 import { moduleForEvent } from "@/lib/catalog";
+import { sendMailForOrg } from "@/lib/connectors";
+import type { MailProviderId } from "@/lib/connectors";
 
 /**
  * Action executor registry.
@@ -274,6 +276,245 @@ const postWebhook: ActionExecutor = async (ctx) => {
   }
 };
 
+/** A recorded no-op step (action authorable but nothing to act on this run). */
+function skipStep(reason: string): StepResult {
+  return { status: "ok", output: { skipped: true, reason } };
+}
+
+/** Coerce assorted truthy param encodings ("true"/true/1) to a boolean. */
+function boolParam(v: unknown): boolean {
+  return v === true || v === "true" || v === 1 || v === "1";
+}
+
+/**
+ * REAL: send an email from a connected mailbox. `providerHint` pins the provider
+ * (gmail.send / outlook.send); null uses the org's oldest connected mailbox
+ * (the provider-agnostic notify.email.send). Params are token-resolved by the
+ * runner, so `to`/`subject`/`body` may contain {{trigger.*}} tokens. Skips
+ * cleanly when there's no recipient or no connected account.
+ */
+function mailSend(providerHint: MailProviderId | null): ActionExecutor {
+  return async (ctx) => {
+    const p = ctx.params ?? {};
+    const to = firstString(p.to, p.recipient, p.email);
+    if (!to) return skipStep("No recipient (to) for the email");
+    const subject = firstString(p.subject) ?? "(no subject)";
+    const body = firstString(p.body, p.message, p.text) ?? "";
+    try {
+      const sent = await sendMailForOrg(
+        ctx.orgId,
+        providerHint,
+        {
+          to,
+          subject,
+          body,
+          cc: firstString(p.cc) ?? undefined,
+          bcc: firstString(p.bcc) ?? undefined,
+          html: boolParam(p.html),
+        },
+        { connectionId: firstString(p.from_connection) ?? undefined },
+      );
+      if (!sent) {
+        return skipStep(`No connected ${providerHint ?? "mail"} account for this org`);
+      }
+      return {
+        status: "ok",
+        output: { sent: true, messageId: sent.id, from: sent.from, provider: sent.provider, to },
+      };
+    } catch (e) {
+      return { status: "failed", error: e instanceof Error ? e.message : "Email send failed" };
+    }
+  };
+}
+
+/** Coerce a param to a number, or null when blank/non-numeric. */
+function numOrNull(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isNaN(n) ? null : n;
+}
+
+/** Parse a `fields{}` param that may arrive as an object or a JSON string. */
+function parseObjectParam(v: unknown): Record<string, unknown> {
+  if (v && typeof v === "object" && !Array.isArray(v)) return v as Record<string, unknown>;
+  if (typeof v === "string" && v.trim()) {
+    try {
+      const o: unknown = JSON.parse(v);
+      if (o && typeof o === "object" && !Array.isArray(o)) return o as Record<string, unknown>;
+    } catch {
+      /* not JSON → no fields */
+    }
+  }
+  return {};
+}
+
+/** REAL: record a weekly KPI reading (reuses QuikScale's upsert+recalc → RAG). */
+const enterKpiValue: ActionExecutor = async (ctx) => {
+  const p = ctx.params ?? {};
+  const kpiId = firstString(p.kpi_id, p.kpiId, resolveTargetId(ctx, "kpi"));
+  if (!kpiId) return skipStep("No KPI id to enter a value for");
+  const weekNumber = numOrNull(p.week_number ?? p.weekNumber ?? ctx.event.data.weekNumber);
+  if (weekNumber === null) return skipStep("No week number to enter a value for");
+  const res = await callQuikScale("/api/internal/actions/enter-kpi-value", {
+    orgId: ctx.orgId,
+    actorId: actorFor(ctx),
+    kpiId,
+    weekNumber,
+    value: numOrNull(p.value),
+    userId: firstString(p.user_id) ?? undefined,
+    notes: firstString(p.note) ?? null,
+  });
+  if (!res.ok) return { status: "failed", error: res.error };
+  return { status: "ok", output: { entered: true, kpiId, weekNumber, value: numOrNull(p.value) } };
+};
+
+/** REAL: create an individual KPI. */
+const createKpi: ActionExecutor = async (ctx) => {
+  const p = ctx.params ?? {};
+  const d = ctx.event.data;
+  const name = firstString(p.name, d.name);
+  const owner = firstString(p.owner_id, p.owner, resolveOwner(d));
+  const year = numOrNull(p.year ?? d.year);
+  if (!name || !owner || year === null) return skipStep("Need name, owner, and year to create a KPI");
+  const q = firstString(p.quarter, d.quarter);
+  const res = await callQuikScale("/api/internal/actions/create-kpi", {
+    orgId: ctx.orgId,
+    actorId: actorFor(ctx),
+    name,
+    owner,
+    target: numOrNull(p.target),
+    measurementUnit: firstString(p.unit) ?? undefined,
+    quarter: q && /^Q[1-4]$/.test(q) ? q : undefined,
+    year,
+    frequency: firstString(p.cadence) ?? undefined,
+    kpiType: firstString(p.type) ?? undefined,
+    teamId: firstString(p.team_id, d.teamId) ?? undefined,
+    description: firstString(p.description) ?? undefined,
+  });
+  if (!res.ok) return { status: "failed", error: res.error };
+  return { status: "ok", output: { created: true, kpiId: res.data?.id, name } };
+};
+
+/** Whitelisted KPI patch keys — never derived columns (RAG/progress/qtd*). */
+const KPI_PATCH_KEYS = ["name", "owner", "description", "measurementUnit", "kpiType", "target"] as const;
+
+/** REAL: update whitelisted KPI fields (server rejects derived columns). */
+const updateKpi: ActionExecutor = async (ctx) => {
+  const p = ctx.params ?? {};
+  const kpiId = firstString(p.kpi_id, p.kpiId, resolveTargetId(ctx, "kpi"));
+  if (!kpiId) return skipStep("No KPI id to update");
+  const fields = parseObjectParam(p.fields);
+  if (fields.owner_id !== undefined && fields.owner === undefined) fields.owner = fields.owner_id;
+  const patch: Record<string, unknown> = {};
+  for (const k of KPI_PATCH_KEYS) {
+    const v = p[k] ?? fields[k];
+    if (v !== undefined && v !== "") patch[k] = k === "target" ? numOrNull(v) : v;
+  }
+  if (Object.keys(patch).length === 0) return skipStep("No updatable KPI fields provided");
+  const res = await callQuikScale("/api/internal/actions/update-kpi", {
+    orgId: ctx.orgId,
+    actorId: actorFor(ctx),
+    kpiId,
+    patch,
+  });
+  if (!res.ok) return { status: "failed", error: res.error };
+  return { status: "ok", output: { updated: true, kpiId, fields: Object.keys(patch) } };
+};
+
+/** REAL: soft-archive a KPI (status → "archived"). */
+const archiveKpi: ActionExecutor = async (ctx) => {
+  const p = ctx.params ?? {};
+  const kpiId = firstString(p.kpi_id, p.kpiId, resolveTargetId(ctx, "kpi"));
+  if (!kpiId) return skipStep("No KPI id to archive");
+  const res = await callQuikScale("/api/internal/actions/update-kpi", {
+    orgId: ctx.orgId,
+    actorId: actorFor(ctx),
+    kpiId,
+    patch: { archived: true },
+  });
+  if (!res.ok) return { status: "failed", error: res.error };
+  return { status: "ok", output: { archived: true, kpiId } };
+};
+
+/** Whitelisted Priority patch keys (never derived progress/dueDate). */
+const PRIORITY_PATCH_KEYS = ["name", "description", "status", "owner", "notes"] as const;
+
+/** REAL: update whitelisted Priority (Rock) fields. */
+const updatePriority: ActionExecutor = async (ctx) => {
+  const p = ctx.params ?? {};
+  const priorityId = firstString(p.priority_id, p.priorityId, resolveTargetId(ctx, "priority"));
+  if (!priorityId) return skipStep("No priority id to update");
+  const fields = parseObjectParam(p.fields);
+  const patch: Record<string, unknown> = {};
+  for (const k of PRIORITY_PATCH_KEYS) {
+    const v = p[k] ?? fields[k];
+    if (v !== undefined && v !== "") patch[k] = v;
+  }
+  if (Object.keys(patch).length === 0) return skipStep("No updatable priority fields provided");
+  const res = await callQuikScale("/api/internal/actions/update-priority", {
+    orgId: ctx.orgId,
+    actorId: actorFor(ctx),
+    priorityId,
+    patch,
+  });
+  if (!res.ok) return { status: "failed", error: res.error };
+  return { status: "ok", output: { updated: true, priorityId, fields: Object.keys(patch) } };
+};
+
+/** REAL: bulk-create WWW items from an `items[]` param (array or JSON string). */
+const bulkImportWww: ActionExecutor = async (ctx) => {
+  const p = ctx.params ?? {};
+  const raw = p.items;
+  const arr: unknown[] = Array.isArray(raw)
+    ? raw
+    : typeof raw === "string" && raw.trim()
+      ? (() => {
+          try {
+            const j: unknown = JSON.parse(raw);
+            return Array.isArray(j) ? j : [];
+          } catch {
+            return [];
+          }
+        })()
+      : [];
+  const items = arr
+    .map((it) => (it && typeof it === "object" ? (it as Record<string, unknown>) : null))
+    .filter((it): it is Record<string, unknown> => it !== null)
+    .map((it) => ({
+      who: firstString(it.who, it.owner),
+      what: firstString(it.what),
+      when: firstString(it.when) ?? new Date(Date.now() + 7 * 86_400_000).toISOString(),
+      category: firstString(it.category) ?? undefined,
+      notes: firstString(it.notes) ?? undefined,
+    }))
+    .filter((it) => it.who && it.what);
+  if (items.length === 0) return skipStep("No valid WWW items to import (need who + what)");
+  const res = await callQuikScale("/api/internal/actions/bulk-create-www", {
+    orgId: ctx.orgId,
+    actorId: actorFor(ctx),
+    items,
+  });
+  if (!res.ok) return { status: "failed", error: res.error };
+  return { status: "ok", output: { imported: true, count: res.data?.count } };
+};
+
+/** REAL: advance an OPSP's status (draft → finalized → reviewed). */
+function setOpspStatus(target: "finalized" | "reviewed"): ActionExecutor {
+  return async (ctx) => {
+    const p = ctx.params ?? {};
+    const opspId = firstString(p.opsp_id, p.opspId, resolveTargetId(ctx, "opsp"));
+    if (!opspId) return skipStep("No OPSP id to update");
+    const res = await callQuikScale("/api/internal/actions/set-opsp-status", {
+      orgId: ctx.orgId,
+      actorId: actorFor(ctx),
+      opspId,
+      target,
+    });
+    if (!res.ok) return { status: "failed", error: res.error };
+    return { status: "ok", output: { opspId, status: target } };
+  };
+}
+
 const REGISTRY: Record<string, ActionExecutor> = {
   // Legacy ids (existing saved workflows) + spec ids (builder catalog) both map
   // to the real executors so either authoring path actually fires.
@@ -287,6 +528,21 @@ const REGISTRY: Record<string, ActionExecutor> = {
   "www.complete": completeWww,
   "priority.reassign": reassignPriority,
   "webhook.post": postWebhook,
+  // Outbound email via a connected mailbox (Gmail / Outlook OAuth connection).
+  "notify.email.send": mailSend(null),
+  "email.send": mailSend(null),
+  "gmail.send": mailSend("gmail"),
+  "outlook.send": mailSend("outlook"),
+  // KPI record mutations (Phase 1) — reuse QuikScale's own write/recalc logic.
+  "kpi.value.enter": enterKpiValue,
+  "kpi.create": createKpi,
+  "kpi.update": updateKpi,
+  "kpi.archive": archiveKpi,
+  // Phase 2 — other internal-DB module mutations.
+  "priority.update": updatePriority,
+  "www.bulk.import": bulkImportWww,
+  "opsp.finalize": setOpspStatus("finalized"),
+  "opsp.review.mark": setOpspStatus("reviewed"),
 };
 
 /** Resolve an executor for an action id, falling back to the simulator. */

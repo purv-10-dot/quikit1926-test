@@ -29,9 +29,9 @@ export const WWW_MODULE: ModuleDef = {
     { id: "www.created", label: "A WWW action item is created", firesWhen: "New action item added", payloadFields: ["owner", "when"], live: true },
     { id: "www.assigned", label: "A WWW item is assigned", firesWhen: "Owner set", payloadFields: ["owner"] },
     { id: "www.completed", label: "A WWW item is completed", firesWhen: "Status becomes Completed", payloadFields: ["owner"], live: true },
-    { id: "www.overdue", label: "A WWW action item passes its due date", firesWhen: "Past the when-date, still open", payloadFields: ["when", "owner"] },
-    { id: "www.due.approaching", label: "N days before a WWW due date", firesWhen: "Reminder offset before due", payloadFields: ["offset"] },
+    { id: "www.overdue", label: "A WWW action item passes its due date", firesWhen: "Past the when-date, still open", payloadFields: ["when", "owner"], live: true },
+    { id: "www.due.approaching", label: "N days before a WWW due date", firesWhen: "Reminder offset before due", payloadFields: ["offset"], live: true },
     { id: "www.carried", label: "A WWW item is carried over again", firesWhen: "Item rolls over", payloadFields: ["count"] },
   ],
-  actionIds: ["notify.inapp.send", "notify.email.send", "www.complete", "flow.wait", "webhook.post"],
+  actionIds: ["notify.inapp.send", "notify.email.send", "www.complete", "www.bulk.import", "flow.wait", "webhook.post"],
 };

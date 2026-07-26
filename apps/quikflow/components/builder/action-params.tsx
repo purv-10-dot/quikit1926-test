@@ -1,11 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import { Braces } from "lucide-react";
+import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
+import { Braces, Mail } from "lucide-react";
 import { findAction, type ConditionField } from "@/lib/catalog";
+import { apiGet } from "@/lib/client/fetcher";
 import { cn } from "@/lib/utils";
+import type { ConnectionDTO } from "@/types";
 
 const INPUT_CLS = "w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm";
+
+/** Actions that send from a connected mailbox → show the "From account" picker. */
+const MAIL_SEND_ACTIONS: Record<string, "gmail" | "outlook" | null> = {
+  "notify.email.send": null,
+  "email.send": null,
+  "gmail.send": "gmail",
+  "outlook.send": "outlook",
+};
+const MAIL_PROVIDERS = new Set(["gmail", "outlook"]);
 
 /** "who[]" → "who", "fields{}" → "fields". */
 function baseKey(raw: string): string {
@@ -44,10 +57,18 @@ export function ActionParams({
   }
 
   const setParam = (key: string, value: string) => onChange({ ...params, [key]: value });
+  const isMailSend = actionId != null && actionId in MAIL_SEND_ACTIONS;
 
   return (
     <div className="space-y-3">
       <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Parameters</p>
+      {isMailSend ? (
+        <MailAccountPicker
+          pinned={MAIL_SEND_ACTIONS[actionId!]}
+          value={params.from_connection ?? ""}
+          onChange={(v) => setParam("from_connection", v)}
+        />
+      ) : null}
       {keys.map((key) => (
         <ParamInput
           key={key}
@@ -63,6 +84,58 @@ export function ActionParams({
         <code className="rounded bg-gray-100 px-1">+14d</code>.
       </p>
     </div>
+  );
+}
+
+/**
+ * "From account" picker — the Zapier/n8n-style connected-account selector for
+ * mail-send actions. Lists the org's connected Gmail/Outlook mailboxes (pinned
+ * to one provider for gmail.send/outlook.send). Empty ⇒ the engine auto-picks
+ * the oldest connected mailbox. No connection ⇒ a prompt to connect one.
+ */
+function MailAccountPicker({
+  pinned,
+  value,
+  onChange,
+}: {
+  pinned: "gmail" | "outlook" | null;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["connections"],
+    queryFn: () => apiGet<ConnectionDTO[]>("/api/connections"),
+  });
+  const accounts = (data ?? []).filter(
+    (c) => MAIL_PROVIDERS.has(c.provider) && c.status === "connected" && (!pinned || c.provider === pinned),
+  );
+
+  return (
+    <label className="block">
+      <span className="mb-1 flex items-center gap-1.5 text-sm font-medium text-gray-700">
+        <Mail className="h-3.5 w-3.5 text-gray-400" />
+        From account
+      </span>
+      {isLoading ? (
+        <div className={cn(INPUT_CLS, "text-gray-400")}>Loading accounts…</div>
+      ) : accounts.length === 0 ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          No {pinned ?? "mail"} account connected.{" "}
+          <Link href="/connections" className="font-medium underline">
+            Connect one →
+          </Link>
+        </div>
+      ) : (
+        <select value={value} onChange={(e) => onChange(e.target.value)} className={INPUT_CLS}>
+          <option value="">Auto — first connected {pinned ?? "mailbox"}</option>
+          {accounts.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.label} · {a.provider}
+            </option>
+          ))}
+        </select>
+      )}
+    </label>
   );
 }
 

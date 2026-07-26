@@ -51,9 +51,30 @@ export async function loadContext(event: EngineEvent): Promise<EnrichedContext> 
 
   // Record fields win over payload on key collisions (the record is authoritative).
   const flat: Record<string, unknown> = { ...event.data, ...(record ?? {}) };
+  aliasOwnerKeys(flat);
   const trigger: Record<string, unknown> = moduleKey
     ? { ...flat, [moduleKey]: record ?? flat }
     : { ...flat };
 
   return { data: flat, trigger, moduleKey, record };
+}
+
+/**
+ * Reconcile the two owner representations so a condition/token authored against
+ * the catalog field key (`owner`) resolves even when the event only carried
+ * `ownerId` — and vice-versa. Emitters (lib/services/workflowEvents.ts) and the
+ * "Run now" sample always write `ownerId`, while the builder serializes the
+ * Owner condition as `trigger.owner`; a loaded record projects `owner` from its
+ * column. When only one side is present we mirror it onto the other so all three
+ * paths (live event with no loaded record, Run now, real record) agree. Whatever
+ * value is already present (e.g. the authoritative record `owner`) is never
+ * overwritten. Mutates `flat` in place.
+ */
+function aliasOwnerKeys(flat: Record<string, unknown>): void {
+  const owner = flat.owner;
+  const ownerId = flat.ownerId;
+  const hasOwner = owner !== undefined && owner !== null && owner !== "";
+  const hasOwnerId = ownerId !== undefined && ownerId !== null && ownerId !== "";
+  if (hasOwner && !hasOwnerId) flat.ownerId = owner;
+  else if (hasOwnerId && !hasOwner) flat.owner = ownerId;
 }

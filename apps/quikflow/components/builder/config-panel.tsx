@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { TRIGGER_CATALOG, findEvent, conditionFieldsForEvent, actionsByCategory } from "@/lib/catalog";
+import { TRIGGER_CATALOG, findEvent, conditionFieldsForEvent, actionsForEvent } from "@/lib/catalog";
+import { isBeforeDateEvent } from "@/lib/schedule/date-rules";
 import type { Step, RuleGroupValue, ScheduleValue } from "@/lib/builder/types";
 import { cn } from "@/lib/utils";
 import { RuleGroupEditor } from "./rule-group-editor";
@@ -26,6 +27,8 @@ export function ConfigPanel({
   onTriggerFilterChange,
   schedule,
   onScheduleChange,
+  offsetDays,
+  onOffsetDaysChange,
   step,
   onUpdateStep,
   onRemoveStep,
@@ -43,6 +46,8 @@ export function ConfigPanel({
   onTriggerFilterChange: (patch: { combine?: "and" | "or"; rules?: RuleGroupValue["rules"] }) => void;
   schedule: ScheduleValue;
   onScheduleChange: (patch: Partial<ScheduleValue>) => void;
+  offsetDays: number;
+  onOffsetDaysChange: (days: number) => void;
   step: Step | undefined;
   onUpdateStep: (patch: Partial<Step>) => void;
   onRemoveStep: () => void;
@@ -157,6 +162,20 @@ export function ConfigPanel({
             </div>
           ) : null}
 
+          {isBeforeDateEvent(event) ? (
+            <Field label="Days before">
+              <input
+                type="number"
+                min={0}
+                max={90}
+                value={offsetDays}
+                onChange={(e) => onOffsetDaysChange(Math.max(0, Number(e.target.value) || 0))}
+                className={SELECT_CLS}
+              />
+              <span className="mt-1 block text-xs text-gray-500">Fires this many days before the due date.</span>
+            </Field>
+          ) : null}
+
           {event ? (
             <Collapsible title="Only when… (optional filter)" defaultOpen={triggerFilter.rules.length > 0}>
               <RuleGroupEditor
@@ -180,7 +199,7 @@ export function ConfigPanel({
               <Field label="Action">
                 <select value={step.actionId ?? ""} onChange={(e) => onUpdateStep({ actionId: e.target.value, params: {} })} className={SELECT_CLS}>
                   <option value="">Choose an action…</option>
-                  {actionsByCategory().map((g) => (
+                  {actionsForEvent(app, event).map((g) => (
                     <optgroup key={g.category} label={g.category}>
                       {g.actions.map((a) => (
                         <option key={a.id} value={a.id}>
