@@ -281,6 +281,34 @@ export function emitPriorityStatusChanged(
   }
 }
 
+/**
+ * Emit `priority.weekly.status.changed` when one week's status changes in the
+ * Weekly Status grid (the `PriorityWeeklyStatus` upsert path) — distinct from
+ * `priority.status.changed`, which watches the `overallStatus` column that the
+ * weekly grid never touches. The weekly status rides on its own payload keys
+ * (`weekStatus`/`weekNumber`) so QuikFlow's record-load — which overwrites the
+ * payload with the priority's `overallStatus` column — cannot clobber it.
+ * Skips no-ops (same status). Callers emit once per CHANGED week.
+ */
+export function emitPriorityWeeklyStatusChanged(
+  input: PriorityEventInput & {
+    weekNumber: number;
+    weekStatus: string;
+    previousWeekStatus: string | null;
+  },
+): void {
+  const { weekNumber, weekStatus, previousWeekStatus } = input;
+  if (!weekStatus || previousWeekStatus === weekStatus) return;
+  postEvent({
+    app: "quikscale",
+    event: "priority.weekly.status.changed",
+    orgId: input.orgId,
+    dedupeKey: `priority.weekly.status.changed:${input.priorityId}:w${weekNumber}:${weekStatus}`,
+    occurredAt: new Date().toISOString(),
+    data: priorityData(input, { weekNumber, weekStatus, previousWeekStatus }),
+  });
+}
+
 // ── OPSP events ──────────────────────────────────────────────────────────────
 // Real lifecycle is draft → finalized → reviewed (NOT the doc's submit/approve).
 

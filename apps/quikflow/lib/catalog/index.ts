@@ -6,7 +6,7 @@
  */
 import { TRIGGER_CATALOG, type CatalogApp, type CatalogEvent } from "./triggers";
 import { type FieldType } from "./conditions";
-import { MODULES, moduleForEvent, moduleByKey, fieldsUsableIn } from "./modules";
+import { MODULES, moduleForEvent, moduleByKey, fieldsUsableIn, type FieldDef, type ModuleDef } from "./modules";
 import { ACTION_CATALOG, ACTION_CATEGORY_ORDER, type CatalogAction } from "./actions";
 import { toEngineType, type SemanticType } from "./field-types";
 import { MAIL_APP_SLUG, MAIL_CONDITION_FIELDS } from "./mail";
@@ -92,7 +92,7 @@ export function conditionFieldsForEvent(slug: string, eventId: string): Conditio
   if (slug !== "quikscale") return [];
   const mod = moduleForEvent(eventId);
   if (!mod) return [];
-  return fieldsUsableIn(mod, "condition").map(toConditionField);
+  return moduleConditionFields(mod);
 }
 
 /** Map a registry FieldDef to a builder ConditionField. */
@@ -113,11 +113,51 @@ function toConditionField(f: {
   };
 }
 
+/** A plain-text ConditionField (used for resolved-value companion tokens). */
+function textConditionField(key: string, label: string): ConditionField {
+  return { id: `trigger.${key}`, label, type: "string", semanticType: "text" };
+}
+
+/**
+ * Resolved-value companions for people / reference fields. The data provider
+ * fills `<key>Name` (and `<key>Email` for people) so conditions AND `{{tokens}}`
+ * can use a readable person / label instead of the raw id the column stores —
+ * e.g. `{{trigger.ownerName}}`, `{{trigger.teamName}}`. Generated for every
+ * module, so no email ever leaks an id (the reported Priority bug, generalized).
+ */
+function companionConditionFields(fields: FieldDef[]): ConditionField[] {
+  const out: ConditionField[] = [];
+  for (const f of fields) {
+    // Only column-backed fields carry an id the data provider can resolve; a
+    // companion for a column-less field would render empty, so skip it.
+    if (!f.column) continue;
+    if (f.type === "people") {
+      out.push(textConditionField(`${f.key}Name`, `${f.label} name`));
+      out.push(textConditionField(`${f.key}Email`, `${f.label} email`));
+    } else if (f.type === "reference") {
+      out.push(textConditionField(`${f.key}Name`, `${f.label} name`));
+    }
+  }
+  return out;
+}
+
+/** Condition-usable fields for a module + resolved companions (deduped by id). */
+function moduleConditionFields(mod: ModuleDef): ConditionField[] {
+  const base = fieldsUsableIn(mod, "condition");
+  const fields = base.map(toConditionField);
+  const seen = new Set(fields.map((f) => f.id));
+  for (const c of companionConditionFields(base)) {
+    if (!seen.has(c.id)) {
+      seen.add(c.id);
+      fields.push(c);
+    }
+  }
+  return fields;
+}
+
 /** Every condition-usable field across all modules (for global field pickers). */
 export function allConditionFields(): (ConditionField & { module: string })[] {
-  return MODULES.flatMap((m) =>
-    fieldsUsableIn(m, "condition").map((f) => ({ ...toConditionField(f), module: m.label })),
-  );
+  return MODULES.flatMap((m) => moduleConditionFields(m).map((f) => ({ ...f, module: m.label })));
 }
 
 /**

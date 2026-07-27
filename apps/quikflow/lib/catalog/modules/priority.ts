@@ -30,6 +30,17 @@ export const PRIORITY_MODULE: ModuleDef = {
     { key: "progressPct", label: "Progress %", type: "number", usableIn: ["condition"], derived: true },
     { key: "team", label: "Team", type: "reference", usableIn: ["trigger", "condition"], source: "master:teams", column: "teamId" },
     { key: "quarter", label: "Quarter", type: "reference", usableIn: ["trigger", "condition"], source: "master:quarters", column: "quarter" },
+    // Weekly-grid status fields — carried on the priority.weekly.status.changed
+    // payload (no backing column, so record-load can't overwrite them). Usable
+    // in conditions and as {{trigger.weekStatus}} / {{trigger.weekNumber}} tokens.
+    {
+      key: "weekStatus",
+      label: "Weekly status",
+      type: "status",
+      usableIn: ["condition"],
+      values: ["not-applicable", "not-yet-started", "behind-schedule", "on-track", "completed"],
+    },
+    { key: "weekNumber", label: "Week number", type: "number", usableIn: ["condition"] },
     ...auditFields({ createdBy: true, updatedBy: true }),
   ],
   // doc §4.3 — none live yet (QuikScale doesn't emit Priority events today).
@@ -37,6 +48,7 @@ export const PRIORITY_MODULE: ModuleDef = {
     { id: "priority.created", label: "A priority (Rock) is created", firesWhen: "New priority persisted", payloadFields: ["owner", "status"], live: true },
     { id: "priority.imported", label: "A priority is imported from OPSP", firesWhen: "Priority created from an OPSP", payloadFields: ["owner"] },
     { id: "priority.status.changed", label: "A priority's status changes", firesWhen: "Status transition", payloadFields: ["status", "before", "after"], live: true },
+    { id: "priority.weekly.status.changed", label: "A priority's weekly status changes", firesWhen: "A week's status is set/changed in the Weekly Status grid", payloadFields: ["weekNumber", "weekStatus", "previousWeekStatus", "owner", "name"], live: true },
     { id: "priority.status.changed_to", label: "Status changes to a chosen value", firesWhen: "e.g. becomes Behind Schedule / Completed", payloadFields: ["status"] },
     { id: "priority.completed", label: "A priority is marked Completed", firesWhen: "Status becomes Completed", payloadFields: ["owner", "status"], live: true },
     { id: "priority.blocked", label: "A priority becomes Blocked", firesWhen: "Status becomes Blocked", payloadFields: ["owner", "reason"] },
