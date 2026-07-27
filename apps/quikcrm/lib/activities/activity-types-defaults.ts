@@ -59,11 +59,33 @@ export const DEFAULT_ACTIVITY_TYPES: readonly DefaultActivityType[] = [
     code: "call",
     label: "Call",
     category: "Communication",
+    // NOTE ON ORDERING: fields are APPENDED, never inserted mid-array. The
+    // self-healing backfill (ensure-defaults) derives sortOrder from array
+    // index; inserting would renumber only NEW rows on already-seeded orgs and
+    // collide with existing sortOrders. `contact_name` and `phone_number` are
+    // rendered by a dedicated picker ABOVE the generic field list in the Call
+    // form (log-activity-form.tsx), so their trailing position here does not
+    // affect their on-screen placement — they still show first. Phone is a
+    // Text field (the Phone field type is unsupported for activities and would
+    // be rejected by writeActivityFieldValues); international numbers are fine
+    // as free text.
     fields: [
       { key: "direction", label: "Direction", fieldType: "Select", requirement: "Required", options: ["Incoming", "Outgoing"] },
       { key: "duration_minutes", label: "Duration (minutes)", fieldType: "Number", requirement: "Optional" },
       { key: "outcome", label: "Outcome", fieldType: "Select", requirement: "Optional", options: ["Connected", "No Answer", "Busy", "Left Voicemail", "Wrong Number", "Callback Requested"] },
       { key: "call_date_time", label: "Call Date & Time", fieldType: "Date", requirement: "Optional", helpText: "Date of the call." },
+      // Person called + their number. Rendered via the Call contact picker
+      // (custom JSX) so they appear at the TOP of the Call form; selecting a
+      // related contact auto-fills phone_number, which stays editable.
+      { key: "contact_name", label: "Contact Name", fieldType: "Text", requirement: "Optional", helpText: "Person called." },
+      { key: "phone_number", label: "Phone Number", fieldType: "Text", requirement: "Optional", helpText: "Auto-filled from the selected contact; editable. Supports international numbers." },
+      // Telephony metadata — useful when the call was placed/logged via the
+      // dialer. All optional and free-form so manual logging isn't burdened.
+      { key: "call_status", label: "Call Status", fieldType: "Select", requirement: "Optional", options: ["Completed", "Missed", "Busy", "No Answer"] },
+      { key: "dialed_number", label: "Dialed Number", fieldType: "Text", requirement: "Optional", helpText: "The number actually dialed (may differ from the contact's)." },
+      { key: "recording_url", label: "Recording URL", fieldType: "Text", requirement: "Optional", helpText: "Link to the call recording." },
+      { key: "telephony_provider", label: "Telephony Provider", fieldType: "Text", requirement: "Optional" },
+      { key: "call_id", label: "Call ID", fieldType: "Text", requirement: "Optional", helpText: "Provider call/session reference." },
     ],
   },
   {

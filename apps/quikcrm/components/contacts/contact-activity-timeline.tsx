@@ -1,9 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { Phone, History, FileText, Mail, Calendar, AlertCircle } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { LogActivityModal } from "@/components/activities/log-activity-modal";
 import { useToast } from "@/hooks/use-toast";
 import { formatDateTime } from "@/lib/utils/date-helpers";
 
@@ -53,13 +52,26 @@ export function ContactActivityTimeline({
   leadId,
   leadName,
   canLogActivity = false,
-  canViewLeads = false,
 }: Props) {
   const toast = useToast();
   const [items, setItems] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterMode, setFilterMode] = useState<TimelineFilter>("all");
-  const [showLog, setShowLog] = useState(false);
+
+  // Log activity is now a dedicated page (/activities/log). Deep-link with the
+  // contact pre-linked (+ the linked lead as secondary context) instead of a modal.
+  const logActivityHref = useMemo(() => {
+    const qs = new URLSearchParams({
+      relatedKind: "Contact",
+      relatedObjectId: contactId,
+      label: contactName,
+    });
+    if (leadId && leadName) {
+      qs.set("leadId", leadId);
+      qs.set("leadName", leadName);
+    }
+    return `/activities/log?${qs.toString()}`;
+  }, [contactId, contactName, leadId, leadName]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -122,9 +134,9 @@ export function ContactActivityTimeline({
           </p>
         </div>
         {canLogActivity && !loading && (
-          <Button type="button" size="sm" onClick={() => setShowLog(true)}>
+          <Link href={logActivityHref} className="crm-btn-primary !px-2.5 !py-1.5 text-xs">
             + Log activity
-          </Button>
+          </Link>
         )}
       </div>
 
@@ -148,9 +160,12 @@ export function ContactActivityTimeline({
         <div className="rounded-lg border border-dashed border-crm-border px-4 py-10 text-center">
           <p className="text-sm text-crm-muted">No activity yet for {contactName}.</p>
           {canLogActivity && (
-            <Button type="button" size="sm" className="mt-3" onClick={() => setShowLog(true)}>
+            <Link
+              href={logActivityHref}
+              className="crm-btn-primary mt-3 inline-flex !px-2.5 !py-1.5 text-xs"
+            >
               Log first activity
-            </Button>
+            </Link>
           )}
         </div>
       ) : (
@@ -166,16 +181,6 @@ export function ContactActivityTimeline({
         </ol>
       )}
 
-      {canLogActivity && (
-        <LogActivityModal
-          open={showLog}
-          canViewLeads={canViewLeads}
-          initialRelated={{ kind: "Contact", id: contactId, label: contactName }}
-          initialLead={leadId && leadName ? { id: leadId, label: leadName } : null}
-          onClose={() => setShowLog(false)}
-          onSuccess={() => void refresh()}
-        />
-      )}
     </div>
   );
 }

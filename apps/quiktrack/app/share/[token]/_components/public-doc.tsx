@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Eye, Pencil } from "lucide-react";
 import { RichTextEditor } from "@/components/rich-text-editor-lazy";
+import { RichTextView } from "@/components/rich-text-view";
 import { sanitizeRichText } from "@/lib/sanitize";
 
 interface SharedDoc {
@@ -182,10 +183,11 @@ export function PublicDoc({
           ) : (
             <div className="px-10 py-8">
               <h1 className="text-3xl font-bold text-gray-900 mb-6">{title || "Untitled doc"}</h1>
-              <div
-                className="qt-rich-content"
-                dangerouslySetInnerHTML={{ __html: sanitizeRichText(content) }}
-              />
+              {/* Read-only render via the shared TipTap view so file-attachment
+                  cards (and all rich content) render identically to the editor. */}
+              <div className="qt-rich-content">
+                <RichTextView html={sanitizeRichText(content)} />
+              </div>
             </div>
           )}
         </div>

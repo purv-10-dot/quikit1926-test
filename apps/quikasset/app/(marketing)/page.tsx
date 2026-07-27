@@ -4,6 +4,7 @@ import { AppAccessDeniedPopup } from "@quikit/ui/app-access-denied-popup";
 import { authOptions } from "@/lib/auth";
 import { getOrgId } from "@/lib/api/getOrgId";
 import { loadMyPermissions } from "@/lib/api/permissions";
+import { postLoginLanding } from "@/lib/api/landing";
 import { Nav } from "./_components/nav";
 import { Hero } from "./_components/hero";
 import { Features } from "./_components/features";
@@ -38,9 +39,7 @@ export default async function MarketingPage({
     let target = "/dashboard";
     const orgId = await getOrgId(session.user.id);
     if (orgId) {
-      const perms = await loadMyPermissions(session.user.id, orgId);
-      const canSeeDashboard = perms.isAdmin || perms.permissions.includes("Dashboard:view");
-      target = canSeeDashboard ? "/dashboard" : "/employee-view";
+      target = postLoginLanding(await loadMyPermissions(session.user.id, orgId));
     }
     // No org resolved → fall through to /dashboard so the dashboard layout's
     // access gate (requireAppAccess) decides, exactly as before.

@@ -72,6 +72,8 @@ export interface LeadFormViewProps {
   setSource: (v: string) => void;
   sourcesLoading: boolean;
   sources: { id: string; name: string }[];
+  /** When true, the Lead Source is fixed (e.g. forced "LinkedIn") and rendered read-only. */
+  sourceLocked?: boolean;
   stage: string;
   setStage: (v: string) => void;
   visibleStages: string[];
@@ -141,17 +143,25 @@ export function LeadFormView(props: LeadFormViewProps) {
       label="Lead Source *"
       error={p.errors.source}
       action={
-        <LeadFormSettingsLink
-          settingsPath="/settings/sources"
-          returnTo={p.settingsReturnTo}
-          draftScope={draftScope}
-          getDraft={p.collectDraft}
-        >
-          + Lead sources
-        </LeadFormSettingsLink>
+        p.sourceLocked ? undefined : (
+          <LeadFormSettingsLink
+            settingsPath="/settings/sources"
+            returnTo={p.settingsReturnTo}
+            draftScope={draftScope}
+            getDraft={p.collectDraft}
+          >
+            + Lead sources
+          </LeadFormSettingsLink>
+        )
       }
     >
-      {p.sourcesLoading ? (
+      {p.sourceLocked ? (
+        // Fixed source (e.g. prospect → lead forces "LinkedIn"). Read-only: the
+        // value is set programmatically and submitted with no user input.
+        <Select value={p.source} disabled aria-readonly="true">
+          <option value={p.source}>{p.source}</option>
+        </Select>
+      ) : p.sourcesLoading ? (
         <Select value="" disabled>
           <option value="">Loading sources…</option>
         </Select>

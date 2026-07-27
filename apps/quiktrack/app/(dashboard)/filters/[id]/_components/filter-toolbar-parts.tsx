@@ -63,29 +63,33 @@ export function ActiveChip({ label, op, value, onClear, renderValueMenu }: Activ
   useOutsideClose(ref, () => setOpen(false));
 
   return (
-    <div ref={ref} className="relative inline-flex items-center h-8 border border-blue-300 rounded bg-white text-sm overflow-hidden">
-      <span className="inline-flex items-center gap-1 px-2.5 h-full text-blue-700 font-medium">
-        {label}
-        <span className="text-blue-500 font-normal">{op}</span>
-      </span>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 px-2.5 h-full text-blue-700 font-medium border-l border-blue-100 hover:bg-blue-50"
-      >
-        {value}
-        <ChevronDown className="h-3.5 w-3.5 text-blue-500" />
-      </button>
-      <button
-        type="button"
-        onClick={onClear}
-        aria-label={`Remove ${label} filter`}
-        className="h-full px-1.5 text-blue-500 hover:bg-blue-50 border-l border-blue-100"
-      >
-        <X className="h-3.5 w-3.5" />
-      </button>
+    <div ref={ref} className="relative inline-flex">
+      {/* The pill itself clips its segment borders (overflow-hidden); the
+          popover lives OUTSIDE that clip so the dropdown isn't cut off. */}
+      <div className="inline-flex items-center h-8 border border-blue-300 rounded bg-white text-sm overflow-hidden">
+        <span className="inline-flex items-center gap-1 px-2.5 h-full text-blue-700 font-medium">
+          {label}
+          <span className="text-blue-500 font-normal">{op}</span>
+        </span>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="inline-flex items-center gap-1 px-2.5 h-full text-blue-700 font-medium border-l border-blue-100 hover:bg-blue-50"
+        >
+          {value}
+          <ChevronDown className="h-3.5 w-3.5 text-blue-500" />
+        </button>
+        <button
+          type="button"
+          onClick={onClear}
+          aria-label={`Remove ${label} filter`}
+          className="h-full px-1.5 text-blue-500 hover:bg-blue-50 border-l border-blue-100"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
       {open && (
-        <div className="absolute z-20 top-full mt-1 left-0 min-w-[200px] bg-white border border-gray-200 rounded shadow-lg py-1">
+        <div className="absolute z-30 top-full mt-1 left-0 min-w-[200px] bg-white border border-gray-200 rounded-lg shadow-xl py-1">
           {renderValueMenu(() => setOpen(false))}
         </div>
       )}

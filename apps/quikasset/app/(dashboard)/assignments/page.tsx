@@ -1,9 +1,11 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import { useRevalidateOnFocus } from "@/lib/hooks/useRevalidateOnFocus"
 import { Plus, Search, Undo2, Trash2, Loader2, ArrowLeftRight, Pencil, SlidersHorizontal, ChevronUp, X, Layers } from "lucide-react"
 import Pagination from "@/components/ui/Pagination"
 import { cn } from "@/lib/utils"
+import { apiErrorMessage } from "@/lib/apiError"
 import AssignAssetModal from "@/components/assignments/AssignAssetModal"
 import BulkAssignModal from "@/components/assignments/BulkAssignModal"
 import EditAssignmentModal from "@/components/assignments/EditAssignmentModal"
@@ -64,6 +66,7 @@ export default function AssignmentsPage() {
   }
 
   useEffect(() => { load() }, [])
+  useRevalidateOnFocus(load)
 
   const departments = [...new Set(assignments.map((a) => a.user?.department).filter(Boolean))].sort() as string[]
 
@@ -116,8 +119,11 @@ export default function AssignmentsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       })
-      if (!res.ok) throw new Error()
-      const json = await res.json()
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || json?.success === false) {
+        showToast("Error", apiErrorMessage(json, "Failed to assign asset"), "error")
+        return
+      }
       const created: Assignment = json.data
       setAssignments((prev) => [created, ...prev])
       setShowAdd(false)
@@ -156,8 +162,11 @@ export default function AssignmentsPage() {
           notes: data.notes || null,
         }),
       })
-      if (!res.ok) throw new Error()
-      const json = await res.json()
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || json?.success === false) {
+        showToast("Error", apiErrorMessage(json, "Failed to update assignment"), "error")
+        return
+      }
       const updated: Assignment = json.data
       setAssignments((prev) => prev.map((a) => (a.id === updated.id ? updated : a)))
       setEditAssignment(null)
@@ -171,8 +180,11 @@ export default function AssignmentsPage() {
     if (!confirmReturn) return
     try {
       const res = await fetch(`/api/assignments/${confirmReturn.id}`, { method: "PATCH" })
-      if (!res.ok) throw new Error()
-      const json = await res.json()
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || json?.success === false) {
+        showToast("Error", apiErrorMessage(json, "Failed to mark as returned"), "error")
+        return
+      }
       const updated: Assignment = json.data
       setAssignments((prev) =>
         prev.map((a) => (a.id === updated.id ? { ...a, status: "Returned", returnedAt: updated.returnedAt } : a))
@@ -374,7 +386,12 @@ export default function AssignmentsPage() {
 
                     <td className="px-4 py-3 text-gray-600">{a.condition}</td>
 
-                    <td className="px-4 py-3 text-gray-600">{fmt(a.assignedAt)}</td>
+                    <td className="px-4 py-3 text-gray-600">
+                      <p>{fmt(a.assignedAt)}</p>
+                      {a.assignedByName && (
+                        <p className="text-gray-400 text-[10px] mt-0.5">by {a.assignedByName}</p>
+                      )}
+                    </td>
 
                     <td className="px-4 py-3 text-gray-600">
                       {a.status === "Returned" && a.returnedAt

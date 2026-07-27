@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
+import { resolveActorNames } from "@/lib/api/actorNames";
 
 const auth = withOrgAuthForResource("Repair");
 
@@ -25,7 +26,15 @@ export const GET = auth.view(async ({ orgId }) => {
     orderBy: { createdAt: "desc" },
     include: { asset: { include: { baseCategory: true, category: true } }, vendorRef: true },
   });
-  return NextResponse.json({ success: true, data: repairs });
+
+  // Resolve "Sent to repair by" names (the actor) in one batched User lookup.
+  const actorNames = await resolveActorNames(repairs.map((r) => r.createdByUserId));
+  const data = repairs.map((r) => ({
+    ...r,
+    sentByName: r.createdByUserId ? actorNames.get(r.createdByUserId) ?? null : null,
+  }));
+
+  return NextResponse.json({ success: true, data });
 });
 
 export const POST = auth.create(async ({ orgId, userId, userEmail }, req) => {
@@ -62,6 +71,7 @@ export const POST = auth.create(async ({ orgId, userId, userEmail }, req) => {
         expectedReturn: expectedReturn || null,
         notes: notes || null,
         status: "InRepair",
+        createdByUserId: userId,
       },
       include: { asset: { include: { baseCategory: true, category: true } }, vendorRef: true },
     });

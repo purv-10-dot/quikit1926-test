@@ -84,13 +84,41 @@ const STATUS_LABELS: Record<string, string> = {
 
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null)
+  const [error, setError] = useState(false)
 
   useEffect(() => {
+    let cancelled = false
     fetch("/api/dashboard")
-      .then((r) => r.json())
-      .then((json) => { if (json?.success !== false) setData(json.data ?? null) })
-      .catch(() => {})
+      .then(async (r) => {
+        const json = await r.json().catch(() => null)
+        if (cancelled) return
+        // Any failure (e.g. a 403 for a user without Dashboard:view) must land
+        // on a clear message + escape hatch — never leave the page spinning.
+        if (!r.ok || json?.success === false || !json?.data) { setError(true); return }
+        setData(json.data)
+      })
+      .catch(() => { if (!cancelled) setError(true) })
+    return () => { cancelled = true }
   }, [])
+
+  if (error) {
+    return (
+      <div className="flex flex-1 items-center justify-center p-6">
+        <div className="mx-auto flex max-w-md flex-col items-center gap-3 rounded-xl border border-gray-200 bg-white px-8 py-12 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
+            <XCircle className="h-6 w-6 text-red-500" />
+          </div>
+          <h2 className="text-sm font-semibold text-gray-800">Dashboard unavailable</h2>
+          <p className="text-xs leading-relaxed text-gray-500">
+            You don&apos;t have access to the dashboard, or it couldn&apos;t be loaded.
+          </p>
+          <Link href="/employee-view" className="text-xs font-medium text-accent-600 hover:underline">
+            Go to My Assets
+          </Link>
+        </div>
+      </div>
+    )
+  }
 
   if (!data) {
     return (
