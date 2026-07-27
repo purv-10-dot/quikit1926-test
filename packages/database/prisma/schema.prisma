@@ -6120,6 +6120,11 @@ model QtProject {
   name             String
   description      String?
   projectType      String              @default("software")
+  /// Jira-style management style chosen at creation: "team-managed" (default)
+  /// or "company-managed". Display/label only today (drives the "Type" column
+  /// label on the Projects list); distinct from `projectType`, which is the
+  /// template kind (software / discovery / service).
+  managementStyle  String              @default("team-managed")
   /// Which template the space was created from. Drives runtime behavior:
   ///   "scrum"      → sprints + sprint-gated board (default; all existing spaces)
   ///   "functional" → no sprints; Kanban-style "Activity Board" (all tasks);

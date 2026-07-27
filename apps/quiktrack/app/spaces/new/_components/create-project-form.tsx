@@ -99,6 +99,7 @@ export function CreateProjectForm() {
           name,
           projectKey: finalKey,
           projectType: backendTemplate === "discovery" ? "discovery" : "software",
+          managementStyle: projectType,
           templateKey: backendTemplate,
           icon: randomProjectIconKey(),
         }),
