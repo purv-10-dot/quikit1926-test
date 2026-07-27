@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import { Tooltip } from "@/components/hrms/tooltip";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface Holiday {
   id: string;
@@ -99,6 +100,14 @@ export default function HRCalendarPage() {
   const [myTeamOnly, setMyTeamOnly] = useState(false);
   const [visibleTypes, setVisibleTypes] = useState<Record<EventType, boolean>>({ holiday: true, leave: true, birthday: true, anniversary: true });
   const toggleType = (t: EventType) => setVisibleTypes((s) => ({ ...s, [t]: !s[t] }));
+  // Auto-filter from the URL (?filter=birthday | anniversary) — e.g. when opened
+  // via "View All" on the dashboard's Upcoming Birthdays / Anniversaries cards.
+  useEffect(() => {
+    const f = new URLSearchParams(window.location.search).get("filter");
+    if (f === "birthday" || f === "anniversary") {
+      setVisibleTypes({ holiday: false, leave: false, birthday: f === "birthday", anniversary: f === "anniversary" });
+    }
+  }, []);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filtersRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -233,6 +242,8 @@ export default function HRCalendarPage() {
 
   return (
     <div className="space-y-3">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl bg-[#dcfce7] text-[#16a34a] flex items-center justify-center">

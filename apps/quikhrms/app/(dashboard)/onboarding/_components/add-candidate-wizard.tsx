@@ -109,7 +109,7 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
   const { data: roles } = useRoles();
   const { data: templatesData } = useSalaryTemplates();
   const { data: managers } = useQuery({ queryKey: ["employees-mgrs"], queryFn: () => api.get<RefItem[]>("/api/v1/hrms/employees?limit=200") });
-  const { data: onbTemplates } = useQuery({ queryKey: ["onboarding", "templates"], queryFn: () => api.get<RefItem[]>("/api/v1/hrms/onboarding/templates?isActive=true&limit=100") });
+  const { data: onbTemplates } = useQuery({ queryKey: ["onboarding", "templates", "Onboarding"], queryFn: () => api.get<RefItem[]>("/api/v1/hrms/onboarding/templates?isActive=true&kind=Onboarding&limit=100") });
 
   const deptOpts = ((depts?.data ?? []) as RefItem[]).map((d) => ({ value: d.id, label: d.name ?? "" }));
   const desigOpts = ((desigs?.data ?? []) as RefItem[]).map((d) => ({ value: d.id, label: d.title ?? d.name ?? "" }));
@@ -552,7 +552,15 @@ function Grid2({ children }: { children: React.ReactNode }) {
   return <div className="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">{children}</div>;
 }
 function F({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div><label className={labelCls}>{label}</label>{children}</div>;
+  // Render a trailing "*" (required marker) in red.
+  const required = label.trimEnd().endsWith("*");
+  const text = required ? label.replace(/\s*\*\s*$/, "") : label;
+  return (
+    <div>
+      <label className={labelCls}>{text}{required && <span className="text-red-500"> *</span>}</label>
+      {children}
+    </div>
+  );
 }
 function AddressFields({ value, onChange }: { value: Addr; onChange: (a: Addr) => void }) {
   const api = useApiClient();

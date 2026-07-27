@@ -8,6 +8,7 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
 import { useDialog } from "@/components/hrms/dialog";
 import { EmptyState } from "@/components/hrms/empty-state";
+import { PageBackground } from "@/components/hrms/page-background";
 import { ShieldCheck, Check, X, MessageSquare, Megaphone, Heart, ThumbsUp } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -154,6 +155,8 @@ export default function EngagementApprovalsPage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <ShieldCheck className="text-[#22c55e]" />

@@ -6,6 +6,7 @@ import { Save, Loader2, Image as ImageIcon, Stamp, PenLine, FileText, Eye, Rotat
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
 import { FileUploadInput } from "@/components/hrms/file-upload-input";
+import { PageBackground } from "@/components/hrms/page-background";
 import { JOINING_LETTER_FIELDS, DEFAULT_JOINING_LETTER_BODY } from "@/lib/recruit/joining-letter-fields";
 
 interface Branding {
@@ -102,6 +103,8 @@ export default function JoiningLetterBrandingPage() {
 
   return (
     <div className="p-4 space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div>
         <h1 className="text-base font-semibold text-gray-900">Joining Letter Branding</h1>
         <p className="text-xs text-gray-500 mt-1">

@@ -6,6 +6,7 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { Check, X, Clock, FileText, Loader2 } from "lucide-react";
 import { clsx } from "clsx";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
+import { PageBackground } from "@/components/hrms/page-background";
 
 const REG_EXPORT_COLUMNS = [
   { header: "Date", key: "date", width: 16 },
@@ -73,6 +74,8 @@ export default function RegularizationApprovalsPage() {
 
   return (
     <div>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <h1 className="text-base font-semibold text-gray-900 mb-1">Approve Regularizations</h1>
       <p className="text-xs text-gray-500 mb-5">Review attendance regularization requests from your team.</p>
 

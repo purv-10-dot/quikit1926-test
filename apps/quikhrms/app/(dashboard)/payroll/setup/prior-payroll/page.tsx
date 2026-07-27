@@ -7,6 +7,7 @@ import { Select } from "@/components/hrms/ui/select";
 import { History, Save, Calendar, CheckCircle2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { SkeletonLine } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 import { PriorPayrollUpload } from "./_components/prior-payroll-upload";
 import { PriorPayrollRecords } from "./_components/prior-payroll-records";
 
@@ -37,6 +38,8 @@ function currentFinancialYear(): string {
 export default function PriorPayrollPage() {
   return (
     <Suspense fallback={<div className="p-4 space-y-2"><SkeletonLine w="40%" h={16} /><SkeletonLine w="70%" h={12} /><SkeletonLine w="60%" h={12} /></div>}>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <PriorPayrollPageInner />
     </Suspense>
   );

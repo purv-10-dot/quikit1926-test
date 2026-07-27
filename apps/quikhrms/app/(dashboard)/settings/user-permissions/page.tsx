@@ -6,6 +6,7 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
 import { Search, Lock, Ban } from "lucide-react";
 import { Select } from "@/components/hrms/select";
+import { PageBackground } from "@/components/hrms/page-background";
 import { PERMISSION_TREE, ACTIONS } from "@/lib/rbac/permissions-tree";
 
 /**
@@ -151,6 +152,8 @@ export default function UserPermissionsPage() {
 
   return (
     <div className="bg-white">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       {/* Header */}
       <div className="px-5 py-4 border-b border-gray-200 flex items-center gap-4">
         <h1 className="text-base font-semibold text-gray-900">Users — Effective Permissions</h1>

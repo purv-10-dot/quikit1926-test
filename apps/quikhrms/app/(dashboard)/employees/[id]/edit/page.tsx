@@ -20,6 +20,7 @@ import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { SkeletonLine } from "@/components/hrms/skeleton";
 import { BankDetailsFields } from "@/components/hrms/bank-details-fields";
+import { PageBackground } from "@/components/hrms/page-background";
 
 type EmploymentType = "FullTime" | "PartTime" | "Contract" | "Intern";
 type WorkLocation = "Office" | "Remote" | "Hybrid";
@@ -87,6 +88,8 @@ type StepId = typeof STEPS[number]["id"];
 export default function EditEmployeePage({ params }: { params: { id: string } }) {
   return (
     <Suspense fallback={<div className="p-4 space-y-2"><SkeletonLine w="40%" h={16} /><SkeletonLine w="70%" h={12} /><SkeletonLine w="60%" h={12} /></div>}>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <EditEmployeePageInner params={params} />
     </Suspense>
   );

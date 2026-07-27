@@ -13,6 +13,7 @@ import { clsx } from "clsx";
 import { EMAIL_EVENTS, GROUPS, EMAIL_EVENT_MAP, allowedVarNames } from "@/lib/email/registry";
 import { findUnknownVars } from "@/lib/email/validate-vars";
 import { Modal } from "@/components/hrms/modal";
+import { PageBackground } from "@/components/hrms/page-background";
 
 // This screen customizes the Email channel only. Every event falls back to the
 // branded code default when no override is saved (see lib/email/resolve.ts).
@@ -254,6 +255,8 @@ export default function EmailTemplatesPage() {
 
   return (
     <div className="flex flex-col gap-4 h-[calc(100vh-7rem)]">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       {/* ── Header ─────────────────────────────────────────────── */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex items-center gap-3 shrink-0">
         <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center shadow-sm shrink-0">

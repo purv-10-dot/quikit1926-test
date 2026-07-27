@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Modal } from "@/components/hrms/modal";
+import { PageBackground } from "@/components/hrms/page-background";
 import { Select } from "@/components/hrms/ui/select";
 import { FileSpreadsheet, Plus, Clock, CheckCircle, XCircle, Download, ArrowLeft } from "lucide-react";
 import { clsx } from "clsx";
@@ -48,6 +49,8 @@ export default function GeneratedReportsPage() {
 
   return (
     <div>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <Link href="/reports" className="inline-flex items-center gap-1 text-xs text-[#22c55e] hover:underline mb-4">
         <ArrowLeft size={13} /> Back to reports
       </Link>

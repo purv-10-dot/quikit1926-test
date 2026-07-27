@@ -6,6 +6,7 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { CrudTable, type Column } from "@/components/hrms/crud-table";
 import { Modal } from "@/components/hrms/modal";
 import { NumberInput } from "@/components/hrms/ui/number-input";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface GradeItem {
   id: string;
@@ -69,6 +70,8 @@ export default function GradesPage() {
 
   return (
     <>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <CrudTable title="Grades / Bands" data={filtered} columns={columns} isLoading={isLoading}
         onAdd={openAdd} onEdit={openEdit} onDelete={(id) => deleteMut.mutate(id)}
         search={search} onSearchChange={setSearch} searchPlaceholder="Search grades..." />

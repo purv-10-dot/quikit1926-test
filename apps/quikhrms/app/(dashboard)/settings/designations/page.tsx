@@ -7,6 +7,7 @@ import { CrudTable, type Column } from "@/components/hrms/crud-table";
 import { Modal } from "@/components/hrms/modal";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { Select } from "@/components/hrms/ui/select";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface Desig {
   id: string;
@@ -95,6 +96,8 @@ export default function DesignationsPage() {
 
   return (
     <>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <CrudTable title="Designations" data={data?.data ?? []} columns={columns} isLoading={isLoading}
         onAdd={openAdd} onEdit={openEdit} onDelete={(id) => deleteMut.mutate(id)}
         search={search} onSearchChange={setSearch} searchPlaceholder="Search designations..." />

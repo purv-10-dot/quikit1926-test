@@ -8,6 +8,7 @@ import { Modal } from "@/components/hrms/modal";
 import { Play, Plus, Calendar } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonTable } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface PayRun {
   id: string;
@@ -60,6 +61,8 @@ export default function PayRunsPage() {
 
   return (
     <div className="w-full px-5 py-4 space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-start gap-3">
           <Play size={28} className="text-[#22c55e] mt-1.5" />

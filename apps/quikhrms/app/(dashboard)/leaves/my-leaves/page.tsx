@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient, ApiError } from "@/lib/hooks/use-api";
 import { Modal } from "@/components/hrms/modal";
+import { PageBackground } from "@/components/hrms/page-background";
 import { clsx } from "clsx";
 import { Plus, AlertTriangle, Eye, Trash2, X } from "lucide-react";
 import { EmptyState } from "@/components/hrms/empty-state";
@@ -421,6 +422,8 @@ export default function MyLeavesPage() {
 
   return (
     <div className="w-full">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       {/* Header */}
       <div className="surface-card p-4 mb-4 flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-base font-semibold text-gray-900">Leave</h1>

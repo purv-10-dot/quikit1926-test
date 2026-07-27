@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Modal } from "@/components/hrms/modal";
+import { PageBackground } from "@/components/hrms/page-background";
 import { EmployeeSelect } from "@/components/hrms/employees/employee-select";
 import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
@@ -130,6 +131,8 @@ export default function RecognitionPage() {
 
   return (
     <div>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       {/* Hero */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#3F1A56] via-[#7C2D92] to-[#C026D3] mb-4">
         <svg className="absolute inset-0 w-full h-full opacity-50" viewBox="0 0 1200 200" preserveAspectRatio="none">

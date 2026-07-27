@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Save, Loader2, FileText, RotateCcw } from "lucide-react";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
+import { PageBackground } from "@/components/hrms/page-background";
 import { RESIGNATION_LETTER_FIELDS, DEFAULT_RESIGNATION_LETTER_BODY } from "@/lib/offboarding/resignation-letter-fields";
 
 interface Body { resignationLetterBody?: string | null }
@@ -45,6 +46,8 @@ export default function ResignationLetterSettingsPage() {
 
   return (
     <div className="p-4 space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div>
         <h1 className="text-base font-semibold text-gray-900">Resignation Acceptance Letter</h1>
         <p className="text-xs text-gray-500 mt-1">

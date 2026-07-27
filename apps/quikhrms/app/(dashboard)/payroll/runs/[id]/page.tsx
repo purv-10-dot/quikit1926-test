@@ -10,6 +10,7 @@ import { clsx } from "clsx";
 import { SkeletonLine } from "@/components/hrms/skeleton";
 import { Select } from "@/components/hrms/select";
 import { useToast } from "@/components/hrms/toast";
+import { PageBackground } from "@/components/hrms/page-background";
 import { withBasePath } from "@/lib/utils/base-path";
 
 interface PayslipLine {
@@ -235,6 +236,8 @@ export default function PayRunDetailPage() {
 
   return (
     <div className="space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm p-4">
         <div className="flex items-start justify-between gap-4">
           <div>

@@ -7,6 +7,7 @@ import { useToast } from "@/components/hrms/toast";
 import { useDialog } from "@/components/hrms/dialog";
 import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/select";
+import { PageBackground } from "@/components/hrms/page-background";
 import { FileCheck2, Plus, Pencil, Trash2, Power, PowerOff, Sparkles } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -72,6 +73,8 @@ export default function CandidateDocumentsSettings() {
 
   return (
     <div className="bg-slate-50 -m-6 p-6">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-start justify-between mb-5 gap-3 flex-wrap">
         <div>
           <h1 className="text-base font-semibold text-slate-900 flex items-center gap-2">

@@ -8,6 +8,7 @@ import { Select } from "@/components/hrms/ui/select";
 import { useDepartments, useDesignations } from "@/lib/hooks/use-ref-data";
 import { EMAIL_EVENTS } from "@/lib/email/registry";
 import { SkeletonCards } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 import { clsx } from "clsx";
 import {
   Plus, ListChecks, Pencil, Trash2, FileText, GripVertical,
@@ -176,6 +177,8 @@ export default function OffboardingTemplatesPage() {
 
   return (
     <div>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3"><ListChecks className="text-[#22c55e]" /><h1 className="text-page-title text-gray-900">Offboarding Templates</h1></div>
         <button onClick={openCreate} className="flex items-center gap-2 btn btn-primary"><Plus size={13} /> New Template</button>

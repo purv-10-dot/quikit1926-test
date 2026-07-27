@@ -12,6 +12,7 @@ import { Plus, Target, TrendingUp, Trash2, BarChart3 } from "lucide-react";
 import { SkeletonCards } from "@/components/hrms/skeleton";
 import { useDialog } from "@/components/hrms/dialog";
 import { useToast } from "@/components/hrms/toast";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface GoalItem {
   id: string;
@@ -171,6 +172,8 @@ export default function GoalsPage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <h1 className="text-page-title text-gray-900">Goals &amp; OKRs</h1>
         <button onClick={() => { setForm({ type: "Individual", employeeId: "", departmentId: "", title: "", description: "", metric: "", targetValue: 100, unit: "%", weight: 0, startDate: "", dueDate: "", alignedTo: "", keyResults: [] }); setShowCreate(true); }}

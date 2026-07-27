@@ -7,6 +7,7 @@ import { clsx } from "clsx";
 import { ReimbursementsTab } from "./_tabs/reimbursements";
 import { POITab } from "./_tabs/poi";
 import { SalaryRevisionTab } from "./_tabs/salary-revisions";
+import { PageBackground } from "@/components/hrms/page-background";
 
 type TabKey = "Reimbursements" | "ProofOfInvestments" | "SalaryRevision";
 const TABS: { key: TabKey; label: string; icon: React.ReactNode; slug: string }[] = [
@@ -41,6 +42,8 @@ export default function PayrollApprovalsPage() {
 
   return (
     <div className="w-full px-5 py-4 space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-start gap-3">
         <CheckSquare size={28} className="text-[#22c55e] mt-1.5" />
         <div>

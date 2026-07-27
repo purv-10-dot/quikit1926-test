@@ -10,6 +10,7 @@ import { Inbox, CheckCircle2, X as XIcon, Briefcase, AlertTriangle, FileText, Pe
 import { clsx } from "clsx";
 import { RequisitionWizard, toReqPayload, emptyReqForm } from "../_components/requisition-wizard";
 import type { ReqFormShape, DeptOption, PipelineOption, EmpOption } from "../_components/requisition-wizard";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface FullReq {
   id: string; title?: string; jobOpeningName?: string | null; pipelineId?: string | null;
@@ -198,6 +199,8 @@ export default function RequisitionApprovalsPage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-start justify-between mb-5 gap-3 flex-wrap">
         <div className="flex items-start gap-3">
           <Inbox size={28} className="text-[#22c55e] mt-1.5" />

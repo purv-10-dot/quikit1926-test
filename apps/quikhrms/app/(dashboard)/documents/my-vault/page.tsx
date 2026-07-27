@@ -9,6 +9,7 @@ import { FileText, Download, AlertCircle, FolderLock, Plus, Pencil, Trash2 } fro
 import { clsx } from "clsx";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { Modal } from "@/components/hrms/modal";
+import { PageBackground } from "@/components/hrms/page-background";
 import { Select } from "@/components/hrms/ui/select";
 import { FormField, FormInput, FormTextarea, FormActions } from "@/components/hrms/form";
 import { DocumentSourcePicker } from "@/components/hrms/document-source-picker";
@@ -176,6 +177,8 @@ export default function MyVaultPage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div className="flex items-start gap-3">
           <FolderLock size={28} className="text-[#166534] mt-1.5" />

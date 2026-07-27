@@ -6,6 +6,7 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { CrudTable, type Column } from "@/components/hrms/crud-table";
 import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/ui/select";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface Dept {
   id: string;
@@ -89,6 +90,8 @@ export default function DepartmentsPage() {
 
   return (
     <>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <CrudTable
         title="Departments"
         data={data?.data ?? []}

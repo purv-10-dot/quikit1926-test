@@ -6,6 +6,7 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { LeaveRulesWizard, type LeaveTypeRules } from "../_components/leave-rules-wizard";
 import { CrudTable, type Column } from "@/components/hrms/crud-table";
 import { Modal } from "@/components/hrms/modal";
+import { PageBackground } from "@/components/hrms/page-background";
 import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { useToast } from "@/components/hrms/toast";
@@ -221,6 +222,8 @@ export default function LeavePoliciesPage() {
 
   return (
     <div className="space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="surface-card p-1 inline-flex items-center gap-1 flex-wrap">
         {showTypes && <TabButton active={tab === "types"} onClick={() => setTab("types")} icon={<Tag size={14} />} label="Leave Types" />}
         {showGroups && <TabButton active={tab === "groups"} onClick={() => setTab("groups")} icon={<Layers size={14} />} label="Leave Groups" />}

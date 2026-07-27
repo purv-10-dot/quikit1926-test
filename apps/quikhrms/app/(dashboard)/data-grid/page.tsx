@@ -5,6 +5,7 @@ import { clsx } from "clsx";
 import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { withBasePath } from "@/lib/utils/base-path";
+import { PageBackground } from "@/components/hrms/page-background";
 import {
   Search, Filter, MoreVertical, Plus, ChevronDown, Check, X,
   ArrowLeft, Mail, Pencil, Trash2, PlusCircle, User,
@@ -128,6 +129,8 @@ export default function EmployeeDirectoryGridPage() {
 
   return (
     <div className="w-full">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center gap-3 mb-4 flex-wrap">
         <h1 className="text-base font-semibold text-gray-900 mr-1">Employee Directory</h1>
         <div className="inline-flex bg-white border border-gray-200 rounded-xl p-1 shadow-sm">

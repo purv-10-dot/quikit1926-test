@@ -15,6 +15,7 @@ import { User, Users, ArrowRight, UserPlus, CheckCircle, Check, Star, MessageSqu
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { SendOfferWizard } from "./_components/send-offer-wizard";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface ApplicationItem {
   id: string;
@@ -879,6 +880,8 @@ export default function PipelinePage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <h1 className="text-page-title text-gray-900">Hiring pipeline</h1>
         <div className="flex items-center gap-2">

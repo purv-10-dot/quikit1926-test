@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import { Tooltip } from "@/components/hrms/tooltip";
+import { PageBackground } from "@/components/hrms/page-background";
 import { Select } from "@/components/hrms/ui/select";
 import { REGULARIZATION_REASONS, OTHER_REASON } from "@/lib/constants/attendance-reasons";
 
@@ -97,6 +98,8 @@ const ATTENDANCE_EXPORT_COLUMNS = [
 export default function AttendancePage() {
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <h1 className="text-base font-semibold text-gray-900 mb-5">My Attendance</h1>
       <AttendanceSummary />
     </div>

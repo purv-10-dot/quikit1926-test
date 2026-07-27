@@ -9,6 +9,7 @@ import { SkeletonTable } from "@/components/hrms/skeleton";
 import { clsx } from "clsx";
 import { exportCsv as exportCsvFile, fmtDate, type CsvColumn } from "@/lib/utils/csv";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
+import { PageBackground } from "@/components/hrms/page-background";
 import { AddCandidateWizard } from "../onboarding/_components/add-candidate-wizard";
 
 interface Emp {
@@ -91,6 +92,8 @@ export default function PreOnboardingPage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-start justify-between gap-3 mb-4 flex-wrap">
         <div className="flex items-start gap-3">
           <Plane size={26} className="text-[#166534] mt-1" />

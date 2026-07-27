@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Modal } from "@/components/hrms/modal";
+import { PageBackground } from "@/components/hrms/page-background";
 import { Plus, FileText, Search, AlertCircle, FolderLock, Pencil, Trash2 } from "lucide-react";
 import { useToast } from "@/components/hrms/toast";
 import { clsx } from "clsx";
@@ -120,6 +121,8 @@ export default function DocumentLibraryPage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div className="flex items-start gap-3">
           <FileText size={28} className="text-[#166534] mt-1.5" />

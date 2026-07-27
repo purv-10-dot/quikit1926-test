@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Modal } from "@/components/hrms/modal";
+import { PageBackground } from "@/components/hrms/page-background";
 import { todayInput } from "@/lib/utils/date-input";
 import { Select } from "@/components/hrms/ui/select";
 import { clsx } from "clsx";
@@ -131,6 +132,8 @@ export default function SurveysPage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <h1 className="text-page-title text-gray-900">Surveys &amp; pulse checks</h1>
         <div className="flex items-center gap-2 flex-wrap">

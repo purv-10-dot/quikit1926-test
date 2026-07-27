@@ -9,6 +9,7 @@ import { Modal } from "@/components/hrms/modal";
 import { EmployeeSelect } from "@/components/hrms/employees/employee-select";
 import { Select } from "@/components/hrms/ui/select";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
+import { PageBackground } from "@/components/hrms/page-background";
 import { UserMinus, Plus, LogOut, ClipboardList, UserX, TrendingDown, CalendarClock, ArrowRight, Filter } from "lucide-react";
 import { clsx } from "clsx";
 import { ExitedEmployeesTab } from "./_components/exited-employees-tab";
@@ -153,6 +154,8 @@ export default function OffboardingDashboardPage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div className="flex items-start gap-3">
           <UserMinus size={28} className="text-[#22c55e] mt-1.5" />

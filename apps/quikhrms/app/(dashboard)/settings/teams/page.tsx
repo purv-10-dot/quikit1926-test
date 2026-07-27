@@ -6,6 +6,7 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { CrudTable, type Column } from "@/components/hrms/crud-table";
 import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/ui/select";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface TeamItem {
   id: string;
@@ -65,6 +66,8 @@ export default function TeamsPage() {
 
   return (
     <>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <CrudTable title="Teams" data={data?.data ?? []} columns={columns} isLoading={isLoading}
         onAdd={openAdd} onEdit={openEdit} onDelete={(id) => deleteMut.mutate(id)}
         search={search} onSearchChange={setSearch} searchPlaceholder="Search teams..." />

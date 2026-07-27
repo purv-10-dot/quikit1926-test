@@ -10,6 +10,7 @@ import { clsx } from "clsx";
 import { Tooltip } from "@/components/hrms/tooltip";
 import { Select } from "@/components/hrms/ui/select";
 import { SkeletonLine } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 import { withBasePath } from "@/lib/utils/base-path";
 import { useToast } from "@/components/hrms/toast";
 import { EXIT_INTERVIEW_QUESTIONS } from "@/lib/data/exit-interview";
@@ -211,6 +212,8 @@ export default function OffboardingDetailPage({ params }: { params: { employeeId
 
   return (
     <div className="w-full pb-10">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <Link href="/offboarding" className="inline-flex items-center gap-1 text-xs font-medium text-[#16a34a] hover:underline mb-4">
         <ArrowLeft size={14} /> Back to offboarding
       </Link>

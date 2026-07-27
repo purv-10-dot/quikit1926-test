@@ -7,6 +7,7 @@ import { useToast } from "@/components/hrms/toast";
 import { useDialog } from "@/components/hrms/dialog";
 import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/select";
+import { PageBackground } from "@/components/hrms/page-background";
 import {
   Plus, Pencil, Trash2, Users, X, Home, Search, Shield, UserCircle, Check,
   ChevronRight, Clock, CalendarDays, Building2, SlidersHorizontal,
@@ -222,6 +223,8 @@ export default function WfhQuotaPage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <PageHeader
         icon={<Home size={28} className="text-[#22c55e]" />}
         title="WFH quota groups"

@@ -6,6 +6,7 @@ import { ArrowLeft } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { CrudTable, type Column } from "@/components/hrms/crud-table";
+import { PageBackground } from "@/components/hrms/page-background";
 import { Modal } from "@/components/hrms/modal";
 import { FormActions, FormField, FormInput } from "@/components/hrms/form";
 import { NumberInput } from "@/components/hrms/ui/number-input";
@@ -92,6 +93,8 @@ export default function ShiftsPage() {
 
   return (
     <>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <button
         type="button"
         onClick={() => {

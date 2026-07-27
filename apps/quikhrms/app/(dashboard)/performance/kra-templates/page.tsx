@@ -13,6 +13,7 @@ import {
 import { AssignKraModal } from "../kra-assignments/_assign-modal";
 import { clsx } from "clsx";
 import { SkeletonCards } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface Designation { id: string; title: string }
 interface Department { id: string; name: string }
@@ -85,6 +86,8 @@ export default function KraTemplatesPage() {
 
   return (
     <div className="w-full space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <Target size={28} className="text-[#22c55e]" />

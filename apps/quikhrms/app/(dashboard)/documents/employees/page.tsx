@@ -7,6 +7,7 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { FileText, Search, Download, Users, ChevronLeft, ChevronRight } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonTable } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 import { withBasePath } from "@/lib/utils/base-path";
 
 /** Internal uploads live behind an auth-guarded API path and need the app's
@@ -100,6 +101,8 @@ export default function EmployeeDocumentsPage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-start gap-3 mb-4">
         <FileText size={28} className="text-[#166534] mt-1.5" />
         <div>

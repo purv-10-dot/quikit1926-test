@@ -12,6 +12,7 @@ import { Select } from "@/components/hrms/ui/select";
 import { SkeletonCards } from "@/components/hrms/skeleton";
 import { useDialog } from "@/components/hrms/dialog";
 import { useToast } from "@/components/hrms/toast";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface FeedbackItem {
   id: string;
@@ -99,6 +100,8 @@ export default function FeedbackPage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <h1 className="text-page-title text-gray-900">Continuous feedback</h1>
         <button onClick={() => { setForm({ toEmployeeId: "", type: "Praise", category: "Teamwork", message: "", isPublic: true }); setShowCreate(true); }}

@@ -7,6 +7,7 @@ import { Receipt, Send, Check, X, FileText, AlertTriangle, Pencil, Trash2, Arrow
 import { clsx } from "clsx";
 import { SkeletonLine } from "@/components/hrms/skeleton";
 import { Modal } from "@/components/hrms/modal";
+import { PageBackground } from "@/components/hrms/page-background";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { FileUploadInput } from "@/components/hrms/file-upload-input";
 import { useToast } from "@/components/hrms/toast";
@@ -125,6 +126,8 @@ export default function ExpenseDetailPage({ params }: { params: { id: string } }
 
   return (
     <div className="max-w-4xl">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <button
         type="button"
         onClick={() => {

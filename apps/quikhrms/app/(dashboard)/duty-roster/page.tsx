@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/hrms/empty-state";
 import { useToast } from "@/components/hrms/toast";
 import { useDialog } from "@/components/hrms/dialog";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
+import { PageBackground } from "@/components/hrms/page-background";
 import { ChevronLeft, ChevronRight, CalendarDays, Plus, CalendarOff, CheckCircle2, Lock, Search, Check, Info, Users, Clock } from "lucide-react";
 import Link from "next/link";
 import { clsx } from "clsx";
@@ -178,6 +179,8 @@ export default function DutyRosterPage() {
 
   return (
     <div className="w-full h-full flex flex-col px-5 py-4 overflow-hidden">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3 shrink-0">
         <div>
           <h1 className="text-base font-semibold text-gray-900">Shift Roster</h1>

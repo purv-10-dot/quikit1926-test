@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonLine } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 import { RecordChallanModal } from "./_record-challan-modal";
 
 const INR = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
@@ -83,6 +84,8 @@ function currentFY(): string {
 export default function TdsPage() {
   return (
     <Suspense fallback={<div className="p-4"><SkeletonLine w="40%" h={20} /></div>}>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <TdsPageInner />
     </Suspense>
   );

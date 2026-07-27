@@ -12,6 +12,7 @@ import { Plus, Check, X, Trash2, Gift, Upload, Download, FileSpreadsheet, AlertT
 import { clsx } from "clsx";
 import { read, utils, writeFile } from "xlsx";
 import { SkeletonTable } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 
 type Kind = "Bonus" | "Arrears" | "Incentive" | "Commission" | "PerformanceBonus" | "ReferralBonus" | "Other" | "Deduction";
 type Status = "Pending" | "Approved" | "Rejected" | "Applied";
@@ -155,6 +156,8 @@ export default function OneTimeEarningsPage() {
 
   return (
     <div className="space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Gift className="text-[#22c55e]" />

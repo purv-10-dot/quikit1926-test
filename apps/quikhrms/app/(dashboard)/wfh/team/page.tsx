@@ -8,6 +8,7 @@ import { useToast } from "@/components/hrms/toast";
 import { Home, Calendar, CheckCircle2, X as XIcon, Inbox, User } from "lucide-react";
 import { clsx } from "clsx";
 import { PageHeader } from "@/components/hrms/ui/page-header";
+import { PageBackground } from "@/components/hrms/page-background";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 
 interface Approver { id: string; firstName: string; lastName: string; employeeCode: string }
@@ -80,6 +81,8 @@ export default function WfhTeamPage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <PageHeader
         icon={<Inbox size={28} className="text-[#22c55e]" />}
         title="WFH approvals"

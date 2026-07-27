@@ -9,6 +9,7 @@ import { UserCheck, Plus, Trash2, Pause, Play, Check } from "lucide-react";
 import { EmptyState } from "@/components/hrms/empty-state";
 import { EmployeeSelect } from "@/components/hrms/employees/employee-select";
 import { Select } from "@/components/hrms/ui/select";
+import { PageBackground } from "@/components/hrms/page-background";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 import { clsx } from "clsx";
 import { DELEGATION_CATALOG, DELEGATION_PERM_LABELS } from "@/lib/rbac/delegatable";
@@ -125,6 +126,8 @@ export default function DelegationsPage() {
 
   return (
     <div>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <UserCheck className="text-[#22c55e]" />

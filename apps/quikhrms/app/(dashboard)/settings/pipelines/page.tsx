@@ -9,6 +9,7 @@ import { Select } from "@/components/hrms/select";
 import { Plus, Trash2, Pencil, Star, GripVertical, X, AlertTriangle, ChevronRight, Mail, MailX } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonCards } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 
 type MailTemplate = "interview" | "offer-branded" | "offer-default" | "welcome" | "joining-letter" | null;
 
@@ -211,6 +212,8 @@ export default function PipelinesPage() {
 
   return (
     <div>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-base font-semibold text-gray-900">Hiring Pipelines</h1>

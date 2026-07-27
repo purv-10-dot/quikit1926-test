@@ -8,6 +8,7 @@ import { Wallet, TrendingUp, Users, AlertCircle, Settings2, ArrowRight } from "l
 import { clsx } from "clsx";
 import { useState } from "react";
 import { KPI, ChartCard, Donut, INR, INR_LAKH } from "./_tabs/_shared";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface SummaryRes {
   lastSalaryProcessed: { amount: string | number; month: string; employeeCount: number } | null;
@@ -116,6 +117,8 @@ export default function PayrollAnalyticsPage() {
 
   return (
     <div className="w-full px-5 py-4 space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-start gap-3">
           <Wallet size={28} className="text-[#22c55e] mt-1.5" />

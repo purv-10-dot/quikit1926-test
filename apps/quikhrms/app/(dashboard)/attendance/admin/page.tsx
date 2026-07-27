@@ -9,6 +9,7 @@ import { EmployeeSelect } from "@/components/hrms/employees/employee-select";
 import { Select } from "@/components/hrms/ui/select";
 import { EmptyState } from "@/components/hrms/empty-state";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
+import { PageBackground } from "@/components/hrms/page-background";
 import {
   ChevronLeft,
   ChevronRight,
@@ -352,6 +353,8 @@ export default function AdminAttendancePage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
         <div>
           <h1 className="text-base font-semibold text-gray-900">Team Attendance</h1>

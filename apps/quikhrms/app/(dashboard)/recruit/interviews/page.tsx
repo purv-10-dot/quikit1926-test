@@ -12,6 +12,7 @@ import { Video, Phone, Users, Calendar, Link2, MapPin, Star, Check, X, AlertCirc
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { useToast } from "@/components/hrms/toast";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
+import { PageBackground } from "@/components/hrms/page-background";
 
 const AVATAR_PALETTE: Array<{ bg: string; text: string }> = [
   { bg: "bg-rose-100",    text: "text-rose-700" },
@@ -525,6 +526,8 @@ export default function InterviewsPage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-start justify-between mb-5 gap-4 flex-wrap">
         <div>
           <h1 className="text-page-title text-gray-900 leading-tight">Interviews</h1>

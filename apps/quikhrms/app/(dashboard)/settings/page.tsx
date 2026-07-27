@@ -12,6 +12,7 @@ import {
   X, PinOff,
 } from "lucide-react";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface Item {
   label: string;
@@ -170,6 +171,8 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       {/* Header */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
         <div className="flex items-center gap-3">

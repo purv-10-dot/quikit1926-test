@@ -6,6 +6,7 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 import { EmptyState } from "@/components/hrms/empty-state";
 import { SkeletonCards } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 import { clsx } from "clsx";
 import {
   Briefcase, Users, Calendar, FileText, Award, Clock, Check, Send, UserPlus, TrendingUp,
@@ -78,6 +79,8 @@ export default function RecruitDashboardPage() {
 
   return (
     <div className="w-full px-5 py-4 space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-end justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-page-title text-gray-900">Recruitment Dashboard</h1>

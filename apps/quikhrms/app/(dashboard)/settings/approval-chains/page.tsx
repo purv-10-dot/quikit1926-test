@@ -11,6 +11,7 @@ import { useDialog } from "@/components/hrms/dialog";
 import { Plus, GitBranch, Trash2, X, Pencil, ArrowRight, User, Shield, Settings as SettingsIcon, ChevronDown } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonCards } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 
 type ApprovalModule =
   | "Leave" | "Expense" | "Asset" | "Onboarding" | "Offboarding"
@@ -211,6 +212,8 @@ export default function ApprovalChainsPage() {
 
   return (
     <div className="space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       {/* Header */}
       <div className="flex items-center justify-between bg-white rounded-lg border border-gray-200 px-4 py-4">
         <div className="flex items-center gap-3">

@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { Briefcase } from "lucide-react";
 import { RequisitionWizard, toReqPayload, emptyReqForm } from "../_components/requisition-wizard";
 import type { ReqFormShape, DeptOption, PipelineOption, EmpOption } from "../_components/requisition-wizard";
+import { PageBackground } from "@/components/hrms/page-background";
 
 // People → "Raise Requisition" now uses the SAME 5-step wizard as
 // Recruit → New Requisition (shared component). On submit it posts the full
@@ -52,6 +53,8 @@ export default function RaiseRequisitionPage() {
 
   return (
     <div className="w-full px-5 pt-2 pb-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center gap-2.5 mb-3">
         <Briefcase size={20} className="text-green-600 shrink-0" />
         <div>

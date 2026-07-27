@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { CrudTable, type Column } from "@/components/hrms/crud-table";
 import { Modal } from "@/components/hrms/modal";
+import { PageBackground } from "@/components/hrms/page-background";
 import { CITIES } from "@/lib/data/cities";
 import { ChevronDown, MapPin } from "lucide-react";
 
@@ -64,6 +65,8 @@ export default function LocationsPage() {
 
   return (
     <>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <CrudTable title="Office Locations" data={data?.data ?? []} columns={columns} isLoading={isLoading}
         onAdd={openAdd} onEdit={openEdit} onDelete={(id) => deleteMut.mutate(id)}
         search={search} onSearchChange={setSearch} searchPlaceholder="Search locations..." />

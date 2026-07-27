@@ -7,6 +7,7 @@ import { ScrollText, Download, Search } from "lucide-react";
 import { Select } from "@/components/hrms/ui/select";
 import { clsx } from "clsx";
 import { SkeletonTable } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface Log {
   id: string; userId: string; actorName?: string; action: string; entityType: string; entityId: string | null;
@@ -65,6 +66,8 @@ export default function AuditLogsPage() {
 
   return (
     <div>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <ScrollText className="text-[#22c55e]" />

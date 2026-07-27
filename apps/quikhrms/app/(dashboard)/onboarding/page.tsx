@@ -12,6 +12,7 @@ import { SkeletonLine } from "@/components/hrms/skeleton";
 import { useToast } from "@/components/hrms/toast";
 import { exportCsv as exportCsvFile, fmtDate, formatGroup, formatAddress, type CsvColumn } from "@/lib/utils/csv";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
+import { PageBackground } from "@/components/hrms/page-background";
 
 type SourceOfHire = "Referral" | "JobPortal" | "LinkedIn" | "Agency" | "Campus" | "Direct" | "Other";
 
@@ -217,6 +218,8 @@ export default function OnboardingCandidatesPage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <h1 className="text-page-title text-gray-900 mb-5">Onboarding</h1>
 
       <div className="">

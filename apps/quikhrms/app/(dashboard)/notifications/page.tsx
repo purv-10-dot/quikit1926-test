@@ -6,6 +6,7 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { Bell, CheckCheck, Info, AlertTriangle, CheckCircle, XCircle, ArrowRight } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonCards } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface Notif { id: string; type: string; title: string; message: string; link: string | null; isRead: boolean; createdAt: string; entityType: string | null; entityId: string | null; }
 
@@ -52,6 +53,8 @@ export default function NotificationCenterPage() {
 
   return (
     <div className="max-w-3xl">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <Bell className="text-[#22c55e]" />

@@ -19,6 +19,7 @@ import { Select } from "@/components/hrms/select";
 import { FileUploadInput } from "@/components/hrms/file-upload-input";
 import { SkeletonTable, SkeletonLine } from "@/components/hrms/skeleton";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
+import { PageBackground } from "@/components/hrms/page-background";
 
 // CTC fields are captured in LPA (lakhs per annum) — cap to a realistic ceiling
 // so 5–6 digit nonsense values can't be entered.
@@ -470,6 +471,8 @@ export default function CandidatesPage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <h1 className="text-page-title text-gray-900">Candidates</h1>
         <div className="flex items-center gap-2">

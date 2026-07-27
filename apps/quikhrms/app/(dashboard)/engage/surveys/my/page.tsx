@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { ClipboardList, Lock, ChevronRight, CheckCircle2, Clock, Sparkles, BarChart3 } from "lucide-react";
 import { SkeletonCards } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface MySurvey {
   id: string;
@@ -49,6 +50,8 @@ export default function MySurveysPage() {
 
   return (
     <div>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       {/* Hero */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#0F1F3D] via-[#14532d] to-[#16a34a] mb-4">
         <div className="relative px-6 py-7 flex items-center justify-between gap-6">

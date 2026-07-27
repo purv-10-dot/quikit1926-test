@@ -11,6 +11,7 @@ import { exportCsv as writeCsv } from "@/lib/utils/csv";
 import { EMPLOYEE_EXPORT_COLUMNS, type EmployeeExportRow } from "@/lib/data/employee-export";
 import { Select } from "@/components/hrms/ui/select";
 import { SkeletonCards } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 import { useDialog } from "@/components/hrms/dialog";
 import { useToast } from "@/components/hrms/toast";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
@@ -630,6 +631,8 @@ export default function OrgChartPage() {
 
   return (
     <div>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-start justify-between mb-3 gap-3 flex-wrap">
         <div />
         {topTab === "directory" ? (

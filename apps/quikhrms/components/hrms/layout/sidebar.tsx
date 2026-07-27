@@ -92,7 +92,7 @@ export const navigation: NavItem[] = [
     perms: ["hrms.employee.read", "hrms.employee.read_team"],
     children: [
       { label: "Directory", href: "/org-chart", perms: ["hrms.employee.read", "hrms.employee.read_team", "hrms.org.read"], navKey: "people.directory" },
-      { label: "Employment Logs", href: "/employees/history", perms: ["hrms.employee.read"], navKey: "people.history" },
+      { label: "Employee Log", href: "/employees/history", perms: ["hrms.employee.read"], navKey: "people.history" },
       { label: "Delegations", href: "/delegations", perms: ["hrms.employee.read", "hrms.employee.read_team"], navKey: "people.delegations" },
       { label: "Pre-Onboarding", href: "/pre-onboarding", perms: ["hrms.onboarding.read", "hrms.onboarding.write"], navKey: "people.pre-onboarding" },
       { label: "Onboarding", href: "/onboarding", perms: ["hrms.onboarding.read", "hrms.onboarding.write"], navKey: "people.onboarding" },
@@ -483,29 +483,6 @@ export function Sidebar() {
       </Link>
 
       {/* Profile */}
-      <Link
-        href={employee?.id ? `/employees/${employee.id}` : "/dashboard"}
-        title={employee?.name ?? ""}
-        className="flex flex-col items-center pt-3 pb-3 border-b border-slate-100"
-      >
-        {employee?.profilePhoto ? (
-          <div className="w-14 h-14 rounded-full overflow-hidden ring-2 ring-slate-100 bg-slate-100 shrink-0">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={withBasePath(employee.profilePhoto)} alt={employee.name} className="w-full h-full object-cover" />
-          </div>
-        ) : (
-          <div className="w-14 h-14 rounded-full ring-2 ring-slate-100 bg-gradient-to-br from-green-500 to-green-600 text-white flex items-center justify-center text-lg font-bold shrink-0">
-            {(employee?.name ?? companyName).split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase()}
-          </div>
-        )}
-        {employee?.name && (
-          <div className="mt-2 text-[13px] font-bold text-slate-900 text-center leading-tight px-2 truncate max-w-full">{employee.name}</div>
-        )}
-        {role?.name && (
-          <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400 mt-0.5">{role.name}</div>
-        )}
-      </Link>
-
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-2.5 py-3 [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]">
         {SECTION_ORDER.map((sec) => {

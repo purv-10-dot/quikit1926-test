@@ -22,6 +22,7 @@ import { NumberInput } from "@/components/hrms/ui/number-input";
 import { SkeletonLine } from "@/components/hrms/skeleton";
 import { BankDetailsFields } from "@/components/hrms/bank-details-fields";
 import { SalaryBreakdown } from "@/components/hrms/salary-breakdown";
+import { PageBackground } from "@/components/hrms/page-background";
 import { INDIA_STATE_OPTS as STATE_OPTS } from "@/lib/data/india-states";
 import { INDIAN_CITIES } from "@/lib/data/indian-cities";
 
@@ -140,6 +141,8 @@ type StepId = typeof STEPS[number]["id"];
 export default function NewEmployeePage() {
   return (
     <Suspense fallback={<div className="p-4 space-y-2"><SkeletonLine w="40%" h={16} /><SkeletonLine w="70%" h={12} /><SkeletonLine w="60%" h={12} /></div>}>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <NewEmployeePageInner />
     </Suspense>
   );

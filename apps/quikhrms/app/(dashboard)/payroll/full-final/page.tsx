@@ -9,6 +9,7 @@ import { Select } from "@/components/hrms/ui/select";
 import { DoorOpen, Plus, X } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonTable } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 
 type Status = "Draft" | "Computed" | "Approved" | "Paid" | "Cancelled";
 
@@ -74,6 +75,8 @@ export default function FNFListPage() {
 
   return (
     <div className="space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <DoorOpen className="text-[#22c55e]" />

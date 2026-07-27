@@ -5,6 +5,7 @@ import { clsx } from "clsx";
 import { FileText, Receipt } from "lucide-react";
 import Form16Page from "../form16/page";
 import Form12BBPage from "../form12bb/page";
+import { PageBackground } from "@/components/hrms/page-background";
 
 type Tab = "form16" | "form12bb";
 
@@ -18,6 +19,8 @@ export default function TaxFilingsHub() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <h1 className="text-page-title text-gray-900 mb-1">Tax Filings</h1>
       <p className="text-xs text-gray-500 mb-5">Statutory tax documents and challans in one place.</p>
 

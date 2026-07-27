@@ -6,6 +6,7 @@ import { Save, Loader2, FileText, RotateCcw } from "lucide-react";
 import { clsx } from "clsx";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
+import { PageBackground } from "@/components/hrms/page-background";
 import { EXIT_LETTER_FIELDS, DEFAULT_RELIEVING_LETTER_BODY, DEFAULT_EXPERIENCE_LETTER_BODY } from "@/lib/offboarding/exit-letter-fields";
 
 type LetterType = "relieving" | "experience";
@@ -43,6 +44,8 @@ export default function ExitLettersSettingsPage() {
 
   return (
     <div className="p-4 space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div>
         <h1 className="text-base font-semibold text-gray-900">Exit Letters</h1>
         <p className="text-xs text-gray-500 mt-1">

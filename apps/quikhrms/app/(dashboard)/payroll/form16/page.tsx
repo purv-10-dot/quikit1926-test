@@ -7,6 +7,7 @@ import { Select } from "@/components/hrms/ui/select";
 import { useToast } from "@/components/hrms/toast";
 import { FileBadge, Download, Eye, AlertCircle, Loader2, X } from "lucide-react";
 import { SkeletonTable, SkeletonLine } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface Summary {
   employeeId: string;
@@ -123,6 +124,8 @@ export default function Form16Page() {
 
   return (
     <div className="space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <FileBadge className="text-[#22c55e]" />

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
+import { PageBackground } from "@/components/hrms/page-background";
 import { FileSpreadsheet, FileText, FileType, Eye, Search } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -88,6 +89,8 @@ export default function ReportsPage() {
 
   return (
     <div className="w-full px-5 py-4 space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div>
         <h1 className="text-page-title text-gray-900">Reports</h1>
         <p className="text-xs text-gray-500 mt-1">{catalog.length} reports across payroll, statutory, attendance, leave, recruitment and more. Export as CSV, Excel or PDF.</p>

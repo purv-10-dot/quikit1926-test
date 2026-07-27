@@ -8,6 +8,7 @@ import { Select } from "@/components/hrms/ui/select";
 import { Users, Target, Search, ArrowRight, Briefcase, Building2 } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonTable } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface Scorecard { id: string; name: string }
 interface Employee {
@@ -85,6 +86,8 @@ export default function KraAssignmentsPage() {
 
   return (
     <div className="w-full space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <Users size={28} className="text-[#22c55e]" />

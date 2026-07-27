@@ -13,6 +13,7 @@ import {
   Ban, Archive, ArchiveRestore, RotateCcw, ShieldX, Rocket, MessageSquare, BellRing,
 } from "lucide-react";
 import { SkeletonLine } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -91,6 +92,8 @@ export default function CandidateDetailPage() {
 
   return (
     <div className="w-full px-5 py-4 space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       {/* Header card */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 px-5 pt-5">
         <div className="flex items-start justify-between gap-4 flex-wrap pb-4">
