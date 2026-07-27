@@ -23,7 +23,7 @@ import {
   Check,
 } from "lucide-react";
 import { RichTextEditor } from "@/components/rich-text-editor-lazy";
-import { uploadProjectImage } from "@/lib/upload-image";
+import { uploadProjectImage, uploadProjectFile } from "@/lib/upload-image";
 import { BoardFilterSelect } from "@/app/(dashboard)/spaces/[id]/board/_components/board-filter-select";
 import { SpaceIcon } from "@/components/space-icon";
 import { useApiData } from "@/lib/hooks/useApiData";
@@ -444,6 +444,7 @@ export function CreateIssueModal({
               onChange={setDescription}
               mentions={memberMentions}
               uploadImage={(file) => uploadProjectImage(projectId, file)}
+              uploadFile={(file) => uploadProjectFile(projectId, file)}
             />
           </Field>
 
