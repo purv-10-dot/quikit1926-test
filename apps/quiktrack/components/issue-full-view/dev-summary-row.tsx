@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Check, Copy, ExternalLink, Github, Plus } from "lucide-react";
+import { DevelopmentModal } from "./development-modal";
 
 /** A single dev item rendered inside the popover (branch / commit / PR). */
 export interface DevPopoverItem {
@@ -27,6 +28,7 @@ export function DevSummaryRow({
   kind,
   items,
   issueKey,
+  issueId,
   onCreateBranch,
 }: {
   icon: React.ElementType;
@@ -37,18 +39,37 @@ export function DevSummaryRow({
   items: DevPopoverItem[];
   /** Work-item key, used to prefill the git create-branch command. */
   issueKey: string;
+  /** Work-item id — opens the full "Development" modal from the popover. */
+  issueId: string;
   /** Open the in-app "Create GitHub branch" dialog (from the + affordance). */
   onCreateBranch?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
   const first = items[0];
+  // Delay closing so moving the cursor from the row into the popover (which may
+  // cross a sliver of the next row) doesn't snap it shut / open the next one.
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelClose = () => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+  const scheduleClose = () => {
+    cancelClose();
+    closeTimer.current = setTimeout(() => setOpen(false), 160);
+  };
 
   return (
     <div
       className="relative"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
+      onMouseEnter={() => {
+        cancelClose();
+        setOpen(true);
+      }}
+      onMouseLeave={scheduleClose}
     >
       <div className="group flex items-center gap-2 rounded px-1 py-1 hover:bg-gray-50 dark:hover:bg-gray-800/50">
         <Icon className="h-4 w-4 text-accent-600 dark:text-accent-400" />
@@ -185,12 +206,21 @@ export function DevSummaryRow({
             </div>
           ))}
           <div className="mt-3 border-t border-gray-100 pt-2 dark:border-gray-800">
-            <span className="text-[12px] text-accent-600 dark:text-accent-400">
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                setModalOpen(true);
+              }}
+              className="text-[12px] text-accent-600 hover:underline dark:text-accent-400"
+            >
               View all development information
-            </span>
+            </button>
           </div>
         </div>
       )}
+
+      {modalOpen && <DevelopmentModal issueId={issueId} onClose={() => setModalOpen(false)} />}
     </div>
   );
 }

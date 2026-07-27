@@ -103,6 +103,7 @@ export function IssueDevelopment({
                   icon={GitBranch}
                   kind="Branch"
                   issueKey={issueKey}
+                  issueId={issueId}
                   label={`${branches.length} branch${branches.length === 1 ? "" : "es"}`}
                   items={branches.map((b) => ({ heading: b.name, repo: b.repoFullName, url: b.url }))}
                 />
@@ -115,6 +116,7 @@ export function IssueDevelopment({
                   icon={GitCommit}
                   kind="Commit"
                   issueKey={issueKey}
+                  issueId={issueId}
                   label={`${commits.length} commit${commits.length === 1 ? "" : "s"}`}
                   meta={relativeTime(latestCommitAt)}
                   items={commits.map((c) => ({
@@ -133,6 +135,7 @@ export function IssueDevelopment({
                   icon={GitPullRequest}
                   kind="Pull request"
                   issueKey={issueKey}
+                  issueId={issueId}
                   label={`${prs.length} pull request${prs.length === 1 ? "" : "s"}`}
                   items={prs.map((p) => ({
                     heading: `#${p.number} ${p.title}`,
