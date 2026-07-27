@@ -133,6 +133,12 @@ model Org {
   brandColor               String?                   @default("#0066cc")
   plan                     String                    @default("startup")
   billingEmail             String?
+  /// Optional workspace profile captured on the post-registration
+  /// "A few quick details" onboarding step. All nullable — the step is
+  /// skippable, so existing/older orgs simply leave these empty.
+  industry                 String?
+  companySize              String?
+  primaryUseCase           String?
   /// Empty = no restriction. Non-empty = POST /api/members must match one
   /// (case-insensitive, no @ prefix — e.g. ["acme.com", "acme.co.uk"]).
   allowedEmailDomains      String[]                  @default([])
@@ -302,6 +308,9 @@ model User {
   country                 String?
   timezone                String?
   bio                     String?
+  /// Optional self-described role captured on the post-registration
+  /// "A few quick details" onboarding step (Founder / CEO, Operations, …).
+  jobRole                 String?
   themeMode               String?                          @default("light")
   accentColor             String?                          @default("#0066cc")
   kpiFrozenCol            String?
