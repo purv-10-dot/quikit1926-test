@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowDownNarrowWide, X, ChevronDown, ChevronRight } from "lucide-react";
 import { RichTextEditor } from "@/components/rich-text-editor-lazy";
-import { uploadProjectImage } from "@/lib/upload-image";
+import { RichTextView } from "@/components/rich-text-view";
+import { uploadProjectImage, uploadProjectFile } from "@/lib/upload-image";
 import { sanitizeRichText } from "@/lib/sanitize";
 import type { MentionItem } from "@/components/editor/mention";
 import { SkeletonList } from "@/components/skeleton";
@@ -315,6 +316,7 @@ function CommentsView({
               placeholder="Add a comment..."
               mentions={mentions ?? []}
               uploadImage={(file) => uploadProjectImage(projectId, file)}
+              uploadFile={(file) => uploadProjectFile(projectId, file)}
             />
             <div className="flex items-center justify-end gap-2">
               <button
@@ -386,9 +388,13 @@ function CommentsView({
                   <span className="text-[11px] text-gray-400">(edited)</span>
                 )}
               </div>
-              <div
+              {/* RichTextView (not dangerouslySetInnerHTML) so file
+                  attachments in a comment render as the same inline cards as
+                  the description — the read-only `.prose` chip styling would
+                  otherwise hide the attachment anchors entirely. */}
+              <RichTextView
+                html={sanitizeRichText(c.body)}
                 className="prose prose-sm max-w-none text-sm text-gray-800 mt-1"
-                dangerouslySetInnerHTML={{ __html: sanitizeRichText(c.body) }}
               />
             </div>
           </div>
