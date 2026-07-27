@@ -27,8 +27,8 @@ const h = vi.hoisted(() => ({
   update: vi.fn(),
 }));
 
-vi.mock('@/lib/prisma', () => ({
-  prisma: { lmsUser: { findMany: h.findMany, findFirst: h.findFirst, update: h.update } },
+vi.mock('@/lib/db', () => ({
+  db: { lmsUser: { findMany: h.findMany, findFirst: h.findFirst, update: h.update } },
 }));
 
 import { searchUsers, findAllUsers, updateUser } from '@/lib/services/users-service';

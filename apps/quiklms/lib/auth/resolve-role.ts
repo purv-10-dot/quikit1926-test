@@ -11,8 +11,9 @@
  * the two in lock-step is what prevents "lands on the wrong dashboard" drift.
  */
 import type { LmsUserRole as UserRole } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { mapPlatformRoleToLmsRole } from '@/lib/auth/role-resolution';
+import { getAssignedLmsRole } from '@/lib/auth/app-role';
 
 export interface SessionRoleInput {
   id: string;
@@ -24,7 +25,13 @@ export interface SessionRoleInput {
 
 export async function resolveLmsRole(user: SessionRoleInput): Promise<UserRole> {
   try {
-    const row = await prisma.lmsUser.findUnique({
+    // Platform-assigned app role wins (mirrors the other apps, which authorise
+    // off app_<slug>.UserAppRole). Absent → fall back to the LMS User.role row,
+    // so users with no explicit assignment resolve exactly as before.
+    const assigned = await getAssignedLmsRole(user.id, user.orgId);
+    if (assigned) return assigned;
+
+    const row = await db.lmsUser.findUnique({
       where: { id: user.id },
       select: { role: true },
     });
@@ -36,7 +43,7 @@ export async function resolveLmsRole(user: SessionRoleInput): Promise<UserRole> 
     // super-admin portal. Mirrors getAuthContext's fallback exactly.
     let hasTenantRow = false;
     if (user.orgId) {
-      const tenant = await prisma.lmsTenant.findUnique({
+      const tenant = await db.lmsTenant.findUnique({
         where: { id: user.orgId },
         select: { id: true },
       });

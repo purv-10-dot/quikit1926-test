@@ -20,8 +20,8 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/env', () => ({ env: { DATABASE_URL: 'x' }, optionalEnv: () => '' }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     lmsUser: { findFirst: h.userFindFirst, findUnique: h.userFindUnique, update: h.userUpdate },
     lmsUserAvailabilitySlot: { deleteMany: h.slotDeleteMany, createMany: h.slotCreateMany },
     lmsBatch: { findMany: vi.fn() },

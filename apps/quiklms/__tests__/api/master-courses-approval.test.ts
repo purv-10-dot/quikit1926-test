@@ -49,8 +49,8 @@ vi.mock('@/lib/s3', () => ({
   s3: { send: vi.fn() },
   S3_BUCKET: 'test-bucket',
 }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     lmsMasterCourse: {
       findFirst: h.findFirst,
       findUnique: h.findUnique,

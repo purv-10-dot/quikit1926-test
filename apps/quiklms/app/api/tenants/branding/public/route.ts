@@ -1,5 +1,5 @@
 import { route, json } from '@/lib/http';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { presignFromUrlOrKey, isManagedStorageUrl } from '@/lib/s3';
 
 function hostSubdomain(host: string | null): string | null {
@@ -34,8 +34,8 @@ export const GET = route(async (req) => {
 
   try {
     let tenant = null;
-    if (tenantKey) tenant = await prisma.lmsTenant.findUnique({ where: { tenantKey } });
-    else if (subdomain) tenant = await prisma.lmsTenant.findUnique({ where: { subdomain } });
+    if (tenantKey) tenant = await db.lmsTenant.findUnique({ where: { tenantKey } });
+    else if (subdomain) tenant = await db.lmsTenant.findUnique({ where: { subdomain } });
 
     if (!tenant) return json({ success: true, data: null });
 

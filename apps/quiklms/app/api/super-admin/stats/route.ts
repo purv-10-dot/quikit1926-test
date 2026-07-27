@@ -1,6 +1,6 @@
 import { route, json } from '@/lib/http';
 import { requireAuth, requireRoles } from '@/lib/auth/context';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
@@ -9,7 +9,7 @@ export const GET = route(async (req) => {
   // Tenant status lives on the platform `Org` now (see lib/tenant-status), not
   // on a column of this table, so the status counts are Org counts scoped to
   // the orgs that actually have a tenant row. `LmsTenant.id === Org.id`.
-  const tenantIds = (await prisma.lmsTenant.findMany({ select: { id: true } })).map((t) => t.id);
+  const tenantIds = (await db.lmsTenant.findMany({ select: { id: true } })).map((t) => t.id);
   const scopedToTenants = { id: { in: tenantIds } };
 
   const [
@@ -20,34 +20,34 @@ export const GET = route(async (req) => {
     courseTotal, coursePublished, courseDraft,
     progressTotal, progressCompleted, progressInProgress,
   ] = await Promise.all([
-    prisma.lmsTenant.count(),
-    prisma.lmsTenant.count({ where: { tenantType: 'corporate' } }),
-    prisma.lmsTenant.count({ where: { tenantType: 'school' } }),
-    prisma.org.count({ where: { ...scopedToTenants, status: 'active' } }),
-    prisma.org.count({ where: { ...scopedToTenants, status: { not: 'active' } } }),
-    prisma.lmsTenant.findMany({
+    db.lmsTenant.count(),
+    db.lmsTenant.count({ where: { tenantType: 'corporate' } }),
+    db.lmsTenant.count({ where: { tenantType: 'school' } }),
+    db.org.count({ where: { ...scopedToTenants, status: 'active' } }),
+    db.org.count({ where: { ...scopedToTenants, status: { not: 'active' } } }),
+    db.lmsTenant.findMany({
       orderBy: { createdAt: 'desc' },
       take: 10,
       select: { id: true, name: true, subdomain: true, tenantType: true, officialEmail: true, createdAt: true },
     }),
-    prisma.lmsUser.count({ where: { role: { not: 'SUPER_ADMIN' } } }),
-    prisma.lmsUser.groupBy({
+    db.lmsUser.count({ where: { role: { not: 'SUPER_ADMIN' } } }),
+    db.lmsUser.groupBy({
       by: ['role'],
       where: { role: { not: 'SUPER_ADMIN' } },
       _count: { _all: true },
     }),
-    prisma.lmsUser.findMany({
+    db.lmsUser.findMany({
       where: { role: { not: 'SUPER_ADMIN' } },
       orderBy: { createdAt: 'desc' },
       take: 5,
       select: { id: true, firstName: true, lastName: true, email: true, role: true, createdAt: true },
     }),
-    prisma.lmsMasterCourse.count(),
-    prisma.lmsMasterCourse.count({ where: { status: 'Published' } }),
-    prisma.lmsMasterCourse.count({ where: { status: 'Draft' } }),
-    prisma.lmsProgress.count(),
-    prisma.lmsProgress.count({ where: { status: 'Completed' } }),
-    prisma.lmsProgress.count({ where: { status: 'InProgress' } }),
+    db.lmsMasterCourse.count(),
+    db.lmsMasterCourse.count({ where: { status: 'Published' } }),
+    db.lmsMasterCourse.count({ where: { status: 'Draft' } }),
+    db.lmsProgress.count(),
+    db.lmsProgress.count({ where: { status: 'Completed' } }),
+    db.lmsProgress.count({ where: { status: 'InProgress' } }),
   ]);
 
   const completionRate =

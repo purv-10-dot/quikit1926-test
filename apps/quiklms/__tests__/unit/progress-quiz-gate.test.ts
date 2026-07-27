@@ -39,8 +39,8 @@ vi.mock('@/lib/services/certificates-service', () => ({
   generateCertificateForCompletion: h.generateCertificate,
   getLearnerCertificates: vi.fn().mockResolvedValue([]),
 }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     lmsProgress: {
       findFirst: h.progressFindFirst,
       findUnique: h.progressFindUnique,

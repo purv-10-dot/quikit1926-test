@@ -27,7 +27,7 @@ vi.mock('@/lib/org-db', () => ({
 }));
 // Severs the import chain to the real shared PrismaClient (no DATABASE_URL in
 // the test env) — none of these are exercised by provisionOrgForTenant.
-vi.mock('@/lib/prisma', () => ({ prisma: {} }));
+vi.mock('@/lib/db', () => ({ db: {} }));
 vi.mock('@/lib/services/auth-service', () => ({ registerUser: vi.fn() }));
 vi.mock('@/lib/email', () => ({ sendEmail: vi.fn() }));
 vi.mock('@/lib/email-templates', () => ({ invitationEmail: () => ({ subject: '', html: '' }) }));

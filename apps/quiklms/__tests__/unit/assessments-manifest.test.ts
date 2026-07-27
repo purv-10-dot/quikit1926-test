@@ -22,8 +22,8 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@/lib/env', () => ({ env: { DATABASE_URL: 'x' }, optionalEnv: () => '' }));
 vi.mock('@/lib/services/quiz-proctoring-service', () => ({ getSessionManifest: h.manifest }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     lmsAssessment: { findFirst: h.findFirst },
     lmsMasterCourse: { findMany: h.masterFindMany },
     lmsProgress: { findFirst: h.progressFindFirst, update: h.progressUpdate, create: h.progressCreate },

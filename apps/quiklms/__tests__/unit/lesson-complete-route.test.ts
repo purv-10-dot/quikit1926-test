@@ -22,7 +22,7 @@ const h = vi.hoisted(() => ({ requireAuth: vi.fn(), syncProgress: vi.fn() }));
 vi.mock('@/lib/env', () => ({ env: { DATABASE_URL: 'x' }, optionalEnv: () => '' }));
 vi.mock('@/lib/auth/context', () => ({ requireAuth: h.requireAuth }));
 vi.mock('@/lib/services/progress-service', () => ({ syncProgress: h.syncProgress }));
-vi.mock('@/lib/prisma', () => ({ prisma: {} }));
+vi.mock('@/lib/db', () => ({ db: {} }));
 
 import { POST } from '@/app/api/progress/[courseId]/lesson/[lessonId]/complete/route';
 

@@ -3,7 +3,7 @@
  * Per-tenant Subject + Section tables. Defaults are seeded into the tenant on
  * first access (matching the legacy lazy seed). `addSection` upper-cases the name.
  */
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 
 const DEFAULT_SUBJECTS = [
   'Mathematics', 'Physics', 'Chemistry', 'Biology', 'English',
@@ -12,7 +12,7 @@ const DEFAULT_SUBJECTS = [
 const DEFAULT_SECTIONS = ['A', 'B', 'C', 'D'];
 
 export async function getSubjects(orgId: string): Promise<string[]> {
-  const subjects = await prisma.lmsSubject.findMany({
+  const subjects = await db.lmsSubject.findMany({
     where: { orgId },
     orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],
   });
@@ -26,7 +26,7 @@ export async function getSubjects(orgId: string): Promise<string[]> {
 export async function addSubject(orgId: string, name: string): Promise<string> {
   const trimmed = name.trim();
   if (!trimmed) throw new Error('Subject name is required');
-  await prisma.lmsSubject.upsert({
+  await db.lmsSubject.upsert({
     where: { orgId_name: { orgId, name: trimmed } },
     create: { orgId, name: trimmed, isDefault: false },
     update: {},
@@ -37,7 +37,7 @@ export async function addSubject(orgId: string, name: string): Promise<string> {
 export async function getSections(orgId: string, grade?: string): Promise<{ grade: string; name: string }[]> {
   const where: { orgId: string; grade?: string } = { orgId };
   if (grade) where.grade = grade;
-  const sections = await prisma.lmsSection.findMany({ where, orderBy: [{ grade: 'asc' }, { name: 'asc' }] });
+  const sections = await db.lmsSection.findMany({ where, orderBy: [{ grade: 'asc' }, { name: 'asc' }] });
   if (sections.length === 0 && !grade) {
     await seedDefaultSections(orgId);
     return DEFAULT_SECTIONS.map((s) => ({ grade: 'all', name: s }));
@@ -46,7 +46,7 @@ export async function getSections(orgId: string, grade?: string): Promise<{ grad
 }
 
 export async function getSectionNames(orgId: string): Promise<string[]> {
-  const rows = await prisma.lmsSection.findMany({
+  const rows = await db.lmsSection.findMany({
     where: { orgId },
     select: { name: true },
     distinct: ['name'],
@@ -61,7 +61,7 @@ export async function getSectionNames(orgId: string): Promise<string[]> {
 export async function addSection(orgId: string, grade: string, name: string): Promise<void> {
   const trimmed = name.trim().toUpperCase();
   if (!trimmed) throw new Error('Section name is required');
-  await prisma.lmsSection.upsert({
+  await db.lmsSection.upsert({
     where: { orgId_grade_name: { orgId, grade, name: trimmed } },
     create: { orgId, grade, name: trimmed },
     update: {},
@@ -69,14 +69,14 @@ export async function addSection(orgId: string, grade: string, name: string): Pr
 }
 
 async function seedDefaultSubjects(orgId: string): Promise<void> {
-  await prisma.lmsSubject.createMany({
+  await db.lmsSubject.createMany({
     data: DEFAULT_SUBJECTS.map((name) => ({ orgId, name, isDefault: true })),
     skipDuplicates: true,
   });
 }
 
 async function seedDefaultSections(orgId: string): Promise<void> {
-  await prisma.lmsSection.createMany({
+  await db.lmsSection.createMany({
     data: DEFAULT_SECTIONS.map((name) => ({ orgId, grade: 'all', name })),
     skipDuplicates: true,
   });

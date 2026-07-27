@@ -21,7 +21,7 @@
 import { expect, type Page } from "@playwright/test";
 import { storageStateFor, type RoleKey } from "./auth";
 
-export const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3020";
+export const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3014";
 
 /** Text the catch-all scaffold renders. Its presence means the real page did not. */
 export const SCAFFOLD_MARKER = /wired to its API and ready for UI build-out/i;

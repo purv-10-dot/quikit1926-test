@@ -33,8 +33,8 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@/lib/env', () => ({ env: { DATABASE_URL: 'x' }, optionalEnv: () => '' }));
 vi.mock('@/lib/services/payouts-service', () => ({ generatePayouts: vi.fn() }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     lmsScheduledClass: { findUnique: h.classFindUnique, update: h.classUpdate, count: h.countClasses, findMany: vi.fn() },
     lmsCallEscalation: { updateMany: h.escalationUpdateMany },
     lmsUser: { update: h.userUpdate, findMany: h.userFindMany, findUnique: vi.fn() },

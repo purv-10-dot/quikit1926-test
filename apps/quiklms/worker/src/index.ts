@@ -92,15 +92,14 @@ const httpServer = createServer((req, res) => {
 // Socket.IO (shares the HTTP server). With credentials:true the CORS origin
 // MUST be an explicit allow-list (the '*' wildcard is invalid + insecure when
 // credentials are sent). Read allowed origins from env (comma-separated),
-// falling back to the configured frontend/API URLs.
+// falling back to the app's public origin (NEXT_PUBLIC_QUIKLMS_URL).
 const allowedOrigins = [
-  ...(process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',') : []),
-  ...(process.env.NEXT_PUBLIC_API_URL ? process.env.NEXT_PUBLIC_API_URL.split(',') : []),
+  ...(process.env.NEXT_PUBLIC_QUIKLMS_URL ? process.env.NEXT_PUBLIC_QUIKLMS_URL.split(',') : []),
 ]
   .map((o) => o.trim())
   .filter(Boolean);
 const io = new SocketServer(httpServer, {
-  cors: { origin: allowedOrigins.length > 0 ? allowedOrigins : ['http://localhost:3020'], credentials: true },
+  cors: { origin: allowedOrigins.length > 0 ? allowedOrigins : ['http://localhost:3014'], credentials: true },
 });
 registerExamNamespace(io);
 registerMessagesNamespace(io);

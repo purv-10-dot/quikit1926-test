@@ -5,7 +5,7 @@
  * single fetch. The Socket.IO realtime timer/forceSubmit lives in the worker.
  */
 import type { Prisma } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { BadRequest, NotFound } from '@/lib/http';
 import type { AuthUser } from '@/lib/auth/context';
 import { tenantWhere, assertTenantMatch } from '@/lib/auth/context';
@@ -27,7 +27,7 @@ async function autoSelectQuestions(orgId: string, rules: AutoSelectRules) {
   if (rules.difficulty) where.difficulty = rules.difficulty;
   if (rules.tags?.length) where.tags = { hasSome: rules.tags };
 
-  const pool = await prisma.lmsQuestion.findMany({ where, select: { id: true, points: true } });
+  const pool = await db.lmsQuestion.findMany({ where, select: { id: true, points: true } });
   // $sample equivalent — shuffle and take N
   const shuffled = shuffleArray(pool);
   return shuffled.slice(0, rules.count || 10);
@@ -46,7 +46,7 @@ export async function createExam(user: AuthUser, userId: string, data: Record<st
   const orgId = user.orgId as string;
 
   if (data.batchId) {
-    const batch = await prisma.lmsBatch.findFirst({ where: tenantWhere(user, { id: data.batchId as string }) });
+    const batch = await db.lmsBatch.findFirst({ where: tenantWhere(user, { id: data.batchId as string }) });
     if (!batch) throw NotFound('Batch not found');
   }
 
@@ -74,13 +74,13 @@ export async function createExam(user: AuthUser, userId: string, data: Record<st
   // Tenant-scope client-supplied question IDs: only this tenant's questions may be attached.
   if (cleanQuestions.length) {
     const ids = [...new Set(cleanQuestions.map((q) => q.questionId))];
-    const owned = await prisma.lmsQuestion.findMany({ where: { id: { in: ids }, orgId }, select: { id: true } });
+    const owned = await db.lmsQuestion.findMany({ where: { id: { in: ids }, orgId }, select: { id: true } });
     const ownedSet = new Set(owned.map((q) => q.id));
     const foreign = ids.filter((id) => !ownedSet.has(id));
     if (foreign.length) throw BadRequest('One or more question IDs are invalid for this tenant');
   }
 
-  const exam = await prisma.lmsExam.create({
+  const exam = await db.lmsExam.create({
     data: {
       title: data.title as string,
       description: (data.description as string) || '',
@@ -228,7 +228,7 @@ export async function findAllExams(
   if (filters.status) where.status = filters.status as Prisma.LmsExamWhereInput['status'];
   if (filters.subject) where.subject = filters.subject;
 
-  const exams = await prisma.lmsExam.findMany({
+  const exams = await db.lmsExam.findMany({
     where,
     include: {
       batch: { select: { name: true, grade: true, subject: true } },
@@ -244,7 +244,7 @@ export async function findAllExams(
 }
 
 export async function findOneExam(user: AuthUser, id: string) {
-  const exam = await prisma.lmsExam.findFirst({
+  const exam = await db.lmsExam.findFirst({
     where: tenantWhere(user, { id }),
     include: {
       batch: { select: { name: true, grade: true, subject: true } },
@@ -268,7 +268,7 @@ export async function findOneExam(user: AuthUser, id: string) {
 }
 
 async function findOneRaw(user: AuthUser, id: string) {
-  const exam = await prisma.lmsExam.findFirst({
+  const exam = await db.lmsExam.findFirst({
     where: tenantWhere(user, { id }),
     include: { questions: true },
   });
@@ -278,7 +278,7 @@ async function findOneRaw(user: AuthUser, id: string) {
 }
 
 export async function updateExam(user: AuthUser, id: string, data: Record<string, unknown>) {
-  const exam = await prisma.lmsExam.findFirst({ where: tenantWhere(user, { id }), include: { questions: true } });
+  const exam = await db.lmsExam.findFirst({ where: tenantWhere(user, { id }), include: { questions: true } });
   if (!exam) throw NotFound('Exam not found');
   assertTenantMatch(user, exam.orgId);
   if (exam.status !== 'draft') throw BadRequest('Only draft exams can be edited');
@@ -305,7 +305,7 @@ export async function updateExam(user: AuthUser, id: string, data: Record<string
     // Tenant-scope client-supplied question IDs: only this tenant's questions may be attached.
     const ids = [...new Set(questions.map((q) => q.questionId))];
     if (ids.length) {
-      const owned = await prisma.lmsQuestion.findMany({ where: { id: { in: ids }, orgId: exam.orgId }, select: { id: true } });
+      const owned = await db.lmsQuestion.findMany({ where: { id: { in: ids }, orgId: exam.orgId }, select: { id: true } });
       const ownedSet = new Set(owned.map((q) => q.id));
       const foreign = ids.filter((qid) => !ownedSet.has(qid));
       if (foreign.length) throw BadRequest('One or more question IDs are invalid for this tenant');
@@ -321,7 +321,7 @@ export async function updateExam(user: AuthUser, id: string, data: Record<string
    * and left the exam with **zero questions** while returning a 500. The admin's
    * question set was gone and the exam unpublishable.
    */
-  const updated = await prisma.$transaction(async (tx) => {
+  const updated = await db.$transaction(async (tx) => {
     if (replaceQuestions) {
       await tx.lmsExamQuestion.deleteMany({ where: { examId: id } });
       update.questions = {
@@ -347,7 +347,7 @@ export async function publishExam(user: AuthUser, id: string) {
   if (!exam.scheduledStartTime || !exam.scheduledEndTime) {
     throw BadRequest('Scheduled start and end times are required');
   }
-  return prisma.lmsExam.update({ where: { id }, data: { status: 'published' } });
+  return db.lmsExam.update({ where: { id }, data: { status: 'published' } });
 }
 
 export async function publishResults(user: AuthUser, id: string) {
@@ -355,7 +355,7 @@ export async function publishResults(user: AuthUser, id: string) {
   if (exam.status !== 'completed' && exam.status !== 'active') {
     throw BadRequest('Exam must be completed before publishing results');
   }
-  return prisma.lmsExam.update({
+  return db.lmsExam.update({
     where: { id },
     data: { status: 'results_published', resultPublishedAt: new Date() },
   });
@@ -364,19 +364,19 @@ export async function publishResults(user: AuthUser, id: string) {
 export async function getStudentExams(user: AuthUser, studentId: string) {
   const orgId = user.orgId as string;
 
-  const learner = await prisma.lmsUser.findFirst({
+  const learner = await db.lmsUser.findFirst({
     where: tenantWhere(user, { id: studentId }),
     select: { grade: true },
   });
 
-  const enrolledBatches = await prisma.lmsBatch.findMany({
+  const enrolledBatches = await db.lmsBatch.findMany({
     where: tenantWhere(user, { students: { some: { studentId } } }),
     select: { id: true, name: true },
   });
 
   let gradeBatches: { id: string; name: string }[] = [];
   if (learner?.grade) {
-    gradeBatches = await prisma.lmsBatch.findMany({
+    gradeBatches = await db.lmsBatch.findMany({
       where: tenantWhere(user, { grade: learner.grade, status: 'active' } as Prisma.LmsBatchWhereInput),
       select: { id: true, name: true },
     });
@@ -396,7 +396,7 @@ export async function getStudentExams(user: AuthUser, studentId: string) {
     where.batchId = null;
   }
 
-  const exams = await prisma.lmsExam.findMany({
+  const exams = await db.lmsExam.findMany({
     where,
     select: {
       id: true, title: true, subject: true, duration: true, totalMarks: true,
@@ -408,7 +408,7 @@ export async function getStudentExams(user: AuthUser, studentId: string) {
   });
 
   const examIds = exams.map((e) => e.id);
-  const sessions = await prisma.lmsExamSession.findMany({
+  const sessions = await db.lmsExamSession.findMany({
     where: { studentId, examId: { in: examIds }, orgId },
     select: { examId: true, status: true, score: true, percentage: true, passed: true, startedAt: true, endedAt: true },
   });

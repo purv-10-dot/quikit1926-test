@@ -44,8 +44,8 @@ const h = vi.hoisted(() => ({
   orgUpdate: vi.fn(),
 }));
 
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     lmsTenant: {
       findUnique: h.tenantFindUnique,
       findMany: h.tenantFindMany,

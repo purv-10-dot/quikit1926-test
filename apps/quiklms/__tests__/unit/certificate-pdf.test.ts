@@ -26,8 +26,8 @@ vi.mock('@/lib/s3', () => ({
   S3_BUCKET: 'test-bucket',
   presignFromUrlOrKey: vi.fn(),
 }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     lmsCertificateIssued: { create: h.certCreate, update: h.certUpdate, findFirst: h.certFindFirst },
     lmsCertificate: { findUnique: h.templateFindUnique },
   },

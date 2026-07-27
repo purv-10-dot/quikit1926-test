@@ -32,8 +32,8 @@ vi.mock('@/lib/services/certificates-service', () => ({
   generateCertificateForCompletion: vi.fn(),
   getLearnerCertificates: vi.fn().mockResolvedValue([]),
 }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     lmsProgress: { findFirst: h.progressFindFirst, findUnique: h.progressFindUnique, upsert: h.progressUpsert, findMany: vi.fn() },
     lmsCourseAssignment: { findFirst: h.assignmentFindFirst },
     lmsCourse: { findFirst: h.courseFindFirst, findUnique: vi.fn() },

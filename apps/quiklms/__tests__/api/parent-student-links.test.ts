@@ -24,8 +24,8 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/env', () => ({ optionalEnv: () => '', env: { ENCRYPTION_KEY: 'k'.repeat(32) } }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     lmsUser: { findFirst: h.userFindFirst },
     lmsUserParent: {
       findUnique: h.linkFindUnique,

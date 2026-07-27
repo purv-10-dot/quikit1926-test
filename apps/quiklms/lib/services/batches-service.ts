@@ -6,7 +6,7 @@
  * map to the BatchSchedule / BatchStudent / BatchSubstituteTeacher child tables.
  */
 import type { Prisma, LmsBatchStatus as BatchStatus } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { BadRequest, Conflict, NotFound } from '@/lib/http';
 import {
   validateTeacherSchedule,
@@ -63,7 +63,7 @@ async function assertUsersInTenant(
 ): Promise<void> {
   const unique = [...new Set(ids)];
   if (!unique.length) return;
-  const found = await prisma.lmsUser.count({
+  const found = await db.lmsUser.count({
     where: { id: { in: unique }, orgId, ...(opts.role ? { role: opts.role } : {}) },
   });
   if (found !== unique.length) throw BadRequest(`One or more ${opts.label} are invalid for this tenant`);
@@ -71,7 +71,7 @@ async function assertUsersInTenant(
 
 /** Shape a batch row + child tables into the legacy populated response. */
 async function shapeBatch(batchId: string, opts: { fullTeacher?: boolean; fullStudents?: boolean; subs?: boolean; rawStudentIds?: boolean } = {}) {
-  const batch = await prisma.lmsBatch.findUnique({
+  const batch = await db.lmsBatch.findUnique({
     where: { id: batchId },
     include: {
       schedule: true,
@@ -119,9 +119,9 @@ async function enrichBatches(
     : [];
 
   const [teachers, students, subs] = await Promise.all([
-    teacherIds.length ? prisma.lmsUser.findMany({ where: { id: { in: teacherIds } }, select: teacherSelect }) : [],
-    studentIds.length ? prisma.lmsUser.findMany({ where: { id: { in: studentIds } }, select: studentSelect }) : [],
-    subIds.length ? prisma.lmsUser.findMany({ where: { id: { in: subIds } }, select: USER_NAME }) : [],
+    teacherIds.length ? db.lmsUser.findMany({ where: { id: { in: teacherIds } }, select: teacherSelect }) : [],
+    studentIds.length ? db.lmsUser.findMany({ where: { id: { in: studentIds } }, select: studentSelect }) : [],
+    subIds.length ? db.lmsUser.findMany({ where: { id: { in: subIds } }, select: USER_NAME }) : [],
   ]);
 
   const tMap = new Map((teachers as { id: string }[]).map((u) => [u.id, u]));
@@ -159,9 +159,9 @@ async function enrichBatch(
     ? { ...USER_NAME, grade: true, section: true, studentId: true }
     : { ...USER_NAME, grade: true };
 
-  const teacher = await prisma.lmsUser.findUnique({ where: { id: batch.teacherId }, select: teacherSelect });
+  const teacher = await db.lmsUser.findUnique({ where: { id: batch.teacherId }, select: teacherSelect });
   const students = studentIds.length && !opts.rawStudentIds
-    ? await prisma.lmsUser.findMany({ where: { id: { in: studentIds } }, select: studentSelect })
+    ? await db.lmsUser.findMany({ where: { id: { in: studentIds } }, select: studentSelect })
     : [];
   const studentMap = new Map(students.map((s) => [s.id, s]));
 
@@ -175,7 +175,7 @@ async function enrichBatch(
 
   if (opts.subs) {
     const subs = substituteTeacherIds.length
-      ? await prisma.lmsUser.findMany({ where: { id: { in: substituteTeacherIds } }, select: USER_NAME })
+      ? await db.lmsUser.findMany({ where: { id: { in: substituteTeacherIds } }, select: USER_NAME })
       : [];
     out.substituteTeacherIds = subs;
   } else {
@@ -186,14 +186,14 @@ async function enrichBatch(
 
 // ═══════════════ CREATE BATCH ═══════════════
 export async function create(orgId: string, dto: CreateBatchInput, userId?: string) {
-  const teacher = await prisma.lmsUser.findFirst({
+  const teacher = await db.lmsUser.findFirst({
     where: { id: dto.teacherId, orgId, role: 'TEACHER', isActive: true },
   });
   if (!teacher) throw BadRequest('Invalid teacher ID or teacher not found');
 
   validateAcademicYear(dto.academicYear);
 
-  const existing = await prisma.lmsBatch.findFirst({
+  const existing = await db.lmsBatch.findFirst({
     where: { orgId, name: dto.name, academicYear: dto.academicYear },
   });
   if (existing) {
@@ -216,7 +216,7 @@ export async function create(orgId: string, dto: CreateBatchInput, userId?: stri
 
   const status = (dto.status as BatchStatus) ?? 'active';
 
-  const created = await prisma.lmsBatch.create({
+  const created = await db.lmsBatch.create({
     data: {
       orgId,
       name: dto.name,
@@ -285,7 +285,7 @@ export async function findAll(
   if (options?.grade) where.grade = options.grade;
   if (options?.subject) where.subject = options.subject;
 
-  const batches = await prisma.lmsBatch.findMany({
+  const batches = await db.lmsBatch.findMany({
     where,
     orderBy: { createdAt: 'desc' },
     include: {
@@ -299,14 +299,14 @@ export async function findAll(
 
 // ═══════════════ FIND ONE BATCH ═══════════════
 export async function findOne(orgId: string, batchId: string) {
-  const batch = await prisma.lmsBatch.findUnique({ where: { id: batchId } });
+  const batch = await db.lmsBatch.findUnique({ where: { id: batchId } });
   if (!batch || batch.orgId !== orgId) throw NotFound('Batch not found');
   return shapeBatch(batchId, { fullTeacher: true, fullStudents: true, subs: true });
 }
 
 // ═══════════════ FIND BATCHES BY TEACHER ═══════════════
 export async function findByTeacher(orgId: string, teacherId: string) {
-  const batches = await prisma.lmsBatch.findMany({
+  const batches = await db.lmsBatch.findMany({
     where: {
       orgId,
       status: 'active',
@@ -322,7 +322,7 @@ export async function findByTeacher(orgId: string, teacherId: string) {
 
   const allStudentIds = Array.from(new Set(batches.flatMap((b) => b.students.map((s) => s.studentId))));
   const students = allStudentIds.length
-    ? await prisma.lmsUser.findMany({
+    ? await db.lmsUser.findMany({
         where: { id: { in: allStudentIds } },
         select: { id: true, firstName: true, lastName: true, email: true, grade: true, section: true, studentId: true, phone: true, role: true },
       })
@@ -341,7 +341,7 @@ export async function findByTeacher(orgId: string, teacherId: string) {
 
 // ═══════════════ FIND BATCHES BY STUDENT ═══════════════
 export async function findByStudent(orgId: string, studentId: string) {
-  const batches = await prisma.lmsBatch.findMany({
+  const batches = await db.lmsBatch.findMany({
     where: { orgId, status: 'active', students: { some: { studentId } } },
     orderBy: { createdAt: 'desc' },
     include: {
@@ -367,11 +367,11 @@ export async function findByStudent(orgId: string, studentId: string) {
 
 // ═══════════════ UPDATE BATCH ═══════════════
 export async function update(orgId: string, batchId: string, dto: UpdateBatchInput) {
-  const batch = await prisma.lmsBatch.findUnique({ where: { id: batchId } });
+  const batch = await db.lmsBatch.findUnique({ where: { id: batchId } });
   if (!batch || batch.orgId !== orgId) throw NotFound('Batch not found');
 
   if (dto.teacherId) {
-    const teacher = await prisma.lmsUser.findFirst({
+    const teacher = await db.lmsUser.findFirst({
       where: { id: dto.teacherId, orgId, role: 'TEACHER', isActive: true },
     });
     if (!teacher) throw BadRequest('Invalid teacher ID or teacher not found');
@@ -388,7 +388,7 @@ export async function update(orgId: string, batchId: string, dto: UpdateBatchInp
 
   if (dto.name) {
     const academicYear = dto.academicYear || batch.academicYear;
-    const dup = await prisma.lmsBatch.findFirst({
+    const dup = await db.lmsBatch.findFirst({
       where: { id: { not: batchId }, orgId, name: dto.name, academicYear },
     });
     if (dup) throw Conflict(`A batch with name "${dto.name}" already exists for academic year ${academicYear}`);
@@ -444,7 +444,7 @@ export async function update(orgId: string, batchId: string, dto: UpdateBatchInp
     };
   }
 
-  const updated = await prisma.lmsBatch.update({ where: { id: batchId }, data });
+  const updated = await db.lmsBatch.update({ where: { id: batchId }, data });
 
   const datesOrScheduleChanged =
     dto.startDate !== undefined || dto.endDate !== undefined || dto.schedule !== undefined;
@@ -464,7 +464,7 @@ export async function update(orgId: string, batchId: string, dto: UpdateBatchInp
 
 // ═══════════════ ADD STUDENTS TO BATCH ═══════════════
 export async function addStudents(orgId: string, batchId: string, dto: { studentIds: string[] }) {
-  const batch = await prisma.lmsBatch.findUnique({
+  const batch = await db.lmsBatch.findUnique({
     where: { id: batchId },
     include: { students: { select: { studentId: true } } },
   });
@@ -480,13 +480,13 @@ export async function addStudents(orgId: string, batchId: string, dto: { student
     }
   }
 
-  const students = await prisma.lmsUser.findMany({
+  const students = await db.lmsUser.findMany({
     where: { id: { in: dto.studentIds }, orgId, role: 'LEARNER', isActive: true },
     select: { id: true },
   });
   if (students.length !== dto.studentIds.length) throw BadRequest('One or more student IDs are invalid');
 
-  await prisma.lmsBatchStudent.createMany({
+  await db.lmsBatchStudent.createMany({
     data: dto.studentIds.map((studentId) => ({ batchId, studentId })),
     skipDuplicates: true,
   });
@@ -496,17 +496,17 @@ export async function addStudents(orgId: string, batchId: string, dto: { student
 
 // ═══════════════ REMOVE STUDENT FROM BATCH ═══════════════
 export async function removeStudent(orgId: string, batchId: string, studentId: string) {
-  const batch = await prisma.lmsBatch.findUnique({ where: { id: batchId } });
+  const batch = await db.lmsBatch.findUnique({ where: { id: batchId } });
   if (!batch || batch.orgId !== orgId) throw NotFound('Batch not found');
-  await prisma.lmsBatchStudent.deleteMany({ where: { batchId, studentId } });
+  await db.lmsBatchStudent.deleteMany({ where: { batchId, studentId } });
   return shapeBatch(batchId);
 }
 
 // ═══════════════ ARCHIVE BATCH ═══════════════
 export async function archive(orgId: string, batchId: string) {
-  const batch = await prisma.lmsBatch.findUnique({ where: { id: batchId } });
+  const batch = await db.lmsBatch.findUnique({ where: { id: batchId } });
   if (!batch || batch.orgId !== orgId) throw NotFound('Batch not found');
-  await prisma.lmsBatch.update({ where: { id: batchId }, data: { status: 'archived' } });
+  await db.lmsBatch.update({ where: { id: batchId }, data: { status: 'archived' } });
   // Shaped, like the sibling `unarchive`. A bare `update()` returns scalars
   // only, so `studentIds` / `substituteTeacherIds` / `schedule` were ABSENT from
   // the response — any UI re-rendering off it hit
@@ -517,7 +517,7 @@ export async function archive(orgId: string, batchId: string) {
 
 // ═══════════════ DELETE BATCH (draft/archived only) ═══════════════
 export async function remove(orgId: string, batchId: string): Promise<void> {
-  const batch = await prisma.lmsBatch.findUnique({ where: { id: batchId } });
+  const batch = await db.lmsBatch.findUnique({ where: { id: batchId } });
   if (!batch || batch.orgId !== orgId) throw NotFound('Batch not found');
   if (batch.status === 'active') {
     throw BadRequest(
@@ -541,10 +541,10 @@ export async function remove(orgId: string, batchId: string): Promise<void> {
    * term's academic record; the admin is told what is blocking instead.
    */
   const [classes, homework, grades, attendance] = await Promise.all([
-    prisma.lmsScheduledClass.count({ where: { batchId } }),
-    prisma.lmsHomework.count({ where: { batchId } }),
-    prisma.lmsGradeRecord.count({ where: { batchId } }),
-    prisma.lmsAttendance.count({ where: { batchId } }),
+    db.lmsScheduledClass.count({ where: { batchId } }),
+    db.lmsHomework.count({ where: { batchId } }),
+    db.lmsGradeRecord.count({ where: { batchId } }),
+    db.lmsAttendance.count({ where: { batchId } }),
   ]);
   const blocking = [
     classes && `${classes} scheduled class(es)`,
@@ -560,12 +560,12 @@ export async function remove(orgId: string, batchId: string): Promise<void> {
     );
   }
 
-  await prisma.lmsBatch.delete({ where: { id: batchId } });
+  await db.lmsBatch.delete({ where: { id: batchId } });
 }
 
 // ═══════════════ GET BATCH STATISTICS ═══════════════
 export async function getStatistics(orgId: string) {
-  const batches = await prisma.lmsBatch.findMany({
+  const batches = await db.lmsBatch.findMany({
     where: { orgId },
     select: { status: true, _count: { select: { students: true } } },
   });

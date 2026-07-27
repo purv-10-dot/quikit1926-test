@@ -21,8 +21,8 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/env', () => ({ env: { DATABASE_URL: 'x' }, optionalEnv: () => '' }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     lmsCreditPackageDefinition: {
       findMany: h.defFindMany,
       create: h.defCreate,

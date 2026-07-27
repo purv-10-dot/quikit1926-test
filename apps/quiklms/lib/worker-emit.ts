@@ -42,12 +42,11 @@ function warnOnce(key: string, message: string): void {
 }
 
 /**
- * WORKER_URL is the server-side (possibly internal) address; the
- * NEXT_PUBLIC_ variant is what the browser socket already uses and is the
- * sensible fallback when only the public one is configured.
+ * NEXT_PUBLIC_WORKER_URL is the single worker address var (also used by the
+ * browser socket in lib/socket.ts), so app and worker agree on one name.
  */
 function resolveBaseUrl(): string | null {
-  const raw = process.env.WORKER_URL ?? process.env.NEXT_PUBLIC_WORKER_URL ?? '';
+  const raw = process.env.NEXT_PUBLIC_WORKER_URL ?? '';
   const base = raw.trim().replace(/\/+$/, '');
   return base || null;
 }

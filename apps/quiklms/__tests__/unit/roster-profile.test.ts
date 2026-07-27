@@ -20,8 +20,8 @@ const h = vi.hoisted(() => ({
   getNextId: vi.fn(),
 }));
 
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     lmsUser: { update: h.update },
     lmsUserAvailabilitySlot: { createMany: h.createManySlots },
   },

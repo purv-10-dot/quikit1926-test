@@ -13,8 +13,10 @@ import { createHash, randomBytes } from 'crypto';
 import bcrypt from 'bcryptjs';
 import { SUBSCRIPTION_STATUS, TENANT_PLANS } from '@quikit/shared';
 import { generateTempPassword } from '@quikit/shared/temp-password';
+import type { LmsUserRole } from '@prisma/client';
 import { orgDb, ORG_DB_ENABLED } from '@/lib/org-db';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
+import { seedLmsAppRoles, ensureUserOnLmsRole } from '@/lib/api/seed-lms-app-roles';
 import { registerUser, type RegisterUserInput } from '@/lib/services/auth-service';
 import { BadRequest } from '@/lib/http';
 import { sendEmail } from '@/lib/email';
@@ -23,7 +25,7 @@ import { invitationEmail } from '@/lib/email-templates';
 const QUIKLMS_SLUG = 'quiklms';
 
 /** The tenant login entry point — SSO handoff bounces through here. */
-const LOGIN_URL = `${(process.env.BASE_URL || process.env.FRONTEND_URL || 'http://localhost:3020').replace(/\/$/, '')}/login`;
+const LOGIN_URL = `${(process.env.NEXTAUTH_URL || 'http://localhost:3014').replace(/\/$/, '')}/login`;
 
 /**
  * Invitation lifetime. Mirrors INVITATION_TTL_MS in
@@ -41,7 +43,7 @@ const INVITATION_TTL_DAYS = 7;
  * Pointing invitees at the LMS login form instead is what bypassed all of it.
  */
 function acceptUrlFor(token: string): string | null {
-  const base = (process.env.NEXT_PUBLIC_AUTH_URL ?? process.env.AUTH_URL ?? '').replace(/\/+$/, '');
+  const base = (process.env.NEXT_PUBLIC_AUTH_URL ?? '').replace(/\/+$/, '');
   if (!base) return null; // No central auth host configured — fall back to the login link.
   return `${base}/invitations/accept?token=${encodeURIComponent(token)}`;
 }
@@ -71,7 +73,7 @@ async function sendInvitation(params: {
     // inside the outer try/catch below, which swallows everything: any failure
     // resolving the tenant row aborted the whole function and the invitee got
     // NO EMAIL, with only a log line to show for it. The `.catch()` chained to
-    // the tenant lookup did not help either — when `prisma.lmsTenant` is
+    // the tenant lookup did not help either — when `db.lmsTenant` is
     // undefined, reading `.findUnique` throws SYNCHRONOUSLY, before there is a
     // promise to attach a catch to.
     const org = await orgDb.org
@@ -83,7 +85,7 @@ async function sendInvitation(params: {
     // "Learners". Missing row, missing model or a DB blip → corporate wording.
     let tenant: { tenantType: string } | null = null;
     try {
-      tenant = await prisma.lmsTenant.findUnique({
+      tenant = await db.lmsTenant.findUnique({
         where: { id: params.orgId },
         select: { tenantType: true },
       });
@@ -160,7 +162,7 @@ export async function createCentralIdentity(
 ): Promise<CreateCentralIdentityResult> {
   if (!ORG_DB_ENABLED) {
     throw BadRequest(
-      'Identity provisioning is not configured on this server (ORG_DATABASE_URL is unset).',
+      'Identity provisioning is not available on this server.',
     );
   }
 
@@ -433,7 +435,7 @@ export interface ProvisionOrgInput {
 
 export async function provisionOrgForTenant(input: ProvisionOrgInput): Promise<string> {
   if (!ORG_DB_ENABLED) {
-    throw BadRequest('Identity provisioning is not configured on this server (ORG_DATABASE_URL is unset).');
+    throw BadRequest('Identity provisioning is not available on this server.');
   }
 
   // Resolved BEFORE the transaction, and a missing row is now a hard error
@@ -503,6 +505,17 @@ export async function provisionOrgForTenant(input: ProvisionOrgInput): Promise<s
     return created;
   });
 
+  // Seed this org's QuikLMS AppRole catalogue so the Admin Portal role dropdown
+  // is populated and assignAppRoles can resolve roles by name — matching how the
+  // launcher's grant flow provisions the other apps. Best-effort: a seeding
+  // failure must not fail tenant onboarding (the lazy seed / provision-roles
+  // endpoint remain the safety net).
+  try {
+    await seedLmsAppRoles(org.id);
+  } catch {
+    /* advisory — see note above */
+  }
+
   return org.id;
 }
 
@@ -538,7 +551,7 @@ export async function provisionLmsUser(
   });
 
   // LMS row with the shared central id (idempotent — skip if already linked).
-  const existingLms = await prisma.lmsUser.findUnique({
+  const existingLms = await db.lmsUser.findUnique({
     where: { id: identity.userId },
     select: { id: true },
   });
@@ -555,5 +568,16 @@ export async function provisionLmsUser(
     });
     lms = res.data;
   }
+
+  // Mirror the provisioned role into the platform RBAC tables so the user's
+  // QuikLMS role is visible in the Admin Portal and resolves through the same
+  // app_quiklms.UserAppRole path the other apps use. Best-effort (self-seeds the
+  // role catalogue); a failure never blocks user creation.
+  try {
+    await ensureUserOnLmsRole(identity.userId, input.orgId, input.lmsRole as LmsUserRole);
+  } catch {
+    /* advisory — the assignment is re-derivable from LmsUser.role */
+  }
+
   return { ...identity, lms };
 }

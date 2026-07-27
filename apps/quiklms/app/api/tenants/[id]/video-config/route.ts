@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { route, json } from '@/lib/http';
 import { parseBody } from '@/lib/validation';
 import { requireAuth, requireRoles, assertTenantMatch } from '@/lib/auth/context';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { findTenant } from '@/lib/services/tenants-service';
 
 /**
@@ -82,7 +82,7 @@ export const PATCH = route(async (req, { params }) => {
   const existing = (existingTenant.videoConfig ?? {}) as Record<string, unknown>;
   const updated = { ...existing, ...(dto as Record<string, unknown>) };
 
-  const tenant = await prisma.lmsTenant.update({
+  const tenant = await db.lmsTenant.update({
     where: { id: params!.id },
     data: { videoConfig: updated as object },
   });

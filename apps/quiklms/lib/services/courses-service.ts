@@ -10,7 +10,7 @@
  * returned every stored S3 URL unsigned, which 403s against a private bucket.)
  */
 import type { Prisma, LmsLessonType as LessonType } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { NotFound } from '@/lib/http';
 import { presignFromUrlOrKey, isManagedStorageUrl } from '@/lib/s3';
 
@@ -98,7 +98,7 @@ const MODULES_INCLUDE = {
 
 export async function createCourse(orgId: string, authorId: string, dto: Record<string, unknown>) {
   const { modules: _m, selectedTenants: _s, ...rest } = dto as Record<string, unknown>;
-  return prisma.lmsCourse.create({
+  return db.lmsCourse.create({
     data: { ...(rest as Prisma.LmsCourseCreateInput), orgId, authorId },
   });
 }
@@ -108,7 +108,7 @@ export async function createCourse(orgId: string, authorId: string, dto: Record<
  * distributed to it, plus published MasterCourse docs assigned to it.
  */
 export async function findAllForTenant(orgId: string) {
-  const legacyCourses = await prisma.lmsCourse.findMany({
+  const legacyCourses = await db.lmsCourse.findMany({
     where: {
       OR: [
         { orgId },
@@ -119,7 +119,7 @@ export async function findAllForTenant(orgId: string) {
     orderBy: { createdAt: 'desc' },
   });
 
-  const masterCourses = await prisma.lmsMasterCourse.findMany({
+  const masterCourses = await db.lmsMasterCourse.findMany({
     where: {
       status: 'Published',
       selectedTenants: { some: { orgId } },
@@ -150,7 +150,7 @@ export async function findAllForTenant(orgId: string) {
 }
 
 export async function findAllMaster() {
-  return prisma.lmsCourse.findMany({
+  return db.lmsCourse.findMany({
     where: { isMaster: true },
     include: MODULES_INCLUDE,
     orderBy: { createdAt: 'desc' },
@@ -158,7 +158,7 @@ export async function findAllMaster() {
 }
 
 export async function findOneMaster(id: string) {
-  const course = await prisma.lmsCourse.findFirst({
+  const course = await db.lmsCourse.findFirst({
     where: { id, isMaster: true },
     include: MODULES_INCLUDE,
   });
@@ -168,13 +168,13 @@ export async function findOneMaster(id: string) {
 
 export async function findOne(id: string, orgId: string) {
   // First try a published MasterCourse assigned to this tenant.
-  const masterCourse = await prisma.lmsMasterCourse.findFirst({
+  const masterCourse = await db.lmsMasterCourse.findFirst({
     where: { id, status: 'Published', parentCourseId: null, selectedTenants: { some: { orgId } } },
   });
   if (masterCourse) return transformMasterCourseForPlayer(masterCourse);
 
   // Fall back to legacy Course collection (tenant-owned or master assigned).
-  const course = await prisma.lmsCourse.findFirst({
+  const course = await db.lmsCourse.findFirst({
     where: {
       id,
       OR: [{ orgId }, { isMaster: true, selectedTenants: { some: { orgId } } }],
@@ -186,10 +186,10 @@ export async function findOne(id: string, orgId: string) {
 }
 
 export async function addModule(orgId: string, dto: { courseId: string; title: string; description?: string; orderIndex?: number; assessmentId?: string }) {
-  const course = await prisma.lmsCourse.findFirst({ where: { id: dto.courseId, orgId } });
+  const course = await db.lmsCourse.findFirst({ where: { id: dto.courseId, orgId } });
   if (!course) throw NotFound('Course not found');
-  const count = await prisma.lmsModule.count({ where: { courseId: dto.courseId } });
-  return prisma.lmsModule.create({
+  const count = await db.lmsModule.count({ where: { courseId: dto.courseId } });
+  return db.lmsModule.create({
     data: {
       orgId,
       courseId: dto.courseId,
@@ -203,10 +203,10 @@ export async function addModule(orgId: string, dto: { courseId: string; title: s
 
 export async function addLesson(orgId: string, dto: Record<string, unknown>) {
   const moduleId = String(dto.moduleId);
-  const module = await prisma.lmsModule.findFirst({ where: { id: moduleId, orgId }, include: { lessons: true } });
+  const module = await db.lmsModule.findFirst({ where: { id: moduleId, orgId }, include: { lessons: true } });
   if (!module) throw NotFound('Module not found');
   const order = typeof dto.orderIndex === 'number' ? (dto.orderIndex as number) : module.lessons.length;
-  await prisma.lmsLesson.create({
+  await db.lmsLesson.create({
     data: {
       moduleId,
       title: String(dto.title ?? ''),
@@ -220,33 +220,33 @@ export async function addLesson(orgId: string, dto: Record<string, unknown>) {
       quiz: (dto.quiz as Prisma.InputJsonValue) ?? undefined,
     },
   });
-  return prisma.lmsModule.findUnique({ where: { id: moduleId }, include: { lessons: { orderBy: { orderIndex: 'asc' } } } });
+  return db.lmsModule.findUnique({ where: { id: moduleId }, include: { lessons: { orderBy: { orderIndex: 'asc' } } } });
 }
 
 export async function updateModuleOrder(orgId: string, courseId: string, moduleIds: string[]) {
-  const course = await prisma.lmsCourse.findFirst({ where: { id: courseId, orgId } });
+  const course = await db.lmsCourse.findFirst({ where: { id: courseId, orgId } });
   if (!course) throw NotFound('Course not found');
-  await prisma.$transaction(
+  await db.$transaction(
     moduleIds.map((id, index) =>
-      prisma.lmsModule.updateMany({ where: { id, courseId, orgId }, data: { orderIndex: index } }),
+      db.lmsModule.updateMany({ where: { id, courseId, orgId }, data: { orderIndex: index } }),
     ),
   );
-  return prisma.lmsCourse.findUnique({ where: { id: courseId }, include: MODULES_INCLUDE });
+  return db.lmsCourse.findUnique({ where: { id: courseId }, include: MODULES_INCLUDE });
 }
 
 export async function updateLessonOrder(orgId: string, moduleId: string, lessonIndices: number[]) {
-  const module = await prisma.lmsModule.findFirst({
+  const module = await db.lmsModule.findFirst({
     where: { id: moduleId, orgId },
     include: { lessons: { orderBy: { orderIndex: 'asc' } } },
   });
   if (!module) throw NotFound('Module not found');
   const reordered = lessonIndices.map((index) => module.lessons[index]).filter(Boolean);
-  await prisma.$transaction(
+  await db.$transaction(
     reordered.map((lesson, index) =>
-      prisma.lmsLesson.update({ where: { id: lesson.id }, data: { orderIndex: index } }),
+      db.lmsLesson.update({ where: { id: lesson.id }, data: { orderIndex: index } }),
     ),
   );
-  return prisma.lmsModule.findUnique({ where: { id: moduleId }, include: { lessons: { orderBy: { orderIndex: 'asc' } } } });
+  return db.lmsModule.findUnique({ where: { id: moduleId }, include: { lessons: { orderBy: { orderIndex: 'asc' } } } });
 }
 
 /**
@@ -258,7 +258,7 @@ export async function createMasterCourse(authorId: string, courseData: Record<st
   const selectedTenants = (courseData.selectedTenants as string[]) || [];
   const incomingModules = (courseData.modules as Array<Record<string, unknown>>) || [];
 
-  const course = await prisma.lmsCourse.create({
+  const course = await db.lmsCourse.create({
     data: {
       title: String(courseData.title ?? ''),
       description: courseData.description ? String(courseData.description) : '',
@@ -297,11 +297,11 @@ export async function createMasterCourse(authorId: string, courseData: Record<st
 }
 
 export async function updateMasterCourse(id: string, courseData: Record<string, unknown>) {
-  const course = await prisma.lmsCourse.findFirst({ where: { id, isMaster: true } });
+  const course = await db.lmsCourse.findFirst({ where: { id, isMaster: true } });
   if (!course) throw NotFound('Master course not found');
 
   // Replace modules wholesale (legacy deleteMany + recreate).
-  await prisma.lmsModule.deleteMany({ where: { courseId: id } });
+  await db.lmsModule.deleteMany({ where: { courseId: id } });
 
   const incomingModules = (courseData.modules as Array<Record<string, unknown>>) || [];
   const data: Prisma.LmsCourseUpdateInput = {};
@@ -311,11 +311,11 @@ export async function updateMasterCourse(id: string, courseData: Record<string, 
 
   if (courseData.selectedTenants !== undefined) {
     const tenants = (courseData.selectedTenants as string[]) || [];
-    await prisma.lmsCourseSelectedTenant.deleteMany({ where: { courseId: id } });
+    await db.lmsCourseSelectedTenant.deleteMany({ where: { courseId: id } });
     data.selectedTenants = tenants.length ? { create: tenants.map((orgId) => ({ orgId })) } : undefined;
   }
 
-  await prisma.lmsCourse.update({
+  await db.lmsCourse.update({
     where: { id },
     data: {
       ...data,
@@ -342,14 +342,14 @@ export async function updateMasterCourse(id: string, courseData: Record<string, 
     },
   });
 
-  return prisma.lmsCourse.findUnique({ where: { id }, include: MODULES_INCLUDE });
+  return db.lmsCourse.findUnique({ where: { id }, include: MODULES_INCLUDE });
 }
 
 export async function deleteMasterCourse(id: string) {
-  const course = await prisma.lmsCourse.findFirst({ where: { id, isMaster: true } });
+  const course = await db.lmsCourse.findFirst({ where: { id, isMaster: true } });
   if (!course) throw NotFound('Master course not found');
-  await prisma.lmsModule.deleteMany({ where: { courseId: id } });
-  await prisma.lmsCourse.delete({ where: { id } });
+  await db.lmsModule.deleteMany({ where: { courseId: id } });
+  await db.lmsCourse.delete({ where: { id } });
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────

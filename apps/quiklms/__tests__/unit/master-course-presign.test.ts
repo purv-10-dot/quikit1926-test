@@ -24,7 +24,7 @@ vi.mock('@/lib/s3', () => ({
   s3: { send: vi.fn() },
   S3_BUCKET: 'b',
 }));
-vi.mock('@/lib/prisma', () => ({ prisma: {} }));
+vi.mock('@/lib/db', () => ({ db: {} }));
 // master-course-service imports the auth context for `userHasRole` (its actor
 // predicates). That module pulls in NextAuth + a real PrismaClient at import
 // time, which a pure unit test must not construct.

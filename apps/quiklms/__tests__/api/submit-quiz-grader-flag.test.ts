@@ -27,7 +27,7 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@/lib/env', () => ({ env: { DATABASE_URL: 'x' }, optionalEnv: () => '' }));
 vi.mock('@/lib/auth/context', () => ({ requireAuth: h.requireAuth }));
-vi.mock('@/lib/prisma', () => ({ prisma: {} }));
+vi.mock('@/lib/db', () => ({ db: {} }));
 vi.mock('@/lib/services/assessments-service', () => ({ submitQuiz: h.submitQuiz }));
 vi.mock('@/lib/services/progress-service', () => ({ syncProgress: h.syncProgress }));
 vi.mock('@/lib/services/certificates-service', () => ({

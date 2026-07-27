@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { route, json, NotFound, Forbidden } from '@/lib/http';
 import { parseBody } from '@/lib/validation';
 import { requireAuth, requireRoles } from '@/lib/auth/context';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { findOne, updateTemplate, deleteTemplate } from '@/lib/services/certificates-service';
 
 function isTenantOrSubAdmin(role: string, secondaryRole: string | null) {
@@ -60,7 +60,7 @@ export const PUT = route(async (req, { params }) => {
     let approvalEnabled = true;
     if (orgId) {
       try {
-        const tenant = await prisma.lmsTenant.findUnique({ where: { id: orgId }, select: { featureConfig: true } });
+        const tenant = await db.lmsTenant.findUnique({ where: { id: orgId }, select: { featureConfig: true } });
         approvalEnabled = (tenant?.featureConfig as Record<string, unknown>)?.approvalWorkflowEnabled !== false;
       } catch { /* default */ }
     }

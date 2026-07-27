@@ -20,7 +20,7 @@ import {
   Ban,
 } from "lucide-react";
 import { SlidePanel, Pagination, EmptyState, Select, TableSkeleton, useConfirm } from "@quikit/ui";
-import { HIDDEN_APP_SLUGS, INVITE_METHOD, validateSsoEmail } from "@quikit/shared";
+import { INVITE_METHOD, validateSsoEmail } from "@quikit/shared";
 
 interface PlatformApp {
   id: string;
@@ -138,27 +138,17 @@ export default function OrgsPage() {
   // FR-SA-002 — fetch the App registry once on mount so the multi-select
   // can render. We only show active apps because that's what the API will
   // accept on org create (super_admin schema filters on status="active").
-  //
-  // HIDDEN apps are also excluded. `HIDDEN_APP_SLUGS` (QuikVC / QuikSocial) are
-  // suppressed everywhere the user could reach them — the launcher API omits
-  // them and `/apps` filters them again defensively. Offering them HERE meant a
-  // super admin could tick three apps, the grants would be written, and the
-  // invitee would then find only two in their launcher with no explanation.
-  // Don't offer what we will never show.
   useEffect(() => {
     fetch("/api/super/apps?status=active")
       .then((r) => r.json())
       .then((j) => {
         if (j.success && Array.isArray(j.data)) {
-          const hidden = new Set<string>(HIDDEN_APP_SLUGS);
           setPlatformApps(
-            j.data
-              .filter((a: { slug: string }) => !hidden.has(a.slug))
-              .map((a: { id: string; name: string; slug: string }) => ({
-                id: a.id,
-                name: a.name,
-                slug: a.slug,
-              }))
+            j.data.map((a: { id: string; name: string; slug: string }) => ({
+              id: a.id,
+              name: a.name,
+              slug: a.slug,
+            }))
           );
         }
       })

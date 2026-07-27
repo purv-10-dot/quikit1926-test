@@ -1,6 +1,6 @@
 import { Forbidden } from '@/lib/http';
 import { userHasRole, type AuthUser } from '@/lib/auth/context';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 
 /**
  * Shared relationship check for any endpoint that takes a `studentId` and
@@ -42,7 +42,7 @@ export async function assertCanViewStudent(
   if (isAdmin) return;
 
   if (userHasRole(actor, 'PARENT')) {
-    const link = await prisma.lmsUserParent.findUnique({
+    const link = await db.lmsUserParent.findUnique({
       where: { parentId_childId: { parentId: actor.id, childId: studentId } },
       select: { id: true },
     });
@@ -52,11 +52,11 @@ export async function assertCanViewStudent(
   if (userHasRole(actor, 'TEACHER')) {
     // Shares a batch this teacher runs, or reports to them directly.
     const [sharedBatch, managed] = await Promise.all([
-      prisma.lmsBatchStudent.findFirst({
+      db.lmsBatchStudent.findFirst({
         where: { studentId, batch: { orgId: actor.orgId ?? undefined, teacherId: actor.id } },
         select: { id: true },
       }),
-      prisma.lmsUser.findFirst({
+      db.lmsUser.findFirst({
         where: { id: studentId, orgId: actor.orgId ?? undefined, managerId: actor.id },
         select: { id: true },
       }),
@@ -65,7 +65,7 @@ export async function assertCanViewStudent(
   }
 
   if (userHasRole(actor, 'MANAGER')) {
-    const managed = await prisma.lmsUser.findFirst({
+    const managed = await db.lmsUser.findFirst({
       where: { id: studentId, orgId: actor.orgId ?? undefined, managerId: actor.id },
       select: { id: true },
     });
@@ -94,7 +94,7 @@ export async function assertCanViewBatch(
   if (isAdmin) return;
 
   if (userHasRole(actor, 'TEACHER')) {
-    const own = await prisma.lmsBatch.findFirst({
+    const own = await db.lmsBatch.findFirst({
       where: { id: batchId, orgId: actor.orgId ?? undefined, teacherId: actor.id },
       select: { id: true },
     });

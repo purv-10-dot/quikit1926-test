@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({ userFindUnique: vi.fn(), tenantFindUnique: vi.fn() }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     lmsUser: { findUnique: h.userFindUnique },
     lmsTenant: { findUnique: h.tenantFindUnique },
   },

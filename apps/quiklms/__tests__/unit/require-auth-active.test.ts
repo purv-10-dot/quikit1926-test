@@ -9,8 +9,8 @@ const h = vi.hoisted(() => ({
 
 vi.mock('next-auth', () => ({ getServerSession: h.getServerSession }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: { lmsUser: { findUnique: h.userFindUnique } },
+vi.mock('@/lib/db', () => ({
+  db: { lmsUser: { findUnique: h.userFindUnique } },
 }));
 // The central entitlement gate is stubbed rather than exercised: the real one
 // pulls in `@quikit/database` (a real PrismaClient at module load, which the

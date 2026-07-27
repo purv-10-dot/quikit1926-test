@@ -1,7 +1,7 @@
 import { route, json, Forbidden } from '@/lib/http';
 import { requireAuth, requireRoles } from '@/lib/auth/context';
 import { getTransactions } from '@/lib/services/credits-service';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 
 // GET /api/credits/my-transactions — PARENT | LEARNER
 export const GET = route(async (req) => {
@@ -23,7 +23,7 @@ export const GET = route(async (req) => {
    */
   let studentId = actor.id;
   if (actor.role === 'PARENT' && studentIdParam && studentIdParam !== actor.id) {
-    const link = await prisma.lmsUserParent.findUnique({
+    const link = await db.lmsUserParent.findUnique({
       where: { parentId_childId: { parentId: actor.id, childId: studentIdParam } },
       select: { id: true },
     });

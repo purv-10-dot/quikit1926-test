@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { route, json } from '@/lib/http';
 import { parseBody } from '@/lib/validation';
 import { requireAuth, requireRoles, userHasRole } from '@/lib/auth/context';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { createTemplate, findAll, removeDuplicateIssuedCertificates } from '@/lib/services/certificates-service';
 
 function isTenantOrSubAdmin(role: string, secondaryRole: string | null) {
@@ -14,7 +14,7 @@ function isTenantOrSubAdmin(role: string, secondaryRole: string | null) {
  *
  * `LmsCertificate.name` and `LmsCertificate.backgroundImageUrl` are the two
  * non-nullable columns without a default, and `createTemplate` forwards the
- * body through an allow-list straight into `prisma.lmsCertificate.create` — so
+ * body through an allow-list straight into `db.lmsCertificate.create` — so
  * `POST {}` failed inside Prisma and was reported as a **500**. The field list
  * mirrors `TEMPLATE_WRITABLE` in `certificates-service.ts` plus
  * `selectedTenants`, which the service consumes separately.
@@ -63,7 +63,7 @@ export const POST = route(async (req) => {
   let approvalEnabled = true;
   if (isTenantOrSubAdmin(user.role, user.secondaryRole) && orgId) {
     try {
-      const tenant = await prisma.lmsTenant.findUnique({ where: { id: orgId }, select: { featureConfig: true } });
+      const tenant = await db.lmsTenant.findUnique({ where: { id: orgId }, select: { featureConfig: true } });
       approvalEnabled = (tenant?.featureConfig as Record<string, unknown>)?.approvalWorkflowEnabled !== false;
     } catch { /* default */ }
   }

@@ -41,8 +41,8 @@ export const DEFAULT_LANDING = '/learner/dashboard';
 export async function resolveTenantType(orgId: string | null | undefined): Promise<TenantKind> {
   if (!orgId) return null;
   try {
-    const { prisma } = await import('@/lib/prisma');
-    const t = await prisma.lmsTenant.findUnique({
+    const { db } = await import('@/lib/db');
+    const t = await db.lmsTenant.findUnique({
       where: { id: orgId },
       select: { tenantType: true },
     });

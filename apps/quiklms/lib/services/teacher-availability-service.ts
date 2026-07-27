@@ -3,7 +3,7 @@
  * (Mongoose → Prisma). User.availableSlots is the userAvailabilitySlot child
  * table here. Tenant isolation via explicit orgId args + teacher tenant check.
  */
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { NotFound } from '@/lib/http';
 
 export interface FreeWindow { dayOfWeek: number; startTime: string; endTime: string; }
@@ -44,7 +44,7 @@ export async function updateAvailableSlots(
   slots: { dayOfWeek: number; startTime: string; endTime: string }[],
   maxSlotsPerWeek?: number,
 ) {
-  const teacher = await prisma.lmsUser.findFirst({ where: { id: teacherId, orgId, role: 'TEACHER' } });
+  const teacher = await db.lmsUser.findFirst({ where: { id: teacherId, orgId, role: 'TEACHER' } });
   if (!teacher) throw NotFound('Teacher not found');
 
   // ATOMIC. The legacy replaced the embedded array in one `teacher.save()`
@@ -54,7 +54,7 @@ export async function updateAvailableSlots(
   // entire availability with no replacement (next read: `availabilityConfigured:
   // false`, `availableSlots: []`), and a concurrent read landing mid-operation
   // saw an empty schedule. One transaction restores all-or-nothing.
-  await prisma.$transaction(async (tx) => {
+  await db.$transaction(async (tx) => {
     await tx.lmsUserAvailabilitySlot.deleteMany({ where: { userId: teacherId } });
     if (slots?.length) {
       await tx.lmsUserAvailabilitySlot.createMany({
@@ -66,11 +66,11 @@ export async function updateAvailableSlots(
     }
   });
 
-  return prisma.lmsUser.findUnique({ where: { id: teacherId }, include: { availableSlots: true } });
+  return db.lmsUser.findUnique({ where: { id: teacherId }, include: { availableSlots: true } });
 }
 
 export async function getTeacherAvailability(orgId: string, teacherId: string) {
-  const teacher = await prisma.lmsUser.findFirst({
+  const teacher = await db.lmsUser.findFirst({
     where: { id: teacherId, orgId, role: 'TEACHER' },
     select: {
       id: true, firstName: true, lastName: true, email: true, maxSlotsPerWeek: true,
@@ -80,7 +80,7 @@ export async function getTeacherAvailability(orgId: string, teacherId: string) {
   });
   if (!teacher) throw NotFound('Teacher not found');
 
-  const batches = await prisma.lmsBatch.findMany({
+  const batches = await db.lmsBatch.findMany({
     where: { orgId, teacherId, status: { in: ['active', 'draft'] } },
     select: { name: true, schedule: { select: { dayOfWeek: true, startTime: true, endTime: true } } },
   });
@@ -146,7 +146,7 @@ export async function getTeacherAvailability(orgId: string, teacherId: string) {
 }
 
 export async function getAllTeacherAvailability(orgId: string) {
-  const teachers = await prisma.lmsUser.findMany({
+  const teachers = await db.lmsUser.findMany({
     where: { orgId, role: 'TEACHER', isActive: true },
     select: { id: true, firstName: true, lastName: true, email: true },
   });

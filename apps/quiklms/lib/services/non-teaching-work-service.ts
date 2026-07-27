@@ -5,7 +5,7 @@
  * lookups (actor refs are scalar Strings), preserving the legacy nested shapes.
  */
 import type { Prisma, LmsTaskStatus as TaskStatus, LmsTaskCategory as TaskCategory } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { NotFound, BadRequest } from '@/lib/http';
 
 const USER_NAME_SELECT = { id: true, firstName: true, lastName: true, email: true } as const;
@@ -13,7 +13,7 @@ const USER_NAME_SELECT = { id: true, firstName: true, lastName: true, email: tru
 async function userMap(ids: (string | null | undefined)[], select: Prisma.LmsUserSelect = USER_NAME_SELECT) {
   const unique = Array.from(new Set(ids.filter(Boolean) as string[]));
   if (!unique.length) return new Map<string, Record<string, unknown>>();
-  const users = await prisma.lmsUser.findMany({ where: { id: { in: unique } }, select });
+  const users = await db.lmsUser.findMany({ where: { id: { in: unique } }, select });
   return new Map(users.map((u) => [u.id, u as Record<string, unknown>]));
 }
 
@@ -26,7 +26,7 @@ export async function createTask(
   assignedBy: string,
   dto: { teacherId: string; title: string; description?: string; category?: string; paymentAmount: number; dueDate?: string },
 ) {
-  const task = await prisma.lmsNonTeachingTask.create({
+  const task = await db.lmsNonTeachingTask.create({
     data: {
       orgId,
       teacherId: dto.teacherId,
@@ -46,7 +46,7 @@ export async function getAdminTasks(orgId: string, filters?: { teacherId?: strin
   if (filters?.teacherId) where.teacherId = filters.teacherId;
   if (filters?.status) where.status = filters.status as TaskStatus;
 
-  const rows = await prisma.lmsNonTeachingTask.findMany({ where, orderBy: { createdAt: 'desc' } });
+  const rows = await db.lmsNonTeachingTask.findMany({ where, orderBy: { createdAt: 'desc' } });
   const teacherMap = await userMap(rows.map((r) => r.teacherId));
   const assignerMap = await userMap(rows.map((r) => r.assignedBy));
   const approverMap = await userMap(rows.map((r) => r.approvedBy));
@@ -61,7 +61,7 @@ export async function getAdminTasks(orgId: string, filters?: { teacherId?: strin
 }
 
 export async function getTeacherTasks(orgId: string, teacherId: string) {
-  const rows = await prisma.lmsNonTeachingTask.findMany({
+  const rows = await db.lmsNonTeachingTask.findMany({
     where: { orgId, teacherId },
     orderBy: { createdAt: 'desc' },
   });
@@ -75,13 +75,13 @@ export async function markComplete(
   teacherId: string,
   dto: { completionNotes?: string; hoursSpent?: number; attachmentUrls?: string[] },
 ) {
-  const task = await prisma.lmsNonTeachingTask.findFirst({ where: { id: taskId, orgId, teacherId } });
+  const task = await db.lmsNonTeachingTask.findFirst({ where: { id: taskId, orgId, teacherId } });
   if (!task) throw NotFound('Task not found');
   if (task.status !== 'assigned' && task.status !== 'in_progress') {
     throw BadRequest('Task cannot be marked complete in current status');
   }
 
-  const updated = await prisma.lmsNonTeachingTask.update({
+  const updated = await db.lmsNonTeachingTask.update({
     where: { id: taskId },
     data: {
       status: 'completed_pending',
@@ -95,12 +95,12 @@ export async function markComplete(
 }
 
 export async function approveTask(orgId: string, taskId: string, adminId: string) {
-  const task = await prisma.lmsNonTeachingTask.findFirst({
+  const task = await db.lmsNonTeachingTask.findFirst({
     where: { id: taskId, orgId, status: 'completed_pending' },
   });
   if (!task) throw NotFound('Task not found or not pending approval');
 
-  const updated = await prisma.lmsNonTeachingTask.update({
+  const updated = await db.lmsNonTeachingTask.update({
     where: { id: taskId },
     data: { status: 'approved', approvedAt: new Date(), approvedBy: adminId },
   });
@@ -108,12 +108,12 @@ export async function approveTask(orgId: string, taskId: string, adminId: string
 }
 
 export async function rejectTask(orgId: string, taskId: string, _adminId: string, reason?: string) {
-  const task = await prisma.lmsNonTeachingTask.findFirst({
+  const task = await db.lmsNonTeachingTask.findFirst({
     where: { id: taskId, orgId, status: 'completed_pending' },
   });
   if (!task) throw NotFound('Task not found or not pending approval');
 
-  const updated = await prisma.lmsNonTeachingTask.update({
+  const updated = await db.lmsNonTeachingTask.update({
     where: { id: taskId },
     data: { status: 'rejected', rejectionReason: reason },
   });

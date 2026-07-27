@@ -33,7 +33,7 @@ vi.mock('@/lib/auth/context', () => ({
   requireRoles: h.requireRoles,
   userHasRole: h.userHasRole,
 }));
-vi.mock('@/lib/prisma', () => ({ prisma: { lmsTenantLog: { create: h.tenantLogCreate } } }));
+vi.mock('@/lib/db', () => ({ db: { lmsTenantLog: { create: h.tenantLogCreate } } }));
 vi.mock('@/lib/s3', () => ({ presignFromUrlOrKey: h.presignFromUrlOrKey }));
 vi.mock('@/lib/env', () => ({ env: { DATABASE_URL: 'x', JWT_SECRET: 'x'.repeat(16), ENCRYPTION_KEY: 'x'.repeat(16) }, optionalEnv: () => '' }));
 // The reminder emails are covered by their own suite; stubbed here so importing

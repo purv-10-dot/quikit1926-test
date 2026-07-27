@@ -17,8 +17,8 @@ vi.mock('@/lib/auth/context', () => ({
   tenantWhere: (_u: unknown, w: object) => ({ ...w, orgId: 'org-1' }),
   assertTenantMatch: vi.fn(),
 }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     lmsExam: { findFirst: h.findFirst, findMany: vi.fn(), update: vi.fn(), create: vi.fn() },
     lmsQuestion: { findMany: vi.fn() },
     lmsExamQuestion: { deleteMany: vi.fn() },

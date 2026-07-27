@@ -8,7 +8,7 @@
  * Run (dev):
  *   cd packages/database
  *   DATABASE_URL=postgresql://postgres:postgres@localhost:5433/quikit_dev \
- *   QUIKLMS_URL=http://localhost:3020 \
+ *   QUIKLMS_URL=http://localhost:3014 \
  *   QUIKLMS_OAUTH_CLIENT_SECRET=quiklms-dev-secret-change-in-prod \
  *   npx tsx prisma/seed-quiklms-oauth.ts
  *
@@ -19,7 +19,7 @@ import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
-const BASE = process.env.QUIKLMS_URL ?? "http://localhost:3020"; // prod-safety-allow: dev fallback
+const BASE = process.env.QUIKLMS_URL ?? "http://localhost:3014"; // prod-safety-allow: dev fallback (quiklms binds 3014)
 const SECRET_PLAIN =
   process.env.QUIKLMS_OAUTH_CLIENT_SECRET ?? "quiklms-dev-secret-change-in-prod"; // prod-safety-allow: dev fallback
 

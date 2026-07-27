@@ -12,8 +12,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.hoisted(() => {
-  // Pinned before import — buildAssignedHtml resolves APP_URL at module load.
-  process.env.FRONTEND_URL = 'https://lms.test';
+  // Pinned before import — buildAssignedHtml resolves APP_URL at module load
+  // from NEXTAUTH_URL (the platform-standard self-origin var).
+  process.env.NEXTAUTH_URL = 'https://lms.test';
 });
 
 const h = vi.hoisted(() => ({
@@ -26,8 +27,8 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@/lib/env', () => ({ env: { DATABASE_URL: 'x' }, optionalEnv: () => '' }));
 vi.mock('@/lib/email', () => ({ sendEmail: h.sendEmail }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     lmsCourseAssignment: { findUnique: h.assignmentFindUnique },
     lmsUser: { findUnique: h.userFindUnique },
     lmsMasterCourse: { findUnique: h.masterFindUnique },

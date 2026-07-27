@@ -11,7 +11,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const h = vi.hoisted(() => ({ auditCreate: vi.fn() }));
 
-vi.mock('@/lib/prisma', () => ({ prisma: { lmsPrivacyAuditLog: { create: h.auditCreate } } }));
+vi.mock('@/lib/db', () => ({ db: { lmsPrivacyAuditLog: { create: h.auditCreate } } }));
 
 import { stripSensitiveFields, applyTeacherPrivacy } from '@/lib/privacy';
 

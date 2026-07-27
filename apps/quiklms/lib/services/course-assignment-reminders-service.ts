@@ -23,10 +23,10 @@
  * gradients, which left white-on-white), and a table-based CTA so the whole
  * button area is clickable.
  */
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { sendEmail } from '@/lib/email';
 
-const APP_URL = process.env.FRONTEND_URL || process.env.APP_URL || 'https://app.quikskill.com';
+const APP_URL = process.env.NEXTAUTH_URL || 'http://localhost:3014';
 
 function escapeHtml(s: string): string {
   return String(s || '')
@@ -176,22 +176,22 @@ function buildAssignedHtml(p: BuildHtmlParams): string {
  */
 export async function sendAssignmentAssignedEmail(assignmentId: string): Promise<boolean> {
   try {
-    const assignment = await prisma.lmsCourseAssignment.findUnique({ where: { id: assignmentId } });
+    const assignment = await db.lmsCourseAssignment.findUnique({ where: { id: assignmentId } });
     if (!assignment) return false;
 
-    const learner = await prisma.lmsUser.findUnique({
+    const learner = await db.lmsUser.findUnique({
       where: { id: assignment.targetId },
       select: { firstName: true, lastName: true, email: true },
     });
     if (!learner?.email) return false;
 
     // MasterCourse first, then the legacy Course — the same order the original used.
-    let course = await prisma.lmsMasterCourse.findUnique({
+    let course = await db.lmsMasterCourse.findUnique({
       where: { id: assignment.courseId },
       select: { title: true, description: true },
     });
     if (!course) {
-      course = await prisma.lmsCourse.findUnique({
+      course = await db.lmsCourse.findUnique({
         where: { id: assignment.courseId },
         select: { title: true, description: true },
       });

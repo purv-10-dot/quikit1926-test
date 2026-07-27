@@ -27,7 +27,7 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@/lib/env', () => ({ env: { DATABASE_URL: 'x' }, optionalEnv: () => '' }));
 vi.mock('@/lib/s3', () => ({ presignFromUrlOrKey: h.presignFromUrlOrKey }));
-vi.mock('@/lib/prisma', () => ({ prisma: { lmsTenantLog: { create: h.tenantLogCreate } } }));
+vi.mock('@/lib/db', () => ({ db: { lmsTenantLog: { create: h.tenantLogCreate } } }));
 vi.mock('@/lib/services/manager-service', () => ({
   getTeamCertificates: h.getTeamCertificates,
   getTeamReportData: h.getTeamReportData,

@@ -32,8 +32,8 @@ vi.mock('@/lib/s3', () => ({
   s3: { send: vi.fn() }, S3_BUCKET: 'b', presignGet: vi.fn(), presignFromUrlOrKey: vi.fn(),
 }));
 vi.mock('@/lib/services/email-templates-service', () => ({ sendTemplateEmail: vi.fn() }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     lmsCertificateIssued: { findUnique: h.issuedFindUnique, findFirst: vi.fn(), update: vi.fn(), create: vi.fn(), findMany: vi.fn() },
     lmsCertificate: { findUnique: h.templateFindUnique, updateMany: h.templateUpdateMany, findMany: vi.fn(), create: vi.fn() },
     lmsCertificateSelectedTenant: { deleteMany: h.selDeleteMany, createMany: h.selCreateMany },

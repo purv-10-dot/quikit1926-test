@@ -3,7 +3,7 @@
  * Mongo aggregations rewritten as Prisma queries + JS reduction.
  * Weighted overall = 70% homework average + 30% attendance.
  */
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { NotFound } from '@/lib/http';
 
 function computeLetterGrade(pct: number): { finalGrade: string; gradePoints: number } {
@@ -15,11 +15,11 @@ function computeLetterGrade(pct: number): { finalGrade: string; gradePoints: num
 }
 
 export async function computeStudentGrades(orgId: string, studentId: string, batchId: string, term?: string) {
-  const batch = await prisma.lmsBatch.findFirst({ where: { id: batchId, orgId } });
+  const batch = await db.lmsBatch.findFirst({ where: { id: batchId, orgId } });
   if (!batch) throw NotFound('Batch not found');
 
   // Homework average: submissions for this student joined to homeworks of this batch.
-  const submissions = await prisma.lmsHomeworkSubmission.findMany({
+  const submissions = await db.lmsHomeworkSubmission.findMany({
     where: { orgId, studentId, homework: { batchId } },
     select: { finalScore: true, score: true },
   });
@@ -43,7 +43,7 @@ export async function computeStudentGrades(orgId: string, studentId: string, bat
     : 0;
 
   // Attendance percentage
-  const attendance = await prisma.lmsAttendance.findMany({ where: { orgId, studentId, batchId }, select: { status: true } });
+  const attendance = await db.lmsAttendance.findMany({ where: { orgId, studentId, batchId }, select: { status: true } });
   const total = attendance.length;
   const present = attendance.filter((a) => a.status === 'present' || a.status === 'late').length;
   const attendancePercent = total > 0 ? Math.round((present / total) * 10000) / 100 : 0;
@@ -69,7 +69,7 @@ export async function computeStudentGrades(orgId: string, studentId: string, bat
    * genuine race retry as an update instead of failing the whole batch.
    */
   try {
-    return await prisma.$transaction(async (tx) => {
+    return await db.$transaction(async (tx) => {
       const existing = await tx.lmsGradeRecord.findFirst({
         where: { orgId, studentId, batchId, term: resolvedTerm },
       });
@@ -78,10 +78,10 @@ export async function computeStudentGrades(orgId: string, studentId: string, bat
     });
   } catch (err) {
     if ((err as { code?: string }).code === 'P2002') {
-      const existing = await prisma.lmsGradeRecord.findFirst({
+      const existing = await db.lmsGradeRecord.findFirst({
         where: { orgId, studentId, batchId, term: resolvedTerm },
       });
-      if (existing) return prisma.lmsGradeRecord.update({ where: { id: existing.id }, data });
+      if (existing) return db.lmsGradeRecord.update({ where: { id: existing.id }, data });
     }
     throw err;
   }
@@ -90,22 +90,22 @@ export async function computeStudentGrades(orgId: string, studentId: string, bat
 async function enrichRecords<T extends { studentId: string; batchId: string }>(records: T[]) {
   const studentIds = [...new Set(records.map((r) => r.studentId))];
   const batchIds = [...new Set(records.map((r) => r.batchId))];
-  const students = await prisma.lmsUser.findMany({ where: { id: { in: studentIds } }, select: { id: true, firstName: true, lastName: true, email: true } });
-  const batches = await prisma.lmsBatch.findMany({ where: { id: { in: batchIds } }, select: { id: true, name: true, subject: true, academicYear: true, term: true } });
+  const students = await db.lmsUser.findMany({ where: { id: { in: studentIds } }, select: { id: true, firstName: true, lastName: true, email: true } });
+  const batches = await db.lmsBatch.findMany({ where: { id: { in: batchIds } }, select: { id: true, name: true, subject: true, academicYear: true, term: true } });
   const sMap = new Map(students.map((s) => [s.id, s]));
   const bMap = new Map(batches.map((b) => [b.id, b]));
   return records.map((r) => ({ ...r, studentId: sMap.get(r.studentId) || r.studentId, batchId: bMap.get(r.batchId) || r.batchId }));
 }
 
 export async function getStudentGrades(orgId: string, studentId: string) {
-  const records = await prisma.lmsGradeRecord.findMany({
+  const records = await db.lmsGradeRecord.findMany({
     where: { orgId, studentId }, orderBy: [{ academicYear: 'desc' }, { subject: 'asc' }],
   });
   return enrichRecords(records);
 }
 
 export async function getTranscript(orgId: string, studentId: string, academicYear?: string) {
-  const records = await prisma.lmsGradeRecord.findMany({
+  const records = await db.lmsGradeRecord.findMany({
     where: { orgId, studentId, ...(academicYear ? { academicYear } : {}) },
     orderBy: [{ academicYear: 'desc' }, { term: 'asc' }, { subject: 'asc' }],
   });
@@ -113,7 +113,7 @@ export async function getTranscript(orgId: string, studentId: string, academicYe
 }
 
 export async function getClassRanking(orgId: string, batchId: string, term?: string) {
-  const records = await prisma.lmsGradeRecord.findMany({
+  const records = await db.lmsGradeRecord.findMany({
     where: { orgId, batchId, ...(term ? { term } : {}) },
     // `nulls: 'last'` is required for parity: Mongo sorts null LAST on a
     // descending sort, Postgres puts NULLS FIRST — so any record written before
@@ -124,9 +124,9 @@ export async function getClassRanking(orgId: string, batchId: string, term?: str
 }
 
 export async function computeBatchGrades(orgId: string, batchId: string, term?: string) {
-  const batch = await prisma.lmsBatch.findFirst({ where: { id: batchId, orgId } });
+  const batch = await db.lmsBatch.findFirst({ where: { id: batchId, orgId } });
   if (!batch) throw NotFound('Batch not found');
-  const students = await prisma.lmsBatchStudent.findMany({ where: { batchId }, select: { studentId: true } });
+  const students = await db.lmsBatchStudent.findMany({ where: { batchId }, select: { studentId: true } });
   const grades = await Promise.all(students.map((s) => computeStudentGrades(orgId, s.studentId, batchId, term)));
   return { batchId, studentsProcessed: grades.length, grades };
 }

@@ -13,8 +13,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({ create: vi.fn(), findFirst: vi.fn() }));
 
-vi.mock('@/lib/prisma', () => ({
-  prisma: { lmsUser: { create: h.create, findFirst: h.findFirst } },
+vi.mock('@/lib/db', () => ({
+  db: { lmsUser: { create: h.create, findFirst: h.findFirst } },
 }));
 
 import { registerUser } from '@/lib/services/auth-service';

@@ -19,7 +19,8 @@ import type { LmsUserRole as UserRole } from '@prisma/client';
 import { authOptions } from '@/lib/auth';
 import { hasCentralAppAccess } from '@/lib/auth/central-access';
 import { mapPlatformRoleToLmsRole } from '@/lib/auth/role-resolution';
-import { prisma } from '@/lib/prisma';
+import { getAssignedLmsRole } from '@/lib/auth/app-role';
+import { db } from '@/lib/db';
 import { Forbidden, Unauthorized } from '@/lib/http';
 import { isFeatureEnabled, type FeatureSet } from '@/lib/features';
 
@@ -62,6 +63,11 @@ export async function getAuthContext(_req?: NextRequest): Promise<AuthUser | nul
   let secondaryRole: UserRole | null = null;
   let isActive = true;
   let tenantType: 'corporate' | 'school' | null = null;
+  // Platform-assigned per-app role (app_quiklms.UserAppRole → AppRole.name),
+  // resolved the same way the other apps authorise. When present it OVERRIDES
+  // the LMS row role below; when absent (the common case for users provisioned
+  // before/without an explicit assignment) role resolution is unchanged.
+  let assignedRole: UserRole | null = null;
   // True when this org has a QuikLMS `Tenant` row — i.e. it's a real
   // school/corporate tenant, not the operator org. Used to keep the coarse
   // role fallback from labeling a tenant admin as the operator (SUPER_ADMIN).
@@ -73,17 +79,20 @@ export async function getAuthContext(_req?: NextRequest): Promise<AuthUser | nul
   // `tenant` degrades to a rejected settle (tenantType stays null) instead of a
   // synchronous throw. Tenant.id === orgId (orgId-native), so the tenant lookup
   // is a PK hit; the operator (SUPER_ADMIN) org has no Tenant row → stays null.
-  const [rowRes, tenantRes] = await Promise.allSettled([
+  const [rowRes, tenantRes, assignedRes] = await Promise.allSettled([
     (async () =>
-      prisma.lmsUser.findUnique({
+      db.lmsUser.findUnique({
         where: { id: u.id },
         select: { role: true, secondaryRole: true, isActive: true },
       }))(),
     (async () =>
-      prisma.lmsTenant.findUnique({
+      db.lmsTenant.findUnique({
         where: { id: u.orgId },
         select: { tenantType: true },
       }))(),
+    // Assigned per-app role — its own settle so an RBAC read failure never
+    // drops the User/Tenant resolution (getAssignedLmsRole also catches).
+    (async () => getAssignedLmsRole(u.id, u.orgId))(),
   ]);
 
   if (rowRes.status === 'fulfilled' && rowRes.value) {
@@ -95,11 +104,14 @@ export async function getAuthContext(_req?: NextRequest): Promise<AuthUser | nul
     tenantType = tenantRes.value.tenantType;
     hasTenantRow = true;
   }
+  if (assignedRes.status === 'fulfilled' && assignedRes.value) {
+    assignedRole = assignedRes.value;
+  }
 
   return {
     id: u.id,
     email: u.email ?? '',
-    role: lmsRole ?? mapPlatformRoleToLmsRole(u.membershipRole, u.isSuperAdmin, hasTenantRow),
+    role: assignedRole ?? lmsRole ?? mapPlatformRoleToLmsRole(u.membershipRole, u.isSuperAdmin, hasTenantRow),
     secondaryRole,
     orgId: u.orgId,
     // Resolved from the tenant row (school/corporate) so server-side role
@@ -183,7 +195,7 @@ export async function requireFeature(
 
   let tenant: { id: string; tenantType: 'corporate' | 'school'; featureConfig: unknown } | null = null;
   try {
-    tenant = await prisma.lmsTenant.findUnique({
+    tenant = await db.lmsTenant.findUnique({
       where: { id: user.orgId },
       select: { id: true, tenantType: true, featureConfig: true },
     });

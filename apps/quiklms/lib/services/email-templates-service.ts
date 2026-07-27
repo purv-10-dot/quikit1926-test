@@ -5,7 +5,7 @@
  * The legacy controller accepts the wire value (e.g. "welcome-kit") directly.
  */
 import type { LmsEmailTemplateType as EmailTemplateType } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { BadRequest } from '@/lib/http';
 import { sendEmail } from '@/lib/email';
 
@@ -29,12 +29,12 @@ function resolveType(type: string): EmailTemplateType {
 }
 
 export async function getTemplate(type: string) {
-  return prisma.lmsEmailTemplate.findUnique({ where: { type: resolveType(type) } });
+  return db.lmsEmailTemplate.findUnique({ where: { type: resolveType(type) } });
 }
 
 export async function saveTemplate(type: string, subject: string, htmlContent: string) {
   const resolved = resolveType(type);
-  return prisma.lmsEmailTemplate.upsert({
+  return db.lmsEmailTemplate.upsert({
     where: { type: resolved },
     create: { type: resolved, subject, htmlContent },
     update: { subject, htmlContent },

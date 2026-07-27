@@ -1,6 +1,6 @@
 import { route, json, BadRequest } from '@/lib/http';
 import { requireAuth } from '@/lib/auth/context';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 
 // GET /api/courses/:id/player-data — structured course data for the course player
 //
@@ -20,7 +20,7 @@ export const GET = route(async (req, { params }) => {
   if (!orgId) throw BadRequest('Tenant ID required');
 
   try {
-    const course = await prisma.lmsCourse.findFirst({
+    const course = await db.lmsCourse.findFirst({
       where: {
         id: courseId,
         OR: [{ orgId }, { isMaster: true, selectedTenants: { some: { orgId } } }],
@@ -47,7 +47,7 @@ export const GET = route(async (req, { params }) => {
     // Fetch learner progress for this course if available
     let lessonProgress: Record<string, unknown> = {};
     try {
-      const progress = await prisma.lmsProgress.findUnique({
+      const progress = await db.lmsProgress.findUnique({
         where: {
           orgId_learnerId_courseId: {
             orgId: actor.orgId ?? '',

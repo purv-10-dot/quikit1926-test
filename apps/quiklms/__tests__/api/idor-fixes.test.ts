@@ -37,8 +37,8 @@ vi.mock('@/lib/auth/context', () => ({
 vi.mock('@/lib/services/credits-service', () => ({ getTransactions: h.getTransactions }));
 vi.mock('@/lib/services/analytics-service', () => ({ getStudentProgress: h.getStudentProgress }));
 vi.mock('@/lib/services/proctoring-flags', () => ({ incrementProctoringFlags: h.incrementFlags }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     lmsUserParent: { findUnique: h.parentFindUnique },
     lmsBatchStudent: { findFirst: h.batchStudentFindFirst },
     lmsUser: { findFirst: h.userFindFirst },

@@ -2,12 +2,12 @@
  * Per-tenant sequence generator — ported from CountersService.
  * Produces SCH-T-0001 / SCH-S-0001 / SCH-P-0001 style ids (teacher/student/parent).
  */
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 
 const PREFIX: Record<string, string> = { teacher: 'SCH-T', student: 'SCH-S', parent: 'SCH-P' };
 
 export async function getNextId(orgId: string, type: 'teacher' | 'student' | 'parent'): Promise<string> {
-  const counter = await prisma.lmsCounter.upsert({
+  const counter = await db.lmsCounter.upsert({
     where: { orgId_type: { orgId, type } },
     create: { orgId, type, seq: 1 },
     update: { seq: { increment: 1 } },

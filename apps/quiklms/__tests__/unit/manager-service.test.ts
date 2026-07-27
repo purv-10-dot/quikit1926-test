@@ -24,8 +24,8 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@/lib/env', () => ({ env: { DATABASE_URL: 'x' }, optionalEnv: () => '' }));
 vi.mock('@/lib/services/notify-service', () => ({ notifyUsers: h.notifyUsers }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     lmsCertificateIssued: { findFirst: h.certFindFirst },
     lmsUser: { findFirst: h.userFindFirst },
     lmsTenantLog: { create: h.tenantLogCreate },

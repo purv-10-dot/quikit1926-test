@@ -27,7 +27,7 @@ vi.mock('@/lib/s3', () => ({
   s3: { send: vi.fn() },
   S3_BUCKET: 'b',
 }));
-vi.mock('@/lib/prisma', () => ({ prisma: {} }));
+vi.mock('@/lib/db', () => ({ db: {} }));
 
 import { enrichCourseWithPresignedUrls, enrichCoursesWithPresignedUrls } from '@/lib/services/courses-service';
 

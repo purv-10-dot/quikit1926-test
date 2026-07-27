@@ -21,7 +21,7 @@ vi.mock('@/lib/services/meetings-service', async () => {
   return { ...actual, handleZoomWebhook: h.handleZoomWebhook };
 });
 
-vi.mock('@/lib/prisma', () => ({ prisma: {} }));
+vi.mock('@/lib/db', () => ({ db: {} }));
 
 import { POST } from '@/app/api/meetings/webhook/zoom/route';
 import { verifyZoomWebhookSignature } from '@/lib/services/meetings-service';

@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { getServerSession } from 'next-auth';
+import { AppAccessDeniedPopup } from '@quikit/ui/app-access-denied-popup';
 import { authOptions } from '@/lib/auth';
 import { resolveLmsRole } from '@/lib/auth/resolve-role';
 import { landingPathFor, resolveTenantType } from '@/lib/auth/landing';
@@ -75,20 +76,19 @@ export default async function LandingPage({
     redirect(landingPathFor(role, tenantType));
   }
 
-  const notice = deniedAppAccess || loggedOut;
+  // The logged-out notice is a fixed bar that shifts the nav/hero down via
+  // `has-notice`. The denied-access case is now a modal overlay
+  // (AppAccessDeniedPopup), so it must NOT reserve the bar's height.
+  const notice = loggedOut;
 
   return (
     // `has-notice` reserves --lp-notice-h so the fixed nav and the hero shift
     // down instead of sitting underneath the notice bar.
     <div className={`lp-root${notice ? ' has-notice' : ''}`}>
-      {deniedAppAccess && (
-        <div role="status" className="lp-notice lp-notice-warn">
-          <span>
-            Your organisation does not currently have access to QuikSkill, or your access has been
-            removed. Contact your administrator if you think this is a mistake.
-          </span>
-        </div>
-      )}
+      {/* Signed in but not entitled to this app: bounced here with
+          ?reason=no_app_access by lib/auth/page-guard. Same shared modal the
+          other QuikIT apps use — it self-gates on the URL marker client-side. */}
+      {deniedAppAccess && <AppAccessDeniedPopup appName="QuikSkill" />}
       {loggedOut && (
         <div role="status" className="lp-notice lp-notice-ok">
           <span>

@@ -4,37 +4,37 @@
  * preserving the exact response objects. Tenant isolation via explicit orgId.
  * `studentIds` membership is the batchStudent child table here.
  */
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { Internal } from '@/lib/http';
 
 // ═══════════════ DASHBOARD ANALYTICS ═══════════════
 export async function getAnalytics(orgId: string) {
   const [totalDemo, totalTrial, totalRegular] = await Promise.all([
-    prisma.lmsBatch.count({ where: { orgId, classType: 'demo' } }),
-    prisma.lmsBatch.count({ where: { orgId, classType: 'trial' } }),
-    prisma.lmsBatch.count({ where: { orgId, OR: [{ classType: 'regular' }, { classType: null }] } }),
+    db.lmsBatch.count({ where: { orgId, classType: 'demo' } }),
+    db.lmsBatch.count({ where: { orgId, classType: 'trial' } }),
+    db.lmsBatch.count({ where: { orgId, OR: [{ classType: 'regular' }, { classType: null }] } }),
   ]);
 
-  const convertedBatches = await prisma.lmsBatch.count({
+  const convertedBatches = await db.lmsBatch.count({
     where: { orgId, classType: { in: ['demo', 'trial'] }, convertedToRegular: true },
   });
   const totalDemoTrial = totalDemo + totalTrial;
   const conversionRate = totalDemoTrial > 0 ? Math.round((convertedBatches / totalDemoTrial) * 100) : 0;
 
-  const demoTrialBatches = await prisma.lmsBatch.findMany({
+  const demoTrialBatches = await db.lmsBatch.findMany({
     where: { orgId, classType: { in: ['demo', 'trial'] } },
     select: { id: true, trialClassCount: true, classType: true, convertedToRegular: true },
   });
   const demoTrialBatchIds = demoTrialBatches.map((b) => b.id);
 
   const [completedDemoClasses, totalDemoClasses] = await Promise.all([
-    prisma.lmsScheduledClass.count({ where: { orgId, batchId: { in: demoTrialBatchIds }, status: 'completed' } }),
-    prisma.lmsScheduledClass.count({ where: { orgId, batchId: { in: demoTrialBatchIds } } }),
+    db.lmsScheduledClass.count({ where: { orgId, batchId: { in: demoTrialBatchIds }, status: 'completed' } }),
+    db.lmsScheduledClass.count({ where: { orgId, batchId: { in: demoTrialBatchIds } } }),
   ]);
 
   const [demoAttendancePresent, demoAttendanceTotal] = await Promise.all([
-    prisma.lmsAttendance.count({ where: { orgId, batchId: { in: demoTrialBatchIds }, status: { in: ['present', 'late'] } } }),
-    prisma.lmsAttendance.count({ where: { orgId, batchId: { in: demoTrialBatchIds } } }),
+    db.lmsAttendance.count({ where: { orgId, batchId: { in: demoTrialBatchIds }, status: { in: ['present', 'late'] } } }),
+    db.lmsAttendance.count({ where: { orgId, batchId: { in: demoTrialBatchIds } } }),
   ]);
   const demoAttendanceRate = demoAttendanceTotal > 0 ? Math.round((demoAttendancePresent / demoAttendanceTotal) * 100) : 0;
 
@@ -44,7 +44,7 @@ export async function getAnalytics(orgId: string) {
   if (convertedTrialBatches.length > 0) {
     let totalTrialClasses = 0;
     for (const batch of convertedTrialBatches) {
-      const classCount = await prisma.lmsScheduledClass.count({ where: { batchId: batch.id, status: 'completed' } });
+      const classCount = await db.lmsScheduledClass.count({ where: { batchId: batch.id, status: 'completed' } });
       totalTrialClasses += classCount;
     }
     avgTrialClassesBeforeConversion = Math.round(totalTrialClasses / convertedTrialBatches.length);
@@ -53,7 +53,7 @@ export async function getAnalytics(orgId: string) {
   // Monthly trend — last 6 months ($group by year/month)
   const sixMonthsAgo = new Date();
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-  const trendBatches = await prisma.lmsBatch.findMany({
+  const trendBatches = await db.lmsBatch.findMany({
     where: { orgId, classType: { in: ['demo', 'trial'] }, createdAt: { gte: sixMonthsAgo } },
     select: { createdAt: true, convertedToRegular: true },
   });
@@ -92,7 +92,7 @@ export async function getAnalytics(orgId: string) {
 
 // ═══════════════ TEACHER CONVERSION PERFORMANCE ═══════════════
 export async function getTeacherConversionPerformance(orgId: string) {
-  const batches = await prisma.lmsBatch.findMany({
+  const batches = await db.lmsBatch.findMany({
     where: { orgId, classType: { in: ['demo', 'trial'] } },
     select: { teacherId: true, convertedToRegular: true },
   });
@@ -108,7 +108,7 @@ export async function getTeacherConversionPerformance(orgId: string) {
     if (b.convertedToRegular) agg.converted += 1;
   }
 
-  const teachers = await prisma.lmsUser.findMany({
+  const teachers = await db.lmsUser.findMany({
     where: { id: { in: Array.from(byTeacher.keys()) } },
     select: { id: true, firstName: true, lastName: true, email: true },
   });
@@ -133,7 +133,7 @@ export async function getTeacherConversionPerformance(orgId: string) {
 
 // ═══════════════ STUDENT JOURNEY ═══════════════
 export async function getStudentJourney(orgId: string, studentId: string) {
-  const batches = await prisma.lmsBatch.findMany({
+  const batches = await db.lmsBatch.findMany({
     where: { orgId, students: { some: { studentId } } },
     orderBy: { createdAt: 'asc' },
     select: {
@@ -142,7 +142,7 @@ export async function getStudentJourney(orgId: string, studentId: string) {
     },
   });
 
-  const teachers = await prisma.lmsUser.findMany({
+  const teachers = await db.lmsUser.findMany({
     where: { id: { in: batches.map((b) => b.teacherId) } },
     select: { id: true, firstName: true, lastName: true },
   });
@@ -175,11 +175,11 @@ export async function getStudentJourney(orgId: string, studentId: string) {
 
 // ═══════════════ CONVERT BATCH TO REGULAR ═══════════════
 export async function convertToRegular(orgId: string, batchId: string) {
-  const result = await prisma.lmsBatch.updateMany({
+  const result = await db.lmsBatch.updateMany({
     where: { id: batchId, orgId, classType: { in: ['demo', 'trial'] } },
     data: { convertedToRegular: true, convertedAt: new Date(), classType: 'regular' },
   });
   if (result.count === 0) throw Internal('Batch not found or not a demo/trial batch');
-  const batch = await prisma.lmsBatch.findUnique({ where: { id: batchId } });
+  const batch = await db.lmsBatch.findUnique({ where: { id: batchId } });
   return { _id: batch!.id, ...batch };
 }

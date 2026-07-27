@@ -27,12 +27,26 @@ const NAV_LINKS = [
  * dashboard's `.dark` class + `theme` key, so toggling the marketing page
  * never changes how the authenticated app renders.
  *
- * "Sign in" points at the LOCAL `/login`, which runs `signIn('quikit')` and
- * sets up the central SSO handoff — it must not link to the auth host
- * directly, or the post-login callback that returns the visitor to QuikSkill
- * is lost and they land on the launcher instead.
+ * "Sign in" points at the LOCAL `/login`, which now bounces to the central
+ * QuikAuth login through the shared post-login bridge (`buildLoginUrl` →
+ * `${AUTH_URL}/api/post-login` → this app's `/auth-handoff`), exactly like
+ * quikscale/quikinfra. It deliberately does NOT use `signIn('quikit')` (the
+ * OAuth authorize flow), whose access-denied path bounces users to the launcher
+ * `/apps` instead of showing this app's access-denied popup. For the bridge's
+ * cross-origin callback to be honoured, this app's origin must be on the auth
+ * host's `AUTH_ALLOWED_RETURN_ORIGINS` allow-list.
+ *
+ * "Sign up" points at the central auth host's self-serve `/register`
+ * (`NEXT_PUBLIC_AUTH_URL`) — the same target the shared SignInComponent uses
+ * for its `signUpUrl`. Registration creates a new workspace and lands on the
+ * launcher, so — unlike Sign in — there is no per-app callback to preserve.
  */
 export default function Nav() {
+  // Central auth self-serve registration. NEXT_PUBLIC_AUTH_URL is the auth
+  // host (the register page lives there, not in this app). Fall back to the
+  // local login if it is unset so the button is never a dead link.
+  const authBase = (process.env.NEXT_PUBLIC_AUTH_URL ?? '').replace(/\/+$/, '');
+  const signUpHref = authBase ? `${authBase}/register` : '/login';
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const progressRef = useRef<HTMLDivElement>(null);
@@ -118,8 +132,8 @@ export default function Nav() {
                 />
               </svg>
             </button>
-            <a href="/verify-certificate" className="btn btn-ghost" style={{ padding: '10px 20px' }}>
-              Verify
+            <a href={signUpHref} className="btn btn-ghost" style={{ padding: '10px 20px' }}>
+              Sign up
             </a>
             <a href="/login" className="btn btn-primary" style={{ padding: '10px 20px' }}>
               Sign in

@@ -12,17 +12,11 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Pin the host BEFORE the service is imported — FRONTEND_URL/BACKEND_URL are
-// module-level consts resolved at import time.
-//
-// This must be explicit, not ambient: Vite defines `BASE_URL` as a built-in and
-// Vitest leaves `process.env.BASE_URL === '/'`. Since FRONTEND_URL falls back to
-// BASE_URL, an un-pinned test silently resolves the host to '/' and every link
-// assertion becomes meaningless.
+// Pin the host BEFORE the service is imported — the FRONTEND_URL/BACKEND_URL
+// module-level consts are resolved at import time from NEXTAUTH_URL, the
+// platform-standard self-origin var (replaced the app-local BASE_URL/FRONTEND_URL).
 vi.hoisted(() => {
-  process.env.FRONTEND_URL = 'https://lms.test';
-  delete process.env.BACKEND_URL;
-  delete process.env.API_BASE_URL;
+  process.env.NEXTAUTH_URL = 'https://lms.test';
   delete process.env.PLATFORM_NAME;
 });
 
@@ -54,8 +48,8 @@ vi.mock('@/lib/s3', () => ({
   presignGet: vi.fn(),
   presignFromUrlOrKey: vi.fn(),
 }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     lmsProgress: { findUnique: h.progressFindUnique },
     lmsUser: { findUnique: h.userFindUnique, findMany: vi.fn() },
     lmsCourse: { findFirst: h.courseFindFirst },

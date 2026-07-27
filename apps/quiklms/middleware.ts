@@ -9,7 +9,7 @@ const APP_SLUG = 'quiklms';
 /**
  * Extract subdomain from host for multi-tenant branding routing.
  * Returns null for localhost / single-segment hosts.
- *   acme.quikskill.com → 'acme'   |   localhost:3020 → null
+ *   acme.quikskill.com → 'acme'   |   localhost:3014 → null
  */
 function extractSubdomain(host: string): string | null {
   const hostname = host.split(':')[0];

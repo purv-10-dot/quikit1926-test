@@ -1,6 +1,6 @@
 import { route, json } from '@/lib/http';
 import { requireAuth } from '@/lib/auth/context';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 
 // GET /api/courses/enrolled — list courses the authenticated learner is enrolled in
 // Enrollment is derived from CourseAssignment targeting this user (no Enrollment model exists).
@@ -10,7 +10,7 @@ export const GET = route(async (req) => {
 
   try {
     // No dedicated Enrollment model; resolve via CourseAssignment (targetType USER)
-    const assignments = await (prisma as any).courseAssignment.findMany({
+    const assignments = await (db as any).courseAssignment.findMany({
       where: {
         targetId: actor.id,
         targetType: 'USER',
@@ -24,7 +24,7 @@ export const GET = route(async (req) => {
     // Fetch courses separately using the scalar courseId scalars
     const courseIds: string[] = assignments.map((a: any) => a.courseId);
     const courses = courseIds.length
-      ? await (prisma as any).course.findMany({
+      ? await (db as any).course.findMany({
           where: { id: { in: courseIds } },
         })
       : [];

@@ -32,8 +32,8 @@ vi.mock('@/lib/services/assessments-service', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/services/assessments-service')>();
   return { ...actual, findOne: h.findOne, update: vi.fn() };
 });
-vi.mock('@/lib/prisma', () => ({
-  prisma: { lmsQuizProctoringSession: { findUnique: h.sessionFindUnique } },
+vi.mock('@/lib/db', () => ({
+  db: { lmsQuizProctoringSession: { findUnique: h.sessionFindUnique } },
 }));
 
 import { GET } from '@/app/api/assessments/[id]/route';

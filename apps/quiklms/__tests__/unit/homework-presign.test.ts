@@ -19,8 +19,8 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@/lib/env', () => ({ env: { DATABASE_URL: 'x' }, optionalEnv: () => '' }));
 vi.mock('@/lib/s3', () => ({ presignFromUrlOrKey: h.presign }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     lmsHomework: { findUnique: h.hwFindUnique, findMany: h.hwFindMany },
     lmsHomeworkSubmission: { findMany: h.subFindMany },
     lmsUser: { findUnique: h.userFindUnique, findMany: h.userFindMany },

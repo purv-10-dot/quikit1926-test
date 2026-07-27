@@ -17,7 +17,7 @@
  * Field names come from a fixed internal map, never from user input, and are
  * additionally allow-listed here before interpolation.
  */
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 
 /**
  * Every counter key either service may increment. Guards the SQL interpolation.
@@ -91,7 +91,7 @@ export async function incrementProctoringFlags(
     ? setTotal
     : `jsonb_set(${setTotal}, '{${field}}', to_jsonb(COALESCE((base->>'${field}')::int, 0) + 1))`;
 
-  await prisma.$executeRawUnsafe(
+  await db.$executeRawUnsafe(
     `UPDATE "app_quiklms"."${table}" AS t
      SET "proctoringFlags" = jsonb_set(${inner}, '{severityLevel}', to_jsonb($2::text))
      FROM (

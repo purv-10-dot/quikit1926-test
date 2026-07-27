@@ -7,7 +7,7 @@
  * teacherLevelHistory child table here; the cap is enforced after each push.
  */
 import type { LmsTeacherStatus as TeacherStatus } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 
 interface LevelConfig {
   beginnerMaxScore: number;
@@ -19,7 +19,7 @@ interface LevelConfig {
 async function getLevelConfig(orgId: string): Promise<LevelConfig> {
   const defaults: LevelConfig = { beginnerMaxScore: 80, intermediateMaxScore: 200, leadMinScore: 200 };
   try {
-    const tenant = await prisma.lmsTenant.findUnique({ where: { id: orgId } });
+    const tenant = await db.lmsTenant.findUnique({ where: { id: orgId } });
     const cfg = (tenant as Record<string, any> | null)?.enhancementConfig?.teacherLevel;
     if (cfg) return { ...defaults, ...cfg };
   } catch {
@@ -29,21 +29,21 @@ async function getLevelConfig(orgId: string): Promise<LevelConfig> {
 }
 
 export async function getTeacherLevel(orgId: string, teacherId: string) {
-  let level = await prisma.lmsTeacherLevel.findFirst({ where: { orgId, teacherId } });
+  let level = await db.lmsTeacherLevel.findFirst({ where: { orgId, teacherId } });
   if (!level) {
-    level = await prisma.lmsTeacherLevel.create({ data: { orgId, teacherId } });
+    level = await db.lmsTeacherLevel.create({ data: { orgId, teacherId } });
   }
   return level;
 }
 
 export async function getAllTeacherLevels(orgId: string) {
-  const rows = await prisma.lmsTeacherLevel.findMany({
+  const rows = await db.lmsTeacherLevel.findMany({
     where: { orgId },
     include: { levelHistory: { orderBy: { calculatedAt: 'asc' } } },
     orderBy: { overallScore: 'desc' },
   });
   const teacherIds = rows.map((r) => r.teacherId);
-  const teachers = await prisma.lmsUser.findMany({
+  const teachers = await db.lmsUser.findMany({
     where: { id: { in: teacherIds } },
     select: { id: true, firstName: true, lastName: true, email: true, classesCompleted: true, classesMissed: true, punctualityScore: true },
   });
@@ -61,13 +61,13 @@ export async function getAllTeacherLevels(orgId: string) {
 }
 
 export async function calculateTeacherLevel(orgId: string, teacherId: string) {
-  const teacher = await prisma.lmsUser.findUnique({ where: { id: teacherId } });
+  const teacher = await db.lmsUser.findUnique({ where: { id: teacherId } });
 
-  const totalClasses = await prisma.lmsScheduledClass.count({
+  const totalClasses = await db.lmsScheduledClass.count({
     where: { orgId, teacherId, status: 'completed' },
   });
 
-  const totalScheduled = await prisma.lmsScheduledClass.count({
+  const totalScheduled = await db.lmsScheduledClass.count({
     where: { orgId, teacherId, status: { in: ['completed', 'in_progress', 'cancelled'] } },
   });
   const attendanceScore = totalScheduled > 0 ? Math.round((totalClasses / totalScheduled) * 100) : 0;
@@ -75,8 +75,8 @@ export async function calculateTeacherLevel(orgId: string, teacherId: string) {
   // Homework grading rate — scoped to this tenant's submissions
   let homeworkCompletionRate = 80;
   try {
-    const teacherHomework = await prisma.lmsHomeworkSubmission.count({ where: { orgId, gradedBy: teacherId } });
-    const totalSubmissions = await prisma.lmsHomeworkSubmission.count({
+    const teacherHomework = await db.lmsHomeworkSubmission.count({ where: { orgId, gradedBy: teacherId } });
+    const totalSubmissions = await db.lmsHomeworkSubmission.count({
       where: { orgId, status: { in: ['submitted', 'graded'] } },
     });
     if (totalSubmissions > 0 && teacherHomework > 0) {
@@ -103,17 +103,17 @@ export async function calculateTeacherLevel(orgId: string, teacherId: string) {
 
   const now = new Date();
 
-  const existing = await prisma.lmsTeacherLevel.findFirst({ where: { orgId, teacherId } });
+  const existing = await db.lmsTeacherLevel.findFirst({ where: { orgId, teacherId } });
   const level = existing
-    ? await prisma.lmsTeacherLevel.update({
+    ? await db.lmsTeacherLevel.update({
         where: { id: existing.id },
         data: { currentLevel, totalClassesTaught: totalClasses, attendanceScore, homeworkCompletionRate, classesMissed, overallScore, lastCalculatedAt: now },
       })
-    : await prisma.lmsTeacherLevel.create({
+    : await db.lmsTeacherLevel.create({
         data: { orgId, teacherId, currentLevel, totalClassesTaught: totalClasses, attendanceScore, homeworkCompletionRate, classesMissed, overallScore, lastCalculatedAt: now },
       });
 
-  await prisma.lmsTeacherLevelHistory.create({
+  await db.lmsTeacherLevelHistory.create({
     data: {
       teacherLevelId: level.id,
       month: now.getMonth() + 1,
@@ -125,17 +125,17 @@ export async function calculateTeacherLevel(orgId: string, teacherId: string) {
   });
 
   // Enforce $slice: -12 (keep most recent 12 entries)
-  const history = await prisma.lmsTeacherLevelHistory.findMany({
+  const history = await db.lmsTeacherLevelHistory.findMany({
     where: { teacherLevelId: level.id },
     orderBy: { calculatedAt: 'asc' },
     select: { id: true },
   });
   if (history.length > 12) {
     const toDelete = history.slice(0, history.length - 12).map((h) => h.id);
-    await prisma.lmsTeacherLevelHistory.deleteMany({ where: { id: { in: toDelete } } });
+    await db.lmsTeacherLevelHistory.deleteMany({ where: { id: { in: toDelete } } });
   }
 
-  const result = await prisma.lmsTeacherLevel.findUnique({
+  const result = await db.lmsTeacherLevel.findUnique({
     where: { id: level.id },
     include: { levelHistory: { orderBy: { calculatedAt: 'asc' } } },
   });
@@ -143,7 +143,7 @@ export async function calculateTeacherLevel(orgId: string, teacherId: string) {
 }
 
 export async function recalculateTenantLevels(orgId: string) {
-  const teachers = await prisma.lmsUser.findMany({
+  const teachers = await db.lmsUser.findMany({
     where: { orgId, role: 'TEACHER', isActive: true },
     select: { id: true },
   });

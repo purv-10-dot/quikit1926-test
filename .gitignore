@@ -33,8 +33,6 @@ deploy-*.log
 apps/quikscale.zip
 apps/quikinfra/uploads/*
 packages/database/.env.tmp
-# Prisma schema backups (timestamped local artifacts, never committed)
-packages/database/prisma/schema.prisma.bak.*
 
 # ────────────────────────────────────────────────────────────────────────────
 # Internal working artifacts — audits, handoffs, mind maps, brainstorm

@@ -198,7 +198,7 @@ export async function GET(req: NextRequest) {
     quikcrm: "http://localhost:3008",
     quikfinance: "http://localhost:3013",
     quikhrms: "http://localhost:3009",
-    quiklms: "http://localhost:3020",
+    quiklms: "http://localhost:3014",
     quikasset: "http://localhost:3012",
     quiksupport: "http://localhost:3010",
   };

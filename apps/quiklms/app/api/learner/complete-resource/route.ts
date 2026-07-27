@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { route, json } from '@/lib/http';
 import { parseBody } from '@/lib/validation';
 import { requireAuth } from '@/lib/auth/context';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { syncProgress } from '@/lib/services/progress-service';
 
 /**
@@ -53,7 +53,7 @@ export const POST = route(async (req) => {
     const lessonProgress = (progress.lessonProgress as Record<string, Record<string, unknown>>) || {};
     if (lessonProgress[body.subModuleId as string]) {
       lessonProgress[body.subModuleId as string].lastPageSeen = body.lastPageSeen;
-      await prisma.lmsProgress.update({ where: { id: progress.id }, data: { lessonProgress: lessonProgress as object } });
+      await db.lmsProgress.update({ where: { id: progress.id }, data: { lessonProgress: lessonProgress as object } });
     }
   }
   return json({ success: true, data: progress, message: 'Resource marked as completed' });

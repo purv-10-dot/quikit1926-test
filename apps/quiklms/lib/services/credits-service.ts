@@ -6,7 +6,7 @@
  * denormalized childrenIds array).
  */
 import type { Prisma, LmsTransactionType as TransactionType } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { BadRequest, NotFound } from '@/lib/http';
 
 export interface CreditDeductionResult {
@@ -27,7 +27,7 @@ interface TenantCreditConfig {
 }
 
 async function getCreditConfig(orgId: string): Promise<TenantCreditConfig> {
-  const tenant = await prisma.lmsTenant.findUnique({ where: { id: orgId }, select: { creditConfig: true } });
+  const tenant = await db.lmsTenant.findUnique({ where: { id: orgId }, select: { creditConfig: true } });
   return ((tenant?.creditConfig as TenantCreditConfig) || {}) as TenantCreditConfig;
 }
 
@@ -49,7 +49,7 @@ export async function allocateCredits(
     expiresAt.setMonth(expiresAt.getMonth() + months);
   }
 
-  const creditPackage = await prisma.lmsCreditPackage.create({
+  const creditPackage = await db.lmsCreditPackage.create({
     data: {
       orgId,
       studentId: dto.studentId,
@@ -66,7 +66,7 @@ export async function allocateCredits(
     },
   });
 
-  await prisma.lmsCreditTransaction.create({
+  await db.lmsCreditTransaction.create({
     data: {
       orgId,
       packageId: creditPackage.id,
@@ -92,7 +92,7 @@ export async function deductCredit(
   customNotes?: string,
   customType?: TransactionType,
 ): Promise<CreditDeductionResult> {
-  const packages = await prisma.lmsCreditPackage.findMany({
+  const packages = await db.lmsCreditPackage.findMany({
     where: { orgId, studentId, status: 'active', remainingCredits: { gt: 0 } },
     // `nulls: 'first'` is REQUIRED for parity, not a style choice. Mongo sorts
     // missing values FIRST, so the legacy drained never-expiring packages before
@@ -112,12 +112,12 @@ export async function deductCredit(
     newStatus = 'exhausted';
   }
 
-  await prisma.lmsCreditPackage.update({
+  await db.lmsCreditPackage.update({
     where: { id: packageToUse.id },
     data: { usedCredits: newUsed, remainingCredits: newRemaining, status: newStatus },
   });
 
-  const transaction = await prisma.lmsCreditTransaction.create({
+  const transaction = await db.lmsCreditTransaction.create({
     data: {
       orgId: packageToUse.orgId,
       packageId: packageToUse.id,
@@ -149,7 +149,7 @@ export async function deductCredit(
 
 // ═══════════════ GET TOTAL REMAINING CREDITS ═══════════════
 export async function getTotalRemainingCredits(studentId: string): Promise<number> {
-  const result = await prisma.lmsCreditPackage.aggregate({
+  const result = await db.lmsCreditPackage.aggregate({
     where: { studentId, status: 'active' },
     _sum: { remainingCredits: true },
   });
@@ -158,7 +158,7 @@ export async function getTotalRemainingCredits(studentId: string): Promise<numbe
 
 // ═══════════════ GET STUDENT BALANCE ═══════════════
 export async function getStudentBalance(orgId: string, studentId: string) {
-  const packages = await prisma.lmsCreditPackage.findMany({
+  const packages = await db.lmsCreditPackage.findMany({
     where: { orgId, studentId, status: 'active' },
     orderBy: { expiresAt: { sort: 'asc', nulls: 'first' } }, // Mongo sorts nulls first — see deductCredit
   });
@@ -195,8 +195,8 @@ export async function getTransactions(orgId: string, studentId: string, page = 1
   const where: Prisma.LmsCreditTransactionWhereInput = { orgId, studentId };
 
   const [rawTransactions, total] = await Promise.all([
-    prisma.lmsCreditTransaction.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take: limit }),
-    prisma.lmsCreditTransaction.count({ where }),
+    db.lmsCreditTransaction.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take: limit }),
+    db.lmsCreditTransaction.count({ where }),
   ]);
 
   // Reproduce populate('relatedClassId','title startTime') + populate('processedBy','firstName lastName')
@@ -204,10 +204,10 @@ export async function getTransactions(orgId: string, studentId: string, page = 1
   const processorIds = rawTransactions.map((t) => t.processedBy).filter(Boolean) as string[];
   const [classes, processors] = await Promise.all([
     classIds.length
-      ? prisma.lmsScheduledClass.findMany({ where: { id: { in: classIds } }, select: { id: true, title: true, startTime: true } })
+      ? db.lmsScheduledClass.findMany({ where: { id: { in: classIds } }, select: { id: true, title: true, startTime: true } })
       : Promise.resolve([]),
     processorIds.length
-      ? prisma.lmsUser.findMany({ where: { id: { in: processorIds } }, select: { id: true, firstName: true, lastName: true } })
+      ? db.lmsUser.findMany({ where: { id: { in: processorIds } }, select: { id: true, firstName: true, lastName: true } })
       : Promise.resolve([]),
   ]);
   const classMap = new Map(classes.map((c) => [c.id, c]));
@@ -228,7 +228,7 @@ export async function refundCredits(
   dto: { packageId: string; amount: number; reason: string; notes?: string },
   processedBy: string,
 ) {
-  const pkg = await prisma.lmsCreditPackage.findFirst({ where: { id: dto.packageId, orgId } });
+  const pkg = await db.lmsCreditPackage.findFirst({ where: { id: dto.packageId, orgId } });
   if (!pkg) throw NotFound('Credit package not found');
 
   /**
@@ -250,12 +250,12 @@ export async function refundCredits(
   const newRemaining = pkg.remainingCredits + dto.amount;
   const newStatus = newRemaining > 0 && pkg.status === 'exhausted' ? 'active' : pkg.status;
 
-  await prisma.lmsCreditPackage.update({
+  await db.lmsCreditPackage.update({
     where: { id: pkg.id },
     data: { usedCredits: newUsed, remainingCredits: newRemaining, status: newStatus },
   });
 
-  await prisma.lmsCreditTransaction.create({
+  await db.lmsCreditTransaction.create({
     data: {
       orgId,
       packageId: pkg.id,
@@ -290,7 +290,7 @@ export async function refundCredits(
  * only ever go to the table.
  */
 export async function getPackageDefinitions(orgId: string) {
-  const rows = await prisma.lmsCreditPackageDefinition.findMany({
+  const rows = await db.lmsCreditPackageDefinition.findMany({
     where: { orgId },
     orderBy: { createdAt: 'asc' },
   });
@@ -304,7 +304,7 @@ export async function createPackageDefinition(
   orgId: string,
   dto: { name: string; credits: number; price: number; validityMonths: number; isActive?: boolean },
 ) {
-  return prisma.lmsCreditPackageDefinition.create({
+  return db.lmsCreditPackageDefinition.create({
     data: {
       orgId,
       name: dto.name,
@@ -323,7 +323,7 @@ export async function updatePackageDefinition(
 ) {
   // Scoped update — a definition from another tenant cannot be touched, and the
   // whole change is one atomic statement.
-  const result = await prisma.lmsCreditPackageDefinition.updateMany({
+  const result = await db.lmsCreditPackageDefinition.updateMany({
     where: { id: packageId, orgId },
     data: {
       ...(dto.name !== undefined ? { name: dto.name } : {}),
@@ -338,7 +338,7 @@ export async function updatePackageDefinition(
 }
 
 export async function deletePackageDefinition(orgId: string, packageId: string) {
-  const result = await prisma.lmsCreditPackageDefinition.deleteMany({ where: { id: packageId, orgId } });
+  const result = await db.lmsCreditPackageDefinition.deleteMany({ where: { id: packageId, orgId } });
   if (result.count === 0) throw NotFound('Credit package definition not found');
   return { success: true };
 }
@@ -350,7 +350,7 @@ export async function getZeroCreditStatus(orgId: string, studentId: string) {
   const policy = config.zeroCreditPolicy || 'warn';
   const gracePeriodClasses = config.gracePeriodClasses ?? 3;
 
-  const exhaustedPackages = await prisma.lmsCreditPackage.findMany({
+  const exhaustedPackages = await db.lmsCreditPackage.findMany({
     where: { orgId, studentId, status: 'exhausted' },
   });
   const graceClassesUsed = exhaustedPackages.reduce(
@@ -363,13 +363,13 @@ export async function getZeroCreditStatus(orgId: string, studentId: string) {
 
 // ═══════════════ GET BALANCE BY PARENT (find children) ═══════════════
 export async function getBalanceByParent(orgId: string, parentId: string) {
-  const parent = await prisma.lmsUser.findFirst({ where: { id: parentId, orgId } });
+  const parent = await db.lmsUser.findFirst({ where: { id: parentId, orgId } });
   if (!parent) throw NotFound('Parent not found');
 
-  const links = await prisma.lmsUserParent.findMany({ where: { parentId }, select: { childId: true } });
+  const links = await db.lmsUserParent.findMany({ where: { parentId }, select: { childId: true } });
   const childrenIds = links.map((l) => l.childId);
   const children = childrenIds.length
-    ? await prisma.lmsUser.findMany({
+    ? await db.lmsUser.findMany({
         where: { id: { in: childrenIds } },
         select: { id: true, firstName: true, lastName: true, grade: true },
       })

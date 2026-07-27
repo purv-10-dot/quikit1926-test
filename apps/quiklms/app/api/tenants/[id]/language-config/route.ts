@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { route, json } from '@/lib/http';
 import { parseBody } from '@/lib/validation';
 import { requireAuth, requireRoles, assertTenantMatch } from '@/lib/auth/context';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { findTenant } from '@/lib/services/tenants-service';
 
 /**
@@ -47,7 +47,7 @@ export const PATCH = route(async (req, { params }) => {
   if (dto.defaultLanguage) data.defaultLanguage = dto.defaultLanguage;
   if (dto.enabledLanguages) data.enabledLanguages = dto.enabledLanguages;
 
-  const tenant = await prisma.lmsTenant.update({ where: { id: params!.id }, data });
+  const tenant = await db.lmsTenant.update({ where: { id: params!.id }, data });
 
   return json({
     success: true,

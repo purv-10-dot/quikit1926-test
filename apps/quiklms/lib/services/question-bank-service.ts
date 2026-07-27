@@ -5,7 +5,7 @@
  * with Prisma + JS de-dup.
  */
 import type { Prisma, LmsBankQuestionType as BankQuestionType, LmsDifficulty as Difficulty } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { NotFound } from '@/lib/http';
 
 export interface QuestionFilters {
@@ -36,7 +36,7 @@ function buildWhere(orgId: string, filters: QuestionFilters): Prisma.LmsQuestion
 
 export async function createQuestion(orgId: string, userId: string, data: Record<string, unknown>) {
   const { id: _id, orgId: _t, createdBy: _c, createdAt: _ca, updatedAt: _ua, ...rest } = data as Record<string, unknown>;
-  return prisma.lmsQuestion.create({
+  return db.lmsQuestion.create({
     data: { ...(rest as Prisma.LmsQuestionCreateInput), orgId, createdBy: userId },
   });
 }
@@ -48,15 +48,15 @@ export async function findAllQuestions(orgId: string, filters: QuestionFilters) 
   const skip = (page - 1) * limit;
 
   const [questions, total] = await Promise.all([
-    prisma.lmsQuestion.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take: limit }),
-    prisma.lmsQuestion.count({ where }),
+    db.lmsQuestion.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take: limit }),
+    db.lmsQuestion.count({ where }),
   ]);
 
   return { questions, total, page, limit, totalPages: Math.ceil(total / limit) };
 }
 
 export async function findQuestion(orgId: string, id: string) {
-  const question = await prisma.lmsQuestion.findFirst({ where: { id, orgId } });
+  const question = await db.lmsQuestion.findFirst({ where: { id, orgId } });
   if (!question) throw NotFound('Question not found');
   return question;
 }
@@ -64,12 +64,12 @@ export async function findQuestion(orgId: string, id: string) {
 export async function updateQuestion(orgId: string, id: string, data: Record<string, unknown>) {
   await findQuestion(orgId, id);
   const { id: _id, orgId: _t, createdBy: _c, createdAt: _ca, updatedAt: _ua, ...rest } = data as Record<string, unknown>;
-  return prisma.lmsQuestion.update({ where: { id }, data: rest as Prisma.LmsQuestionUpdateInput });
+  return db.lmsQuestion.update({ where: { id }, data: rest as Prisma.LmsQuestionUpdateInput });
 }
 
 export async function softDeleteQuestion(orgId: string, id: string) {
   await findQuestion(orgId, id);
-  return prisma.lmsQuestion.update({ where: { id }, data: { isActive: false } });
+  return db.lmsQuestion.update({ where: { id }, data: { isActive: false } });
 }
 
 /**
@@ -87,10 +87,10 @@ export async function softDeleteQuestion(orgId: string, id: string) {
  */
 export async function bulkCreateQuestions(orgId: string, userId: string, questions: Record<string, unknown>[]) {
   if (!questions.length) return [];
-  return prisma.$transaction(
+  return db.$transaction(
     questions.map((q) => {
       const { id: _id, orgId: _t, createdBy: _c, createdAt: _ca, updatedAt: _ua, ...rest } = q;
-      return prisma.lmsQuestion.create({
+      return db.lmsQuestion.create({
         data: { ...(rest as Prisma.LmsQuestionCreateInput), orgId, createdBy: userId },
       });
     }),
@@ -98,7 +98,7 @@ export async function bulkCreateQuestions(orgId: string, userId: string, questio
 }
 
 export async function getQuestionSubjects(orgId: string): Promise<string[]> {
-  const rows = await prisma.lmsQuestion.findMany({
+  const rows = await db.lmsQuestion.findMany({
     where: { orgId, isActive: true },
     select: { subject: true },
     distinct: ['subject'],
@@ -109,12 +109,12 @@ export async function getQuestionSubjects(orgId: string): Promise<string[]> {
 export async function getQuestionTopics(orgId: string, subject?: string): Promise<string[]> {
   const where: Prisma.LmsQuestionWhereInput = { orgId, isActive: true };
   if (subject) where.subject = subject;
-  const rows = await prisma.lmsQuestion.findMany({ where, select: { topic: true }, distinct: ['topic'] });
+  const rows = await db.lmsQuestion.findMany({ where, select: { topic: true }, distinct: ['topic'] });
   return rows.map((r) => r.topic).filter((t): t is string => !!t);
 }
 
 export async function getQuestionTags(orgId: string): Promise<string[]> {
-  const rows = await prisma.lmsQuestion.findMany({
+  const rows = await db.lmsQuestion.findMany({
     where: { orgId, isActive: true },
     select: { tags: true },
   });
@@ -131,5 +131,5 @@ export async function countQuestionsByFilters(
   if (filters.subject) where.subject = filters.subject;
   if (filters.difficulty) where.difficulty = filters.difficulty as Difficulty;
   if (filters.tags?.length) where.tags = { hasSome: filters.tags };
-  return prisma.lmsQuestion.count({ where });
+  return db.lmsQuestion.count({ where });
 }

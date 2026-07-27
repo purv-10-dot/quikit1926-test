@@ -5,7 +5,7 @@
  */
 import { randomUUID } from 'crypto';
 import type { Prisma } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { Conflict, NotFound } from '@/lib/http';
 import { toOrgStatus, toTenantStatus, type TenantStatus } from '@/lib/tenant-status';
 import { provisionOrgForTenant, provisionLmsUser } from './identity-service';
@@ -17,7 +17,7 @@ import { provisionOrgForTenant, provisionLmsUser } from './identity-service';
  * every row storing the identical `${BASE_URL}/login` string, which then went
  * stale the moment the deployment URL changed. Derived once here instead.
  */
-const TENANT_LOGIN_URL = `${(process.env.BASE_URL || process.env.FRONTEND_URL || 'http://localhost:3020').replace(/\/$/, '')}/login`;
+const TENANT_LOGIN_URL = `${(process.env.NEXTAUTH_URL || 'http://localhost:3014').replace(/\/$/, '')}/login`;
 
 const SCHOOL_FEATURES = {
   enableCourses: false, enableScorm: false, enableCompliance: false, enableManagerReports: false, enableSelfEnrollment: false,
@@ -102,7 +102,7 @@ async function uniqueSubdomain(orgName: string): Promise<string> {
   const base = orgName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'tenant';
   let candidate = base;
   let n = 1;
-  while (await prisma.lmsTenant.findUnique({ where: { subdomain: candidate } })) {
+  while (await db.lmsTenant.findUnique({ where: { subdomain: candidate } })) {
     candidate = `${base}-${n++}`;
   }
   return candidate;
@@ -119,7 +119,7 @@ export async function onboardTenant(dto: OnboardInput) {
   const subdomain = await uniqueSubdomain(dto.orgName);
   const tenantKey = `tk_${randomUUID().replace(/-/g, '')}`;
 
-  const existingAdmin = await prisma.lmsUser.findFirst({ where: { email: dto.email.toLowerCase().trim() } });
+  const existingAdmin = await db.lmsUser.findFirst({ where: { email: dto.email.toLowerCase().trim() } });
   if (existingAdmin) throw Conflict('A user with the admin email already exists');
 
   // 1) Provision the platform Org (+ enable QuikLMS). Its id IS the LMS Tenant id
@@ -135,7 +135,7 @@ export async function onboardTenant(dto: OnboardInput) {
       trialDays: null,
     }));
 
-  const tenant = await prisma.lmsTenant.create({
+  const tenant = await db.lmsTenant.create({
     data: {
       id: orgId,
       orgId,
@@ -274,18 +274,18 @@ export interface CreateTenantInput {
 export async function createTenant(dto: CreateTenantInput) {
   const subdomain = generateSubdomain(dto.name);
 
-  const existingTenant = await prisma.lmsTenant.findUnique({ where: { subdomain } });
+  const existingTenant = await db.lmsTenant.findUnique({ where: { subdomain } });
   if (existingTenant) throw Conflict('Subdomain already exists');
 
   // Legacy guarded with `if (createTenantDto.gstNumber)` even though its own DTO
   // made the field required — reproduced.
   if (dto.gstNumber) {
-    const existingGst = await prisma.lmsTenant.findUnique({ where: { gstNumber: dto.gstNumber } });
+    const existingGst = await db.lmsTenant.findUnique({ where: { gstNumber: dto.gstNumber } });
     if (existingGst) throw Conflict('GST Number already registered');
   }
 
   const { tenantType, ...rest } = dto;
-  return prisma.lmsTenant.create({
+  return db.lmsTenant.create({
     data: {
       ...rest,
       ...(tenantType ? { tenantType } : {}),
@@ -331,7 +331,7 @@ export async function createTenantAdminForTenant(
 
   // Idempotency check, matching the legacy seeder: an existing TENANT_ADMIN on
   // this tenant with this email short-circuits with password 'Already exists'.
-  const existingAdmin = await prisma.lmsUser.findFirst({
+  const existingAdmin = await db.lmsUser.findFirst({
     where: { email: contactEmail.toLowerCase().trim(), orgId: tenant.orgId, role: 'TENANT_ADMIN' },
     select: { id: true },
   });
@@ -380,7 +380,7 @@ export async function createTenantAdminsForAllTenants(): Promise<{
   success: boolean;
   results: CreateAdminCredentialsResult[];
 }> {
-  const tenants = await prisma.lmsTenant.findMany({ select: { id: true, orgName: true, name: true } });
+  const tenants = await db.lmsTenant.findMany({ select: { id: true, orgName: true, name: true } });
   const results: CreateAdminCredentialsResult[] = [];
 
   for (const t of tenants) {
@@ -407,10 +407,10 @@ export async function createTenantAdminsForAllTenants(): Promise<{
  * 'Paused'`, so the super-admin screens need no edit.
  */
 export async function findAllTenants() {
-  const tenants = await prisma.lmsTenant.findMany({ orderBy: { createdAt: 'desc' } });
+  const tenants = await db.lmsTenant.findMany({ orderBy: { createdAt: 'desc' } });
   if (tenants.length === 0) return [];
 
-  const orgs = await prisma.org.findMany({
+  const orgs = await db.org.findMany({
     where: { id: { in: tenants.map((t) => t.id) } },
     select: { id: true, status: true },
   });
@@ -420,10 +420,10 @@ export async function findAllTenants() {
 }
 
 export async function findTenant(id: string) {
-  const tenant = await prisma.lmsTenant.findUnique({ where: { id } });
+  const tenant = await db.lmsTenant.findUnique({ where: { id } });
   if (!tenant) throw NotFound('Tenant not found');
 
-  const org = await prisma.org.findUnique({ where: { id }, select: { status: true } });
+  const org = await db.org.findUnique({ where: { id }, select: { status: true } });
   return { ...tenant, status: toTenantStatus(org?.status) };
 }
 
@@ -463,7 +463,7 @@ export async function updateTenant(
   // the platform `Org.status`, so it actually takes effect — the old column was
   // never consulted by any gate, which meant "Paused" suspended nothing.
   if (status !== undefined) {
-    await prisma.org.update({
+    await db.org.update({
       where: { id },
       data: { status: toOrgStatus(status as TenantStatus) },
     });
@@ -471,20 +471,20 @@ export async function updateTenant(
 
   // Always issued, even when `setFields` is empty — the previous behaviour, and
   // what keeps `updatedAt` moving on a status-only PATCH.
-  const updated = await prisma.lmsTenant.update({
+  const updated = await db.lmsTenant.update({
     where: { id },
     data: setFields as Prisma.LmsTenantUpdateInput,
   });
 
   // Re-read the (possibly just-changed) platform status so the response is
   // consistent with what was written.
-  const org = await prisma.org.findUnique({ where: { id }, select: { status: true } });
+  const org = await db.org.findUnique({ where: { id }, select: { status: true } });
   return { ...updated, status: toTenantStatus(org?.status) };
 }
 
 export async function removeTenant(id: string) {
   await findTenant(id);
-  await prisma.lmsTenant.delete({ where: { id } });
+  await db.lmsTenant.delete({ where: { id } });
 }
 
 export async function getStorageUsage(orgId: string): Promise<{ currentUsage: number; storageLimit: number }> {
@@ -492,9 +492,9 @@ export async function getStorageUsage(orgId: string): Promise<{ currentUsage: nu
   const storageLimit = (tenant.storageLimit || 2) * 1024 * 1024 * 1024; // GB → bytes
 
   // Master courses linked to this tenant
-  const links = await prisma.lmsMasterCourseSelectedTenant.findMany({ where: { orgId }, select: { masterCourseId: true } });
+  const links = await db.lmsMasterCourseSelectedTenant.findMany({ where: { orgId }, select: { masterCourseId: true } });
   const ids = links.map((l) => l.masterCourseId);
-  const courses = await prisma.lmsMasterCourse.findMany({
+  const courses = await db.lmsMasterCourse.findMany({
     where: { OR: [{ id: { in: ids } }, { submittedByTenantId: orgId }] },
     select: { modules: true },
   });

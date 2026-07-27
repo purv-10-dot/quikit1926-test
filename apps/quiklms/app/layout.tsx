@@ -97,6 +97,13 @@ const fontVars = [
 export const metadata: Metadata = {
   title: 'QuikSkill LMS',
   description: 'Multi-tenant Learning Management System',
+  // QuikSkill ships its OWN in-app i18n (7 locales — see lib/i18n.tsx), so
+  // browser auto-translation is redundant AND harmful: Google Translate rewrites
+  // the server-rendered text (wrapping nodes in <font> tags) BEFORE React
+  // hydrates, which trips "Hydration failed — initial UI does not match". Opting
+  // the app out of machine translation removes that whole class of mismatch and
+  // leaves language selection to the in-app switcher.
+  other: { google: 'notranslate' },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -107,8 +114,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     // log "Extra attributes from the server: data-theme" on every landing view.
     // This is the documented remedy for that pattern; it hides nothing else.
     // (It also covers `lang`, which Providers syncs to the chosen locale.)
-    <html lang="en" suppressHydrationWarning className={fontVars}>
-      <body>
+    <html lang="en" translate="no" suppressHydrationWarning className={`notranslate ${fontVars}`}>
+      {/* `suppressHydrationWarning` on <body>: browser extensions that inject
+          attributes/nodes into the body before hydration (Grammarly's
+          data-gr-* / data-new-gr-* attrs, password managers, Dark Reader) would
+          otherwise trip a hydration mismatch on an otherwise-correct tree. This
+          suppresses only <body>'s own attributes, one level deep — real
+          mismatches inside the app still surface. */}
+      <body suppressHydrationWarning>
         <Providers>{children}</Providers>
       </body>
     </html>

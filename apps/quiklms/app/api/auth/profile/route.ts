@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { route, json, BadRequest } from '@/lib/http';
 import { presignFromUrlOrKey } from '@/lib/s3';
 import { requireAuth } from '@/lib/auth/context';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 
 /**
  * Current user's profile. Static routes under app/api/auth/* take precedence
@@ -17,7 +17,7 @@ import { prisma } from '@/lib/prisma';
 // GET /api/auth/profile
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
-  const row = await prisma.lmsUser.findUnique({
+  const row = await db.lmsUser.findUnique({
     where: { id: actor.id },
     select: {
       id: true, email: true, firstName: true, lastName: true, role: true,
@@ -71,14 +71,14 @@ export const PATCH = route(async (req) => {
   for (const [k, v] of Object.entries(body)) if (v !== undefined) data[k] = v;
   if (Object.keys(data).length === 0) throw BadRequest('No updatable profile fields provided');
 
-  const existing = await prisma.lmsUser.findUnique({ where: { id: actor.id }, select: { id: true } });
+  const existing = await db.lmsUser.findUnique({ where: { id: actor.id }, select: { id: true } });
   if (!existing) {
     // No LMS row for this central user yet (Phase-3 gap) — echo back so the UI
     // updates its local copy without persisting server-side.
     return json({ success: true, data: { id: actor.id, ...data } });
   }
 
-  const updated = await prisma.lmsUser.update({
+  const updated = await db.lmsUser.update({
     where: { id: actor.id },
     data,
     select: {

@@ -32,8 +32,8 @@ vi.mock('@/lib/auth/context', () => ({
 }));
 vi.mock('@/lib/env', () => ({ optionalEnv: () => 'ap-south-1', env: { ENCRYPTION_KEY: 'k'.repeat(32) } }));
 vi.mock('@/lib/s3', () => ({ presignFromUrlOrKey: vi.fn(async (u: string) => u), s3: { send: vi.fn() }, S3_BUCKET: 'b' }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     lmsMasterCourse: { findFirst: h.findFirst, update: h.update },
     lmsMasterCourseSelectedTenant: {
       findMany: h.selectedFindMany,

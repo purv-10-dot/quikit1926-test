@@ -26,8 +26,8 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/env', () => ({ env: { DATABASE_URL: 'x' }, optionalEnv: () => '' }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     lmsBatch: { findFirst: h.batchFindFirst, findMany: h.batchFindMany },
     lmsHomeworkSubmission: { findMany: h.subFindMany },
     lmsAttendance: { findMany: h.attFindMany },

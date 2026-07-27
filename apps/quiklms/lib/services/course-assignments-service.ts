@@ -18,7 +18,7 @@
  * stops matching the cron's query.
  */
 import type { LmsAssignmentTargetType as AssignmentTargetType } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { NotFound, BadRequest, Forbidden } from '@/lib/http';
 import { presignFromUrlOrKey } from '@/lib/s3';
 import { handleNewAssignments } from '@/lib/services/course-assignment-reminders-service';
@@ -71,26 +71,26 @@ export interface AssignCourseInput {
 }
 
 async function getGroupMemberIds(orgId: string, groupId: string): Promise<string[]> {
-  const group = await prisma.lmsGroup.findFirst({ where: { id: groupId, orgId } });
+  const group = await db.lmsGroup.findFirst({ where: { id: groupId, orgId } });
   if (!group) throw NotFound(`Group ${groupId} not found`);
-  const members = await prisma.lmsGroupMember.findMany({ where: { groupId }, select: { userId: true } });
+  const members = await db.lmsGroupMember.findMany({ where: { groupId }, select: { userId: true } });
   return members.map((m) => m.userId);
 }
 
 export async function checkPrerequisites(courseId: string, userId: string, orgId: string) {
   // Resolve course + its prerequisites. MasterCourse stores no prereq relation;
   // legacy Course has CoursePrerequisite. Try Course first for prereqs.
-  const course = await prisma.lmsCourse.findUnique({
+  const course = await db.lmsCourse.findUnique({
     where: { id: courseId },
     include: { prerequisites: { select: { prerequisiteId: true } } },
   });
-  const masterExists = course ? null : await prisma.lmsMasterCourse.findUnique({ where: { id: courseId }, select: { id: true } });
+  const masterExists = course ? null : await db.lmsMasterCourse.findUnique({ where: { id: courseId }, select: { id: true } });
   if (!course && !masterExists) throw NotFound('Course not found');
 
   const prereqIds = (course?.prerequisites || []).map((p) => p.prerequisiteId);
   if (prereqIds.length === 0) return { canAccess: true, missingCourses: [] as string[] };
 
-  const completed = await prisma.lmsProgress.findMany({
+  const completed = await db.lmsProgress.findMany({
     where: { orgId, learnerId: userId, courseId: { in: prereqIds }, status: 'Completed' },
     select: { courseId: true },
   });
@@ -100,9 +100,9 @@ export async function checkPrerequisites(courseId: string, userId: string, orgId
 
   const missingCourses: string[] = [];
   for (const id of missingIds) {
-    const mc = await prisma.lmsMasterCourse.findUnique({ where: { id }, select: { title: true } });
+    const mc = await db.lmsMasterCourse.findUnique({ where: { id }, select: { title: true } });
     if (mc) { missingCourses.push(mc.title); continue; }
-    const c = await prisma.lmsCourse.findUnique({ where: { id }, select: { title: true } });
+    const c = await db.lmsCourse.findUnique({ where: { id }, select: { title: true } });
     if (c) missingCourses.push(c.title);
   }
   return { canAccess: false, missingCourses };
@@ -111,20 +111,20 @@ export async function checkPrerequisites(courseId: string, userId: string, orgId
 export async function getAssignedCourses(orgId: string | null | undefined) {
   // MasterCourses published + assigned to this tenant (or all for super admin)
   const tenantFilter = orgId ? { selectedTenants: { some: { orgId } } } : {};
-  const masterCourses = await prisma.lmsMasterCourse.findMany({
+  const masterCourses = await db.lmsMasterCourse.findMany({
     where: { status: 'Published', parentCourseId: null, ...tenantFilter },
     orderBy: { createdAt: 'desc' },
   });
 
   let ownPending: typeof masterCourses = [];
   if (orgId) {
-    ownPending = await prisma.lmsMasterCourse.findMany({
+    ownPending = await db.lmsMasterCourse.findMany({
       where: { status: { not: 'Published' }, parentCourseId: null, submittedByTenantId: orgId },
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  const legacyCourses = await prisma.lmsCourse.findMany({
+  const legacyCourses = await db.lmsCourse.findMany({
     where: { isMaster: true, ...(orgId ? { selectedTenants: { some: { orgId } } } : {}) },
     orderBy: { createdAt: 'desc' },
   });
@@ -156,7 +156,7 @@ export async function getAssignedCourses(orgId: string | null | undefined) {
 export async function countEnrolledLearnersByCourseIds(courseIds: string[], orgId: string | null | undefined) {
   const counts: Record<string, number> = {};
   if (courseIds.length === 0) return counts;
-  const assignments = await prisma.lmsCourseAssignment.findMany({
+  const assignments = await db.lmsCourseAssignment.findMany({
     where: { courseId: { in: courseIds }, ...(orgId ? { orgId } : {}) },
   });
   const learnerIdsByCourse = new Map<string, Set<string>>();
@@ -168,7 +168,7 @@ export async function countEnrolledLearnersByCourseIds(courseIds: string[], orgI
   }
   if (groupIdsByCourse.size > 0) {
     const allGroupIds = [...new Set([...groupIdsByCourse.values()].flat())].filter(Boolean);
-    const members = await prisma.lmsGroupMember.findMany({ where: { groupId: { in: allGroupIds } }, select: { groupId: true, userId: true } });
+    const members = await db.lmsGroupMember.findMany({ where: { groupId: { in: allGroupIds } }, select: { groupId: true, userId: true } });
     const byGroup = new Map<string, string[]>();
     members.forEach((m) => byGroup.set(m.groupId, [...(byGroup.get(m.groupId) || []), m.userId]));
     groupIdsByCourse.forEach((groupIds, courseId) => {
@@ -182,19 +182,19 @@ export async function countEnrolledLearnersByCourseIds(courseIds: string[], orgI
 }
 
 export async function getCourseAssignments(orgId: string, courseId: string) {
-  return prisma.lmsCourseAssignment.findMany({ where: { orgId, courseId } });
+  return db.lmsCourseAssignment.findMany({ where: { orgId, courseId } });
 }
 
 export async function assignCourse(orgId: string, assignedBy: string, dto: AssignCourseInput): Promise<{
   assignments: unknown[]; newCount: number; alreadyAssignedCount: number; alreadyAssignedIds: string[];
 }> {
   // Verify course is published+assigned to tenant (MasterCourse) or legacy master
-  let course = await prisma.lmsMasterCourse.findFirst({
+  let course = await db.lmsMasterCourse.findFirst({
     where: { id: dto.courseId, status: 'Published', parentCourseId: null, selectedTenants: { some: { orgId } } },
     select: { id: true },
   });
   if (!course) {
-    const legacy = await prisma.lmsCourse.findFirst({
+    const legacy = await db.lmsCourse.findFirst({
       where: { id: dto.courseId, isMaster: true, selectedTenants: { some: { orgId } } }, select: { id: true },
     });
     course = legacy;
@@ -202,7 +202,7 @@ export async function assignCourse(orgId: string, assignedBy: string, dto: Assig
   if (!course) throw NotFound('Course not found or not available to this tenant');
 
   if (dto.targetType === 'USER') {
-    const users = await prisma.lmsUser.findMany({ where: { id: { in: dto.targetIds }, orgId } });
+    const users = await db.lmsUser.findMany({ where: { id: { in: dto.targetIds }, orgId } });
     if (users.length !== dto.targetIds.length) throw BadRequest('One or more users do not belong to this tenant');
 
     if (!dto.skipPrerequisiteCheck) {
@@ -237,14 +237,14 @@ export async function assignCourse(orgId: string, assignedBy: string, dto: Assig
   const dueDate = dto.dueDate ? new Date(dto.dueDate) : new Date(assignedAt.getTime() + DEFAULT_DEADLINE_DAYS * 86400000);
 
   for (const targetId of dto.targetIds) {
-    const existing = await prisma.lmsCourseAssignment.findFirst({
+    const existing = await db.lmsCourseAssignment.findFirst({
       where: { orgId, courseId: dto.courseId, targetType: dto.targetType, targetId },
     });
     if (existing) {
       alreadyAssignedIds.push(targetId);
       assignments.push(existing);
     } else {
-      const created = await prisma.lmsCourseAssignment.create({
+      const created = await db.lmsCourseAssignment.create({
         data: {
           orgId, courseId: dto.courseId, targetType: dto.targetType, targetId,
           dueDate, isMandatory: dto.isMandatory ?? true, assignedBy, assignedAt,
@@ -271,12 +271,12 @@ export async function assignCourse(orgId: string, assignedBy: string, dto: Assig
 
 export async function getUserAssignments(orgId: string | null, userId: string) {
   if (!orgId) return [];
-  const assignments = await prisma.lmsCourseAssignment.findMany({
+  const assignments = await db.lmsCourseAssignment.findMany({
     where: { orgId, targetType: 'USER', targetId: userId },
   });
   const courseIds = assignments.map((a) => a.courseId).filter(Boolean);
   const progresses = courseIds.length
-    ? await prisma.lmsProgress.findMany({
+    ? await db.lmsProgress.findMany({
         where: { orgId, learnerId: userId, courseId: { in: courseIds } },
         select: { courseId: true, completionPercentage: true, status: true, completedAt: true },
       })
@@ -285,7 +285,7 @@ export async function getUserAssignments(orgId: string | null, userId: string) {
 
   const result = await Promise.all(
     assignments.map(async (a) => {
-      let course = await prisma.lmsMasterCourse.findUnique({
+      let course = await db.lmsMasterCourse.findUnique({
         where: { id: a.courseId },
         select: { id: true, title: true, description: true, category: true, thumbnailUrl: true, modules: true, estimatedDuration: true, level: true },
       });
@@ -293,7 +293,7 @@ export async function getUserAssignments(orgId: string | null, userId: string) {
         ? { _id: course.id, title: course.title, description: course.description, category: course.category, thumbnailUrl: course.thumbnailUrl, modules: course.modules || [], estimatedDuration: course.estimatedDuration, level: course.level }
         : null;
       if (!courseObj) {
-        const legacy = await prisma.lmsCourse.findUnique({
+        const legacy = await db.lmsCourse.findUnique({
           where: { id: a.courseId },
           select: { id: true, title: true, description: true, category: true, thumbnailUrl: true },
         });
@@ -319,9 +319,9 @@ export async function assignCourseByBatch(orgId: string, assignedBy: string, cou
   const allStudentIds = new Set<string>();
   const batchDetails: { batchId: string; batchName: string; studentCount: number }[] = [];
   for (const batchId of batchIds) {
-    const batch = await prisma.lmsBatch.findFirst({ where: { id: batchId, orgId }, select: { name: true } });
+    const batch = await db.lmsBatch.findFirst({ where: { id: batchId, orgId }, select: { name: true } });
     if (!batch) continue;
-    const students = await prisma.lmsBatchStudent.findMany({ where: { batchId }, select: { studentId: true } });
+    const students = await db.lmsBatchStudent.findMany({ where: { batchId }, select: { studentId: true } });
     students.forEach((s) => allStudentIds.add(s.studentId));
     batchDetails.push({ batchId, batchName: batch.name, studentCount: students.length });
   }
@@ -334,7 +334,7 @@ export async function assignCourseByBatch(orgId: string, assignedBy: string, cou
 }
 
 export async function assignCourseToAllLearners(orgId: string, assignedBy: string, courseId: string, dueDate?: string, isMandatory?: boolean) {
-  const learners = await prisma.lmsUser.findMany({ where: { orgId, role: 'LEARNER', isActive: true }, select: { id: true } });
+  const learners = await db.lmsUser.findMany({ where: { orgId, role: 'LEARNER', isActive: true }, select: { id: true } });
   if (learners.length === 0) return { assigned: 0, total: 0 };
   const result = await assignCourse(orgId, assignedBy, {
     courseId, targetType: 'USER', targetIds: learners.map((l) => l.id), dueDate, isMandatory: isMandatory ?? true, skipPrerequisiteCheck: true,
@@ -354,6 +354,6 @@ export async function bulkAssignCourses(orgId: string, assignedBy: string, cours
 }
 
 export async function removeAssignment(orgId: string, assignmentId: string) {
-  const result = await prisma.lmsCourseAssignment.deleteMany({ where: { id: assignmentId, orgId } });
+  const result = await db.lmsCourseAssignment.deleteMany({ where: { id: assignmentId, orgId } });
   if (result.count === 0) throw NotFound('Assignment not found');
 }

@@ -22,8 +22,8 @@ const h = vi.hoisted(() => ({
 vi.mock('@/lib/env', () => ({ env: { DATABASE_URL: 'x' }, optionalEnv: () => '' }));
 vi.mock('@/lib/auth/context', () => ({ requireAuth: h.requireAuth }));
 vi.mock('@/lib/s3', () => ({ presignFromUrlOrKey: h.presign }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: { lmsUser: { findUnique: h.userFindUnique, update: h.userUpdate } },
+vi.mock('@/lib/db', () => ({
+  db: { lmsUser: { findUnique: h.userFindUnique, update: h.userUpdate } },
 }));
 
 import { GET, PATCH } from '@/app/api/auth/profile/route';

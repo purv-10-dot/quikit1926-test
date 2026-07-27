@@ -16,10 +16,10 @@
  * recipient as delivered once an in-app Message row has actually been created.
  */
 import type { LmsTenantActionType as TenantActionType } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { sendEmail } from '@/lib/email';
 
-const FRONTEND_URL = process.env.FRONTEND_URL || 'https://quikskills.quikit.ai';
+const FRONTEND_URL = process.env.NEXTAUTH_URL || 'http://localhost:3014';
 
 /** Escape text destined for email HTML. */
 function escapeHtml(s: string): string {
@@ -40,7 +40,7 @@ async function getOrCreateDirectConversation(
   senderId: string,
   recipientId: string,
 ): Promise<string> {
-  const candidates = await prisma.lmsConversation.findMany({
+  const candidates = await db.lmsConversation.findMany({
     where: {
       orgId,
       type: 'direct',
@@ -54,14 +54,14 @@ async function getOrCreateDirectConversation(
   const existing = candidates.find((c) => c.participants.length === 2);
   if (existing) {
     // Un-archive / un-delete for both sides so the message surfaces.
-    await prisma.lmsConversationParticipant.updateMany({
+    await db.lmsConversationParticipant.updateMany({
       where: { conversationId: existing.id },
       data: { isDeleted: false, isArchived: false },
     });
     return existing.id;
   }
 
-  const conversation = await prisma.lmsConversation.create({
+  const conversation = await db.lmsConversation.create({
     data: {
       orgId,
       type: 'direct',
@@ -86,10 +86,10 @@ async function deliverInApp(
   text: string,
 ): Promise<boolean> {
   const conversationId = await getOrCreateDirectConversation(orgId, senderId, recipientId);
-  await prisma.lmsMessage.create({
+  await db.lmsMessage.create({
     data: { conversationId, senderId, text: text.slice(0, 2000) },
   });
-  await prisma.lmsConversation.update({
+  await db.lmsConversation.update({
     where: { id: conversationId },
     data: {
       lastMessageText: text.slice(0, 100),
@@ -164,7 +164,7 @@ export async function notifyUsers(opts: NotifyOptions): Promise<NotifyResult> {
 
   if (auditAction && deliveredCount > 0) {
     try {
-      await prisma.lmsTenantLog.create({
+      await db.lmsTenantLog.create({
         data: {
           orgId,
           actionType: auditAction,

@@ -57,10 +57,10 @@ function resolveClientSecret(envName: string, devFallback: string): string {
 //   quikit → 3000   auth → 3001   admin → 3002   quikscale → 3003
 //   quiktrack → 3004   quikvc → 3005   quikinfra → 3006   quiksocial → 3007
 //   quikcrm → 3008   quikhrms → 3009   quiksupport → 3010  quikasset → 3012
-//   quikfinance → 3013   quiklms → 3020
-// quiklms sits outside the contiguous 3000-3013 block; the gap is historical
-// (it was folded in from the standalone quikskill_lms app, which already used
-// 3020) and `apps/quiklms/package.json` is the source of truth.
+//   quikfinance → 3013   quiklms → 3014
+// quiklms was folded in from the standalone quikskill_lms app; it now binds
+// 3014 to sit next to the contiguous block. `apps/quiklms/package.json`
+// (`next dev -p 3014`) is the source of truth and its .env.local agrees.
 // In production these URLs MUST be passed via env vars (resolveAppUrl throws
 // when NODE_ENV=production and the env var is unset).
 const ADMIN_BASE = resolveAppUrl("ADMIN_URL", "http://localhost:3002"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
@@ -70,7 +70,7 @@ const QUIKINFRA_BASE = resolveAppUrl("QUIKINFRA_URL", "http://localhost:3006"); 
 const QUIKSOCIAL_BASE = resolveAppUrl("QUIKSOCIAL_URL", "http://localhost:3007"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKVC_BASE = resolveAppUrl("QUIKVC_URL", "http://localhost:3005"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKCRM_BASE = resolveAppUrl("QUIKCRM_URL", "http://localhost:3008"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
-const QUIKLMS_BASE = resolveAppUrl("QUIKLMS_URL", "http://localhost:3020"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
+const QUIKLMS_BASE = resolveAppUrl("QUIKLMS_URL", "http://localhost:3014"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKFINANCE_BASE = resolveAppUrl("QUIKFINANCE_URL", "http://localhost:3013"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKASSET_BASE = resolveAppUrl("QUIKASSET_URL", "http://localhost:3012"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKSUPPORT_BASE = resolveAppUrl("QUIKSUPPORT_URL", "http://localhost:3010"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
@@ -188,7 +188,7 @@ const APPS = [
     name: "QuikLMS",
     description: "Learning Management System — courses, batches, exams, attendance, certificates, teacher/learner portals.",
     baseUrl: QUIKLMS_BASE,
-    iconUrl: "/app-icons/quiklms.png",
+    iconUrl: "/app-icons/quiklms.svg",
     status: "active",
     oauth: {
       clientId: "quiklms",

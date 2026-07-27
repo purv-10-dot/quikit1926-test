@@ -7,7 +7,7 @@
  * member names (e.g. NewLearnerInvited) in code; Prisma stores the mapped value.
  */
 import type { Prisma, LmsTenantActionType as TenantActionType } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 
 export interface TenantLogFilters {
   startDate?: Date;
@@ -35,7 +35,7 @@ export interface CreateTenantLogInput {
  * `metadata` defaults to `{}` rather than null, as the legacy did.
  */
 export async function createLog(data: CreateTenantLogInput) {
-  return prisma.lmsTenantLog.create({
+  return db.lmsTenantLog.create({
     data: {
       orgId: data.orgId,
       actionType: data.actionType,
@@ -80,7 +80,7 @@ function buildWhere(orgId: string, filters?: TenantLogFilters): Prisma.LmsTenant
 async function populatePerformedBy<T extends { performedBy: string }>(rows: T[]) {
   const ids = [...new Set(rows.map((r) => r.performedBy).filter(Boolean))];
   const users = ids.length
-    ? await prisma.lmsUser.findMany({
+    ? await db.lmsUser.findMany({
         where: { id: { in: ids } },
         select: { id: true, firstName: true, lastName: true, email: true },
       })
@@ -91,8 +91,8 @@ async function populatePerformedBy<T extends { performedBy: string }>(rows: T[])
 
 export async function getTenantLogs(orgId: string, filters?: TenantLogFilters) {
   const where = buildWhere(orgId, filters);
-  const total = await prisma.lmsTenantLog.count({ where });
-  const rows = await prisma.lmsTenantLog.findMany({
+  const total = await db.lmsTenantLog.count({ where });
+  const rows = await db.lmsTenantLog.findMany({
     where,
     orderBy: { createdAt: 'desc' },
     take: filters?.limit || 100,
@@ -109,7 +109,7 @@ export async function getLogsForPDF(
   actionType?: TenantActionType,
 ) {
   const where = buildWhere(orgId, { startDate, endDate, actionType });
-  const rows = await prisma.lmsTenantLog.findMany({ where, orderBy: { createdAt: 'desc' } });
+  const rows = await db.lmsTenantLog.findMany({ where, orderBy: { createdAt: 'desc' } });
   return populatePerformedBy(rows);
 }
 
@@ -118,20 +118,20 @@ export async function getLogsForPDF(
  * Mirrors the legacy seed: course assignments, learner invites, course completions.
  */
 export async function seedIfEmpty(orgId: string): Promise<number> {
-  const count = await prisma.lmsTenantLog.count({ where: { orgId } });
+  const count = await db.lmsTenantLog.count({ where: { orgId } });
   if (count > 0) return 0;
 
   let seeded = 0;
 
   // 1. Course assignments → CourseAssignedToUser, grouped by assignedBy + courseId
   try {
-    const assignments = await prisma.lmsCourseAssignment.findMany({
+    const assignments = await db.lmsCourseAssignment.findMany({
       where: { orgId },
       select: { courseId: true, assignedBy: true, assignedAt: true, createdAt: true },
     });
     const courseIds = [...new Set(assignments.map((a) => a.courseId).filter(Boolean))];
     const courses = courseIds.length
-      ? await prisma.lmsMasterCourse.findMany({ where: { id: { in: courseIds } }, select: { id: true, title: true } })
+      ? await db.lmsMasterCourse.findMany({ where: { id: { in: courseIds } }, select: { id: true, title: true } })
       : [];
     const courseMap = new Map(courses.map((c) => [c.id, c.title]));
 
@@ -152,7 +152,7 @@ export async function seedIfEmpty(orgId: string): Promise<number> {
     }
 
     for (const [, data] of grouped) {
-      await prisma.lmsTenantLog.create({
+      await db.lmsTenantLog.create({
         data: {
           orgId,
           actionType: 'CourseAssignedToUser',
@@ -170,15 +170,15 @@ export async function seedIfEmpty(orgId: string): Promise<number> {
 
   // 2. Learner invites → NewLearnerInvited
   try {
-    const learners = await prisma.lmsUser.findMany({
+    const learners = await db.lmsUser.findMany({
       where: { orgId, role: 'LEARNER' },
       select: { id: true, firstName: true, lastName: true, email: true, createdAt: true },
     });
     if (learners.length > 0) {
-      const admin = await prisma.lmsUser.findFirst({ where: { orgId, role: 'TENANT_ADMIN' }, select: { id: true } });
+      const admin = await db.lmsUser.findFirst({ where: { orgId, role: 'TENANT_ADMIN' }, select: { id: true } });
       const performedBy = admin?.id || learners[0].id;
       for (const learner of learners) {
-        await prisma.lmsTenantLog.create({
+        await db.lmsTenantLog.create({
           data: {
             orgId,
             actionType: 'NewLearnerInvited',
@@ -197,18 +197,18 @@ export async function seedIfEmpty(orgId: string): Promise<number> {
 
   // 3. Course completions → CourseCompleted
   try {
-    const completions = await prisma.lmsProgress.findMany({
+    const completions = await db.lmsProgress.findMany({
       where: { orgId, status: 'Completed' },
       select: { courseId: true, learnerId: true, completedAt: true, updatedAt: true },
     });
     const courseIds = [...new Set(completions.map((c) => c.courseId).filter(Boolean))];
     const courses = courseIds.length
-      ? await prisma.lmsMasterCourse.findMany({ where: { id: { in: courseIds } }, select: { id: true, title: true } })
+      ? await db.lmsMasterCourse.findMany({ where: { id: { in: courseIds } }, select: { id: true, title: true } })
       : [];
     const courseMap = new Map(courses.map((c) => [c.id, c.title]));
 
     for (const progress of completions) {
-      await prisma.lmsTenantLog.create({
+      await db.lmsTenantLog.create({
         data: {
           orgId,
           actionType: 'CourseCompleted',

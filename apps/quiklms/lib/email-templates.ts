@@ -4,7 +4,9 @@
  * and forgot-password OTP.
  */
 
-const FRONTEND_URL = (process.env.FRONTEND_URL || 'http://localhost:3020').trim().replace(/\/$/, '');
+// App's own public origin — the platform-standard NEXTAUTH_URL (its Vercel
+// domain in prod, localhost in dev). Replaces the app-local FRONTEND_URL.
+const FRONTEND_URL = (process.env.NEXTAUTH_URL || 'http://localhost:3014').trim().replace(/\/$/, '');
 
 const ROLE_NAMES: Record<string, string> = {
   SUPER_ADMIN: 'Super Administrator',

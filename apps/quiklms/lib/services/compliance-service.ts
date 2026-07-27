@@ -7,7 +7,7 @@
  */
 import { Prisma } from '@prisma/client';
 import type { LmsProgress, LmsProgressStatus } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { notifyUsers } from '@/lib/services/notify-service';
 
 type AnyRec = Record<string, unknown>;
@@ -97,7 +97,7 @@ async function autoRepairProgress(rows: LmsProgress[]): Promise<void> {
 
   let masters: { id: string; modules: Prisma.JsonValue }[];
   try {
-    masters = await prisma.lmsMasterCourse.findMany({
+    masters = await db.lmsMasterCourse.findMany({
       where: { id: { in: courseIds } },
       select: { id: true, modules: true },
     });
@@ -154,7 +154,7 @@ async function autoRepairProgress(rows: LmsProgress[]): Promise<void> {
 
       const completedAt = correctStatus === 'Completed' ? progress.completedAt ?? new Date() : null;
 
-      await prisma.lmsProgress.update({
+      await db.lmsProgress.update({
         where: { id: progress.id },
         data: {
           completionPercentage: correctPct,
@@ -185,11 +185,11 @@ export async function getComplianceAnalytics(orgId: string): Promise<{
 }> {
   if (!orgId) return { completionRates: { completed: 0, inProgress: 0, notStarted: 0 }, topPerformers: [], difficultModules: [] };
 
-  const users = await prisma.lmsUser.findMany({ where: { orgId, role: { in: ['LEARNER', 'TEACHER'] } } });
+  const users = await db.lmsUser.findMany({ where: { orgId, role: { in: ['LEARNER', 'TEACHER'] } } });
   const userIds = users.map((u) => u.id);
 
-  const assignments = await prisma.lmsCourseAssignment.findMany({ where: { orgId, targetType: 'USER' } });
-  const allProgress = await prisma.lmsProgress.findMany({
+  const assignments = await db.lmsCourseAssignment.findMany({ where: { orgId, targetType: 'USER' } });
+  const allProgress = await db.lmsProgress.findMany({
     where: { OR: [{ learnerId: { in: userIds } }, { orgId }] },
   });
 
@@ -230,7 +230,7 @@ export async function getComplianceAnalytics(orgId: string): Promise<{
 
   // Difficult modules — resolve titles from assignments / MasterCourse
   const assignedCourseIds = [...new Set(assignments.map((a) => a.courseId))];
-  const masters = await prisma.lmsMasterCourse.findMany({ where: { id: { in: assignedCourseIds } }, select: { id: true, title: true } });
+  const masters = await db.lmsMasterCourse.findMany({ where: { id: { in: assignedCourseIds } }, select: { id: true, title: true } });
   const masterTitle = new Map(masters.map((m) => [m.id, m.title]));
 
   const courseCompletions = new Map<string, { totalPct: number; count: number; title: string }>();
@@ -265,16 +265,16 @@ export async function getNudgeUsers(orgId: string): Promise<{ users: NudgeUser[]
   if (!orgId) return { users: [], totalCount: 0 };
   const now = new Date();
 
-  const users = await prisma.lmsUser.findMany({ where: { orgId, role: { in: ['LEARNER', 'TEACHER'] } } });
-  const assignments = await prisma.lmsCourseAssignment.findMany({ where: { orgId, targetType: 'USER', isMandatory: true } });
+  const users = await db.lmsUser.findMany({ where: { orgId, role: { in: ['LEARNER', 'TEACHER'] } } });
+  const assignments = await db.lmsCourseAssignment.findMany({ where: { orgId, targetType: 'USER', isMandatory: true } });
   const courseIds = [...new Set(assignments.map((a) => a.courseId))];
-  const masters = await prisma.lmsMasterCourse.findMany({ where: { id: { in: courseIds } }, select: { id: true, title: true } });
+  const masters = await db.lmsMasterCourse.findMany({ where: { id: { in: courseIds } }, select: { id: true, title: true } });
   const titleMap = new Map(masters.map((m) => [m.id, m.title]));
 
   const nudgeUsers: NudgeUser[] = [];
   for (const user of users) {
     const userAssignments = assignments.filter((a) => a.targetId === user.id);
-    const userProgress = await prisma.lmsProgress.findMany({ where: { learnerId: user.id } });
+    const userProgress = await db.lmsProgress.findMany({ where: { learnerId: user.id } });
 
     const reasons: NudgeReason[] = [];
     const overdueCourses: NonNullable<NudgeUser['overdueCourses']> = [];
@@ -314,7 +314,7 @@ export async function sendNudgeEmails(
   senderId: string,
 ): Promise<{ success: boolean; sentCount: number }> {
   if (userIds.length === 0) return { success: false, sentCount: 0 };
-  const users = await prisma.lmsUser.findMany({
+  const users = await db.lmsUser.findMany({
     where: { id: { in: userIds }, orgId },
     select: { id: true, email: true, firstName: true, lastName: true },
   });

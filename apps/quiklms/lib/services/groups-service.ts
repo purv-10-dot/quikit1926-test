@@ -19,7 +19,7 @@
  *  4. Duplicate ids in `memberIds` hit the `@@unique([groupId, userId])`
  *     constraint and surfaced as a confusing 409.
  */
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { NotFound, Conflict, BadRequest } from '@/lib/http';
 
 type GroupRow = { id: string; createdBy: string | null } & Record<string, unknown>;
@@ -40,7 +40,7 @@ async function enrichGroups<T extends GroupRow>(groups: T[]) {
   if (groups.length === 0) return [];
 
   const groupIds = groups.map((g) => g.id);
-  const links = await prisma.lmsGroupMember.findMany({
+  const links = await db.lmsGroupMember.findMany({
     where: { groupId: { in: groupIds } },
     select: { groupId: true, userId: true },
   });
@@ -50,7 +50,7 @@ async function enrichGroups<T extends GroupRow>(groups: T[]) {
   const lookupIds = [...new Set([...userIds, ...creatorIds])];
 
   const users = lookupIds.length
-    ? await prisma.lmsUser.findMany({ where: { id: { in: lookupIds } }, select: MEMBER_SELECT })
+    ? await db.lmsUser.findMany({ where: { id: { in: lookupIds } }, select: MEMBER_SELECT })
     : [];
   const userMap = new Map(users.map((u) => [u.id, u]));
 
@@ -85,7 +85,7 @@ async function enrichGroup<T extends GroupRow>(group: T) {
 
 /** Re-read and enrich, so every mutation returns the same shape the reads do. */
 async function enrichById(groupId: string) {
-  const group = await prisma.lmsGroup.findUnique({ where: { id: groupId } });
+  const group = await db.lmsGroup.findUnique({ where: { id: groupId } });
   if (!group) throw NotFound('Group not found');
   return enrichGroup(group);
 }
@@ -100,20 +100,20 @@ async function enrichById(groupId: string) {
 async function assertMembersInOrg(orgId: string, memberIds: string[]): Promise<string[]> {
   const unique = [...new Set((memberIds || []).filter(Boolean))];
   if (unique.length === 0) return [];
-  const found = await prisma.lmsUser.findMany({ where: { id: { in: unique }, orgId }, select: { id: true } });
+  const found = await db.lmsUser.findMany({ where: { id: { in: unique }, orgId }, select: { id: true } });
   if (found.length !== unique.length) throw BadRequest('One or more users do not belong to this tenant');
   return unique;
 }
 
 export async function create(orgId: string, createdBy: string, dto: { name: string; description?: string; memberIds?: string[] }) {
-  const existing = await prisma.lmsGroup.findFirst({ where: { orgId, name: dto.name } });
+  const existing = await db.lmsGroup.findFirst({ where: { orgId, name: dto.name } });
   if (existing) throw Conflict(`A group named "${dto.name}" already exists`);
 
   // Deduped before the write — duplicates in the payload would otherwise trip
   // @@unique([groupId, userId]) and surface as a bewildering 409.
   const memberIds = await assertMembersInOrg(orgId, dto.memberIds ?? []);
 
-  const group = await prisma.lmsGroup.create({
+  const group = await db.lmsGroup.create({
     data: {
       orgId, name: dto.name, description: dto.description, createdBy,
       ...(memberIds.length ? { members: { create: memberIds.map((userId) => ({ userId })) } } : {}),
@@ -123,22 +123,22 @@ export async function create(orgId: string, createdBy: string, dto: { name: stri
 }
 
 export async function findAll(orgId: string) {
-  const groups = await prisma.lmsGroup.findMany({ where: { orgId }, orderBy: { createdAt: 'desc' } });
+  const groups = await db.lmsGroup.findMany({ where: { orgId }, orderBy: { createdAt: 'desc' } });
   return enrichGroups(groups);
 }
 
 export async function findOne(orgId: string, groupId: string) {
-  const group = await prisma.lmsGroup.findFirst({ where: { id: groupId, orgId } });
+  const group = await db.lmsGroup.findFirst({ where: { id: groupId, orgId } });
   if (!group) throw NotFound('Group not found');
   return enrichGroup(group);
 }
 
 export async function update(orgId: string, groupId: string, dto: { name?: string; description?: string; memberIds?: string[] }) {
-  const group = await prisma.lmsGroup.findFirst({ where: { id: groupId, orgId } });
+  const group = await db.lmsGroup.findFirst({ where: { id: groupId, orgId } });
   if (!group) throw NotFound('Group not found');
 
   if (dto.name && dto.name !== group.name) {
-    const conflict = await prisma.lmsGroup.findFirst({ where: { orgId, name: dto.name, id: { not: groupId } } });
+    const conflict = await db.lmsGroup.findFirst({ where: { orgId, name: dto.name, id: { not: groupId } } });
     if (conflict) throw Conflict(`A group named "${dto.name}" already exists`);
   }
 
@@ -146,7 +146,7 @@ export async function update(orgId: string, groupId: string, dto: { name?: strin
   // and the roster half-applied.
   const memberIds = dto.memberIds !== undefined ? await assertMembersInOrg(orgId, dto.memberIds) : undefined;
 
-  await prisma.lmsGroup.update({
+  await db.lmsGroup.update({
     where: { id: groupId },
     data: {
       ...(dto.name ? { name: dto.name } : {}),
@@ -156,9 +156,9 @@ export async function update(orgId: string, groupId: string, dto: { name?: strin
 
   if (memberIds !== undefined) {
     // Wholesale replace — `memberIds` on the legacy DTO was the full roster.
-    await prisma.lmsGroupMember.deleteMany({ where: { groupId } });
+    await db.lmsGroupMember.deleteMany({ where: { groupId } });
     if (memberIds.length) {
-      await prisma.lmsGroupMember.createMany({
+      await db.lmsGroupMember.createMany({
         data: memberIds.map((userId) => ({ groupId, userId })),
         skipDuplicates: true,
       });
@@ -168,18 +168,18 @@ export async function update(orgId: string, groupId: string, dto: { name?: strin
 }
 
 export async function remove(orgId: string, groupId: string) {
-  const result = await prisma.lmsGroup.deleteMany({ where: { id: groupId, orgId } });
+  const result = await db.lmsGroup.deleteMany({ where: { id: groupId, orgId } });
   if (result.count === 0) throw NotFound('Group not found');
 }
 
 export async function addMembers(orgId: string, groupId: string, dto: { memberIds: string[] }) {
-  const group = await prisma.lmsGroup.findFirst({ where: { id: groupId, orgId } });
+  const group = await db.lmsGroup.findFirst({ where: { id: groupId, orgId } });
   if (!group) throw NotFound('Group not found');
 
   const memberIds = await assertMembersInOrg(orgId, dto.memberIds ?? []);
   if (memberIds.length) {
     // skipDuplicates reproduces the legacy's "only push ids not already present".
-    await prisma.lmsGroupMember.createMany({
+    await db.lmsGroupMember.createMany({
       data: memberIds.map((userId) => ({ groupId, userId })),
       skipDuplicates: true,
     });
@@ -188,15 +188,15 @@ export async function addMembers(orgId: string, groupId: string, dto: { memberId
 }
 
 export async function removeMember(orgId: string, groupId: string, memberId: string) {
-  const group = await prisma.lmsGroup.findFirst({ where: { id: groupId, orgId } });
+  const group = await db.lmsGroup.findFirst({ where: { id: groupId, orgId } });
   if (!group) throw NotFound('Group not found');
-  await prisma.lmsGroupMember.deleteMany({ where: { groupId, userId: memberId } });
+  await db.lmsGroupMember.deleteMany({ where: { groupId, userId: memberId } });
   return enrichById(groupId);
 }
 
 export async function getMemberIds(orgId: string, groupId: string): Promise<string[]> {
-  const group = await prisma.lmsGroup.findFirst({ where: { id: groupId, orgId } });
+  const group = await db.lmsGroup.findFirst({ where: { id: groupId, orgId } });
   if (!group) throw NotFound('Group not found');
-  const members = await prisma.lmsGroupMember.findMany({ where: { groupId }, select: { userId: true } });
+  const members = await db.lmsGroupMember.findMany({ where: { groupId }, select: { userId: true } });
   return members.map((m) => m.userId);
 }

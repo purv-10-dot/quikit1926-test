@@ -70,9 +70,10 @@ export const POST = route(async (req) => {
   requireRoles(actor, ['SUPER_ADMIN']);
   const dto = await parseBody(req, createSchema);
   const tenant = await createTenant(dto);
-  // Legacy fallback host (`tenants.controller.ts:98`) — NOT localhost. The old
-  // default here was 'http://localhost:3020', so a production deploy missing both
-  // BASE_URL and FRONTEND_URL handed every new tenant a localhost clientUrl.
-  const base = process.env.BASE_URL || process.env.FRONTEND_URL || 'https://quikskills.quikit.ai';
+  // App's own public origin. NEXTAUTH_URL is the platform-standard self-origin
+  // var and is ALWAYS set in prod (NextAuth cannot boot without it), so the
+  // localhost fallback only ever applies in local dev — a prod deploy can never
+  // hand a tenant a localhost clientUrl.
+  const base = process.env.NEXTAUTH_URL || 'http://localhost:3014';
   return json({ success: true, data: tenant, message: 'Tenant created successfully', clientUrl: `${base}/${tenant.subdomain}` }, 201);
 });

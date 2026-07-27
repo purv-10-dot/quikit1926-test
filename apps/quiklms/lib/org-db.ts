@@ -1,6 +1,6 @@
 /**
  * Platform ORG identity client. After the fold, this is simply the SHARED
- * `@quikit/database` client — the same one `@/lib/prisma` exports. The central
+ * `@quikit/database` client — the same one `@/lib/db` exports. The central
  * identity models (`orgDb.user` = auth.User, `orgDb.orgMember`,
  * `orgDb.userAppAccess`, `orgDb.app`, `orgDb.org`) and the LMS domain models
  * (`orgDb.lmsUser`, …) live on ONE client against the one `quikit_dev` database.

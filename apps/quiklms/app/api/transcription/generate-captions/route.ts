@@ -3,7 +3,7 @@ import type { Prisma } from '@prisma/client';
 import { route, json, BadRequest, NotFound, ApiError } from '@/lib/http';
 import { parseBody } from '@/lib/validation';
 import { requireAuth, requireRoles, assertTenantMatch } from '@/lib/auth/context';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import {
   storage,
   S3_BUCKET,
@@ -225,7 +225,7 @@ export const POST = route(async (req) => {
   let lessonCaptions: unknown;
 
   if (dto.isMasterCourse) {
-    const course = await prisma.lmsMasterCourse.findUnique({ where: { id: dto.courseId } });
+    const course = await db.lmsMasterCourse.findUnique({ where: { id: dto.courseId } });
     if (!course) throw NotFound('Master course not found');
 
     masterModules = (course.modules as unknown as AnyRec[]) || [];
@@ -233,7 +233,7 @@ export const POST = route(async (req) => {
     mediaUrl = masterResource?.url as string | undefined;
     lessonCaptions = masterResource?.captions;
   } else {
-    const moduleRow = await prisma.lmsModule.findUnique({
+    const moduleRow = await db.lmsModule.findUnique({
       where: { id: dto.moduleId as string },
       select: { id: true, orgId: true },
     });
@@ -243,7 +243,7 @@ export const POST = route(async (req) => {
     // to it). Every other write path in this app scopes on orgId; so does this.
     assertTenantMatch(actor, moduleRow.orgId);
 
-    const lesson = await prisma.lmsLesson.findFirst({
+    const lesson = await db.lmsLesson.findFirst({
       where: { id: dto.lessonId, moduleId: moduleRow.id },
       select: { id: true, contentUrl: true, captions: true },
     });
@@ -332,12 +332,12 @@ export const POST = route(async (req) => {
   if (dto.isMasterCourse) {
     if (!masterResource || !masterModules) throw NotFound('Lesson or video URL not found');
     masterResource.captions = upsertCaption(lessonCaptions, entry);
-    await prisma.lmsMasterCourse.update({
+    await db.lmsMasterCourse.update({
       where: { id: dto.courseId },
       data: { modules: masterModules as unknown as Prisma.InputJsonValue },
     });
   } else {
-    await prisma.lmsLesson.update({
+    await db.lmsLesson.update({
       where: { id: dto.lessonId },
       data: { captions: upsertCaption(lessonCaptions, entry) as unknown as Prisma.InputJsonValue },
     });

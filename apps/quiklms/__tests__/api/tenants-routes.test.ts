@@ -22,8 +22,8 @@ vi.mock('@/lib/auth/context', () => ({
 // `org` is mocked because tenant STATUS now lives on the platform Org, not on a
 // column of `tenants` — the service reads it back on every tenant read and
 // writes it on a status PATCH. See lib/tenant-status.ts.
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     lmsTenant: { findUnique: h.findUnique, findFirst: h.findFirst, update: h.update, create: h.create },
     org: { findUnique: h.orgFindUnique, findMany: h.orgFindMany, update: h.orgUpdate },
   },
@@ -283,9 +283,11 @@ describe('POST /api/tenants', () => {
     expect((await res.json()).message).toBe('GST Number already registered');
   });
 
-  it('does not fall back to a localhost clientUrl', async () => {
-    delete process.env.BASE_URL;
-    delete process.env.FRONTEND_URL;
+  it('derives clientUrl from NEXTAUTH_URL (never a bare localhost in prod)', async () => {
+    // NEXTAUTH_URL is the platform-standard self-origin var and is ALWAYS set in
+    // prod (NextAuth cannot boot without it), so clientUrl tracks the real domain
+    // — the localhost fallback only applies in local dev.
+    process.env.NEXTAUTH_URL = 'https://quikskills.quikit.ai';
     h.findUnique.mockResolvedValue(null);
     h.create.mockImplementation(({ data }: any) => ({ ...data }));
 

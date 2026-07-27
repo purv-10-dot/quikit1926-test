@@ -6,7 +6,7 @@
  * blobs, since the legacy Mongo $unwind aggregation has no direct Prisma equivalent.
  */
 import { Prisma } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { sendEmail } from '@/lib/email';
 
 const STORAGE_LIMIT_BYTES = 2 * 1024 * 1024 * 1024; // 2GB
@@ -29,9 +29,9 @@ function sumModuleFileSizes(modules: unknown): number {
 }
 
 export async function getGlobalStorageUsage() {
-  const courses = await prisma.lmsMasterCourse.findMany({ select: { modules: true } });
+  const courses = await db.lmsMasterCourse.findMany({ select: { modules: true } });
   const totalUsed = courses.reduce((sum, c) => sum + sumModuleFileSizes(c.modules), 0);
-  const totalTenants = await prisma.lmsTenant.count();
+  const totalTenants = await db.lmsTenant.count();
   return {
     totalUsed,
     totalUsedMB: totalUsed / (1024 * 1024),
@@ -51,7 +51,7 @@ export interface TenantStorageRow {
 
 export async function getTenantStorageBreakdown(): Promise<TenantStorageRow[]> {
   // Per-tenant storage from mastercourses: combine selectedTenants[] and submittedByTenantId.
-  const courses = await prisma.lmsMasterCourse.findMany({
+  const courses = await db.lmsMasterCourse.findMany({
     select: {
       modules: true,
       updatedAt: true,
@@ -74,11 +74,11 @@ export async function getTenantStorageBreakdown(): Promise<TenantStorageRow[]> {
     }
   }
 
-  const tenants = await prisma.lmsTenant.findMany({ select: { id: true, orgName: true } });
+  const tenants = await db.lmsTenant.findMany({ select: { id: true, orgName: true } });
   const tenantMap = new Map(tenants.map((t) => [t.id, t.orgName]));
 
   // Last activity per tenant (activity logs)
-  const activityLogs = await prisma.lmsActivityLog.groupBy({
+  const activityLogs = await db.lmsActivityLog.groupBy({
     by: ['orgId'],
     where: { orgId: { not: null } },
     _max: { timestamp: true },
@@ -120,8 +120,8 @@ export async function getTenantStorageBreakdown(): Promise<TenantStorageRow[]> {
 export async function getActivityLogs(limit = 50, skip = 0, orgId?: string) {
   const where = orgId ? { orgId } : {};
   const [rows, total] = await Promise.all([
-    prisma.lmsActivityLog.findMany({ where, orderBy: { timestamp: 'desc' }, take: limit, skip }),
-    prisma.lmsActivityLog.count({ where }),
+    db.lmsActivityLog.findMany({ where, orderBy: { timestamp: 'desc' }, take: limit, skip }),
+    db.lmsActivityLog.count({ where }),
   ]);
 
   // Mirror legacy populate('orgId','orgName') + populate('userId','firstName lastName email')
@@ -129,10 +129,10 @@ export async function getActivityLogs(limit = 50, skip = 0, orgId?: string) {
   const userIds = [...new Set(rows.map((r) => r.userId).filter((x): x is string => !!x))];
   const [tenants, users] = await Promise.all([
     tenantIds.length
-      ? prisma.lmsTenant.findMany({ where: { id: { in: tenantIds } }, select: { id: true, orgName: true } })
+      ? db.lmsTenant.findMany({ where: { id: { in: tenantIds } }, select: { id: true, orgName: true } })
       : Promise.resolve([]),
     userIds.length
-      ? prisma.lmsUser.findMany({ where: { id: { in: userIds } }, select: { id: true, firstName: true, lastName: true, email: true } })
+      ? db.lmsUser.findMany({ where: { id: { in: userIds } }, select: { id: true, firstName: true, lastName: true, email: true } })
       : Promise.resolve([]),
   ]);
   const tMap = new Map(tenants.map((t) => [t.id, { _id: t.id, orgName: t.orgName }]));
@@ -150,7 +150,7 @@ export async function getActivityLogs(limit = 50, skip = 0, orgId?: string) {
 async function upgradeInvoiceSubject(orgName: string): Promise<string> {
   let subject = `Storage Upgrade Required - ${orgName}`;
   try {
-    const template = await prisma.lmsEmailTemplate.findUnique({ where: { type: 'upgrade_invoice' } });
+    const template = await db.lmsEmailTemplate.findUnique({ where: { type: 'upgrade_invoice' } });
     if (template?.subject) subject = template.subject.replace(/\{\{tenantName\}\}/g, orgName);
   } catch {
     /* use default subject */
@@ -195,7 +195,7 @@ function generateUpgradeInvoiceHtml(
 }
 
 export async function previewUpgradeInvoice(orgId: string) {
-  const tenant = await prisma.lmsTenant.findUnique({ where: { id: orgId } });
+  const tenant = await db.lmsTenant.findUnique({ where: { id: orgId } });
   if (!tenant) throw new Error(`Tenant with ID ${orgId} not found`);
 
   const breakdown = await getTenantStorageBreakdown();
@@ -219,7 +219,7 @@ export async function previewUpgradeInvoice(orgId: string) {
 }
 
 export async function sendUpgradeInvoice(orgId: string) {
-  const tenant = await prisma.lmsTenant.findUnique({ where: { id: orgId } });
+  const tenant = await db.lmsTenant.findUnique({ where: { id: orgId } });
   if (!tenant) throw new Error(`Tenant with ID ${orgId} not found`);
 
   const breakdown = await getTenantStorageBreakdown();
@@ -242,7 +242,7 @@ export async function sendUpgradeInvoice(orgId: string) {
     // nothing — unrecoverable after the fact.
     if (!result) {
       const message = 'Email service not configured (SMTP credentials missing)';
-      await prisma.lmsActivityLog.create({
+      await db.lmsActivityLog.create({
         data: {
           type: 'user_action',
           message: `Failed to send upgrade invoice email to ${tenant.orgName} (${billingEmail})`,
@@ -260,7 +260,7 @@ export async function sendUpgradeInvoice(orgId: string) {
       return { success: false, error: message, email: billingEmail, tenantName: tenant.orgName };
     }
 
-    await prisma.lmsActivityLog.create({
+    await db.lmsActivityLog.create({
       data: {
         type: 'user_action',
         message: `Upgrade invoice email sent to ${tenant.orgName} (${billingEmail})`,
@@ -281,7 +281,7 @@ export async function sendUpgradeInvoice(orgId: string) {
     return { success: true, email: billingEmail, tenantName: tenant.orgName, messageId: result.messageId };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await prisma.lmsActivityLog.create({
+    await db.lmsActivityLog.create({
       data: {
         type: 'user_action',
         message: `Failed to send upgrade invoice email to ${tenant.orgName} (${billingEmail})`,
@@ -311,7 +311,7 @@ export async function getEmailDeliveryStatus(orgId: string) {
   // degraded to 'unknown' and the last-sent date vanished — even though the
   // record was right there. Filtering on the JSON path restores the legacy's
   // semantics and does not depend on log volume.
-  const recentEmail = await prisma.lmsActivityLog.findFirst({
+  const recentEmail = await db.lmsActivityLog.findFirst({
     where: {
       orgId,
       type: 'user_action',

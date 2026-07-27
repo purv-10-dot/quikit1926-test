@@ -66,13 +66,14 @@ export function authThemeCss(scope: string): string {
         ${s} .fade-in-up.d4 { animation-delay:0.46s; }
 
         /* ── Split layout ──
-           Height-capped and centered rather than stretched to the full
-           viewport: min-height gives the panels a comfortable desktop height
-           but caps at the available space on short laptops (so nothing spills
-           off-screen), and never exceeds ~620px on tall monitors (so the hero
-           doesn't stretch into a mostly-empty column). Width is capped at
-           1160px and centered by the wrapper. */
-        ${s} .auth-layout { position:relative; z-index:1; width:100%; max-width:1160px; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,480px); gap:16px; min-height:min(620px, calc(100dvh - 96px)); }
+           Stretched to fill the viewport (minus the wrapper's padding), matching
+           the self-serve register / sign-up page so Sign In and Sign Up share the
+           same card width, height, and proportions. flex:1 fills the wrapper's
+           column height and width:100% (no max-width) fills its width; the
+           wrapper's padding is the only gutter. Previously this was capped at
+           max-width 1160px + min-height 620px and centered, which made the
+           Sign In card narrower/shorter than the Sign Up card. */
+        ${s} .auth-layout { position:relative; z-index:1; width:100%; flex:1; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,480px); gap:16px; min-height:0; }
 
         /* ── Left brand panel ── */
         ${s} .auth-side { position:relative; overflow:hidden; background:var(--brand-bg); border:1px solid var(--brand-border); color:var(--text-primary); padding:44px; display:flex; flex-direction:column; justify-content:space-between; border-radius:24px; }

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { ADMIN_TIER_ROLES, HIDDEN_APP_SLUGS } from '@quikit/shared';
 import { authOptions } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 
 /**
  * GET /api/apps/switcher — the apps this user can open, for the topbar waffle.
@@ -52,7 +52,7 @@ const SELF_SLUG = 'quiklms';
  */
 const ENV_BASE_URLS: Record<string, string | undefined> = {
   quikit: process.env.QUIKIT_URL ?? process.env.NEXT_PUBLIC_QUIKIT_URL,
-  auth: process.env.AUTH_URL ?? process.env.NEXT_PUBLIC_AUTH_URL,
+  auth: process.env.NEXT_PUBLIC_AUTH_URL,
   admin: process.env.ADMIN_URL ?? process.env.NEXT_PUBLIC_ADMIN_URL,
   quikscale: process.env.QUIKSCALE_URL ?? process.env.NEXT_PUBLIC_QUIKSCALE_URL,
   quiktrack: process.env.QUIKTRACK_URL ?? process.env.NEXT_PUBLIC_QUIKTRACK_URL,
@@ -87,7 +87,7 @@ const DEV_FALLBACKS: Record<string, string> = {
   quiksupport: 'http://localhost:3010',
   quikasset: 'http://localhost:3012',
   quikfinance: 'http://localhost:3013',
-  quiklms: 'http://localhost:3020',
+  quiklms: 'http://localhost:3014',
 };
 
 const LOCALHOST = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i;
@@ -125,7 +125,7 @@ export async function GET() {
 
   // No org on the session yet — fall back to the first active membership.
   if (!orgId) {
-    const membership = await prisma.orgMember.findFirst({
+    const membership = await db.orgMember.findFirst({
       where: { userId, status: 'active' },
       select: { orgId: true, role: true },
       orderBy: { createdAt: 'asc' },
@@ -141,7 +141,7 @@ export async function GET() {
   const memberIsAdmin = isSuperAdmin || ADMIN_TIER_ROLES.has(String(memberRole ?? ''));
 
   const [allApps, orgAllows, userAccess] = await Promise.all([
-    prisma.app.findMany({
+    db.app.findMany({
       where: { status: { not: 'disabled' }, slug: { notIn: ['quikit', ...HIDDEN_APP_SLUGS] } },
       select: {
         id: true,
@@ -155,8 +155,8 @@ export async function GET() {
       },
       orderBy: { name: 'asc' },
     }),
-    prisma.orgAppAccess.findMany({ where: { orgId, enabled: true }, select: { appId: true } }),
-    prisma.userAppAccess.findMany({ where: { userId, orgId }, select: { appId: true } }),
+    db.orgAppAccess.findMany({ where: { orgId, enabled: true }, select: { appId: true } }),
+    db.userAppAccess.findMany({ where: { userId, orgId }, select: { appId: true } }),
   ]);
 
   const orgAllowedAppIds = new Set(orgAllows.map((a) => a.appId));

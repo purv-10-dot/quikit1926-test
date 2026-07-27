@@ -5,7 +5,7 @@
  * email: the invitation/welcome email is dispatched centrally by
  * createCentralIdentity (see identity-service), which owns the temp password.
  */
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 
 export interface RegisterUserInput {
   /** When set, the LMS row is created with this id (e.g. the central User id). */
@@ -41,10 +41,10 @@ export interface RegisterUserInput {
 export async function registerUser(input: RegisterUserInput): Promise<{ data: { id: string; employeeId?: string; [key: string]: unknown } }> {
   const { id, email, firstName, lastName, role, orgId, phone } = input;
 
-  const existing = await prisma.lmsUser.findFirst({ where: { email: email.toLowerCase() } });
+  const existing = await db.lmsUser.findFirst({ where: { email: email.toLowerCase() } });
   if (existing) throw new Error(`User with email ${email} already exists`);
 
-  const user = await prisma.lmsUser.create({
+  const user = await db.lmsUser.create({
     data: {
       // Share the central User id when provided so SSO `session.user.id` maps
       // to this LMS row (see identity-service). Otherwise auto-generate.

@@ -23,8 +23,8 @@ const h = vi.hoisted(() => ({
 vi.mock('@/lib/env', () => ({ env: { DATABASE_URL: 'x' }, optionalEnv: () => '' }));
 vi.mock('@/lib/integrations/zoom-provider', () => ({ resolveZoomProvider: h.resolveZoomProvider }));
 vi.mock('@/lib/integrations/google-meet-provider', () => ({ resolveGoogleMeetProvider: h.resolveGoogleMeetProvider }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     lmsTenant: { findUnique: h.tenantFindUnique },
     lmsUser: { findUnique: h.userFindUnique },
     lmsMeeting: { create: h.meetingCreate },

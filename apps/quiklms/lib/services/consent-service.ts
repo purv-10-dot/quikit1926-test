@@ -5,7 +5,7 @@
  * student enrichment done via manual user lookups.
  */
 import type { LmsConsentType as ConsentType } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { NotFound } from '@/lib/http';
 
 export async function grantConsent(
@@ -14,11 +14,11 @@ export async function grantConsent(
   dto: { studentId: string; consentType: ConsentType; consentVersion?: string; notes?: string },
   ipAddress?: string,
 ) {
-  const existing = await prisma.lmsConsentRecord.findFirst({
+  const existing = await db.lmsConsentRecord.findFirst({
     where: { orgId, studentId: dto.studentId, parentId, consentType: dto.consentType },
   });
   if (existing) {
-    return prisma.lmsConsentRecord.update({
+    return db.lmsConsentRecord.update({
       where: { id: existing.id },
       data: {
         granted: true, grantedAt: new Date(), revokedAt: null,
@@ -34,7 +34,7 @@ export async function grantConsent(
       },
     });
   }
-  return prisma.lmsConsentRecord.create({
+  return db.lmsConsentRecord.create({
     data: {
       orgId, studentId: dto.studentId, parentId, consentType: dto.consentType,
       granted: true, grantedAt: new Date(), ipAddress, consentVersion: dto.consentVersion || '1.0', notes: dto.notes,
@@ -47,27 +47,27 @@ export async function revokeConsent(
   parentId: string,
   dto: { studentId: string; consentType: ConsentType; notes?: string },
 ) {
-  const consent = await prisma.lmsConsentRecord.findFirst({
+  const consent = await db.lmsConsentRecord.findFirst({
     where: { orgId, studentId: dto.studentId, parentId, consentType: dto.consentType },
   });
   if (!consent) throw NotFound('No consent record found');
-  return prisma.lmsConsentRecord.update({
+  return db.lmsConsentRecord.update({
     where: { id: consent.id },
     data: { granted: false, revokedAt: new Date(), notes: dto.notes ?? consent.notes },
   });
 }
 
 export async function checkConsent(orgId: string, studentId: string, consentType: string) {
-  const consent = await prisma.lmsConsentRecord.findFirst({
+  const consent = await db.lmsConsentRecord.findFirst({
     where: { orgId, studentId, consentType: consentType as ConsentType, granted: true },
   });
   return { hasConsent: !!consent, consent };
 }
 
 export async function getConsentHistory(orgId: string, studentId: string) {
-  const records = await prisma.lmsConsentRecord.findMany({ where: { orgId, studentId }, orderBy: { createdAt: 'desc' } });
+  const records = await db.lmsConsentRecord.findMany({ where: { orgId, studentId }, orderBy: { createdAt: 'desc' } });
   const parentIds = [...new Set(records.map((r) => r.parentId))];
-  const parents = await prisma.lmsUser.findMany({ where: { id: { in: parentIds } }, select: { id: true, firstName: true, lastName: true, email: true } });
+  const parents = await db.lmsUser.findMany({ where: { id: { in: parentIds } }, select: { id: true, firstName: true, lastName: true, email: true } });
   // `_id` alias: Mongoose populate produced `_id`, and the rest of this port
   // follows that convention for populated actors (tutoring-requests, payouts,
   // scheduling). Without it a client keyed on `parentId._id` reads undefined.
@@ -76,9 +76,9 @@ export async function getConsentHistory(orgId: string, studentId: string) {
 }
 
 export async function getPendingConsents(orgId: string, parentId: string) {
-  const records = await prisma.lmsConsentRecord.findMany({ where: { orgId, parentId, granted: false }, orderBy: { createdAt: 'desc' } });
+  const records = await db.lmsConsentRecord.findMany({ where: { orgId, parentId, granted: false }, orderBy: { createdAt: 'desc' } });
   const studentIds = [...new Set(records.map((r) => r.studentId))];
-  const students = await prisma.lmsUser.findMany({ where: { id: { in: studentIds } }, select: { id: true, firstName: true, lastName: true, grade: true } });
+  const students = await db.lmsUser.findMany({ where: { id: { in: studentIds } }, select: { id: true, firstName: true, lastName: true, grade: true } });
   const studentMap = new Map(students.map((s) => [s.id, { _id: s.id, ...s }]));
   return records.map((r) => ({ _id: r.id, ...r, studentId: studentMap.get(r.studentId) || r.studentId }));
 }

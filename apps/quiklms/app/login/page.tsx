@@ -1,15 +1,29 @@
 'use client';
 
-import { signIn, useSession } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
+import { buildLoginUrl } from '@quikit/shared/login-url';
 import { globalSignOut } from '@/lib/global-signout';
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 /**
  * SSO entry point. Replaces the old dev `/role-select` picker: unauthenticated
- * users are sent straight to the QuikIT IdP via the "quikit" OAuth provider;
- * authenticated users are routed to the app root, which redirects to their role
- * landing (see app/(marketing)/page.tsx).
+ * users are bounced to the central QuikAuth login via the shared post-login
+ * bridge (`buildLoginUrl` → `${AUTH_URL}/api/post-login` → this app's
+ * `/auth-handoff`), exactly like quikscale / quikinfra; authenticated users are
+ * routed to the app root, which redirects to their role landing (see
+ * app/(marketing)/page.tsx).
+ *
+ * Why the bridge and NOT `signIn('quikit')` (the OAuth authorize flow): the
+ * authorize endpoint enforces app access at the IdP and redirects a user who
+ * lacks QuikLMS to the launcher `/apps`. The bridge instead mints a session for
+ * any authenticated user and lets THIS app's own access gate (the role-group
+ * layouts' `requirePageRoles` → `hasCentralAppAccess`) bounce a denied user to
+ * `/?reason=no_app_access`, where the AppAccessDeniedPopup shows — the same
+ * "stay on the landing + popup" behaviour every other QuikIT app has. The
+ * bridge honours this app's return origin only if it is on the auth host's
+ * allow-list (`AUTH_ALLOWED_RETURN_ORIGINS` — QuikLMS's origin must be listed,
+ * or the callback is dropped and the user lands on the launcher instead).
  *
  * INVITE-LINK GUARD: invitation emails link here with `?email=<invitee>`. If a
  * DIFFERENT user is already signed in — e.g. the super admin who sent the invite
@@ -51,7 +65,15 @@ function LoginInner() {
     invitedEmail !== currentEmail;
 
   useEffect(() => {
-    if (status === 'unauthenticated') void signIn('quikit', { callbackUrl: '/' });
+    if (status === 'unauthenticated') {
+      // Bounce to the central login through the post-login bridge, returning to
+      // this app's root ('/') afterwards — the landing then routes the user to
+      // their role dashboard, or (when they lack QuikLMS access) to the
+      // access-denied popup. Mirrors quikscale/quikinfra's buildLoginUrl CTA.
+      const appUrl =
+        (process.env.NEXT_PUBLIC_QUIKLMS_URL ?? '').replace(/\/+$/, '') || window.location.origin;
+      window.location.href = buildLoginUrl({ appUrl, postLoginPath: '/' });
+    }
     if (status === 'authenticated' && !mismatch) router.replace('/');
   }, [status, mismatch, router]);
 

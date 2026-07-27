@@ -32,8 +32,8 @@ vi.mock('@/lib/auth/context', () => ({
   tenantWhere: (_u: unknown, w: object) => ({ ...w, orgId: 'org-1' }),
   assertTenantMatch: vi.fn(),
 }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     lmsTeacherLevel: { findFirst: h.levelFindFirst },
     lmsTenant: { findUnique: h.tenantFindUnique },
     lmsPayoutAdjustment: { create: h.adjCreate, findMany: h.adjFindMany },

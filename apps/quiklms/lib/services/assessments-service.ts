@@ -13,7 +13,7 @@
  * sessionId is supplied the full question set is used.
  */
 import { Prisma } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { BadRequest, NotFound } from '@/lib/http';
 import { getSessionManifest } from '@/lib/services/quiz-proctoring-service';
 
@@ -83,7 +83,7 @@ export async function create(orgId: string, dto: AnyRec) {
   const questions = ((dto.questions as AnyRec[]) || []).map(normalisePoints);
   const additionalQuestions = ((dto.additionalQuestions as AnyRec[]) || []).map(normalisePoints);
 
-  return prisma.lmsAssessment.create({
+  return db.lmsAssessment.create({
     data: {
       orgId,
       moduleId: String(dto.moduleId),
@@ -104,7 +104,7 @@ export async function create(orgId: string, dto: AnyRec) {
 
 /** Find an assessment by id (standalone Assessment row, else master-course quiz). */
 export async function findOne(id: string, orgId: string): Promise<AnyRec> {
-  const standalone = await prisma.lmsAssessment.findFirst({ where: { id, orgId } });
+  const standalone = await db.lmsAssessment.findFirst({ where: { id, orgId } });
   if (standalone) return standalone as unknown as AnyRec;
 
   // Search master-course embedded quizzes by quiz id.
@@ -141,19 +141,19 @@ export async function findOne(id: string, orgId: string): Promise<AnyRec> {
  */
 async function findCoursesContainingQuiz(quizId: string): Promise<{ modules: unknown }[]> {
   try {
-    const rows = await prisma.$queryRaw<{ id: string }[]>`
+    const rows = await db.$queryRaw<{ id: string }[]>`
       SELECT id FROM app_quiklms.master_courses
       WHERE jsonb_path_exists(modules, '$[*].subModules[*].quiz.id ? (@ == $q)', jsonb_build_object('q', ${quizId}::text))
          OR jsonb_path_exists(modules, '$[*].moduleEndQuiz.id ? (@ == $q)', jsonb_build_object('q', ${quizId}::text))
       LIMIT 1
     `;
     if (rows.length === 0) return [];
-    return prisma.lmsMasterCourse.findMany({
+    return db.lmsMasterCourse.findMany({
       where: { id: rows[0].id },
       select: { modules: true },
     });
   } catch {
-    return prisma.lmsMasterCourse.findMany({ select: { modules: true } });
+    return db.lmsMasterCourse.findMany({ select: { modules: true } });
   }
 }
 
@@ -182,10 +182,10 @@ function transformMasterQuiz(id: string, orgId: string, quiz: AnyRec, fallbackTi
 }
 
 export async function update(id: string, orgId: string, updateData: AnyRec) {
-  const existing = await prisma.lmsAssessment.findFirst({ where: { id, orgId } });
+  const existing = await db.lmsAssessment.findFirst({ where: { id, orgId } });
   if (!existing) throw NotFound('Assessment not found');
   const { id: _id, orgId: _t, createdAt: _ca, updatedAt: _ua, ...rest } = updateData;
-  return prisma.lmsAssessment.update({ where: { id }, data: rest as Prisma.LmsAssessmentUpdateInput });
+  return db.lmsAssessment.update({ where: { id }, data: rest as Prisma.LmsAssessmentUpdateInput });
 }
 
 /** Prior submitted attempts for retry-limit enforcement. */
@@ -195,7 +195,7 @@ async function countLearnerAttempts(orgId: string, learnerId: string, courseId: 
 
   // For UUID/master assessments we don't persist QuizAttempt rows; use
   // lessonProgress as a "1 prior attempt" signal.
-  const progress = await prisma.lmsProgress.findFirst({ where: { orgId, learnerId, courseId } });
+  const progress = await db.lmsProgress.findFirst({ where: { orgId, learnerId, courseId } });
   const lp = (progress?.lessonProgress as AnyRec | null) || undefined;
   if (!lp) return 0;
   const isDone = (v: AnyRec) => v && (v.isCompleted === true || (Number(v.completionPercentage) || 0) >= 95);
@@ -216,7 +216,7 @@ export async function getQuizAttempts(orgId: string, learnerId: string, assessme
   // history was therefore always empty, which also made `retryLimit`
   // unenforceable. Querying by (orgId, learnerId, assessmentId) is safe for
   // master-quiz ids too: they simply match no rows.
-  return prisma.lmsQuizAttempt.findMany({
+  return db.lmsQuizAttempt.findMany({
     where: { orgId, learnerId, assessmentId },
     orderBy: { submittedAt: 'desc' },
   });
@@ -324,7 +324,7 @@ export async function submitQuiz(orgId: string, learnerId: string, dto: SubmitQu
   const passed = percentage >= passingScore;
 
   // Update or create progress.
-  const existingProgress = await prisma.lmsProgress.findFirst({ where: { orgId, learnerId, courseId: dto.courseId } });
+  const existingProgress = await db.lmsProgress.findFirst({ where: { orgId, learnerId, courseId: dto.courseId } });
   const lessonProgress: AnyRec = (existingProgress?.lessonProgress as AnyRec | null) || {};
   lessonProgress[dto.assessmentId] = {
     lessonId: dto.assessmentId,
@@ -339,11 +339,11 @@ export async function submitQuiz(orgId: string, learnerId: string, dto: SubmitQu
     existingProgress?.status === 'NotStarted' || !existingProgress ? 'InProgress' : existingProgress.status;
 
   const progress = existingProgress
-    ? await prisma.lmsProgress.update({
+    ? await db.lmsProgress.update({
         where: { id: existingProgress.id },
         data: { quizScore: percentage, isPassed: passed, lessonProgress: lessonProgress as Prisma.InputJsonValue, status: nextStatus },
       })
-    : await prisma.lmsProgress.create({
+    : await db.lmsProgress.create({
         data: {
           orgId,
           learnerId,
@@ -392,7 +392,7 @@ export async function submitQuiz(orgId: string, learnerId: string, dto: SubmitQu
       };
     });
 
-    await prisma.lmsQuizAttempt.create({
+    await db.lmsQuizAttempt.create({
       data: {
         orgId,
         learnerId,

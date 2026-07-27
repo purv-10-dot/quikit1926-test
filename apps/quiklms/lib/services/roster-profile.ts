@@ -27,7 +27,7 @@
  * worked. The form was collecting availability and silently discarding it.
  */
 import { z } from 'zod';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { getNextId } from './counters';
 
 export interface AvailabilitySlotInput {
@@ -90,7 +90,7 @@ export async function assignGeneratedId(
   try {
     const code = await getNextId(orgId, type);
     const field = type === 'teacher' ? 'employeeId' : type === 'student' ? 'studentId' : 'parentCode';
-    await prisma.lmsUser.update({ where: { id: userId }, data: { [field]: code } });
+    await db.lmsUser.update({ where: { id: userId }, data: { [field]: code } });
     return code;
   } catch (err) {
     // eslint-disable-next-line no-console
@@ -115,10 +115,10 @@ export async function applyTeacherProfile(userId: string, fields: TeacherProfile
   if (fields.monthlyPayout !== undefined && !Number.isNaN(fields.monthlyPayout)) data.monthlyPayout = fields.monthlyPayout;
 
   if (Object.keys(data).length) {
-    await prisma.lmsUser.update({ where: { id: userId }, data });
+    await db.lmsUser.update({ where: { id: userId }, data });
   }
   if (fields.availableSlots?.length) {
-    await prisma.lmsUserAvailabilitySlot.createMany({
+    await db.lmsUserAvailabilitySlot.createMany({
       data: fields.availableSlots.map((s) => ({
         userId,
         dayOfWeek: s.dayOfWeek,

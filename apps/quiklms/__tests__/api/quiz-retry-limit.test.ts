@@ -28,8 +28,8 @@ const h = vi.hoisted(() => ({
 vi.mock('@/lib/env', () => ({ optionalEnv: () => '', env: { ENCRYPTION_KEY: 'k'.repeat(32) } }));
 vi.mock('@/lib/s3', () => ({ presignFromUrlOrKey: vi.fn(), S3_BUCKET: 'b' }));
 vi.mock('@/lib/services/quiz-proctoring-service', () => ({ getSessionManifest: vi.fn() }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     lmsAssessment: { findFirst: h.assessmentFindFirst },
     lmsQuizAttempt: { findMany: h.attemptFindMany, create: h.attemptCreate },
     lmsProgress: { findFirst: h.progressFindFirst, create: h.progressCreate, update: h.progressUpdate },

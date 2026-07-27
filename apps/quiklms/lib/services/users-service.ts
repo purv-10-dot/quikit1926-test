@@ -4,7 +4,7 @@
  */
 import type { Prisma, LmsUserRole as UserRole } from '@prisma/client';
 import { LmsUserRole } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { BadRequest, Forbidden, NotFound } from '@/lib/http';
 import { sendEmail } from '@/lib/email';
 
@@ -73,7 +73,7 @@ export async function searchUsers(orgId: string | undefined, query?: string, rol
   const trimmed = query?.trim();
 
   if (!trimmed) {
-    return prisma.lmsUser.findMany({ where: base, select: SEARCH_SELECT, orderBy, take: 20 });
+    return db.lmsUser.findMany({ where: base, select: SEARCH_SELECT, orderBy, take: 20 });
   }
 
   const words = trimmed.split(/\s+/).filter(Boolean);
@@ -82,7 +82,7 @@ export async function searchUsers(orgId: string | undefined, query?: string, rol
     const w = words[0];
     // Prefix matches first — the legacy ranked these above contains-matches so
     // typing "ada" surfaces Ada before Amadadu.
-    const prefixMatches = await prisma.lmsUser.findMany({
+    const prefixMatches = await db.lmsUser.findMany({
       where: {
         ...base,
         OR: [
@@ -95,7 +95,7 @@ export async function searchUsers(orgId: string | undefined, query?: string, rol
       take: 10,
     });
 
-    const containsMatches = await prisma.lmsUser.findMany({
+    const containsMatches = await db.lmsUser.findMany({
       where: {
         ...base,
         id: { notIn: prefixMatches.map((u) => u.id) },
@@ -113,7 +113,7 @@ export async function searchUsers(orgId: string | undefined, query?: string, rol
     return [...prefixMatches, ...containsMatches];
   }
 
-  return prisma.lmsUser.findMany({
+  return db.lmsUser.findMany({
     where: { ...base, ...nameSearch(trimmed) },
     select: SEARCH_SELECT,
     orderBy,
@@ -128,30 +128,30 @@ export async function findAllUsers(orgId: string | undefined, search?: string, r
   else if (role && role !== 'ALL') where.role = role as UserRole;
   else if (excludeRoles.length) where.role = { notIn: excludeRoles as UserRole[] };
   if (search?.trim()) Object.assign(where, nameSearch(search));
-  return prisma.lmsUser.findMany({ where, select: LIST_SELECT, orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }] });
+  return db.lmsUser.findMany({ where, select: LIST_SELECT, orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }] });
 }
 
 export async function findUsersByIds(orgId: string, ids: string[]) {
   if (!ids.length) return [];
-  return prisma.lmsUser.findMany({
+  return db.lmsUser.findMany({
     where: { id: { in: ids }, orgId },
     select: { id: true, firstName: true, lastName: true, email: true, role: true, grade: true, section: true, studentId: true },
   });
 }
 
 export async function promoteToSubAdmin(userId: string, orgId: string) {
-  const user = await prisma.lmsUser.findUnique({ where: { id: userId } });
+  const user = await db.lmsUser.findUnique({ where: { id: userId } });
   if (!user) throw NotFound('User not found');
   if (!user.orgId || user.orgId !== orgId) throw Forbidden('User is not in this organization');
   if (user.secondaryRole === 'SUB_ADMIN') throw BadRequest('User already has Sub Admin role');
-  return prisma.lmsUser.update({ where: { id: userId }, data: { secondaryRole: 'SUB_ADMIN' }, select: LIST_SELECT });
+  return db.lmsUser.update({ where: { id: userId }, data: { secondaryRole: 'SUB_ADMIN' }, select: LIST_SELECT });
 }
 
 export async function revokeSubAdmin(userId: string, orgId: string) {
-  const user = await prisma.lmsUser.findUnique({ where: { id: userId } });
+  const user = await db.lmsUser.findUnique({ where: { id: userId } });
   if (!user) throw NotFound('User not found');
   if (!user.orgId || user.orgId !== orgId) throw Forbidden('User is not in this organization');
-  return prisma.lmsUser.update({ where: { id: userId }, data: { secondaryRole: null }, select: LIST_SELECT });
+  return db.lmsUser.update({ where: { id: userId }, data: { secondaryRole: null }, select: LIST_SELECT });
 }
 
 /**
@@ -176,7 +176,7 @@ export async function revokeSubAdmin(userId: string, orgId: string) {
  * could link users from another tenant.
  */
 async function assertInOrg(userId: string, orgId: string, role: 'PARENT' | 'LEARNER', label: string) {
-  const user = await prisma.lmsUser.findFirst({ where: { id: userId, orgId } });
+  const user = await db.lmsUser.findFirst({ where: { id: userId, orgId } });
   if (!user) throw NotFound(`${label} not found in this tenant`);
   // `secondaryRole` counts: the legacy's RolesGuard treated either as the role.
   if (user.role !== role && user.secondaryRole !== role) {
@@ -189,13 +189,13 @@ export async function linkParentStudent(orgId: string, parentId: string, student
   await assertInOrg(parentId, orgId, 'PARENT', 'Parent');
   await assertInOrg(studentId, orgId, 'LEARNER', 'Student');
 
-  const existing = await prisma.lmsUserParent.findUnique({
+  const existing = await db.lmsUserParent.findUnique({
     where: { parentId_childId: { parentId, childId: studentId } },
   });
   // Legacy returned success without re-writing when already linked.
   if (existing) return { success: true, message: 'Already linked' };
 
-  await prisma.lmsUserParent.create({ data: { parentId, childId: studentId } });
+  await db.lmsUserParent.create({ data: { parentId, childId: studentId } });
   return { success: true, message: 'Parent-Student linked successfully' };
 }
 
@@ -204,22 +204,22 @@ export async function unlinkParentStudent(orgId: string, parentId: string, stude
   // `deleteMany` (not `delete`) because the legacy's `$pull` was a no-op when
   // the link was already gone rather than an error.
   await assertInOrg(parentId, orgId, 'PARENT', 'Parent');
-  await prisma.lmsUserParent.deleteMany({ where: { parentId, childId: studentId } });
+  await db.lmsUserParent.deleteMany({ where: { parentId, childId: studentId } });
   return { success: true, message: 'Parent-Student unlinked successfully' };
 }
 
 export async function toggleActive(id: string, orgId: string | undefined, isActive: boolean) {
   const where: Prisma.LmsUserWhereInput = { id };
   if (orgId) where.orgId = orgId;
-  const existing = await prisma.lmsUser.findFirst({ where });
+  const existing = await db.lmsUser.findFirst({ where });
   if (!existing) throw NotFound('User not found');
-  return prisma.lmsUser.update({ where: { id }, data: { isActive }, select: LIST_SELECT });
+  return db.lmsUser.update({ where: { id }, data: { isActive }, select: LIST_SELECT });
 }
 
 export async function updateUser(id: string, orgId: string | undefined, data: Record<string, unknown>) {
   const where: Prisma.LmsUserWhereInput = { id };
   if (orgId) where.orgId = orgId;
-  const current = await prisma.lmsUser.findFirst({ where });
+  const current = await db.lmsUser.findFirst({ where });
   if (!current) throw NotFound('User not found or access denied');
 
   const update: Prisma.LmsUserUpdateInput = {};
@@ -278,7 +278,7 @@ export async function updateUser(id: string, orgId: string | undefined, data: Re
     const newEmail = String(data.email).trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) throw BadRequest('A valid email address is required');
     if (newEmail !== current.email.toLowerCase()) {
-      const dup = await prisma.lmsUser.findFirst({ where: { id: { not: id }, email: newEmail, orgId: current.orgId } });
+      const dup = await db.lmsUser.findFirst({ where: { id: { not: id }, email: newEmail, orgId: current.orgId } });
       if (dup) throw BadRequest('Another user with this email already exists');
       update.email = newEmail;
       emailChangedTo = newEmail;
@@ -306,7 +306,7 @@ export async function updateUser(id: string, orgId: string | undefined, data: Re
     update.children = { deleteMany: {}, create: ids.map((childId) => ({ childId })) };
   }
 
-  const user = await prisma.lmsUser.update({ where: { id }, data: update, select: LIST_SELECT });
+  const user = await db.lmsUser.update({ where: { id }, data: update, select: LIST_SELECT });
 
   // Address-update welcome email (legacy `sendEmailAddressUpdateWelcome`).
   // Best-effort: a mail failure must never fail the profile update.

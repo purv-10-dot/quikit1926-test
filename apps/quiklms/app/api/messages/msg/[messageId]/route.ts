@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { route, json } from '@/lib/http';
 import { parseBody } from '@/lib/validation';
 import { requireAuth } from '@/lib/auth/context';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { editMessage, deleteMessage } from '@/lib/services/messages-service';
 import { emitToConversation } from '@/lib/worker-emit';
 
@@ -40,7 +40,7 @@ export const DELETE = route(async (req, { params }) => {
   // delete. It is a soft delete, so the row is still there. Wrapped in
   // try/catch: a failed lookup must never turn a successful delete into a 500.
   try {
-    const row = await prisma.lmsMessage.findUnique({
+    const row = await db.lmsMessage.findUnique({
       where: { id: messageId },
       select: { conversationId: true },
     });

@@ -19,8 +19,8 @@ const h = vi.hoisted(() => ({
 
 vi.mock('next-auth', () => ({ getServerSession: h.getServerSession }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     app: { findMany: h.appFindMany },
     orgAppAccess: { findMany: h.orgAppAccessFindMany },
     userAppAccess: { findMany: h.userAppAccessFindMany },

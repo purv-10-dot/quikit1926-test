@@ -38,8 +38,8 @@ vi.mock('@/lib/s3', () => ({
   presignGet: vi.fn(),
   presignFromUrlOrKey: vi.fn(),
 }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     lmsCertificate: { findMany: h.templateFindMany, updateMany: h.templateUpdateMany, findUnique: vi.fn() },
     lmsCertificateIssued: { findUnique: h.certFindUnique, findFirst: h.certFindFirst, update: h.certUpdate },
     lmsUser: { findMany: vi.fn() },

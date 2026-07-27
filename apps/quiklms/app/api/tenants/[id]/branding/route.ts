@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { route, json } from '@/lib/http';
 import { parseBody } from '@/lib/validation';
 import { requireAuth, requireRoles, assertTenantMatch } from '@/lib/auth/context';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { findTenant } from '@/lib/services/tenants-service';
 
 const schema = z.object({
@@ -25,7 +25,7 @@ export const PATCH = route(async (req, { params }) => {
   if (dto.primaryColor !== undefined) data.primaryColor = dto.primaryColor;
   if (dto.secondaryColor !== undefined) data.secondaryColor = dto.secondaryColor;
 
-  const tenant = await prisma.lmsTenant.update({ where: { id: params!.id }, data });
+  const tenant = await db.lmsTenant.update({ where: { id: params!.id }, data });
   // The legacy handler returned ONLY the three branding fields
   // (`tenants.controller.ts:395-403`), not the whole tenant row. Returning the
   // full row here leaked every tenant column — including gstNumber,

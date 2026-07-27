@@ -5,12 +5,12 @@
  * functions own the read side, reproducing Mongo populate() with manual lookups.
  */
 import type { Prisma, LmsEscalationStatus as EscalationStatus } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 
 async function classMap(ids: string[]) {
   const unique = Array.from(new Set(ids.filter(Boolean)));
   if (!unique.length) return new Map<string, Record<string, unknown>>();
-  const classes = await prisma.lmsScheduledClass.findMany({
+  const classes = await db.lmsScheduledClass.findMany({
     where: { id: { in: unique } },
     select: { id: true, title: true, startTime: true, endTime: true, status: true },
   });
@@ -20,12 +20,12 @@ async function classMap(ids: string[]) {
 async function userMap(ids: string[], select: Prisma.LmsUserSelect) {
   const unique = Array.from(new Set(ids.filter(Boolean)));
   if (!unique.length) return new Map<string, Record<string, unknown>>();
-  const users = await prisma.lmsUser.findMany({ where: { id: { in: unique } }, select });
+  const users = await db.lmsUser.findMany({ where: { id: { in: unique } }, select });
   return new Map(users.map((u) => [u.id, { _id: u.id, ...(u as Record<string, unknown>) }]));
 }
 
 export async function getTeacherEscalations(orgId: string, teacherId: string) {
-  const rows = await prisma.lmsCallEscalation.findMany({
+  const rows = await db.lmsCallEscalation.findMany({
     where: { orgId, teacherId },
     include: { callAttempts: true },
     orderBy: { createdAt: 'desc' },
@@ -49,7 +49,7 @@ export async function getAdminEscalations(orgId: string, filters?: { status?: st
     if (filters?.to) where.createdAt.lte = filters.to;
   }
 
-  const rows = await prisma.lmsCallEscalation.findMany({
+  const rows = await db.lmsCallEscalation.findMany({
     where,
     include: { callAttempts: true },
     orderBy: { createdAt: 'desc' },

@@ -4,7 +4,7 @@
  * and lazily generates IncidentReport rows. orgId enforced via tenantWhere().
  */
 import type { Prisma, LmsProctoringEventType as ProctoringEventType, LmsProctoringSeverity as ProctoringSeverity } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { incrementProctoringFlags } from '@/lib/services/proctoring-flags';
 import { NotFound } from '@/lib/http';
 import type { AuthUser } from '@/lib/auth/context';
@@ -45,13 +45,13 @@ export async function logEvent(
    * potentially getting their exam voided. That is not a data leak; it is
    * framing someone for cheating, from an endpoint every learner can reach.
    */
-  const own = await prisma.lmsExamSession.findFirst({
+  const own = await db.lmsExamSession.findFirst({
     where: { id: sessionId, orgId, studentId },
     select: { id: true },
   });
   if (!own) throw NotFound('Session not found');
 
-  const count = await prisma.lmsProctoringLog.count({
+  const count = await db.lmsProctoringLog.count({
     where: { sessionId, eventType: eventType as ProctoringEventType },
   });
 
@@ -61,7 +61,7 @@ export async function logEvent(
   else if (count >= 3) severity = 'medium';
   else severity = 'low';
 
-  const log = await prisma.lmsProctoringLog.create({
+  const log = await db.lmsProctoringLog.create({
     data: {
       orgId,
       sessionId,
@@ -85,7 +85,7 @@ export async function logEvent(
 
 export async function getSessionLog(user: AuthUser, sessionId: string) {
   const orgId = user.orgId as string;
-  return prisma.lmsProctoringLog.findMany({
+  return db.lmsProctoringLog.findMany({
     where: { orgId, sessionId },
     orderBy: { timestamp: 'asc' },
   });
@@ -94,7 +94,7 @@ export async function getSessionLog(user: AuthUser, sessionId: string) {
 export async function getExamIncidents(user: AuthUser, examId: string) {
   const orgId = user.orgId as string;
 
-  const sessions = await prisma.lmsExamSession.findMany({
+  const sessions = await db.lmsExamSession.findMany({
     where: { orgId, examId, proctoringFlags: { path: ['totalFlags'], gt: 0 } },
   });
 
@@ -111,7 +111,7 @@ export async function getExamIncidents(user: AuthUser, examId: string) {
   const studentMap = await (async () => {
     const ids = [...new Set(sessions.map((x) => x.studentId).filter(Boolean))];
     if (!ids.length) return new Map<string, Record<string, unknown>>();
-    const users = await prisma.lmsUser.findMany({
+    const users = await db.lmsUser.findMany({
       where: { id: { in: ids } },
       select: { id: true, firstName: true, lastName: true, email: true },
     });
@@ -120,9 +120,9 @@ export async function getExamIncidents(user: AuthUser, examId: string) {
 
   const incidents: unknown[] = [];
   for (const session of sessions) {
-    let incident = await prisma.lmsIncidentReport.findFirst({ where: { sessionId: session.id, orgId } });
+    let incident = await db.lmsIncidentReport.findFirst({ where: { sessionId: session.id, orgId } });
     if (!incident) {
-      const logs = await prisma.lmsProctoringLog.findMany({ where: { sessionId: session.id } });
+      const logs = await db.lmsProctoringLog.findMany({ where: { sessionId: session.id } });
       const summary: Record<string, number> = {};
       let total = 0;
       for (const log of logs) {
@@ -131,7 +131,7 @@ export async function getExamIncidents(user: AuthUser, examId: string) {
       }
       summary.total = total;
 
-      incident = await prisma.lmsIncidentReport.create({
+      incident = await db.lmsIncidentReport.create({
         data: {
           orgId,
           sessionId: session.id,
@@ -163,10 +163,10 @@ export async function reviewIncident(
 ) {
   const orgId = user.orgId as string;
 
-  const existing = await prisma.lmsIncidentReport.findFirst({ where: { sessionId, orgId } });
+  const existing = await db.lmsIncidentReport.findFirst({ where: { sessionId, orgId } });
   if (!existing) throw NotFound('Incident report not found');
 
-  const incident = await prisma.lmsIncidentReport.update({
+  const incident = await db.lmsIncidentReport.update({
     where: { id: existing.id },
     data: {
       reviewedBy: reviewerId,
@@ -178,7 +178,7 @@ export async function reviewIncident(
   });
 
   if (data.action === 'session_voided') {
-    await prisma.lmsExamSession.update({
+    await db.lmsExamSession.update({
       where: { id: sessionId },
       data: { status: 'voided', endedAt: new Date() },
     });

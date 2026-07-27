@@ -22,8 +22,8 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/env', () => ({ env: { DATABASE_URL: 'x' }, optionalEnv: () => '' }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     lmsMeeting: { findFirst: h.meetingFindFirst, update: h.meetingUpdate },
     lmsMeetingAttendance: {
       findFirst: h.attendanceFindFirst,

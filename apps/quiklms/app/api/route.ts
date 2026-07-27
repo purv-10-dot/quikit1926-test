@@ -9,7 +9,8 @@ import { NextResponse } from 'next/server';
  * monitors, a load balancer's default health path — got a 404.
  *
  * Deliberately dependency-free: it answers "is the runtime up", nothing more.
- * `/api/health` is the one that probes the database.
+ * `/api/health` is the standardized fleet liveness probe (also dependency-free,
+ * matches apps/quiktrack). DB reachability is a readiness concern, not liveness.
  */
 export async function GET() {
   return NextResponse.json({ message: 'QuikSkill LMS API is running!' });

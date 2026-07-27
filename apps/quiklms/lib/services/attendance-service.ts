@@ -6,7 +6,7 @@
  * notification are owned by the worker process (Phase 4) and reduced to no-ops.
  */
 import type { Prisma, LmsAttendanceStatus as AttendanceStatus } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { generatePayouts } from '@/lib/services/payouts-service';
 import { ApiError, BadRequest, Forbidden, NotFound } from '@/lib/http';
 import { deductCredit, getZeroCreditStatus } from './credits-service';
@@ -33,7 +33,7 @@ export interface EditAttendanceInput {
 
 // ═══════════════ MARK ATTENDANCE (BULK) ═══════════════
 export async function markAttendance(orgId: string, dto: MarkAttendanceInput, markedBy: string) {
-  const scheduledClass = await prisma.lmsScheduledClass.findFirst({
+  const scheduledClass = await db.lmsScheduledClass.findFirst({
     where: { id: dto.scheduledClassId, orgId },
   });
   if (!scheduledClass) throw NotFound('Scheduled class not found');
@@ -41,14 +41,14 @@ export async function markAttendance(orgId: string, dto: MarkAttendanceInput, ma
   const batchId = dto.batchId || scheduledClass.batchId;
   const classDate = dto.classDate ? new Date(dto.classDate) : scheduledClass.startTime;
 
-  const existing = await prisma.lmsAttendance.findFirst({ where: { scheduledClassId: dto.scheduledClassId } });
+  const existing = await db.lmsAttendance.findFirst({ where: { scheduledClassId: dto.scheduledClassId } });
   if (existing) throw BadRequest('Attendance has already been marked for this class');
 
   const records: Array<{ status: AttendanceStatus }> = [];
   const warnings: string[] = [];
 
   for (const student of dto.students) {
-    let attendance = await prisma.lmsAttendance.create({
+    let attendance = await db.lmsAttendance.create({
       data: {
         orgId,
         scheduledClassId: dto.scheduledClassId,
@@ -64,7 +64,7 @@ export async function markAttendance(orgId: string, dto: MarkAttendanceInput, ma
     if (student.status === 'present' || student.status === 'late') {
       let creditAmount = 1;
       try {
-        const batch = await prisma.lmsBatch.findUnique({ where: { id: batchId }, select: { creditPerClass: true } });
+        const batch = await db.lmsBatch.findUnique({ where: { id: batchId }, select: { creditPerClass: true } });
         creditAmount = batch?.creditPerClass ?? 1;
       } catch {
         /* use default */
@@ -89,7 +89,7 @@ export async function markAttendance(orgId: string, dto: MarkAttendanceInput, ma
             warnings.push(
               `${student.studentId}: Grace class used (${zeroCreditStatus.graceClassesUsed + 1}/${zeroCreditStatus.gracePeriodClasses})`,
             );
-            attendance = await prisma.lmsAttendance.update({
+            attendance = await db.lmsAttendance.update({
               where: { id: attendance.id },
               data: { creditDeducted: false },
             });
@@ -111,7 +111,7 @@ export async function markAttendance(orgId: string, dto: MarkAttendanceInput, ma
           attendance.id,
           creditAmount,
         );
-        attendance = await prisma.lmsAttendance.update({
+        attendance = await db.lmsAttendance.update({
           where: { id: attendance.id },
           data: { creditDeducted: true, creditTransactionId: creditResult.transactionId },
         });
@@ -147,7 +147,7 @@ export async function markAttendance(orgId: string, dto: MarkAttendanceInput, ma
    * recomputation must never fail the attendance the teacher just marked.
    */
   try {
-    const cls = await prisma.lmsScheduledClass.findUnique({
+    const cls = await db.lmsScheduledClass.findUnique({
       where: { id: dto.scheduledClassId },
       select: { startTime: true },
     });
@@ -174,7 +174,7 @@ export async function markAttendance(orgId: string, dto: MarkAttendanceInput, ma
 
 // ═══════════════ GET CLASS ATTENDANCE ═══════════════
 export async function getClassAttendance(orgId: string, classId: string) {
-  const records = await prisma.lmsAttendance.findMany({
+  const records = await db.lmsAttendance.findMany({
     where: { orgId, scheduledClassId: classId },
   });
   return hydrateAttendance(records, {
@@ -188,14 +188,14 @@ export async function getStudentAttendance(orgId: string, studentId: string, sta
   const where: Prisma.LmsAttendanceWhereInput = { orgId, studentId };
   applyClassDateRange(where, startDate, endDate);
 
-  const records = await prisma.lmsAttendance.findMany({ where, orderBy: { classDate: 'desc' } });
+  const records = await db.lmsAttendance.findMany({ where, orderBy: { classDate: 'desc' } });
 
   // populate scheduledClassId (title,startTime,endTime) + batchId (name,subject,grade)
   const classIds = Array.from(new Set(records.map((r) => r.scheduledClassId)));
   const batchIds = Array.from(new Set(records.map((r) => r.batchId)));
   const [classes, batches] = await Promise.all([
-    prisma.lmsScheduledClass.findMany({ where: { id: { in: classIds } }, select: { id: true, title: true, startTime: true, endTime: true } }),
-    prisma.lmsBatch.findMany({ where: { id: { in: batchIds } }, select: { id: true, name: true, subject: true, grade: true } }),
+    db.lmsScheduledClass.findMany({ where: { id: { in: classIds } }, select: { id: true, title: true, startTime: true, endTime: true } }),
+    db.lmsBatch.findMany({ where: { id: { in: batchIds } }, select: { id: true, name: true, subject: true, grade: true } }),
   ]);
   const classMap = new Map(classes.map((c) => [c.id, c]));
   const batchMap = new Map(batches.map((b) => [b.id, b]));
@@ -212,7 +212,7 @@ export async function getBatchReport(orgId: string, batchId: string, startDate?:
   const where: Prisma.LmsAttendanceWhereInput = { orgId, batchId };
   applyClassDateRange(where, startDate, endDate);
 
-  const rawRecords = await prisma.lmsAttendance.findMany({ where, orderBy: { classDate: 'desc' } });
+  const rawRecords = await db.lmsAttendance.findMany({ where, orderBy: { classDate: 'desc' } });
 
   const records = await hydrateAttendance(rawRecords, {
     studentSelect: { id: true, firstName: true, lastName: true, grade: true, studentId: true },
@@ -248,14 +248,14 @@ export async function editAttendance(
   editedBy: string,
   userRole?: string,
 ) {
-  const attendance = await prisma.lmsAttendance.findFirst({ where: { id: attendanceId, orgId } });
+  const attendance = await db.lmsAttendance.findFirst({ where: { id: attendanceId, orgId } });
   if (!attendance) throw NotFound('Attendance record not found');
 
   if (userRole === 'TEACHER' && attendance.markedBy !== editedBy) {
     throw Forbidden('Teachers can only edit attendance records they marked');
   }
 
-  return prisma.lmsAttendance.update({
+  return db.lmsAttendance.update({
     where: { id: attendanceId },
     data: {
       status: dto.status,
@@ -283,7 +283,7 @@ async function hydrateAttendance(
 ) {
   const studentIds = Array.from(new Set(records.map((r) => r.studentId)));
   const students = studentIds.length
-    ? await prisma.lmsUser.findMany({ where: { id: { in: studentIds } }, select: opts.studentSelect })
+    ? await db.lmsUser.findMany({ where: { id: { in: studentIds } }, select: opts.studentSelect })
     : [];
   const studentMap = new Map(students.map((s) => [(s as { id: string }).id, s]));
 
@@ -291,7 +291,7 @@ async function hydrateAttendance(
   if (opts.withMarkedBy) {
     const markerIds = Array.from(new Set(records.map((r) => r.markedBy)));
     const markers = markerIds.length
-      ? await prisma.lmsUser.findMany({ where: { id: { in: markerIds } }, select: { id: true, firstName: true, lastName: true } })
+      ? await db.lmsUser.findMany({ where: { id: { in: markerIds } }, select: { id: true, firstName: true, lastName: true } })
       : [];
     markedByMap = new Map(markers.map((m) => [m.id, m]));
   }
@@ -300,7 +300,7 @@ async function hydrateAttendance(
   if (opts.classSelect) {
     const classIds = Array.from(new Set(records.map((r) => r.scheduledClassId)));
     const classes = classIds.length
-      ? await prisma.lmsScheduledClass.findMany({ where: { id: { in: classIds } }, select: opts.classSelect })
+      ? await db.lmsScheduledClass.findMany({ where: { id: { in: classIds } }, select: opts.classSelect })
       : [];
     classMap = new Map(classes.map((c) => [(c as { id: string }).id, c]));
   }

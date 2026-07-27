@@ -14,7 +14,7 @@
  *    infra; the DB state transitions are preserved regardless.
  */
 import type { LmsClassStatus as ClassStatus, Prisma } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { BadRequest, NotFound } from '@/lib/http';
 import { sendEmail } from '@/lib/email';
 
@@ -38,7 +38,7 @@ const USER_NAME_SELECT = { id: true, firstName: true, lastName: true, email: tru
 async function userMap(ids: string[], select: Prisma.LmsUserSelect = USER_NAME_SELECT) {
   const unique = Array.from(new Set(ids.filter(Boolean)));
   if (!unique.length) return new Map<string, Record<string, unknown>>();
-  const users = await prisma.lmsUser.findMany({ where: { id: { in: unique } }, select });
+  const users = await db.lmsUser.findMany({ where: { id: { in: unique } }, select });
   // Expose `_id` alongside `id`. Mongoose's `.populate()` produced `_id`, the
   // batch shape emits `_id`, and this service's own getSessionJoinTimestamps
   // builds `{_id: ...}` — so a consumer reading `teacherId._id` would otherwise
@@ -63,7 +63,7 @@ function shapeClass(
 async function loadBatchLite(batchIds: string[]) {
   const unique = Array.from(new Set(batchIds.filter(Boolean)));
   if (!unique.length) return new Map<string, Record<string, unknown>>();
-  const batches = await prisma.lmsBatch.findMany({
+  const batches = await db.lmsBatch.findMany({
     where: { id: { in: unique } },
     select: { id: true, name: true, grade: true, subject: true, students: { select: { studentId: true } } },
   });
@@ -80,7 +80,7 @@ export async function generateClasses(
   orgId: string,
   dto: { batchId: string; fromDate?: string; toDate?: string },
 ): Promise<unknown[]> {
-  const batch = await prisma.lmsBatch.findFirst({
+  const batch = await db.lmsBatch.findFirst({
     where: { id: dto.batchId, orgId },
     include: { schedule: true },
   });
@@ -90,7 +90,7 @@ export async function generateClasses(
   const fromDate = dto.fromDate ? new Date(dto.fromDate) : new Date(batch.startDate);
   const toDate = dto.toDate ? new Date(dto.toDate) : new Date(batch.endDate);
 
-  const existingClasses = await prisma.lmsScheduledClass.findMany({
+  const existingClasses = await db.lmsScheduledClass.findMany({
     where: {
       orgId,
       batchId: batch.id,
@@ -141,7 +141,7 @@ export async function generateClasses(
   const inserted: unknown[] = [];
   for (const data of toCreate) {
     try {
-      inserted.push(await prisma.lmsScheduledClass.create({ data }));
+      inserted.push(await db.lmsScheduledClass.create({ data }));
     } catch {
       /* duplicate guard — skip */
     }
@@ -167,7 +167,7 @@ export async function getSessionJoinTimestamps(
   if (params.batchId) where.batchId = params.batchId;
   if (params.teacherId) where.teacherId = params.teacherId;
 
-  const classes = await prisma.lmsScheduledClass.findMany({
+  const classes = await db.lmsScheduledClass.findMany({
     where,
     orderBy: { startTime: 'desc' },
     take: limit,
@@ -179,7 +179,7 @@ export async function getSessionJoinTimestamps(
   const meetingIds = classes.map((c) => c.meetingId).filter(Boolean) as string[];
   const meetingAttendanceByMeeting = new Map<string, Array<{ userId: string; role: string; firstJoinAt: Date }>>();
   if (meetingIds.length) {
-    const rows = await prisma.lmsMeetingAttendance.findMany({
+    const rows = await db.lmsMeetingAttendance.findMany({
       where: { meetingId: { in: meetingIds } },
       select: { meetingId: true, userId: true, role: true, joinedAt: true },
     });
@@ -254,7 +254,7 @@ export async function getAllTenantClasses(orgId: string, startDate?: string, end
   const where: Prisma.LmsScheduledClassWhereInput = { orgId };
   applyDateRange(where, startDate, endDate);
 
-  const classes = await prisma.lmsScheduledClass.findMany({ where, orderBy: { startTime: 'asc' } });
+  const classes = await db.lmsScheduledClass.findMany({ where, orderBy: { startTime: 'asc' } });
   return hydrateClasses(classes, true);
 }
 
@@ -267,7 +267,7 @@ export async function getTeacherClasses(orgId: string, teacherId: string, startD
   };
   applyDateRange(where, startDate, endDate);
 
-  const classes = await prisma.lmsScheduledClass.findMany({ where, orderBy: { startTime: 'asc' } });
+  const classes = await db.lmsScheduledClass.findMany({ where, orderBy: { startTime: 'asc' } });
   const seen = new Set<string>();
   const deduped = classes.filter((c) => (seen.has(c.id) ? false : (seen.add(c.id), true)));
   return hydrateClasses(deduped, true);
@@ -275,7 +275,7 @@ export async function getTeacherClasses(orgId: string, teacherId: string, startD
 
 // ═══════════════ GET STUDENT'S CLASSES ═══════════════
 export async function getStudentClasses(orgId: string, studentId: string, startDate?: string, endDate?: string) {
-  const batchRows = await prisma.lmsBatchStudent.findMany({
+  const batchRows = await db.lmsBatchStudent.findMany({
     where: { studentId, batch: { orgId, status: ACTIVE } },
     select: { batchId: true },
   });
@@ -289,13 +289,13 @@ export async function getStudentClasses(orgId: string, studentId: string, startD
   };
   applyDateRange(where, startDate, endDate);
 
-  const classes = await prisma.lmsScheduledClass.findMany({ where, orderBy: { startTime: 'asc' } });
+  const classes = await db.lmsScheduledClass.findMany({ where, orderBy: { startTime: 'asc' } });
   return hydrateClasses(classes, false);
 }
 
 // ═══════════════ GET CLASS BY ID ═══════════════
 export async function findOne(orgId: string, classId: string) {
-  const cls = await prisma.lmsScheduledClass.findUnique({ where: { id: classId } });
+  const cls = await db.lmsScheduledClass.findUnique({ where: { id: classId } });
   if (!cls || cls.orgId !== orgId) throw NotFound('Scheduled class not found');
   const [shaped] = await hydrateClasses([cls], true);
   return shaped;
@@ -303,11 +303,11 @@ export async function findOne(orgId: string, classId: string) {
 
 // ═══════════════ START CLASS ═══════════════
 export async function startClass(orgId: string, classId: string) {
-  const cls = await prisma.lmsScheduledClass.findUnique({ where: { id: classId } });
+  const cls = await db.lmsScheduledClass.findUnique({ where: { id: classId } });
   if (!cls || cls.orgId !== orgId) throw NotFound('Scheduled class not found');
   if (cls.status !== 'scheduled') throw BadRequest('Class can only be started from scheduled status');
 
-  const updated = await prisma.lmsScheduledClass.update({ where: { id: classId }, data: { status: 'in_progress' } });
+  const updated = await db.lmsScheduledClass.update({ where: { id: classId }, data: { status: 'in_progress' } });
 
   /**
    * Resolve any open escalation for this class — port of
@@ -323,7 +323,7 @@ export async function startClass(orgId: string, classId: string) {
    * request.
    */
   try {
-    await prisma.lmsCallEscalation.updateMany({
+    await db.lmsCallEscalation.updateMany({
       where: { orgId, scheduledClassId: classId, status: { in: ['pending', 'escalating'] } },
       data: { status: 'resolved', resolutionTime: new Date(), teacherJoinedAt: new Date() },
     });
@@ -347,7 +347,7 @@ export async function startClass(orgId: string, classId: string) {
     const classStart = new Date(updated.startTime);
     const delayMinutes = (Date.now() - classStart.getTime()) / 60000;
     const punctualityDelta = delayMinutes <= 2 ? 1 : delayMinutes <= 5 ? 0 : -1;
-    await prisma.lmsUser.update({
+    await db.lmsUser.update({
       where: { id: updated.teacherId },
       data: { punctualityScore: { increment: punctualityDelta } },
     });
@@ -384,10 +384,10 @@ async function trySend(to: string, subject: string, html: string): Promise<void>
 
 /** Active students of a batch — `userModel.find({_id: {$in: batch.studentIds}, isActive: true})`. */
 async function activeBatchStudents(batchId: string) {
-  const rows = await prisma.lmsBatchStudent.findMany({ where: { batchId }, select: { studentId: true } });
+  const rows = await db.lmsBatchStudent.findMany({ where: { batchId }, select: { studentId: true } });
   const ids = rows.map((r) => r.studentId);
   if (!ids.length) return [];
-  return prisma.lmsUser.findMany({
+  return db.lmsUser.findMany({
     where: { id: { in: ids }, isActive: true },
     select: { id: true, firstName: true, email: true },
   });
@@ -409,12 +409,12 @@ async function sendJoinLinkToStudents(cls: {
   startTime: Date;
   meetingId: string | null;
 }): Promise<void> {
-  let meeting = cls.meetingId ? await prisma.lmsMeeting.findUnique({ where: { id: cls.meetingId } }) : null;
+  let meeting = cls.meetingId ? await db.lmsMeeting.findUnique({ where: { id: cls.meetingId } }) : null;
 
   if (!meeting) {
-    meeting = await prisma.lmsMeeting.findFirst({ where: { scheduledClassId: cls.id } });
+    meeting = await db.lmsMeeting.findFirst({ where: { scheduledClassId: cls.id } });
     if (meeting) {
-      await prisma.lmsScheduledClass
+      await db.lmsScheduledClass
         .update({ where: { id: cls.id }, data: { meetingId: meeting.id } })
         .catch(() => {});
     }
@@ -428,8 +428,8 @@ async function sendJoinLinkToStudents(cls: {
   const students = await activeBatchStudents(cls.batchId);
   if (!students.length) return;
 
-  const batch = await prisma.lmsBatch.findUnique({ where: { id: cls.batchId }, select: { subject: true } });
-  const teacher = await prisma.lmsUser.findUnique({
+  const batch = await db.lmsBatch.findUnique({ where: { id: cls.batchId }, select: { subject: true } });
+  const teacher = await db.lmsUser.findUnique({
     where: { id: cls.teacherId },
     select: { firstName: true, lastName: true },
   });
@@ -469,14 +469,14 @@ async function sendJoinLinkToStudents(cls: {
 
 // ═══════════════ COMPLETE CLASS ═══════════════
 export async function completeClass(orgId: string, classId: string) {
-  const cls = await prisma.lmsScheduledClass.findUnique({ where: { id: classId } });
+  const cls = await db.lmsScheduledClass.findUnique({ where: { id: classId } });
   if (!cls || cls.orgId !== orgId) throw NotFound('Scheduled class not found');
   if (cls.status !== 'in_progress' && cls.status !== 'scheduled') {
     throw BadRequest('Class can only be completed from in_progress or scheduled status');
   }
-  const updated = await prisma.lmsScheduledClass.update({ where: { id: classId }, data: { status: 'completed' } });
+  const updated = await db.lmsScheduledClass.update({ where: { id: classId }, data: { status: 'completed' } });
   try {
-    await prisma.lmsUser.update({ where: { id: updated.teacherId }, data: { classesCompleted: { increment: 1 } } });
+    await db.lmsUser.update({ where: { id: updated.teacherId }, data: { classesCompleted: { increment: 1 } } });
   } catch {
     /* non-blocking */
   }
@@ -486,16 +486,16 @@ export async function completeClass(orgId: string, classId: string) {
 
 // ═══════════════ CANCEL CLASS ═══════════════
 export async function cancelClass(orgId: string, classId: string, dto: { reason: string }) {
-  const cls = await prisma.lmsScheduledClass.findUnique({ where: { id: classId } });
+  const cls = await db.lmsScheduledClass.findUnique({ where: { id: classId } });
   if (!cls || cls.orgId !== orgId) throw NotFound('Scheduled class not found');
   if (cls.status === 'completed') throw BadRequest('Cannot cancel a completed class');
 
-  const updated = await prisma.lmsScheduledClass.update({
+  const updated = await db.lmsScheduledClass.update({
     where: { id: classId },
     data: { status: 'cancelled', cancellationReason: dto.reason },
   });
   try {
-    await prisma.lmsUser.update({ where: { id: cls.teacherId }, data: { classesCancelled: { increment: 1 } } });
+    await db.lmsUser.update({ where: { id: cls.teacherId }, data: { classesCancelled: { increment: 1 } } });
   } catch {
     /* non-blocking */
   }
@@ -508,13 +508,13 @@ export async function rescheduleClass(
   classId: string,
   dto: { newStartTime: string; newEndTime: string; reason: string; newLocation?: string },
 ) {
-  const cls = await prisma.lmsScheduledClass.findUnique({ where: { id: classId } });
+  const cls = await db.lmsScheduledClass.findUnique({ where: { id: classId } });
   if (!cls || cls.orgId !== orgId) throw NotFound('Scheduled class not found');
   if (cls.status === 'cancelled' || cls.status === 'rescheduled') {
     throw BadRequest('Cannot reschedule a cancelled or already-rescheduled class');
   }
 
-  const newClass = await prisma.lmsScheduledClass.create({
+  const newClass = await db.lmsScheduledClass.create({
     data: {
       orgId,
       batchId: cls.batchId,
@@ -529,7 +529,7 @@ export async function rescheduleClass(
     },
   });
 
-  await prisma.lmsScheduledClass.update({
+  await db.lmsScheduledClass.update({
     where: { id: classId },
     data: { status: 'rescheduled', rescheduledTo: newClass.id, rescheduleReason: dto.reason },
   });
@@ -593,7 +593,7 @@ async function sendRescheduleNotification(
 
 // ═══════════════ MARK ATTENDANCE TIMESTAMP ═══════════════
 export async function markAttendanceTimestamp(classId: string): Promise<void> {
-  await prisma.lmsScheduledClass.update({
+  await db.lmsScheduledClass.update({
     where: { id: classId },
     data: { attendanceMarkedAt: new Date(), status: 'completed' },
   });
@@ -601,7 +601,7 @@ export async function markAttendanceTimestamp(classId: string): Promise<void> {
 
 // ═══════════════ CANCEL FUTURE CLASSES FOR BATCH ═══════════════
 export async function cancelFutureClassesForBatch(orgId: string, batchId: string, fromDate: Date): Promise<void> {
-  await prisma.lmsScheduledClass.updateMany({
+  await db.lmsScheduledClass.updateMany({
     where: { orgId, batchId, status: 'scheduled', startTime: { gte: fromDate } },
     data: { status: 'cancelled', cancellationReason: 'Batch schedule updated' },
   });
@@ -613,7 +613,7 @@ export async function validateTeacherSchedule(
   schedule: ScheduleSlot[],
   excludeBatchId?: string,
 ): Promise<{ available: boolean; reason?: string }[]> {
-  const teacher = await prisma.lmsUser.findUnique({
+  const teacher = await db.lmsUser.findUnique({
     where: { id: teacherId },
     select: { orgId: true, availableSlots: { select: { dayOfWeek: true, startTime: true, endTime: true } } },
   });
@@ -638,7 +638,7 @@ export async function validateTeacherSchedule(
       status: { in: ['active', 'draft'] },
     };
     if (excludeBatchId) batchWhere.id = { not: excludeBatchId };
-    const existingBatches = await prisma.lmsBatch.findMany({
+    const existingBatches = await db.lmsBatch.findMany({
       where: batchWhere,
       select: { name: true, schedule: { select: { dayOfWeek: true, startTime: true, endTime: true } } },
     });

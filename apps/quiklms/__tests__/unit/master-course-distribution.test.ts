@@ -42,8 +42,8 @@ vi.mock('@/lib/auth/context', () => ({
   requireRoles: vi.fn(),
   userHasRole: (u: { role?: string }, r: string) => u?.role === r,
 }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     lmsMasterCourse: {
       findUnique: h.masterFindUnique,
       findFirst: h.masterFindFirst,

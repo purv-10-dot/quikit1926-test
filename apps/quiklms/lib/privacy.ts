@@ -19,7 +19,7 @@
  * the outcome is identical.
  */
 import type { NextRequest } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import type { AuthUser } from '@/lib/auth/context';
 
 /** Verbatim from `teacher-privacy.interceptor.ts:6-19`. Order preserved. */
@@ -95,7 +95,7 @@ async function logAccess(data: {
   userAgent?: string;
 }): Promise<void> {
   try {
-    await prisma.lmsPrivacyAuditLog.create({ data });
+    await db.lmsPrivacyAuditLog.create({ data });
   } catch {
     // Swallowed, as in the original.
   }

@@ -8,9 +8,13 @@ import { z } from 'zod';
 
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  BASE_URL: z.string().url().default('http://localhost:3020'),
-  FRONTEND_URL: z.string().url().default('http://localhost:3020'),
+  // App's own public origin — platform-standard names (replaces the app-local
+  // BASE_URL / FRONTEND_URL). NEXTAUTH_URL is the server-side self-origin every
+  // QuikIT app defines; NEXT_PUBLIC_QUIKLMS_URL is the client-exposed variant.
+  NEXTAUTH_URL: z.string().url().default('http://localhost:3014'),
+  NEXT_PUBLIC_QUIKLMS_URL: z.string().url().default('http://localhost:3014'),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
+  DATABASE_URL_DIRECT: z.string().optional(),
   REDIS_URL: z.string().default('redis://127.0.0.1:6379'),
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be set (>=16 chars)'),
   ENCRYPTION_KEY: z.string().min(16, 'ENCRYPTION_KEY must be set'),

@@ -34,7 +34,7 @@ import type {
 } from '@prisma/client';
 import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 import { NotFound } from '@/lib/http';
 import {
   S3_BUCKET,
@@ -45,7 +45,7 @@ import {
 } from '@/lib/s3';
 import { sendTemplateEmail } from '@/lib/services/email-templates-service';
 
-const FRONTEND_URL = process.env.FRONTEND_URL || process.env.BASE_URL || 'https://quikskills.quikit.ai';
+const FRONTEND_URL = process.env.NEXTAUTH_URL || 'http://localhost:3014';
 
 /**
  * Host for the PUBLIC certificate download link mailed to the learner
@@ -58,7 +58,8 @@ const FRONTEND_URL = process.env.FRONTEND_URL || process.env.BASE_URL || 'https:
  * fallback chain ends at FRONTEND_URL, and the path carries Next's `/api`
  * prefix (the legacy had no global prefix — verified in `main.ts`).
  */
-const BACKEND_URL = process.env.BACKEND_URL || process.env.API_BASE_URL || FRONTEND_URL;
+// Same origin as the frontend (Next serves the API under /api on the same host).
+const BACKEND_URL = FRONTEND_URL;
 const PLATFORM_NAME = process.env.PLATFORM_NAME || 'QuikSkill LMS';
 
 // ── Certificate rendering geometry ───────────────────────────────────────────
@@ -266,7 +267,7 @@ function pickTemplateFields(data: Record<string, unknown>): Record<string, unkno
 export async function createTemplate(data: Record<string, unknown>) {
   const { selectedTenants } = data as { selectedTenants?: string[] };
   const rest = pickTemplateFields(data);
-  const created = await prisma.lmsCertificate.create({
+  const created = await db.lmsCertificate.create({
     data: {
       ...(rest as object),
       ...(selectedTenants?.length
@@ -288,11 +289,11 @@ export async function findAll(orgId?: string) {
         { submittedByTenantId: orgId },
       ],
     };
-    let certs = await prisma.lmsCertificate.findMany({ where: { AND: [where, { isActive: true }] }, include: SELECTED_TENANTS_INCLUDE });
+    let certs = await db.lmsCertificate.findMany({ where: { AND: [where, { isActive: true }] }, include: SELECTED_TENANTS_INCLUDE });
     if (certs.length === 0) {
-      certs = await prisma.lmsCertificate.findMany({ where: { AND: [where, { approvalStatus: 'approved' }] }, include: SELECTED_TENANTS_INCLUDE });
+      certs = await db.lmsCertificate.findMany({ where: { AND: [where, { approvalStatus: 'approved' }] }, include: SELECTED_TENANTS_INCLUDE });
       if (certs.length) {
-        await prisma.lmsCertificate.updateMany({ where: { id: { in: certs.map((c) => c.id) } }, data: { isActive: true } });
+        await db.lmsCertificate.updateMany({ where: { id: { in: certs.map((c) => c.id) } }, data: { isActive: true } });
         certs = certs.map((c) => ({ ...c, isActive: true }));
       }
     }
@@ -308,15 +309,15 @@ export async function findAll(orgId?: string) {
     // templates were rejected gets none, and issuance falls back to the built-in
     // default certificate rather than resurrecting a refused design.
     if (certs.length === 0) {
-      certs = await prisma.lmsCertificate.findMany({ where: { AND: [where, { approvalStatus: { not: 'rejected' } }] }, include: SELECTED_TENANTS_INCLUDE });
+      certs = await db.lmsCertificate.findMany({ where: { AND: [where, { approvalStatus: { not: 'rejected' } }] }, include: SELECTED_TENANTS_INCLUDE });
       if (certs.length) {
-        await prisma.lmsCertificate.updateMany({ where: { id: { in: certs.map((c) => c.id) } }, data: { isActive: true, approvalStatus: 'approved' } });
+        await db.lmsCertificate.updateMany({ where: { id: { in: certs.map((c) => c.id) } }, data: { isActive: true, approvalStatus: 'approved' } });
         certs = certs.map((c) => ({ ...c, isActive: true, approvalStatus: 'approved' as const }));
       }
     }
     return certs.map(shapeTemplate);
   }
-  return (await prisma.lmsCertificate.findMany({ include: SELECTED_TENANTS_INCLUDE })).map(shapeTemplate);
+  return (await db.lmsCertificate.findMany({ include: SELECTED_TENANTS_INCLUDE })).map(shapeTemplate);
 }
 
 type PopulatedActor = { _id: string; firstName: string; lastName: string; email: string } | null;
@@ -350,13 +351,13 @@ async function hydrateApprovalActors(certs: CertificateTemplate[]): Promise<Appr
 
   const [users, tenants] = await Promise.all([
     userIds.length
-      ? prisma.lmsUser.findMany({
+      ? db.lmsUser.findMany({
           where: { id: { in: userIds } },
           select: { id: true, firstName: true, lastName: true, email: true },
         })
       : [],
     orgIds.length
-      ? prisma.lmsTenant.findMany({
+      ? db.lmsTenant.findMany({
           where: { id: { in: orgIds } },
           select: { id: true, orgName: true, contactEmail: true },
         })
@@ -380,7 +381,7 @@ async function hydrateApprovalActors(certs: CertificateTemplate[]): Promise<Appr
 }
 
 export async function findPendingApprovals(): Promise<ApprovalItem[]> {
-  const certs = await prisma.lmsCertificate.findMany({
+  const certs = await db.lmsCertificate.findMany({
     where: { approvalStatus: 'pending_approval' },
     orderBy: { createdAt: 'desc' },
   });
@@ -388,7 +389,7 @@ export async function findPendingApprovals(): Promise<ApprovalItem[]> {
 }
 
 export async function findAllApprovalItems(): Promise<ApprovalItem[]> {
-  const certs = await prisma.lmsCertificate.findMany({
+  const certs = await db.lmsCertificate.findMany({
     where: { submittedByTenantId: { not: null }, approvalStatus: { in: ['pending_approval', 'approved', 'rejected'] } },
     orderBy: { updatedAt: 'desc' },
   });
@@ -396,7 +397,7 @@ export async function findAllApprovalItems(): Promise<ApprovalItem[]> {
 }
 
 export async function findBySubmittedTenant(orgId: string) {
-  const certs = await prisma.lmsCertificate.findMany({
+  const certs = await db.lmsCertificate.findMany({
     where: { OR: [{ submittedByTenantId: orgId }, { selectedTenants: { some: { orgId } } }] },
     orderBy: { updatedAt: 'desc' },
     include: { selectedTenants: { select: { orgId: true } } },
@@ -410,7 +411,7 @@ export async function findBySubmittedTenant(orgId: string) {
 async function deactivateOtherTenantTemplates(excludeId: string, orgId?: string | null, submittedByTenantId?: string | null) {
   const tid = orgId || submittedByTenantId;
   if (!tid) return;
-  await prisma.lmsCertificate.updateMany({
+  await db.lmsCertificate.updateMany({
     where: {
       id: { not: excludeId },
       isActive: true,
@@ -421,10 +422,10 @@ async function deactivateOtherTenantTemplates(excludeId: string, orgId?: string 
 }
 
 export async function approve(id: string, approvedById: string) {
-  const cert = await prisma.lmsCertificate.findUnique({ where: { id } });
+  const cert = await db.lmsCertificate.findUnique({ where: { id } });
   if (!cert) throw NotFound('Certificate template not found');
   if (cert.approvalStatus !== 'pending_approval') throw NotFound('Only pending certificates can be approved');
-  const saved = await prisma.lmsCertificate.update({
+  const saved = await db.lmsCertificate.update({
     where: { id },
     data: { approvalStatus: 'approved', isActive: true, approvedBy: approvedById, approvalDate: new Date(), rejectionReason: null },
   });
@@ -433,10 +434,10 @@ export async function approve(id: string, approvedById: string) {
 }
 
 export async function reject(id: string, rejectedById: string, reason: string) {
-  const cert = await prisma.lmsCertificate.findUnique({ where: { id } });
+  const cert = await db.lmsCertificate.findUnique({ where: { id } });
   if (!cert) throw NotFound('Certificate template not found');
   if (cert.approvalStatus !== 'pending_approval') throw NotFound('Only pending certificates can be rejected');
-  return prisma.lmsCertificate.update({
+  return db.lmsCertificate.update({
     where: { id },
     data: { approvalStatus: 'rejected', isActive: false, approvedBy: rejectedById, approvalDate: new Date(), rejectionReason: reason },
   });
@@ -456,7 +457,7 @@ function tenantTemplateScope(orgId?: string | null) {
 
 export async function findOne(id: string, orgId?: string | null) {
   const scope = tenantTemplateScope(orgId);
-  const cert = await prisma.lmsCertificate.findFirst({ where: scope ? { AND: [{ id }, scope] } : { id }, include: SELECTED_TENANTS_INCLUDE });
+  const cert = await db.lmsCertificate.findFirst({ where: scope ? { AND: [{ id }, scope] } : { id }, include: SELECTED_TENANTS_INCLUDE });
   if (!cert) throw NotFound('Certificate template not found');
   return shapeTemplate(cert);
 }
@@ -465,7 +466,7 @@ export async function updateTemplate(id: string, data: Record<string, unknown>, 
   const { selectedTenants } = data as { selectedTenants?: string[] };
   const rest = pickTemplateFields(data);
   const scope = tenantTemplateScope(orgId);
-  const result = await prisma.lmsCertificate.updateMany({
+  const result = await db.lmsCertificate.updateMany({
     where: scope ? { AND: [{ id }, scope] } : { id },
     data: rest as never,
   });
@@ -486,7 +487,7 @@ export async function updateTemplate(id: string, data: Record<string, unknown>, 
    */
   if (selectedTenants !== undefined) {
     const ids = [...new Set((selectedTenants || []).filter(Boolean))];
-    await prisma.$transaction(async (tx) => {
+    await db.$transaction(async (tx) => {
       await tx.lmsCertificateSelectedTenant.deleteMany({ where: { certificateId: id } });
       if (ids.length) {
         await tx.lmsCertificateSelectedTenant.createMany({
@@ -497,19 +498,19 @@ export async function updateTemplate(id: string, data: Record<string, unknown>, 
     });
   }
 
-  return prisma.lmsCertificate.findUnique({ where: { id }, include: SELECTED_TENANTS_INCLUDE });
+  return db.lmsCertificate.findUnique({ where: { id }, include: SELECTED_TENANTS_INCLUDE });
 }
 
 export async function deleteTemplate(id: string) {
   try {
-    await prisma.lmsCertificate.delete({ where: { id } });
+    await db.lmsCertificate.delete({ where: { id } });
   } catch {
     throw NotFound('Certificate template not found');
   }
 }
 
 export async function deleteAllTemplates() {
-  const result = await prisma.lmsCertificate.deleteMany({});
+  const result = await db.lmsCertificate.deleteMany({});
   return result.count;
 }
 
@@ -528,7 +529,7 @@ export async function deleteAllTemplates() {
  * everything deliberately, while the create path passes its own tenant.
  */
 export async function removeDuplicateIssuedCertificates(orgId?: string) {
-  const all = await prisma.lmsCertificateIssued.findMany({
+  const all = await db.lmsCertificateIssued.findMany({
     where: orgId ? { orgId } : undefined,
     select: { id: true, orgId: true, learnerId: true, courseId: true },
     orderBy: { createdAt: 'asc' },
@@ -540,7 +541,7 @@ export async function removeDuplicateIssuedCertificates(orgId?: string) {
     if (seen.has(key)) toRemove.push(c.id);
     else seen.set(key, c.id);
   }
-  if (toRemove.length) await prisma.lmsCertificateIssued.deleteMany({ where: { id: { in: toRemove } } });
+  if (toRemove.length) await db.lmsCertificateIssued.deleteMany({ where: { id: { in: toRemove } } });
   return toRemove.length;
 }
 
@@ -563,7 +564,7 @@ interface GenerateInput {
 
 export async function generateCertificate(data: GenerateInput) {
   const { orgId, learnerId, courseId } = data;
-  const existing = await prisma.lmsCertificateIssued.findFirst({ where: { orgId, learnerId, courseId } });
+  const existing = await db.lmsCertificateIssued.findFirst({ where: { orgId, learnerId, courseId } });
   if (existing) {
     /**
      * Re-point + regenerate when the tenant's active template has CHANGED.
@@ -576,9 +577,9 @@ export async function generateCertificate(data: GenerateInput) {
      */
     if (data.certificateTemplateId && data.certificateTemplateId !== existing.certificateTemplateId) {
       try {
-        const template = await prisma.lmsCertificate.findUnique({ where: { id: data.certificateTemplateId } });
+        const template = await db.lmsCertificate.findUnique({ where: { id: data.certificateTemplateId } });
         const { pdfUrl, qrCodeUrl } = await renderAndUploadCertificateAssets(existing, template, data.designation);
-        return await prisma.lmsCertificateIssued.update({
+        return await db.lmsCertificateIssued.update({
           where: { id: existing.id },
           data: {
             certificateTemplateId: data.certificateTemplateId,
@@ -605,7 +606,7 @@ export async function generateCertificate(data: GenerateInput) {
   // Creating first reaches the same guarantee without depending on a catch, and
   // gives the renderer a real row (with its certificateId + verificationUrl) to
   // draw from. `renderAndUploadCertificateAssets` never throws.
-  const created = await prisma.lmsCertificateIssued.create({
+  const created = await db.lmsCertificateIssued.create({
     data: {
       orgId, learnerId, courseId,
       certificateTemplateId: data.certificateTemplateId ?? null,
@@ -620,7 +621,7 @@ export async function generateCertificate(data: GenerateInput) {
   const { pdfUrl, qrCodeUrl } = await renderAndUploadCertificateAssets(created, template, data.designation);
   if (!pdfUrl && !qrCodeUrl) return created; // storage failed — record stands, as in the legacy
 
-  return prisma.lmsCertificateIssued.update({
+  return db.lmsCertificateIssued.update({
     where: { id: created.id },
     data: { pdfUrl, qrCodeUrl },
   });
@@ -635,7 +636,7 @@ export async function generateDefaultCertificate(data: GenerateInput) {
  * Re-verifies completion + quiz pass gate, selects active template, then issues.
  */
 export async function generateCertificateForCompletion(orgId: string, learnerId: string, courseId: string): Promise<void> {
-  const progress = await prisma.lmsProgress.findUnique({
+  const progress = await db.lmsProgress.findUnique({
     where: { orgId_learnerId_courseId: { orgId, learnerId, courseId } },
   });
   if (!progress) return;
@@ -643,30 +644,30 @@ export async function generateCertificateForCompletion(orgId: string, learnerId:
   if (progress.quizScore != null && progress.isPassed !== true) return;
 
   // Already issued?
-  const existing = await prisma.lmsCertificateIssued.findFirst({ where: { orgId, learnerId, courseId } });
+  const existing = await db.lmsCertificateIssued.findFirst({ where: { orgId, learnerId, courseId } });
   if (existing) return;
 
-  const user = await prisma.lmsUser.findUnique({ where: { id: learnerId } });
+  const user = await db.lmsUser.findUnique({ where: { id: learnerId } });
   if (!user) return;
 
   // Course details — Course first, then MasterCourse.
   let course: { title: string; settings?: unknown } | null =
-    await prisma.lmsCourse.findFirst({ where: { id: courseId }, select: { title: true } });
+    await db.lmsCourse.findFirst({ where: { id: courseId }, select: { title: true } });
   let settings: Record<string, unknown> | undefined;
   if (!course) {
-    const mc = await prisma.lmsMasterCourse.findUnique({ where: { id: courseId }, select: { title: true, settings: true } });
+    const mc = await db.lmsMasterCourse.findUnique({ where: { id: courseId }, select: { title: true, settings: true } });
     if (mc) { course = { title: mc.title }; settings = (mc.settings as Record<string, unknown>) ?? undefined; }
   }
   if (!course) return;
 
   // Tenant feature + designation
-  const tenant = await prisma.lmsTenant.findUnique({ where: { id: orgId } });
+  const tenant = await db.lmsTenant.findUnique({ where: { id: orgId } });
   const featureConfig = (tenant?.featureConfig as Record<string, unknown>) || {};
   if (featureConfig.enableCertificates === false) return;
   if (settings?.certificateEnabled === false && settings?.certificateTemplateId) return;
 
   // Compliance metadata
-  const assignment = await prisma.lmsCourseAssignment.findFirst({
+  const assignment = await db.lmsCourseAssignment.findFirst({
     where: { orgId, targetType: 'USER', targetId: learnerId, courseId },
     select: { isMandatory: true },
   });
@@ -694,11 +695,11 @@ export async function generateCertificateForCompletion(orgId: string, learnerId:
     : typeof progress.quizScore === 'number' ? progress.quizScore : undefined;
   let certPassingScore: number | undefined;
   try {
-    const latestAttempt = await prisma.lmsQuizAttempt.findFirst({
+    const latestAttempt = await db.lmsQuizAttempt.findFirst({
       where: { orgId, learnerId, courseId }, orderBy: { submittedAt: 'desc' },
     });
     if (latestAttempt) {
-      const a = await prisma.lmsAssessment.findFirst({ where: { id: latestAttempt.assessmentId }, select: { passingScore: true } });
+      const a = await db.lmsAssessment.findFirst({ where: { id: latestAttempt.assessmentId }, select: { passingScore: true } });
       if (a && typeof a.passingScore === 'number') certPassingScore = a.passingScore;
     }
   } catch { /* best-effort */ }
@@ -762,18 +763,18 @@ async function resolveCourseMap(courseIds: string[]) {
   const map = new Map<string, { _id: string; title: string; description?: string | null }>();
   if (courseIds.length === 0) return map;
   const unique = [...new Set(courseIds)];
-  const masters = await prisma.lmsMasterCourse.findMany({ where: { id: { in: unique } }, select: { id: true, title: true, description: true } });
+  const masters = await db.lmsMasterCourse.findMany({ where: { id: { in: unique } }, select: { id: true, title: true, description: true } });
   masters.forEach((mc) => map.set(mc.id, { _id: mc.id, title: mc.title, description: mc.description }));
   const missing = unique.filter((id) => !map.has(id));
   if (missing.length) {
-    const courses = await prisma.lmsCourse.findMany({ where: { id: { in: missing } }, select: { id: true, title: true, description: true } });
+    const courses = await db.lmsCourse.findMany({ where: { id: { in: missing } }, select: { id: true, title: true, description: true } });
     courses.forEach((c) => map.set(c.id, { _id: c.id, title: c.title, description: c.description }));
   }
   return map;
 }
 
 export async function getLearnerCertificates(orgId: string, learnerId: string) {
-  const certs = await prisma.lmsCertificateIssued.findMany({ where: { orgId, learnerId }, orderBy: { issuedAt: 'desc' } });
+  const certs = await db.lmsCertificateIssued.findMany({ where: { orgId, learnerId }, orderBy: { issuedAt: 'desc' } });
   const courseMap = await resolveCourseMap(certs.map((c) => c.courseId).filter(Boolean));
   const seen = new Set<string>();
   return certs
@@ -794,10 +795,10 @@ export async function getLearnerCertificates(orgId: string, learnerId: string) {
 }
 
 export async function getTenantIssuedCertificates(orgId: string) {
-  const certs = await prisma.lmsCertificateIssued.findMany({ where: { orgId }, orderBy: { issuedAt: 'desc' } });
+  const certs = await db.lmsCertificateIssued.findMany({ where: { orgId }, orderBy: { issuedAt: 'desc' } });
   const courseMap = await resolveCourseMap(certs.map((c) => c.courseId).filter(Boolean));
   const learnerIds = [...new Set(certs.map((c) => c.learnerId).filter(Boolean))];
-  const learners = await prisma.lmsUser.findMany({
+  const learners = await db.lmsUser.findMany({
     where: { id: { in: learnerIds } }, select: { id: true, firstName: true, lastName: true, email: true },
   });
   const learnerMap = new Map(learners.map((l) => [l.id, l]));
@@ -825,7 +826,7 @@ export async function getTenantIssuedCertificates(orgId: string) {
 // ── Verification + downloads ─────────────────────────────────────────────────
 
 export async function findIssuedById(id: string) {
-  return prisma.lmsCertificateIssued.findUnique({ where: { id } });
+  return db.lmsCertificateIssued.findUnique({ where: { id } });
 }
 
 /**
@@ -833,7 +834,7 @@ export async function findIssuedById(id: string) {
  * unauthenticated verification routes, which only ever see the public id.
  */
 export async function findIssuedByCertificateId(certificateId: string) {
-  return prisma.lmsCertificateIssued.findUnique({ where: { certificateId } });
+  return db.lmsCertificateIssued.findUnique({ where: { certificateId } });
 }
 
 /**
@@ -849,18 +850,18 @@ export async function findIssuedByCertificateId(certificateId: string) {
  * while naming no learner, no course and no template.
  */
 export async function verifyCertificate(certificateId: string) {
-  const cert = await prisma.lmsCertificateIssued.findUnique({ where: { certificateId } });
+  const cert = await db.lmsCertificateIssued.findUnique({ where: { certificateId } });
   if (!cert) return cert;
 
   const [learner, template] = await Promise.all([
     cert.learnerId
-      ? prisma.lmsUser.findUnique({
+      ? db.lmsUser.findUnique({
           where: { id: cert.learnerId },
           select: { id: true, firstName: true, lastName: true, email: true },
         })
       : null,
     cert.certificateTemplateId
-      ? prisma.lmsCertificate.findUnique({
+      ? db.lmsCertificate.findUnique({
           where: { id: cert.certificateTemplateId },
           select: { id: true, name: true },
         })
@@ -1201,7 +1202,7 @@ export async function buildCertificatePdf(
 export async function loadTemplateForIssued(cert: CertificateIssued): Promise<CertificateTemplate | null> {
   if (!cert.certificateTemplateId) return null;
   try {
-    return await prisma.lmsCertificate.findUnique({ where: { id: cert.certificateTemplateId } });
+    return await db.lmsCertificate.findUnique({ where: { id: cert.certificateTemplateId } });
   } catch {
     return null;
   }
@@ -1235,7 +1236,7 @@ export async function selectTemplateForIssued(cert: CertificateIssued): Promise<
     candidates.push(...assigned);
   }
   if (cert.certificateTemplateId && !candidates.some((c) => c.id === cert.certificateTemplateId)) {
-    const stored = await prisma.lmsCertificate.findUnique({ where: { id: cert.certificateTemplateId } });
+    const stored = await db.lmsCertificate.findUnique({ where: { id: cert.certificateTemplateId } });
     if (stored) candidates.push(stored);
   }
 
@@ -1319,7 +1320,7 @@ async function renderIssuedCertificate(cert: CertificateIssued) {
   try {
     const pdfKey = `certificates/templates/generated/${cert.certificateId}.pdf`;
     await putObject(pdfKey, buffer, 'application/pdf');
-    certificate = await prisma.lmsCertificateIssued.update({
+    certificate = await db.lmsCertificateIssued.update({
       where: { id: cert.id },
       data: {
         pdfUrl: `https://storage.googleapis.com/${S3_BUCKET}/${pdfKey}`,
@@ -1342,13 +1343,13 @@ async function renderIssuedCertificate(cert: CertificateIssued) {
 export async function regeneratePdfForIssuedCertificate(id: string, orgId?: string | null) {
   const where: { id: string; orgId?: string } = { id };
   if (orgId) where.orgId = orgId;
-  const cert = await prisma.lmsCertificateIssued.findFirst({ where });
+  const cert = await db.lmsCertificateIssued.findFirst({ where });
   if (!cert) throw NotFound('Issued certificate not found');
   return renderIssuedCertificate(cert);
 }
 
 export async function regeneratePdfByCertificateId(certificateId: string) {
-  const cert = await prisma.lmsCertificateIssued.findUnique({ where: { certificateId } });
+  const cert = await db.lmsCertificateIssued.findUnique({ where: { certificateId } });
   if (!cert) throw NotFound('Certificate not found');
   return renderIssuedCertificate(cert);
 }
@@ -1369,7 +1370,7 @@ export async function regeneratePdfByCertificateId(certificateId: string) {
 export async function getPresignedDownloadUrl(id: string, orgId: string | null, learnerId: string): Promise<string> {
   if (!orgId) throw NotFound('Tenant ID is required');
 
-  const cert = await prisma.lmsCertificateIssued.findFirst({ where: { id, orgId, learnerId } });
+  const cert = await db.lmsCertificateIssued.findFirst({ where: { id, orgId, learnerId } });
   if (!cert) throw NotFound('Certificate not found');
   if (!cert.pdfUrl) throw NotFound('Certificate PDF not found');
 

@@ -14,7 +14,7 @@
  * (Expired `LmsAnalyticsCache` rows are purged by the worker's hourly TTL job,
  * replacing the old Mongo TTL index.)
  */
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/db';
 
 const monthKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 const dayKey = (d: Date) => {
@@ -36,7 +36,7 @@ async function buildCourseNameMap(courseIds: string[]): Promise<Map<string, { ti
   const uniqueIds = [...new Set(courseIds.filter(Boolean))];
   if (!uniqueIds.length) return nameMap;
 
-  const legacyCourses = await prisma.lmsCourse.findMany({
+  const legacyCourses = await db.lmsCourse.findMany({
     where: { id: { in: uniqueIds } },
     select: { id: true, title: true, description: true },
   });
@@ -44,7 +44,7 @@ async function buildCourseNameMap(courseIds: string[]): Promise<Map<string, { ti
 
   const unresolved = uniqueIds.filter((id) => !nameMap.has(id));
   if (unresolved.length) {
-    const masters = await prisma.lmsMasterCourse.findMany({
+    const masters = await db.lmsMasterCourse.findMany({
       where: { id: { in: unresolved } },
       select: { id: true, title: true, description: true },
     });
@@ -56,7 +56,7 @@ async function buildCourseNameMap(courseIds: string[]): Promise<Map<string, { ti
 // ═══════════════ EVENT TRACKING ═══════════════
 export async function trackEvent(orgId: string, eventType: string, eventData?: unknown, userId?: string) {
   try {
-    await prisma.lmsAnalyticsEvent.create({
+    await db.lmsAnalyticsEvent.create({
       data: {
         orgId,
         userId: userId || null,
@@ -73,17 +73,17 @@ export async function trackEvent(orgId: string, eventType: string, eventData?: u
 export async function getCorporateOverview(orgId: string) {
   const now = new Date();
   const [totalLearners, progresses, totalAssignments, mandatoryAssignments, certificatesIssued] = await Promise.all([
-    prisma.lmsUser.count({ where: { orgId, role: 'LEARNER', isActive: true } }),
-    prisma.lmsProgress.findMany({
+    db.lmsUser.count({ where: { orgId, role: 'LEARNER', isActive: true } }),
+    db.lmsProgress.findMany({
       where: { orgId },
       select: { learnerId: true, courseId: true, completionPercentage: true, status: true, startedAt: true, completedAt: true },
     }),
-    prisma.lmsCourseAssignment.count({ where: { orgId } }),
-    prisma.lmsCourseAssignment.findMany({
+    db.lmsCourseAssignment.count({ where: { orgId } }),
+    db.lmsCourseAssignment.findMany({
       where: { orgId, isMandatory: true },
       select: { courseId: true, targetId: true, targetType: true, dueDate: true },
     }),
-    prisma.lmsCertificateIssued.count({ where: { orgId } }),
+    db.lmsCertificateIssued.count({ where: { orgId } }),
   ]);
 
   let completed = 0;
@@ -162,7 +162,7 @@ export async function getCorporateOverview(orgId: string) {
 }
 
 export async function getCorporateLearnerCoursesOverview(orgId: string) {
-  const users = await prisma.lmsUser.findMany({
+  const users = await db.lmsUser.findMany({
     where: { orgId, role: { in: ['LEARNER', 'MANAGER'] }, isActive: true },
     select: { id: true },
   });
@@ -171,7 +171,7 @@ export async function getCorporateLearnerCoursesOverview(orgId: string) {
   const userIds = users.map((u) => u.id);
   const userIdSet = new Set(userIds);
 
-  const assignments = await prisma.lmsCourseAssignment.findMany({
+  const assignments = await db.lmsCourseAssignment.findMany({
     where: { orgId, targetType: 'USER', targetId: { in: userIds } },
     select: { targetId: true, courseId: true },
   });
@@ -188,7 +188,7 @@ export async function getCorporateLearnerCoursesOverview(orgId: string) {
   if (!deduped.length) return [];
 
   const courseIds = [...new Set(deduped.map((a) => a.courseId))];
-  const progresses = await prisma.lmsProgress.findMany({
+  const progresses = await db.lmsProgress.findMany({
     where: { orgId, learnerId: { in: userIds }, courseId: { in: courseIds } },
     select: { learnerId: true, courseId: true, completionPercentage: true, status: true },
   });
@@ -239,7 +239,7 @@ export async function getCorporateLearnersByCourse(orgId: string, courseId: stri
     };
   };
 
-  const users = await prisma.lmsUser.findMany({
+  const users = await db.lmsUser.findMany({
     where: { orgId, role: { in: ['LEARNER', 'MANAGER'] }, isActive: true },
     select: { id: true, firstName: true, lastName: true, email: true, role: true, updatedAt: true, createdAt: true },
   });
@@ -249,7 +249,7 @@ export async function getCorporateLearnersByCourse(orgId: string, courseId: stri
   const userIds = users.map((u) => u.id);
   const userIdSet = new Set(userIds);
 
-  const assignments = await prisma.lmsCourseAssignment.findMany({
+  const assignments = await db.lmsCourseAssignment.findMany({
     where: { orgId, targetType: 'USER', targetId: { in: userIds }, courseId },
     select: { id: true, targetId: true, dueDate: true, isMandatory: true },
   });
@@ -261,7 +261,7 @@ export async function getCorporateLearnersByCourse(orgId: string, courseId: stri
     return true;
   });
 
-  const progresses = await prisma.lmsProgress.findMany({
+  const progresses = await db.lmsProgress.findMany({
     where: { orgId, courseId, learnerId: { in: userIds } },
     select: { learnerId: true, completionPercentage: true, status: true },
   });
@@ -313,23 +313,23 @@ export async function getSchoolOverview(orgId: string, dateFrom?: string, dateTo
   const to = dateTo ? new Date(new Date(dateTo).getTime() + 86400000 - 1) : new Date();
 
   const [totalStudents, totalTeachers, totalBatches, activeBatches] = await Promise.all([
-    prisma.lmsUser.count({ where: { orgId, role: 'LEARNER', isActive: true } }),
-    prisma.lmsUser.count({ where: { orgId, role: 'TEACHER', isActive: true } }),
-    prisma.lmsBatch.count({ where: { orgId } }),
-    prisma.lmsBatch.count({ where: { orgId, status: 'active' } }),
+    db.lmsUser.count({ where: { orgId, role: 'LEARNER', isActive: true } }),
+    db.lmsUser.count({ where: { orgId, role: 'TEACHER', isActive: true } }),
+    db.lmsBatch.count({ where: { orgId } }),
+    db.lmsBatch.count({ where: { orgId, status: 'active' } }),
   ]);
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
-  const todaysClasses = await prisma.lmsScheduledClass.count({
+  const todaysClasses = await db.lmsScheduledClass.count({
     where: { orgId, startTime: { gte: today, lt: tomorrow }, status: { notIn: ['cancelled'] } },
   });
 
-  const classesThisMonth = await prisma.lmsScheduledClass.count({
+  const classesThisMonth = await db.lmsScheduledClass.count({
     where: { orgId, startTime: { gte: from, lte: to }, status: 'completed' },
   });
 
-  const attendances = await prisma.lmsAttendance.findMany({
+  const attendances = await db.lmsAttendance.findMany({
     where: { orgId, classDate: { gte: from, lte: to } },
     select: { status: true },
   });
@@ -341,7 +341,7 @@ export async function getSchoolOverview(orgId: string, dateFrom?: string, dateTo
   let revenueThisMonth = 0;
   let revenuePrevMonth = 0;
   try {
-    const thisAgg = await prisma.lmsCreditPackage.aggregate({
+    const thisAgg = await db.lmsCreditPackage.aggregate({
       _sum: { price: true },
       where: { orgId, purchaseDate: { gte: from, lte: to }, price: { gt: 0 } },
     });
@@ -349,7 +349,7 @@ export async function getSchoolOverview(orgId: string, dateFrom?: string, dateTo
 
     const prevFrom = new Date(from); prevFrom.setMonth(prevFrom.getMonth() - 1);
     const prevTo = new Date(from); prevTo.setDate(prevTo.getDate() - 1);
-    const prevAgg = await prisma.lmsCreditPackage.aggregate({
+    const prevAgg = await db.lmsCreditPackage.aggregate({
       _sum: { price: true },
       where: { orgId, purchaseDate: { gte: prevFrom, lte: prevTo }, price: { gt: 0 } },
     });
@@ -359,8 +359,8 @@ export async function getSchoolOverview(orgId: string, dateFrom?: string, dateTo
   let pendingPayouts = 0;
   let totalPayoutAmount = 0;
   try {
-    pendingPayouts = await prisma.lmsTeacherPayout.count({ where: { orgId, status: { in: ['draft', 'pending'] } } });
-    const paidAgg = await prisma.lmsTeacherPayout.aggregate({
+    pendingPayouts = await db.lmsTeacherPayout.count({ where: { orgId, status: { in: ['draft', 'pending'] } } });
+    const paidAgg = await db.lmsTeacherPayout.aggregate({
       _sum: { netAmount: true },
       where: { orgId, status: { in: ['approved', 'paid'] } },
     });
@@ -369,7 +369,7 @@ export async function getSchoolOverview(orgId: string, dateFrom?: string, dateTo
 
   // Enrollment trend (learners by month, last 6 months)
   const sixMonthsAgo = new Date(); sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-  const learnerRows = await prisma.lmsUser.findMany({
+  const learnerRows = await db.lmsUser.findMany({
     where: { orgId, role: 'LEARNER', createdAt: { gte: sixMonthsAgo } },
     select: { createdAt: true },
   });
@@ -378,7 +378,7 @@ export async function getSchoolOverview(orgId: string, dateFrom?: string, dateTo
   const enrollmentTrend = [...trendMap.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([month, count]) => ({ month, count }));
 
   // Enrollment by grade (active batches)
-  const activeBatchRows = await prisma.lmsBatch.findMany({
+  const activeBatchRows = await db.lmsBatch.findMany({
     where: { orgId, status: 'active' },
     select: { grade: true, _count: { select: { students: true } } },
   });
@@ -391,7 +391,7 @@ export async function getSchoolOverview(orgId: string, dateFrom?: string, dateTo
 
   let avgHomeworkScore = 0;
   try {
-    const hwAgg = await prisma.lmsHomeworkSubmission.aggregate({
+    const hwAgg = await db.lmsHomeworkSubmission.aggregate({
       _avg: { score: true },
       where: { orgId, score: { not: null } },
     });
@@ -425,7 +425,7 @@ export async function getAttendanceTrend(orgId: string, days = 14) {
   startDate.setDate(startDate.getDate() - days);
   startDate.setHours(0, 0, 0, 0);
 
-  const rows = await prisma.lmsAttendance.findMany({
+  const rows = await db.lmsAttendance.findMany({
     where: { orgId, classDate: { gte: startDate } },
     select: { classDate: true, status: true },
   });
@@ -456,7 +456,7 @@ export async function getTeacherPerformance(orgId: string, dateFrom?: string, da
   const from = dateFrom ? new Date(dateFrom) : undefined;
   const to = dateTo ? new Date(dateTo) : undefined;
 
-  const teachers = await prisma.lmsUser.findMany({
+  const teachers = await db.lmsUser.findMany({
     where: { orgId, role: 'TEACHER', isActive: true },
     select: { id: true, firstName: true, lastName: true, email: true, classesMissed: true, punctualityScore: true },
   });
@@ -470,8 +470,8 @@ export async function getTeacherPerformance(orgId: string, dateFrom?: string, da
     const hasTime = from || to;
     const baseWhere = { orgId, teacherId: teacher.id, ...(hasTime ? { startTime: startTimeFilter } : {}) };
 
-    const completedClasses = await prisma.lmsScheduledClass.count({ where: { ...baseWhere, status: 'completed' } });
-    const totalClasses = await prisma.lmsScheduledClass.count({ where: { ...baseWhere, status: { notIn: ['cancelled', 'rescheduled'] } } });
+    const completedClasses = await db.lmsScheduledClass.count({ where: { ...baseWhere, status: 'completed' } });
+    const totalClasses = await db.lmsScheduledClass.count({ where: { ...baseWhere, status: { notIn: ['cancelled', 'rescheduled'] } } });
 
     /**
      * On-time start rate — NOT AVAILABLE, reported as null rather than 0.
@@ -493,9 +493,9 @@ export async function getTeacherPerformance(orgId: string, dateFrom?: string, da
     // Attendance across the teacher's classes
     let attendanceRate = 0;
     try {
-      const teacherClassIds = (await prisma.lmsScheduledClass.findMany({ where: { orgId, teacherId: teacher.id }, select: { id: true } })).map((c) => c.id);
+      const teacherClassIds = (await db.lmsScheduledClass.findMany({ where: { orgId, teacherId: teacher.id }, select: { id: true } })).map((c) => c.id);
       if (teacherClassIds.length) {
-        const att = await prisma.lmsAttendance.findMany({ where: { scheduledClassId: { in: teacherClassIds } }, select: { status: true } });
+        const att = await db.lmsAttendance.findMany({ where: { scheduledClassId: { in: teacherClassIds } }, select: { status: true } });
         const total = att.length;
         const present = att.filter((a) => a.status === 'present' || a.status === 'late').length;
         attendanceRate = total > 0 ? Math.round((present / total) * 100) : 0;
@@ -505,7 +505,7 @@ export async function getTeacherPerformance(orgId: string, dateFrom?: string, da
     // Avg homework grading time (days)
     let avgGradingDays = 0;
     try {
-      const graded = await prisma.lmsHomeworkSubmission.findMany({
+      const graded = await db.lmsHomeworkSubmission.findMany({
         where: { gradedBy: teacher.id, gradedAt: { not: null } },
         select: { gradedAt: true, submittedAt: true },
       });
@@ -536,20 +536,20 @@ export async function getTeacherPerformance(orgId: string, dateFrom?: string, da
 
 // ═══════════════ TEACHER SELF-DASHBOARD ═══════════════
 export async function getTeacherDashboard(orgId: string, teacherId: string) {
-  const teacher = await prisma.lmsUser.findFirst({
+  const teacher = await db.lmsUser.findFirst({
     where: { id: teacherId, orgId },
     select: { firstName: true, lastName: true, email: true, classesMissed: true, punctualityScore: true },
   });
   if (!teacher) return null;
 
-  const completedClasses = await prisma.lmsScheduledClass.count({ where: { orgId, teacherId, status: 'completed' } });
-  const totalClasses = await prisma.lmsScheduledClass.count({ where: { orgId, teacherId, status: { notIn: ['cancelled', 'rescheduled'] } } });
+  const completedClasses = await db.lmsScheduledClass.count({ where: { orgId, teacherId, status: 'completed' } });
+  const totalClasses = await db.lmsScheduledClass.count({ where: { orgId, teacherId, status: { notIn: ['cancelled', 'rescheduled'] } } });
 
   let attendanceRate = 0;
   {
-    const teacherClassIds = (await prisma.lmsScheduledClass.findMany({ where: { orgId, teacherId }, select: { id: true } })).map((c) => c.id);
+    const teacherClassIds = (await db.lmsScheduledClass.findMany({ where: { orgId, teacherId }, select: { id: true } })).map((c) => c.id);
     if (teacherClassIds.length) {
-      const att = await prisma.lmsAttendance.findMany({ where: { scheduledClassId: { in: teacherClassIds } }, select: { status: true } });
+      const att = await db.lmsAttendance.findMany({ where: { scheduledClassId: { in: teacherClassIds } }, select: { status: true } });
       const total = att.length;
       const present = att.filter((a) => a.status === 'present' || a.status === 'late').length;
       attendanceRate = total > 0 ? Math.round((present / total) * 100) : 0;
@@ -558,10 +558,10 @@ export async function getTeacherDashboard(orgId: string, teacherId: string) {
 
   let homeworkCompletionRate = 0;
   try {
-    const teacherHwIds = (await prisma.lmsHomework.findMany({ where: { orgId, teacherId }, select: { id: true } })).map((h) => h.id);
+    const teacherHwIds = (await db.lmsHomework.findMany({ where: { orgId, teacherId }, select: { id: true } })).map((h) => h.id);
     if (teacherHwIds.length) {
-      const totalSubs = await prisma.lmsHomeworkSubmission.count({ where: { orgId, homeworkId: { in: teacherHwIds } } });
-      const gradedSubs = await prisma.lmsHomeworkSubmission.count({ where: { orgId, homeworkId: { in: teacherHwIds }, status: 'graded' } });
+      const totalSubs = await db.lmsHomeworkSubmission.count({ where: { orgId, homeworkId: { in: teacherHwIds } } });
+      const gradedSubs = await db.lmsHomeworkSubmission.count({ where: { orgId, homeworkId: { in: teacherHwIds }, status: 'graded' } });
       homeworkCompletionRate = totalSubs > 0 ? Math.round((gradedSubs / totalSubs) * 100) : 0;
     }
   } catch { /* ignore */ }
@@ -569,9 +569,9 @@ export async function getTeacherDashboard(orgId: string, teacherId: string) {
   const classesMissed = teacher.classesMissed || 0;
   const punctualityScore = teacher.punctualityScore || 100;
 
-  let teacherLevel: Awaited<ReturnType<typeof prisma.lmsTeacherLevel.findFirst>> & { levelHistory?: unknown[] } | null = null;
+  let teacherLevel: Awaited<ReturnType<typeof db.lmsTeacherLevel.findFirst>> & { levelHistory?: unknown[] } | null = null;
   try {
-    teacherLevel = await prisma.lmsTeacherLevel.findFirst({
+    teacherLevel = await db.lmsTeacherLevel.findFirst({
       where: { orgId, teacherId },
       // Ordered: Postgres guarantees no row order without ORDER BY, so the
       // `.slice(-3)` below was picking three ARBITRARY months (often the oldest),
@@ -590,7 +590,7 @@ export async function getTeacherDashboard(orgId: string, teacherId: string) {
   if (suggestions.length === 0) suggestions.push('You are performing well! Keep up the great work and continue engaging with your students.');
 
   const sevenDaysAgo = new Date(); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-  const recentClasses = await prisma.lmsScheduledClass.findMany({
+  const recentClasses = await db.lmsScheduledClass.findMany({
     where: { orgId, teacherId, startTime: { gte: sevenDaysAgo } },
     select: { title: true, status: true, startTime: true, endTime: true },
     orderBy: { startTime: 'desc' },
@@ -618,14 +618,14 @@ export async function getTeacherDashboard(orgId: string, teacherId: string) {
 
 // ═══════════════ STUDENT PROGRESS ═══════════════
 export async function getStudentProgress(orgId: string, studentId: string) {
-  const student = await prisma.lmsUser.findFirst({
+  const student = await db.lmsUser.findFirst({
     where: { id: studentId, orgId },
     select: { firstName: true, lastName: true, email: true, grade: true },
   });
   if (!student) return null;
 
   const threeMonthsAgo = new Date(); threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
-  const attendanceRecords = await prisma.lmsAttendance.findMany({
+  const attendanceRecords = await db.lmsAttendance.findMany({
     where: { orgId, studentId, classDate: { gte: threeMonthsAgo } },
     select: { classDate: true, status: true },
     orderBy: { classDate: 'asc' },
@@ -640,19 +640,19 @@ export async function getStudentProgress(orgId: string, studentId: string) {
   let avgScore = 0;
   let scoreTrend: Array<{ week: string; avgScore: number; count: number }> = [];
   try {
-    const studentBatches = await prisma.lmsBatchStudent.findMany({ where: { studentId, batch: { orgId } }, select: { batchId: true } });
+    const studentBatches = await db.lmsBatchStudent.findMany({ where: { studentId, batch: { orgId } }, select: { batchId: true } });
     const batchIds = studentBatches.map((b) => b.batchId);
 
     const totalHomework = batchIds.length
-      ? await prisma.lmsHomework.count({ where: { batchId: { in: batchIds }, status: 'published' } })
+      ? await db.lmsHomework.count({ where: { batchId: { in: batchIds }, status: 'published' } })
       : 0;
-    const submittedHomework = await prisma.lmsHomeworkSubmission.count({ where: { studentId } });
+    const submittedHomework = await db.lmsHomeworkSubmission.count({ where: { studentId } });
     homeworkCompletion = totalHomework > 0 ? Math.round((submittedHomework / totalHomework) * 100) : 0;
 
-    const scoreAgg = await prisma.lmsHomeworkSubmission.aggregate({ _avg: { score: true }, where: { studentId, score: { not: null } } });
+    const scoreAgg = await db.lmsHomeworkSubmission.aggregate({ _avg: { score: true }, where: { studentId, score: { not: null } } });
     avgScore = Math.round(scoreAgg._avg.score || 0);
 
-    const trendRows = await prisma.lmsHomeworkSubmission.findMany({
+    const trendRows = await db.lmsHomeworkSubmission.findMany({
       where: { studentId, score: { not: null }, submittedAt: { gte: threeMonthsAgo } },
       select: { score: true, submittedAt: true },
     });
@@ -672,12 +672,12 @@ export async function getStudentProgress(orgId: string, studentId: string) {
   // Class average comparison
   let classAvgScore = 0;
   try {
-    const studentBatches = await prisma.lmsBatchStudent.findMany({ where: { studentId, batch: { orgId } }, select: { batchId: true } });
+    const studentBatches = await db.lmsBatchStudent.findMany({ where: { studentId, batch: { orgId } }, select: { batchId: true } });
     const batchIds = studentBatches.map((b) => b.batchId);
     if (batchIds.length) {
-      const classmates = await prisma.lmsBatchStudent.findMany({ where: { batchId: { in: batchIds } }, select: { studentId: true } });
+      const classmates = await db.lmsBatchStudent.findMany({ where: { batchId: { in: batchIds } }, select: { studentId: true } });
       const allStudentIds = [...new Set(classmates.map((c) => c.studentId))];
-      const classAgg = await prisma.lmsHomeworkSubmission.aggregate({
+      const classAgg = await db.lmsHomeworkSubmission.aggregate({
         _avg: { score: true },
         where: { studentId: { in: allStudentIds }, score: { not: null } },
       });
@@ -693,7 +693,7 @@ export async function getStudentProgress(orgId: string, studentId: string) {
    * showed zero credits remaining. `LmsCreditPackage.remainingCredits` holds
    * exactly this (`schema.prisma:17292`) and is what `credits-service` sums.
    */
-  const creditAgg = await prisma.lmsCreditPackage.aggregate({
+  const creditAgg = await db.lmsCreditPackage.aggregate({
     where: { orgId, studentId, status: 'active' },
     _sum: { remainingCredits: true },
   });
@@ -714,14 +714,14 @@ export async function getStudentProgress(orgId: string, studentId: string) {
 
 // ═══════════════ BATCH ANALYTICS ═══════════════
 export async function getBatchAnalytics(orgId: string, batchId: string) {
-  const batch = await prisma.lmsBatch.findFirst({
+  const batch = await db.lmsBatch.findFirst({
     where: { id: batchId, orgId },
     select: { name: true, grade: true, subject: true, teacherId: true, maxCapacity: true, students: { select: { studentId: true } } },
   });
   if (!batch) return null;
 
   const teacher = batch.teacherId
-    ? await prisma.lmsUser.findUnique({ where: { id: batch.teacherId }, select: { id: true, firstName: true, lastName: true } })
+    ? await db.lmsUser.findUnique({ where: { id: batch.teacherId }, select: { id: true, firstName: true, lastName: true } })
     : null;
 
   const studentIds = batch.students.map((s) => s.studentId);
@@ -729,17 +729,17 @@ export async function getBatchAnalytics(orgId: string, batchId: string) {
   const maxCapacity = batch.maxCapacity || 0;
 
   // Class status counts
-  const classes = await prisma.lmsScheduledClass.findMany({ where: { batchId }, select: { status: true } });
+  const classes = await db.lmsScheduledClass.findMany({ where: { batchId }, select: { status: true } });
   const classCounts: Record<string, number> = {};
   for (const c of classes) classCounts[c.status] = (classCounts[c.status] || 0) + 1;
   const totalScheduled = classes.length;
   const completedCount = classCounts['completed'] || 0;
 
   // Attendance rate for this batch (via class join)
-  const batchClassIds = (await prisma.lmsScheduledClass.findMany({ where: { batchId }, select: { id: true } })).map((c) => c.id);
+  const batchClassIds = (await db.lmsScheduledClass.findMany({ where: { batchId }, select: { id: true } })).map((c) => c.id);
   let batchAttendanceRate = 0;
   if (batchClassIds.length) {
-    const att = await prisma.lmsAttendance.findMany({ where: { scheduledClassId: { in: batchClassIds } }, select: { status: true } });
+    const att = await db.lmsAttendance.findMany({ where: { scheduledClassId: { in: batchClassIds } }, select: { status: true } });
     const total = att.length;
     const present = att.filter((a) => a.status === 'present' || a.status === 'late').length;
     batchAttendanceRate = total > 0 ? Math.round((present / total) * 100) : 0;
@@ -749,7 +749,7 @@ export async function getBatchAnalytics(orgId: string, batchId: string) {
   let topPerformers: Array<{ _id: string; avgScore: number; count: number; name: string }> = [];
   try {
     if (studentIds.length) {
-      const subs = await prisma.lmsHomeworkSubmission.findMany({
+      const subs = await db.lmsHomeworkSubmission.findMany({
         where: { studentId: { in: studentIds }, score: { not: null } },
         select: { studentId: true, score: true },
       });
@@ -764,7 +764,7 @@ export async function getBatchAnalytics(orgId: string, batchId: string) {
         .map(([sid, v]) => ({ studentId: sid, avgScore: Math.round((v.sum / v.count) * 10) / 10, count: v.count }))
         .sort((a, b) => b.avgScore - a.avgScore)
         .slice(0, 10);
-      const users = await prisma.lmsUser.findMany({ where: { id: { in: ranked.map((r) => r.studentId) } }, select: { id: true, firstName: true, lastName: true } });
+      const users = await db.lmsUser.findMany({ where: { id: { in: ranked.map((r) => r.studentId) } }, select: { id: true, firstName: true, lastName: true } });
       const userMap = new Map(users.map((u) => [u.id, `${u.firstName} ${u.lastName}`]));
       topPerformers = ranked.map((r) => ({ _id: r.studentId, avgScore: r.avgScore, count: r.count, name: userMap.get(r.studentId) || '' }));
     }
@@ -774,11 +774,11 @@ export async function getBatchAnalytics(orgId: string, batchId: string) {
   const atRiskStudents: Array<{ studentId: string; name: string; attendanceRate: number; reason: string }> = [];
   try {
     for (const sid of studentIds) {
-      const studentAtt = await prisma.lmsAttendance.count({ where: { orgId, studentId: sid } });
-      const studentPresent = await prisma.lmsAttendance.count({ where: { orgId, studentId: sid, status: { in: ['present', 'late'] } } });
+      const studentAtt = await db.lmsAttendance.count({ where: { orgId, studentId: sid } });
+      const studentPresent = await db.lmsAttendance.count({ where: { orgId, studentId: sid, status: { in: ['present', 'late'] } } });
       const rate = studentAtt > 0 ? Math.round((studentPresent / studentAtt) * 100) : 100;
       if (rate < 70 && studentAtt > 0) {
-        const user = await prisma.lmsUser.findUnique({ where: { id: sid }, select: { firstName: true, lastName: true } });
+        const user = await db.lmsUser.findUnique({ where: { id: sid }, select: { firstName: true, lastName: true } });
         atRiskStudents.push({
           studentId: sid,
           name: user ? `${user.firstName} ${user.lastName}` : 'Unknown',
@@ -792,10 +792,10 @@ export async function getBatchAnalytics(orgId: string, batchId: string) {
   // Homework completion rate
   let homeworkCompletion = 0;
   try {
-    const totalHw = await prisma.lmsHomework.count({ where: { batchId, status: 'published' } });
+    const totalHw = await db.lmsHomework.count({ where: { batchId, status: 'published' } });
     const totalPossible = totalHw * enrolledCount;
-    const hwIds = (await prisma.lmsHomework.findMany({ where: { batchId }, select: { id: true } })).map((h) => h.id);
-    const totalSubmitted = hwIds.length ? await prisma.lmsHomeworkSubmission.count({ where: { homeworkId: { in: hwIds } } }) : 0;
+    const hwIds = (await db.lmsHomework.findMany({ where: { batchId }, select: { id: true } })).map((h) => h.id);
+    const totalSubmitted = hwIds.length ? await db.lmsHomeworkSubmission.count({ where: { homeworkId: { in: hwIds } } }) : 0;
     homeworkCompletion = totalPossible > 0 ? Math.round((totalSubmitted / totalPossible) * 100) : 0;
   } catch { /* ignore */ }
 
@@ -819,7 +819,7 @@ export async function getFinancialAnalytics(orgId: string, dateFrom?: string, da
   let revenueByPackage: Array<{ package: string; revenue: number; count: number }> = [];
   let totalRevenue = 0;
   try {
-    const pkgs = await prisma.lmsCreditPackage.findMany({
+    const pkgs = await db.lmsCreditPackage.findMany({
       where: { orgId, purchaseDate: { gte: from, lte: to }, price: { gt: 0 } },
       select: { price: true, purchaseDate: true, packageName: true },
     });
@@ -845,7 +845,7 @@ export async function getFinancialAnalytics(orgId: string, dateFrom?: string, da
   let pendingPayoutCount = 0;
   let pendingPayoutAmount = 0;
   try {
-    const payouts = await prisma.lmsTeacherPayout.findMany({
+    const payouts = await db.lmsTeacherPayout.findMany({
       where: { orgId, status: { in: ['approved', 'paid'] }, createdAt: { gte: from, lte: to } },
       select: { netAmount: true, createdAt: true },
     });
@@ -858,8 +858,8 @@ export async function getFinancialAnalytics(orgId: string, dateFrom?: string, da
     }
     payoutsByMonth = [...byMonth.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([month, v]) => ({ month, amount: v.total, count: v.count }));
 
-    pendingPayoutCount = await prisma.lmsTeacherPayout.count({ where: { orgId, status: { in: ['draft', 'pending'] } } });
-    const pendingAgg = await prisma.lmsTeacherPayout.aggregate({ _sum: { netAmount: true }, where: { orgId, status: { in: ['draft', 'pending'] } } });
+    pendingPayoutCount = await db.lmsTeacherPayout.count({ where: { orgId, status: { in: ['draft', 'pending'] } } });
+    const pendingAgg = await db.lmsTeacherPayout.aggregate({ _sum: { netAmount: true }, where: { orgId, status: { in: ['draft', 'pending'] } } });
     pendingPayoutAmount = pendingAgg._sum.netAmount || 0;
   } catch { /* ignore */ }
 
@@ -870,11 +870,11 @@ export async function getFinancialAnalytics(orgId: string, dateFrom?: string, da
    * credit exposure at all.
    */
   const [unusedAgg, expiringAgg] = await Promise.all([
-    prisma.lmsCreditPackage.aggregate({
+    db.lmsCreditPackage.aggregate({
       where: { orgId, status: 'active' },
       _sum: { remainingCredits: true },
     }),
-    prisma.lmsCreditPackage.aggregate({
+    db.lmsCreditPackage.aggregate({
       // "Expiring" = active credits with an expiry inside the next 30 days.
       where: {
         orgId,
@@ -887,7 +887,7 @@ export async function getFinancialAnalytics(orgId: string, dateFrom?: string, da
   const totalUnusedCredits = unusedAgg._sum.remainingCredits ?? 0;
   const expiringCredits = expiringAgg._sum.remainingCredits ?? 0;
 
-  const totalStudents = await prisma.lmsUser.count({ where: { orgId, role: 'LEARNER', isActive: true } });
+  const totalStudents = await db.lmsUser.count({ where: { orgId, role: 'LEARNER', isActive: true } });
   const avgRevenuePerStudent = totalStudents > 0 ? Math.round(totalRevenue / totalStudents) : 0;
 
   const netProfit = totalRevenue - totalPayouts;
@@ -924,7 +924,7 @@ export async function getArrReport(orgId: string) {
   const creditRevenueByMonth: Record<string, number> = {};
   let totalCreditRevenue = 0;
   try {
-    const pkgs = await prisma.lmsCreditPackage.findMany({
+    const pkgs = await db.lmsCreditPackage.findMany({
       where: { orgId, purchaseDate: { gte: yearStart }, price: { gt: 0 } },
       select: { price: true, purchaseDate: true },
     });
@@ -939,7 +939,7 @@ export async function getArrReport(orgId: string) {
   const payoutsByMonth: Record<string, number> = {};
   let totalPayouts = 0;
   try {
-    const payouts = await prisma.lmsTeacherPayout.findMany({
+    const payouts = await db.lmsTeacherPayout.findMany({
       where: { orgId, status: { in: ['approved', 'paid'] }, createdAt: { gte: yearStart } },
       select: { netAmount: true, createdAt: true },
     });
@@ -954,7 +954,7 @@ export async function getArrReport(orgId: string) {
   const nonTeachingByMonth: Record<string, number> = {};
   let totalNonTeachingExpense = 0;
   try {
-    const tasks = await prisma.lmsNonTeachingTask.findMany({
+    const tasks = await db.lmsNonTeachingTask.findMany({
       where: { orgId, status: 'approved', approvedAt: { gte: yearStart } },
       select: { paymentAmount: true, approvedAt: true },
     });
@@ -1002,14 +1002,14 @@ export async function getArrReport(orgId: string) {
 export async function getEngagementAnalytics(orgId: string, days = 30) {
   const startDate = new Date(); startDate.setDate(startDate.getDate() - days);
 
-  const activeStudentRows = await prisma.lmsAttendance.findMany({
+  const activeStudentRows = await db.lmsAttendance.findMany({
     where: { orgId, classDate: { gte: startDate } },
     select: { studentId: true },
     distinct: ['studentId'],
   });
   const activeStudents = activeStudentRows.length;
 
-  const activeTeacherRows = await prisma.lmsScheduledClass.findMany({
+  const activeTeacherRows = await db.lmsScheduledClass.findMany({
     // legacy 'started' status maps to the Postgres ClassStatus enum 'in_progress'
     where: { orgId, startTime: { gte: startDate }, status: { in: ['completed', 'in_progress'] } },
     select: { teacherId: true },
@@ -1017,7 +1017,7 @@ export async function getEngagementAnalytics(orgId: string, days = 30) {
   });
   const activeTeachers = activeTeacherRows.length;
 
-  const events = await prisma.lmsAnalyticsEvent.findMany({
+  const events = await db.lmsAnalyticsEvent.findMany({
     where: { orgId, createdAt: { gte: startDate } },
     select: { eventType: true, userId: true, createdAt: true },
   });
@@ -1036,7 +1036,7 @@ export async function getEngagementAnalytics(orgId: string, days = 30) {
 
   let homeworkSubmissionTrend: Array<{ date: string; count: number }> = [];
   try {
-    const subs = await prisma.lmsHomeworkSubmission.findMany({
+    const subs = await db.lmsHomeworkSubmission.findMany({
       where: { orgId, submittedAt: { gte: startDate } },
       select: { submittedAt: true },
     });
@@ -1050,7 +1050,7 @@ export async function getEngagementAnalytics(orgId: string, days = 30) {
 
 // ═══════════════ BATCH UTILIZATION ═══════════════
 export async function getBatchUtilization(orgId: string) {
-  const batches = await prisma.lmsBatch.findMany({
+  const batches = await db.lmsBatch.findMany({
     where: { orgId, status: 'active' },
     select: {
       id: true, name: true, grade: true, subject: true, teacherId: true, maxCapacity: true,
@@ -1060,7 +1060,7 @@ export async function getBatchUtilization(orgId: string) {
 
   const teacherIds = [...new Set(batches.map((b) => b.teacherId).filter(Boolean))];
   const teachers = teacherIds.length
-    ? await prisma.lmsUser.findMany({ where: { id: { in: teacherIds } }, select: { id: true, firstName: true, lastName: true } })
+    ? await db.lmsUser.findMany({ where: { id: { in: teacherIds } }, select: { id: true, firstName: true, lastName: true } })
     : [];
   const teacherMap = new Map(teachers.map((t) => [t.id, `${t.firstName} ${t.lastName}`]));
 
@@ -1116,20 +1116,20 @@ export async function getPeriodComparison(orgId: string, dateFrom: string, dateT
 export async function getCourseAnalytics(orgId: string, courseId: string) {
   const info = (await buildCourseNameMap([courseId])).get(courseId);
 
-  const users = await prisma.lmsUser.findMany({
+  const users = await db.lmsUser.findMany({
     where: { orgId, role: { in: ['LEARNER', 'MANAGER'] }, isActive: true },
     select: { id: true },
   });
   const userIds = users.map((u) => u.id);
 
-  const assignments = await prisma.lmsCourseAssignment.findMany({
+  const assignments = await db.lmsCourseAssignment.findMany({
     where: { orgId, targetType: 'USER', targetId: { in: userIds }, courseId },
     select: { targetId: true },
   });
   const assignedUserIds = [...new Set(assignments.map((a) => a.targetId).filter(Boolean))];
   const totalEnrolled = assignedUserIds.length;
 
-  const progresses = await prisma.lmsProgress.findMany({
+  const progresses = await db.lmsProgress.findMany({
     where: { orgId, courseId, learnerId: { in: userIds } },
     select: { learnerId: true, completionPercentage: true, status: true, scorePercentage: true, quizScore: true },
   });
@@ -1165,7 +1165,7 @@ export async function getCourseAnalytics(orgId: string, courseId: string) {
   const highestQuizScore = quizScores.length > 0 ? Math.round(Math.max(...quizScores)) : null;
   const lowestQuizScore = quizScores.length > 0 ? Math.round(Math.min(...quizScores)) : null;
 
-  const certificatesIssued = await prisma.lmsCertificateIssued.count({ where: { orgId, courseId } });
+  const certificatesIssued = await db.lmsCertificateIssued.count({ where: { orgId, courseId } });
 
   return {
     courseId,

@@ -37,14 +37,10 @@ test.describe("Phase 04 — (a) /api/health", () => {
 
     expect(res.status()).toBe(200);
 
-    // The healthy branch is a fixed literal — this asserts it stays that way.
-    // The DEGRADED branch is the concern: app/api/health/route.ts:21 returns
-    // `error: (err as Error).message` verbatim to an unauthenticated caller.
-    // A Prisma connection failure message embeds the datasource URL, which
-    // carries host, port, database name and — depending on the driver error —
-    // the username. We cannot force that branch without taking the database
-    // down, which an audit must not do, so this asserts the invariant on
-    // whichever branch we get and the finding is recorded from source review.
+    // The probe is now a fixed liveness literal (matches apps/quiktrack): it
+    // makes no DB call and has no error branch, so it can never emit a Prisma
+    // datasource URL. These assertions guard that the leak stays closed even if
+    // someone later re-adds a dependency check on the wrong probe.
     expect(
       raw,
       "health response must never contain a connection string",
@@ -52,9 +48,9 @@ test.describe("Phase 04 — (a) /api/health", () => {
     expect(raw, "health response must never contain credentials").not.toMatch(/password|user=|@localhost:\d{4}/i);
     expect(raw, "health response must never contain a stack frame").not.toMatch(/\bat\s+\w+\s+\(/);
 
-    // Present in the healthy branch; absent means we hit the degraded branch
-    // and the assertions above just did the real work.
-    if (res.status() === 200) expect(body.db).toBe("up");
+    // Standardized fleet shape: { success: true, data: { name, commit, timestamp } }.
+    expect(body.success).toBe(true);
+    expect((body.data as Record<string, unknown> | undefined)?.name).toBe("quiklms");
     await anon.dispose();
   });
 });

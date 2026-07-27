@@ -26,8 +26,8 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@/lib/env', () => ({ env: { DATABASE_URL: 'x' }, optionalEnv: () => '' }));
 vi.mock('@/lib/email', () => ({ sendEmail: h.sendEmail }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/db', () => ({
+  db: {
     lmsConversation: { findMany: h.convFindMany, create: h.convCreate, update: h.convUpdate },
     lmsConversationParticipant: { updateMany: h.participantUpdateMany },
     lmsMessage: { create: h.msgCreate },

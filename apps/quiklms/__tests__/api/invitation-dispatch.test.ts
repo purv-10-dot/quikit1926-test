@@ -67,7 +67,7 @@ vi.mock('@quikit/database', () => ({
     $transaction: h.transaction,
   },
 }));
-vi.mock('@/lib/prisma', () => ({ prisma: { lmsUser: { findUnique: h.lmsFindUnique } } }));
+vi.mock('@/lib/db', () => ({ db: { lmsUser: { findUnique: h.lmsFindUnique } } }));
 
 import { provisionLmsUser } from '@/lib/services/identity-service';
 
