@@ -84,8 +84,17 @@ export async function POST(req: NextRequest) {
       const commits = (payload.commits as Parameters<typeof handlePushEvent>[2]) ?? [];
       linked = await handlePushEvent(orgId, repo, commits);
     } else if (event === "pull_request") {
-      const pr = payload.pull_request as Parameters<typeof handlePullRequestEvent>[2];
-      if (pr) linked = await handlePullRequestEvent(orgId, repo, pr);
+      const pr = payload.pull_request as
+        | (Parameters<typeof handlePullRequestEvent>[2] & { head?: { ref?: string } })
+        | undefined;
+      if (pr) {
+        // Surface GitHub's head.ref as headRef so the handler can key off the
+        // branch name when the title/body has no work-item key.
+        linked = await handlePullRequestEvent(orgId, repo, {
+          ...pr,
+          headRef: pr.headRef ?? pr.head?.ref ?? null,
+        });
+      }
     } else if (event === "create" || event === "delete") {
       const refType = String(payload.ref_type ?? "");
       const ref = String(payload.ref ?? "");

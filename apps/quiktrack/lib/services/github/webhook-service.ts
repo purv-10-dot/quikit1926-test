@@ -116,6 +116,9 @@ interface PullRequestPayload {
   html_url?: string;
   updated_at?: string;
   user?: { login?: string };
+  /** Head branch ref (e.g. "QUIKTR-104-work") — often carries the key when the
+   *  human-typed title/body doesn't. GitHub sends this as pull_request.head.ref. */
+  headRef?: string | null;
 }
 
 function prState(pr: PullRequestPayload): string {
@@ -131,7 +134,9 @@ export async function handlePullRequestEvent(
   repo: RepoRef,
   pr: PullRequestPayload,
 ): Promise<number> {
-  const keys = parseIssueKeys(`${pr.title}\n${pr.body ?? ""}`);
+  // Parse the title, body AND the head branch ref — the branch often carries
+  // the key (e.g. "QUIKTR-104-work") even when the PR title doesn't.
+  const keys = parseIssueKeys(`${pr.title}\n${pr.body ?? ""}\n${pr.headRef ?? ""}`);
   const issueIds = await resolveIssueIds(orgId, keys);
   const state = prState(pr);
   for (const issueId of issueIds) {

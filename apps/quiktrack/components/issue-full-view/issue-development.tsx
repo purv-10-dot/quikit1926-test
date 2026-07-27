@@ -8,8 +8,16 @@ import {
   GitBranch,
   GitCommit,
   GitPullRequest,
+  Settings,
 } from "lucide-react";
-import { DevelopmentActions } from "./development-actions";
+import { DevSummaryRow } from "./dev-summary-row";
+import {
+  DevActionLink,
+  OpenInToolRow,
+  CreateBranchRow,
+  CreateCommitRow,
+  CreatePrRow,
+} from "./dev-action-rows";
 
 interface Branch { id: string; name: string; url: string | null; repoFullName: string }
 interface Commit {
@@ -60,6 +68,8 @@ export function IssueDevelopment({
   const commits = data?.commits ?? [];
   const prs = data?.pullRequests ?? [];
   const total = branches.length + commits.length + prs.length;
+  // Most recent commit timestamp (commits come back newest-first).
+  const latestCommitAt = commits.find((c) => c.committedAt)?.committedAt ?? null;
 
   return (
     <div className="mb-5">
@@ -71,11 +81,6 @@ export function IssueDevelopment({
         >
           {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
           Development
-          {total > 0 && (
-            <span className="ml-1 rounded-full bg-gray-100 px-1.5 text-[11px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-              {total}
-            </span>
-          )}
         </button>
       </div>
 
@@ -85,66 +90,60 @@ export function IssueDevelopment({
             <p className="px-4 py-3 text-sm text-gray-500">Loading development data…</p>
           )}
 
-          {!isLoading && total === 0 && (
-            <p className="px-4 py-4 text-sm text-gray-500 dark:text-gray-400">
-              No linked development activity yet. Include{" "}
-              <code className="rounded bg-gray-100 px-1 py-0.5 font-mono text-[12px] dark:bg-gray-800">
-                {issueKey}
-              </code>{" "}
-              in a branch name, commit message, or PR title to link it here.
-            </p>
-          )}
-
-          {branches.length > 0 && (
-            <Group icon={GitBranch} label="Branches" count={branches.length}>
-              {branches.map((b) => (
-                <Row key={b.id} url={b.url}>
-                  <GitBranch className="h-3.5 w-3.5 text-gray-400" />
-                  <span className="font-mono text-[13px] text-gray-800 dark:text-gray-200">{b.name}</span>
-                  <span className="ml-auto truncate text-[11px] text-gray-400">{b.repoFullName}</span>
-                </Row>
-              ))}
-            </Group>
-          )}
-
-          {commits.length > 0 && (
-            <Group icon={GitCommit} label="Commits" count={commits.length}>
-              {commits.map((c) => (
-                <Row key={c.id} url={c.url}>
-                  <GitCommit className="h-3.5 w-3.5 text-gray-400" />
-                  <span className="font-mono text-[11px] text-gray-500">{c.sha.slice(0, 7)}</span>
-                  <span className="truncate text-[13px] text-gray-800 dark:text-gray-200">
-                    {c.message.split("\n")[0]}
-                  </span>
-                </Row>
-              ))}
-            </Group>
-          )}
-
-          {prs.length > 0 && (
-            <Group icon={GitPullRequest} label="Pull requests" count={prs.length}>
-              {prs.map((p) => (
-                <Row key={p.id} url={p.url}>
-                  <GitPullRequest className="h-3.5 w-3.5 text-gray-400" />
-                  <span className="text-[11px] text-gray-500">#{p.number}</span>
-                  <span className="truncate text-[13px] text-gray-800 dark:text-gray-200">{p.title}</span>
-                  <span className={`ml-auto rounded-full px-2 py-0.5 text-[10px] font-medium ${PR_STATE_CLS[p.state] ?? PR_STATE_CLS.OPEN}`}>
-                    {p.state}
-                  </span>
-                </Row>
-              ))}
-            </Group>
-          )}
-
-          {/* Action links (Jira-style): always available at the bottom of the
-              card, whether or not there's linked activity yet. */}
+          {/* Jira layout: Connect + Open always; then per type show the COUNT
+              row when there's data, otherwise the CREATE row (which expands
+              inline). Never both — no duplication. */}
           {!isLoading && (
-            <div className="border-t border-gray-100 px-3 py-2 dark:border-gray-800">
-              <DevelopmentActions
-                issueId={issueId}
-                issueKey={issueKey}
-                onBranchCreated={() => refetch()}
-              />
+            <div className="flex flex-col gap-1 px-3 py-2">
+              <DevActionLink href="/settings/integrations/github" icon={Settings} label="Connect development tools" />
+              <OpenInToolRow />
+
+              {branches.length > 0 ? (
+                <DevSummaryRow
+                  icon={GitBranch}
+                  kind="Branch"
+                  issueKey={issueKey}
+                  label={`${branches.length} branch${branches.length === 1 ? "" : "es"}`}
+                  items={branches.map((b) => ({ heading: b.name, repo: b.repoFullName, url: b.url }))}
+                />
+              ) : (
+                <CreateBranchRow issueId={issueId} issueKey={issueKey} onCreated={() => refetch()} />
+              )}
+
+              {commits.length > 0 ? (
+                <DevSummaryRow
+                  icon={GitCommit}
+                  kind="Commit"
+                  issueKey={issueKey}
+                  label={`${commits.length} commit${commits.length === 1 ? "" : "s"}`}
+                  meta={relativeTime(latestCommitAt)}
+                  items={commits.map((c) => ({
+                    heading: `#${c.sha.slice(0, 7)}`,
+                    meta: c.committedAt ? `Last updated ${relativeTime(c.committedAt)}` : undefined,
+                    repo: c.repoFullName,
+                    url: c.url,
+                  }))}
+                />
+              ) : (
+                <CreateCommitRow issueKey={issueKey} />
+              )}
+
+              {prs.length > 0 ? (
+                <DevSummaryRow
+                  icon={GitPullRequest}
+                  kind="Pull request"
+                  issueKey={issueKey}
+                  label={`${prs.length} pull request${prs.length === 1 ? "" : "s"}`}
+                  items={prs.map((p) => ({
+                    heading: `#${p.number} ${p.title}`,
+                    meta: p.state,
+                    repo: p.repoFullName,
+                    url: p.url,
+                  }))}
+                />
+              ) : (
+                <CreatePrRow issueKey={issueKey} />
+              )}
             </div>
           )}
         </div>
@@ -153,35 +152,17 @@ export function IssueDevelopment({
   );
 }
 
-function Group({
-  icon: Icon,
-  label,
-  count,
-  children,
-}: {
-  icon: React.ElementType;
-  label: string;
-  count: number;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="border-b border-gray-100 last:border-b-0 dark:border-gray-800">
-      <div className="flex items-center gap-1.5 px-4 pt-2.5 pb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-        <Icon className="h-3 w-3" /> {label} ({count})
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function Row({ url, children }: { url: string | null; children: React.ReactNode }) {
-  const cls = "flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800/50";
-  if (url) {
-    return (
-      <a href={url} target="_blank" rel="noreferrer noopener" className={cls}>
-        {children}
-      </a>
-    );
-  }
-  return <div className={cls}>{children}</div>;
+/** Compact relative time ("3 minutes ago", "2 days ago"). */
+function relativeTime(iso: string | null): string {
+  if (!iso) return "";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const secs = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  if (secs < 60) return "just now";
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins} minute${mins === 1 ? "" : "s"} ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} hour${hrs === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
 }

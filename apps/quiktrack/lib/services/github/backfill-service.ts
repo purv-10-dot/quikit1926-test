@@ -96,6 +96,7 @@ export async function backfillRepo(
         html_url: pr.url ?? undefined,
         updated_at: pr.updatedAt ?? undefined,
         user: pr.authorName ? { login: pr.authorName } : undefined,
+        headRef: pr.headRef ?? undefined,
       });
     }
 

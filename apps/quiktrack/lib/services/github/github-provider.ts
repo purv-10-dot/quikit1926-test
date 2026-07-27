@@ -33,6 +33,7 @@ interface GhPull {
   html_url: string;
   updated_at: string;
   user: { login: string } | null;
+  head: { ref: string } | null;
 }
 
 function prState(pr: GhPull): ScmPullRequest["state"] {
@@ -94,6 +95,7 @@ export class GithubProvider implements ScmProvider {
       url: pr.html_url,
       authorName: pr.user?.login ?? null,
       updatedAt: pr.updated_at,
+      headRef: pr.head?.ref ?? null,
     }));
   }
 

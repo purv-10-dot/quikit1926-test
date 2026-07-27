@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { GitBranch, GitCommit, GitPullRequest, Github, Rocket, ShieldAlert, Sparkles } from "lucide-react";
+import { PrTable, type PrRow } from "./pr-table";
 
 interface Repo { repoId: string; repoFullName: string; defaultBranch: string }
 interface Branch { id: string; name: string; url: string | null; repoFullName: string }
 interface Commit { id: string; sha: string; message: string; url: string | null; repoFullName: string }
-interface PR { id: string; number: number; title: string; state: string; url: string | null; repoFullName: string }
+type PR = PrRow;
 
 export interface RelatedWorkData {
   repos: Repo[];
@@ -51,14 +52,9 @@ export function RelatedWork({ data }: { data: RelatedWorkData }) {
       <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
         {tab === "pull-requests" && (
           data.pullRequests.length ? (
-            <List>{data.pullRequests.map((p) => (
-              <Row key={p.id} url={p.url}>
-                <GitPullRequest className="h-3.5 w-3.5 text-gray-400" />
-                <span className="text-[11px] text-gray-500">#{p.number}</span>
-                <span className="truncate text-[13px] text-gray-800 dark:text-gray-200">{p.title}</span>
-                <span className="ml-auto text-[11px] text-gray-400">{p.state}</span>
-              </Row>
-            ))}</List>
+            <div className="p-4">
+              <PrTable prs={data.pullRequests} />
+            </div>
           ) : (
             <Empty icon={GitPullRequest} title="No pull requests yet"
               body="Add a work-item key (e.g. QUIKTR-123) to a pull request title in your connected repository to see it here." />

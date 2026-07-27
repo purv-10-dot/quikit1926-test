@@ -52,6 +52,8 @@ export interface ScmPullRequest {
   authorName?: string | null;
   /** ISO-8601 last-updated timestamp. */
   updatedAt?: string | null;
+  /** Head branch ref — carries the work-item key when the title doesn't. */
+  headRef?: string | null;
 }
 
 /**

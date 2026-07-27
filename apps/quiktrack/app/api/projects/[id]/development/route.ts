@@ -50,7 +50,7 @@ export const GET = withProjectAccess<{ id: string }>(
       issueIds.length
         ? db.qtDevPullRequest.findMany({
             where: { orgId, issueId: { in: issueIds } },
-            select: { id: true, number: true, title: true, state: true, url: true, repoFullName: true, issueId: true, updatedAtGh: true },
+            select: { id: true, number: true, title: true, state: true, url: true, repoFullName: true, issueId: true, updatedAtGh: true, authorName: true },
             orderBy: { updatedAtGh: "desc" },
             take: 25,
           })
