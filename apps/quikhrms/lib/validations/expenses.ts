@@ -57,7 +57,7 @@ export const createExpenseClaimSchema = z.object({
   category: ExpenseCategoryEnum,
   title: z.string().min(1),
   description: z.string().optional(),
-  totalAmount: z.number().positive("Amount must be greater than 0"),
+  totalAmount: z.number().positive("Amount must be greater than 0").max(10_000_000, "Amount is unrealistically large"),
   currency: z.string().length(3).default("INR"),
   expenseDate: z.string().optional().nullable(),
   receiptUrl: z.string().refine(
@@ -74,7 +74,9 @@ export const updateExpenseClaimSchema = createExpenseClaimSchema.partial();
 export const approveClaimSchema = z.object({
   action: z.enum(["ExpApproved", "ExpRejected", "Escalated"]),
   comments: z.string().optional(),
-  approvedAmount: z.number().min(0).optional(),
+  // NOTE: partial approval is not supported (no approvedAmount column on
+  // ExpenseClaim). `approvedAmount` was removed so callers can't believe a
+  // partial amount took effect — the full claim amount is what's approved.
 });
 
 export type CreateExpensePolicyInput = z.infer<typeof createExpensePolicySchema>;

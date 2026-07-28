@@ -58,7 +58,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, roleCode, permiss
     console.error("POST /wfh/quota-groups/:id/departments", e);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.employee.write"] });
 
 export const DELETE = withAuth(async (req: NextRequest, { orgId, roleCode, permissions }, params) => {
   try {
@@ -81,4 +81,4 @@ export const DELETE = withAuth(async (req: NextRequest, { orgId, roleCode, permi
     console.error("DELETE /wfh/quota-groups/:id/departments", e);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.employee.write"] });

@@ -6,6 +6,7 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { useDialog } from "@/components/hrms/dialog";
 import { useToast } from "@/components/hrms/toast";
 import { Modal } from "@/components/hrms/modal";
+import { PageBackground } from "@/components/hrms/page-background";
 import { Plus, Shield, ShieldCheck, Trash2, Pencil, Search, X, CheckSquare, Square } from "lucide-react";
 import {
   PERMISSION_TREE,
@@ -170,6 +171,8 @@ export default function RolesPage() {
 
   return (
     <div className="flex h-[calc(100vh-6rem)] bg-white">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       {/* ── Left: Roles list ────────────────────────────── */}
       <aside className="w-[260px] border-r border-gray-200 flex flex-col">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">

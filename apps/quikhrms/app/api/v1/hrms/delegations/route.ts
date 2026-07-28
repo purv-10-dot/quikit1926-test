@@ -11,12 +11,15 @@ export const GET = withAuth(async (req: NextRequest, { orgId, userId }) => {
   try {
     const { searchParams } = new URL(req.url);
     const { page, limit } = parsePagination(searchParams);
-    const scope = searchParams.get("scope") ?? "self";
+    // Fail closed: only "received" is treated specially; ANY other value
+    // (including unknown ones) falls back to "self". The where clause ALWAYS
+    // carries a user filter, so this can never return delegations the caller
+    // isn't party to.
+    const scope = searchParams.get("scope") === "received" ? "received" : "self";
 
     const where = {
       orgId, deletedAt: null,
-      ...(scope === "self" && { delegatorId: userId }),
-      ...(scope === "received" && { delegateeId: userId }),
+      ...(scope === "received" ? { delegateeId: userId } : { delegatorId: userId }),
     };
 
     const [items, total] = await Promise.all([
@@ -46,7 +49,7 @@ export const GET = withAuth(async (req: NextRequest, { orgId, userId }) => {
   }
 });
 
-export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissions }) => {
+export const POST = withAuth(async (req: NextRequest, { orgId, userId, basePermissions }) => {
   try {
     const body = await req.json();
     const parsed = createDelegationSchema.safeParse(body);
@@ -60,11 +63,12 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
       return validationError("You cannot delegate to yourself.");
     }
 
-    // You can only delegate authorities you actually hold. Super-admin ("*")
-    // may delegate anything.
-    if (!permissions.includes("*")) {
+    // You can only delegate authorities you actually hold YOURSELF — checked
+    // against basePermissions (not the delegation-augmented set), so a borrowed
+    // authority can never be re-delegated. Super-admin ("*") may delegate anything.
+    if (!basePermissions.includes("*")) {
       const missing = [...new Set(
-        d.modules.flatMap((m) => m.permissions).filter((code) => !permissions.includes(code)),
+        d.modules.flatMap((m) => m.permissions).filter((code) => !basePermissions.includes(code)),
       )];
       if (missing.length) {
         return validationError(

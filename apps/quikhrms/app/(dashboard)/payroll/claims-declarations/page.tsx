@@ -8,6 +8,7 @@ import { FileCheck, Receipt, FileText, ShieldCheck, Gift, Info, Save, Lock, Unlo
 import { clsx } from "clsx";
 import { Select } from "@/components/hrms/ui/select";
 import { SkeletonTable } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 import { EmployeeClaimSection } from "./_components/employee-claim-section";
 
 type TabKey = "FBP" | "Reimbursement" | "ITDeclaration" | "POI";
@@ -54,6 +55,8 @@ export default function ClaimsDeclarationsPage() {
 
   return (
     <div className="max-w-5xl mx-auto px-5 py-4 space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-start gap-3 mb-2">
         <FileCheck size={28} className="text-[#22c55e] mt-1.5" />
         <h1 className="text-page-title text-gray-900 leading-tight">Claims and declarations</h1>

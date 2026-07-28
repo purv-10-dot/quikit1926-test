@@ -12,7 +12,17 @@ const brandingSchema = z.object({
   signatoryDesignation: z.string().max(120).nullish(),
   offerLetterFooter: z.string().max(500).nullish(),
   offerLetterBody: z.string().max(20000).nullish(),
+  joiningLetterBody: z.string().max(20000).nullish(),
 });
+
+// A storage key may only be one that lives under the caller's own org prefix
+// (keys are written as "<prefix>/<orgId>/<uuid>…"). Blocks pointing branding at
+// another tenant's uploaded object, and rejects path traversal.
+function keyBelongsToOrg(key: string | null | undefined, orgId: string): boolean {
+  if (!key) return true; // null clears the asset — allowed
+  if (key.includes("..")) return false;
+  return key.split("/").includes(orgId);
+}
 
 const SELECT = {
   letterheadKey: true,
@@ -22,6 +32,7 @@ const SELECT = {
   signatoryDesignation: true,
   offerLetterFooter: true,
   offerLetterBody: true,
+  joiningLetterBody: true,
   companyName: true,
 };
 
@@ -33,7 +44,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }) => {
     console.error("GET /settings/branding error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.settings.read", "hrms.settings.write"], anyPermission: true });
 
 export const PUT = withAuth(async (req: NextRequest, { orgId, userId }) => {
   try {
@@ -42,6 +53,11 @@ export const PUT = withAuth(async (req: NextRequest, { orgId, userId }) => {
     if (!parsed.success) return validationError("Validation failed", parsed.error.flatten().fieldErrors);
 
     const data = parsed.data;
+
+    // Storage keys must belong to this org — no cross-tenant asset references.
+    if (!keyBelongsToOrg(data.letterheadKey, orgId) || !keyBelongsToOrg(data.sealKey, orgId) || !keyBelongsToOrg(data.signatureKey, orgId)) {
+      return validationError("Invalid storage key — assets must belong to your organisation.");
+    }
 
     const existing = await prisma.companySettings.findUnique({ where: { orgId } });
     const row = existing
@@ -66,4 +82,4 @@ export const PUT = withAuth(async (req: NextRequest, { orgId, userId }) => {
     console.error("PUT /settings/branding error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.settings.write"] });

@@ -13,6 +13,7 @@ import { NewDeductionForm } from "./_forms/new-deduction";
 import { NewBenefitForm } from "./_forms/new-benefit";
 import type { SalaryComponent, CompType } from "./_forms/types";
 import { SkeletonTable, SkeletonLine } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 
 // Reimbursement is intentionally NOT a tab here — the new reimbursement
 // flow (top-level /hrms/claims-declarations) uses a fixed category list,
@@ -25,6 +26,8 @@ const TAB_LABEL: Record<CompType, string> = {
 export default function SalaryComponentsPage() {
   return (
     <Suspense fallback={<div className="p-4 space-y-2"><SkeletonLine w="40%" h={16} /><SkeletonLine w="70%" h={12} /><SkeletonLine w="60%" h={12} /></div>}>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <SalaryComponentsPageInner />
     </Suspense>
   );

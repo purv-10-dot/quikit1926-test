@@ -5,9 +5,11 @@ import { successResponse, validationError, internalError } from "@/lib/api-respo
 import { createFeedbackSchema } from "@/lib/validations/performance";
 import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
 import { moderationRequired, notifyApprovers } from "@/lib/services/content-moderation";
+import { getCallerEmployeeId, getCallerReporteeIds } from "@/lib/rbac/scope";
 
-export const GET = withAuth(async (req: NextRequest, { orgId, userId, permissions }) => {
+export const GET = withAuth(async (req: NextRequest, ctx) => {
   try {
+    const { orgId, permissions } = ctx;
     const { searchParams } = new URL(req.url);
     const { page, limit } = parsePagination(searchParams);
     const toEmployeeId = searchParams.get("toEmployeeId");
@@ -29,11 +31,20 @@ export const GET = withAuth(async (req: NextRequest, { orgId, userId, permission
     if (statusFilter && canApprove) {
       where.approvalStatus = statusFilter;
     } else if (!canApprove) {
-      // Author can still see own pending items; recipients only see approved
-      where.OR = [
-        { approvalStatus: "Approved" },
-        { fromEmployeeId: userId },
-      ];
+      // Confidentiality: a non-approver may see feedback they authored, feedback
+      // addressed to themselves or their direct reports (once approved), and
+      // public approved feedback — never arbitrary approved feedback about
+      // anyone else via ?toEmployeeId.
+      const callerId = await getCallerEmployeeId(ctx);
+      const reporteeIds = await getCallerReporteeIds(ctx);
+      const myTargets = [callerId, ...reporteeIds].filter(Boolean) as string[];
+      where.AND = [{
+        OR: [
+          { fromEmployeeId: callerId },
+          { toEmployeeId: { in: myTargets }, approvalStatus: "Approved" },
+          { isPublic: true, approvalStatus: "Approved" },
+        ],
+      }];
     }
 
     const [feedback, total] = await Promise.all([

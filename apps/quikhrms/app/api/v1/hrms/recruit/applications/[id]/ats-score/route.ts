@@ -89,8 +89,8 @@ export const POST = withAuth(async (_req: NextRequest, { orgId, userId }, params
       result = await scoreResumeAgainstJD({
         jobTitle: application.requisition.title,
         jobDescription: application.requisition.jobDescription ?? null,
-        experienceMin: application.requisition.experienceMin ?? null,
-        experienceMax: application.requisition.experienceMax ?? null,
+        experienceMin: application.requisition.experienceMin != null ? Number(application.requisition.experienceMin) : null,
+        experienceMax: application.requisition.experienceMax != null ? Number(application.requisition.experienceMax) : null,
         skillWeights,
         resumeText,
         candidateSummary: parsedResume?.summary ?? null,
@@ -117,6 +117,7 @@ export const POST = withAuth(async (_req: NextRequest, { orgId, userId }, params
     return internalError();
   }
 }, {
+  requiredPermissions: ["hrms.recruit.write"],
   rateLimit: [
     { max: 10, windowSec: 60, by: "user", scope: "ai" },
     { max: 200, windowSec: 24 * 60 * 60, by: "tenant", scope: "ai.daily" },

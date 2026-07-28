@@ -51,4 +51,4 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
 
     return successResponse(survey, undefined, 201);
   } catch (error) { console.error("POST /engage/surveys error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.engage.manage"] });

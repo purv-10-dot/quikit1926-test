@@ -9,6 +9,7 @@ import { Select } from "@/components/hrms/select";
 import { Plus, Trash2, Pencil, Star, GripVertical, X, AlertTriangle, ChevronRight, Mail, MailX } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonCards } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 
 type MailTemplate = "interview" | "offer-branded" | "offer-default" | "welcome" | "joining-letter" | null;
 
@@ -56,13 +57,12 @@ const isRequiredStage = (name: string) => REQUIRED_STAGES.some((r) => r.toLowerC
 function inferTemplate(name: string): MailTemplate {
   if (/interview|phonescreen|assessment|finalround/i.test(name)) return "interview";
   if (/offer/i.test(name)) return "offer-branded";
-  if (/joining/i.test(name)) return "joining-letter";
   if (/hired/i.test(name)) return "welcome";
   return null;
 }
 
 function canHaveMail(stageName: string): boolean {
-  return /interview|phonescreen|assessment|finalround|offer|hired|joining/i.test(stageName);
+  return /interview|phonescreen|assessment|finalround|offer|hired/i.test(stageName);
 }
 
 function templateOptions(stageName: string): { value: NonNullable<MailTemplate>; label: string }[] {
@@ -72,11 +72,9 @@ function templateOptions(stageName: string): { value: NonNullable<MailTemplate>;
       { value: "offer-default", label: "Default Content Letter" },
     ];
   }
-  if (/joining/i.test(stageName)) return [{ value: "joining-letter", label: "Joining Letter" }];
   if (/hired/i.test(stageName)) {
     return [
       { value: "welcome", label: "Welcome / Onboarding" },
-      { value: "joining-letter", label: "Joining Letter" },
     ];
   }
   if (/interview|phonescreen|assessment|finalround/i.test(stageName)) return [{ value: "interview", label: "Interview Invite" }];
@@ -214,6 +212,8 @@ export default function PipelinesPage() {
 
   return (
     <div>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-base font-semibold text-gray-900">Hiring Pipelines</h1>

@@ -5,10 +5,12 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Modal } from "@/components/hrms/modal";
+import { PageBackground } from "@/components/hrms/page-background";
 import { todayInput } from "@/lib/utils/date-input";
 import { Plus, Pin, Megaphone, Sparkles, Calendar, Globe2, Building2, Users, CalendarClock, Send } from "lucide-react";
 import { FilterBar, FilterDivider, FilterPills, FilterSearch } from "@/components/hrms/ui/filter-bar";
 import { SkeletonCards } from "@/components/hrms/skeleton";
+import { Pagination } from "@/components/hrms/pagination";
 
 interface AnnouncementItem {
   id: string;
@@ -33,6 +35,8 @@ export default function AnnouncementsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"All" | "Pinned" | "Active">("All");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [form, setForm] = useState({ title: "", content: "", isPinned: false, visibility: "Organization" as string, expiresAt: "" });
 
   const resetForm = () => setForm({ title: "", content: "", isPinned: false, visibility: "Organization", expiresAt: "" });
@@ -85,9 +89,13 @@ export default function AnnouncementsPage() {
       return true;
     });
   }, [announcements, filter, search, now]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       {/* Hero header */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#0F1F3D] via-[#14532d] to-[#16a34a] mb-4">
         <svg className="absolute inset-0 w-full h-full opacity-40" viewBox="0 0 1200 200" preserveAspectRatio="none">
@@ -138,7 +146,7 @@ export default function AnnouncementsPage() {
           <FilterBar>
             <FilterPills
               value={filter}
-              onChange={(v) => setFilter(v as "All" | "Pinned" | "Active")}
+              onChange={(v) => { setFilter(v as "All" | "Pinned" | "Active"); setPage(1); }}
               options={[
                 { value: "All", label: "All" },
                 { value: "Pinned", label: "Pinned" },
@@ -146,7 +154,7 @@ export default function AnnouncementsPage() {
               ]}
             />
             <FilterDivider />
-            <FilterSearch value={search} onChange={setSearch} placeholder="Search announcements..." />
+            <FilterSearch value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="Search announcements..." />
           </FilterBar>
 
           {/* Feed */}
@@ -160,7 +168,7 @@ export default function AnnouncementsPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {filtered.map((a, idx) => {
+              {pageItems.map((a, idx) => {
                 const vs = visibilityStyles[a.visibility] ?? visibilityStyles.Organization;
                 return (
                   <article
@@ -202,6 +210,7 @@ export default function AnnouncementsPage() {
                   </article>
                 );
               })}
+              <Pagination page={page} totalPages={totalPages} total={filtered.length} limit={PAGE_SIZE} onPageChange={setPage} className="border-t-0 px-0" />
             </div>
           )}
         </div>

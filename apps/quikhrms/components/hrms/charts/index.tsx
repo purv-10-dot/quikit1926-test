@@ -23,3 +23,13 @@ export const FunnelView = dynamic(
   () => import("./_recharts-bundle").then((m) => m.FunnelView),
   { ssr: false, loading: () => SKELETON },
 );
+
+export const TrendLineChart = dynamic(
+  () => import("./_recharts-bundle").then((m) => m.TrendLineChart),
+  { ssr: false, loading: () => SKELETON },
+);
+
+export const DonutView = dynamic(
+  () => import("./_recharts-bundle").then((m) => m.DonutView),
+  { ssr: false, loading: () => SKELETON },
+);

@@ -1,6 +1,28 @@
 import { prisma } from "@/lib/prisma";
+import { attendanceDayStart } from "@/lib/attendance/day";
 
-export type DayStatus = "Present" | "Absent" | "HalfDay" | "Weekend" | "Holiday" | "OnLeave" | "OnDuty" | "CompOff" | "WFH" | "NotMarked";
+const DAY_NAME_TO_NUM: Record<string, number> = {
+  sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6,
+};
+
+/**
+ * Derive week-off day numbers (0=Sun … 6=Sat) from the company profile's
+ * `workWeek` (the list of WORKING day names). Week-offs are the days NOT worked.
+ * Returns null when workWeek is empty/unset so callers fall through to the next
+ * source in the precedence chain.
+ */
+function companyWeekOffs(workWeek: unknown): number[] | null {
+  if (!Array.isArray(workWeek) || workWeek.length === 0) return null;
+  const working = new Set(
+    (workWeek as unknown[])
+      .map((d) => (typeof d === "string" ? DAY_NAME_TO_NUM[d.toLowerCase()] : undefined))
+      .filter((n): n is number => n != null),
+  );
+  if (working.size === 0) return null;
+  return [0, 1, 2, 3, 4, 5, 6].filter((n) => !working.has(n));
+}
+
+export type DayStatus = "Present" | "Absent" | "HalfDay" | "Weekend" | "Holiday" | "OnLeave" | "OnDuty" | "CompOff" | "WFH" | "NotMarked" | "Missing";
 
 export interface DayCell {
   recordId: string | null;
@@ -47,13 +69,15 @@ export interface WeekSummary {
 }
 
 export async function getWeekSummary(orgId: string, employeeId: string, weekStart: Date): Promise<WeekSummary> {
-  const start = new Date(weekStart);
-  start.setHours(0, 0, 0, 0);
+  // Bucket by the IST calendar date (stored as UTC-midnight), matching how
+  // attendance records are keyed — so the grid days line up with records on ANY
+  // server timezone. (Local-midnight + toISOString shifted days by one on IST.)
+  const start = attendanceDayStart(weekStart);
   const end = new Date(start);
-  end.setDate(end.getDate() + 6);
-  end.setHours(23, 59, 59, 999);
+  end.setUTCDate(start.getUTCDate() + 6);
+  end.setUTCHours(23, 59, 59, 999);
 
-  const [records, shiftAssign, holidays, leaves, rosterEntries, company] = await Promise.all([
+  const [records, shiftAssign, holidays, leaves, rosterEntries, company, employee] = await Promise.all([
     prisma.attendanceRecord.findMany({
       where: { orgId, employeeId, date: { gte: start, lte: end }, deletedAt: null },
       orderBy: { date: "asc" },
@@ -88,7 +112,11 @@ export async function getWeekSummary(orgId: string, employeeId: string, weekStar
     }),
     prisma.companySettings.findUnique({
       where: { orgId },
-      select: { workHoursPerDay: true },
+      select: { workHoursPerDay: true, workWeek: true },
+    }),
+    prisma.employee.findUnique({
+      where: { id: employeeId },
+      select: { weeklyOffDays: true },
     }),
   ]);
 
@@ -98,20 +126,36 @@ export async function getWeekSummary(orgId: string, employeeId: string, weekStar
 
   const shift = shiftAssign?.shift
     ? { name: shiftAssign.shift.name, start: shiftAssign.shift.startTime, end: shiftAssign.shift.endTime, weekOffs: shiftAssign.shift.weekOffs }
-    : { name: "General", start: "09:00", end: "18:00", weekOffs: [0, 6] as unknown };
+    : { name: "General", start: "09:00", end: "18:00", weekOffs: null as unknown };
 
-  const weekOffs = Array.isArray(shift.weekOffs) ? (shift.weekOffs as number[]) : [0, 6];
+  // Week-off precedence (most specific wins). A per-date roster entry (handled
+  // in the day loop below) always overrides this baseline pattern:
+  //   employee's own weekly-offs → shift week-offs → company profile (workWeek)
+  //   → Sat/Sun fallback.
+  const asDayNums = (v: unknown): number[] | null => {
+    if (!Array.isArray(v) || v.length === 0) return null;
+    const nums = (v as unknown[]).filter((n) => typeof n === "number") as number[];
+    return nums.length ? nums : null;
+  };
+  const empOff = asDayNums(employee?.weeklyOffDays);
+  const shiftOff = asDayNums(shift.weekOffs);
+  const companyOff = companyWeekOffs(company?.workWeek);
+  const weekOffs = empOff ?? shiftOff ?? companyOff ?? [0, 6];
 
   const recordByDate = new Map(records.map((r) => [r.date.toISOString().slice(0, 10), r]));
   const holidayByDate = new Map(holidays.map((h) => [h.date.toISOString().slice(0, 10), h]));
   const rosterByDate = new Map(rosterEntries.map((e) => [e.date.toISOString().slice(0, 10), e]));
 
+  // Start of today's IST date (UTC-midnight) — used to flag past days with a
+  // missing exit time and to separate past / today / future.
+  const todayStart = attendanceDayStart();
+
   const days: DayCell[] = [];
   for (let i = 0; i < 7; i++) {
     const d = new Date(start);
-    d.setDate(start.getDate() + i);
+    d.setUTCDate(start.getUTCDate() + i);
     const key = d.toISOString().slice(0, 10);
-    const dow = d.getDay();
+    const dow = d.getUTCDay();
 
     const rec = recordByDate.get(key);
     const hol = holidayByDate.get(key);
@@ -131,7 +175,14 @@ export async function getWeekSummary(orgId: string, employeeId: string, weekStar
 
     let status: DayStatus;
     if (rec?.checkIn) {
-      status = (rec.status as DayStatus) ?? "Present";
+      // Checked in but no exit time recorded, and the day is already over →
+      // flag as "Missing" so the employee can regularize (add the exit time).
+      // A still-open punch on the current day stays "Present" (may still be working).
+      if (!rec.checkOut && d < todayStart) {
+        status = "Missing";
+      } else {
+        status = (rec.status as DayStatus) ?? "Present";
+      }
     } else if (leave) {
       status = "OnLeave";
     } else if (hol) {
@@ -139,10 +190,10 @@ export async function getWeekSummary(orgId: string, employeeId: string, weekStar
     } else if (isRosterWeekOff) {
       status = "Weekend";
     } else if (isRosterDuty) {
-      status = d > new Date() ? "NotMarked" : "Absent";
+      status = d > todayStart ? "NotMarked" : "Absent";
     } else if (weekOffs.includes(dow)) {
       status = "Weekend";
-    } else if (d > new Date()) {
+    } else if (d > todayStart) {
       status = "NotMarked";
     } else {
       status = "Absent";
@@ -215,12 +266,6 @@ export async function getWeekSummary(orgId: string, employeeId: string, weekStar
 
 type Punch = { in: string; out: string | null };
 
-function startOfToday(): Date {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
 /**
  * Clock the employee in when they log in. Opens a new punch on today's record
  * (creating the record if needed). Idempotent — if a punch is already open
@@ -232,7 +277,9 @@ export async function autoClockIn(
   ipAddress?: string | null,
 ): Promise<void> {
   try {
-    const today = startOfToday();
+    // Bucket on the same IST day key as manual check-in/out and getWeekSummary,
+    // so auto-punches don't land on a different (local/UTC-midnight) day.
+    const today = attendanceDayStart();
     const existing = await prisma.attendanceRecord.findFirst({
       where: { orgId, employeeId, date: today, deletedAt: null },
     });

@@ -19,7 +19,7 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
     const { searchParams } = new URL(req.url);
     const scope = searchParams.get("scope") ?? "pending";
 
-    const isHr = permissions.includes("*") || permissions.includes("hrms.offboarding.write");
+    const isHr = permissions.includes("*") || permissions.includes("hrms.offboarding.write") || permissions.includes("hrms.offboarding.approve");
     const callerEmployeeId = await resolveEmployeeId(orgId, ctx.userId);
 
     // Non-HR who aren't anyone's approver see an empty queue.

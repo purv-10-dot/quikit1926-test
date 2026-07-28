@@ -16,7 +16,7 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     ]);
     return successResponse(forms, paginationMeta(page, limit, total));
   } catch (error) { console.error("GET /review-forms error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.performance.appraise"] });
 
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
   try {
@@ -28,4 +28,4 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     });
     return successResponse(form, undefined, 201);
   } catch (error) { console.error("POST /review-forms error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.performance.appraise"] });

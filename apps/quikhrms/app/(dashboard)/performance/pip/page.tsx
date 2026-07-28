@@ -12,6 +12,8 @@ import { clsx } from "clsx";
 import { Plus, AlertTriangle, CheckCircle2, XCircle, Trash2 } from "lucide-react";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { useToast } from "@/components/hrms/toast";
+import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 
 interface PIPItem {
   id: string;
@@ -53,6 +55,8 @@ export default function PIPPage() {
 
   const [statusFilter, setStatusFilter] = useState("");
   const [employeeFilter, setEmployeeFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   const { data, isLoading } = useQuery({
     queryKey: ["pips", statusFilter, employeeFilter],
@@ -101,11 +105,15 @@ export default function PIPPage() {
   };
 
   const pips = data?.data ?? [];
+  const totalPages = Math.max(1, Math.ceil(pips.length / PAGE_SIZE));
+  const pageItems = pips.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-        <h1 className="text-page-title text-gray-900">Performance improvement plans</h1>
+        <h1 className="text-page-title text-gray-900">Improvement Plans</h1>
         <button onClick={() => { setForm({ employeeId: "", reason: "", startDate: "", endDate: "" }); setShowCreate(true); }}
           className="btn btn-danger">
           <Plus size={13} /> Initiate PIP
@@ -115,7 +123,7 @@ export default function PIPPage() {
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <Select
           value={statusFilter}
-          onChange={setStatusFilter}
+          onChange={(v) => { setStatusFilter(v); setPage(1); }}
           className="w-44"
           options={[
             { value: "", label: "All statuses" },
@@ -127,12 +135,12 @@ export default function PIPPage() {
           ]}
         />
         <div className="w-64">
-          <EmployeeSelect value={employeeFilter} onChange={setEmployeeFilter} placeholder="Filter by employee" />
+          <EmployeeSelect value={employeeFilter} onChange={(id) => { setEmployeeFilter(id); setPage(1); }} placeholder="Filter by employee" />
         </div>
         {(statusFilter || employeeFilter) && (
           <button
             type="button"
-            onClick={() => { setStatusFilter(""); setEmployeeFilter(""); }}
+            onClick={() => { setStatusFilter(""); setEmployeeFilter(""); setPage(1); }}
             className="text-xs text-[#22c55e] hover:underline"
           >
             Clear
@@ -161,7 +169,7 @@ export default function PIPPage() {
               </tr>
             </thead>
             <tbody>
-              {pips.map((p, i) => (
+              {pageItems.map((p, i) => (
                 <tr key={p.id} className="row-stagger border-b border-gray-100 hover:bg-gray-50" style={{ ["--i" as never]: Math.min(i, 10) }}>
                   <td className="px-4 py-2.5">
                     <p className="text-[13px] font-medium text-gray-900">{p.employee.firstName} {p.employee.lastName}</p>
@@ -229,6 +237,9 @@ export default function PIPPage() {
               ))}
             </tbody>
           </table>
+        )}
+        {!isLoading && pips.length > 0 && (
+          <Pagination page={page} totalPages={totalPages} total={pips.length} limit={PAGE_SIZE} onPageChange={setPage} />
         )}
       </div>
 

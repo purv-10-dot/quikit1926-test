@@ -1,9 +1,10 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, validationError, internalError, notFound } from "@/lib/api-response";
+import { successResponse, validationError, conflict, internalError, notFound } from "@/lib/api-response";
 import { updateFNFSchema } from "@/lib/validations/payroll";
 import { computeFullAndFinal } from "@/lib/services/payroll-settlement";
+import { getClearanceStatus } from "@/lib/services/offboarding-clearance";
 import { createAuditLog } from "@/lib/utils/audit";
 
 export const GET = withAuth(async (_req: NextRequest, { orgId }, { id }) => {
@@ -43,6 +44,14 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, { id }
     const recoveries = Number(next.noticePayRecovery ?? 0) + Number(next.loanRecovery ?? 0) + Number(next.otherDeductions ?? 0) + Number(next.tdsDeducted ?? 0);
     if (fields.some((f) => f in parsed.data)) {
       data.netSettlement = grossOwed - recoveries;
+    }
+    // Blocking gate: don't approve/pay the settlement until every department
+    // clearance is done (the doc's "clearances gate F&F" rule).
+    if (parsed.data.status === "Approved" || parsed.data.status === "Paid") {
+      const clr = await getClearanceStatus(orgId, existing.employeeId);
+      if (clr.hasOffboarding && !clr.complete) {
+        return conflict(`${clr.pending} clearance task(s) still pending — all department clearances must be Cleared before the F&F can be ${parsed.data.status === "Paid" ? "paid" : "approved"}.`);
+      }
     }
     if (parsed.data.status === "Approved") {
       data.approvedBy = userId;
