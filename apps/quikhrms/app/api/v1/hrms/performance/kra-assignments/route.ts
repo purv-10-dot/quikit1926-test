@@ -105,6 +105,16 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       return validationError(`Some employees are not in your organization: ${invalid.slice(0, 5).join(", ")}`);
     }
 
+    // A supplied cycleId must reference an appraisal cycle in THIS org (not
+    // soft-deleted) — never trust a cross-tenant / stale cycle id.
+    if (cycleId) {
+      const cycle = await prisma.appraisalCycle.findFirst({
+        where: { id: cycleId, orgId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!cycle) return validationError("Invalid appraisal cycle for this organization.");
+    }
+
     const scorecard = await prisma.kraScorecard.findFirst({
       where: { id: scorecardId, orgId, deletedAt: null },
       include: {

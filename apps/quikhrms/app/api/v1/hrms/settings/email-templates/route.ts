@@ -29,7 +29,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }) => {
     console.error("GET /settings/email-templates error:", e);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.settings.read", "hrms.settings.write"], anyPermission: true });
 
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
   try {

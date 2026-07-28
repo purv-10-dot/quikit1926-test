@@ -128,7 +128,7 @@ export const createRecognitionSchema = z.object({
   type: z.enum(["Kudos", "Badge", "Award", "Shoutout"]).default("Kudos"),
   message: z.string().min(1, "Message required"),
   badge: z.string().optional(),
-  points: z.number().int().default(0),
+  // points is NOT client-supplied — it's derived server-side from the type.
   isPublic: z.boolean().default(true),
 });
 

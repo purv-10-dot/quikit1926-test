@@ -8,7 +8,7 @@ import { generateEmployeeCode } from "@/lib/utils/employee-code";
 import { fireWorkflow } from "@/lib/workflows/executor";
 import { resolveScope, employeeScopeFilter } from "@/lib/rbac/scope";
 import { getHierarchyAccessibleEmployeeIds, intersectEmployeeIds } from "@/lib/rbac/hierarchy";
-import { APP_ID } from "@/lib/rbac/registry";
+import { APP_ID, joinCode } from "@/lib/rbac/registry";
 import { forbidden } from "@/lib/api-response";
 import { scheduleOrgChartRebuild } from "@/lib/org-chart-rebuild";
 import { allocateProRataLeaveBalances } from "@/lib/services/leave-allocation";
@@ -100,7 +100,10 @@ export const GET = withServiceAuth(async (req: NextRequest, ctx) => {
         ...(officeLocationId && { officeLocationId }),
       };
 
-      const orderBy: Prisma.EmployeeOrderByWithRelationInput = sort
+      // Only allow sorting by known Employee columns — never pass an arbitrary
+      // client key straight to Prisma orderBy. Unknown/absent → newest first.
+      const SORTABLE = new Set(["firstName", "lastName", "employeeCode", "dateOfJoining", "createdAt", "status"]);
+      const orderBy: Prisma.EmployeeOrderByWithRelationInput = sort && SORTABLE.has(sort)
         ? { [sort]: order }
         : { createdAt: "desc" };
 
@@ -219,7 +222,7 @@ export const GET = withServiceAuth(async (req: NextRequest, ctx) => {
 });
 
 /** POST /api/v1/hrms/employees — create employee */
-export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
+export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissions }) => {
   try {
     const body = await req.json();
     const parsed = createEmployeeSchema.safeParse(body);
@@ -251,6 +254,46 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     });
     if (!structure) {
       return validationError("Salary template not found");
+    }
+
+    // Relational-id integrity — every supplied FK must resolve inside the
+    // caller's org (mirrors the org-scoped salaryStructure lookup above). Done
+    // BEFORE any writes so a bad id can't orphan a half-provisioned employee.
+    {
+      const relErrors: Record<string, string[]> = {};
+      const notInOrg = (f: string) => { relErrors[f] = [`${f} does not belong to this organization`]; };
+      if (data.reportingManagerId && !(await prisma.employee.findFirst({ where: { id: data.reportingManagerId, orgId, deletedAt: null }, select: { id: true } }))) notInOrg("reportingManagerId");
+      if (data.dottedLineManagerId && !(await prisma.employee.findFirst({ where: { id: data.dottedLineManagerId, orgId, deletedAt: null }, select: { id: true } }))) notInOrg("dottedLineManagerId");
+      if (data.referredById && !(await prisma.employee.findFirst({ where: { id: data.referredById, orgId, deletedAt: null }, select: { id: true } }))) notInOrg("referredById");
+      if (data.departmentId && !(await prisma.department.findFirst({ where: { id: data.departmentId, orgId }, select: { id: true } }))) notInOrg("departmentId");
+      if (data.teamId && !(await prisma.team.findFirst({ where: { id: data.teamId, orgId }, select: { id: true } }))) notInOrg("teamId");
+      if (data.designationId && !(await prisma.designation.findFirst({ where: { id: data.designationId, orgId }, select: { id: true } }))) notInOrg("designationId");
+      if (data.gradeId && !(await prisma.grade.findFirst({ where: { id: data.gradeId, orgId }, select: { id: true } }))) notInOrg("gradeId");
+      if (data.officeLocationId && !(await prisma.officeLocation.findFirst({ where: { id: data.officeLocationId, orgId }, select: { id: true } }))) notInOrg("officeLocationId");
+      if (data.noticePeriodId && !(await prisma.noticePeriod.findFirst({ where: { id: data.noticePeriodId, orgId }, select: { id: true } }))) notInOrg("noticePeriodId");
+      if (Object.keys(relErrors).length) return validationError("Validation failed", relErrors);
+    }
+
+    // Role assignment is privileged: only rbac.manage (or super admin) may set an
+    // explicit roleId — any other caller's roleId is ignored silently (the tenant
+    // default role is used). A permitted assigner still can't grant a role that
+    // carries permissions they don't already hold (tier guard, mirrors
+    // PUT /employees/:id/role). Validated before writes.
+    const canManageRoles = permissions.includes("*") || permissions.includes("hrms.rbac.manage");
+    const requestedRoleId: string | null = canManageRoles ? (data.roleId ?? null) : null;
+    if (requestedRoleId) {
+      const role = await prisma.hrmsAppRole.findFirst({
+        where: { id: requestedRoleId, orgId, appId: APP_ID },
+        select: { id: true, permissions: { select: { resource: true, action: true } } },
+      });
+      if (!role) return validationError("Role not found");
+      if (!permissions.includes("*")) {
+        const held = new Set(permissions);
+        const missing = role.permissions.map((p) => joinCode(p.resource, p.action)).filter((c) => !held.has(c));
+        if (missing.length) {
+          return validationError(`You can't assign a role with permissions you don't hold: ${missing.join(", ")}`);
+        }
+      }
     }
 
     const employeeCode = await generateEmployeeCode(orgId);
@@ -323,9 +366,9 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       },
     });
 
-    // RBAC v2: link to AppRole via UserAppRole join. If no roleId provided,
-    // fall back to the tenant's default role (AppRole.isDefault = true).
-    let assignedRoleId: string | null = data.roleId ?? null;
+    // RBAC v2: link to AppRole via UserAppRole join. If no (permitted) roleId was
+    // supplied, fall back to the tenant's default role (AppRole.isDefault = true).
+    let assignedRoleId: string | null = requestedRoleId;
     if (!assignedRoleId) {
       const defaultRole = await prisma.hrmsAppRole.findFirst({
         where: { orgId: orgId, appId: APP_ID, isDefault: true },

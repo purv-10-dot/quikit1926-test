@@ -81,6 +81,27 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
       return forbidden("You can only set goals for yourself or your team.");
     }
 
+    // A parent goal must be a real, non-deleted goal in THIS org (blocks
+    // aligning to / nesting under a goal from another tenant).
+    if (data.parentGoalId) {
+      const parent = await prisma.hrmsGoal.findFirst({
+        where: { id: data.parentGoalId, orgId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!parent) return validationError("Parent goal does not exist in your organization.");
+    }
+    // alignedTo may be free text OR a goal id. If it references an actual goal,
+    // that goal must belong to this org (and not be soft-deleted).
+    if (data.alignedTo) {
+      const aligned = await prisma.hrmsGoal.findFirst({
+        where: { id: data.alignedTo },
+        select: { orgId: true, deletedAt: true },
+      });
+      if (aligned && (aligned.orgId !== orgId || aligned.deletedAt !== null)) {
+        return validationError("alignedTo references a goal that isn't in your organization.");
+      }
+    }
+
     const goal = await prisma.hrmsGoal.create({
       data: {
         orgId, employeeId: targetEmployeeId,

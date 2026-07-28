@@ -111,6 +111,12 @@ export default function RequisitionApprovalsPage() {
       // Approve is a one-click action — send the user to the requisitions list.
       if (vars.kind === "approve") router.push("/recruit/requisitions");
     },
+    onError: (e: unknown) => {
+      // Surface the failure instead of leaving the row silently "stuck", and
+      // refresh the queue in case the decision was already taken elsewhere.
+      toast.error("Couldn't submit decision", e instanceof Error ? e.message : undefined);
+      qc.invalidateQueries({ queryKey: ["requisition-approvals"] });
+    },
   });
 
   // #6 — HR can edit the requisition (Timeline/ETA/Budget/etc.) before approving,

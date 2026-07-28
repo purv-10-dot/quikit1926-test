@@ -62,19 +62,23 @@ export const POST = withAuth(async (req: NextRequest, ctx, params) => {
       (snap?.approvalChain as ExpenseChainLevel[] | undefined) ??
       ((claim.policy?.approvalChain as ExpenseChainLevel[] | null) ?? []);
     const isSuper = ctx.permissions.includes("*");
-    const isDecision = parsed.data.action === "ExpApproved" || parsed.data.action === "ExpRejected";
     const claimApprovers = {
       reportingManagerId: claim.employee?.reportingManagerId ?? null,
       departmentHeadId: claim.employee?.department?.headId ?? null,
     };
-    if (!isSuper && isDecision) {
+    // Approver-eligibility gate runs for EVERY action — including "Escalated",
+    // which must not be a way to bypass the chain. super_admin ("*") excepted.
+    if (!isSuper) {
       if (chain.length > 0) {
         const levelCfg = chain.find((c) => c.level === currentLevel);
-        if (levelCfg) {
-          const eligible = isEligibleExpenseApprover(levelCfg, ctx.roles, callerEmpId, claimApprovers);
-          if (!eligible) {
-            return forbidden(`Level ${currentLevel} must be actioned by ${EXPENSE_APPROVER_LABEL[levelCfg.approverType]}.`);
-          }
+        // A configured chain with no rule for this level is a misconfiguration —
+        // fail closed rather than silently allowing anyone through.
+        if (!levelCfg) {
+          return forbidden("No approver configured for this level.");
+        }
+        const eligible = isEligibleExpenseApprover(levelCfg, ctx.roles, callerEmpId, claimApprovers);
+        if (!eligible) {
+          return forbidden(`Level ${currentLevel} must be actioned by ${EXPENSE_APPROVER_LABEL[levelCfg.approverType]}.`);
         }
       } else {
         // No approval chain configured → require a genuine approver relationship,

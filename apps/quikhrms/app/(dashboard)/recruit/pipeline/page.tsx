@@ -11,7 +11,7 @@ import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { clsx } from "clsx";
-import { User, Users, ArrowRight, UserPlus, CheckCircle, Check, Star, MessageSquare, X, Search, Mail, Clock, ThumbsUp, ThumbsDown, Download, CalendarPlus, MapPin, Link2, FileCheck2, FileText, Briefcase, Calendar, FileCheck, Copy, ExternalLink, SkipForward, FastForward, Phone, Video, Award, Send, BellRing, Info, AlertTriangle, ChevronDown, Save, HelpCircle, ClipboardList, MoreHorizontal } from "lucide-react";
+import { User, Users, ArrowRight, ArrowRightLeft, UserPlus, CheckCircle, Check, Star, MessageSquare, X, Search, Mail, Clock, ThumbsUp, ThumbsDown, Download, CalendarPlus, MapPin, Link2, FileCheck2, FileText, Briefcase, Calendar, FileCheck, Copy, ExternalLink, SkipForward, FastForward, Phone, Video, Award, Send, BellRing, Info, AlertTriangle, ChevronDown, Save, HelpCircle, ClipboardList, MoreHorizontal } from "lucide-react";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { SendOfferWizard } from "./_components/send-offer-wizard";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
@@ -1414,14 +1414,21 @@ export default function PipelinePage() {
                 <MenuItem icon={<ArrowRight size={14} />} label="Move to next"
                   onClick={() => {
                     setMenu(null);
+                    const next = STAGES[si + 1];
+                    // Gate: unapproved required documents block reaching Offer (same rule as the kanban "Move to Offer" button).
+                    if (/offer/i.test(next ?? "") && app.docGate?.blocking) { setDocBlockApp(app); return; }
                     if ((app._count.scorecards ?? 0) === 0) {
                       toast.warning("Feedback required", `Provide feedback for "${stageName}" before moving to the next stage.`);
                       setFeedback({ overallRating: 7, recommendation: "", strengths: "", concerns: "", overallComments: "" });
                       setFeedbackApp(app);
                       return;
                     }
-                    moveMut.mutate({ id: app.id, stage: STAGES[si + 1] });
+                    moveMut.mutate({ id: app.id, stage: next });
                   }} />
+              )}
+              {!isHired && (
+                <MenuItem icon={<ArrowRightLeft size={14} />} label="Change stage"
+                  onClick={() => { setMenu(null); setMoveTarget(app.currentStage ?? STAGES[0]); setMoveApp(app); }} />
               )}
               <div className="px-2 pt-1.5 pb-1 text-[10px] font-bold tracking-[0.09em] uppercase text-gray-400">Review</div>
               {showScreening(app) && (

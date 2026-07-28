@@ -36,6 +36,7 @@ export async function getAttritionAnalytics(orgId: string, months = 12) {
     prisma.employee.findMany({
       where: {
         orgId,
+        deletedAt: null,
         status: "Relieved",
         lastWorkingDate: { gte: cutoff },
       },

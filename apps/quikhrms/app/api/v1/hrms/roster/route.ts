@@ -226,15 +226,18 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
     const parsed = createRosterSchema.safeParse(body);
     if (!parsed.success) return validationError("Validation failed", parsed.error.flatten().fieldErrors);
 
-    // Reject overlapping rosters for the same department scope — two rosters over
-    // the same dates would produce ambiguous cells and conflicting attendance.
+    // Reject overlapping rosters — two rosters over the same dates would produce
+    // ambiguous cells and conflicting attendance. An All-departments (null)
+    // roster conflicts with ANY department's roster over the period (and
+    // vice-versa); a department-scoped roster conflicts with its OWN department
+    // OR an org-wide (null) roster.
     const deptScope = parsed.data.departmentId || null;
     const overlap = await prisma.roster.findFirst({
       where: {
         orgId, deletedAt: null,
-        departmentId: deptScope,
         periodStart: { lte: parsed.data.periodEnd },
         periodEnd: { gte: parsed.data.periodStart },
+        ...(deptScope ? { OR: [{ departmentId: deptScope }, { departmentId: null }] } : {}),
       },
       select: { name: true },
     });

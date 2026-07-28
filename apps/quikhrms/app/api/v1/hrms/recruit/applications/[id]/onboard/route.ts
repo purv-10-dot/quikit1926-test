@@ -95,6 +95,16 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
     const reqn = application.requisition; // renamed from `req` to avoid clash with the request param above
 
     const employee = await prisma.$transaction(async (tx) => {
+      // Idempotency guard: re-check inside the transaction so two fast clicks
+      // can't both pass the earlier check and create duplicate employees. The
+      // DB unique index on (orgId, workEmail) is the ultimate backstop (P2002,
+      // handled below).
+      const dup = await tx.employee.findFirst({
+        where: { orgId, workEmail: application.candidate.email, deletedAt: null },
+        select: { id: true },
+      });
+      if (dup) throw new Error("EMP_EXISTS");
+
       const emp = await tx.employee.create({
         data: {
           orgId,
@@ -110,7 +120,9 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
           departmentId: reqn.departmentId ?? undefined,
           employmentType: reqn.employmentType,
           workLocation: reqn.workLocation,
-          dateOfJoining: new Date(),
+          // Honour the agreed offer joining date (drives Pre-Onboarding
+          // "joining this week/month" counts); fall back to today if unset.
+          dateOfJoining: application.offerJoiningDate ?? new Date(),
           status: "PreBoarding",
           createdBy: userId,
           updatedBy: userId,
@@ -191,6 +203,10 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
           employeeId: emp.id,
           startDate,
           status: "NotStarted",
+          // New hires start in the PRE-ONBOARDING phase (pre-joining: BGV, docs,
+          // credentials, facilities). Set inside the transaction so a hire can
+          // never be saved without a phase and vanish from the list.
+          phase: "PreOnboarding",
           createdBy: userId,
           updatedBy: userId,
         },
@@ -199,12 +215,6 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
 
       return emp;
     });
-
-    // New hires start in the PRE-ONBOARDING phase (pre-joining: BGV, docs,
-    // credentials, facilities). HR moves them to Onboarding once it's done.
-    await prisma.$executeRaw`
-      UPDATE "app_quikhrms"."OnboardingInstance" SET phase = 'PreOnboarding'
-      WHERE "employeeId" = ${employee.id} AND "orgId" = ${orgId}`;
 
     // Copy the candidate's approved recruitment documents into the new
     // employee's central Documents vault (best-effort — never block onboarding).
@@ -259,6 +269,14 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
   } catch (error) {
     if (error instanceof Error && error.message === "SEAT_FULL") {
       return conflict("All positions for this requisition are already filled.");
+    }
+    // In-tx dedup guard, or the (orgId, workEmail) unique index tripping on a
+    // concurrent double-click → return the same friendly conflict, not a 500.
+    if (error instanceof Error && error.message === "EMP_EXISTS") {
+      return conflict("Employee already exists for this candidate email");
+    }
+    if (error && typeof error === "object" && (error as { code?: string }).code === "P2002") {
+      return conflict("Employee already exists for this candidate email");
     }
     console.error("POST /recruit/applications/:id/onboard error:", error);
     return internalError();

@@ -131,6 +131,7 @@ export default function DocumentReviewQueue() {
       qc.invalidateQueries({ queryKey: ["doc-reviews"] });
       setDecision(null); setReason("");
     },
+    onError: (e: unknown) => toast.error("Action failed", e instanceof Error ? e.message : undefined),
   });
 
   const stats = {

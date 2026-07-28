@@ -1,7 +1,9 @@
 import { NextRequest } from "next/server";
+import { getServerSession } from "next-auth";
 import { prisma } from "@/lib/prisma";
 import { withServiceAuth } from "@/lib/with-auth";
-import { successResponse, notFound, internalError } from "@/lib/api-response";
+import { authOptions } from "@/lib/auth";
+import { successResponse, internalError } from "@/lib/api-response";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { getCached, cacheKeys } from "@/lib/services/cache";
 import { APP_ID, rolePriority } from "@/lib/rbac/registry";
@@ -39,7 +41,20 @@ export const GET = withServiceAuth(async (_req: NextRequest, { orgId, userId }) 
         return { ...rest, role };
       },
     );
-    if (!employee) return notFound("Employee record not found");
+    if (!employee) {
+      // A missing linked profile is not an error state — return a minimal
+      // fallback (200) so the UI can render (e.g. the top-bar greeting) without
+      // logging a 404 on every page.
+      const session = await getServerSession(authOptions);
+      const displayName = session?.user?.name?.trim() ?? "";
+      const firstName = displayName.split(/\s+/)[0] || "";
+      return successResponse({
+        id: null, employeeCode: null,
+        firstName, lastName: "",
+        jobTitle: null, profilePhoto: null, status: null, reportingManagerId: null,
+        department: null, designation: null, role: null,
+      });
+    }
     return successResponse(employee);
   } catch (error) {
     console.error("GET /employees/me error:", error);

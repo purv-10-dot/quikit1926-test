@@ -224,12 +224,13 @@ export default function OrgChartPage() {
   const qc = useQueryClient();
   const dialog = useDialog();
   const { hasPermission, isLoading: permsLoading, navKeys, permissions } = useDashboardConfig();
-  // People directory access — same gate as the rest of the app. Users without
-  // it may still view the Org Chart, but must not reach the Directory tab.
-  const canViewDirectory =
-    hasPermission("hrms.employee.read") ||
-    hasPermission("hrms.employee.read_team") ||
-    hasPermission("hrms.org.read");
+  // People directory access. The Directory + Org Chart data API
+  // (/api/v1/hrms/org-chart) requires the full-read `hrms.employee.read` and
+  // returns the whole company tree (it isn't team/self-scoped), so the tab gate
+  // must match — otherwise read_team/org.read users get an empty Directory.
+  // Users without it may still view the Org Chart, but must not reach the
+  // Directory tab.
+  const canViewDirectory = hasPermission("hrms.employee.read");
 
   // Per-tab navigation allow-list (mirrors the sidebar). Default-allow — a role
   // with no configured navKeys (or super-admin) sees both tabs. Legacy
@@ -396,11 +397,19 @@ export default function OrgChartPage() {
       // The on-screen chart data carries only a few fields — for the download we
       // pull the complete, export-grade record (`fields=full`) straight from the
       // API and emit the shared employee column set (same columns as the People
-      // directory export). Mirror the active filters so the CSV matches the view.
-      const base = new URLSearchParams({ limit: "100", fields: "full", status: "Active" });
-      if (departmentId) base.set("department", departmentId);
-      if (search.trim()) base.set("search", search.trim());
+      // directory export).
+      //
+      // Match the CSV to exactly what the table shows: compute the visible set
+      // with the SAME client-side filters the table uses (department, role,
+      // reporting manager, and fuzzy search over name/code/title/email/dept) via
+      // `matchesFilters` on `all`, then keep only those export rows — joined by
+      // employeeCode (unique per org). Don't rely on the server `search` param,
+      // which uses plain contains, not the table's fuzzyMatch.
+      const matchedCodes = hasActiveFilter
+        ? new Set(all.filter(matchesFilters).map((e) => e.employeeCode).filter(Boolean) as string[])
+        : null;
 
+      const base = new URLSearchParams({ limit: "100", fields: "full", status: "Active" });
       const rows: EmployeeExportRow[] = [];
       let p = 1;
       for (;;) {
@@ -411,8 +420,9 @@ export default function OrgChartPage() {
         if (p >= pages || res.data.length === 0) break;
         p += 1;
       }
-      // Role has no server-side filter param — apply it client-side to match the view.
-      const filtered = roleId ? rows.filter((e) => e.roleId === roleId) : rows;
+      const filtered = matchedCodes
+        ? rows.filter((e) => e.employeeCode != null && matchedCodes.has(e.employeeCode))
+        : rows;
       writeCsv("people-directory", EMPLOYEE_EXPORT_COLUMNS, filtered);
     } finally {
       setExporting(false);

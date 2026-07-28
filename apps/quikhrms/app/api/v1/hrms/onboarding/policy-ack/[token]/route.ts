@@ -89,6 +89,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
   if (!ctx) return err("INVALID_TOKEN", "This link is invalid or has expired.", 400);
   const { task, orgId } = ctx;
 
+  // Frozen once the onboarding is closed.
+  const inst = await prisma.onboardingInstance.findFirst({ where: { id: task.instanceId, orgId }, select: { status: true } });
+  if (inst && (inst.status === "OnboardCompleted" || inst.status === "OnboardCancelled")) {
+    return err("ONBOARDING_CLOSED", "This onboarding is closed.", 409);
+  }
+
   const body = await req.json().catch(() => ({}));
   const url = String(body?.url ?? "");
 

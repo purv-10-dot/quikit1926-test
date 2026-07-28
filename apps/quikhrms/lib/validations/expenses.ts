@@ -74,7 +74,9 @@ export const updateExpenseClaimSchema = createExpenseClaimSchema.partial();
 export const approveClaimSchema = z.object({
   action: z.enum(["ExpApproved", "ExpRejected", "Escalated"]),
   comments: z.string().optional(),
-  approvedAmount: z.number().min(0).optional(),
+  // NOTE: partial approval is not supported (no approvedAmount column on
+  // ExpenseClaim). `approvedAmount` was removed so callers can't believe a
+  // partial amount took effect — the full claim amount is what's approved.
 });
 
 export type CreateExpensePolicyInput = z.infer<typeof createExpensePolicySchema>;

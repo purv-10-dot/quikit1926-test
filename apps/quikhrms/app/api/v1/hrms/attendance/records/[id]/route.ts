@@ -71,6 +71,14 @@ export const PATCH = withAuth(async (req: NextRequest, ctx, params) => {
       // IST calendar date to match how attendance days are bucketed.
       const recordDay = attendanceDayStart(existing.date);
       const todayStart = attendanceDayStart();
+      // Submitted punches must belong to the record's own IST attendance day —
+      // a caller can't backfill a different day's times onto this record.
+      if (parsed.data.checkIn && attendanceDayStart(new Date(parsed.data.checkIn)).getTime() !== recordDay.getTime()) {
+        return validationError("Check-in must fall on the same day as this attendance record.");
+      }
+      if (parsed.data.checkOut && attendanceDayStart(new Date(parsed.data.checkOut)).getTime() !== recordDay.getTime()) {
+        return validationError("Check-out must fall on the same day as this attendance record.");
+      }
       if (recordDay >= todayStart) {
         return validationError("You can't regularize today or a future date — wait until the day is over.");
       }

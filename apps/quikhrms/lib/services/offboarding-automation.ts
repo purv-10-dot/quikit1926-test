@@ -202,17 +202,55 @@ export async function setAutomated(instanceId: string, orgId: string, value: boo
     UPDATE "app_quikhrms"."OffboardingInstance" SET "automated" = ${value} WHERE id = ${instanceId} AND "orgId" = ${orgId}`;
 }
 
+/**
+ * Shared offboarding finalization used by EVERY completion path (manual PUT,
+ * automation chain, policy-ack, send-emails). If no task for the instance is
+ * still pending — i.e. every task is TaskCompleted or TaskSkipped — close the
+ * offboarding (status = OffboardCompleted) and mark the employee Relieved.
+ * No-ops when tasks remain or the instance is already closed. Returns true only
+ * when it actually closed the offboarding.
+ */
+export async function finalizeOffboardingIfComplete(
+  instanceId: string,
+  orgId: string,
+  userId?: string | null,
+): Promise<boolean> {
+  const remaining = await prisma.offboardingTask.count({
+    where: { orgId, instanceId, status: { notIn: ["TaskCompleted", "TaskSkipped"] } },
+  });
+  if (remaining > 0) return false;
+
+  const inst = await prisma.offboardingInstance.findFirst({
+    where: { id: instanceId, orgId },
+    select: { id: true, status: true, employeeId: true },
+  });
+  if (!inst || inst.status === "OffboardCompleted") return false;
+
+  await prisma.offboardingInstance.update({
+    where: { id: inst.id },
+    data: { status: "OffboardCompleted", updatedBy: userId ?? undefined },
+  });
+  // Final closure — mark the employee Relieved (exited / inactive).
+  await prisma.employee.update({
+    where: { id: inst.employeeId },
+    data: { status: "Relieved", updatedBy: userId ?? undefined },
+  }).catch(() => null);
+  return true;
+}
+
 export async function advanceAutomation(instanceId: string, orgId: string): Promise<void> {
   try {
     if (!(await isAutomated(instanceId, orgId))) return;
     for (let i = 0; i < 25; i++) {
       const tasks = await loadTasks(instanceId, orgId);
       const next = tasks.find((t) => isSendableStep(t) && t.status !== "TaskCompleted" && t.status !== "TaskSkipped");
-      if (!next) return;
-      if (cfgOf(next).requestSentAt) return; // already sent — waiting for completion
+      if (!next) break;
+      if (cfgOf(next).requestSentAt) break; // already sent — waiting for completion
       const autoCompleted = await sendStepRequest(next, orgId);
-      if (!autoCompleted) return;
+      if (!autoCompleted) break;
     }
+    // A step that just auto-completed may have been the last one — close out.
+    await finalizeOffboardingIfComplete(instanceId, orgId);
   } catch (e) {
     console.error("offboarding advanceAutomation failed:", e);
   }

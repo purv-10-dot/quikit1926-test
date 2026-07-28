@@ -58,7 +58,7 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
             select: {
               id: true,
               candidate: { select: { id: true, firstName: true, lastName: true, email: true } },
-              requisition: { select: { title: true } },
+              requisition: { select: { title: true, pipelineId: true } },
             },
           },
           interviewer: { select: { id: true, firstName: true, lastName: true, workEmail: true } },
@@ -66,10 +66,28 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
       }),
       prisma.interview.count({ where }),
     ]);
+
+    // Resolve each interview's stage name from ITS OWN requisition pipeline (not
+    // a globally-selected one) so labels are correct when the org runs multiple
+    // pipelines. Falls back to the default pipeline, then to "Round N".
+    const pipelineIds = [...new Set(
+      interviews.map((i) => i.application?.requisition?.pipelineId).filter((p): p is string => !!p),
+    )];
+    const pipelines = pipelineIds.length
+      ? await prisma.hiringPipeline.findMany({ where: { orgId, deletedAt: null, id: { in: pipelineIds } }, select: { id: true, stages: true } })
+      : [];
+    const defaultPipeline = await prisma.hiringPipeline.findFirst({ where: { orgId, deletedAt: null, isDefault: true }, select: { stages: true } });
+    const stagesByPipeline = new Map(pipelines.map((p) => [p.id, stageNames(p.stages)]));
+    const defaultStages = stageNames(defaultPipeline?.stages);
+    const resolveStage = (pipelineId: string | null | undefined, round: number) => {
+      const stages = (pipelineId && stagesByPipeline.get(pipelineId)) || defaultStages;
+      return stages[round - 1] ?? `Round ${round}`;
+    };
     // Scorecard fields now live on the interview row; re-expose under the
     // historical `scorecard` shape so existing consumers keep working.
     const shaped = interviews.map((i) => ({
       ...i,
+      stageName: resolveStage(i.application?.requisition?.pipelineId, i.round),
       scorecard: i.overallRating != null
         ? {
             id: i.id, overallRating: i.overallRating, recommendation: i.recommendation,

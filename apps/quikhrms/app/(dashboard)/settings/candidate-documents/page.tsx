@@ -45,6 +45,8 @@ export default function CandidateDocumentsSettings() {
       setShowCreate(false);
       setForm(emptyForm);
     },
+    // Surface the failure and keep the modal open for retry.
+    onError: (e: unknown) => toast.error("Couldn't add document", e instanceof Error ? e.message : undefined),
   });
 
   const updateMut = useMutation({
@@ -55,6 +57,7 @@ export default function CandidateDocumentsSettings() {
       qc.invalidateQueries({ queryKey: ["candidate-doc-types"] });
       setEditing(null);
     },
+    onError: (e: unknown) => toast.error("Couldn't update", e instanceof Error ? e.message : undefined),
   });
 
   const deleteMut = useMutation({
@@ -65,11 +68,19 @@ export default function CandidateDocumentsSettings() {
       else toast.success("Deleted");
       qc.invalidateQueries({ queryKey: ["candidate-doc-types"] });
     },
+    onError: (e: unknown) => toast.error("Delete failed", e instanceof Error ? e.message : undefined),
   });
 
   const preOffer = items.filter((i) => i.bundle === "PreOffer").sort((a, b) => a.sortOrder - b.sortOrder);
   const postOffer = items.filter((i) => i.bundle === "PostOffer").sort((a, b) => a.sortOrder - b.sortOrder);
   const list = bundleTab === "PreOffer" ? preOffer : postOffer;
+
+  // New types append after the current highest in that bundle so ordering is
+  // predictable (instead of everything tying at the old 999 default).
+  const nextSortOrder = (bundle: Bundle) => {
+    const inBundle = items.filter((i) => i.bundle === bundle);
+    return inBundle.length ? Math.max(...inBundle.map((i) => i.sortOrder)) + 1 : 0;
+  };
 
   return (
     <div className="bg-slate-50 -m-6 p-6">
@@ -83,7 +94,7 @@ export default function CandidateDocumentsSettings() {
           <p className="text-xs text-slate-500 mt-0.5">Define which documents candidates must upload before &amp; after offer.</p>
         </div>
         <button
-          onClick={() => { setForm({ ...emptyForm, bundle: bundleTab }); setShowCreate(true); }}
+          onClick={() => { setForm({ ...emptyForm, bundle: bundleTab, sortOrder: nextSortOrder(bundleTab) }); setShowCreate(true); }}
           className="btn btn-primary"
         >
           <Plus size={13} /> Add Document Type
@@ -277,6 +288,16 @@ function FormFields({ form, onChange, lockBundle }: {
             ]}
           />
         </div>
+      </div>
+      <div className="w-32">
+        <label className="block text-sm font-medium text-gray-700 mb-1">Display order</label>
+        <input
+          type="number"
+          min={0}
+          value={form.sortOrder}
+          onChange={(e) => onChange({ ...form, sortOrder: Number(e.target.value) || 0 })}
+          className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]"
+        />
       </div>
       <label className="flex items-center gap-2 text-sm">
         <input

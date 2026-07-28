@@ -175,7 +175,7 @@ const employeeBaseSchema = z.object({
 
   // Initial salary assignment — required on create so onboarded employees always have a salary.
   salaryTemplateId: z.string().min(1, "Salary template required"),
-  ctcLpa: z.number().positive("CTC (LPA) required"),
+  ctcLpa: z.number().positive("CTC (LPA) required").max(10000, "CTC (LPA) is unrealistically large"),
 
   // When true, send a portal-access invite (account-setup email) instead of the
   // informational welcome email. Decided via the popup on the Add Employee form.

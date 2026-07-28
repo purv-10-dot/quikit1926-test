@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyDocUploadToken } from "@/lib/services/doc-upload-token";
 import { getObject } from "@/lib/storage";
-import { advanceAutomation } from "@/lib/services/offboarding-automation";
+import { advanceAutomation, finalizeOffboardingIfComplete } from "@/lib/services/offboarding-automation";
 
 // PUBLIC (token-gated, no login) — the exiting employee's "read & acknowledge"
 // page for a Policy Re-acknowledge offboarding step. Mirrors the onboarding one,
@@ -93,7 +93,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
     UPDATE "app_quikhrms"."OffboardingTask" SET config = ${JSON.stringify({ ...config, acks })}::jsonb WHERE id = ${task.id}`;
   if (allAcked) {
     await prisma.offboardingTask.update({ where: { id: task.id }, data: { status: "TaskCompleted", completedAt: new Date() } });
-    await advanceAutomation(task.instanceId, orgId);
+    // Shared finalization; if it didn't close the offboarding, chain automation.
+    const finalized = await finalizeOffboardingIfComplete(task.instanceId, orgId);
+    if (!finalized) await advanceAutomation(task.instanceId, orgId);
   } else {
     await prisma.offboardingTask.update({ where: { id: task.id }, data: { status: "TaskInProgress" } });
   }

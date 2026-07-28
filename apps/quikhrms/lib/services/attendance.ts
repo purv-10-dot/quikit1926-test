@@ -266,12 +266,6 @@ export async function getWeekSummary(orgId: string, employeeId: string, weekStar
 
 type Punch = { in: string; out: string | null };
 
-function startOfToday(): Date {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
 /**
  * Clock the employee in when they log in. Opens a new punch on today's record
  * (creating the record if needed). Idempotent — if a punch is already open
@@ -283,7 +277,9 @@ export async function autoClockIn(
   ipAddress?: string | null,
 ): Promise<void> {
   try {
-    const today = startOfToday();
+    // Bucket on the same IST day key as manual check-in/out and getWeekSummary,
+    // so auto-punches don't land on a different (local/UTC-midnight) day.
+    const today = attendanceDayStart();
     const existing = await prisma.attendanceRecord.findFirst({
       where: { orgId, employeeId, date: today, deletedAt: null },
     });

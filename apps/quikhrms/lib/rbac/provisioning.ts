@@ -13,7 +13,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
-import { APP_ID, splitCode } from "@/lib/rbac/registry";
+import { APP_ID, splitCode, joinCode } from "@/lib/rbac/registry";
 import { PERMISSIONS, DEFAULT_ROLES } from "@/lib/rbac/permissions";
 import { generateEmployeeCode } from "@/lib/utils/employee-code";
 
@@ -184,6 +184,7 @@ export interface InvitationProvisionData {
   departmentId: string | null;
   designationId: string | null;
   managerId: string | null;
+  invitedBy: string;
 }
 
 export interface ProvisionFromInvitationArgs {
@@ -242,9 +243,37 @@ export async function provisionFromInvitation(args: ProvisionFromInvitationArgs)
     employeeId = existing.id;
   }
 
-  if (invitation.roleIds.length > 0) {
+  // Tier guard (defense-in-depth): only grant roles whose permissions the
+  // INVITER actually held — even if an over-privileged invite slipped through,
+  // provisioning can't escalate the invitee beyond the inviter's own authority.
+  // The inviter's roles are resolved live; an "admin" inviter grants anything.
+  let grantRoleIds = invitation.roleIds;
+  if (grantRoleIds.length > 0) {
+    const inviterLinks = await prisma.hrmsUserAppRole.findMany({
+      where: { orgId, userId: invitation.invitedBy },
+      select: { roleId: true },
+    });
+    const inviterRoles = inviterLinks.length
+      ? await prisma.hrmsAppRole.findMany({
+          where: { orgId, id: { in: inviterLinks.map((l) => l.roleId) } },
+          select: { name: true, permissions: { select: { resource: true, action: true } } },
+        })
+      : [];
+    const inviterIsSuper = inviterRoles.some((r) => r.name === "admin");
+    if (!inviterIsSuper) {
+      const held = new Set(inviterRoles.flatMap((r) => r.permissions.map((p) => joinCode(p.resource, p.action))));
+      const requested = await prisma.hrmsAppRole.findMany({
+        where: { orgId, id: { in: grantRoleIds } },
+        select: { id: true, permissions: { select: { resource: true, action: true } } },
+      });
+      grantRoleIds = requested
+        .filter((r) => r.permissions.every((p) => held.has(joinCode(p.resource, p.action))))
+        .map((r) => r.id);
+    }
+  }
+  if (grantRoleIds.length > 0) {
     await prisma.hrmsUserAppRole.createMany({
-      data: invitation.roleIds.map((roleId) => ({
+      data: grantRoleIds.map((roleId) => ({
         userId: employeeId,
         orgId: orgId,
         roleId,

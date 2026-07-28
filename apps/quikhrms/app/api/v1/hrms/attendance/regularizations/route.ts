@@ -90,6 +90,15 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       return validationError("You can't regularize today or a future date — wait until the day is over.");
     }
 
+    // Submitted punches must belong to the requested IST attendance day — a
+    // caller can't attach a different day's times to this regularization.
+    if (checkIn && attendanceDayStart(new Date(checkIn)).getTime() !== day.getTime()) {
+      return validationError("Check-in must fall on the requested date.");
+    }
+    if (checkOut && attendanceDayStart(new Date(checkOut)).getTime() !== day.getTime()) {
+      return validationError("Check-out must fall on the requested date.");
+    }
+
     // Backdate window + finalized-payroll lock.
     const blockReason = await regularizationBlockReason(orgId, day);
     if (blockReason) return conflict(blockReason);

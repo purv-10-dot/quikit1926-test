@@ -70,6 +70,27 @@ export const PATCH = withAuth(async (req: NextRequest, ctx, params) => {
     const illegal = provided.filter((k) => !allowed.has(k));
     if (illegal.length) return forbidden(`You're not allowed to set: ${illegal.join(", ")}`);
 
+    // ── Status lock ──────────────────────────────────────────────────────
+    // A Completed appraisal is frozen: the ONLY permitted write is an HR
+    // re-open (HR changing status away from Completed, nothing else).
+    if (existing.status === "Completed") {
+      const isReopen =
+        isHR &&
+        provided.length > 0 &&
+        provided.every((k) => k === "status") &&
+        data.status !== undefined &&
+        data.status !== "Completed";
+      if (!isReopen) {
+        return forbidden("This appraisal is completed and locked. Only HR can re-open it.");
+      }
+    }
+    // The reviewee can only edit their self-appraisal fields while the appraisal
+    // is still Pending / InProgress — never after Submitted (or Completed).
+    if (isReviewee && !isHR && provided.some((k) => SELF.includes(k))
+      && (existing.status === "Submitted" || existing.status === "Completed")) {
+      return forbidden("You can only edit your self-appraisal while it's Pending or In Progress.");
+    }
+
     const updateData: Record<string, unknown> = { updatedBy: userId };
     if (data.selfRating !== undefined) updateData.selfRating = data.selfRating;
     if (data.selfComments !== undefined) updateData.selfComments = data.selfComments;

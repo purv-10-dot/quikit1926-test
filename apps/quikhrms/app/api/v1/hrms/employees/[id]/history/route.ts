@@ -1,12 +1,20 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, validationError, notFound, internalError } from "@/lib/api-response";
+import { successResponse, validationError, notFound, forbidden, internalError } from "@/lib/api-response";
 import { createEmploymentHistorySchema } from "@/lib/validations/gap-fill";
 import { createAuditLog } from "@/lib/utils/audit";
+import { canAccessEmployee } from "@/lib/rbac/hierarchy";
 
-export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
+export const GET = withAuth(async (_req: NextRequest, ctx, params) => {
   try {
+    const { orgId } = ctx;
+    // Scope gate: the caller must be allowed to see THIS employee (self / within
+    // their reporting-hierarchy). super_admin ("*") passes via canAccessEmployee.
+    if (!(await canAccessEmployee(ctx, params.id))) {
+      return forbidden("You don't have access to this employee's history");
+    }
+
     const history = await prisma.employmentHistory.findMany({
       where: { orgId, employeeId: params.id },
       orderBy: { effectiveDate: "desc" },

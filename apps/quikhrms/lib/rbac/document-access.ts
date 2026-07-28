@@ -80,7 +80,19 @@ export async function resolveDocumentAccessById(ctx: AuthContext, documentId: st
  */
 export async function resolveDocumentAccessByKey(ctx: AuthContext, key: string): Promise<DocAccessResult> {
   const doc = await prisma.document.findFirst({
-    where: { orgId: ctx.orgId, deletedAt: null, fileUrl: { contains: key } },
+    // The stored fileUrl keeps the object key percent-encoded (?key=uploads%2F…)
+    // while the passed key is the decoded slash form — match either encoding so
+    // the owner / read-scope / live-share gating (and the view-only download
+    // block in the uploads proxy) actually fires instead of falling through to
+    // tenant-only auth.
+    where: {
+      orgId: ctx.orgId,
+      deletedAt: null,
+      OR: [
+        { fileUrl: { contains: key } },
+        { fileUrl: { contains: encodeURIComponent(key) } },
+      ],
+    },
     select: {
       id: true, employeeId: true, fileUrl: true,
       shares: { select: { sharedWith: true, expiresAt: true, accessLevel: true } },

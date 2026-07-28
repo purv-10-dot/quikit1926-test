@@ -56,10 +56,16 @@ export default function EmploymentHistoryPage() {
     refetchOnMount: "always",
   });
 
-  // Default view: all employees' history (no one selected).
+  // Default view: all employees' history (no one selected). Date range is sent
+  // to the server so results aren't limited to just the newest 500 rows.
   const { data: allData } = useQuery({
-    queryKey: ["employee-history", "all"],
-    queryFn: () => api.get<HistoryEntry[]>("/api/v1/hrms/employees/history?limit=500"),
+    queryKey: ["employee-history", "all", fromDate, toDate],
+    queryFn: () => {
+      const qs = new URLSearchParams({ limit: "500" });
+      if (fromDate) qs.set("from", fromDate);
+      if (toDate) qs.set("to", toDate);
+      return api.get<HistoryEntry[]>(`/api/v1/hrms/employees/history?${qs.toString()}`);
+    },
     enabled: !employeeId,
     staleTime: 0,
     refetchOnMount: "always",

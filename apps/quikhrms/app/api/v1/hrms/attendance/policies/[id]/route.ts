@@ -15,7 +15,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
     console.error("GET /attendance/policies/:id error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.attendance.manage"] });
 
 export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
   try {

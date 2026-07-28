@@ -36,7 +36,7 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     console.error("GET /settings/approval-chains error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.settings.write", "hrms.settings.read"], anyPermission: true });
 
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
   try {

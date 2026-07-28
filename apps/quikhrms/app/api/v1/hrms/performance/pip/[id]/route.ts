@@ -44,6 +44,24 @@ export const PATCH = withAuth(async (req: NextRequest, ctx, params) => {
     if (!parsed.success) return validationError("Validation failed", parsed.error.flatten().fieldErrors);
 
     const data = parsed.data;
+
+    // A PIP that has reached a terminal outcome is closed — no further status
+    // changes (can't re-open a passed/failed PIP).
+    if (data.status && data.status !== existing.status
+      && (existing.status === "PIPCompletedSuccess" || existing.status === "PIPFailed")) {
+      return forbidden("This PIP is closed and its status can no longer be changed.");
+    }
+
+    // A new end date must be on/after the PIP's start date (the one in the body,
+    // else the existing record's start date).
+    if (data.endDate) {
+      const newEnd = new Date(data.endDate);
+      const startRef = data.startDate ? new Date(data.startDate) : existing.startDate;
+      if (newEnd < startRef) {
+        return validationError("End date must be on or after the PIP start date.");
+      }
+    }
+
     const updateData: Record<string, unknown> = { updatedBy: userId };
     if (data.status) updateData.status = data.status;
     if (data.outcome) updateData.outcome = data.outcome;

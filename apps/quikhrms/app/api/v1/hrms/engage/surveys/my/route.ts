@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, internalError } from "@/lib/api-response";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
+import { audienceMatches } from "@/lib/services/survey-audience";
 
 export const GET = withAuth(async (_req: NextRequest, { orgId, userId }) => {
   try {
@@ -50,18 +51,3 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId }) => {
     return internalError();
   }
 });
-
-function audienceMatches(
-  audience: unknown,
-  emp: { departmentId: string | null; employmentType: string },
-) {
-  if (!audience || typeof audience !== "object") return true;
-  const a = audience as { departments?: string[]; employmentTypes?: string[] };
-  if (a.departments && a.departments.length > 0) {
-    if (!emp.departmentId || !a.departments.includes(emp.departmentId)) return false;
-  }
-  if (a.employmentTypes && a.employmentTypes.length > 0) {
-    if (!a.employmentTypes.includes(emp.employmentType)) return false;
-  }
-  return true;
-}

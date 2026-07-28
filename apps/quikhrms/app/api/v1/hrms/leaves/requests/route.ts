@@ -183,7 +183,26 @@ export const POST = withServiceAuth(async (req: NextRequest, ctx) => {
     if (end < start) {
       return validationError("End date must be on or after start date");
     }
-    const duration = data.duration ?? Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+    // Never trust data.duration. Compute the inclusive calendar span (on IST day
+    // keys), then derive/validate the real duration:
+    //  • dayBreakdown present → duration is derived from it (FullDay = 1.0, half = 0.5).
+    //  • otherwise → fall back to the span; a smaller value must be justified by a
+    //    dayBreakdown (half-day allowance), never accepted on trust.
+    // Reject (422) if duration exceeds the span, or falls short of it by more than
+    // the half-day allowance the breakdown justifies.
+    const span = Math.round((attendanceDayStart(end).getTime() - attendanceDayStart(start).getTime()) / 86400000) + 1;
+    const breakdown = data.dayBreakdown ?? [];
+    const allowance = breakdown.filter((d) => d.session !== "FullDay").length * 0.5;
+    const duration = breakdown.length
+      ? breakdown.reduce((s, d) => s + (d.session === "FullDay" ? 1 : 0.5), 0)
+      : (data.duration ?? span);
+    if (duration <= 0) return validationError("Leave duration must be positive.");
+    if (duration > span) {
+      return errorResponse(ErrorCode.VALIDATION_ERROR, `Duration (${duration}) exceeds the ${span}-day date range.`, 422);
+    }
+    if (span - duration > allowance + 1e-9) {
+      return errorResponse(ErrorCode.VALIDATION_ERROR, `Duration (${duration}) is less than the ${span}-day date range by more than the half-day allowance; provide a matching dayBreakdown.`, 422);
+    }
 
     const leaveType = await prisma.leaveType.findFirst({
       where: { id: data.leaveTypeId, orgId, deletedAt: null },

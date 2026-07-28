@@ -15,9 +15,23 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
 
     switch (entityType) {
       case "employees":
+        // Explicit column allow-list — never dump the full Employee model
+        // (which would include auth secrets like passwordHash/authUserId and
+        // bank details) via a bare `include`.
         data = await prisma.employee.findMany({
           where: { orgId, deletedAt: null },
-          include: { department: { select: { name: true } }, designation: { select: { title: true } }, officeLocation: { select: { name: true, city: true } } },
+          select: {
+            id: true, employeeCode: true,
+            firstName: true, middleName: true, lastName: true, displayName: true,
+            gender: true, dateOfBirth: true, maritalStatus: true, nationality: true,
+            workEmail: true, personalEmail: true, personalPhone: true, workPhone: true,
+            jobTitle: true, employmentType: true, workerType: true, workLocation: true, status: true,
+            dateOfJoining: true, confirmationDate: true, probationEndDate: true, lastWorkingDate: true,
+            panNumber: true, aadhaarNumber: true, uanNumber: true,
+            department: { select: { name: true } },
+            designation: { select: { title: true } },
+            officeLocation: { select: { name: true, city: true } },
+          },
         });
         break;
       case "departments":

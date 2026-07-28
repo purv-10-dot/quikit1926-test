@@ -6,6 +6,7 @@ import { updateEmployeeSchema } from "@/lib/validations/employee";
 import { fireWorkflow } from "@/lib/workflows/executor";
 import { invalidatePermissionCache } from "@/lib/with-auth";
 import { ensureSuperAdminRemains } from "@/lib/rbac/guards";
+import { APP_ID, joinCode } from "@/lib/rbac/registry";
 import { mirrorHrmsRolesToCentral } from "@/lib/rbac/mirrorRole";
 import { scheduleOrgChartRebuild } from "@/lib/org-chart-rebuild";
 import { cascadeSoftDeleteEmployee, restoreEmployee } from "@/lib/services/employee-cascade";
@@ -93,6 +94,8 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId, permissi
     const currentEmployeeId = await resolveEmployeeId(orgId, userId);
     const isSelf = !!currentEmployeeId && currentEmployeeId === params.id;
     const canManageEmployees = permissions.includes("*") || permissions.includes("hrms.employee.write");
+    // Role assignment is a distinct, higher privilege than editing employees.
+    const canManageRoles = permissions.includes("*") || permissions.includes("hrms.rbac.manage");
     if (!isSelf && !canManageEmployees) {
       return forbidden("You don't have permission to edit this employee's profile.");
     }
@@ -130,9 +133,10 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId, permissi
       "epfApplicable", "esiApplicable", "ptApplicable",
     ] as const;
     // roleId is handled separately via UserAppRole join — not an Employee column.
-    // Role changes are admin-only; a self-service editor can never change roles.
+    // Role changes require the dedicated rbac.manage privilege (NOT plain
+    // employee.write); any other caller's roleId is ignored silently.
     const rawRoleId = "roleId" in data ? ((data as { roleId?: string | null }).roleId ?? null) : undefined;
-    const incomingRoleId = canManageEmployees ? rawRoleId : undefined;
+    const incomingRoleId = canManageRoles ? rawRoleId : undefined;
 
     for (const field of directFields) {
       if (field in data) {
@@ -163,13 +167,48 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId, permissi
       }
     }
 
-    // Role changes are admin-only (never self-service).
-    if (incomingRoleId !== undefined && canManageEmployees) {
+    // Role changes require rbac.manage (incomingRoleId is undefined otherwise).
+    if (incomingRoleId !== undefined) {
+      // Tier guard: can't assign a role carrying permissions you don't hold
+      // (mirrors PUT /employees/:id/role). Only applies when setting a role.
+      if (incomingRoleId) {
+        const role = await prisma.hrmsAppRole.findFirst({
+          where: { id: incomingRoleId, orgId, appId: APP_ID },
+          select: { id: true, permissions: { select: { resource: true, action: true } } },
+        });
+        if (!role) return validationError("Role not found");
+        if (!permissions.includes("*")) {
+          const held = new Set(permissions);
+          const missing = role.permissions.map((p) => joinCode(p.resource, p.action)).filter((c) => !held.has(c));
+          if (missing.length) {
+            return validationError(`You can't assign a role with permissions you don't hold: ${missing.join(", ")}`);
+          }
+        }
+      }
       try {
         await ensureSuperAdminRemains(orgId, [params.id], incomingRoleId);
       } catch (e) {
         return validationError(e instanceof Error ? e.message : "Super admin guard failed");
       }
+    }
+
+    // Relational-id integrity — every supplied FK that will be persisted must
+    // resolve inside the caller's org (mirrors the org-scoped salaryStructure
+    // lookup in POST). Uses updateData so stripped self-service fields are skipped.
+    {
+      const relErrors: Record<string, string[]> = {};
+      const notInOrg = (f: string) => { relErrors[f] = [`${f} does not belong to this organization`]; };
+      const emp = async (f: string) => { const id = updateData[f] as string | undefined; if (id && !(await prisma.employee.findFirst({ where: { id, orgId, deletedAt: null }, select: { id: true } }))) notInOrg(f); };
+      if (updateData.reportingManagerId) await emp("reportingManagerId");
+      if (updateData.dottedLineManagerId) await emp("dottedLineManagerId");
+      if (updateData.referredById) await emp("referredById");
+      if (updateData.departmentId && !(await prisma.department.findFirst({ where: { id: updateData.departmentId as string, orgId }, select: { id: true } }))) notInOrg("departmentId");
+      if (updateData.teamId && !(await prisma.team.findFirst({ where: { id: updateData.teamId as string, orgId }, select: { id: true } }))) notInOrg("teamId");
+      if (updateData.designationId && !(await prisma.designation.findFirst({ where: { id: updateData.designationId as string, orgId }, select: { id: true } }))) notInOrg("designationId");
+      if (updateData.gradeId && !(await prisma.grade.findFirst({ where: { id: updateData.gradeId as string, orgId }, select: { id: true } }))) notInOrg("gradeId");
+      if (updateData.officeLocationId && !(await prisma.officeLocation.findFirst({ where: { id: updateData.officeLocationId as string, orgId }, select: { id: true } }))) notInOrg("officeLocationId");
+      if (updateData.noticePeriodId && !(await prisma.noticePeriod.findFirst({ where: { id: updateData.noticePeriodId as string, orgId }, select: { id: true } }))) notInOrg("noticePeriodId");
+      if (Object.keys(relErrors).length) return validationError("Validation failed", relErrors);
     }
 
     // Personal email uniqueness across other active employees in the tenant.

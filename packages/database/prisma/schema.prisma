@@ -10870,6 +10870,11 @@ model Employee {
   // creating duplicate records. authUserId is nullable (manual employees), and
   // Postgres treats NULLs as distinct, so manual records are unaffected.
   @@unique([orgId, authUserId])
+  // Prevents duplicate employees for the same work email in a tenant (e.g. a
+  // double-clicked onboarding). Enforced in the DB as a PARTIAL unique index on
+  // active rows only (WHERE "deletedAt" IS NULL) so an email can be reused after
+  // an employee is soft-deleted — see the raw SQL that ships with this change.
+  @@unique([orgId, workEmail])
   @@index([orgId, workEmail])
   @@index([orgId])
   @@index([orgId, deletedAt])
@@ -12696,8 +12701,32 @@ model HrmsSurveyResponse {
   survey   HrmsSurvey @relation(fields: [surveyId], references: [id])
   employee Employee?  @relation(fields: [employeeId], references: [id])
 
+  // A PARTIAL unique index on (orgId, surveyId, employeeId) WHERE employeeId IS
+  // NOT NULL dedups IDENTIFIED responses. Prisma can't express partial unique
+  // indexes, so it is maintained via raw SQL:
+  //   CREATE UNIQUE INDEX "SurveyResponse_orgId_surveyId_employeeId_key"
+  //     ON "app_quikhrms"."SurveyResponse" ("orgId","surveyId","employeeId")
+  //     WHERE "employeeId" IS NOT NULL;
+  // Anonymous dedup uses the separate SurveyRespondent table below.
   @@index([orgId, surveyId])
   @@map("SurveyResponse")
+  @@schema("app_quikhrms")
+}
+
+/// Records WHO responded to a survey, kept SEPARATE from SurveyResponse so
+/// anonymous answers stay unlinked to the person. Enforces one response per
+/// (survey, employee) — including anonymous surveys. Written via raw SQL from
+/// the respond route.
+model HrmsSurveyRespondent {
+  id          String   @id @default(cuid())
+  orgId       String
+  surveyId    String
+  employeeId  String
+  respondedAt DateTime @default(now())
+
+  @@unique([orgId, surveyId, employeeId])
+  @@index([orgId, surveyId])
+  @@map("SurveyRespondent")
   @@schema("app_quikhrms")
 }
 

@@ -4,7 +4,7 @@ import { withAuth } from "@/lib/with-auth";
 import { successResponse, validationError, notFound, conflict, internalError } from "@/lib/api-response";
 import { updateOffboardingTaskSchema } from "@/lib/validations/boarding";
 import { createAuditLog } from "@/lib/utils/audit";
-import { advanceAutomation } from "@/lib/services/offboarding-automation";
+import { advanceAutomation, finalizeOffboardingIfComplete } from "@/lib/services/offboarding-automation";
 
 export const PUT = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
   try {
@@ -46,22 +46,10 @@ export const PUT = withAuth(async (req: NextRequest, { orgId, userId }, params) 
     }
 
     if (status === "TaskCompleted" || status === "TaskSkipped") {
-      const remaining = await prisma.offboardingTask.count({
-        where: { instanceId: task.instanceId, status: { notIn: ["TaskCompleted", "TaskSkipped"] } },
-      });
-      if (remaining === 0) {
-        const inst = await prisma.offboardingInstance.update({
-          where: { id: task.instanceId },
-          data: { status: "OffboardCompleted", updatedBy: userId },
-        });
-        // Final closure — mark the employee Relieved (exited / inactive).
-        await prisma.employee.update({
-          where: { id: inst.employeeId },
-          data: { status: "Relieved", updatedBy: userId },
-        }).catch(() => null);
-      } else {
-        await advanceAutomation(task.instanceId, orgId); // chain: send the next step
-      }
+      // Shared finalization (used by every completion path). If it didn't close
+      // the offboarding, chain the automation to send the next step.
+      const finalized = await finalizeOffboardingIfComplete(task.instanceId, orgId, userId);
+      if (!finalized) await advanceAutomation(task.instanceId, orgId);
     }
 
     await createAuditLog({ orgId, userId, action: "Update", entityType: "OffboardingTask", entityId: taskId, changes: parsed.data });

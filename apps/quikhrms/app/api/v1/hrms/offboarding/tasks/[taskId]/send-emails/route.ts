@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, validationError, notFound, internalError } from "@/lib/api-response";
-import { sendStepEmails, advanceAutomation } from "@/lib/services/offboarding-automation";
+import { sendStepEmails, advanceAutomation, finalizeOffboardingIfComplete } from "@/lib/services/offboarding-automation";
 
 // HR clicks "Send now" on a Send Email offboarding step → sends every selected
 // email (incl. the Resignation Acceptance PDF) to the exiting employee,
@@ -23,7 +23,9 @@ export const POST = withAuth(async (_req: NextRequest, { orgId, userId }, params
 
     await prisma.offboardingTask.update({ where: { id: task.id }, data: { status: "TaskCompleted", completedAt: new Date(), completedBy: userId } });
     await prisma.$executeRaw`UPDATE "app_quikhrms"."OffboardingTask" SET config = ${JSON.stringify({ ...(task.config ?? {}), requestSentAt: new Date().toISOString() })}::jsonb WHERE id = ${task.id}`;
-    await advanceAutomation(task.instanceId, orgId);
+    // Shared finalization; if it didn't close the offboarding, chain automation.
+    const finalized = await finalizeOffboardingIfComplete(task.instanceId, orgId, userId);
+    if (!finalized) await advanceAutomation(task.instanceId, orgId);
 
     return successResponse({ sent });
   } catch (error) {

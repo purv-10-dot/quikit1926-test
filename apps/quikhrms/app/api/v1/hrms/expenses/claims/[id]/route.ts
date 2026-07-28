@@ -5,10 +5,22 @@ import { successResponse, validationError, notFound, forbidden, conflict, intern
 import { updateExpenseClaimSchema } from "@/lib/validations/expenses";
 import { createAuditLog } from "@/lib/utils/audit";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
+import { resolveScope, employeeScopeFilter, getCallerEmployeeId } from "@/lib/rbac/scope";
 import { urlBelongsToTenant } from "@/lib/storage";
 
-export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
+export const GET = withAuth(async (_req: NextRequest, ctx, params) => {
   try {
+    const { orgId } = ctx;
+    // Secure like the list route: scope (all/team/self) + hierarchy filter.
+    const scope = resolveScope(ctx, {
+      all: "hrms.expense.read",
+      team: "hrms.expense.read_team",
+      self: "hrms.expense.read_self",
+    });
+    const scopeFilter = await employeeScopeFilter(ctx, scope);
+    if (!scopeFilter.allow) return forbidden("No expense read permission");
+    const callerId = await getCallerEmployeeId(ctx);
+
     const claim = await prisma.expenseClaim.findFirst({
       where: { id: params.id, orgId, deletedAt: null },
       include: {
@@ -18,6 +30,15 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
       },
     });
     if (!claim) return notFound("Claim not found");
+
+    // Authorize the read: owner, OR unrestricted scope, OR the claim's employee
+    // is within the caller's scoped set. Otherwise 404 (don't reveal existence).
+    const isOwner = !!callerId && callerId === claim.employeeId;
+    const unrestricted = !scopeFilter.employeeIds; // "all" scope carries no id list
+    const inScope = unrestricted || (scopeFilter.employeeIds?.includes(claim.employeeId) ?? false);
+    if (!isOwner && !inScope) return notFound("Claim not found");
+    // Drafts are private to their owner — never expose to a non-owner, even in scope.
+    if (!isOwner && claim.status === "Draft") return notFound("Claim not found");
 
     // ExpenseApproval.approverId has no Employee relation — resolve names by id.
     const approverIds = [...new Set(claim.approvals.map((a) => a.approverId))];

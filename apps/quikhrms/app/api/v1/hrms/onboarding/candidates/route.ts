@@ -7,6 +7,7 @@ import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
 import { generateEmployeeCode } from "@/lib/utils/employee-code";
 import { addDays } from "@/lib/services/boarding";
 import { createAuditLog } from "@/lib/utils/audit";
+import { joinCode } from "@/lib/rbac/registry";
 
 const educationSchema = z.object({
   schoolName: z.string().optional(),
@@ -209,9 +210,9 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     console.error("GET /onboarding/candidates error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.onboarding.read"] });
 
-export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
+export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissions }) => {
   try {
     const body = await req.json();
     const parsed = addCandidateSchema.safeParse(body);
@@ -236,9 +237,21 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
 
     const role = await prisma.hrmsAppRole.findFirst({
       where: { id: d.roleId, orgId },
-      select: { id: true },
+      select: { id: true, permissions: { select: { resource: true, action: true } } },
     });
     if (!role) return validationError("Selected role not found.");
+
+    // Tier guard: you can't assign a role that carries permissions you don't
+    // hold yourself (blocks a non-admin from granting a more-privileged role).
+    if (!permissions.includes("*")) {
+      const held = new Set(permissions);
+      const missing = role.permissions
+        .map((p) => joinCode(p.resource, p.action))
+        .filter((c) => !held.has(c));
+      if (missing.length) {
+        return validationError(`You can't assign a role with permissions you don't hold: ${missing.join(", ")}`);
+      }
+    }
 
     // Validate salary structure + onboarding template BEFORE creating anything,
     // so a validation failure can never leave an orphan employee behind (the

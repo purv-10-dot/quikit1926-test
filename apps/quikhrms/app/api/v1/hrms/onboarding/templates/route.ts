@@ -38,7 +38,7 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     console.error("GET /onboarding/templates error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.onboarding.read"] });
 
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
   try {

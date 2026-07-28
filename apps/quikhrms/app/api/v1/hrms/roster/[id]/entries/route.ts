@@ -44,6 +44,18 @@ export const POST = withAuth(async (req: NextRequest, ctx, params) => {
       }
     }
 
+    // Every target employee must belong to this org — checked for ALL callers
+    // (including admins, who bypass the hierarchy guard above). A foreign or
+    // invalid id would otherwise create orphan cells / FK-error in the transaction.
+    const empIds = [...new Set(entries.map((e) => e.employeeId))];
+    const foundEmps = await prisma.employee.findMany({
+      where: { orgId, deletedAt: null, id: { in: empIds } },
+      select: { id: true },
+    });
+    if (foundEmps.length !== empIds.length) {
+      return validationError("One or more employees are not in your organization.");
+    }
+
     // Verify every referenced shift exists in this org — an invalid shiftId would
     // otherwise throw a Prisma FK error inside the transaction → generic 500.
     const shiftIds = [...new Set(entries.map((e) => e.shiftId).filter((id): id is string => !!id))];

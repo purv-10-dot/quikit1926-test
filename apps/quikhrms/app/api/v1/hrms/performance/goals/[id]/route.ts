@@ -25,13 +25,20 @@ export const GET = withAuth(async (_req: NextRequest, ctx, params) => {
         keyResults: true,
         checkIns: { orderBy: { date: "desc" }, take: 10, include: { updatedBy: { select: { firstName: true, lastName: true } } } },
         childGoals: { where: { deletedAt: null }, select: { id: true, title: true, status: true, progress: true } },
-        parentGoal: { select: { id: true, title: true } },
+        parentGoal: { select: { id: true, title: true, orgId: true } },
       },
     });
     if (!goal) return notFound("Goal not found");
     const { ok } = await assertReadable(ctx, goal.employeeId);
     if (!ok) return forbidden("You don't have access to this goal");
-    return successResponse(goalTypeFromDb(goal));
+    // Only surface the parent goal when it belongs to the caller's org — never
+    // leak a cross-tenant parent (and don't expose its orgId).
+    const out = goalTypeFromDb(goal) as Record<string, unknown> & { parentGoal?: { id: string; title: string; orgId: string } | null };
+    out.parentGoal = out.parentGoal && out.parentGoal.orgId === orgId
+      ? { id: out.parentGoal.id, title: out.parentGoal.title, orgId: out.parentGoal.orgId }
+      : null;
+    if (out.parentGoal) delete (out.parentGoal as { orgId?: string }).orgId;
+    return successResponse(out);
   } catch (error) { console.error("GET /performance/goals/:id error:", error); return internalError(); }
 });
 
