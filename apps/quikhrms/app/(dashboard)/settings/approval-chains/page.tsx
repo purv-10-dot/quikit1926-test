@@ -12,6 +12,7 @@ import { Plus, GitBranch, Trash2, X, Pencil, ArrowRight, User, Shield, Settings 
 import { clsx } from "clsx";
 import { SkeletonCards } from "@/components/hrms/skeleton";
 import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 
 type ApprovalModule =
   | "Leave" | "Expense" | "Asset" | "Onboarding" | "Offboarding"
@@ -103,6 +104,8 @@ export default function ApprovalChainsPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [moduleFilter, setModuleFilter] = useState<string>("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [advancedIdx, setAdvancedIdx] = useState<Set<number>>(new Set());
 
@@ -208,6 +211,8 @@ export default function ApprovalChainsPage() {
   };
 
   const chains = data?.data ?? [];
+  const totalPages = Math.max(1, Math.ceil(chains.length / PAGE_SIZE));
+  const pageItems = chains.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const validForm = form.levels.every((l) => (l.kind === "ROLE" ? !!l.roleId : !!l.userId));
 
   return (
@@ -228,7 +233,7 @@ export default function ApprovalChainsPage() {
         <div className="flex items-center gap-2">
           <Select
             value={moduleFilter}
-            onChange={(v) => setModuleFilter(v)}
+            onChange={(v) => { setModuleFilter(v); setPage(1); }}
             placeholder="All modules"
             options={[{ value: "", label: "All modules" }, ...MODULES.map((m) => ({ value: m, label: `${MODULE_ICON[m]}  ${m}` }))]}
             className="w-44"
@@ -254,8 +259,9 @@ export default function ApprovalChainsPage() {
           </button>
         </div>
       ) : (
+        <>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {chains.map((c) => (
+          {pageItems.map((c) => (
             <div
               key={c.id}
               className={clsx(
@@ -343,6 +349,8 @@ export default function ApprovalChainsPage() {
             </div>
           ))}
         </div>
+        <Pagination page={page} totalPages={totalPages} total={chains.length} limit={PAGE_SIZE} onPageChange={setPage} className="border-t-0 px-0" />
+        </>
       )}
 
       {/* Create / Edit Modal */}

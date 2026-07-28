@@ -31,6 +31,8 @@ export default function ShiftsPage() {
   const router = useRouter();
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [modal, setModal] = useState<{ open: boolean; item: ShiftItem | null }>({ open: false, item: null });
   const [formError, setFormError] = useState<string | null>(null);
   const [form, setForm] = useState<{
@@ -90,6 +92,8 @@ export default function ShiftsPage() {
   };
 
   const filtered = (data?.data ?? []).filter((s) => !search || s.name.toLowerCase().includes(search.toLowerCase()));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <>
@@ -106,9 +110,10 @@ export default function ShiftsPage() {
       >
         <ArrowLeft size={14} /> Back
       </button>
-      <CrudTable title="Shift Policies" data={filtered} columns={columns} isLoading={isLoading}
+      <CrudTable title="Shift Policies" data={pageItems} columns={columns} isLoading={isLoading}
         onAdd={openAdd} onEdit={openEdit} onDelete={(id) => deleteMut.mutate(id)}
-        search={search} onSearchChange={setSearch} searchPlaceholder="Search shifts..." />
+        search={search} onSearchChange={(v) => { setSearch(v); setPage(1); }} searchPlaceholder="Search shifts..."
+        pagination={{ page, totalPages, total: filtered.length, limit: PAGE_SIZE, onPageChange: setPage }} />
 
       <Modal open={modal.open} onClose={() => setModal({ open: false, item: null })} title={modal.item ? "Edit Shift" : "Add Shift"}>
         <form

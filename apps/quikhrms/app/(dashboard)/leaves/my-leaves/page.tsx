@@ -13,6 +13,7 @@ import { Select } from "@/components/hrms/ui/select";
 import { FilterBar, FilterDivider, FilterSearch } from "@/components/hrms/ui/filter-bar";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { SkeletonTable } from "@/components/hrms/skeleton";
+import { Pagination } from "@/components/hrms/pagination";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area, PieChart, Pie, Cell,
@@ -113,6 +114,8 @@ export default function MyLeavesPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [form, setForm] = useState({
     leaveTypeId: "",
     startDate: "",
@@ -190,8 +193,10 @@ export default function MyLeavesPage() {
   });
 
   const { data: typesData, isLoading: typesLoading, isError: typesError } = useQuery({
-    queryKey: ["leave-types"],
-    queryFn: () => api.get<LeaveType[]>("/api/v1/hrms/leaves/types?limit=50"),
+    queryKey: ["leave-types", "mine"],
+    // Only the leave types the current user can actually apply for — i.e. those
+    // offered by their assigned leave group (none if they're in no group).
+    queryFn: () => api.get<LeaveType[]>("/api/v1/hrms/leaves/types?forEmployee=me&limit=50"),
   });
 
   // ── Apply Leave form helpers ─────────────────────────────────────
@@ -391,6 +396,9 @@ export default function MyLeavesPage() {
     });
   }, [requests, statusFilter, typeFilter, search]);
 
+  const totalPages = Math.max(1, Math.ceil(filteredRequests.length / PAGE_SIZE));
+  const pageItems = filteredRequests.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
   const yearOptions = useMemo(() => {
     const cur = new Date().getFullYear();
     return [cur - 1, cur, cur + 1].map((y) => ({ value: String(y), label: `Jan ${y}–Dec ${y}` }));
@@ -512,7 +520,7 @@ export default function MyLeavesPage() {
           <FilterBar>
             <Select
               value={statusFilter}
-              onChange={(v) => setStatusFilter(v)}
+              onChange={(v) => { setStatusFilter(v); setPage(1); }}
               options={[
                 { value: "all", label: "All status" },
                 { value: "Pending,Approved", label: "Pending, Approved" },
@@ -524,13 +532,13 @@ export default function MyLeavesPage() {
             />
             <Select
               value={typeFilter}
-              onChange={(v) => setTypeFilter(v)}
+              onChange={(v) => { setTypeFilter(v); setPage(1); }}
               options={[{ value: "all", label: "All Leave Types" }, ...leaveTypes.map((t) => ({ value: t.id, label: t.name }))]}
             />
             <FilterDivider />
-            <FilterSearch value={search} onChange={setSearch} placeholder="Search reason..." />
+            <FilterSearch value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="Search reason..." />
             <button
-              onClick={() => { setStatusFilter("all"); setTypeFilter("all"); setSearch(""); }}
+              onClick={() => { setStatusFilter("all"); setTypeFilter("all"); setSearch(""); setPage(1); }}
               className="text-xs font-medium text-gray-500 hover:text-gray-900 px-3 py-1.5 border border-gray-200 rounded-md"
             >Reset</button>
           </FilterBar>
@@ -558,7 +566,7 @@ export default function MyLeavesPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredRequests.map((r, idx) => {
+                {pageItems.map((r, idx) => {
                   const days = dayDiff(r.startDate, r.endDate);
                   const dur = Number(r.duration);
                   const dayLabel = `${dur === 0.5 ? "0.5" : days} day${days === 1 && dur >= 1 ? "" : "s"} leave`;
@@ -571,7 +579,7 @@ export default function MyLeavesPage() {
                   const displayStatus = expired ? "Expired" : r.status;
                   return (
                     <tr key={r.id} className="row-stagger hover:bg-slate-50/60 align-middle [&>td]:border-b [&>td]:border-gray-100" style={{ ["--i" as never]: Math.min(idx, 10) }}>
-                      <td className="px-4 py-2.5 text-gray-500 tabular-nums">{idx + 1}</td>
+                      <td className="px-4 py-2.5 text-gray-500 tabular-nums">{(page - 1) * PAGE_SIZE + idx + 1}</td>
                       <td className="px-4 py-2.5">
                         <div className="text-[13px] text-gray-800 font-medium">{formatDate(r.startDate)} - {formatDate(r.endDate)}</div>
                         <div className="text-[11px] text-[#16a34a]">({dayLabel})</div>
@@ -602,6 +610,7 @@ export default function MyLeavesPage() {
                 })}
               </tbody>
             </table>
+            <Pagination page={page} totalPages={totalPages} total={filteredRequests.length} limit={PAGE_SIZE} onPageChange={setPage} />
           </div>
         )}
       </div>

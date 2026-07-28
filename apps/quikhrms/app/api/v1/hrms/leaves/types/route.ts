@@ -4,12 +4,30 @@ import { withAuth, withServiceAuth } from "@/lib/with-auth";
 import { successResponse, validationError, conflict, internalError } from "@/lib/api-response";
 import { createLeaveTypeSchema } from "@/lib/validations/leave";
 import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
+import { resolveEmployeeId } from "@/lib/resolve-employee";
+import { resolveEmployeeLeaveGroup } from "@/lib/services/employee-leave-rules";
 
-export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
+export const GET = withServiceAuth(async (req: NextRequest, { orgId, userId }) => {
   try {
     const { searchParams } = new URL(req.url);
     const { page, limit } = parsePagination(searchParams);
-    const where = { orgId, deletedAt: null };
+    const forEmployee = searchParams.get("forEmployee");
+
+    // `?forEmployee=me` → only the leave types the CALLER can actually apply for,
+    // i.e. the types offered by their active Leave Group. Not in a group → none.
+    // (The unfiltered list stays available for admin config screens.)
+    let idFilter: { in: string[] } | undefined;
+    if (forEmployee === "me") {
+      const meId = await resolveEmployeeId(orgId, userId);
+      const emp = meId
+        ? await prisma.employee.findFirst({ where: { orgId, id: meId }, select: { appRoles: { select: { roleId: true }, take: 1 } } })
+        : null;
+      const group = meId ? await resolveEmployeeLeaveGroup(orgId, meId, emp?.appRoles[0]?.roleId ?? null) : null;
+      if (!group) return successResponse([], paginationMeta(page, limit, 0));
+      idFilter = { in: [...group.leaveTypeIds] };
+    }
+
+    const where = { orgId, deletedAt: null, ...(idFilter && { id: idFilter }) };
 
     const [types, total] = await Promise.all([
       prisma.leaveType.findMany({

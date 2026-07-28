@@ -128,7 +128,7 @@ export function RecentlyAssigned() {
   const items = [
     { label: "Open tasks", count: taskCount, people: null as Person[] | null, href: "/tasks?status=Open,InProgress", icon: <CheckSquare size={14} /> },
     { label: "Leave approvals", count: leavePeople.length, people: leavePeople, href: "/leaves/team-leaves", icon: <Palmtree size={14} /> },
-    { label: "Expense approvals", count: expensePeople.length, people: expensePeople, href: "/expenses?tab=approvals", icon: <Receipt size={14} /> },
+    { label: "Expense approvals", count: expensePeople.length, people: expensePeople, href: "/expenses", icon: <Receipt size={14} /> },
     { label: "Requisition approvals", count: reqPeople.length, people: reqPeople, href: "/recruit/approvals", icon: <Briefcase size={14} /> },
   ].filter((i) => i.count > 0);
 

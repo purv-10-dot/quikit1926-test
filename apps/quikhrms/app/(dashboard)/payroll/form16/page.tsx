@@ -8,6 +8,7 @@ import { useToast } from "@/components/hrms/toast";
 import { FileBadge, Download, Eye, AlertCircle, Loader2, X } from "lucide-react";
 import { SkeletonTable, SkeletonLine } from "@/components/hrms/skeleton";
 import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 
 interface Summary {
   employeeId: string;
@@ -98,6 +99,8 @@ export default function Form16Page() {
   const [fy, setFy] = useState(currentFY());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [viewTarget, setViewTarget] = useState<Summary | null>(null);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   const { data, isLoading } = useQuery({
     queryKey: ["payroll", "form16", fy],
@@ -105,6 +108,9 @@ export default function Form16Page() {
   });
 
   const res = data?.data;
+  const summaries = res?.summaries ?? [];
+  const totalPages = Math.max(1, Math.ceil(summaries.length / PAGE_SIZE));
+  const pageSummaries = summaries.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const downloadAll = async () => {
     if (!res || res.summaries.length === 0) return;
@@ -136,7 +142,7 @@ export default function Form16Page() {
         </div>
         <Select
           value={fy}
-          onChange={(v) => setFy(v)}
+          onChange={(v) => { setFy(v); setPage(1); }}
           options={Array.from({ length: 5 }, (_, i) => {
             const y = new Date().getFullYear() - i;
             const label = `${y}-${String((y + 1) % 100).padStart(2, "0")}`;
@@ -188,7 +194,7 @@ export default function Form16Page() {
               </tr>
             </thead>
             <tbody>
-              {res.summaries.map((s, i) => (
+              {pageSummaries.map((s, i) => (
                 <tr key={s.employeeId} className="row-stagger border-b border-gray-50 hover:bg-gray-50" style={{ ["--i" as never]: Math.min(i, 10) }}>
                   <td className="py-3 px-3">
                     <p className="text-[13px] font-medium text-gray-900">{s.employee.name}</p>
@@ -216,6 +222,8 @@ export default function Form16Page() {
             </tbody>
           </table>
         )}
+
+        <Pagination page={page} totalPages={totalPages} total={summaries.length} limit={PAGE_SIZE} onPageChange={setPage} />
 
         <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-between bg-gray-50/50">
           <p className="text-xs text-gray-500">

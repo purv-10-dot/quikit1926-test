@@ -1,17 +1,15 @@
 "use client";
 
-import Link from "next/link";
-import { Suspense, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { Suspense, useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Modal } from "@/components/hrms/modal";
 import { PageBackground } from "@/components/hrms/page-background";
 import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
-import { Receipt, Plus, CheckSquare } from "lucide-react";
+import { Receipt, Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { ExpenseClaimDrawer } from "./_components/expense-claim-drawer";
 import { FilterBar, FilterDivider, FilterSearch } from "@/components/hrms/ui/filter-bar";
-import { ExpenseTabs } from "./_components/expense-tabs";
 import { clsx } from "clsx";
 import { FileUploadInput } from "@/components/hrms/file-upload-input";
 import { SkeletonTable } from "@/components/hrms/skeleton";
@@ -26,13 +24,6 @@ interface Claim {
   policy: { id: string; name: string } | null;
   employee: { id: string; firstName: string; lastName: string; employeeCode: string | null } | null;
   _count: { approvals: number };
-}
-
-// A claim awaiting the current user's approval (shape from claimsAwaitingApprover).
-interface ApprovalItem {
-  id: string; status: Status; totalAmount: string | number; currency: string;
-  title: string; category: string; expenseDate: string | null;
-  requester: { id: string; firstName: string; lastName: string; profilePhoto: string | null } | null;
 }
 
 function employeeName(
@@ -80,8 +71,12 @@ export default function ExpensesListPage() {
 function ExpensesListInner() {
   const api = useApiClient();
   const qc = useQueryClient();
-  const isApprovals = (useSearchParams()?.get("tab") ?? "") === "approvals";
   const [filters, setFilters] = useState({ status: "", category: "" });
+  const [page, setPage] = useState(1);
+  const [drawer, setDrawer] = useState<{ id: string; approve: boolean } | null>(null);
+  const PAGE_SIZE = 10;
+  // Any filter change resets to the first page.
+  useEffect(() => { setPage(1); }, [filters]);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState<{
     policyId: string; category: Category; title: string; description: string;
@@ -92,12 +87,13 @@ function ExpensesListInner() {
   });
 
   const qs = new URLSearchParams();
-  qs.set("limit", "100");
+  qs.set("limit", String(PAGE_SIZE));
+  qs.set("page", String(page));
   if (filters.status) qs.set("status", filters.status);
   if (filters.category) qs.set("category", filters.category);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["expenses", "claims", filters],
+    queryKey: ["expenses", "claims", filters, page, PAGE_SIZE],
     queryFn: () => api.get<Claim[]>(`/api/v1/hrms/expenses/claims?${qs.toString()}`),
   });
 
@@ -106,24 +102,14 @@ function ExpensesListInner() {
     queryFn: () => api.get<Policy[]>("/api/v1/hrms/expenses/policies?isActive=true&limit=100"),
   });
 
-  // Claims awaiting the current user's approval — only fetched on the Approvals tab.
-  const { data: approvalsData, isLoading: approvalsLoading } = useQuery({
-    queryKey: ["expenses", "approvals-list"],
-    queryFn: () =>
-      api
-        .get<ApprovalItem[]>("/api/v1/hrms/expenses/claims/pending-approvals")
-        .catch(() => ({ data: [] as ApprovalItem[] })),
-    enabled: isApprovals,
-    staleTime: 60_000,
-  });
-  const approvals = approvalsData?.data ?? [];
-
   const createMut = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.post("/api/v1/hrms/expenses/claims", body),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["expenses"] }); setShowCreate(false); },
   });
 
   const claims = data?.data ?? [];
+  const total = data?.meta?.total ?? claims.length;
+  const totalPages = data?.meta?.totalPages ?? 1;
 
   const selectedPolicy = (policies?.data ?? []).find((p) => p.id === form.policyId) ?? null;
   const policiesForCategory = (policies?.data ?? []).filter((p) => p.category === form.category);
@@ -184,17 +170,11 @@ function ExpensesListInner() {
             <p className="text-xs text-gray-500 mt-1">Submit and track reimbursement claims.</p>
           </div>
         </div>
-        {!isApprovals && (
-          <button onClick={() => setShowCreate(true)} className="btn btn-primary">
-            <Plus size={13} /> New claim
-          </button>
-        )}
+        <button onClick={() => setShowCreate(true)} className="btn btn-primary">
+          <Plus size={13} /> New claim
+        </button>
       </div>
-      <div className="mb-5"><ExpenseTabs /></div>
 
-      {isApprovals ? (
-        <ApprovalsTable items={approvals} loading={approvalsLoading} />
-      ) : (
       <>
       <div className="mb-4">
         <FilterBar>
@@ -222,6 +202,7 @@ function ExpensesListInner() {
           <p className="text-xs text-slate-400 mt-0.5">Submit your first reimbursement claim</p>
         </div>
       ) : (
+        <>
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <table className="w-full">
             <thead>
@@ -238,7 +219,7 @@ function ExpensesListInner() {
               {claims.map((c, i) => (
                 <tr key={c.id} className="row-stagger border-b border-slate-100 transition hover:bg-slate-50/60" style={{ ["--i" as never]: Math.min(i, 10) }}>
                   <td className="px-4 py-2.5">
-                    <Link href={`/expenses/${c.id}`} className="text-[#22c55e] hover:underline font-semibold text-[13px]">{c.title}</Link>
+                    <button type="button" onClick={() => setDrawer({ id: c.id, approve: true })} className="text-left text-[#22c55e] hover:underline font-semibold text-[13px]">{c.title}</button>
                     {c.policy && <div className="text-[11px] text-slate-400">{c.policy.name}</div>}
                   </td>
                   <td className="px-4 py-2.5 text-xs text-slate-600">{employeeName(c.employee, c.employeeId)}</td>
@@ -251,9 +232,35 @@ function ExpensesListInner() {
             </tbody>
           </table>
         </div>
+        {total > 0 && (
+          <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
+            <span>
+              Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-white"
+              >
+                <ChevronLeft size={14} /> Prev
+              </button>
+              <span className="tabular-nums">Page {page} of {totalPages}</span>
+              <button
+                type="button"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-white"
+              >
+                Next <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
+        )}
+        </>
       )}
       </>
-      )}
 
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="New Expense Claim">
         <form onSubmit={(e) => {
@@ -347,55 +354,8 @@ function ExpensesListInner() {
           </div>
         </form>
       </Modal>
-    </div>
-  );
-}
 
-/** Claims awaiting the current user's approval. Each opens its detail to act on. */
-function ApprovalsTable({ items, loading }: { items: ApprovalItem[]; loading: boolean }) {
-  if (loading) return <SkeletonTable rows={5} cols={6} />;
-  if (items.length === 0) {
-    return (
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 text-center text-slate-500">
-        <CheckSquare size={36} className="mx-auto mb-2 text-slate-300" />
-        <p className="text-[13px] font-semibold">Nothing awaiting your approval</p>
-        <p className="text-xs text-slate-400 mt-0.5">Expense claims that need your sign-off will appear here.</p>
-      </div>
-    );
-  }
-  return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-      <table className="w-full">
-        <thead>
-          <tr className="bg-slate-50/60 border-b border-slate-200">
-            <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Title</th>
-            <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Requested by</th>
-            <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Category</th>
-            <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Date</th>
-            <th className="text-right px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Amount</th>
-            <th className="text-right px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((c, i) => (
-            <tr key={c.id} className="row-stagger border-b border-slate-100 transition hover:bg-slate-50/60" style={{ ["--i" as never]: Math.min(i, 10) }}>
-              <td className="px-4 py-2.5">
-                <Link href={`/expenses/${c.id}`} className="text-[#22c55e] hover:underline font-semibold text-[13px]">{c.title}</Link>
-                <div className="mt-0.5"><span className={clsx("inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ring-1", statusColors[c.status])}>{c.status}</span></div>
-              </td>
-              <td className="px-4 py-2.5 text-xs text-slate-600">{employeeName(c.requester, c.id)}</td>
-              <td className="px-4 py-2.5"><span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-purple-50 text-purple-700 ring-1 ring-purple-200">{c.category}</span></td>
-              <td className="px-4 py-2.5 text-xs text-slate-700">{c.expenseDate ? new Date(c.expenseDate).toLocaleDateString("en-IN") : "—"}</td>
-              <td className="px-4 py-2.5 text-right text-sm font-semibold text-slate-900">{c.currency} {Number(c.totalAmount).toLocaleString("en-IN")}</td>
-              <td className="px-4 py-2.5 text-right">
-                <Link href={`/expenses/${c.id}`} className="inline-flex items-center gap-1 text-[12px] font-semibold text-green-700 hover:text-green-800">
-                  Review →
-                </Link>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <ExpenseClaimDrawer claimId={drawer?.id ?? null} allowApprove={drawer?.approve ?? false} onClose={() => setDrawer(null)} />
     </div>
   );
 }

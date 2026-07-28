@@ -60,7 +60,7 @@ const catColors: Record<string, string> = {
   Other: "bg-gray-100 text-gray-600",
 };
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 10;
 
 function fullName(e: Emp) {
   return e.displayName || `${e.firstName} ${e.lastName}`.trim();

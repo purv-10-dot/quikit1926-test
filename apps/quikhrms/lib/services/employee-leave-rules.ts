@@ -33,6 +33,35 @@ export interface GroupLeaveRules {
   [k: string]: unknown;
 }
 
+/**
+ * The ACTIVE leave group an employee belongs to (direct employee assignment
+ * wins over a role assignment), plus the set of leave-type ids that group
+ * offers. Returns null when the employee is in NO active group — the caller
+ * then treats them as having no leave entitlements at all (group-based model:
+ * you only get the leave types of your assigned group).
+ */
+export async function resolveEmployeeLeaveGroup(
+  orgId: string,
+  employeeId: string,
+  roleId: string | null,
+): Promise<{ leaveGroupId: string; leaveTypeIds: Set<string> } | null> {
+  const assignments = await prisma.leaveGroupAssignment.findMany({
+    where: {
+      orgId,
+      leaveGroup: { deletedAt: null, isActive: true },
+      OR: [{ employeeId }, ...(roleId ? [{ roleId }] : [])],
+    },
+    select: { employeeId: true, leaveGroupId: true },
+  });
+  if (!assignments.length) return null;
+  const chosen = assignments.find((a) => a.employeeId === employeeId) ?? assignments[0];
+  const items = await prisma.leaveGroupItem.findMany({
+    where: { orgId, leaveGroupId: chosen.leaveGroupId },
+    select: { leaveTypeId: true },
+  });
+  return { leaveGroupId: chosen.leaveGroupId, leaveTypeIds: new Set(items.map((i) => i.leaveTypeId)) };
+}
+
 export async function getEmployeeLeaveRules(
   orgId: string,
   employeeId: string,

@@ -113,7 +113,7 @@ export default function CandidatesPage() {
   const [sourceFilter, setSourceFilter] = useState("");
   const [expFilter, setExpFilter] = useState(""); // "min-max" (e.g. "2-5", "10-")
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 20;
+  const PAGE_SIZE = 10;
   const [showCreate, setShowCreate] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [blacklistTarget, setBlacklistTarget] = useState<CandidateItem | null>(null);

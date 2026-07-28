@@ -8,6 +8,7 @@ import { Select } from "@/components/hrms/ui/select";
 import { clsx } from "clsx";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 
 interface Log {
   id: string; userId: string; actorName?: string; action: string; entityType: string; entityId: string | null;
@@ -32,6 +33,8 @@ const actionColors: Record<string, string> = {
 export default function AuditLogsPage() {
   const api = useApiClient();
   const [filters, setFilters] = useState({ entityType: "", action: "", actorId: "", from: "", to: "" });
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   const qs = new URLSearchParams();
   qs.set("limit", "100");
@@ -63,6 +66,8 @@ export default function AuditLogsPage() {
   };
 
   const logs = data?.data ?? [];
+  const totalPages = Math.max(1, Math.ceil(logs.length / PAGE_SIZE));
+  const pageItems = logs.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div>
@@ -80,19 +85,19 @@ export default function AuditLogsPage() {
       </div>
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 mb-4 grid grid-cols-5 gap-2">
-        <input placeholder="Entity type" value={filters.entityType} onChange={(e) => setFilters({ ...filters, entityType: e.target.value })}
+        <input placeholder="Entity type" value={filters.entityType} onChange={(e) => { setFilters({ ...filters, entityType: e.target.value }); setPage(1); }}
           className="border border-[var(--border)] rounded-lg px-3 py-2 text-sm" />
         <Select
           value={filters.action}
-          onChange={(v) => setFilters({ ...filters, action: v })}
+          onChange={(v) => { setFilters({ ...filters, action: v }); setPage(1); }}
           placeholder="All actions"
           options={[{ value: "", label: "All actions" }, ...ACTIONS.map((a) => ({ value: a, label: a }))]}
         />
-        <input placeholder="Actor ID" value={filters.actorId} onChange={(e) => setFilters({ ...filters, actorId: e.target.value })}
+        <input placeholder="Actor ID" value={filters.actorId} onChange={(e) => { setFilters({ ...filters, actorId: e.target.value }); setPage(1); }}
           className="border border-[var(--border)] rounded-lg px-3 py-2 text-sm" />
-        <input type="date" value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value })}
+        <input type="date" value={filters.from} onChange={(e) => { setFilters({ ...filters, from: e.target.value }); setPage(1); }}
           className="border border-[var(--border)] rounded-lg px-3 py-2 text-sm" />
-        <input type="date" value={filters.to} onChange={(e) => setFilters({ ...filters, to: e.target.value })}
+        <input type="date" value={filters.to} onChange={(e) => { setFilters({ ...filters, to: e.target.value }); setPage(1); }}
           className="border border-[var(--border)] rounded-lg px-3 py-2 text-sm" />
       </div>
 
@@ -114,7 +119,7 @@ export default function AuditLogsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {logs.map((l, i) => (
+              {pageItems.map((l, i) => (
                 <tr key={l.id} className="row-stagger hover:bg-gray-50" style={{ ["--i" as never]: Math.min(i, 10) }}>
                   <td className="px-4 py-2 text-xs text-gray-500">{new Date(l.createdAt).toLocaleString("en-IN")}</td>
                   <td className={clsx("px-4 py-2 text-xs", l.actorName && l.actorName !== l.userId ? "text-gray-700" : "font-mono text-gray-500")}>{l.actorName || l.userId}</td>
@@ -130,6 +135,7 @@ export default function AuditLogsPage() {
               ))}
             </tbody>
           </table>
+          <Pagination page={page} totalPages={totalPages} total={logs.length} limit={PAGE_SIZE} onPageChange={setPage} />
         </div>
       )}
     </div>

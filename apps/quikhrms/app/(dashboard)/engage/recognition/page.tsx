@@ -15,6 +15,7 @@ import {
   Search, Send, Globe2, Users, TrendingUp, Crown, Flame,
 } from "lucide-react";
 import { SkeletonCards } from "@/components/hrms/skeleton";
+import { Pagination } from "@/components/hrms/pagination";
 
 interface RecognitionItem {
   id: string;
@@ -67,6 +68,8 @@ export default function RecognitionPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"All" | RecogType>("All");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [form, setForm] = useState<{
     toEmployeeId: string;
     type: RecogType;
@@ -126,6 +129,8 @@ export default function RecognitionPage() {
       return true;
     });
   }, [recognitions, filter, search]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const meta = typeMeta[form.type];
 
@@ -187,7 +192,7 @@ export default function RecognitionPage() {
                 type="text"
                 placeholder="Search recognitions..."
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
                 className="w-full pl-9 pr-3 py-2 border border-[var(--border)] rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-violet-500"
               />
             </div>
@@ -195,7 +200,7 @@ export default function RecognitionPage() {
               {(["All", "Kudos", "Badge", "Award", "Shoutout"] as const).map((f) => (
                 <button
                   key={f}
-                  onClick={() => setFilter(f)}
+                  onClick={() => { setFilter(f); setPage(1); }}
                   className={`px-3 py-1.5 rounded-md text-[13px] font-semibold transition-colors ${
                     filter === f ? "bg-white text-[#3F1A56] shadow-sm" : "text-gray-500 hover:text-gray-700"
                   }`}
@@ -219,7 +224,7 @@ export default function RecognitionPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {filtered.map((r, idx) => {
+              {pageItems.map((r, idx) => {
                 const m = typeMeta[r.type as RecogType] ?? typeMeta.Kudos;
                 const TIcon = m.Icon;
                 return (
@@ -273,6 +278,7 @@ export default function RecognitionPage() {
                   </article>
                 );
               })}
+              <Pagination page={page} totalPages={totalPages} total={filtered.length} limit={PAGE_SIZE} onPageChange={setPage} className="border-t-0 px-0" />
             </div>
           )}
         </div>

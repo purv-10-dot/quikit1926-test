@@ -10,6 +10,7 @@ import { DoorOpen, Plus, X } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 
 type Status = "Draft" | "Computed" | "Approved" | "Paid" | "Cancelled";
 
@@ -51,6 +52,8 @@ export default function FNFListPage() {
   const qc = useQueryClient();
   const toast = useToast();
   const [showForm, setShowForm] = useState(false);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   const { data: empRes } = useQuery({
     queryKey: ["fnf", "employees"],
@@ -63,6 +66,8 @@ export default function FNFListPage() {
     queryFn: () => api.get<FNF[]>("/api/v1/hrms/payroll/full-final"),
   });
   const items = data?.data ?? [];
+  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  const pageItems = items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const createMut = useMutation({
     mutationFn: (b: Record<string, unknown>) => api.post<FNF>("/api/v1/hrms/payroll/full-final", b),
@@ -107,6 +112,7 @@ export default function FNFListPage() {
         ) : items.length === 0 ? (
           <div className="py-12 text-center text-xs text-gray-500">No settlements yet.</div>
         ) : (
+          <>
           <table className="w-full text-xs">
             <thead>
               <tr className="text-table-head font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">
@@ -121,7 +127,7 @@ export default function FNFListPage() {
               </tr>
             </thead>
             <tbody>
-              {items.map((f, i) => (
+              {pageItems.map((f, i) => (
                 <tr key={f.id} className="row-stagger border-b border-gray-50 hover:bg-gray-50/50" style={{ ["--i" as never]: Math.min(i, 10) }}>
                   <td className="py-2 px-3">
                     <p className="text-[13px] font-medium text-gray-900">{f.employee ? `${f.employee.firstName} ${f.employee.lastName}` : "—"}</p>
@@ -151,6 +157,8 @@ export default function FNFListPage() {
               ))}
             </tbody>
           </table>
+          <Pagination page={page} totalPages={totalPages} total={items.length} limit={PAGE_SIZE} onPageChange={setPage} />
+          </>
         )}
       </div>
     </div>

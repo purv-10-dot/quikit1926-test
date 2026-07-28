@@ -4,6 +4,7 @@ import { withServiceAuth } from "@/lib/with-auth";
 import { successResponse, forbidden, internalError } from "@/lib/api-response";
 import { canAccessEmployee } from "@/lib/rbac/hierarchy";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
+import { resolveEmployeeLeaveGroup } from "@/lib/services/employee-leave-rules";
 
 /** GET /api/v1/hrms/leaves/balances?employeeId=...&year=... */
 export const GET = withServiceAuth(async (req: NextRequest, ctx) => {
@@ -34,7 +35,7 @@ export const GET = withServiceAuth(async (req: NextRequest, ctx) => {
       ...(employeeId && { employeeId }),
     };
 
-    const balances = await prisma.leaveBalance.findMany({
+    let balances = await prisma.leaveBalance.findMany({
       where,
       include: {
         leaveType: { select: { id: true, name: true, code: true, color: true, isPaid: true, maxBalance: true } },
@@ -43,8 +44,10 @@ export const GET = withServiceAuth(async (req: NextRequest, ctx) => {
       orderBy: { leaveType: { name: "asc" } },
     });
 
-    // Per-type opening from the employee's active Leave Group (group rules win
-    // over LeaveType.maxBalance) — keeps the cards consistent with enforcement.
+    // Group-based visibility: an employee only sees the leave types of the ACTIVE
+    // Leave Group they're assigned to. No group → NO leave types at all.
+    // Per-type opening comes from that group's rules (group quota wins over
+    // LeaveType.maxBalance) — keeps the cards consistent with enforcement.
     let ruleOpening: Map<string, number> | null = null;
     if (employeeId) {
       const emp = await prisma.employee.findFirst({
@@ -52,31 +55,26 @@ export const GET = withServiceAuth(async (req: NextRequest, ctx) => {
         select: { appRoles: { select: { roleId: true }, take: 1 } },
       });
       const roleId = emp?.appRoles[0]?.roleId ?? null;
-      const assignments = await prisma.leaveGroupAssignment.findMany({
-        where: {
-          orgId,
-          leaveGroup: { deletedAt: null, isActive: true },
-          OR: [{ employeeId }, ...(roleId ? [{ roleId }] : [])],
-        },
-        select: { employeeId: true, leaveGroupId: true },
+      const group = await resolveEmployeeLeaveGroup(orgId, employeeId, roleId);
+      // Not assigned to any leave group → no entitlements to show.
+      if (!group) return successResponse([]);
+      // Only surface the leave types the group offers.
+      balances = balances.filter((b) => group.leaveTypeIds.has(b.leaveTypeId));
+
+      const items = await prisma.leaveGroupItem.findMany({
+        where: { orgId, leaveGroupId: group.leaveGroupId },
+        select: { leaveTypeId: true, rules: true },
       });
-      const chosen = assignments.find((a) => a.employeeId === employeeId) ?? assignments[0];
-      if (chosen) {
-        const items = await prisma.leaveGroupItem.findMany({
-          where: { orgId, leaveGroupId: chosen.leaveGroupId },
-          select: { leaveTypeId: true, rules: true },
-        });
-        ruleOpening = new Map();
-        for (const it of items) {
-          const r = it.rules as { isUnlimited?: boolean; maxBalance?: number } | null;
-          // Unlimited types have no fixed quota — leave them to the default path.
-          if (r && typeof r === "object" && r.isUnlimited) continue;
-          // Every other group-item type is governed by the group: use its
-          // configured quota, or 0 when none has been set yet (never the stale
-          // accrued balance).
-          const q = r && typeof r === "object" && typeof r.maxBalance === "number" ? Number(r.maxBalance) : 0;
-          ruleOpening.set(it.leaveTypeId, q);
-        }
+      ruleOpening = new Map();
+      for (const it of items) {
+        const r = it.rules as { isUnlimited?: boolean; maxBalance?: number } | null;
+        // Unlimited types have no fixed quota — leave them to the default path.
+        if (r && typeof r === "object" && r.isUnlimited) continue;
+        // Every other group-item type is governed by the group: use its
+        // configured quota, or 0 when none has been set yet (never the stale
+        // accrued balance).
+        const q = r && typeof r === "object" && typeof r.maxBalance === "number" ? Number(r.maxBalance) : 0;
+        ruleOpening.set(it.leaveTypeId, q);
       }
     }
 

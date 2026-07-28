@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/hrms/empty-state";
 import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/ui/select";
 import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 import { clsx } from "clsx";
 import { ShieldCheck, Check, X, CalendarClock, Clock } from "lucide-react";
 
@@ -58,6 +59,8 @@ export default function ResignationApprovalsPage() {
 
   const [tab, setTab] = useState<"pending" | "all">("pending");
   const [approveFor, setApproveFor] = useState<Resignation | null>(null);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   const { data, isLoading } = useQuery({
     queryKey: ["resignation-approvals", tab],
@@ -65,6 +68,8 @@ export default function ResignationApprovalsPage() {
     enabled: canApprove,
   });
   const rows = useMemo(() => data?.data ?? [], [data]);
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const pageItems = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const decideMut = useMutation({
     mutationFn: ({ id, action, reason, noticePeriodId }: { id: string; action: "approve" | "reject"; reason?: string; noticePeriodId?: string }) =>
@@ -114,7 +119,7 @@ export default function ResignationApprovalsPage() {
         {(["pending", "all"] as const).map((t) => (
           <button
             key={t}
-            onClick={() => setTab(t)}
+            onClick={() => { setTab(t); setPage(1); }}
             className={clsx(
               "inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md text-[13px] font-semibold transition capitalize",
               tab === t ? "bg-green-600 text-white shadow-sm" : "text-gray-600 hover:bg-gray-50",
@@ -145,7 +150,7 @@ export default function ResignationApprovalsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {rows.map((r) => (
+              {pageItems.map((r) => (
                 <tr key={r.id} className="hover:bg-gray-50/60">
                   <td className="px-4 py-2.5">
                     <div className="text-[13px] font-medium text-gray-900">
@@ -197,6 +202,9 @@ export default function ResignationApprovalsPage() {
               ))}
             </tbody>
           </table>
+        )}
+        {!isLoading && rows.length > 0 && (
+          <Pagination page={page} totalPages={totalPages} total={rows.length} limit={PAGE_SIZE} onPageChange={setPage} />
         )}
       </div>
 

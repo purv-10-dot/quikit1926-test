@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { clsx } from "clsx";
 import {
   LayoutDashboard,
@@ -121,7 +121,7 @@ export const navigation: NavItem[] = [
     perms: ["hrms.leave.read", "hrms.leave.read_self", "hrms.leave.read_team", "hrms.leave.apply"],
     children: [
       { label: "My Leaves", href: "/leaves", perms: ["hrms.leave.read_self", "hrms.leave.apply"], navKey: "leave.my" },
-      { label: "Team Leaves", href: "/leaves/team-leaves", perms: ["hrms.leave.read_team"], navKey: "leave.team" },
+      { label: "Team Approvals", href: "/leaves/team-leaves", perms: ["hrms.leave.read_team"], navKey: "leave.team" },
       { label: "Leave Calendar", href: "/holidays", navKey: "leave.calendar" },
       { label: "Leave Settings", href: "/leaves/policies", perms: ["hrms.leave.manage"], navKey: "leave.policies" },
     ],
@@ -152,11 +152,16 @@ export const navigation: NavItem[] = [
   },
   {
     label: "Expenses",
-    href: "/expenses",
     icon: <Wallet size={18} />,
     section: "finance",
     perms: ["hrms.expense.read", "hrms.expense.read_self", "hrms.expense.read_team", "hrms.expense.submit"],
-    navKey: "expenses",
+    children: [
+      // Approvals are merged into Claims via the "Awaiting my approval" filter,
+      // so there's no separate Approvals sub-item.
+      { label: "Claims", href: "/expenses", navKey: "expenses.claims" },
+      { label: "Policies", href: "/expenses/policies", perms: ["hrms.expense.manage"], navKey: "expenses.policies" },
+      { label: "Reports", href: "/expenses/reports", perms: ["hrms.expense.read"], navKey: "expenses.reports" },
+    ],
   },
   {
     label: "Payroll",
@@ -264,6 +269,27 @@ export function childHasActive(child: NavChild, pathname: string): boolean {
   return child.children?.some((c) => pathname === c.href) ?? false;
 }
 
+/**
+ * Active state for a leaf link, aware of a `?tab=` query so siblings that share
+ * the same path (e.g. Expenses → Claims `/expenses` vs Approvals
+ * `/expenses?tab=approvals`) highlight correctly. A query-less child is the
+ * default for its path — active unless a sibling's tab matches the current one.
+ */
+export function leafActive(href: string, pathname: string, currentTab: string, siblings: NavChild[]): boolean {
+  const [hPath, hQuery] = href.split("?");
+  if (pathname !== hPath) return false;
+  const hTab = new URLSearchParams(hQuery ?? "").get("tab");
+  if (hTab) return currentTab === hTab;
+  const siblingTabMatches = siblings.some((s) => {
+    if (!s.href || s.href === href) return false;
+    const [sPath, sQuery] = s.href.split("?");
+    if (sPath !== hPath) return false;
+    const sTab = new URLSearchParams(sQuery ?? "").get("tab");
+    return !!sTab && sTab === currentTab;
+  });
+  return !siblingTabMatches;
+}
+
 export function Sidebar() {
   const rawPathname = usePathname();
   const router = useRouter();
@@ -277,6 +303,8 @@ export function Sidebar() {
   const { hasAnyPermission, permissions, navKeys, employee, role, preBoarding } = useDashboardConfig();
   const isSuper = permissions.includes("*");
   const pathname = mounted ? rawPathname : "";
+  const searchParams = useSearchParams();
+  const currentTab = mounted ? (searchParams?.get("tab") ?? "") : "";
 
   // Navigation allow-list (default-allow). Super admins and roles with no
   // saved navKeys see everything their permissions permit; otherwise a tab is
@@ -443,7 +471,7 @@ export function Sidebar() {
                   </div>
                 );
               }
-              const a = pathname === child.href;
+              const a = leafActive(child.href!, pathname, currentTab, item.children ?? []);
               return (
                 <Link
                   key={child.href}

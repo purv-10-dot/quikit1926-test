@@ -11,6 +11,7 @@ import { SkeletonTable } from "@/components/hrms/skeleton";
 import { useDialog } from "@/components/hrms/dialog";
 import { useToast } from "@/components/hrms/toast";
 import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 
 interface CycleItem {
   id: string;
@@ -44,6 +45,8 @@ export default function ReviewsPage() {
 
   const [statusFilter, setStatusFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   const { data, isLoading } = useQuery({
     queryKey: ["appraisal-cycles", statusFilter, typeFilter],
@@ -80,6 +83,8 @@ export default function ReviewsPage() {
   };
 
   const cycles = data?.data ?? [];
+  const totalPages = Math.max(1, Math.ceil(cycles.length / PAGE_SIZE));
+  const pageItems = cycles.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div className="w-full px-5 py-4">
@@ -96,7 +101,7 @@ export default function ReviewsPage() {
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <Select
           value={statusFilter}
-          onChange={setStatusFilter}
+          onChange={(v) => { setStatusFilter(v); setPage(1); }}
           className="w-44"
           options={[
             { value: "", label: "All statuses" },
@@ -106,7 +111,7 @@ export default function ReviewsPage() {
         />
         <Select
           value={typeFilter}
-          onChange={setTypeFilter}
+          onChange={(v) => { setTypeFilter(v); setPage(1); }}
           className="w-40"
           options={[
             { value: "", label: "All types" },
@@ -117,7 +122,7 @@ export default function ReviewsPage() {
         {(statusFilter || typeFilter) && (
           <button
             type="button"
-            onClick={() => { setStatusFilter(""); setTypeFilter(""); }}
+            onClick={() => { setStatusFilter(""); setTypeFilter(""); setPage(1); }}
             className="text-xs text-[#22c55e] hover:underline"
           >
             Clear
@@ -143,7 +148,7 @@ export default function ReviewsPage() {
               </tr>
             </thead>
             <tbody>
-              {cycles.map((c, i) => (
+              {pageItems.map((c, i) => (
                 <tr key={c.id} className="row-stagger border-b border-gray-100 hover:bg-gray-50" style={{ ["--i" as never]: Math.min(i, 10) }}>
                   <td className="px-4 py-2.5 text-[13px] font-medium text-gray-900">{c.name}</td>
                   <td className="px-4 py-2.5 text-xs text-gray-700">{c.type}</td>
@@ -166,6 +171,9 @@ export default function ReviewsPage() {
               ))}
             </tbody>
           </table>
+        )}
+        {!isLoading && cycles.length > 0 && (
+          <Pagination page={page} totalPages={totalPages} total={cycles.length} limit={PAGE_SIZE} onPageChange={setPage} />
         )}
       </div>
 

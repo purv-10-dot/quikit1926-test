@@ -23,6 +23,8 @@ export default function DepartmentsPage() {
   const api = useApiClient();
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [modal, setModal] = useState<{ open: boolean; item: Dept | null }>({
     open: false,
     item: null,
@@ -94,15 +96,16 @@ export default function DepartmentsPage() {
       <PageBackground src="/images/pre-onboarding-bg.png" />
       <CrudTable
         title="Departments"
-        data={data?.data ?? []}
+        data={(data?.data ?? []).slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)}
         columns={columns}
         isLoading={isLoading}
         onAdd={openAdd}
         onEdit={openEdit}
         onDelete={(id) => deleteMutation.mutate(id)}
         search={search}
-        onSearchChange={setSearch}
+        onSearchChange={(v) => { setSearch(v); setPage(1); }}
         searchPlaceholder="Search departments..."
+        pagination={{ page, totalPages: Math.max(1, Math.ceil((data?.data ?? []).length / PAGE_SIZE)), total: (data?.data ?? []).length, limit: PAGE_SIZE, onPageChange: setPage }}
       />
 
       <Modal

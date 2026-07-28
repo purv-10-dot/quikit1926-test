@@ -13,6 +13,7 @@ import { useToast } from "@/components/hrms/toast";
 import { exportCsv as exportCsvFile, fmtDate, formatGroup, formatAddress, type CsvColumn } from "@/lib/utils/csv";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 
 type SourceOfHire = "Referral" | "JobPortal" | "LinkedIn" | "Agency" | "Campus" | "Direct" | "Other";
 
@@ -78,6 +79,8 @@ export default function OnboardingCandidatesPage() {
   const toast = useToast();
 
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [revealPan, setRevealPan] = useState(false);
   const [revealAadhaar, setRevealAadhaar] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -136,6 +139,8 @@ export default function OnboardingCandidatesPage() {
     return true;
   });
   const total = filteredCandidates.length;
+  const totalPages = Math.max(1, Math.ceil(filteredCandidates.length / PAGE_SIZE));
+  const pageItems = filteredCandidates.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const activeFilterCount = filters.status.length + filters.source.length;
 
   // Export EVERY captured field. Nested groups (addresses, emergency contacts,
@@ -240,7 +245,7 @@ export default function OnboardingCandidatesPage() {
                       {STATUSES.map((s) => (
                         <label key={s} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
                           <input type="checkbox" className="accent-green-600" checked={filters.status.includes(s)}
-                            onChange={() => setFilters((f) => ({ ...f, status: f.status.includes(s) ? f.status.filter((x) => x !== s) : [...f.status, s] }))} />
+                            onChange={() => { setFilters((f) => ({ ...f, status: f.status.includes(s) ? f.status.filter((x) => x !== s) : [...f.status, s] })); setPage(1); }} />
                           {s}
                         </label>
                       ))}
@@ -252,14 +257,14 @@ export default function OnboardingCandidatesPage() {
                       {SOURCES.map((s) => (
                         <label key={s} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
                           <input type="checkbox" className="accent-green-600" checked={filters.source.includes(s)}
-                            onChange={() => setFilters((f) => ({ ...f, source: f.source.includes(s) ? f.source.filter((x) => x !== s) : [...f.source, s] }))} />
+                            onChange={() => { setFilters((f) => ({ ...f, source: f.source.includes(s) ? f.source.filter((x) => x !== s) : [...f.source, s] })); setPage(1); }} />
                           {s}
                         </label>
                       ))}
                     </div>
                   </div>
                   {activeFilterCount > 0 && (
-                    <button type="button" onClick={() => setFilters({ status: [], source: [] })}
+                    <button type="button" onClick={() => { setFilters({ status: [], source: [] }); setPage(1); }}
                       className="w-full text-center text-[11px] font-medium text-red-600 hover:underline pt-1">
                       Clear all filters
                     </button>
@@ -270,13 +275,13 @@ export default function OnboardingCandidatesPage() {
             {filters.status.map((s) => (
               <span key={`fs-${s}`} className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-green-50 text-green-700 text-[11px] font-medium">
                 {s}
-                <button onClick={() => setFilters((f) => ({ ...f, status: f.status.filter((x) => x !== s) }))} className="hover:text-green-900">×</button>
+                <button onClick={() => { setFilters((f) => ({ ...f, status: f.status.filter((x) => x !== s) })); setPage(1); }} className="hover:text-green-900">×</button>
               </span>
             ))}
             {filters.source.map((s) => (
               <span key={`fr-${s}`} className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-[11px] font-medium">
                 {s}
-                <button onClick={() => setFilters((f) => ({ ...f, source: f.source.filter((x) => x !== s) }))} className="hover:text-blue-900">×</button>
+                <button onClick={() => { setFilters((f) => ({ ...f, source: f.source.filter((x) => x !== s) })); setPage(1); }} className="hover:text-blue-900">×</button>
               </span>
             ))}
           </div>
@@ -311,7 +316,7 @@ export default function OnboardingCandidatesPage() {
 
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 mb-4 flex items-center gap-2 max-w-md">
           <Search size={14} className="text-gray-400" />
-          <input placeholder="Search candidates…" value={search} onChange={(e) => setSearch(e.target.value)}
+          <input placeholder="Search candidates…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             className="flex-1 text-sm focus:outline-none" />
         </div>
 
@@ -337,7 +342,7 @@ export default function OnboardingCandidatesPage() {
         ) : (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {filteredCandidates.map((c, i) => {
+              {pageItems.map((c, i) => {
                 const name = `${c.firstName} ${c.lastName}`.trim();
                 const inits = `${c.firstName?.[0] ?? ""}${c.lastName?.[0] ?? ""}`.toUpperCase() || "?";
                 const role = c.designation ?? c.jobTitle;
@@ -366,6 +371,7 @@ export default function OnboardingCandidatesPage() {
                 );
               })}
             </div>
+            <Pagination page={page} totalPages={totalPages} total={filteredCandidates.length} limit={PAGE_SIZE} onPageChange={setPage} className="border-t-0 px-0" />
             <div className="mt-4 text-xs text-gray-500">
               Total Record Count : <span className="text-[#22c55e] font-medium">{total}</span>
             </div>

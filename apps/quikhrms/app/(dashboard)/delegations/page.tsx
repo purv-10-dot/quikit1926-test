@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/hrms/empty-state";
 import { EmployeeSelect } from "@/components/hrms/employees/employee-select";
 import { Select } from "@/components/hrms/ui/select";
 import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 import { clsx } from "clsx";
 import { DELEGATION_CATALOG, DELEGATION_PERM_LABELS } from "@/lib/rbac/delegatable";
@@ -52,6 +53,8 @@ export default function DelegationsPage() {
   const qc = useQueryClient();
   const dialog = useDialog();
   const [tab, setTab] = useState<"self" | "received">("self");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [showAdd, setShowAdd] = useState(false);
   const { permissions } = useDashboardConfig();
   // form.selections maps a module name → the permission codes chosen to delegate.
@@ -123,6 +126,8 @@ export default function DelegationsPage() {
   };
 
   const items = data?.data ?? [];
+  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  const pageItems = items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div>
@@ -141,7 +146,7 @@ export default function DelegationsPage() {
 
       <div className="flex items-center gap-2 mb-4">
         {(["self", "received"] as const).map((t) => (
-          <button key={t} onClick={() => setTab(t)}
+          <button key={t} onClick={() => { setTab(t); setPage(1); }}
             className={clsx("px-4 py-2 rounded-lg text-[13px] font-semibold", tab === t ? "bg-green-600 text-white" : "bg-white border border-[var(--border)] text-gray-700")}>
             {t === "self" ? "My Delegations" : "Delegated to Me"}
           </button>
@@ -152,7 +157,7 @@ export default function DelegationsPage() {
         <div className="p-1"><EmptyState variant="bot" title="No Data Found" className="border border-gray-200 shadow-sm" /></div>
       ) : (
         <div className="space-y-3">
-          {items.map((d, i) => (
+          {pageItems.map((d, i) => (
             <div key={d.id} className={clsx("row-stagger bg-white rounded-lg shadow-sm border border-gray-200 p-4", !d.isActive && "opacity-60")} style={{ ["--i" as never]: Math.min(i, 10) }}>
               <div className="flex items-start justify-between mb-2">
                 <div>
@@ -199,6 +204,7 @@ export default function DelegationsPage() {
               </div>
             </div>
           ))}
+          <Pagination page={page} totalPages={totalPages} total={items.length} limit={PAGE_SIZE} onPageChange={setPage} className="border-t-0 px-0" />
         </div>
       )}
 

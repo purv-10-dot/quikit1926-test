@@ -21,6 +21,8 @@ export default function GradesPage() {
   const api = useApiClient();
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [modal, setModal] = useState<{ open: boolean; item: GradeItem | null }>({ open: false, item: null });
   const [form, setForm] = useState({ name: "", level: 0, minSalary: 0, maxSalary: 0 });
   const [formErr, setFormErr] = useState<string | null>(null);
@@ -67,14 +69,17 @@ export default function GradesPage() {
   };
 
   const filtered = (data?.data ?? []).filter((g) => !search || g.name.toLowerCase().includes(search.toLowerCase()));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <>
       {/* Subtle HR-themed page background (scoped to this page only). */}
       <PageBackground src="/images/pre-onboarding-bg.png" />
-      <CrudTable title="Grades / Bands" data={filtered} columns={columns} isLoading={isLoading}
+      <CrudTable title="Grades / Bands" data={pageItems} columns={columns} isLoading={isLoading}
         onAdd={openAdd} onEdit={openEdit} onDelete={(id) => deleteMut.mutate(id)}
-        search={search} onSearchChange={setSearch} searchPlaceholder="Search grades..." />
+        search={search} onSearchChange={(v) => { setSearch(v); setPage(1); }} searchPlaceholder="Search grades..."
+        pagination={{ page, totalPages, total: filtered.length, limit: PAGE_SIZE, onPageChange: setPage }} />
 
       <Modal open={modal.open} onClose={() => setModal({ open: false, item: null })} title={modal.item ? "Edit Grade" : "Add Grade"}>
         <form onSubmit={handleSubmit} className="space-y-4">

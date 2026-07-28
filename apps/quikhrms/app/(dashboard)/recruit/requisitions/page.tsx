@@ -11,13 +11,14 @@ import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { clsx } from "clsx";
 import { Plus, Briefcase, Filter, X, AlertTriangle, Check, XCircle, Pause, Play, Pencil, Sparkles, Target, ChevronDown,
-  ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Users, Search as SearchIcon, IndianRupee, GraduationCap, Gift, Globe, Lock, UserCog, Eye, Star,
+  ArrowLeft, ArrowRight, Users, Search as SearchIcon, IndianRupee, GraduationCap, Gift, Globe, Lock, UserCog, Eye, Star,
   FileText, ClipboardList, ThumbsUp, Gem, HelpCircle } from "lucide-react";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import { RequisitionWizard, toReqPayload, emptyReqForm } from "../_components/requisition-wizard";
 import type { ReqFormShape, DeptOption, PipelineOption, EmpOption, SkillWeightItem } from "../_components/requisition-wizard";
 import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 
 
 interface ReqItem {
@@ -204,6 +205,8 @@ export default function RequisitionsPage() {
   const [openSec, setOpenSec] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("ReqOpen"); // default to Open; chips switch to All/others
   const [priorityFilter, setPriorityFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [cancelTarget, setCancelTarget] = useState<ReqItem | null>(null);
   const [reviewTarget, setReviewTarget] = useState<ReqItem | null>(null);
   const [decisions, setDecisions] = useState<Record<string, HeldAction>>({});
@@ -293,6 +296,8 @@ export default function RequisitionsPage() {
   });
 
   const reqs = data?.data ?? [];
+  const totalPages = Math.max(1, Math.ceil(reqs.length / PAGE_SIZE));
+  const pageItems = reqs.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   // Export the currently filtered requisitions (matches the visible table) with
   // the full requisition detail — one row per JR.
@@ -370,7 +375,7 @@ export default function RequisitionsPage() {
               <span className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500"><Filter size={15} /> Status</span>
               <Select
                 value={statusFilter}
-                onChange={(v) => setStatusFilter(v)}
+                onChange={(v) => { setStatusFilter(v); setPage(1); }}
                 size="sm"
                 className="w-40"
                 placeholder="All statuses"
@@ -388,7 +393,7 @@ export default function RequisitionsPage() {
               <span className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500"><Filter size={15} /> Priority</span>
               <Select
                 value={priorityFilter}
-                onChange={(v) => setPriorityFilter(v)}
+                onChange={(v) => { setPriorityFilter(v); setPage(1); }}
                 size="sm"
                 className="w-36"
                 placeholder="All priorities"
@@ -430,7 +435,7 @@ export default function RequisitionsPage() {
               </tr>
             </thead>
             <tbody>
-              {reqs.map((r, i) => {
+              {pageItems.map((r, i) => {
                 const opened = r.raisedAt ?? r.createdAt;
                 const ageDays = opened ? Math.max(0, Math.floor((Date.now() - new Date(opened).getTime()) / 86400000)) : null;
                 const toClose = r.closedDate ? Math.ceil((new Date(r.closedDate).getTime() - Date.now()) / 86400000) : null;
@@ -532,23 +537,7 @@ export default function RequisitionsPage() {
       </div>
 
       {!isLoading && reqs.length > 0 && (
-        <div className="flex items-center justify-end gap-4 mt-4">
-          <span className="text-xs text-gray-500">Showing 1 to {reqs.length} of {reqs.length} result{reqs.length === 1 ? "" : "s"}</span>
-          <div className="flex items-center gap-1.5">
-            <button type="button" disabled aria-label="Previous page"
-              className="w-9 h-9 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 disabled:opacity-50">
-              <ChevronLeft size={12} />
-            </button>
-            <button type="button" aria-current="page"
-              className="w-9 h-9 rounded-lg bg-green-600 text-white flex items-center justify-center text-xs font-semibold">
-              1
-            </button>
-            <button type="button" disabled aria-label="Next page"
-              className="w-9 h-9 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 disabled:opacity-50">
-              <ChevronRight size={12} />
-            </button>
-          </div>
-        </div>
+        <Pagination page={page} totalPages={totalPages} total={reqs.length} limit={PAGE_SIZE} onPageChange={setPage} className="mt-4" />
       )}
 
       <Modal open={showCreate} onClose={() => { setShowCreate(false); setEditId(null); }}

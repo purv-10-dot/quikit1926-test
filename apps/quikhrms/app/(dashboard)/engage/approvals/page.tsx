@@ -9,6 +9,7 @@ import { useToast } from "@/components/hrms/toast";
 import { useDialog } from "@/components/hrms/dialog";
 import { EmptyState } from "@/components/hrms/empty-state";
 import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 import { ShieldCheck, Check, X, MessageSquare, Megaphone, Heart, ThumbsUp } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -79,6 +80,8 @@ export default function EngagementApprovalsPage() {
   const tabParam = (searchParams.get("tab") as Tab) ?? "announcement";
   const [tab, setTab] = useState<Tab>(tabParam);
   const [statusFilter, setStatusFilter] = useState<"Pending" | "Approved" | "Rejected">("Pending");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   // Announcements / Posts / Recognition are gated by hrms.engage.approve;
   // Feedback moderation is a separate grant (hrms.feedback.approve).
@@ -106,6 +109,7 @@ export default function EngagementApprovalsPage() {
 
   const switchTab = (t: Tab) => {
     setTab(t);
+    setPage(1);
     const params = new URLSearchParams(searchParams.toString());
     params.set("tab", t);
     router.replace(`/engage/approvals?${params.toString()}`);
@@ -120,6 +124,8 @@ export default function EngagementApprovalsPage() {
     staleTime: 30_000,
   });
   const items = data?.data ?? [];
+  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  const pageItems = items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const actMut = useMutation({
     mutationFn: ({ id, action, reason }: { id: string; action: "approve" | "reject"; reason?: string }) =>
@@ -192,7 +198,7 @@ export default function EngagementApprovalsPage() {
         {(["Pending", "Approved", "Rejected"] as const).map((s) => (
           <button
             key={s}
-            onClick={() => setStatusFilter(s)}
+            onClick={() => { setStatusFilter(s); setPage(1); }}
             className={clsx(
               "px-3 py-1 text-[11px] rounded-full font-semibold border transition",
               statusFilter === s
@@ -220,7 +226,7 @@ export default function EngagementApprovalsPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {items.map((item, i) => (
+          {pageItems.map((item, i) => (
             <ItemCard
               key={item.id}
               type={tab}
@@ -232,6 +238,7 @@ export default function EngagementApprovalsPage() {
               idx={i}
             />
           ))}
+          <Pagination page={page} totalPages={totalPages} total={items.length} limit={PAGE_SIZE} onPageChange={setPage} className="border-t-0 px-0" />
         </div>
       )}
     </div>

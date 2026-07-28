@@ -24,6 +24,8 @@ export default function LocationsPage() {
   const api = useApiClient();
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [modal, setModal] = useState<{ open: boolean; item: Loc | null }>({ open: false, item: null });
   const [form, setForm] = useState({ name: "", city: "", state: "", country: "", timezone: "", isHeadquarter: false });
 
@@ -67,9 +69,10 @@ export default function LocationsPage() {
     <>
       {/* Subtle HR-themed page background (scoped to this page only). */}
       <PageBackground src="/images/pre-onboarding-bg.png" />
-      <CrudTable title="Office Locations" data={data?.data ?? []} columns={columns} isLoading={isLoading}
+      <CrudTable title="Office Locations" data={(data?.data ?? []).slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)} columns={columns} isLoading={isLoading}
         onAdd={openAdd} onEdit={openEdit} onDelete={(id) => deleteMut.mutate(id)}
-        search={search} onSearchChange={setSearch} searchPlaceholder="Search locations..." />
+        search={search} onSearchChange={(v) => { setSearch(v); setPage(1); }} searchPlaceholder="Search locations..."
+        pagination={{ page, totalPages: Math.max(1, Math.ceil((data?.data ?? []).length / PAGE_SIZE)), total: (data?.data ?? []).length, limit: PAGE_SIZE, onPageChange: setPage }} />
 
       <Modal open={modal.open} onClose={() => setModal({ open: false, item: null })} title={modal.item ? "Edit Location" : "Add Location"}>
         <form onSubmit={handleSubmit} className="space-y-4">

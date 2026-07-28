@@ -12,6 +12,7 @@ import { IndianRupee, Plus, Banknote, Check, X, Send, Lock, Coins, Pause, Play, 
 import { clsx } from "clsx";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 
 type LoanStatus = "Pending" | "Approved" | "Disbursed" | "OnHold" | "Closed" | "Rejected" | "WrittenOff";
 type LoanType = "Personal" | "Education" | "Medical" | "Housing" | "Vehicle" | "Advance" | "Other";
@@ -61,6 +62,8 @@ export default function LoansPage() {
   const qc = useQueryClient();
   const [status, setStatus] = useState<StatusFilter>("All");
   const [newOpen, setNewOpen] = useState(false);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   const { data, isLoading } = useQuery({
     queryKey: ["payroll", "loans", status],
@@ -68,6 +71,8 @@ export default function LoansPage() {
   });
 
   const rows = data?.data ?? [];
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const pageItems = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const [rejectTarget, setRejectTarget] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -141,7 +146,7 @@ export default function LoansPage() {
           {STATUSES.map((s) => (
             <button
               key={s}
-              onClick={() => setStatus(s)}
+              onClick={() => { setStatus(s); setPage(1); }}
               className={clsx(
                 "px-3 py-1 text-xs rounded-full border transition",
                 status === s ? "bg-green-600 text-white border-[#22c55e]" : "bg-white text-gray-600 border-gray-300 hover:border-[#86efac]",
@@ -155,6 +160,7 @@ export default function LoansPage() {
         ) : rows.length === 0 ? (
           <div className="py-10 text-center text-xs text-gray-500">{status === "All" ? "No loans yet." : `No ${status.toLowerCase()} loans.`}</div>
         ) : (
+          <>
           <table className="w-full text-xs">
             <thead>
               <tr className="text-table-head font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">
@@ -170,7 +176,7 @@ export default function LoansPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r, i) => (
+              {pageItems.map((r, i) => (
                 <tr key={r.id} className="row-stagger border-b border-gray-50 hover:bg-gray-50" style={{ ["--i" as never]: Math.min(i, 10) }}>
                   <td className="py-3 px-3">
                     <p className="text-[13px] font-medium text-gray-900">{r.employee ? `${r.employee.firstName} ${r.employee.lastName}` : "Unknown"}</p>
@@ -219,6 +225,8 @@ export default function LoansPage() {
               ))}
             </tbody>
           </table>
+          <Pagination page={page} totalPages={totalPages} total={rows.length} limit={PAGE_SIZE} onPageChange={setPage} />
+          </>
         )}
       </div>
 

@@ -11,6 +11,7 @@ import { clsx } from "clsx";
 import { PageHeader } from "@/components/hrms/ui/page-header";
 import { PageBackground } from "@/components/hrms/page-background";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
+import { Pagination } from "@/components/hrms/pagination";
 
 interface Approver { id: string; firstName: string; lastName: string; employeeCode: string }
 interface ApprovalRow { id: string; level: number; role: string; status: string; comment: string | null; decidedAt: string | null; approver: Approver }
@@ -41,6 +42,8 @@ export default function MyWfhPage() {
   const toast = useToast();
   const [showCreate, setShowCreate] = useState(false);
   const [logItem, setLogItem] = useState<WfhItem | null>(null);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const today = new Date().toISOString().slice(0, 10);
   const [form, setForm] = useState({
     startDate: today, endDate: today,
@@ -53,6 +56,8 @@ export default function MyWfhPage() {
     queryFn: () => api.get<WfhItem[]>("/api/v1/hrms/wfh/requests?scope=me&limit=50"),
   });
   const items = data?.data ?? [];
+  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  const pageItems = items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const { data: quotaData } = useQuery({
     queryKey: ["wfh", "quota", "me"],
@@ -159,7 +164,7 @@ export default function MyWfhPage() {
               </tr>
             </thead>
             <tbody>
-              {items.map((i, idx) => (
+              {pageItems.map((i, idx) => (
                 <tr
                   key={i.id}
                   onClick={() => setLogItem(i)}
@@ -215,6 +220,9 @@ export default function MyWfhPage() {
               ))}
             </tbody>
           </table>
+        )}
+        {!isLoading && items.length > 0 && (
+          <Pagination page={page} totalPages={totalPages} total={items.length} limit={PAGE_SIZE} onPageChange={setPage} />
         )}
       </div>
 

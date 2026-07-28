@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
@@ -15,6 +15,7 @@ import {
 import { clsx } from "clsx";
 import { SkeletonLine } from "@/components/hrms/skeleton";
 import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 import { RecordChallanModal } from "./_record-challan-modal";
 
 const INR = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
@@ -195,12 +196,18 @@ function LiabilityTab({ fy, onRecordChallan }: { fy: string; onRecordChallan: (p
   const qc = useQueryClient();
   const toast = useToast();
 
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
+  useEffect(() => { setPage(1); }, [fy]);
+
   const { data, isLoading } = useQuery({
     queryKey: ["tds", "liability", fy],
     queryFn: () => api.get<LiabilityResponse>(`/api/v1/hrms/payroll/tds/liability?fy=${fy}`),
   });
   const periods = data?.data?.periods ?? [];
   const summary = data?.data?.summary;
+  const totalPages = Math.max(1, Math.ceil(periods.length / PAGE_SIZE));
+  const pagePeriods = periods.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const recomputeMut = useMutation({
     mutationFn: () => api.post("/api/v1/hrms/payroll/tds/liability/recompute", {}),
@@ -259,7 +266,7 @@ function LiabilityTab({ fy, onRecordChallan }: { fy: string; onRecordChallan: (p
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {periods.map((p) => {
+              {pagePeriods.map((p) => {
                 const deducted = Number(p.totalDeducted);
                 const allocated = Number(p.totalAllocated);
                 const pending = Math.max(0, deducted - allocated);
@@ -304,6 +311,7 @@ function LiabilityTab({ fy, onRecordChallan }: { fy: string; onRecordChallan: (p
             </tbody>
           </table>
         )}
+        <Pagination page={page} totalPages={totalPages} total={periods.length} limit={PAGE_SIZE} onPageChange={setPage} />
       </div>
     </div>
   );
@@ -317,12 +325,18 @@ function ChallansTab({ fy, onNewChallan }: { fy: string; onNewChallan: () => voi
   const toast = useToast();
   const dialog = useDialog();
 
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
+  useEffect(() => { setPage(1); }, [fy]);
+
   const { data, isLoading } = useQuery({
     queryKey: ["tds", "challans", fy],
     queryFn: () => api.get<ChallanResponse>(`/api/v1/hrms/payroll/tds/challans?fy=${fy}`),
   });
   const challans = data?.data?.challans ?? [];
   const summary = data?.data?.summary;
+  const totalPages = Math.max(1, Math.ceil(challans.length / PAGE_SIZE));
+  const pageChallans = challans.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => api.delete(`/api/v1/hrms/payroll/tds/challans/${id}`),
@@ -373,7 +387,7 @@ function ChallansTab({ fy, onNewChallan }: { fy: string; onNewChallan: () => voi
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {challans.map((c) => (
+              {pageChallans.map((c) => (
                 <tr key={c.id} className="hover:bg-gray-50">
                   <td className="px-4 py-2.5">
                     <div className="font-mono text-[12px] font-semibold text-gray-900">{c.cin}</div>
@@ -426,6 +440,7 @@ function ChallansTab({ fy, onNewChallan }: { fy: string; onNewChallan: () => voi
             </tbody>
           </table>
         )}
+        <Pagination page={page} totalPages={totalPages} total={challans.length} limit={PAGE_SIZE} onPageChange={setPage} />
       </div>
     </div>
   );

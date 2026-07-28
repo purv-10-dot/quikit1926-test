@@ -12,6 +12,7 @@ import { clsx } from "clsx";
 import { Plus, BarChart3, ClipboardList, Star, BarChart2, ListChecks, CheckSquare, Type, Gauge, Trash2, GripVertical, Lock, Calendar, Send, Play, X as XIcon, Eye } from "lucide-react";
 import Link from "next/link";
 import { SkeletonTable } from "@/components/hrms/skeleton";
+import { Pagination } from "@/components/hrms/pagination";
 
 type QType = "SurveyRating" | "SurveyScale" | "SingleChoice" | "MultiChoice" | "FreeText" | "NPS";
 
@@ -76,6 +77,8 @@ export default function SurveysPage() {
   const qc = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
   const [confirmTarget, setConfirmTarget] = useState<{ id: string; title: string } | null>(null);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [form, setForm] = useState<SurveyForm>({
     title: "", type: "PulseCheck", isAnonymous: true,
     startDate: "", endDate: "",
@@ -129,6 +132,8 @@ export default function SurveysPage() {
   };
 
   const surveys = data?.data ?? [];
+  const totalPages = Math.max(1, Math.ceil(surveys.length / PAGE_SIZE));
+  const pageItems = surveys.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div className="w-full px-5 py-4">
@@ -167,7 +172,7 @@ export default function SurveysPage() {
               </tr>
             </thead>
             <tbody>
-              {surveys.map((s, i) => (
+              {pageItems.map((s, i) => (
                 <tr key={s.id} className="row-stagger border-b border-gray-100 hover:bg-gray-50" style={{ ["--i" as never]: Math.min(i, 10) }}>
                   <td className="px-4 py-2.5">
                     <p className="text-[13px] font-medium text-gray-900">{s.title}</p>
@@ -225,6 +230,9 @@ export default function SurveysPage() {
               ))}
             </tbody>
           </table>
+        )}
+        {!isLoading && surveys.length > 0 && (
+          <Pagination page={page} totalPages={totalPages} total={surveys.length} limit={PAGE_SIZE} onPageChange={setPage} />
         )}
       </div>
 

@@ -9,6 +9,7 @@ import { Users, Target, Search, ArrowRight, Briefcase, Building2 } from "lucide-
 import { clsx } from "clsx";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 
 interface Scorecard { id: string; name: string }
 interface Employee {
@@ -44,6 +45,8 @@ export default function KraAssignmentsPage() {
   const api = useApiClient();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   const { data, isLoading } = useQuery({
     queryKey: ["performance", "kra-assignments", statusFilter],
@@ -62,6 +65,8 @@ export default function KraAssignmentsPage() {
       || a.snapshot.scorecardName.toLowerCase().includes(q)
     );
   });
+  const totalPages = Math.max(1, Math.ceil(assignments.length / PAGE_SIZE));
+  const pageItems = assignments.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   // Progress % = scored KPIs / total KPIs.
   // Completed assignments report 100% regardless of scoring — the work is
@@ -112,7 +117,7 @@ export default function KraAssignmentsPage() {
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             placeholder="Search by employee or scorecard…"
             className="w-full pl-8 pr-3 py-2 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#166534]/20 focus:border-[#166534]"
           />
@@ -120,7 +125,7 @@ export default function KraAssignmentsPage() {
         <div className="w-44">
           <Select
             value={statusFilter}
-            onChange={setStatusFilter}
+            onChange={(v) => { setStatusFilter(v); setPage(1); }}
             options={[
               { value: "", label: "All status" },
               { value: "Active", label: "Active" },
@@ -157,7 +162,7 @@ export default function KraAssignmentsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {assignments.map((a) => {
+              {pageItems.map((a) => {
                 const pct = progressPercent(a);
                 const { scored, total } = scoredKpiCount(a);
                 const completedWithoutScores = a.status === "Completed" && scored === 0;
@@ -247,6 +252,9 @@ export default function KraAssignmentsPage() {
               })}
             </tbody>
           </table>
+        )}
+        {!isLoading && assignments.length > 0 && (
+          <Pagination page={page} totalPages={totalPages} total={assignments.length} limit={PAGE_SIZE} onPageChange={setPage} />
         )}
       </div>
     </div>

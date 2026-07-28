@@ -141,7 +141,7 @@ export default function TeamLeavesPage() {
       {/* Subtle HR-themed page background (scoped to this page only). */}
       <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between gap-3 mb-3 shrink-0">
-        <h1 className="text-base font-semibold text-gray-900">Team leaves</h1>
+        <h1 className="text-base font-semibold text-gray-900">Team Approvals</h1>
         <ExcelExportButton filename="team-leaves" sheetName="Team Leaves" columns={exportColumns} rows={exportRows} label="Export to Excel" />
       </div>
 

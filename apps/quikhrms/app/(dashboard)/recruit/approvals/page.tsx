@@ -11,6 +11,7 @@ import { clsx } from "clsx";
 import { RequisitionWizard, toReqPayload, emptyReqForm } from "../_components/requisition-wizard";
 import type { ReqFormShape, DeptOption, PipelineOption, EmpOption } from "../_components/requisition-wizard";
 import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 
 interface FullReq {
   id: string; title?: string; jobOpeningName?: string | null; pipelineId?: string | null;
@@ -98,6 +99,10 @@ export default function RequisitionApprovalsPage() {
     queryFn: () => api.get<ApprovalsQueueResponse>("/api/v1/hrms/recruit/requisitions/approvals-queue"),
   });
   const items = data?.data?.mine ?? [];
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
+  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  const pageItems = items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const [decision, setDecision] = useState<{ kind: "approve" | "reject"; item: PendingItem } | null>(null);
   const [comment, setComment] = useState("");
 
@@ -237,7 +242,7 @@ export default function RequisitionApprovalsPage() {
           </div>
         ) : (
           <ul className="divide-y divide-slate-100">
-            {items.map((it) => {
+            {pageItems.map((it) => {
               const r = it.requisition;
               const raiserName = r.raiser ? `${r.raiser.firstName} ${r.raiser.lastName}`.trim() : "—";
               const budgetHint = it.role === "HR" && it.openDeptHeadcount > 2;
@@ -304,6 +309,9 @@ export default function RequisitionApprovalsPage() {
               );
             })}
           </ul>
+        )}
+        {!isLoading && items.length > 0 && (
+          <Pagination page={page} totalPages={totalPages} total={items.length} limit={PAGE_SIZE} onPageChange={setPage} />
         )}
       </div>
 

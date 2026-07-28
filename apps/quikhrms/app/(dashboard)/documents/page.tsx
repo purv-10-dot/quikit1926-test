@@ -14,6 +14,7 @@ import { EmployeeSelect } from "@/components/hrms/employees/employee-select";
 import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { SkeletonTable } from "@/components/hrms/skeleton";
+import { Pagination } from "@/components/hrms/pagination";
 import { todayInput } from "@/lib/utils/date-input";
 
 type Category = "OfferLetter" | "Policy" | "IdProof" | "Certificate" | "Contract" | "AppointmentLetter" | "ExperienceLetter" | "RelievingLetter" | "NDA" | "Other";
@@ -57,6 +58,8 @@ export default function DocumentLibraryPage() {
   const qc = useQueryClient();
   const toast = useToast();
   const [filters, setFilters] = useState({ category: "", status: "", search: "" });
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [showUpload, setShowUpload] = useState(false);
   const [editDoc, setEditDoc] = useState<DocItem | null>(null);
   const [deleteDoc, setDeleteDoc] = useState<DocItem | null>(null);
@@ -117,6 +120,8 @@ export default function DocumentLibraryPage() {
   };
 
   const docs = (data?.data ?? []).filter((d) => !d.employeeId);
+  const totalPages = Math.max(1, Math.ceil(docs.length / PAGE_SIZE));
+  const pageItems = docs.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const expiringCount = (expiring?.data ?? []).filter((d) => !d.employeeId).length;
 
   return (
@@ -150,19 +155,19 @@ export default function DocumentLibraryPage() {
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 mb-4 flex items-center gap-2">
         <div className="relative flex-1">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input placeholder="Search documents..." value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+          <input placeholder="Search documents..." value={filters.search} onChange={(e) => { setFilters({ ...filters, search: e.target.value }); setPage(1); }}
             className="w-full pl-9 pr-3 py-2 border border-[var(--border)] rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]" />
         </div>
         <Select
           value={filters.category}
-          onChange={(v) => setFilters({ ...filters, category: v })}
+          onChange={(v) => { setFilters({ ...filters, category: v }); setPage(1); }}
           placeholder="All categories"
           options={[{ value: "", label: "All categories" }, ...CATEGORIES.map((c) => ({ value: c, label: c }))]}
           className="w-48"
         />
         <Select
           value={filters.status}
-          onChange={(v) => setFilters({ ...filters, status: v })}
+          onChange={(v) => { setFilters({ ...filters, status: v }); setPage(1); }}
           placeholder="All statuses"
           options={[{ value: "", label: "All statuses" }, ...STATUSES.map((s) => ({ value: s, label: s }))]}
           className="w-40"
@@ -174,8 +179,9 @@ export default function DocumentLibraryPage() {
           <FileText size={32} className="mx-auto mb-2 text-gray-300" /> No documents
         </div>
       ) : (
+        <>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {docs.map((d) => (
+          {pageItems.map((d) => (
             <div key={d.id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 hover:border-[#bbf7d0] hover:shadow flex flex-col">
               <Link href={`/documents/${d.id}`} className="flex-1 min-w-0">
                 <div className="flex items-start justify-between mb-2">
@@ -206,6 +212,8 @@ export default function DocumentLibraryPage() {
             </div>
           ))}
         </div>
+        <Pagination page={page} totalPages={totalPages} total={docs.length} limit={PAGE_SIZE} onPageChange={setPage} className="border-t-0 px-0" />
+        </>
       )}
 
       <Modal open={showUpload} onClose={() => setShowUpload(false)} title="Upload Document">

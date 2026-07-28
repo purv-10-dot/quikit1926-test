@@ -11,6 +11,7 @@ import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import { TaskRow, type TaskRowData } from "./_components/task-row";
 import { NewTaskModal } from "./_components/new-task-modal";
 import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 
 const TASK_STATUS_LABELS: Record<TaskRowData["status"], string> = {
   Open: "Open",
@@ -57,6 +58,8 @@ function TasksList({ scope }: { scope: "mine" }) {
     return "Open,InProgress,Completed";
   });
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   const params = useMemo(() => {
     const p = new URLSearchParams({ scope });
@@ -84,6 +87,8 @@ function TasksList({ scope }: { scope: "mine" }) {
     staleTime: 60_000,
   });
   const tasks = (data?.data ?? []).filter((t) => !search || t.title.toLowerCase().includes(search.toLowerCase()));
+  const totalPages = Math.max(1, Math.ceil(tasks.length / PAGE_SIZE));
+  const pageItems = tasks.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   // Export the currently filtered task list, matching the visible columns.
   const excelColumns = [
@@ -110,7 +115,7 @@ function TasksList({ scope }: { scope: "mine" }) {
       <FilterBar>
         <FilterPills
           value={statusFilter}
-          onChange={setStatusFilter}
+          onChange={(v) => { setStatusFilter(v); setPage(1); }}
           options={[
             { value: "Open,InProgress", label: "Incomplete" },
             { value: "Completed", label: "Completed" },
@@ -121,7 +126,7 @@ function TasksList({ scope }: { scope: "mine" }) {
         <FilterField icon={<Calendar size={13} className="text-gray-400" />}>
           <Select
             value={datePreset}
-            onChange={(v) => setDatePreset(v as typeof datePreset)}
+            onChange={(v) => { setDatePreset(v as typeof datePreset); setPage(1); }}
             options={[
               { value: "anytime", label: "Anytime" },
               { value: "overdue", label: "Overdue" },
@@ -131,7 +136,7 @@ function TasksList({ scope }: { scope: "mine" }) {
             ]}
           />
         </FilterField>
-        <FilterSearch value={search} onChange={setSearch} placeholder="Search todos..." />
+        <FilterSearch value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="Search todos..." />
       </FilterBar>
 
       <div className="surface-card overflow-hidden">
@@ -156,11 +161,14 @@ function TasksList({ scope }: { scope: "mine" }) {
               </tr>
             </thead>
             <tbody>
-              {tasks.map((t, i) => (
+              {pageItems.map((t, i) => (
                 <TaskRow key={t.id} task={t} onClick={() => {}} index={i} />
               ))}
             </tbody>
           </table>
+        )}
+        {!isLoading && tasks.length > 0 && (
+          <Pagination page={page} totalPages={totalPages} total={tasks.length} limit={PAGE_SIZE} onPageChange={setPage} />
         )}
       </div>
     </div>

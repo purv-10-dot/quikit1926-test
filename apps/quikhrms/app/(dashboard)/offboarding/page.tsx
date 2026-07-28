@@ -10,6 +10,7 @@ import { EmployeeSelect } from "@/components/hrms/employees/employee-select";
 import { Select } from "@/components/hrms/ui/select";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 import { UserMinus, Plus, LogOut, ClipboardList, UserX, TrendingDown, CalendarClock, ArrowRight, Filter } from "lucide-react";
 import { clsx } from "clsx";
 import { ExitedEmployeesTab } from "./_components/exited-employees-tab";
@@ -67,6 +68,8 @@ export default function OffboardingDashboardPage() {
   const [tab, setTab] = useState<"active" | "exited" | "attrition" | "notice">("active");
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<{ status: string[]; reason: string[] }>({ status: [], reason: [] });
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const filterRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -130,6 +133,8 @@ export default function OffboardingDashboardPage() {
     return true;
   });
   const activeFilterCount = filters.status.length + filters.reason.length;
+  const totalPages = Math.max(1, Math.ceil(filteredInstances.length / PAGE_SIZE));
+  const pageItems = filteredInstances.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   // Flatten each offboarding instance (the currently rendered set) into one
   // export row, matching the visible table columns.
@@ -212,7 +217,7 @@ export default function OffboardingDashboardPage() {
                       {OFF_STATUSES.map((s) => (
                         <label key={s} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
                           <input type="checkbox" className="accent-green-600" checked={filters.status.includes(s)}
-                            onChange={() => setFilters((f) => ({ ...f, status: f.status.includes(s) ? f.status.filter((x) => x !== s) : [...f.status, s] }))} />
+                            onChange={() => { setFilters((f) => ({ ...f, status: f.status.includes(s) ? f.status.filter((x) => x !== s) : [...f.status, s] })); setPage(1); }} />
                           {s}
                         </label>
                       ))}
@@ -224,14 +229,14 @@ export default function OffboardingDashboardPage() {
                       {REASONS.map((r) => (
                         <label key={r} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
                           <input type="checkbox" className="accent-green-600" checked={filters.reason.includes(r)}
-                            onChange={() => setFilters((f) => ({ ...f, reason: f.reason.includes(r) ? f.reason.filter((x) => x !== r) : [...f.reason, r] }))} />
+                            onChange={() => { setFilters((f) => ({ ...f, reason: f.reason.includes(r) ? f.reason.filter((x) => x !== r) : [...f.reason, r] })); setPage(1); }} />
                           {r}
                         </label>
                       ))}
                     </div>
                   </div>
                   {activeFilterCount > 0 && (
-                    <button type="button" onClick={() => setFilters({ status: [], reason: [] })}
+                    <button type="button" onClick={() => { setFilters({ status: [], reason: [] }); setPage(1); }}
                       className="w-full text-center text-[11px] font-medium text-red-600 hover:underline pt-1">
                       Clear all filters
                     </button>
@@ -242,13 +247,13 @@ export default function OffboardingDashboardPage() {
             {filters.status.map((s) => (
               <span key={`fs-${s}`} className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-green-50 text-green-700 text-[11px] font-medium">
                 {s}
-                <button onClick={() => setFilters((f) => ({ ...f, status: f.status.filter((x) => x !== s) }))} className="hover:text-green-900">×</button>
+                <button onClick={() => { setFilters((f) => ({ ...f, status: f.status.filter((x) => x !== s) })); setPage(1); }} className="hover:text-green-900">×</button>
               </span>
             ))}
             {filters.reason.map((r) => (
               <span key={`fr-${r}`} className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-[11px] font-medium">
                 {r}
-                <button onClick={() => setFilters((f) => ({ ...f, reason: f.reason.filter((x) => x !== r) }))} className="hover:text-blue-900">×</button>
+                <button onClick={() => { setFilters((f) => ({ ...f, reason: f.reason.filter((x) => x !== r) })); setPage(1); }} className="hover:text-blue-900">×</button>
               </span>
             ))}
           </div>
@@ -256,8 +261,9 @@ export default function OffboardingDashboardPage() {
         {filteredInstances.length === 0 ? (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 text-center text-gray-500 text-xs">{activeFilterCount > 0 ? "No offboardings match filters." : "No offboardings"}</div>
         ) : (
+          <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {filteredInstances.map((i, idx) => {
+            {pageItems.map((i, idx) => {
               const name = i.employee ? (i.employee.displayName ?? `${i.employee.firstName} ${i.employee.lastName}`.trim()) : i.employeeId;
               const initials = i.employee ? `${i.employee.firstName?.[0] ?? ""}${i.employee.lastName?.[0] ?? ""}`.toUpperCase() : "—";
               return (
@@ -282,6 +288,8 @@ export default function OffboardingDashboardPage() {
               );
             })}
           </div>
+          <Pagination page={page} totalPages={totalPages} total={filteredInstances.length} limit={PAGE_SIZE} onPageChange={setPage} className="border-t-0 px-0" />
+          </>
         )}
       </div>
       </>

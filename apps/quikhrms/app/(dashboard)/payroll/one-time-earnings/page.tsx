@@ -13,6 +13,7 @@ import { clsx } from "clsx";
 import { read, utils, writeFile } from "xlsx";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 
 type Kind = "Bonus" | "Arrears" | "Incentive" | "Commission" | "PerformanceBonus" | "ReferralBonus" | "Other" | "Deduction";
 type Status = "Pending" | "Approved" | "Rejected" | "Applied";
@@ -115,6 +116,8 @@ export default function OneTimeEarningsPage() {
   const [showForm, setShowForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [filter, setFilter] = useState<"" | Status>("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   const { data: empRes } = useQuery({
     queryKey: ["payroll", "one-time", "employees"],
@@ -127,6 +130,8 @@ export default function OneTimeEarningsPage() {
     queryFn: () => api.get<Row[]>(`/api/v1/hrms/payroll/one-time-earnings${filter ? `?status=${filter}` : ""}`),
   });
   const rows = data?.data ?? [];
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const pageItems = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const createMut = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.post("/api/v1/hrms/payroll/one-time-earnings", body),
@@ -171,7 +176,7 @@ export default function OneTimeEarningsPage() {
         <div className="flex items-center gap-2">
           <Select
             value={filter}
-            onChange={(v) => setFilter(v as Status | "")}
+            onChange={(v) => { setFilter(v as Status | ""); setPage(1); }}
             options={[
               { value: "", label: "All status" },
               { value: "Pending", label: "Pending" },
@@ -228,6 +233,7 @@ export default function OneTimeEarningsPage() {
         ) : rows.length === 0 ? (
           <div className="py-12 text-center text-xs text-gray-500">No records yet.</div>
         ) : (
+          <>
           <table className="w-full text-xs">
             <thead>
               <tr className="text-table-head font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">
@@ -241,7 +247,7 @@ export default function OneTimeEarningsPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r, i) => (
+              {pageItems.map((r, i) => (
                 <tr key={r.id} className="row-stagger border-b border-gray-50 hover:bg-gray-50/50" style={{ ["--i" as never]: Math.min(i, 10) }}>
                   <td className="py-2 px-3">
                     <p className="text-[13px] font-medium text-gray-900">{r.employee ? `${r.employee.firstName} ${r.employee.lastName}` : "—"}</p>
@@ -301,6 +307,8 @@ export default function OneTimeEarningsPage() {
               ))}
             </tbody>
           </table>
+          <Pagination page={page} totalPages={totalPages} total={rows.length} limit={PAGE_SIZE} onPageChange={setPage} />
+          </>
         )}
       </div>
     </div>

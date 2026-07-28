@@ -1179,7 +1179,7 @@ function DirectoryView({ employees, hasActiveFilter, matchesFilters, roleById, v
   const byId = new Map(employees.map((e) => [e.id, e]));
 
   // ─── Pagination ────────────────────────────────────
-  const [pageSize, setPageSize] = useState<number>(25);
+  const [pageSize, setPageSize] = useState<number>(10);
   const [page, setPage] = useState<number>(1);
   const total = shown.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));

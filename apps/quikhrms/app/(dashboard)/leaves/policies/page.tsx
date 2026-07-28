@@ -178,7 +178,11 @@ interface Role {
 }
 
 export default function LeavePoliciesPage() {
-  const [tab, setTab] = useState<"types" | "groups" | "members" | "dashboard">("types");
+  // Deep-linkable via ?tab= (e.g. the setup checklist links to ?tab=members).
+  const [tab, setTab] = useState<"types" | "groups" | "members" | "dashboard">(() => {
+    const t = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("tab") : null;
+    return t === "groups" || t === "members" || t === "dashboard" ? t : "types";
+  });
   const { hasPermission, isLoading: permsLoading, navKeys, permissions } = useDashboardConfig();
   // Managing leave types & groups requires hrms.leave.manage (also enforced by
   // the API). The Leave Dashboard is separately grantable via
@@ -259,6 +263,8 @@ function LeaveTypesTab() {
   const qc = useQueryClient();
   const toast = useToast();
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [modal, setModal] = useState<{ open: boolean; item: LeaveTypeItem | null }>({ open: false, item: null });
   const emptyForm = {
     preset: "",
@@ -338,20 +344,23 @@ function LeaveTypesTab() {
   const filtered = (data?.data ?? []).filter((t) =>
     !search || t.name.toLowerCase().includes(search.toLowerCase()) || t.code.toLowerCase().includes(search.toLowerCase())
   );
+  const typeTotalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const typePageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <>
       <CrudTable
         title="Leave Types"
-        data={filtered}
+        data={typePageItems}
         columns={columns}
         isLoading={isLoading}
         onAdd={openAdd}
         onEdit={openEdit}
         onDelete={(id) => deleteMut.mutate(id)}
         search={search}
-        onSearchChange={setSearch}
+        onSearchChange={(v) => { setSearch(v); setPage(1); }}
         searchPlaceholder="Search leave types..."
+        pagination={{ page, totalPages: typeTotalPages, total: filtered.length, limit: PAGE_SIZE, onPageChange: setPage }}
       />
 
       <Modal

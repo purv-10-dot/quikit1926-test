@@ -13,7 +13,7 @@ import { resolveApprovalChainLevels } from "@/lib/services/approval-chain";
 import { getHierarchyAccessibleEmployeeIds, intersectEmployeeIds } from "@/lib/rbac/hierarchy";
 import { forbidden } from "@/lib/api-response";
 import { resolveActivePolicyRules, evaluateLeavePolicy, evaluateLeaveTypeColumns } from "@/lib/services/leave-policy-engine";
-import { getEmployeeLeaveRules } from "@/lib/services/employee-leave-rules";
+import { getEmployeeLeaveRules, resolveEmployeeLeaveGroup } from "@/lib/services/employee-leave-rules";
 import { attendanceDayStart } from "@/lib/attendance/day";
 import type { Prisma } from "@quikit/database";
 
@@ -234,6 +234,17 @@ export const POST = withServiceAuth(async (req: NextRequest, ctx) => {
     // `eff` is the effective rule set used by every check below; when the
     // employee is in no group (or the group has no rules for this type) it is
     // just the LeaveType row, so behaviour is unchanged.
+    // Group-based entitlement: an employee can only apply for the leave types
+    // offered by their ACTIVE leave group. No group → they have no entitlements
+    // and can't apply at all.
+    const leaveGroup = await resolveEmployeeLeaveGroup(orgId, employeeId, employeeRoleId);
+    if (!leaveGroup) {
+      return validationError("You aren't assigned to a leave group yet — please contact HR.");
+    }
+    if (!leaveGroup.leaveTypeIds.has(leaveType.id)) {
+      return validationError(`${leaveType.name} isn't available in your leave group.`);
+    }
+
     const groupRules = await getEmployeeLeaveRules(orgId, employeeId, employeeRoleId, leaveType.id);
     const eff = { ...leaveType, ...(groupRules ?? {}) };
 

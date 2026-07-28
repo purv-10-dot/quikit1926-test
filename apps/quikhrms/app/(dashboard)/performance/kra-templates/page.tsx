@@ -14,6 +14,7 @@ import { AssignKraModal } from "../kra-assignments/_assign-modal";
 import { clsx } from "clsx";
 import { SkeletonCards } from "@/components/hrms/skeleton";
 import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 
 interface Designation { id: string; title: string }
 interface Department { id: string; name: string }
@@ -48,6 +49,8 @@ export default function KraTemplatesPage() {
   const [filterDesignation, setFilterDesignation] = useState("");
   const [showInactive, setShowInactive] = useState(false);
   const [assignTarget, setAssignTarget] = useState<Scorecard | null>(null);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   const { data, isLoading } = useQuery({
     queryKey: ["performance", "kra-templates", filterDesignation, showInactive],
@@ -83,6 +86,8 @@ export default function KraTemplatesPage() {
   const scorecards = (data?.data ?? []).filter((s) =>
     !search || s.name.toLowerCase().includes(search.toLowerCase()),
   );
+  const totalPages = Math.max(1, Math.ceil(scorecards.length / PAGE_SIZE));
+  const pageItems = scorecards.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div className="w-full space-y-4">
@@ -112,7 +117,7 @@ export default function KraTemplatesPage() {
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             placeholder="Search scorecards…"
             className="w-full pl-8 pr-3 py-2 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#166534]/20 focus:border-[#166534]"
           />
@@ -120,7 +125,7 @@ export default function KraTemplatesPage() {
         <div className="w-56">
           <Select
             value={filterDesignation}
-            onChange={setFilterDesignation}
+            onChange={(v) => { setFilterDesignation(v); setPage(1); }}
             placeholder="All designations"
             options={[
               { value: "", label: "All designations" },
@@ -132,7 +137,7 @@ export default function KraTemplatesPage() {
           <input
             type="checkbox"
             checked={showInactive}
-            onChange={(e) => setShowInactive(e.target.checked)}
+            onChange={(e) => { setShowInactive(e.target.checked); setPage(1); }}
             className="rounded"
           />
           Show inactive
@@ -157,8 +162,9 @@ export default function KraTemplatesPage() {
           </Link>
         </div>
       ) : (
+        <>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {scorecards.map((sc) => {
+          {pageItems.map((sc) => {
             const kraCount = sc.kras.length;
             const kpiCount = sc.kras.reduce((s, k) => s + k.kpis.length, 0);
             return (
@@ -270,6 +276,8 @@ export default function KraTemplatesPage() {
             );
           })}
         </div>
+        <Pagination page={page} totalPages={totalPages} total={scorecards.length} limit={PAGE_SIZE} onPageChange={setPage} className="border-t-0 px-0" />
+        </>
       )}
 
       <AssignKraModal

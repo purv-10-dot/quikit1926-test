@@ -5,7 +5,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { BarChart3 } from "lucide-react";
 import { SkeletonCards } from "@/components/hrms/skeleton";
-import { ExpenseTabs } from "../_components/expense-tabs";
 import { PageHeader } from "@/components/hrms/ui/page-header";
 import { PageBackground } from "@/components/hrms/page-background";
 
@@ -49,7 +48,6 @@ export default function ExpenseReportsPage() {
           </div>
         }
       />
-      <div className="mb-5"><ExpenseTabs /></div>
 
       {isLoading ? <SkeletonCards count={3} /> : !r ? null : (
         <>
