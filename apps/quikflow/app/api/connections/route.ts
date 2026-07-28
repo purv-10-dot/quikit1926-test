@@ -16,9 +16,10 @@ const PROVIDERS = [
   "slack",
   "sheets",
   "webhook",
+  "fathom",
 ] as const;
 
-const EXTERNAL = new Set(["outlook", "teams", "gmail", "slack", "sheets", "webhook"]);
+const EXTERNAL = new Set(["outlook", "teams", "gmail", "slack", "sheets", "webhook", "fathom"]);
 
 /** GET /api/connections — apps/accounts this org's workflows can use. */
 export const GET = withOrgAuth(async ({ orgId }) => {

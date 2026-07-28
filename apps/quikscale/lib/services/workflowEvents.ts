@@ -499,3 +499,188 @@ export function emitGoalStatusChanged(input: GoalEventInput & { before: string |
     });
   }
 }
+
+/* ───────────────────────── Meeting Rhythm emitters ─────────────────────────
+ * Client Master / Client Members / Daily Huddle / Weekly Meeting → QuikFlow.
+ * Each carries `recordId` so the engine can record-load the row, plus
+ * `clientName` so {{trigger.clientName}} renders a real name (not the id).
+ */
+
+export interface ClientMasterInput {
+  orgId: string;
+  clientId: string;
+  name: string;
+}
+
+/** Emit `clientMaster.created` when a client is added to Client Master. */
+export function emitClientCreated(input: ClientMasterInput): void {
+  postEvent({
+    app: "quikscale",
+    event: "clientMaster.created",
+    orgId: input.orgId,
+    dedupeKey: `clientMaster.created:${input.clientId}`,
+    occurredAt: new Date().toISOString(),
+    data: { recordId: input.clientId, clientId: input.clientId, name: input.name, clientName: input.name },
+  });
+}
+
+/** Emit `clientMaster.updated` when a client's details change. */
+export function emitClientUpdated(input: ClientMasterInput): void {
+  postEvent({
+    app: "quikscale",
+    event: "clientMaster.updated",
+    orgId: input.orgId,
+    // Timestamped so each edit is a distinct run (not collapsed by dedup).
+    dedupeKey: `clientMaster.updated:${input.clientId}:${Date.now()}`,
+    occurredAt: new Date().toISOString(),
+    data: { recordId: input.clientId, clientId: input.clientId, name: input.name, clientName: input.name },
+  });
+}
+
+export interface ClientMemberInput {
+  orgId: string;
+  memberId: string;
+  name: string;
+  email: string;
+}
+
+/** Emit `clientMember.created` when a name + email is added. */
+export function emitClientMemberCreated(input: ClientMemberInput): void {
+  postEvent({
+    app: "quikscale",
+    event: "clientMember.created",
+    orgId: input.orgId,
+    dedupeKey: `clientMember.created:${input.memberId}`,
+    occurredAt: new Date().toISOString(),
+    data: { recordId: input.memberId, name: input.name, email: input.email },
+  });
+}
+
+export interface MeetingLoggedInput {
+  orgId: string;
+  meetingId: string;
+  clientId: string;
+  clientName: string | null;
+  meetingDate: string | Date | null;
+  callStatus: string;
+}
+
+function meetingData(input: MeetingLoggedInput, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  const meetingDate =
+    input.meetingDate instanceof Date ? input.meetingDate.toISOString() : input.meetingDate;
+  return {
+    recordId: input.meetingId,
+    clientId: input.clientId,
+    clientName: input.clientName,
+    meetingDate,
+    callStatus: input.callStatus,
+    ...extra,
+  };
+}
+
+/** Emit `dailyHuddle.logged` when a daily huddle row is created. */
+export function emitDailyHuddleLogged(input: MeetingLoggedInput): void {
+  postEvent({
+    app: "quikscale",
+    event: "dailyHuddle.logged",
+    orgId: input.orgId,
+    dedupeKey: `dailyHuddle.logged:${input.meetingId}`,
+    occurredAt: new Date().toISOString(),
+    data: meetingData(input),
+  });
+}
+
+/** Emit `weeklyMeeting.logged` when a weekly meeting row is created. */
+export function emitWeeklyMeetingLogged(input: MeetingLoggedInput): void {
+  postEvent({
+    app: "quikscale",
+    event: "weeklyMeeting.logged",
+    orgId: input.orgId,
+    dedupeKey: `weeklyMeeting.logged:${input.meetingId}`,
+    occurredAt: new Date().toISOString(),
+    data: meetingData(input),
+  });
+}
+
+export interface MeetingStatusChangedInput {
+  orgId: string;
+  meetingId: string;
+  clientId: string;
+  clientName: string | null;
+  before: string | null;
+  after: string;
+}
+
+/** Emit `dailyHuddle.status.changed` on a call-status transition (no-op skipped). */
+export function emitDailyHuddleStatusChanged(input: MeetingStatusChangedInput): void {
+  if (!input.after || input.before === input.after) return;
+  postEvent({
+    app: "quikscale",
+    event: "dailyHuddle.status.changed",
+    orgId: input.orgId,
+    dedupeKey: `dailyHuddle.status.changed:${input.meetingId}:${input.before}->${input.after}`,
+    occurredAt: new Date().toISOString(),
+    data: {
+      recordId: input.meetingId,
+      clientId: input.clientId,
+      clientName: input.clientName,
+      callStatus: input.after,
+      before: input.before,
+      after: input.after,
+    },
+  });
+}
+
+/** Emit `weeklyMeeting.status.changed` on a call-status transition (no-op skipped). */
+export function emitWeeklyMeetingStatusChanged(input: MeetingStatusChangedInput): void {
+  if (!input.after || input.before === input.after) return;
+  postEvent({
+    app: "quikscale",
+    event: "weeklyMeeting.status.changed",
+    orgId: input.orgId,
+    dedupeKey: `weeklyMeeting.status.changed:${input.meetingId}:${input.before}->${input.after}`,
+    occurredAt: new Date().toISOString(),
+    data: {
+      recordId: input.meetingId,
+      clientId: input.clientId,
+      clientName: input.clientName,
+      callStatus: input.after,
+      before: input.before,
+      after: input.after,
+    },
+  });
+}
+
+export interface TranscriptAttachedInput {
+  orgId: string;
+  type: "DAILY" | "WEEKLY";
+  meetingId: string;
+  clientId: string;
+  clientName: string | null;
+  meetingDate: string | Date | null;
+  recordingId: string;
+}
+
+/**
+ * Emit `dailyHuddle.transcript.attached` / `weeklyMeeting.transcript.attached`
+ * when a Fathom transcript is matched to a concrete meeting row — lets users
+ * chain "transcript attached → create WWW from action items", etc.
+ */
+export function emitMeetingTranscriptAttached(input: TranscriptAttachedInput): void {
+  const event = input.type === "DAILY" ? "dailyHuddle.transcript.attached" : "weeklyMeeting.transcript.attached";
+  const meetingDate = input.meetingDate instanceof Date ? input.meetingDate.toISOString() : input.meetingDate;
+  postEvent({
+    app: "quikscale",
+    event,
+    orgId: input.orgId,
+    dedupeKey: `${event}:${input.meetingId}:${input.recordingId}`,
+    occurredAt: new Date().toISOString(),
+    data: {
+      recordId: input.meetingId,
+      clientId: input.clientId,
+      clientName: input.clientName,
+      meetingDate,
+      recordingId: input.recordingId,
+    },
+  });
+}

@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import { Mail, Plug, Trash2, CheckCircle2, AlertCircle, Send } from "lucide-react";
+import { Mail, Plug, Trash2, CheckCircle2, AlertCircle, Send, Video, KeyRound, X } from "lucide-react";
 import { apiGet, apiSend } from "@/lib/client/fetcher";
 import { StatusPill } from "@/components/ui/status-pill";
 import { LoadingState, ErrorState } from "@/components/ui/page-states";
@@ -14,6 +14,8 @@ const MAIL_PROVIDERS: { id: string; name: string; blurb: string; accent: string 
   { id: "gmail", name: "Gmail", blurb: "Send email from & trigger on a connected Google account.", accent: "text-red-500" },
   { id: "outlook", name: "Outlook", blurb: "Send email from & trigger on a connected Microsoft account.", accent: "text-blue-500" },
 ];
+
+const FATHOM_PROVIDER = "fathom";
 
 const LABELS: Record<string, string> = {
   quikscale: "QuikScale",
@@ -27,6 +29,7 @@ const LABELS: Record<string, string> = {
   slack: "Slack",
   sheets: "Google Sheets",
   webhook: "Webhook",
+  fathom: "Fathom.ai",
 };
 
 export default function IntegrationsPage() {
@@ -50,6 +53,7 @@ function IntegrationsInner() {
       ? { ok: false, text: `Couldn't connect: ${params.get("error")}` }
       : null;
   const [banner, setBanner] = useState<Banner>(null);
+  const [fathomOpen, setFathomOpen] = useState(false);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["connections"],
@@ -94,8 +98,12 @@ function IntegrationsInner() {
   });
 
   const sendTest = useMutation({
-    mutationFn: (id: string) => apiSend<{ to: string }>("/api/connections/test", "POST", { id }),
-    onSuccess: (d) => setBanner({ ok: true, text: `Test email sent to ${d.to}. Check the inbox.` }),
+    mutationFn: (id: string) => apiSend<{ to?: string; ok?: boolean; label?: string }>("/api/connections/test", "POST", { id }),
+    onSuccess: (d) =>
+      setBanner({
+        ok: true,
+        text: d.to ? `Test email sent to ${d.to}. Check the inbox.` : `Connection verified${d.label ? ` (${d.label})` : ""}.`,
+      }),
     onError: (e) => setBanner({ ok: false, text: `Test failed: ${(e as Error).message}` }),
   });
 
@@ -103,7 +111,10 @@ function IntegrationsInner() {
 
   const byProvider = (provider: string) => (data ?? []).filter((c) => c.provider === provider);
   const mailProviderIds = new Set(MAIL_PROVIDERS.map((p) => p.id));
-  const otherConnections = (data ?? []).filter((c) => !mailProviderIds.has(c.provider));
+  const otherConnections = (data ?? []).filter(
+    (c) => !mailProviderIds.has(c.provider) && c.provider !== FATHOM_PROVIDER,
+  );
+  const fathomAccounts = byProvider(FATHOM_PROVIDER);
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -204,6 +215,70 @@ function IntegrationsInner() {
             })}
           </div>
 
+          {/* ── Meeting intelligence (Fathom.ai) ─────────────────────────── */}
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
+            Meeting intelligence
+          </h2>
+          <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-5">
+              <div className="flex items-center gap-3">
+                <Video className="h-6 w-6 text-violet-500" />
+                <div>
+                  <p className="font-semibold">Fathom.ai</p>
+                  <p className="text-xs text-gray-500">
+                    Auto-save Daily Huddle &amp; Weekly Meeting transcripts into QuikScale.
+                  </p>
+                </div>
+              </div>
+
+              {fathomAccounts.length > 0 ? (
+                <ul className="mt-4 space-y-2">
+                  {fathomAccounts.map((c) => (
+                    <li
+                      key={c.id}
+                      className="flex items-center justify-between rounded-lg bg-[var(--color-bg-secondary)] px-3 py-2"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{c.label}</p>
+                        <StatusPill status={c.status} />
+                      </div>
+                      <div className="ml-3 flex shrink-0 items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => sendTest.mutate(c.id)}
+                          disabled={sendTest.isPending}
+                          title="Verify the API key"
+                          className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium text-accent-700 hover:bg-accent-50 disabled:opacity-50"
+                        >
+                          <Send className="h-3.5 w-3.5" />
+                          {sendTest.isPending && sendTest.variables === c.id ? "Testing…" : "Test"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => disconnect.mutate(c.id)}
+                          disabled={disconnect.isPending}
+                          title="Disconnect"
+                          className="rounded-md p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+
+              <button
+                type="button"
+                onClick={() => setFathomOpen(true)}
+                className="mt-4 inline-flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white hover:bg-accent-700"
+              >
+                <KeyRound className="h-4 w-4" />
+                {fathomAccounts.length > 0 ? "Connect another account" : "Connect Fathom"}
+              </button>
+            </div>
+          </div>
+
           {/* ── Other connections ────────────────────────────────────────── */}
           {otherConnections.length > 0 ? (
             <>
@@ -230,6 +305,122 @@ function IntegrationsInner() {
           ) : null}
         </>
       ) : null}
+
+      {fathomOpen ? (
+        <FathomConnectModal
+          onClose={() => setFathomOpen(false)}
+          onConnected={(label) => {
+            setFathomOpen(false);
+            setBanner({ ok: true, text: `Connected ${label} successfully.` });
+            void qc.invalidateQueries({ queryKey: ["connections"] });
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/** API-key connect modal for Fathom (no OAuth popup — Fathom uses an API key). */
+function FathomConnectModal({
+  onClose,
+  onConnected,
+}: {
+  onClose: () => void;
+  onConnected: (label: string) => void;
+}) {
+  const [apiKey, setApiKey] = useState("");
+  const [label, setLabel] = useState("");
+  const [webhookSecret, setWebhookSecret] = useState("");
+
+  const connect = useMutation({
+    mutationFn: () =>
+      apiSend<{ id: string; label: string }>("/api/connections/fathom", "POST", {
+        apiKey: apiKey.trim(),
+        ...(label.trim() ? { label: label.trim() } : {}),
+        ...(webhookSecret.trim() ? { webhookSecret: webhookSecret.trim() } : {}),
+      }),
+    onSuccess: (d) => onConnected(d.label),
+  });
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="w-full max-w-md rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-6 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+      >
+        <div className="mb-4 flex items-start justify-between">
+          <div className="flex items-center gap-2">
+            <Video className="h-5 w-5 text-violet-500" />
+            <h3 className="text-lg font-semibold">Connect Fathom.ai</h3>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-md p-1 text-gray-400 hover:bg-gray-100">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <p className="mb-4 text-sm text-gray-500">
+          Paste an API key from Fathom → Settings → Integrations / API. We validate it and store it encrypted.
+        </p>
+
+        <label className="mb-1 block text-xs font-medium text-gray-600">Fathom API key</label>
+        <input
+          type="password"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          placeholder="fathom_sk_…"
+          autoFocus
+          className="mb-3 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent-400"
+        />
+
+        <label className="mb-1 block text-xs font-medium text-gray-600">Label (optional)</label>
+        <input
+          type="text"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder="e.g. Success Alchemists — Fathom"
+          className="mb-3 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent-400"
+        />
+
+        <label className="mb-1 block text-xs font-medium text-gray-600">
+          Webhook signing secret (optional)
+        </label>
+        <input
+          type="password"
+          value={webhookSecret}
+          onChange={(e) => setWebhookSecret(e.target.value)}
+          placeholder="whsec_… (only for real-time webhooks)"
+          className="mb-4 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent-400"
+        />
+
+        {connect.isError ? (
+          <p className="mb-3 text-sm text-red-600">{(connect.error as Error).message}</p>
+        ) : null}
+
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => connect.mutate()}
+            disabled={connect.isPending || apiKey.trim().length < 10}
+            className="inline-flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white hover:bg-accent-700 disabled:opacity-50"
+          >
+            <Plug className="h-4 w-4" />
+            {connect.isPending ? "Connecting…" : "Connect"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

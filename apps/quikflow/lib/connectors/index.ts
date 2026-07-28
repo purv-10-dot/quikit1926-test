@@ -79,6 +79,65 @@ export async function saveMailConnection(
   return row;
 }
 
+/* ----------------------------- API-key providers ---------------------------- */
+/**
+ * Non-OAuth, non-mail providers (Fathom.ai today) authenticate with a single
+ * API key. We reuse WfConnection's encrypted columns: `accessToken` holds the
+ * encrypted API key, `refreshToken` optionally holds an encrypted webhook
+ * signing secret. `expiresAt` stays null (API keys don't expire).
+ */
+export const FATHOM_PROVIDER_ID = "fathom" as const;
+
+/** Upsert an API-key connection (encrypted at rest). One row per (org, provider, label). */
+export async function saveApiKeyConnection(
+  orgId: string,
+  userId: string,
+  provider: string,
+  label: string,
+  apiKey: string,
+  opts?: { webhookSecret?: string },
+): Promise<{ id: string; label: string }> {
+  const encKey = encryptSecret(apiKey);
+  const encWebhook = opts?.webhookSecret ? encryptSecret(opts.webhookSecret) : undefined;
+  return db.wfConnection.upsert({
+    where: { orgId_provider_label: { orgId, provider: provider as never, label } },
+    create: {
+      orgId,
+      provider: provider as never,
+      label,
+      status: "connected",
+      createdBy: userId,
+      accessToken: encKey,
+      refreshToken: encWebhook ?? null,
+      scopes: [],
+      expiresAt: null,
+    },
+    update: {
+      status: "connected",
+      accessToken: encKey,
+      ...(encWebhook ? { refreshToken: encWebhook } : {}),
+    },
+    select: { id: true, label: true },
+  });
+}
+
+/** Decrypt the API key for an org's first connected Fathom account (or null). */
+export async function getFathomKey(
+  orgId: string,
+): Promise<{ id: string; apiKey: string; webhookSecret: string | null } | null> {
+  const conn = await db.wfConnection.findFirst({
+    where: { orgId, provider: FATHOM_PROVIDER_ID as never, status: "connected" },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, accessToken: true, refreshToken: true },
+  });
+  if (!conn?.accessToken) return null;
+  return {
+    id: conn.id,
+    apiKey: decryptSecret(conn.accessToken),
+    webhookSecret: conn.refreshToken ? decryptSecret(conn.refreshToken) : null,
+  };
+}
+
 const EXPIRY_SKEW_MS = 60_000;
 
 /**

@@ -16,6 +16,7 @@ import { handleEvent } from "@/worker/handler";
 import { runSchedulerTick } from "@/worker/scheduler";
 import { runDateScan } from "@/worker/date-scan";
 import { runMailScan } from "@/worker/mail-scan";
+import { runFathomScan } from "@/worker/fathom-scan";
 import type { EngineEvent } from "@/lib/engine/types";
 
 /** Calendar day (UTC) of the last date-scan, so it runs ~once/day, not every tick. */
@@ -51,6 +52,17 @@ async function main() {
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error("[mail-scan] failed:", err instanceof Error ? err.message : err);
+      }
+      // Fathom.ai: poll connected accounts for new meeting transcripts (~60s).
+      try {
+        const fathom = await runFathomScan();
+        if (fathom.fired > 0) {
+          // eslint-disable-next-line no-console
+          console.log(`[fathom-scan] enqueued ${fathom.fired} meeting transcript event(s)`);
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("[fathom-scan] failed:", err instanceof Error ? err.message : err);
       }
       // Relative-date triggers: heavy scan, so only once per UTC day.
       const today = new Date().toISOString().slice(0, 10);

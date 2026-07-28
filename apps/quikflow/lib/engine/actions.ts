@@ -515,6 +515,51 @@ function setOpspStatus(target: "finalized" | "reviewed"): ActionExecutor {
   };
 }
 
+/**
+ * REAL: save a Fathom meeting transcript into QuikScale. Forwards the whole
+ * normalized meeting payload (from the `fathom.meeting.transcribed` event) to
+ * QuikScale's save-transcript endpoint, which owns the client/type/date MATCHING
+ * (business logic stays in the owning app). Builder params can override the
+ * match (clientId / type / meetingDate) for manual pinning. Idempotent on
+ * (orgId, recordingId) server-side. Skips cleanly if there's no recording id.
+ */
+const saveTranscript: ActionExecutor = async (ctx) => {
+  const p = ctx.params ?? {};
+  const d = ctx.event.data;
+  const recordingId = firstString(p.recordingId, d.recordingId);
+  if (!recordingId) return skipStep("No Fathom recordingId in event or params");
+
+  const res = await callQuikScale("/api/internal/actions/save-transcript", {
+    orgId: ctx.orgId,
+    actorId: actorFor(ctx),
+    recordingId,
+    title: firstString(p.title, d.title),
+    startedAt: firstString(d.startedAt),
+    endedAt: firstString(d.endedAt),
+    durationMinutes: numOrNull(d.durationMinutes),
+    attendees: Array.isArray(d.attendees) ? d.attendees : [],
+    recordingUrl: firstString(d.recordingUrl),
+    rawText: firstString(d.transcriptText, d.rawText),
+    summary: firstString(d.summary),
+    actionItems: Array.isArray(d.actionItems) ? d.actionItems : [],
+    // Optional manual overrides from the builder's action params.
+    clientId: firstString(p.clientId) ?? undefined,
+    type: firstString(p.type) ?? undefined,
+    meetingDate: firstString(p.meetingDate) ?? undefined,
+  });
+  if (!res.ok) return { status: "failed", error: res.error };
+  return {
+    status: "ok",
+    output: {
+      saved: true,
+      transcriptId: res.data?.id,
+      matchStatus: res.data?.matchStatus,
+      clientId: res.data?.clientId,
+      type: res.data?.type,
+    },
+  };
+};
+
 const REGISTRY: Record<string, ActionExecutor> = {
   // Legacy ids (existing saved workflows) + spec ids (builder catalog) both map
   // to the real executors so either authoring path actually fires.
@@ -543,6 +588,8 @@ const REGISTRY: Record<string, ActionExecutor> = {
   "www.bulk.import": bulkImportWww,
   "opsp.finalize": setOpspStatus("finalized"),
   "opsp.review.mark": setOpspStatus("reviewed"),
+  // Fathom.ai → QuikScale meeting transcript.
+  "quikscale.save_transcript": saveTranscript,
 };
 
 /** Resolve an executor for an action id, falling back to the simulator. */

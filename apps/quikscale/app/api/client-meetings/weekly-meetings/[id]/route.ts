@@ -9,6 +9,7 @@ import {
   diffFields,
   WEEKLY_MEETING_AUDIT_FIELDS,
 } from "@/lib/audit";
+import { emitWeeklyMeetingStatusChanged } from "@/lib/services/workflowEvents";
 
 const withOrgAuth = withOrgAuthForModule("clientMeetings.weeklyMeeting");
 
@@ -109,6 +110,7 @@ export const PUT = withOrgAuth<{ id: string }>(
         dashboardNAMembers: { select: { userId: true } },
         absentTeamMembers: { select: { clientMemberId: true } },
         dashboardNATeamMembers: { select: { clientMemberId: true } },
+        client: { select: { name: true } },
       },
     });
     if (!existing)
@@ -411,6 +413,15 @@ export const PUT = withOrgAuth<{ id: string }>(
         ...requestContext(request),
       });
     }
+
+    emitWeeklyMeetingStatusChanged({
+      orgId,
+      meetingId: params.id,
+      clientId: existing.clientId,
+      clientName: existing.client?.name ?? null,
+      before: existing.callStatus,
+      after: d.callStatus ?? existing.callStatus,
+    });
 
     return NextResponse.json({ success: true });
   }

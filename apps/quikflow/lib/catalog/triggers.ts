@@ -13,6 +13,7 @@
  */
 import { MODULES, MODULE_APP } from "./modules";
 import { MAIL_APP } from "./mail";
+import { FATHOM_APP } from "./fathom";
 
 export type Pillar = "Global" | "Execution" | "Strategy" | "People" | "AI" | "Admin";
 export type EventScope = "Org" | "User" | "Workflow";
@@ -53,6 +54,7 @@ const QUIKSCALE_EVENTS: CatalogEvent[] = MODULES.flatMap((m) =>
 export const TRIGGER_CATALOG: CatalogApp[] = [
   { slug: MODULE_APP.slug, name: MODULE_APP.name, events: QUIKSCALE_EVENTS },
   MAIL_APP,
+  FATHOM_APP,
   { slug: "quikcrm", name: "QuikCRM", comingSoon: true, events: [] },
   { slug: "quikhrms", name: "QuikHRMS", comingSoon: true, events: [] },
   { slug: "quikinfra", name: "QuikInfra", comingSoon: true, events: [] },

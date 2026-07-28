@@ -65,6 +65,7 @@ export const ACTION_CATALOG: CatalogAction[] = [
 
   // ── Data / Integrations ──────────────────────────────────────────────────
   { id: "webhook.post", label: "POST to a webhook URL", category: "Data", doesWhat: "POST to a webhook URL", requiredInputs: ["url", "payload{}"], optionalInputs: ["headers"], permission: "webhook.send", output: "{ status, body }", real: true },
+  { id: "quikscale.save_transcript", label: "Save meeting transcript to QuikScale", category: "Data", doesWhat: "Match a Fathom meeting to a client & save its transcript into Meeting Rhythm", requiredInputs: [], optionalInputs: ["recordingId", "clientId", "type", "meetingDate"], permission: "clientMeetings.write", output: "{ transcriptId, matchStatus }", real: true },
   { id: "zapier.emit", label: "Fire a Zapier hook", category: "Data", doesWhat: "Fire Zapier hook", requiredInputs: ["hook_id", "payload{}"], optionalInputs: [], permission: "integration:zapier", output: "{ emitted }" },
   { id: "integration.gsheet.append", label: "Append a row to Google Sheets", category: "Data", doesWhat: "Append row to Google Sheet", requiredInputs: ["sheet_id", "row[]"], optionalInputs: [], permission: "integration:gsheet", output: "{ row_index }" },
   { id: "integration.stripe.pull", label: "Pull a metric from Stripe", category: "Data", doesWhat: "Pull metric from Stripe", requiredInputs: ["metric", "date_range"], optionalInputs: [], permission: "integration:stripe", output: "{ value }" },

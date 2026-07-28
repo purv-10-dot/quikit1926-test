@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { db } from "@/lib/db";
-import { sendMailForOrg } from "@/lib/connectors";
+import { sendMailForOrg, getFathomKey, FATHOM_PROVIDER_ID } from "@/lib/connectors";
+import { validateKey } from "@/lib/connectors/fathom";
 
 export const runtime = "nodejs";
 
@@ -25,6 +26,20 @@ export const POST = withOrgAuth(
     if (!conn) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
+
+    // Fathom is an API-key notetaker (not a mailbox): "test" = re-validate the key.
+    if (conn.provider === FATHOM_PROVIDER_ID) {
+      const key = await getFathomKey(orgId);
+      if (!key) {
+        return NextResponse.json({ success: false, error: "No Fathom key stored" }, { status: 400 });
+      }
+      const check = await validateKey(key.apiKey);
+      if (!check.ok) {
+        return NextResponse.json({ success: false, error: check.error ?? "Fathom key invalid" }, { status: 502 });
+      }
+      return NextResponse.json({ success: true, data: { ok: true, provider: conn.provider, label: conn.label } });
+    }
+
     try {
       const sent = await sendMailForOrg(
         orgId,

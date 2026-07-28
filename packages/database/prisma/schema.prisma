@@ -194,6 +194,7 @@ model Org {
   clientDailyHuddles       ClientDailyHuddle[]
   clientMembers            ClientMember[]
   clientWeeklyMeetings     ClientWeeklyMeeting[]
+  clientMeetingTranscripts ClientMeetingTranscript[]
   feedbackEntries          FeedbackEntry[]
   goals                    Goal[]
   habits                   HabitAssessment[]
@@ -1144,6 +1145,7 @@ model Client {
   memberships     ClientMembership[]
   teamMembers     ClientTeamMember[]
   weeklyMeetings  ClientWeeklyMeeting[]
+  meetingTranscripts ClientMeetingTranscript[]
 
   // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
   position        Float?
@@ -1254,6 +1256,7 @@ model ClientDailyHuddle {
   org                 Org                            @relation(fields: [orgId], references: [id], onDelete: Cascade)
   absentMembers       ClientDailyHuddleAbsence[]
   absentTeamMembers   ClientDailyHuddleTeamAbsence[]
+  transcripts         ClientMeetingTranscript[]
 
   // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
   position            Float?
@@ -1344,6 +1347,7 @@ model ClientWeeklyMeeting {
   absentTeamMembers      ClientWeeklyMeetingTeamAbsence[]
   dashboardNATeamMembers ClientWeeklyMeetingTeamDashboardNA[]
   memberScores           ClientWeeklyMemberScore[]
+  transcripts            ClientMeetingTranscript[]
 
   // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
   position               Float?
@@ -1968,6 +1972,72 @@ enum ClientMeetingStatus {
   HOLIDAY_FOR_SUCCESS_ALCHEMIST
   OTHER
 
+  @@schema("app_quikscale")
+}
+
+/// Which meeting-rhythm cadence a transcript belongs to.
+enum MeetingTranscriptType {
+  DAILY
+  WEEKLY
+
+  @@schema("app_quikscale")
+}
+
+/// How confidently an inbound transcript was matched to a client + meeting.
+/// UNMATCHED / AMBIGUOUS rows land in the "Unassigned" bucket in the UI.
+enum MeetingTranscriptMatch {
+  MATCHED
+  AMBIGUOUS
+  UNMATCHED
+
+  @@schema("app_quikscale")
+}
+
+/// Meeting transcript captured by a third-party notetaker (Fathom.ai today,
+/// `source` allows others later) and matched to a QuikScale client + meeting
+/// by QuikFlow. Greenfield — modelled on VCMeetingTranscript (rawText + Json).
+/// clientId/type/meetingDate are nullable so an unmatched transcript is still
+/// persisted (never dropped). dailyHuddleId/weeklyMeetingId link to the concrete
+/// meeting row when one already exists for that client+date.
+model ClientMeetingTranscript {
+  id               String                 @id @default(cuid())
+  orgId            String
+  clientId         String?
+  type             MeetingTranscriptType?
+  meetingDate      DateTime?
+  dailyHuddleId    String?
+  weeklyMeetingId  String?
+  /// Stable id of the recording in the source system — dedup key.
+  fathomRecordingId String
+  title            String?
+  recordingUrl     String?
+  startedAt        DateTime?
+  endedAt          DateTime?
+  durationMinutes  Int?
+  /// [{ name, email }] snapshot of meeting participants from the source.
+  attendees        Json?
+  rawText          String?                @db.Text
+  summary          String?                @db.Text
+  /// [{ text, assignee?, dueDate? }] action items from the source, if any.
+  actionItems      Json?
+  matchStatus      MeetingTranscriptMatch @default(MATCHED)
+  source           String                 @default("fathom")
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  createdBy        String
+  updatedBy        String?
+  deletedAt        DateTime?
+  org              Org                    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  client           Client?                @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  dailyHuddle      ClientDailyHuddle?     @relation(fields: [dailyHuddleId], references: [id], onDelete: SetNull)
+  weeklyMeeting    ClientWeeklyMeeting?   @relation(fields: [weeklyMeetingId], references: [id], onDelete: SetNull)
+
+  @@unique([orgId, fathomRecordingId])
+  @@index([orgId])
+  @@index([orgId, clientId, type, meetingDate])
+  @@index([orgId, matchStatus])
+  @@index([clientId])
+  @@index([deletedAt])
   @@schema("app_quikscale")
 }
 
@@ -19155,6 +19225,7 @@ enum WfProvider {
   slack
   sheets
   webhook
+  fathom
 
   @@schema("app_quikflow")
 }

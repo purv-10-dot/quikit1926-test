@@ -6,6 +6,7 @@ import { createClientSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { toErrorMessage } from "@/lib/api/errors";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { audit, requestContext } from "@/lib/audit";
+import { emitClientCreated } from "@/lib/services/workflowEvents";
 import { parseSort, type SortDirection } from "@/lib/api/parseSort";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { searchUserIds, dateSearchConditions, timeSearchTokens, activeBooleanFromSearch, commaTokens } from "@/lib/api/listSearch";
@@ -254,6 +255,9 @@ export const POST = auth.create(async ({ orgId, userId }, request) => {
       },
       ...requestContext(request),
     });
+
+    // Fire-and-forget QuikFlow event (gated by QUIKFLOW_EVENTS_ENABLED).
+    emitClientCreated({ orgId, clientId: created.id, name: created.name });
 
     return NextResponse.json({ success: true, data: { id: created.id } }, { status: 201 });
   } catch (error: unknown) {

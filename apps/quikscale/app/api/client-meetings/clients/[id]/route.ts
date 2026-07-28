@@ -5,6 +5,7 @@ import { updateClientSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { toErrorMessage } from "@/lib/api/errors";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { audit, requestContext, classifyUpdateAction, diffFields, CLIENT_AUDIT_FIELDS } from "@/lib/audit";
+import { emitClientUpdated } from "@/lib/services/workflowEvents";
 
 // RBAC v2: same per-action gate as the list endpoint. View/update/delete are
 // gated by the corresponding ClientMaster permission grants on the caller's
@@ -170,6 +171,11 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, request
       skipIfNoChanges: true,
       ...requestContext(request),
     });
+
+    // Fire a QuikFlow event only when something actually changed.
+    if (auditChanges.length) {
+      emitClientUpdated({ orgId, clientId: params.id, name: newSnapshot.name });
+    }
 
     return NextResponse.json({ success: true });
   } catch (error: unknown) {

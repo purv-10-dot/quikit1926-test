@@ -10,6 +10,7 @@ import { MODULES, moduleForEvent, moduleByKey, fieldsUsableIn, type FieldDef, ty
 import { ACTION_CATALOG, ACTION_CATEGORY_ORDER, type CatalogAction } from "./actions";
 import { toEngineType, type SemanticType } from "./field-types";
 import { MAIL_APP_SLUG, MAIL_CONDITION_FIELDS } from "./mail";
+import { FATHOM_APP_SLUG, FATHOM_CONDITION_FIELDS, FATHOM_ACTION_IDS } from "./fathom";
 
 export * from "./triggers";
 export * from "./conditions";
@@ -82,6 +83,16 @@ export function conditionFieldsForEvent(slug: string, eventId: string): Conditio
   // Third-party mail events read straight off the payload — no module record.
   if (slug === MAIL_APP_SLUG) {
     return MAIL_CONDITION_FIELDS.map((f) => ({
+      id: f.id,
+      label: f.label,
+      type: f.type,
+      semanticType: f.semanticType,
+      values: f.values ? [...f.values] : undefined,
+    }));
+  }
+  // Fathom meeting events likewise read straight off the payload.
+  if (slug === FATHOM_APP_SLUG) {
+    return FATHOM_CONDITION_FIELDS.map((f) => ({
       id: f.id,
       label: f.label,
       type: f.type,
@@ -169,6 +180,11 @@ export function allConditionFields(): (ConditionField & { module: string })[] {
 export function actionsForModuleKey(moduleKey: string | undefined): { category: string; actions: CatalogAction[] }[] {
   const mod = moduleKey ? moduleByKey(moduleKey) : undefined;
   const allowed = mod ? new Set(mod.actionIds) : null;
+  return actionsForAllowed(allowed);
+}
+
+/** Group ACTION_CATALOG by category, optionally filtered to an allow-set. */
+function actionsForAllowed(allowed: Set<string> | null): { category: string; actions: CatalogAction[] }[] {
   return ACTION_CATEGORY_ORDER.map((category) => ({
     category,
     actions: ACTION_CATALOG.filter((a) => a.category === category && (!allowed || allowed.has(a.id))),
@@ -180,6 +196,9 @@ export function actionsForEvent(app: string, eventId: string): { category: strin
   // Mail triggers aren't tied to a QuikScale module — offer the full catalog
   // (send a reply, create a priority, POST a webhook, …).
   if (app === MAIL_APP_SLUG) return actionsForModuleKey(undefined);
+  // Fathom triggers offer a curated short list (Save transcript first), not the
+  // whole catalog — so the relevant action isn't buried under simulated ones.
+  if (app === FATHOM_APP_SLUG) return actionsForAllowed(new Set(FATHOM_ACTION_IDS));
   if (app !== "quikscale") return [];
   return actionsForModuleKey(moduleForEvent(eventId)?.key);
 }

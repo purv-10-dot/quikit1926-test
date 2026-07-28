@@ -14,7 +14,10 @@ import { KPI_MODULE } from "./kpi";
 import { TEAMSKPI_MODULE } from "./teamskpi";
 import { PRIORITY_MODULE } from "./priority";
 import { OPSP_MODULE } from "./opsp";
-import { MEETING_MODULE } from "./meeting";
+import { CLIENT_MASTER_MODULE } from "./client";
+import { CLIENT_MEMBERS_MODULE } from "./client-members";
+import { DAILY_HUDDLE_MODULE } from "./daily-huddle";
+import { WEEKLY_MEETING_MODULE } from "./weekly-meeting";
 import { HABIT_MODULE } from "./habit";
 import { REVIEW_MODULE } from "./review";
 import { GOAL_MODULE } from "./goal";
@@ -32,7 +35,10 @@ export const MODULES: ModuleDef[] = [
   TEAMSKPI_MODULE,
   PRIORITY_MODULE,
   OPSP_MODULE,
-  MEETING_MODULE,
+  CLIENT_MASTER_MODULE,
+  CLIENT_MEMBERS_MODULE,
+  DAILY_HUDDLE_MODULE,
+  WEEKLY_MEETING_MODULE,
   HABIT_MODULE,
   REVIEW_MODULE,
   GOAL_MODULE,
