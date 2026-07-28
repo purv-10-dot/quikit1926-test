@@ -336,7 +336,11 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
     closedDate: form.closedDate && form.closedDate < todayStr
       ? "Timeline to close can’t be in the past." : "",
   };
-  const compRequiredFilled = form.experienceMin != null && form.experienceMax != null && form.salaryMin != null && form.salaryMax != null;
+  // Experience + salary ranges are required for NEW requisitions. Edits of older
+  // requisitions (created before these fields existed / left blank) aren't forced
+  // — mirrors the questionsOk edit exemption below. Cross-field checks (compErrors)
+  // are still enforced in step3Valid regardless.
+  const compRequiredFilled = isEdit || (form.experienceMin != null && form.experienceMax != null && form.salaryMin != null && form.salaryMax != null);
   const step3Valid = compRequiredFilled && !compErrors.exp && !compErrors.salary && !compErrors.budget && !compErrors.targetJoiningDate && !compErrors.closedDate;
   // At least one technical question is required for NEW requisitions. Edits of
   // older requisitions (created before this field existed) aren't forced.
@@ -596,6 +600,11 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                   {compErrors.budget && <li className={errText}>{compErrors.budget}</li>}
                 </ul>
               )}
+              {/* Explain why Next is disabled when the required ranges are blank
+                  (only for NEW requisitions — edits are exempt above). */}
+              {!compRequiredFilled && (
+                <p className={clsx(errText, "mt-1.5")}>Experience and salary range are required.</p>
+              )}
             </div>
             <div>
               <p className={clsx(reqSection, "mb-2")}>Planning & Budget</p>
@@ -739,15 +748,8 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                       }
                     }
                   }}
-                  // Commit a typed skill when leaving the field (e.g. clicking Save),
-                  // so a skill isn't silently lost if the user forgets to "+ Add".
-                  onBlur={() => {
-                    const s = skillDraft.trim();
-                    if (s && !form.skillWeights.some((x) => x.skill.toLowerCase() === s.toLowerCase())) {
-                      setForm((p) => ({ ...p, skillWeights: [...p.skillWeights, { skill: s, weight: weightDraft }] }));
-                      setSkillDraft("");
-                    }
-                  }}
+                  // Only commit on Enter or the "+ Add" button — no onBlur add, so
+                  // clicking Next/Save doesn't silently push a half-typed skill.
                   placeholder="e.g., React, AWS, System Design"
                   className="flex-1 border border-gray-300 rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-green-500" />
                 <div className="flex items-center gap-1">
@@ -855,9 +857,8 @@ function BulletListField({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
-          // Commit typed-but-not-added text when leaving the field (e.g. clicking
-          // Next), so users don't silently lose an item they forgot to "+".
-          onBlur={add}
+          // Commit only on Enter or the "+" button — no onBlur add, so clicking
+          // Next doesn't silently push a half-typed entry.
           placeholder={placeholder}
           className="flex-1 px-2.5 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500"
         />

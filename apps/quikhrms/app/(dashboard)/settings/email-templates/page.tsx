@@ -13,6 +13,7 @@ import { clsx } from "clsx";
 import { EMAIL_EVENTS, GROUPS, EMAIL_EVENT_MAP, allowedVarNames } from "@/lib/email/registry";
 import { findUnknownVars } from "@/lib/email/validate-vars";
 import { Modal } from "@/components/hrms/modal";
+import { PageBackground } from "@/components/hrms/page-background";
 
 // This screen customizes the Email channel only. Every event falls back to the
 // branded code default when no override is saved (see lib/email/resolve.ts).
@@ -48,6 +49,7 @@ export default function EmailTemplatesPage() {
   const [previewInline, setPreviewInline] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [previewModal, setPreviewModal] = useState(false);
+  const [resetConfirm, setResetConfirm] = useState(false);
   const [lastFocused, setLastFocused] = useState<"subject" | "body">("body");
 
   const subjectRef = useRef<HTMLInputElement>(null);
@@ -252,7 +254,9 @@ export default function EmailTemplatesPage() {
   );
 
   return (
-    <div className="flex flex-col gap-4 h-[calc(100vh-10.5rem)]">
+    <div className="flex flex-col gap-4 h-[calc(100vh-7rem)]">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       {/* ── Header ─────────────────────────────────────────────── */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex items-center gap-3 shrink-0">
         <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center shadow-sm shrink-0">
@@ -364,23 +368,50 @@ export default function EmailTemplatesPage() {
             </div>
           ) : (
             <div className="flex flex-col flex-1 min-h-0">
-              {/* Editor header */}
-              <div className="px-5 py-4 border-b border-gray-100 flex items-start gap-3 shrink-0">
-                <div className="min-w-0">
-                  <h2 className="text-[15px] font-semibold text-gray-900 truncate">{event.label}</h2>
-                  <p className="text-[11px] text-gray-500 mt-0.5">
-                    <span className="font-mono">{event.key}</span> · {event.group}
-                  </p>
+              {/* Editor header — title, status, and the variable chips inline
+                  (moved here from the body to give the editor more height). */}
+              <div className="px-5 py-3.5 border-b border-gray-100 shrink-0 space-y-2.5">
+                <div className="flex items-start gap-3">
+                  <div className="min-w-0">
+                    <h2 className="text-[15px] font-semibold text-gray-900 truncate">{event.label}</h2>
+                    <p className="text-[11px] text-gray-500 mt-0.5">
+                      <span className="font-mono">{event.key}</span> · {event.group}
+                    </p>
+                  </div>
+                  <span className={clsx("ml-auto shrink-0 px-2 py-1 text-[11px] rounded-md font-semibold", statusBadge.cls)}>
+                    {statusBadge.label}
+                  </span>
                 </div>
-                <span className={clsx("ml-auto shrink-0 px-2 py-1 text-[11px] rounded-md font-semibold", statusBadge.cls)}>
-                  {statusBadge.label}
-                </span>
+                <div className="flex flex-wrap items-center gap-1.5" title="Click a variable to insert it into the focused field">
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400 mr-0.5">Variables</span>
+                  {visibleChips.map((v) => (
+                    <button
+                      key={v.name}
+                      type="button"
+                      title={`${v.description} — e.g. ${v.example}`}
+                      onClick={() => insertToken(`{{${v.name}}}`)}
+                      className="px-2 py-1 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-700 font-mono text-[11px] hover:bg-emerald-100 transition"
+                    >
+                      {`{{${v.name}}}`}
+                    </button>
+                  ))}
+                  {chipVars.length > VISIBLE_CHIPS && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllVars((v) => !v)}
+                      className="inline-flex items-center gap-0.5 px-2 py-1 rounded-md border border-gray-200 text-gray-500 text-[11px] hover:bg-gray-50 transition"
+                    >
+                      {showAllVars ? "Less" : `+${chipVars.length - VISIBLE_CHIPS} more`}
+                      <ChevronDown size={12} className={clsx("transition-transform", showAllVars && "rotate-180")} />
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="flex flex-col flex-1 min-h-0 gap-4 p-5 overflow-y-auto">
                 {/* Subject */}
                 <div className="shrink-0">
-                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">Subject</label>
+                  <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Subject</label>
                   <input
                     ref={subjectRef}
                     value={subject}
@@ -391,39 +422,9 @@ export default function EmailTemplatesPage() {
                   />
                 </div>
 
-                {/* Variables */}
-                <div className="shrink-0">
-                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                    Variables <span className="font-normal text-gray-400">— click to insert into the focused field</span>
-                  </label>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {visibleChips.map((v) => (
-                      <button
-                        key={v.name}
-                        type="button"
-                        title={`${v.description} — e.g. ${v.example}`}
-                        onClick={() => insertToken(`{{${v.name}}}`)}
-                        className="px-2 py-1 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-700 font-mono text-[11px] hover:bg-emerald-100 transition"
-                      >
-                        {`{{${v.name}}}`}
-                      </button>
-                    ))}
-                    {chipVars.length > VISIBLE_CHIPS && (
-                      <button
-                        type="button"
-                        onClick={() => setShowAllVars((v) => !v)}
-                        className="inline-flex items-center gap-0.5 px-2 py-1 rounded-md border border-gray-200 text-gray-500 text-[11px] hover:bg-gray-50 transition"
-                      >
-                        {showAllVars ? "Less" : `+${chipVars.length - VISIBLE_CHIPS} more`}
-                        <ChevronDown size={12} className={clsx("transition-transform", showAllVars && "rotate-180")} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-
                 {/* Body */}
                 <div className="flex flex-col flex-1 min-h-0">
-                  <label className="block text-xs font-semibold text-gray-700 mb-1.5 shrink-0">Body (HTML)</label>
+                  <label className="block text-[13px] font-medium text-gray-700 mb-1.5 shrink-0">Body (HTML)</label>
                   {bodyEditor}
                 </div>
 
@@ -440,7 +441,7 @@ export default function EmailTemplatesPage() {
 
                 {/* Description */}
                 <div className="shrink-0">
-                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">Description (internal)</label>
+                  <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Description (internal)</label>
                   <textarea
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
@@ -461,10 +462,7 @@ export default function EmailTemplatesPage() {
                 <div className="ml-auto flex items-center gap-2">
                   {existing && (
                     <button
-                      onClick={() => {
-                        if (window.confirm("Reset to the built-in default? Your custom subject & body will be removed."))
-                          deleteMut.mutate(existing.id);
-                      }}
+                      onClick={() => setResetConfirm(true)}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg transition"
                     >
                       <Trash2 size={13} /> Reset to default
@@ -513,6 +511,23 @@ export default function EmailTemplatesPage() {
           </div>
         </Modal>
       )}
+
+      <Modal open={resetConfirm} onClose={() => setResetConfirm(false)} title="Reset to default?" size="sm">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-700">
+            This removes your custom subject &amp; body for <b>{event?.label ?? "this email"}</b>. The built-in default will be sent instead.
+          </p>
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setResetConfirm(false)} className="px-3.5 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+            <button
+              onClick={() => { if (existing) deleteMut.mutate(existing.id); setResetConfirm(false); }}
+              disabled={deleteMut.isPending}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 rounded-lg">
+              <Trash2 size={13} /> {deleteMut.isPending ? "Resetting…" : "Reset to default"}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Modal } from "@/components/hrms/modal";
+import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 import { Select } from "@/components/hrms/ui/select";
 import { FileSpreadsheet, Plus, Clock, CheckCircle, XCircle, Download, ArrowLeft } from "lucide-react";
 import { clsx } from "clsx";
@@ -27,6 +29,8 @@ export default function GeneratedReportsPage() {
   const [showGenerate, setShowGenerate] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
   const [form, setForm] = useState({ name: "", type: "Headcount" as ReportType, format: "XLSX" as Format, dateFrom: "", dateTo: "" });
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [schedForm, setSchedForm] = useState({ name: "", type: "Headcount" as ReportType, format: "XLSX" as Format, scheduleCron: "0 9 1 * *", recipients: "" });
 
   const { data } = useQuery({
@@ -45,9 +49,13 @@ export default function GeneratedReportsPage() {
   });
 
   const reports = data?.data ?? [];
+  const totalPages = Math.max(1, Math.ceil(reports.length / PAGE_SIZE));
+  const pageItems = reports.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <Link href="/reports" className="inline-flex items-center gap-1 text-xs text-[#22c55e] hover:underline mb-4">
         <ArrowLeft size={13} /> Back to reports
       </Link>
@@ -86,7 +94,7 @@ export default function GeneratedReportsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {reports.map((r, i) => (
+              {pageItems.map((r, i) => (
                 <tr key={r.id} className="row-stagger" style={{ ["--i" as never]: Math.min(i, 10) }}>
                   <td className="px-4 py-2 text-[13px] font-medium">{r.name}</td>
                   <td className="px-4 py-2"><span className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded-full text-[11px] font-medium">{r.type}</span></td>
@@ -108,6 +116,7 @@ export default function GeneratedReportsPage() {
               ))}
             </tbody>
           </table>
+          <Pagination page={page} totalPages={totalPages} total={reports.length} limit={PAGE_SIZE} onPageChange={setPage} />
         </div>
       )}
 

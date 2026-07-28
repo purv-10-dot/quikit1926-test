@@ -53,4 +53,4 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     console.error("GET /offboarding error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.offboarding.read"] });

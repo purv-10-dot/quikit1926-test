@@ -9,6 +9,7 @@ import { fireWorkflow } from "@/lib/workflows/executor";
 import { extractDocumentText } from "@/lib/ai/extract-document-text";
 import { resolveScope, employeeScopeFilter, getCallerEmployeeId } from "@/lib/rbac/scope";
 import { forbidden } from "@/lib/api-response";
+import { urlBelongsToTenant } from "@/lib/storage";
 import type { Prisma } from "@quikit/database";
 
 export const GET = withServiceAuth(async (req: NextRequest, ctx) => {
@@ -42,6 +43,11 @@ export const GET = withServiceAuth(async (req: NextRequest, ctx) => {
     if (companyOnly) {
       accessClauses.push({ employeeId: null });
     } else if (employeeId) {
+      // Requesting a specific employee's documents — must fall inside the
+      // caller's read-scope (previously this bypassed scope entirely = IDOR).
+      if (scopeFilter.employeeIds && !scopeFilter.employeeIds.includes(employeeId)) {
+        return forbidden("You don't have access to this employee's documents");
+      }
       accessClauses.push({ employeeId });
     } else if (scopeFilter.employeeIds) {
       accessClauses.push({ employeeId: { in: scopeFilter.employeeIds } });
@@ -116,6 +122,19 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
         return validationError("You can only upload documents to your own vault.");
       }
 
+      // Every file must be an uploaded object inside this tenant (blocks SSRF /
+      // cross-tenant file references), and every target employee must be real.
+      if (parsed.data.documents.some((d) => !urlBelongsToTenant(d.fileUrl, orgId))) {
+        return validationError("Each file must be an uploaded file, not an external link.");
+      }
+      if (!isSelfOnly) {
+        const ids = [...new Set(parsed.data.documents.map((d) => d.employeeId).filter(Boolean) as string[])];
+        if (ids.length) {
+          const found = await prisma.employee.findMany({ where: { id: { in: ids }, orgId, deletedAt: null }, select: { id: true } });
+          if (found.length !== ids.length) return validationError("One or more target employees are not in your organization.");
+        }
+      }
+
       const rows = parsed.data.documents.map((d) => ({
         orgId,
         employeeId: isSelfOnly ? userId : (d.employeeId ?? null),
@@ -150,6 +169,13 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
     // Same guard for the single-doc path.
     if (isSelfOnly && d.employeeId && d.employeeId !== userId) {
       return validationError("You can only upload documents to your own vault.");
+    }
+    if (!urlBelongsToTenant(d.fileUrl, orgId)) {
+      return validationError("File must be an uploaded file, not an external link.");
+    }
+    if (!isSelfOnly && d.employeeId) {
+      const emp = await prisma.employee.findFirst({ where: { id: d.employeeId, orgId, deletedAt: null }, select: { id: true } });
+      if (!emp) return validationError("Target employee not found in your organization.");
     }
     const doc = await prisma.document.create({
       data: {

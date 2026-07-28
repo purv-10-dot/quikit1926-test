@@ -13,6 +13,7 @@ import {
   Ban, Archive, ArchiveRestore, RotateCcw, ShieldX, Rocket, MessageSquare, BellRing,
 } from "lucide-react";
 import { SkeletonLine } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -21,6 +22,12 @@ interface Application {
   currentStage: string | null;
   status: string;
   requisition: { id: string; title: string; requisitionNumber: string } | null;
+  screeningAnswers?: {
+    answers?: Record<string, string>;
+    technical?: { question: string; answer: string }[];
+    comments?: string;
+    submittedAt?: string;
+  } | null;
 }
 interface Candidate {
   id: string;
@@ -85,6 +92,8 @@ export default function CandidateDetailPage() {
 
   return (
     <div className="w-full px-5 py-4 space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       {/* Header card */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 px-5 pt-5">
         <div className="flex items-start justify-between gap-4 flex-wrap pb-4">
@@ -151,6 +160,13 @@ function expLabel(months: number | null) {
   if (months == null) return "—";
   return `${Math.floor(months / 12)}y ${months % 12}m`;
 }
+
+const SCREENING_LABELS: Record<string, string> = {
+  name: "Name", contact: "Number", email: "Email", techStack: "Tech stack",
+  experience: "EXP", location: "Location", reasonForChange: "Reason for job change",
+  noticePeriod: "Notice period", currentSalary: "Current salary",
+  expectedSalary: "Expected salary", communication: "Communication",
+};
 
 function Row({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
   return (
@@ -231,6 +247,55 @@ function OverviewTab({ candidate: c, loading }: { candidate: Candidate | undefin
           </div>
         )}
       </div>
+
+      {c.applications
+        .filter((a) => a.screeningAnswers && (
+          Object.values(a.screeningAnswers.answers ?? {}).some(Boolean) ||
+          (a.screeningAnswers.technical ?? []).some((t) => t.answer) ||
+          !!a.screeningAnswers.comments
+        ))
+        .map((a) => {
+          const sa = a.screeningAnswers!;
+          const entries = Object.entries(sa.answers ?? {}).filter(([, v]) => v);
+          const tech = (sa.technical ?? []).filter((t) => t.answer);
+          return (
+            <div key={a.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+              <div className="flex items-center gap-2 text-green-700 mb-3">
+                <FileText size={16} />
+                <h3 className="text-[13px] font-semibold">Screening — {a.requisition?.title ?? "—"}</h3>
+              </div>
+              {entries.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-2.5 mb-3">
+                  {entries.map(([k, v]) => (
+                    <div key={k}>
+                      <p className="text-[11px] text-gray-400">{SCREENING_LABELS[k] ?? k}</p>
+                      <p className="text-xs text-gray-800 break-words">{v}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {tech.length > 0 && (
+                <div className="mb-3 pt-3 border-t border-gray-50">
+                  <p className="text-[11px] font-semibold text-gray-500 mb-1.5">Technical Questions</p>
+                  <div className="space-y-2">
+                    {tech.map((t, i) => (
+                      <div key={i}>
+                        <p className="text-xs font-medium text-gray-700">{t.question}</p>
+                        <p className="text-xs text-gray-600 break-words">{t.answer}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {sa.comments && (
+                <div className="pt-3 border-t border-gray-50">
+                  <p className="text-[11px] font-semibold text-gray-500 mb-1">Comments</p>
+                  <p className="text-xs text-gray-700 whitespace-pre-wrap break-words">{sa.comments}</p>
+                </div>
+              )}
+            </div>
+          );
+        })}
     </div>
   );
 }

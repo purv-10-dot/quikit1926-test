@@ -46,7 +46,7 @@ export function RightSidebar() {
 export function ProfileCardWidget() {
   const api = useApiClient();
   const { data } = useQuery({
-    queryKey: ["me", "right-profile"],
+    queryKey: ["employees", "me"],
     queryFn: () => api.get<Me>("/api/v1/hrms/employees/me"),
     staleTime: 5 * 60_000,
   });

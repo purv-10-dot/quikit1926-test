@@ -28,7 +28,7 @@ export const GET = withAuth(async (req: NextRequest, { orgId, userId }) => {
     console.error("GET candidate-document-types", e);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.recruit.read"] });
 
 function slugify(s: string): string {
   return s.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 40) || `doc_${Date.now()}`;
@@ -65,4 +65,4 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     console.error("POST candidate-document-types", e);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });

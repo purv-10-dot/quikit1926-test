@@ -4,12 +4,30 @@ import { withAuth, withServiceAuth } from "@/lib/with-auth";
 import { successResponse, validationError, conflict, internalError } from "@/lib/api-response";
 import { createLeaveTypeSchema } from "@/lib/validations/leave";
 import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
+import { resolveEmployeeId } from "@/lib/resolve-employee";
+import { resolveEmployeeLeaveGroup } from "@/lib/services/employee-leave-rules";
 
-export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
+export const GET = withServiceAuth(async (req: NextRequest, { orgId, userId }) => {
   try {
     const { searchParams } = new URL(req.url);
     const { page, limit } = parsePagination(searchParams);
-    const where = { orgId, deletedAt: null };
+    const forEmployee = searchParams.get("forEmployee");
+
+    // `?forEmployee=me` → only the leave types the CALLER can actually apply for,
+    // i.e. the types offered by their active Leave Group. Not in a group → none.
+    // (The unfiltered list stays available for admin config screens.)
+    let idFilter: { in: string[] } | undefined;
+    if (forEmployee === "me") {
+      const meId = await resolveEmployeeId(orgId, userId);
+      const emp = meId
+        ? await prisma.employee.findFirst({ where: { orgId, id: meId }, select: { appRoles: { select: { roleId: true }, take: 1 } } })
+        : null;
+      const group = meId ? await resolveEmployeeLeaveGroup(orgId, meId, emp?.appRoles[0]?.roleId ?? null) : null;
+      if (!group) return successResponse([], paginationMeta(page, limit, 0));
+      idFilter = { in: [...group.leaveTypeIds] };
+    }
+
+    const where = { orgId, deletedAt: null, ...(idFilter && { id: idFilter }) };
 
     const [types, total] = await Promise.all([
       prisma.leaveType.findMany({
@@ -21,7 +39,23 @@ export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
       prisma.leaveType.count({ where }),
     ]);
 
-    return successResponse(types, paginationMeta(page, limit, total));
+    // Resolve createdBy / updatedBy (Employee.id) to display names.
+    const actorIds = [...new Set(types.flatMap((t) => [t.createdBy, t.updatedBy]).filter(Boolean) as string[])];
+    const actors = actorIds.length
+      ? await prisma.employee.findMany({
+          where: { orgId, id: { in: actorIds } },
+          select: { id: true, firstName: true, lastName: true },
+        })
+      : [];
+    const nameById = new Map(actors.map((a) => [a.id, `${a.firstName} ${a.lastName ?? ""}`.trim()]));
+
+    const enriched = types.map((t) => ({
+      ...t,
+      createdByName: t.createdBy ? nameById.get(t.createdBy) ?? null : null,
+      updatedByName: t.updatedBy ? nameById.get(t.updatedBy) ?? null : null,
+    }));
+
+    return successResponse(enriched, paginationMeta(page, limit, total));
   } catch (error) {
     console.error("GET /leaves/types error:", error);
     return internalError();

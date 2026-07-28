@@ -8,9 +8,10 @@ import { Modal } from "@/components/hrms/modal";
 import { useToast } from "@/components/hrms/toast";
 import { Plus, Home, Calendar, Clock, CheckCircle2, XCircle, MessageSquare, X, Trash2, Briefcase, ListChecks } from "lucide-react";
 import { clsx } from "clsx";
-import { WfhTabs } from "../_components/wfh-tabs";
 import { PageHeader } from "@/components/hrms/ui/page-header";
+import { PageBackground } from "@/components/hrms/page-background";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
+import { Pagination } from "@/components/hrms/pagination";
 
 interface Approver { id: string; firstName: string; lastName: string; employeeCode: string }
 interface ApprovalRow { id: string; level: number; role: string; status: string; comment: string | null; decidedAt: string | null; approver: Approver }
@@ -41,6 +42,8 @@ export default function MyWfhPage() {
   const toast = useToast();
   const [showCreate, setShowCreate] = useState(false);
   const [logItem, setLogItem] = useState<WfhItem | null>(null);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const today = new Date().toISOString().slice(0, 10);
   const [form, setForm] = useState({
     startDate: today, endDate: today,
@@ -53,6 +56,8 @@ export default function MyWfhPage() {
     queryFn: () => api.get<WfhItem[]>("/api/v1/hrms/wfh/requests?scope=me&limit=50"),
   });
   const items = data?.data ?? [];
+  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  const pageItems = items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const { data: quotaData } = useQuery({
     queryKey: ["wfh", "quota", "me"],
@@ -108,6 +113,8 @@ export default function MyWfhPage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <PageHeader
         icon={<Home size={28} className="text-[#22c55e]" />}
         title="Work from home"
@@ -121,40 +128,19 @@ export default function MyWfhPage() {
           </>
         }
       />
-      <div className="mb-5"><WfhTabs /></div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
         <StatCard label="Total" value={stats.total} icon={<Home size={18} />} color="blue" />
         <StatCard label="Pending" value={stats.pending} icon={<Clock size={18} />} color="amber" />
         <StatCard label="Approved" value={stats.approved} icon={<CheckCircle2 size={18} />} color="emerald" />
         <StatCard label="Rejected" value={stats.rejected} icon={<XCircle size={18} />} color="red" />
+        <StatCard
+          label={quota?.hasQuota && quota.yearlyQuota != null ? `Remaining (of ${quota.yearlyQuota})` : "Remaining"}
+          value={quota?.hasQuota && quota.remaining != null ? quota.remaining : "—"}
+          icon={<Briefcase size={18} />}
+          color="blue"
+        />
       </div>
-
-      {quota?.hasQuota && quota.yearlyQuota !== null && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-4 flex items-center gap-4 flex-wrap">
-          <div className="w-11 h-11 rounded-lg bg-green-50 text-green-600 flex items-center justify-center shrink-0">
-            <Briefcase size={18} />
-          </div>
-          <div className="flex-1 min-w-[200px]">
-            <div className="flex items-center gap-2">
-              <p className="text-[13px] font-semibold text-gray-900">{quota.group?.name}</p>
-              <span className="text-[11px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 font-medium">{quota.year} quota</span>
-            </div>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Used <strong className="text-gray-900">{quota.used}</strong> / {quota.yearlyQuota} days · <strong className="text-emerald-700">{quota.remaining}</strong> remaining
-            </p>
-            <div className="mt-2 h-2 bg-gray-100 rounded-full overflow-hidden">
-              <div
-                className={clsx(
-                  "h-full rounded-full transition-all",
-                  (quota.remaining ?? 0) === 0 ? "bg-red-500" : (quota.remaining ?? 0) <= 5 ? "bg-amber-500" : "bg-emerald-500",
-                )}
-                style={{ width: `${Math.min(100, (quota.used / quota.yearlyQuota) * 100)}%` }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         {isLoading ? (
@@ -178,7 +164,7 @@ export default function MyWfhPage() {
               </tr>
             </thead>
             <tbody>
-              {items.map((i, idx) => (
+              {pageItems.map((i, idx) => (
                 <tr
                   key={i.id}
                   onClick={() => setLogItem(i)}
@@ -235,6 +221,9 @@ export default function MyWfhPage() {
             </tbody>
           </table>
         )}
+        {!isLoading && items.length > 0 && (
+          <Pagination page={page} totalPages={totalPages} total={items.length} limit={PAGE_SIZE} onPageChange={setPage} />
+        )}
       </div>
 
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Apply for Work From Home" size="lg">
@@ -245,19 +234,22 @@ export default function MyWfhPage() {
           if (form.isHalfDay && form.startDate !== form.endDate) return toast.error("Half-day WFH must be a single day");
           createMut.mutate();
         }} className="space-y-4">
-          <label className="flex items-center gap-2 text-xs">
-            <input
-              type="checkbox"
-              checked={form.isHalfDay}
-              onChange={(e) => setForm({
-                ...form,
-                isHalfDay: e.target.checked,
-                session: e.target.checked ? "FirstHalf" : "FullDay",
-                endDate: e.target.checked ? form.startDate : form.endDate,
-              })}
-            />
-            Half-day WFH
-          </label>
+          {/* Half-day only makes sense for a single day. */}
+          {form.startDate === form.endDate && (
+            <label className="flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={form.isHalfDay}
+                onChange={(e) => setForm({
+                  ...form,
+                  isHalfDay: e.target.checked,
+                  session: e.target.checked ? "FirstHalf" : "FullDay",
+                  endDate: e.target.checked ? form.startDate : form.endDate,
+                })}
+              />
+              Half-day WFH
+            </label>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -283,10 +275,24 @@ export default function MyWfhPage() {
                 disabled={form.isHalfDay}
                 min={form.startDate}
                 value={form.endDate}
-                onChange={(e) => setForm({ ...form, endDate: e.target.value })}
+                onChange={(e) => {
+                  const end = e.target.value;
+                  const multiDay = end !== form.startDate;
+                  // Extending to a range drops half-day (it only applies to one day).
+                  setForm({ ...form, endDate: end, isHalfDay: multiDay ? false : form.isHalfDay, session: multiDay ? "FullDay" : form.session });
+                }}
                 className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534] disabled:bg-slate-50 disabled:text-slate-400"
               />
             </div>
+          </div>
+
+          <div className="w-36">
+            <label className="block text-xs font-medium text-gray-700 mb-1">Total days</label>
+            <input
+              readOnly
+              value={totalDaysLabel(form.startDate, form.endDate, form.isHalfDay)}
+              className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs bg-slate-50 text-slate-600 cursor-default focus:outline-none"
+            />
           </div>
 
           {form.isHalfDay && (
@@ -395,12 +401,22 @@ export default function MyWfhPage() {
   );
 }
 
+// Inclusive calendar-day count for the picked range (half-day = 0.5).
+function totalDaysLabel(start: string, end: string, isHalfDay: boolean): string {
+  if (isHalfDay) return "0.5 day";
+  const s = new Date(start);
+  const e = new Date(end);
+  if (isNaN(s.getTime()) || isNaN(e.getTime()) || e < s) return "—";
+  const n = Math.floor((e.getTime() - s.getTime()) / 86400000) + 1;
+  return `${n} day${n === 1 ? "" : "s"}`;
+}
+
 function fmtRange(start: string, end: string): string {
   const fmt = (s: string) => new Date(s).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
   return start === end ? fmt(start) : `${fmt(start)} → ${fmt(end)}`;
 }
 
-function StatCard({ label, value, icon, color }: { label: string; value: number; icon: React.ReactNode; color: "blue" | "amber" | "emerald" | "red" }) {
+function StatCard({ label, value, icon, color }: { label: string; value: React.ReactNode; icon: React.ReactNode; color: "blue" | "amber" | "emerald" | "red" }) {
   const cls = {
     blue: "bg-green-50 text-green-600",
     amber: "bg-amber-50 text-amber-600",

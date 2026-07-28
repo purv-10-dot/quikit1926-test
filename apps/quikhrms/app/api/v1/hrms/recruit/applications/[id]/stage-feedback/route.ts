@@ -33,8 +33,14 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
     });
     if (!app) return notFound("Application not found");
 
+    // Use the application's OWN requisition pipeline (not always the default) so
+    // round number + next stage are correct for candidates on custom pipelines.
+    const reqForPipe = await prisma.jobRequisition.findFirst({
+      where: { id: app.requisitionId, orgId, deletedAt: null },
+      select: { pipelineId: true },
+    });
     const pipeline = await prisma.hiringPipeline.findFirst({
-      where: { orgId, deletedAt: null, isDefault: true },
+      where: { orgId, deletedAt: null, ...(reqForPipe?.pipelineId ? { id: reqForPipe.pipelineId } : { isDefault: true }) },
     });
     const stages = stageNames(pipeline?.stages);
     const currentStage = app.currentStage ?? stages[0] ?? "Screening";
@@ -185,6 +191,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
           status: "AppRejected",
           rejectionStage: currentStage,
           rejectionReason: body.concerns || body.overallComments || "Rejected via stage feedback",
+          rejectedAt: new Date(),
           updatedBy: userId,
         },
       });
@@ -225,4 +232,4 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
     console.error("POST /recruit/applications/:id/stage-feedback error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });

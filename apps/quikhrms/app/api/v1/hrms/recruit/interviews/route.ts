@@ -58,7 +58,7 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
             select: {
               id: true,
               candidate: { select: { id: true, firstName: true, lastName: true, email: true } },
-              requisition: { select: { title: true } },
+              requisition: { select: { title: true, pipelineId: true } },
             },
           },
           interviewer: { select: { id: true, firstName: true, lastName: true, workEmail: true } },
@@ -66,10 +66,28 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
       }),
       prisma.interview.count({ where }),
     ]);
+
+    // Resolve each interview's stage name from ITS OWN requisition pipeline (not
+    // a globally-selected one) so labels are correct when the org runs multiple
+    // pipelines. Falls back to the default pipeline, then to "Round N".
+    const pipelineIds = [...new Set(
+      interviews.map((i) => i.application?.requisition?.pipelineId).filter((p): p is string => !!p),
+    )];
+    const pipelines = pipelineIds.length
+      ? await prisma.hiringPipeline.findMany({ where: { orgId, deletedAt: null, id: { in: pipelineIds } }, select: { id: true, stages: true } })
+      : [];
+    const defaultPipeline = await prisma.hiringPipeline.findFirst({ where: { orgId, deletedAt: null, isDefault: true }, select: { stages: true } });
+    const stagesByPipeline = new Map(pipelines.map((p) => [p.id, stageNames(p.stages)]));
+    const defaultStages = stageNames(defaultPipeline?.stages);
+    const resolveStage = (pipelineId: string | null | undefined, round: number) => {
+      const stages = (pipelineId && stagesByPipeline.get(pipelineId)) || defaultStages;
+      return stages[round - 1] ?? `Round ${round}`;
+    };
     // Scorecard fields now live on the interview row; re-expose under the
     // historical `scorecard` shape so existing consumers keep working.
     const shaped = interviews.map((i) => ({
       ...i,
+      stageName: resolveStage(i.application?.requisition?.pipelineId, i.round),
       scorecard: i.overallRating != null
         ? {
             id: i.id, overallRating: i.overallRating, recommendation: i.recommendation,
@@ -80,7 +98,7 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     }));
     return successResponse(shaped, paginationMeta(page, limit, total));
   } catch (error) { console.error("GET /recruit/interviews error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.read"] });
 
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
   try {
@@ -205,9 +223,15 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       : await prisma.hiringPipeline.findFirst({ where: { orgId, deletedAt: null, isDefault: true } });
     const pipelineStageNames = stageNames(pipeline?.stages);
     const roundStage = pipelineStageNames[data.round - 1] ?? "";
-    // JD is shared with interviewers only on technical rounds so they can prep.
+    // JD sent to interviewers: an explicit override from the schedule dialog wins
+    // (any round); otherwise the requisition JD is auto-shared on technical rounds.
     const isTechnicalRound = /technical/i.test(roundStage);
-    const roundJobDescription = isTechnicalRound ? (interview.application?.requisition?.jobDescription ?? null) : null;
+    const roundJobDescription =
+      (data.jobDescription && data.jobDescription.trim())
+        ? data.jobDescription.trim()
+        : isTechnicalRound
+          ? (interview.application?.requisition?.jobDescription ?? null)
+          : null;
 
     // Auto-send invite emails to BOTH candidate and interviewer (regardless of interview type).
     let mailStatus: { candidate: { sent: boolean; to: string | null; error?: string }; interviewer: { sent: boolean; to: string | null; error?: string } } = {
@@ -378,4 +402,4 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
 
     return successResponse({ ...interview, mailStatus }, undefined, 201);
   } catch (error) { console.error("POST /recruit/interviews error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });

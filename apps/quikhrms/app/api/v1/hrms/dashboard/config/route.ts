@@ -5,6 +5,7 @@ import { successResponse, internalError } from "@/lib/api-response";
 import { APP_ID } from "@/lib/rbac/registry";
 import { widgetsForRole } from "@/lib/rbac/widgets";
 import { isValidNavKey } from "@/lib/rbac/permissions-tree";
+import { resolveEmployeeId } from "@/lib/resolve-employee";
 
 /**
  * GET /api/v1/hrms/dashboard/config
@@ -25,8 +26,12 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId, roleCode,
         })).map((e) => ({ delegatorId: e.id, name: `${e.firstName} ${e.lastName}`.trim() || "a colleague" }))
       : [];
     const cached = await (async () => {
-        const emp = await prisma.employee.findFirst({
-          where: { orgId, deletedAt: null, OR: [{ id: userId }, { employeeCode: "QK-EMP-0001" }] },
+        // Resolve the CURRENT logged-in user's employee (same as /employees/me).
+        // Previously this OR-matched a hardcoded "QK-EMP-0001", which could return
+        // the wrong person in the sidebar profile.
+        const employeeId = await resolveEmployeeId(orgId, userId);
+        const emp = employeeId ? await prisma.employee.findFirst({
+          where: { id: employeeId, orgId, deletedAt: null },
           select: {
             id: true,
             firstName: true,
@@ -39,7 +44,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId, roleCode,
               take: 1,
             },
           },
-        });
+        }) : null;
 
         let role = emp?.appRoles[0]?.role ?? null;
         if (!role) {

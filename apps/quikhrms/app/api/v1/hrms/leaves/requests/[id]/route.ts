@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, notFound, forbidden, validationError, internalError } from "@/lib/api-response";
+import { successResponse, notFound, forbidden, validationError, conflict, internalError } from "@/lib/api-response";
 import { updateLeaveRequestSchema } from "@/lib/validations/leave";
 import { canAccessEmployee } from "@/lib/rbac/hierarchy";
 
@@ -60,19 +60,30 @@ export const PATCH = withAuth(async (req: NextRequest, ctx, params) => {
     const data = parsed.data;
 
     if (data.status === "Cancelled" || data.status === "Recalled") {
-      // If cancelling an approved leave, restore balance
-      if (existing.status === "Approved") {
-        const currentYear = new Date(existing.startDate).getFullYear();
-        await prisma.leaveBalance.updateMany({
-          where: {
-            orgId,
-            employeeId: existing.employeeId,
-            leaveTypeId: existing.leaveTypeId,
-            year: currentYear,
-          },
-          data: { taken: { decrement: existing.duration } },
-        });
+      // Can't cancel/recall leave that has already started — those days are taken;
+      // refunding them would hand back balance for time already off.
+      if (existing.status === "Approved" && new Date(existing.startDate) <= new Date()) {
+        return validationError("You can't cancel leave that has already started.");
       }
+      const result = await prisma.$transaction(async (tx) => {
+        // Atomic claim — only transition from the current status once, so two
+        // parallel cancels can't both refund (single credit).
+        const claimed = await tx.leaveRequest.updateMany({
+          where: { id: params.id, status: existing.status },
+          data: { status: data.status, cancelReason: data.cancelReason, reason: data.reason ?? existing.reason, updatedBy: userId },
+        });
+        if (claimed.count === 0) throw new Error("ALREADY_ACTIONED");
+        // Refund only a previously-approved (future) leave.
+        if (existing.status === "Approved") {
+          const currentYear = new Date(existing.startDate).getFullYear();
+          await tx.leaveBalance.updateMany({
+            where: { orgId, employeeId: existing.employeeId, leaveTypeId: existing.leaveTypeId, year: currentYear },
+            data: { taken: { decrement: existing.duration } },
+          });
+        }
+        return tx.leaveRequest.findFirst({ where: { id: params.id } });
+      });
+      return successResponse(result);
     }
 
     const request = await prisma.leaveRequest.update({
@@ -86,6 +97,9 @@ export const PATCH = withAuth(async (req: NextRequest, ctx, params) => {
     });
     return successResponse(request);
   } catch (error) {
+    if (error instanceof Error && error.message === "ALREADY_ACTIONED") {
+      return conflict("This leave request was just updated by someone else.");
+    }
     console.error("PATCH /leaves/requests/:id error:", error);
     return internalError();
   }

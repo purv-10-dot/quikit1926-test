@@ -10731,7 +10731,9 @@ model Employee {
   tentativeJoiningDate DateTime?      @db.Date
   confirmationDate     DateTime?
   probationEndDate     DateTime?
+  nextReviewDate       DateTime?      @db.Date
   noticePeriodDays     Int            @default(0)
+  noticePeriodId       String?
   lastWorkingDate      DateTime?
   previousExperience   Int            @default(0) // months
   sourceOfHire         SourceOfHire?
@@ -10801,6 +10803,7 @@ model Employee {
   // Relations
   department        Department?     @relation("EmployeeDepartment", fields: [departmentId], references: [id])
   team              HrmsTeam?       @relation("EmployeeTeam", fields: [teamId], references: [id])
+  noticePeriodRef   NoticePeriod?   @relation("EmployeeNoticePeriod", fields: [noticePeriodId], references: [id])
   designation       Designation?    @relation("EmployeeDesignation", fields: [designationId], references: [id])
   grade             Grade?          @relation("EmployeeGrade", fields: [gradeId], references: [id])
   officeLocation    OfficeLocation? @relation("EmployeeOfficeLocation", fields: [officeLocationId], references: [id])
@@ -10876,6 +10879,11 @@ model Employee {
   // creating duplicate records. authUserId is nullable (manual employees), and
   // Postgres treats NULLs as distinct, so manual records are unaffected.
   @@unique([orgId, authUserId])
+  // Prevents duplicate employees for the same work email in a tenant (e.g. a
+  // double-clicked onboarding). Enforced in the DB as a PARTIAL unique index on
+  // active rows only (WHERE "deletedAt" IS NULL) so an email can be reused after
+  // an employee is soft-deleted — see the raw SQL that ships with this change.
+  @@unique([orgId, workEmail])
   @@index([orgId, workEmail])
   @@index([orgId])
   @@index([orgId, deletedAt])
@@ -11036,12 +11044,19 @@ model AttendanceRecord {
 
   regularizationStatus RegularizationStatus @default(None)
   regularizationReason String?
+  // Requested check-in/out for a PENDING regularization — held here (not applied
+  // to the live checkIn/checkOut) until an approver approves. Cleared on decide.
+  regularizedCheckIn   DateTime?
+  regularizedCheckOut  DateTime?
 
   remarks         String?
   isLateCheckIn   Boolean @default(false)
   isEarlyCheckOut Boolean @default(false)
   lateByMinutes   Int     @default(0)
   earlyByMinutes  Int     @default(0)
+  // Checked in on a past day but never checked out — flagged by the daily
+  // missed-checkout cron so the employee can regularize it.
+  missedCheckout  Boolean @default(false)
 
   createdBy String?
   updatedBy String?
@@ -11364,6 +11379,10 @@ model LeaveGroupItem {
   leaveGroupId  String
   leaveTypeId   String
   overrideQuota Decimal? @db.Decimal(5, 2)
+  // Per-group rule set for this leave type (entitlement, accrual, applying,
+  // restrictions) — the leave-rules wizard's output. Lets the same leave type
+  // carry different rules in different groups.
+  rules         Json?
 
   createdAt DateTime @default(now())
 
@@ -11473,6 +11492,9 @@ model LeaveBalance {
   carriedForward Decimal @default(0) @db.Decimal(5, 2)
   encashed       Decimal @default(0) @db.Decimal(5, 2)
   lapsed         Decimal @default(0) @db.Decimal(5, 2)
+  // Accrual/carry-forward engine bookkeeping (idempotency guards).
+  lastAccrualYm  Int?     // YYYYMM of the last monthly accrual applied to this row
+  carryProcessed Boolean  @default(false) // year-end rollover already run for this row
 
   createdBy String?
   updatedBy String?
@@ -12085,6 +12107,8 @@ enum CandidateSource {
   CandCampus
   CandDirect
   CandInbound
+  CandNaukri
+  CandIndeed
 
   @@schema("app_quikhrms")
 }
@@ -12354,6 +12378,8 @@ model JobApplication {
   appliedDate  DateTime @default(now())
   currentStage String?
   stageHistory Json?
+  // Screening-call sheet captured from the pipeline (answers + technical Q&A + comments).
+  screeningAnswers Json?
 
   status ApplicationStatus @default(AppActive)
 
@@ -12362,6 +12388,9 @@ model JobApplication {
 
   rejectionReason String?
   rejectionStage  String?
+  // Stable timestamp of when the application was rejected — the re-apply
+  // cooling window counts from this, not from `updatedAt` (which later edits move).
+  rejectedAt      DateTime?
   // A "penalty-free" rejection (e.g. closed because the requisition was
   // cancelled / not selected after a hold-resume review). Excluded from the
   // re-apply cooling-period block so the candidate can still apply elsewhere.
@@ -12681,8 +12710,32 @@ model HrmsSurveyResponse {
   survey   HrmsSurvey @relation(fields: [surveyId], references: [id])
   employee Employee?  @relation(fields: [employeeId], references: [id])
 
+  // A PARTIAL unique index on (orgId, surveyId, employeeId) WHERE employeeId IS
+  // NOT NULL dedups IDENTIFIED responses. Prisma can't express partial unique
+  // indexes, so it is maintained via raw SQL:
+  //   CREATE UNIQUE INDEX "SurveyResponse_orgId_surveyId_employeeId_key"
+  //     ON "app_quikhrms"."SurveyResponse" ("orgId","surveyId","employeeId")
+  //     WHERE "employeeId" IS NOT NULL;
+  // Anonymous dedup uses the separate SurveyRespondent table below.
   @@index([orgId, surveyId])
   @@map("SurveyResponse")
+  @@schema("app_quikhrms")
+}
+
+/// Records WHO responded to a survey, kept SEPARATE from SurveyResponse so
+/// anonymous answers stay unlinked to the person. Enforces one response per
+/// (survey, employee) — including anonymous surveys. Written via raw SQL from
+/// the respond route.
+model HrmsSurveyRespondent {
+  id          String   @id @default(cuid())
+  orgId       String
+  surveyId    String
+  employeeId  String
+  respondedAt DateTime @default(now())
+
+  @@unique([orgId, surveyId, employeeId])
+  @@index([orgId, surveyId])
+  @@map("SurveyRespondent")
   @@schema("app_quikhrms")
 }
 
@@ -12962,6 +13015,16 @@ model CompanySettings {
   // Editable offer-letter body template with {{dynamic}} fields (see
   // lib/recruit/offer-letter-fields.ts). Null → renderer uses the built-in default.
   offerLetterBody      String?
+  // Editable joining/appointment-letter body template with {{dynamic}} fields
+  // (see lib/recruit/joining-letter-fields.ts). Null → renderer uses the default.
+  joiningLetterBody    String?
+  // Editable resignation-acceptance-letter body template with {{dynamic}} fields
+  // (see lib/offboarding/resignation-letter-fields.ts). Read/written via raw SQL.
+  resignationLetterBody String?
+  // Editable relieving-letter + experience-letter body templates ({{dynamic}}
+  // fields, see lib/offboarding/exit-letter-fields.ts). Read/written via raw SQL.
+  relievingLetterBody  String?
+  experienceLetterBody String?
 
   // First-run org setup gate (admin onboarding). Latched true once Departments,
   // Locations, a complete Approval chain, and Payroll setup are all done — after
@@ -13205,6 +13268,14 @@ enum OffboardingReason {
   @@schema("app_quikhrms")
 }
 
+enum NoticePeriodUnit {
+  Days
+  Weeks
+  Months
+
+  @@schema("app_quikhrms")
+}
+
 enum OffboardingTaskCategory {
   AssetReturn
   AccessRevoke
@@ -13236,6 +13307,9 @@ model OnboardingTemplate {
   designationId String?
   tasks         Json
   isActive      Boolean @default(true)
+  // "Onboarding" (Day-1 checklist) or "PreOnboarding" (pre-joining checklist).
+  // Read/written via raw SQL. Null/absent = Onboarding.
+  kind          String  @default("Onboarding")
 
   createdBy String?
   updatedBy String?
@@ -13261,6 +13335,12 @@ model OnboardingInstance {
   status      OnboardingStatus @default(NotStarted)
   completedAt DateTime?
   notes       String?
+  // When true, completing a step auto-sends the next sendable step's request
+  // (the "Start onboarding" automation chain). Read/written via raw SQL.
+  automated   Boolean          @default(false)
+  // "PreOnboarding" (pre-joining) or "Onboarding" (Day-1+). Read/written via raw
+  // SQL. Null/absent = Onboarding.
+  phase       String           @default("Onboarding")
 
   createdBy String?
   updatedBy String?
@@ -13296,6 +13376,12 @@ model OnboardingTask {
   notes        String?
   sortOrder    Int                    @default(0)
   isMandatory  Boolean                @default(true)
+
+  // Workflow step type (e.g. SendEmail, Approval, DocumentUpload) + its
+  // type-specific settings, carried from the onboarding template so the tracker
+  // can render type-aware actions. Null = a plain task.
+  stepType String?
+  config   Json?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -13401,11 +13487,58 @@ enum ResignationApprovalStatus {
   @@schema("app_quikhrms")
 }
 
+model NoticePeriod {
+  id          String           @id @default(cuid())
+  orgId       String
+  name        String
+  description String?
+  duration    Int              @default(0)
+  unit        NoticePeriodUnit @default(Days)
+  createdBy   String?
+  updatedBy   String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  deletedAt   DateTime?
+
+  offboardingInstances OffboardingInstance[]
+  employees            Employee[]            @relation("EmployeeNoticePeriod")
+
+  @@index([orgId])
+  @@index([orgId, deletedAt])
+  @@schema("app_quikhrms")
+}
+
+model OffboardingTemplate {
+  id    String @id @default(cuid())
+  orgId String
+
+  name          String
+  description   String?
+  departmentId  String?
+  designationId String?
+  tasks         Json
+  isActive      Boolean @default(true)
+
+  createdBy String?
+  updatedBy String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  instances OffboardingInstance[]
+
+  @@index([orgId])
+  @@index([orgId, deletedAt])
+  @@index([orgId, departmentId])
+  @@schema("app_quikhrms")
+}
+
 model OffboardingInstance {
-  id         String  @id @default(cuid())
-  orgId      String
-  employeeId String
-  templateId String?
+  id             String  @id @default(cuid())
+  orgId          String
+  employeeId     String
+  templateId     String?
+  noticePeriodId String?
 
   resignationDate    DateTime          @db.Date
   lastWorkingDate    DateTime          @db.Date
@@ -13430,7 +13563,12 @@ model OffboardingInstance {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  tasks OffboardingTask[]
+  // Completion-chained automation ("Start offboarding"). Read/written via raw SQL.
+  automated Boolean @default(false)
+
+  tasks        OffboardingTask[]
+  noticePeriod NoticePeriod?     @relation(fields: [noticePeriodId], references: [id])
+  template     OffboardingTemplate? @relation(fields: [templateId], references: [id])
 
   @@unique([orgId, employeeId])
   @@index([orgId])
@@ -13439,6 +13577,7 @@ model OffboardingInstance {
   @@index([orgId, employeeId])
   @@index([orgId, resignationApprovalStatus])
   @@index([orgId, resignationApproverId])
+  @@index([orgId, noticePeriodId])
   @@schema("app_quikhrms")
 }
 
@@ -13457,6 +13596,12 @@ model OffboardingTask {
   completedBy String?
   notes       String?
   sortOrder   Int                     @default(0)
+  dueDate     DateTime?               @db.Date
+  // Rich workflow step type (AssetReturn, AccessRevoke, SendEmail, …) + its
+  // type-specific settings, carried from the offboarding template. Read/written
+  // via raw SQL (mirrors onboarding). Null = a plain task.
+  stepType    String?
+  config      Json?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -15597,6 +15742,15 @@ model WfhQuotaGroup {
   yearlyQuota Int
   mode        WfhGroupMode @default(Department)
   isActive    Boolean      @default(true)
+
+  // ── WFH rules (per group) ────────────────────────────────────────────────
+  maxPerWeek          Int?     // max WFH days in a calendar week
+  maxPerMonth         Int?     // max WFH days in a calendar month
+  maxConsecutiveDays  Int?     // max WFH days in a single request (in a row)
+  advanceNoticeDays   Int?     // must apply at least N days before the start
+  applicableAfterDays Int?     // eligible only N days after joining
+  requiresApproval    Boolean  @default(true)  // false = auto-approved on apply
+  blockedDuringNotice Boolean  @default(false) // notice-period employees can't WFH
 
   createdBy String?
   updatedBy String?

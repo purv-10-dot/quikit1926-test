@@ -4,9 +4,13 @@ import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { validationError, internalError } from "@/lib/api-response";
 import { generateOfferPdf } from "@/lib/services/offer-pdf";
+import { generateJoiningLetterPdf } from "@/lib/services/joining-letter-pdf";
 import { DEFAULT_OFFER_LETTER_BODY } from "@/lib/recruit/offer-letter-fields";
+import { DEFAULT_JOINING_LETTER_BODY } from "@/lib/recruit/joining-letter-fields";
 
 const schema = z.object({
+  // Which letter to preview. Defaults to the offer letter.
+  type: z.enum(["offer", "joining"]).optional(),
   // Optional live (unsaved) template body from the editor. Falls back to the
   // saved template, then the built-in default.
   body: z.string().max(20000).nullish(),
@@ -27,6 +31,42 @@ export const POST = withAuth(async (req: NextRequest, { orgId }) => {
     if (!parsed.success) return validationError("Validation failed", parsed.error.flatten().fieldErrors);
 
     const company = await prisma.companySettings.findUnique({ where: { orgId } });
+    const companyAddress = [company?.addressLine1, company?.addressLine2, company?.city, company?.state]
+      .filter(Boolean).join(", ") || "Indore, Madhya Pradesh";
+
+    // ── Joining letter sample ──────────────────────────────────────────────
+    if (parsed.data.type === "joining") {
+      const jBody = parsed.data.body?.trim() || company?.joiningLetterBody || DEFAULT_JOINING_LETTER_BODY;
+      const jPdf = await generateJoiningLetterPdf({
+        employeeName: "Aarav Sharma",
+        employeeCode: "EMP-0142",
+        jobTitle: "Senior Software Engineer",
+        designation: "Senior Software Engineer",
+        department: "Engineering",
+        reportingManager: "Priya Nair",
+        joiningDate: "01 August 2026",
+        offeredCTC: 1_800_000,
+        workLocation: "Indore (Office)",
+        companyName: company?.companyName ?? "Your Company",
+        companyAddress,
+        letterDate: today(),
+        letterheadKey: company?.letterheadKey ?? null,
+        sealKey: company?.sealKey ?? null,
+        signatureKey: company?.signatureKey ?? null,
+        signatoryName: company?.signatoryName ?? "Authorised Signatory",
+        signatoryDesignation: company?.signatoryDesignation ?? "Human Resources",
+        footer: company?.offerLetterFooter ?? null,
+        bodyTemplate: jBody,
+      });
+      return new NextResponse(new Uint8Array(jPdf), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": 'inline; filename="Joining-Letter-Sample.pdf"',
+        },
+      });
+    }
+
     const bodyTemplate =
       parsed.data.body?.trim() || company?.offerLetterBody || DEFAULT_OFFER_LETTER_BODY;
 

@@ -5,6 +5,7 @@ import { clsx } from "clsx";
 import { Banknote, HandCoins } from "lucide-react";
 import LoansPage from "../loans/page";
 import GivingPage from "../giving/page";
+import { PageBackground } from "@/components/hrms/page-background";
 
 type Tab = "loans" | "giving";
 
@@ -18,6 +19,8 @@ export default function LoansGivingHub() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <h1 className="text-page-title text-gray-900 mb-1">Advances</h1>
       <p className="text-xs text-gray-500 mb-4">Employee loans and giving — both auto-deduct in pay runs.</p>
 

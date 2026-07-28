@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useDialog } from "@/components/hrms/dialog";
+import { PageBackground } from "@/components/hrms/page-background";
 import { useRouter } from "next/navigation";
 import {
   Plus, Search, BarChart3, MoreVertical, Copy, Trash2, X,
@@ -79,6 +80,8 @@ export default function DashboardsLandingPage() {
 
   return (
     <div className="w-full">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       {/* Hero banner */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#0F1F3D] via-[#14532d] to-[#16a34a] mb-4">
         <svg className="absolute inset-0 w-full h-full opacity-40" viewBox="0 0 1200 200" preserveAspectRatio="none">

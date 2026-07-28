@@ -33,6 +33,10 @@ export const GET = withAuth(async (req: NextRequest, { orgId, permissions }) => 
   } catch (error) { console.error("GET /engage/recognition error:", error); return internalError(); }
 });
 
+// Points are authoritative on the server — derived from the recognition type,
+// never trusted from the client.
+const POINTS_BY_TYPE: Record<string, number> = { Kudos: 5, Shoutout: 5, Badge: 10, Award: 20 };
+
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
   try {
     const body = await req.json();
@@ -40,13 +44,26 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     if (!parsed.success) return validationError("Validation failed", parsed.error.flatten().fieldErrors);
 
     const data = parsed.data;
+
+    // Can't recognize yourself.
+    if (data.toEmployeeId === userId) return validationError("You cannot recognize yourself.");
+    // Recipient must be a real, non-deleted employee in the caller's org.
+    const recipient = await prisma.employee.findFirst({
+      where: { id: data.toEmployeeId, orgId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!recipient) return validationError("Recipient not found in your organization.");
+
+    // Server-derived score — ignore any client-supplied value.
+    const points = POINTS_BY_TYPE[data.type] ?? 0;
+
     const needsApproval = await moderationRequired(orgId, "Engagement");
 
     const recognition = await prisma.recognition.create({
       data: {
         orgId, fromEmployeeId: userId, toEmployeeId: data.toEmployeeId,
         type: data.type, message: data.message, badge: data.badge,
-        points: data.points, isPublic: data.isPublic,
+        points, isPublic: data.isPublic,
         approvalStatus: needsApproval ? "Pending" : "Approved",
         approvedById: needsApproval ? null : userId,
         approvedAt: needsApproval ? null : new Date(),

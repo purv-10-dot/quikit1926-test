@@ -47,6 +47,8 @@ export interface EmployeeMeta {
   dateOfJoining?: Date | null;
   departmentId?: string | null;
   roleId?: string | null;
+  maritalStatus?: string | null;
+  confirmationDate?: Date | null;
 }
 
 export interface Violation {
@@ -385,6 +387,137 @@ async function checkBalance(rule: LeaveTypeRule, ctx: LeaveContext, vios: Violat
       });
     }
   }
+}
+
+/**
+ * Rules configured directly on the LeaveType row (independent of the AI-extracted
+ * policy JSON), so they apply even when no LeavePolicy document exists:
+ *   • marital-status eligibility
+ *   • waiting period anchored to Joining OR Confirmation date
+ *   • max leave DAYS of this type per calendar month
+ *   • minimum gap between two leaves of this type
+ */
+export async function evaluateLeaveTypeColumns(params: {
+  ctx: LeaveContext;
+  employee: EmployeeMeta;
+  /**
+   * Per-group rule overrides (from the employee's Leave Group). When present,
+   * these replace the corresponding LeaveType column so a leave type can carry
+   * different day/gap/waiting-period rules in different groups.
+   */
+  overrides?: {
+    applicableAfterDays?: number | null;
+    applicableAfterRef?: string | null;
+    maxDaysPerMonth?: number | null;
+    minGapDays?: number | null;
+  } | null;
+}): Promise<EvaluateResult> {
+  const { ctx, employee, overrides } = params;
+  const vios: Violation[] = [];
+
+  const base = await prisma.leaveType.findFirst({
+    where: { id: ctx.leaveTypeId, orgId: ctx.orgId, deletedAt: null },
+    select: {
+      name: true, applicableMaritalStatus: true, applicableAfterDays: true,
+      applicableAfterRef: true, maxDaysPerMonth: true, minGapDays: true,
+    },
+  });
+  if (!base) return { ok: true, violations: vios };
+
+  // Group rules win over the LeaveType column when the key is present.
+  const has = (k: keyof NonNullable<typeof overrides>) => overrides != null && k in overrides;
+  const lt = {
+    name: base.name,
+    applicableMaritalStatus: base.applicableMaritalStatus,
+    applicableAfterDays: has("applicableAfterDays") ? overrides!.applicableAfterDays ?? null : base.applicableAfterDays,
+    applicableAfterRef: has("applicableAfterRef") ? overrides!.applicableAfterRef ?? null : base.applicableAfterRef,
+    maxDaysPerMonth: has("maxDaysPerMonth") ? overrides!.maxDaysPerMonth ?? null : base.maxDaysPerMonth,
+    minGapDays: has("minGapDays") ? overrides!.minGapDays ?? null : base.minGapDays,
+  };
+
+  // 1. Marital-status eligibility
+  const marital = (lt.applicableMaritalStatus ?? "").toLowerCase();
+  if (marital && marital !== "all" && marital !== "any") {
+    if ((employee.maritalStatus ?? "").toLowerCase() !== marital) {
+      vios.push({
+        code: "MARITAL_NOT_ELIGIBLE",
+        message: `${lt.name} is available only to ${lt.applicableMaritalStatus} employees.`,
+        severity: "block", rule: "applicableMaritalStatus",
+      });
+    }
+  }
+
+  // 2. Waiting period from the configured anchor (joining or confirmation date)
+  if (lt.applicableAfterDays && lt.applicableAfterDays > 0) {
+    const useConfirm = lt.applicableAfterRef === "ConfirmationDate";
+    const anchor = useConfirm ? employee.confirmationDate : employee.dateOfJoining;
+    if (useConfirm && !anchor) {
+      vios.push({
+        code: "NOT_CONFIRMED",
+        message: `${lt.name} is available only after your employment is confirmed.`,
+        severity: "block", rule: "applicableAfterRef",
+      });
+    } else if (anchor) {
+      const tenure = daysBetween(startOfDay(anchor), startOfDay(ctx.startDate));
+      if (tenure < lt.applicableAfterDays) {
+        vios.push({
+          code: "TENURE_TOO_SHORT",
+          message: `${lt.name} requires ${lt.applicableAfterDays} day(s) after ${useConfirm ? "confirmation" : "joining"}. So far: ${tenure} day(s).`,
+          severity: "block", rule: "applicableAfterDays",
+        });
+      }
+    }
+  }
+
+  // 3. Max leave DAYS of this type in the request's calendar month
+  if (lt.maxDaysPerMonth != null) {
+    const y = ctx.startDate.getUTCFullYear();
+    const m = ctx.startDate.getUTCMonth();
+    const rows = await prisma.leaveRequest.findMany({
+      where: {
+        orgId: ctx.orgId, employeeId: ctx.employeeId, leaveTypeId: ctx.leaveTypeId,
+        deletedAt: null, status: { in: ["Pending", "Approved"] },
+        startDate: { gte: new Date(Date.UTC(y, m, 1)), lte: new Date(Date.UTC(y, m + 1, 0, 23, 59, 59)) },
+      },
+      select: { duration: true },
+    });
+    const used = rows.reduce((s, r) => s + Number(r.duration), 0);
+    if (used + ctx.duration > lt.maxDaysPerMonth) {
+      vios.push({
+        code: "EXCEEDS_MONTHLY_DAYS",
+        message: `Max ${lt.maxDaysPerMonth} ${lt.name} day(s) per month. Already used: ${used}.`,
+        severity: "block", rule: "maxDaysPerMonth",
+      });
+    }
+  }
+
+  // 4. Minimum gap between two leaves of this type
+  if (lt.minGapDays && lt.minGapDays > 0) {
+    const gapMs = lt.minGapDays * MS_DAY;
+    const sStart = startOfDay(ctx.startDate);
+    const sEnd = startOfDay(ctx.endDate);
+    const clash = await prisma.leaveRequest.findFirst({
+      where: {
+        orgId: ctx.orgId, employeeId: ctx.employeeId, leaveTypeId: ctx.leaveTypeId,
+        deletedAt: null, status: { in: ["Pending", "Approved"] },
+        OR: [
+          { endDate: { gte: new Date(sStart.getTime() - gapMs), lt: sStart } },
+          { startDate: { gt: sEnd, lte: new Date(sEnd.getTime() + gapMs) } },
+        ],
+      },
+      select: { id: true },
+    });
+    if (clash) {
+      vios.push({
+        code: "MIN_GAP_VIOLATION",
+        message: `Keep at least ${lt.minGapDays} day(s) between two ${lt.name} leaves.`,
+        severity: "block", rule: "minGapDays",
+      });
+    }
+  }
+
+  const blocking = vios.filter((v) => v.severity === "block");
+  return { ok: blocking.length === 0, violations: vios };
 }
 
 export function parseRules(json: unknown): LeavePolicyRules | null {

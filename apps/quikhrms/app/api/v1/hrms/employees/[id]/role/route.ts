@@ -5,7 +5,7 @@ import { successResponse, notFound, validationError, internalError } from "@/lib
 import { assignRoleSchema } from "@/lib/validations/rbac";
 import { createAuditLog } from "@/lib/utils/audit";
 import { ensureSuperAdminRemains } from "@/lib/rbac/guards";
-import { APP_ID } from "@/lib/rbac/registry";
+import { APP_ID, joinCode } from "@/lib/rbac/registry";
 import { mirrorHrmsRolesToCentral } from "@/lib/rbac/mirrorRole";
 
 /**
@@ -14,7 +14,7 @@ import { mirrorHrmsRolesToCentral } from "@/lib/rbac/mirrorRole";
  * Semantics: deletes all existing UserAppRole rows for the employee in this
  * tenant, then inserts the new one (if roleId is provided).
  */
-export const PUT = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
+export const PUT = withAuth(async (req: NextRequest, { orgId, userId, permissions }, params) => {
   try {
     const employee = await prisma.employee.findFirst({
       where: { id: params.id, orgId, deletedAt: null },
@@ -30,10 +30,22 @@ export const PUT = withAuth(async (req: NextRequest, { orgId, userId }, params) 
     if (parsed.data.roleId) {
       const role = await prisma.hrmsAppRole.findFirst({
         where: { id: parsed.data.roleId, orgId: orgId, appId: APP_ID },
-        select: { id: true, name: true },
+        select: { id: true, name: true, permissions: { select: { resource: true, action: true } } },
       });
       if (!role) return validationError("Role not found");
       roleName = role.name;
+
+      // Tier guard: you can't assign a role that carries permissions you don't
+      // hold yourself (blocks a non-admin rbac.manager from granting admin).
+      if (!permissions.includes("*")) {
+        const held = new Set(permissions);
+        const missing = role.permissions
+          .map((p) => joinCode(p.resource, p.action))
+          .filter((c) => !held.has(c));
+        if (missing.length) {
+          return validationError(`You can't assign a role with permissions you don't hold: ${missing.join(", ")}`);
+        }
+      }
     }
 
     try {
