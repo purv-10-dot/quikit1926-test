@@ -65,6 +65,18 @@ ENV NEXT_PUBLIC_QUIKIT_URL=$NEXT_PUBLIC_QUIKIT_URL
 ENV NEXT_PUBLIC_QUIKLMS_URL=$NEXT_PUBLIC_QUIKLMS_URL
 ENV NEXT_PUBLIC_WORKER_URL=$NEXT_PUBLIC_WORKER_URL
 ENV NEXTAUTH_SECRET="build-time-dummy-not-used-at-runtime"
+# QuikLMS-only: lib/env.ts zod-validates these two at module import, and Next's
+# "Collect page data" pass executes every route module — so `next build` throws
+# without them even though nothing connects or signs anything at build time.
+# Both must be >=16 chars to satisfy the schema. Plain ENV, never ARG: build-args
+# are recorded in `docker history`, so a real secret passed that way would leak
+# into the image metadata. Real values come from the K8s Secret at runtime, and
+# Next's dotenv loader does not override an existing process.env value.
+# These names are also declared in turbo.json `tasks.build.env` — turbo runs in
+# strict envMode and strips any variable not on that allowlist, so the ENV alone
+# would never reach `next build`.
+ENV JWT_SECRET="build-time-dummy-not-used-at-runtime"
+ENV ENCRYPTION_KEY="build-time-dummy-not-used-at-runtime"
 ENV QUIKIT_URL=$QUIKIT_URL
 ENV QUIKIT_CLIENT_ID=$QUIKIT_CLIENT_ID
 ENV QUIKIT_CLIENT_SECRET=$QUIKIT_CLIENT_SECRET
