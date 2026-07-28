@@ -30,6 +30,140 @@ export const DEFAULT_ISSUE_TYPES = [
   { name: "Subtask", color: "#64748b", icon: "ListTree", orderIndex: 4 },
 ];
 
+export const DEFAULT_RESOLUTIONS = [
+  { name: "Done", orderIndex: 0 },
+  { name: "Won't Do", orderIndex: 1 },
+  { name: "Duplicate", orderIndex: 2 },
+  { name: "Cannot Reproduce", orderIndex: 3 },
+];
+
+/**
+ * Transitions of the seeded "classic default workflow", expressed by STATUS
+ * NAME (resolved to the project's just-created QtIssueStatus ids). The chain
+ * mirrors the DEFAULT_STATUSES order; a GLOBAL "Done" lets any status jump to
+ * Done, and "Reopen" returns Done → To Do. INITIAL runs on issue creation.
+ */
+const CLASSIC_WORKFLOW_NAME = "classic default workflow";
+const CLASSIC_TRANSITIONS: Array<{
+  name: string;
+  type: "INITIAL" | "NORMAL" | "GLOBAL";
+  from: string[];
+  to: string;
+}> = [
+  { name: "Create", type: "INITIAL", from: [], to: "To Do" },
+  { name: "Start Progress", type: "NORMAL", from: ["To Do"], to: "In Progress" },
+  { name: "Ready for Review", type: "NORMAL", from: ["In Progress"], to: "In Review" },
+  { name: "Back to In Progress", type: "NORMAL", from: ["In Review"], to: "In Progress" },
+  { name: "Done", type: "GLOBAL", from: [], to: "Done" },
+  { name: "Reopen", type: "NORMAL", from: ["Done"], to: "To Do" },
+];
+
+/**
+ * Seed a published "classic default workflow" for a new project + a scheme with
+ * a single default item mapping every issue type to it. Idempotent per project
+ * (skips if a scheme already exists). Also seeds the org's resolution catalog.
+ */
+export async function seedProjectWorkflow(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  orgId: string,
+  createdBy: string | null = null,
+): Promise<void> {
+  // Org resolution catalog (shared across the org's projects).
+  await tx.qtResolution.createMany({
+    data: DEFAULT_RESOLUTIONS.map((r) => ({ ...r, orgId })),
+    skipDuplicates: true,
+  });
+
+  // Don't clobber an existing scheme (idempotent re-seed).
+  const existingScheme = await tx.qtWorkflowScheme.findUnique({
+    where: { projectId },
+    select: { id: true },
+  });
+  if (existingScheme) return;
+
+  // Map status NAME → id for this project's seeded statuses.
+  const statuses = await tx.qtIssueStatus.findMany({
+    where: { projectId },
+    select: { id: true, name: true },
+  });
+  const statusIdByName = new Map(statuses.map((s) => [s.name, s.id]));
+
+  const workflow = await tx.qtWorkflow.create({
+    data: {
+      orgId,
+      projectId,
+      name: CLASSIC_WORKFLOW_NAME,
+      description: "Default lifecycle seeded on space creation.",
+      isActive: true,
+      createdBy,
+    },
+    select: { id: true },
+  });
+
+  // Nodes: every project status participates; "To Do" is the initial node.
+  await tx.qtWorkflowStatus.createMany({
+    data: statuses.map((s) => ({
+      workflowId: workflow.id,
+      statusId: s.id,
+      isInitial: s.name === "To Do",
+    })),
+    skipDuplicates: true,
+  });
+
+  // Edges + their source-status joins. Skip any transition whose endpoints
+  // aren't present (defensive — statuses are seeded just above).
+  let initialTransitionId: string | null = null;
+  for (const [i, t] of CLASSIC_TRANSITIONS.entries()) {
+    const toId = statusIdByName.get(t.to);
+    if (!toId) continue;
+    const fromIds = t.from
+      .map((n) => statusIdByName.get(n))
+      .filter((id): id is string => Boolean(id));
+    const transition = await tx.qtWorkflowTransition.create({
+      data: {
+        workflowId: workflow.id,
+        name: t.name,
+        type: t.type,
+        toStatusId: toId,
+        orderIndex: i,
+      },
+      select: { id: true },
+    });
+    if (fromIds.length > 0) {
+      await tx.qtWorkflowTransitionFrom.createMany({
+        data: fromIds.map((statusId) => ({
+          transitionId: transition.id,
+          statusId,
+        })),
+        skipDuplicates: true,
+      });
+    }
+    if (t.type === "INITIAL") initialTransitionId = transition.id;
+  }
+
+  if (initialTransitionId) {
+    await tx.qtWorkflow.update({
+      where: { id: workflow.id },
+      data: { initialTransitionId },
+    });
+  }
+
+  // Scheme + default item (issueTypeId NULL → applies to every type).
+  const scheme = await tx.qtWorkflowScheme.create({
+    data: { orgId, projectId, name: "Default Workflow Scheme" },
+    select: { id: true },
+  });
+  await tx.qtWorkflowSchemeItem.create({
+    data: {
+      schemeId: scheme.id,
+      issueTypeId: null,
+      workflowId: workflow.id,
+      isDefault: true,
+    },
+  });
+}
+
 /**
  * Three starter project roles seeded on every new project. Admins can rename,
  * delete, or add roles per project from the User Management UI.
@@ -168,6 +302,11 @@ export async function seedProjectDefaults(
     data: DEFAULT_ISSUE_TYPES.map((t) => ({ ...t, projectId })),
     skipDuplicates: true,
   });
+
+  // Attach a published "classic default workflow" + scheme so new spaces are
+  // workflow-gated out of the box. Existing spaces (no scheme) keep the legacy
+  // any→any behaviour until an admin publishes one. Idempotent per project.
+  await seedProjectWorkflow(tx, projectId, orgId, createdBy);
 
   // Seed the 3 starter project roles + their grants. Idempotent: if a role
   // with the same name already exists for this project, skip both the role

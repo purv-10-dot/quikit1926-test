@@ -13,6 +13,10 @@ import {
 import { recalcParentRollup } from "@/lib/services/subtaskRollup";
 import { notifyMentions } from "@/lib/services/mentions";
 import {
+  assertTransitionForIssue,
+  TransitionNotAllowedError,
+} from "@/lib/services/workflow";
+import {
   getActiveFieldsForProject,
   getValuesForIssue,
   validateIssueValues,
@@ -177,6 +181,32 @@ export const PATCH = withOrgAuth<{ id: string }>(
     // Dates: a present-but-falsy value (null) clears the field; a valid string
     // sets it; an absent key leaves it unchanged.
     const allowedFields = allowed as typeof parsed.data;
+
+    // Workflow gate: if this patch changes statusId, it must follow a legal
+    // transition on the issue's active workflow. No-ops and projects without a
+    // published scheme fall through (opt-in enforcement).
+    if (
+      allowedFields.statusId != null &&
+      allowedFields.statusId !== issue.statusId
+    ) {
+      try {
+        await assertTransitionForIssue({
+          projectId: issue.projectId,
+          issueType: issue.type ?? "TASK",
+          fromStatusId: issue.statusId,
+          toStatusId: allowedFields.statusId,
+        });
+      } catch (error: unknown) {
+        if (error instanceof TransitionNotAllowedError) {
+          return NextResponse.json(
+            { success: false, error: error.message, code: error.code },
+            { status: 409 },
+          );
+        }
+        throw error;
+      }
+    }
+
     const dateValue = (key: "startDate" | "dueDate") =>
       key in allowedFields
         ? allowedFields[key]
