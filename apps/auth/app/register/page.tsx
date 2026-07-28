@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { signIn } from "next-auth/react";
-import { ArrowLeft, Eye, EyeOff, Sun, Moon } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, Sun, Moon, ChevronDown } from "lucide-react";
 
 /**
  * Self-serve workspace registration — two-panel layout mirroring the central
@@ -28,7 +28,48 @@ const LAUNCHER_URL = (
   "http://localhost:3001"
 ).replace(/\/+$/, "");
 
-type Step = "workspace" | "otp" | "password";
+type Step = "workspace" | "otp" | "password" | "details";
+
+// Optional onboarding profile options ("A few quick details" step). Values are
+// stored verbatim; kept in sync with the server-side Zod enums in
+// /api/auth/register/profile.
+const INDUSTRY_OPTIONS = [
+  "Technology / SaaS",
+  "Finance & Banking",
+  "Healthcare",
+  "Retail & E-commerce",
+  "Manufacturing",
+  "Construction & Real Estate",
+  "Education",
+  "Professional Services",
+  "Other",
+];
+const ROLE_OPTIONS = [
+  "Founder / CEO",
+  "Operations",
+  "Product / Engineering",
+  "Sales / Marketing",
+  "HR / People",
+  "Finance",
+  "IT / Admin",
+  "Other",
+];
+const COMPANY_SIZE_OPTIONS = [
+  "1–10 employees",
+  "11–50 employees",
+  "51–200 employees",
+  "201–1,000 employees",
+  "1,000+ employees",
+];
+const USE_CASE_OPTIONS = [
+  "CRM & sales",
+  "Project & work management",
+  "Team collaboration",
+  "HR & people",
+  "Analytics & reporting",
+  "Customer support",
+  "A bit of everything",
+];
 
 // Left brand-panel copy per step.
 const BRAND_COPY: Record<Step, { eyebrow: string; title: string; subtitle: string; desc: string }> = {
@@ -49,6 +90,12 @@ const BRAND_COPY: Record<Step, { eyebrow: string; title: string; subtitle: strin
     title: "Create your password.",
     subtitle: "Secure your new workspace.",
     desc: `Choose a strong password — you'll use it together with your email to sign in to ${BRAND_NAME}.`,
+  },
+  details: {
+    eyebrow: "Almost set up",
+    title: "Tell us a bit about\nyour business.",
+    subtitle: `So we can tailor ${BRAND_NAME} to the way you work.`,
+    desc: "A few quick details help us personalize your workspace and recommend the right apps from day one.",
   },
 };
 
@@ -71,6 +118,12 @@ const FORM_COPY: Record<Step, { heading: string; sub: string; submit: string; bu
     sub: "Choose a strong password to secure your account.",
     submit: "Create password & continue",
     busy: "Setting up your workspace…",
+  },
+  details: {
+    heading: "A few quick details",
+    sub: "This helps us personalize your workspace and suggest the right apps.",
+    submit: "Continue",
+    busy: "Saving…",
   },
 };
 
@@ -104,6 +157,12 @@ export default function RegisterPage() {
   const [confirm, setConfirm] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+
+  // "A few quick details" onboarding step — all optional.
+  const [industry, setIndustry] = useState("");
+  const [jobRole, setJobRole] = useState("");
+  const [companySize, setCompanySize] = useState("");
+  const [primaryUseCase, setPrimaryUseCase] = useState("");
 
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -280,7 +339,16 @@ export default function RegisterPage() {
         if (res.status === 400) setStep("workspace");
         return;
       }
-      await signIn("credentials", { email, password, callbackUrl: `${LAUNCHER_URL}/apps` });
+      // Establish the session WITHOUT navigating so the optional
+      // "A few quick details" step can save to the user's workspace, then
+      // advance to it. If sign-in somehow fails, fall back to the original
+      // redirect-to-launcher behaviour so registration never dead-ends.
+      const signInRes = await signIn("credentials", { email, password, redirect: false });
+      if (signInRes?.error || !signInRes?.ok) {
+        await signIn("credentials", { email, password, callbackUrl: `${LAUNCHER_URL}/apps` });
+        return;
+      }
+      setStep("details");
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -288,9 +356,62 @@ export default function RegisterPage() {
     }
   }
 
+  // Final navigation to the launcher — mirrors the sign-in component's
+  // post-login handoff: a cross-origin target routes through /api/post-login so
+  // a handoff JWT is minted and the launcher can plant a host-scoped session
+  // cookie (a direct cross-origin assign would land the user unauthenticated).
+  function goToLauncher() {
+    const target = `${LAUNCHER_URL}/apps`;
+    try {
+      const targetUrl = new URL(target, window.location.origin);
+      if (targetUrl.origin !== window.location.origin) {
+        const bridge = new URL("/api/post-login", window.location.origin);
+        bridge.searchParams.set("callbackUrl", targetUrl.toString());
+        window.location.assign(bridge.toString());
+        return;
+      }
+    } catch {
+      /* fall through to a plain assign */
+    }
+    window.location.assign(target);
+  }
+
+  async function handleSaveDetails(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/auth/register/profile", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          industry: industry || null,
+          jobRole: jobRole || null,
+          companySize: companySize || null,
+          primaryUseCase: primaryUseCase || null,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.success) {
+        setError(body.error || "Could not save your details. You can skip for now.");
+        return;
+      }
+      goToLauncher();
+    } catch {
+      setError("Network error. You can skip for now.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function handleSkipDetails() {
+    goToLauncher();
+  }
+
   function handleBack() {
     setError(null);
-    if (step === "password") setStep("otp");
+    if (step === "details") goToLauncher();
+    else if (step === "password") setStep("otp");
     else if (step === "otp") setStep("workspace");
     else window.location.href = "/login";
   }
@@ -486,6 +607,66 @@ export default function RegisterPage() {
               </form>
             )}
 
+            {/* STEP 4 — optional "A few quick details" onboarding. All fields
+                optional; user can Skip straight to the launcher. */}
+            {step === "details" && (
+              <form onSubmit={handleSaveDetails} noValidate>
+                <div className="auth-field">
+                  <label htmlFor="reg-industry">Industry</label>
+                  <div className="auth-select-wrap">
+                    <select id="reg-industry" className={`auth-select${industry ? "" : " is-empty"}`}
+                      value={industry} onChange={(e) => setIndustry(e.target.value)}>
+                      <option value="">Select your industry</option>
+                      {INDUSTRY_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                    <ChevronDown className="auth-select-icon" size={18} aria-hidden />
+                  </div>
+                </div>
+                <div className="auth-field">
+                  <label htmlFor="reg-role">Your role</label>
+                  <div className="auth-select-wrap">
+                    <select id="reg-role" className={`auth-select${jobRole ? "" : " is-empty"}`}
+                      value={jobRole} onChange={(e) => setJobRole(e.target.value)}>
+                      <option value="">Select your role</option>
+                      {ROLE_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                    <ChevronDown className="auth-select-icon" size={18} aria-hidden />
+                  </div>
+                </div>
+                <div className="auth-field">
+                  <label htmlFor="reg-size">Company size</label>
+                  <div className="auth-select-wrap">
+                    <select id="reg-size" className={`auth-select${companySize ? "" : " is-empty"}`}
+                      value={companySize} onChange={(e) => setCompanySize(e.target.value)}>
+                      <option value="">Select company size</option>
+                      {COMPANY_SIZE_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                    <ChevronDown className="auth-select-icon" size={18} aria-hidden />
+                  </div>
+                </div>
+                <div className="auth-field">
+                  <label htmlFor="reg-usecase">Primary use case</label>
+                  <div className="auth-select-wrap">
+                    <select id="reg-usecase" className={`auth-select${primaryUseCase ? "" : " is-empty"}`}
+                      value={primaryUseCase} onChange={(e) => setPrimaryUseCase(e.target.value)}>
+                      <option value="">What will you use {BRAND_NAME} for?</option>
+                      {USE_CASE_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                    <ChevronDown className="auth-select-icon" size={18} aria-hidden />
+                  </div>
+                </div>
+                <button type="submit" className="auth-submit" disabled={submitting}>
+                  {submitting ? form.busy : form.submit}
+                </button>
+                <p className="auth-alt">
+                  Prefer to do this later?{" "}
+                  <button type="button" className="auth-skip" onClick={handleSkipDetails} disabled={submitting}>
+                    Skip for now
+                  </button>
+                </p>
+              </form>
+            )}
+
             {step === "workspace" && (
               <p className="auth-alt">
                 Already have an account? <a href="/login">Sign in</a>
@@ -618,6 +799,15 @@ const REG_CSS = `
 .qk-reg .auth-foot-links { display:flex; gap:20px; }
 .qk-reg .auth-foot a { color:var(--text-muted); }
 .qk-reg .auth-foot a:hover { color:var(--text-primary); }
+.qk-reg .auth-select-wrap { position:relative; }
+.qk-reg .auth-select { width:100%; height:50px; padding:0 42px 0 16px; font-family:inherit; font-size:15px; color:var(--text-primary); background:var(--card-bg); border:1px solid var(--hairline); border-radius:12px; transition:border-color .15s, background .15s; outline:none; cursor:pointer; -webkit-appearance:none; -moz-appearance:none; appearance:none; }
+.qk-reg .auth-select:focus { border-color:var(--text-primary); background:var(--panel-bg); }
+.qk-reg .auth-select.is-empty { color:var(--text-muted); }
+.qk-reg .auth-select option { color:var(--text-primary); background:var(--panel-bg); }
+.qk-reg .auth-select-icon { position:absolute; right:14px; top:50%; transform:translateY(-50%); pointer-events:none; color:var(--text-muted); }
+.qk-reg .auth-skip { background:none; border:none; padding:0; font:inherit; color:var(--text-primary); text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
+.qk-reg .auth-skip:hover { opacity:.8; }
+.qk-reg .auth-skip:disabled { opacity:.5; cursor:default; }
 .qk-reg .auth-foot--terms { justify-content:center; text-align:center; }
 .qk-reg .auth-foot--terms a { color:var(--text-primary); text-decoration:underline; text-underline-offset:2px; }
 .qk-reg .auth-foot--terms a:hover { opacity:.8; }

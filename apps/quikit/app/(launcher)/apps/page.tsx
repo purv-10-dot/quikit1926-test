@@ -76,6 +76,7 @@ const LAUNCHER_ICONS: Record<string, string> = {
   quikfinance: "/app-icons/quikfinance-light.svg",
   quikhrms: "/app-icons/quikhrms-light.svg",
   quikinfra: "/app-icons/quikinfra-light.svg",
+  quiklms: "/app-icons/quiklms-light.svg",
   quikscale: "/app-icons/quikscale-light.svg",
   quiktrack: "/app-icons/quiktrack-light.svg",
   quiksocial: "/app-icons/quiksocial-light.svg",

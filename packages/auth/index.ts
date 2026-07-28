@@ -340,11 +340,29 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
           // The user has authenticated against their stored password, so
           // we treat that as proof of identity equivalent to clicking the
           // accept-invite link.
+          // NOT filtered by `inviteMethod` — deliberately, and this is a bug fix.
+          //
+          // This callback runs on EVERY initial sign-in, credentials and OAuth
+          // alike (NextAuth passes `user` on the first pass for both). Filtering
+          // to `inviteMethod: "native"` therefore created a dead corner: an
+          // invitation minted as `native` (any flow that seeds a temp password —
+          // the LMS roster, for one) was never accepted if the invitee happened
+          // to sign in with Google or Microsoft. The `signIn` callback above
+          // only picks up `sso` invites, so nothing accepted theirs. Their
+          // membership stayed `invited`, `createGetOrgId` found no active org,
+          // and they were bounced to the launcher on every attempt — a person
+          // who could never log in, with no error explaining why.
+          //
+          // The method label describes how the invite was CREATED, not how the
+          // person chooses to authenticate; coupling acceptance to it was the
+          // mistake. Both existing rationales justify auto-accept by proof of
+          // identity — the SSO email matched this User row, or the password
+          // matched — and neither depends on the label. So accept any pending
+          // invitation for the now-authenticated user.
           const pendingNativeInvites = await db.orgMember.findMany({
             where: {
               userId: user.id,
               status: "invited",
-              inviteMethod: "native",
             },
           });
           for (const inv of pendingNativeInvites) {
@@ -371,17 +389,27 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
             }
           }
 
-          // Auto-select first active org on initial sign-in so the user is
+          // Auto-select an active org on initial sign-in so the user is
           // dropped straight onto the launcher (/apps) with an org already
           // resolved. Multi-org users switch orgs from the launcher's
           // /apps org dropdown on demand.
+          //
+          // MOST RECENT, not oldest. This used to order `createdAt: "asc"`,
+          // which silently defeated every new invitation for anyone who already
+          // belonged to an org: invite an existing user to a new SCHOOL tenant,
+          // they accept, sign in — and the session resolved their oldest
+          // membership instead, dropping them in a CORPORATE org from months
+          // earlier, with that org's dashboard and modules. 24 users in
+          // production hold multiple active memberships, so this was not an
+          // edge case. The org someone was just invited to is the one they are
+          // trying to reach; the launcher dropdown still switches away from it.
           const firstMembership = await db.orgMember.findFirst({
             // Skip suspended orgs so a user is never auto-dropped into one on
             // sign-in. If all their orgs are suspended they land org-less and
             // the middleware bounces them to the launcher (where the org is
             // also hidden). Mirrors org.status === "active" gating below.
             where: { userId: user.id, status: "active", org: { status: "active" } },
-            orderBy: { createdAt: "asc" },
+            orderBy: { createdAt: "desc" },
             select: { orgId: true, role: true },
           });
           if (firstMembership) {
@@ -532,6 +560,11 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
           "https://people.quikit.ai",
           "https://support.quikit.ai",
           "https://asset.quikit.ai",
+          // QuikLMS / QuikSkill. Absent until now, which meant a post-login
+          // callback to the LMS failed this check and fell through to the
+          // launcher instead of landing the user in the app they signed in for.
+          "https://quikskill.vercel.app",
+          "https://quikskills.quikit.ai",
           // UAT custom domains (uat<app>.quikit.ai) — added alongside prod.
           "https://uatapps.quikit.ai",
           "https://uatscale.quikit.ai",
