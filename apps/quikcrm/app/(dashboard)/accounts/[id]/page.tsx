@@ -15,7 +15,6 @@ function iso(d: Date | string | null | undefined): string | null {
   return typeof d === "string" ? d : d.toISOString();
 }
 
-
 export default async function AccountDetailPage({
   params,
 }: {

@@ -12,6 +12,7 @@ import { useFeatures } from '@/app/providers';
 import { useCurrentUser } from '@/app/providers';
 import toast, { Toaster } from 'react-hot-toast';
 
+
 // ─── Error Boundary ───────────────────────────────────────────────────────────
 class CertificatesErrorBoundary extends Component<
   { children: ReactNode },
