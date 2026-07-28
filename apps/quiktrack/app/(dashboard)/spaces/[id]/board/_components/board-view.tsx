@@ -194,10 +194,12 @@ export function BoardView({ projectId }: { projectId: string }) {
     }
     window.addEventListener("quiktrack:issue-created", refresh);
     window.addEventListener("quiktrack:issue-updated", refresh);
+    window.addEventListener("quiktrack:issue-deleted", refresh);
     window.addEventListener("quiktrack:open-issue", onOpen);
     return () => {
       window.removeEventListener("quiktrack:issue-created", refresh);
       window.removeEventListener("quiktrack:issue-updated", refresh);
+      window.removeEventListener("quiktrack:issue-deleted", refresh);
       window.removeEventListener("quiktrack:open-issue", onOpen);
     };
   }, []);

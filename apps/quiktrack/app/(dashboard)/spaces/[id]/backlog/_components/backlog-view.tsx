@@ -33,6 +33,7 @@ import {
   ChevronDown,
   ChevronRight,
   MoreHorizontal,
+  ExternalLink,
   Plus,
   CalendarDays,
   User as UserIcon,
@@ -1247,14 +1248,7 @@ function IssueRow({
     }
   }
 
-  useEffect(() => {
-    if (!menuOpen) return;
-    function onClick(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
-    }
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [menuOpen]);
+  // Outside-click / Escape close for this row menu is owned by PopoverPanel.
 
   async function confirmDelete() {
     if (deleting) return;
@@ -1732,32 +1726,50 @@ function IssueRow({
           onClick={() => setMenuOpen((v) => !v)}
           className={`p-1 rounded text-gray-500 ${menuOpen ? "bg-gray-200" : "hover:bg-gray-200"}`}
           aria-label="More"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
         >
           <MoreHorizontal className="h-3.5 w-3.5" />
         </button>
-        {menuOpen && (
-          <div className="absolute right-0 top-full mt-1 w-40 bg-white border border-gray-200 rounded-md shadow-lg z-30 py-1">
+        {/* Portaled via PopoverPanel so the menu never clips against the row/
+            table overflow, and gets consistent positioning + outside-click. */}
+        <PopoverPanel
+          anchorRef={menuRef}
+          open={menuOpen}
+          onClose={() => setMenuOpen(false)}
+          align="right"
+          width={176}
+          estimatedHeight={canDelete ? 84 : 44}
+        >
+          <div role="menu" className="py-1">
             <button
               type="button"
+              role="menuitem"
               onClick={() => {
                 setMenuOpen(false);
                 onOpen(issue.id);
               }}
-              className="block w-full text-left px-3 py-1.5 text-sm text-gray-800 hover:bg-gray-50"
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
             >
+              <ExternalLink className="h-4 w-4 shrink-0 text-gray-400" />
               Open
             </button>
             {canDelete && (
-              <button
-                type="button"
-                onClick={openConfirm}
-                className="block w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
-              >
-                Delete
-              </button>
+              <>
+                <div className="my-1 border-t border-gray-100" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={openConfirm}
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+                >
+                  <Trash2 className="h-4 w-4 shrink-0" />
+                  Delete
+                </button>
+              </>
             )}
           </div>
-        )}
+        </PopoverPanel>
       </div>
 
       {confirmOpen && (
@@ -3819,9 +3831,6 @@ export function BacklogView({ projectId }: { projectId: string }) {
       {/* Footer summary */}
       <div className="mt-3 flex items-center justify-end text-xs text-gray-500">
         {totalVisible} of {totalAll} work items visible
-        <span className="mx-2 text-gray-300">|</span>
-        Estimate: <span className="ml-1 font-semibold text-gray-700">0</span> of{" "}
-        <span className="ml-1 font-semibold text-gray-700">0</span>
       </div>
         </div>{/* /right column */}
       </div>{/* /epic-panel + content flex */}
