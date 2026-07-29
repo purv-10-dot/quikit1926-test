@@ -131,10 +131,25 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     const search = searchParams.get("search");
     const status = searchParams.get("status");
 
+    // The Onboarding list = employees whose onboarding instance is in the
+    // "Onboarding" phase (Day-1+). `phase` is a raw-SQL column, so resolve the
+    // matching employeeIds first (mirrors the pre-onboarding roster, which uses
+    // phase='PreOnboarding'). Null/absent phase counts as Onboarding (default).
+    // Filtering by phase — NOT by employee.status — is what makes "Move to
+    // Onboarding" reliably surface a candidate here, even after their status
+    // has flipped to Active.
+    const phaseRows = await prisma.$queryRaw<Array<{ employeeId: string }>>`
+      SELECT "employeeId" FROM "app_quikhrms"."OnboardingInstance"
+      WHERE "orgId" = ${orgId} AND "deletedAt" IS NULL AND (phase = 'Onboarding' OR phase IS NULL)`;
+    const onboardingIds = phaseRows.map((r) => r.employeeId);
+    if (onboardingIds.length === 0) {
+      return successResponse([], paginationMeta(page, limit, 0));
+    }
+
     const where = {
       orgId,
       deletedAt: null,
-      status: "PreBoarding" as const,
+      id: { in: onboardingIds },
       ...(search && {
         OR: [
           { firstName: { contains: search, mode: "insensitive" as const } },
@@ -406,6 +421,15 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
           },
         },
       });
+
+      // If the caller (e.g. the Pre-Onboarding "Add Candidate" wizard) marks this
+      // as a pre-onboarding hire, flip the instance into the PreOnboarding phase.
+      // `phase` is a raw-SQL column; default stays "Onboarding" for callers that
+      // don't pass it (e.g. the Onboarding "new candidate" page).
+      if (body?.phase === "PreOnboarding") {
+        await prisma.$executeRaw`
+          UPDATE "app_quikhrms"."OnboardingInstance" SET phase = 'PreOnboarding' WHERE id = ${instance.id}`;
+      }
 
       await createAuditLog({
         orgId, userId, action: "Create", entityType: "Employee", entityId: employee.id,

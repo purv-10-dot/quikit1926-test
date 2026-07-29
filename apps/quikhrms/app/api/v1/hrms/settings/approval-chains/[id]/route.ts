@@ -30,7 +30,7 @@ export const PUT = withAuth(async (req: NextRequest, { orgId, userId }, params) 
     const existing = await prisma.approvalChain.findFirst({ where: { id, orgId, deletedAt: null } });
     if (!existing) return notFound("Approval chain not found");
 
-    const { levels, ...rest } = parsed.data;
+    const { levels, module, ...rest } = parsed.data;
 
     // Same org-membership validation as POST: every USER/ROLE approver referenced
     // in the levels must belong to this org (block cross-tenant / bogus ids).
@@ -54,6 +54,8 @@ export const PUT = withAuth(async (req: NextRequest, { orgId, userId }, params) 
         where: { id },
         data: {
           ...rest,
+          // Cast: client enum may lag the DB enum (WFH/Payroll added via raw SQL).
+          ...(module && { module: module as never }),
           ...(levels && { levels: JSON.parse(JSON.stringify(levels)) }),
           updatedBy: userId,
         },

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { getActiveChainLevels, callerCanActionLevel, getCallerRoleIds } from "@/lib/services/approval-chain";
 
 export interface PolicySnapshot {
   policyId: string;
@@ -238,6 +239,14 @@ export async function claimsAwaitingApprover(
   });
 
   const { callerEmployeeId, roles, isSuper } = opts;
+  // Central Approval Chain (Settings → Approval Chains → "Expense") + the
+  // caller's role ids, fetched once (per-org / per-caller, not per-claim). Only
+  // consulted for claims whose policy defines no chain of its own.
+  const centralLevels = isSuper ? null : await getActiveChainLevels(orgId, "Expense");
+  const callerRoleIds =
+    !isSuper && centralLevels?.length && callerEmployeeId
+      ? await getCallerRoleIds(orgId, callerEmployeeId)
+      : [];
   return claims
     .filter((c) => {
       if (isSuper) return true;
@@ -245,8 +254,15 @@ export async function claimsAwaitingApprover(
       const chain: ExpenseChainLevel[] =
         (snap?.approvalChain as ExpenseChainLevel[] | undefined) ??
         ((c.policy?.approvalChain as ExpenseChainLevel[] | null) ?? []);
-      if (chain.length === 0) return true; // legacy: any approver
       const currentLevel = c._count.approvals + 1;
+      if (chain.length === 0) {
+        // No per-policy chain → use the central chain if one is configured,
+        // otherwise stay legacy-permissive (any approver, matches route fallback).
+        if (!centralLevels || centralLevels.length === 0) return true;
+        const levelCfg = centralLevels.find((l) => l.level === currentLevel);
+        if (!levelCfg) return true;
+        return !!callerEmployeeId && callerCanActionLevel(levelCfg, { employeeId: callerEmployeeId, roleIds: callerRoleIds });
+      }
       const levelCfg = chain.find((l) => l.level === currentLevel);
       if (!levelCfg) return true; // no config for this level → permissive (matches approve route)
       return isEligibleExpenseApprover(levelCfg, roles, callerEmployeeId, {

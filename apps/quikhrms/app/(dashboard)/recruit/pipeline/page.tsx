@@ -1422,22 +1422,6 @@ export default function PipelinePage() {
                 <MenuItem icon={<SkipForward size={14} />} label="Skip stage"
                   onClick={() => { setMenu(null); setFeedback({ ...BLANK_FEEDBACK }); setSkipTarget(getNextStage(app.currentStage) ?? ""); setSkipApp(app); prefillFeedback(app).then(setFeedback); }} />
               )}
-              {!isHired && canMoveForward(app.currentStage) && (
-                <MenuItem icon={<ArrowRight size={14} />} label="Move to next"
-                  onClick={() => {
-                    setMenu(null);
-                    const next = STAGES[si + 1];
-                    // Gate: unapproved required documents block reaching Offer (same rule as the kanban "Move to Offer" button).
-                    if (/offer/i.test(next ?? "") && app.docGate?.blocking) { setDocBlockApp(app); return; }
-                    if ((app._count.scorecards ?? 0) === 0) {
-                      toast.warning("Feedback required", `Provide feedback for "${stageName}" before moving to the next stage.`);
-                      setFeedback({ overallRating: 7, recommendation: "", strengths: "", concerns: "", overallComments: "" });
-                      setFeedbackApp(app);
-                      return;
-                    }
-                    moveMut.mutate({ id: app.id, stage: next });
-                  }} />
-              )}
               {!isHired && (
                 <MenuItem icon={<ArrowRightLeft size={14} />} label="Change stage"
                   onClick={() => { setMenu(null); setMoveTarget(app.currentStage ?? STAGES[0]); setMoveApp(app); }} />
@@ -1538,9 +1522,10 @@ export default function PipelinePage() {
         {skipApp && (() => {
           const curStage = skipApp.currentStage ?? STAGES[0];
           const curIdx = STAGES.indexOf(curStage);
-          // A manual move can advance at most to the Offer stage — "Hired" is
-          // only reachable through the offer-accept flow, never a direct jump.
-          const forwardStages = (curIdx >= 0 ? STAGES.slice(curIdx + 1) : []).filter((s) => s !== "Hired");
+          // Skip can advance only up to the last interview round (HR Interview).
+          // "Offer" and "Hired" are never a direct jump — Offer is reached via the
+          // dedicated Send-Offer flow, and Hired via offer-accept.
+          const forwardStages = (curIdx >= 0 ? STAGES.slice(curIdx + 1) : []).filter((s) => s !== "Hired" && !/^offer$/i.test(s));
           const targetIdx = STAGES.indexOf(skipTarget);
           const steps = targetIdx >= 0 && curIdx >= 0 ? targetIdx - curIdx : 0;
           return (

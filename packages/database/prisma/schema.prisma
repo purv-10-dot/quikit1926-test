@@ -12950,6 +12950,8 @@ enum ApprovalModule {
   SalaryRevision
   OneTimeEarning
   Requisition
+  WFH
+  Payroll
 
   @@schema("app_quikhrms")
 }

@@ -133,7 +133,7 @@ export const navigation: NavItem[] = [
     perms: ["hrms.employee.read_self"],
     children: [
       { label: "My WFH", href: "/wfh/my-requests", navKey: "wfh.my" },
-      { label: "Team Approvals", href: "/wfh/team", navKey: "wfh.approvals" },
+      { label: "Team Approvals", href: "/wfh/team", perms: ["hrms.employee.read_team"], navKey: "wfh.approvals" },
       { label: "Quota Groups", href: "/settings/wfh-quota", perms: ["hrms.employee.write"], navKey: "wfh.quota" },
       { label: "Employees In Group", href: "/wfh/groups", perms: ["hrms.employee.write"], navKey: "wfh.groups" },
     ],
@@ -259,7 +259,10 @@ export const navigation: NavItem[] = [
     href: "/settings",
     icon: <Settings size={18} />,
     section: "settings",
-    perms: ["hrms.settings.read", "hrms.settings.write", "hrms.rbac.manage", "hrms.org.read", "hrms.audit.read"],
+    // Only true settings-admins see this — NOT plain directory viewers.
+    // (hrms.org.read / hrms.audit.read removed so Directory access alone no
+    //  longer surfaces the Settings tab.)
+    perms: ["hrms.settings.read", "hrms.settings.write", "hrms.rbac.manage"],
     navKey: "admin.settings",
   },
 ];

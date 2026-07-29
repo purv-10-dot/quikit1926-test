@@ -17,7 +17,8 @@ import { Pagination } from "@/components/hrms/pagination";
 type ApprovalModule =
   | "Leave" | "Expense" | "Asset" | "Onboarding" | "Offboarding"
   | "Attendance" | "Document" | "Engagement" | "Feedback"
-  | "Reimbursement" | "ProofOfInvestment" | "SalaryRevision" | "OneTimeEarning" | "Requisition";
+  | "Reimbursement" | "ProofOfInvestment" | "SalaryRevision" | "OneTimeEarning" | "Requisition"
+  | "WFH" | "Payroll";
 type ApproverKind = "ROLE" | "USER";
 
 interface Level {
@@ -49,18 +50,21 @@ interface EmployeeRef {
   workEmail: string;
 }
 
-// Only modules whose approval is actually enforced by an approval chain are
-// offered. Leave + Requisition use the strict chain engine; Engagement +
-// Feedback use content-moderation. (Expense approval is configured on the
-// Expense Policy, not here; the rest have no consumer — omitted to avoid
-// configuring chains that never run.)
-const MODULES: ApprovalModule[] = ["Leave", "Requisition", "Engagement", "Feedback"];
+// Modules whose approval is driven by a central chain. Leave + Requisition use
+// the strict chain engine; Engagement + Feedback use content-moderation.
+// Expense, WFH, Offboarding (resignation) and Payroll consume their active
+// chain when one exists, falling back to their legacy per-module behaviour
+// otherwise (so an org that hasn't configured a chain keeps working).
+const MODULES: ApprovalModule[] = [
+  "Leave", "Requisition", "Engagement", "Feedback",
+  "Expense", "WFH", "Offboarding", "Payroll",
+];
 
 const MODULE_ICON: Record<ApprovalModule, string> = {
   Leave: "🌴", Expense: "💰", Asset: "💻", Onboarding: "👋", Offboarding: "👋",
   Attendance: "🕐", Document: "📄", Engagement: "🎉", Feedback: "💬",
   Reimbursement: "🧾", ProofOfInvestment: "🛡️", SalaryRevision: "📈", OneTimeEarning: "🎁",
-  Requisition: "📋",
+  Requisition: "📋", WFH: "🏠", Payroll: "💵",
 };
 
 // Human-readable labels for the Select / display.
@@ -79,6 +83,8 @@ const MODULE_LABEL: Record<ApprovalModule, string> = {
   SalaryRevision: "Salary Revision",
   OneTimeEarning: "One-Time Earning / Deduction",
   Requisition: "Requisition",
+  WFH: "Work From Home",
+  Payroll: "Payroll",
 };
 
 interface FormState {
