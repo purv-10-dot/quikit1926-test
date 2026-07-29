@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient, ApiError } from "@/lib/hooks/use-api";
 import { Modal } from "@/components/hrms/modal";
+import { PageBackground } from "@/components/hrms/page-background";
 import { clsx } from "clsx";
 import { Plus, AlertTriangle, Eye, Trash2, X } from "lucide-react";
 import { EmptyState } from "@/components/hrms/empty-state";
@@ -12,6 +13,7 @@ import { Select } from "@/components/hrms/ui/select";
 import { FilterBar, FilterDivider, FilterSearch } from "@/components/hrms/ui/filter-bar";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { SkeletonTable } from "@/components/hrms/skeleton";
+import { Pagination } from "@/components/hrms/pagination";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area, PieChart, Pie, Cell,
@@ -112,6 +114,8 @@ export default function MyLeavesPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [form, setForm] = useState({
     leaveTypeId: "",
     startDate: "",
@@ -173,23 +177,6 @@ export default function MyLeavesPage() {
   });
   const dryRun = dryRunResp?.data ?? null;
 
-  /** Format the rule card as plain-English bullet points. */
-  function rulesBullets(r: DryRunResult["rules"]): string[] {
-    if (!r) return [];
-    const out: string[] = [];
-    if (r.maxConsecutiveDays != null) out.push(`Max ${r.maxConsecutiveDays} day${r.maxConsecutiveDays === 1 ? "" : "s"} at a time`);
-    if (r.minConsecutiveDays != null) out.push(`Must be taken in blocks of ${r.minConsecutiveDays}+ days`);
-    if (r.maxPerMonth != null) out.push(`Up to ${r.maxPerMonth} day${r.maxPerMonth === 1 ? "" : "s"} per month`);
-    if (r.maxPerYear != null) out.push(`Up to ${r.maxPerYear} day${r.maxPerYear === 1 ? "" : "s"} per year`);
-    if (r.advanceNoticeDays != null) out.push(`Apply ${r.advanceNoticeDays} day${r.advanceNoticeDays === 1 ? "" : "s"} in advance`);
-    if (r.applicableAfterDays != null) out.push(`Available ${r.applicableAfterDays} days after joining`);
-    if (r.probationBlocked) out.push("Not available during probation");
-    if (r.applicableGender) out.push(`Available for ${r.applicableGender} employees only`);
-    if (r.sandwichRule) out.push("Weekends/holidays between leave days count as leave");
-    if (r.requiresDocumentation) out.push("Supporting document may be required");
-    return out;
-  }
-
   const liveBlockingViolations = useMemo(
     () => (dryRun?.violations ?? []).filter((v) => v.severity === "block"),
     [dryRun],
@@ -206,8 +193,10 @@ export default function MyLeavesPage() {
   });
 
   const { data: typesData, isLoading: typesLoading, isError: typesError } = useQuery({
-    queryKey: ["leave-types"],
-    queryFn: () => api.get<LeaveType[]>("/api/v1/hrms/leaves/types?limit=50"),
+    queryKey: ["leave-types", "mine"],
+    // Only the leave types the current user can actually apply for — i.e. those
+    // offered by their assigned leave group (none if they're in no group).
+    queryFn: () => api.get<LeaveType[]>("/api/v1/hrms/leaves/types?forEmployee=me&limit=50"),
   });
 
   // ── Apply Leave form helpers ─────────────────────────────────────
@@ -407,6 +396,9 @@ export default function MyLeavesPage() {
     });
   }, [requests, statusFilter, typeFilter, search]);
 
+  const totalPages = Math.max(1, Math.ceil(filteredRequests.length / PAGE_SIZE));
+  const pageItems = filteredRequests.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
   const yearOptions = useMemo(() => {
     const cur = new Date().getFullYear();
     return [cur - 1, cur, cur + 1].map((y) => ({ value: String(y), label: `Jan ${y}–Dec ${y}` }));
@@ -438,6 +430,8 @@ export default function MyLeavesPage() {
 
   return (
     <div className="w-full">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       {/* Header */}
       <div className="surface-card p-4 mb-4 flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-base font-semibold text-gray-900">Leave</h1>
@@ -526,7 +520,7 @@ export default function MyLeavesPage() {
           <FilterBar>
             <Select
               value={statusFilter}
-              onChange={(v) => setStatusFilter(v)}
+              onChange={(v) => { setStatusFilter(v); setPage(1); }}
               options={[
                 { value: "all", label: "All status" },
                 { value: "Pending,Approved", label: "Pending, Approved" },
@@ -538,13 +532,13 @@ export default function MyLeavesPage() {
             />
             <Select
               value={typeFilter}
-              onChange={(v) => setTypeFilter(v)}
+              onChange={(v) => { setTypeFilter(v); setPage(1); }}
               options={[{ value: "all", label: "All Leave Types" }, ...leaveTypes.map((t) => ({ value: t.id, label: t.name }))]}
             />
             <FilterDivider />
-            <FilterSearch value={search} onChange={setSearch} placeholder="Search reason..." />
+            <FilterSearch value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="Search reason..." />
             <button
-              onClick={() => { setStatusFilter("all"); setTypeFilter("all"); setSearch(""); }}
+              onClick={() => { setStatusFilter("all"); setTypeFilter("all"); setSearch(""); setPage(1); }}
               className="text-xs font-medium text-gray-500 hover:text-gray-900 px-3 py-1.5 border border-gray-200 rounded-md"
             >Reset</button>
           </FilterBar>
@@ -572,7 +566,7 @@ export default function MyLeavesPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredRequests.map((r, idx) => {
+                {pageItems.map((r, idx) => {
                   const days = dayDiff(r.startDate, r.endDate);
                   const dur = Number(r.duration);
                   const dayLabel = `${dur === 0.5 ? "0.5" : days} day${days === 1 && dur >= 1 ? "" : "s"} leave`;
@@ -585,7 +579,7 @@ export default function MyLeavesPage() {
                   const displayStatus = expired ? "Expired" : r.status;
                   return (
                     <tr key={r.id} className="row-stagger hover:bg-slate-50/60 align-middle [&>td]:border-b [&>td]:border-gray-100" style={{ ["--i" as never]: Math.min(idx, 10) }}>
-                      <td className="px-4 py-2.5 text-gray-500 tabular-nums">{idx + 1}</td>
+                      <td className="px-4 py-2.5 text-gray-500 tabular-nums">{(page - 1) * PAGE_SIZE + idx + 1}</td>
                       <td className="px-4 py-2.5">
                         <div className="text-[13px] text-gray-800 font-medium">{formatDate(r.startDate)} - {formatDate(r.endDate)}</div>
                         <div className="text-[11px] text-[#16a34a]">({dayLabel})</div>
@@ -616,6 +610,7 @@ export default function MyLeavesPage() {
                 })}
               </tbody>
             </table>
+            <Pagination page={page} totalPages={totalPages} total={filteredRequests.length} limit={PAGE_SIZE} onPageChange={setPage} />
           </div>
         )}
       </div>
@@ -648,32 +643,6 @@ export default function MyLeavesPage() {
               <p className="mt-1 text-xs text-amber-600">No leave types are configured yet. Ask your HR/admin to set up leave policies before applying.</p>
             )}
           </div>
-
-          {/* Live policy rules — populated by the dry-run as soon as a type is picked. */}
-          {form.leaveTypeId && dryRun && (
-            (() => {
-              const bullets = rulesBullets(dryRun.rules);
-              return (
-                <div className="rounded-lg border border-green-100 bg-green-50/60 px-3 py-2.5">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-green-700">
-                    Policy rules · {dryRun.leaveType.name}
-                  </div>
-                  {bullets.length === 0 ? (
-                    <p className="mt-1 text-xs text-gray-500">No specific limits — only your balance applies.</p>
-                  ) : (
-                    <ul className="mt-1.5 space-y-0.5 text-xs text-gray-700">
-                      {bullets.map((b) => (
-                        <li key={b} className="flex items-start gap-1.5">
-                          <span className="mt-1.5 inline-block h-1 w-1 shrink-0 rounded-full bg-green-500" />
-                          <span>{b}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              );
-            })()
-          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div>

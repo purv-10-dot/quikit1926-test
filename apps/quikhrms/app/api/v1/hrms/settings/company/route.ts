@@ -7,9 +7,21 @@ import { getOrCreateCompanySettings } from "@/lib/services/settings";
 import { markStepCompleted } from "@/lib/services/payroll";
 import { createAuditLog } from "@/lib/utils/audit";
 
-export const GET = withAuth(async (_req: NextRequest, { orgId, userId }) => {
+export const GET = withAuth(async (_req: NextRequest, { orgId, userId, permissions }) => {
   try {
     const settings = await getOrCreateCompanySettings(orgId, userId);
+    // GET stays usable app-wide (branding, accent colour, work-week, etc.), but
+    // the statutory / tax identifiers are only exposed to settings readers.
+    const canSeeSensitive =
+      permissions.includes("*") ||
+      permissions.includes("hrms.settings.read") ||
+      permissions.includes("hrms.settings.write");
+    if (!canSeeSensitive) {
+      const SENSITIVE = ["gstin", "pan", "cin", "tan", "tdsCircleCodeArea", "tdsCircleCodeType", "tdsCircleNumber", "tdsCircleSubNumber"] as const;
+      const stripped: Record<string, unknown> = { ...settings };
+      for (const k of SENSITIVE) stripped[k] = null;
+      return successResponse(stripped);
+    }
     return successResponse(settings);
   } catch (error) {
     console.error("GET /settings/company error:", error);

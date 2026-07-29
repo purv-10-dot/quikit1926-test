@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { Select } from "@/components/hrms/select";
 import { useDialog } from "@/components/hrms/dialog";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface ImportResult {
   importId: string;
@@ -321,6 +322,8 @@ export default function BulkOnboardingImportPage() {
 
   return (
     <div className="max-w-5xl mx-auto px-5 py-4 space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center gap-2">
         <Link href="/onboarding" className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg">
           <ChevronLeft size={14} /> Back to Onboarding

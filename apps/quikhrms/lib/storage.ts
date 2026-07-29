@@ -128,6 +128,17 @@ export function keyBelongsToTenant(key: string, orgId: string): boolean {
 }
 
 /**
+ * True when a stored file URL resolves to an object key inside the caller's
+ * tenant. Accepts the internal upload-proxy URL and canonical GCS URLs; any
+ * arbitrary external URL (or one pointing at another tenant's key) returns
+ * false. Use this to reject SSRF / cross-tenant file references at write time.
+ */
+export function urlBelongsToTenant(url: string, orgId: string): boolean {
+  const key = extractKeyFromUrl(url);
+  return !!key && keyBelongsToTenant(key, orgId);
+}
+
+/**
  * Given a stored URL, return the object key, or null if it doesn't point at
  * our storage. Handles the internal upload-proxy URL, the optional
  * GCS_PUBLIC_URL override, and the canonical GCS object URL (for any legacy

@@ -1,14 +1,16 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, validationError, internalError, notFound } from "@/lib/api-response";
+import { successResponse, validationError, forbidden, internalError, notFound } from "@/lib/api-response";
 import { updateTaskSchema } from "@/lib/validations/tasks";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
+import { canActOnTask } from "@/lib/rbac/task-access";
 import { createAuditLog } from "@/lib/utils/audit";
 import { notifyTaskReassigned, notifyTaskCompleted } from "@/lib/services/task-notifications";
 
-export const GET = withAuth(async (_req: NextRequest, { orgId }, { id }) => {
+export const GET = withAuth(async (_req: NextRequest, ctx, { id }) => {
   try {
+    const { orgId } = ctx;
     const task = await prisma.task.findFirst({
       where: { id, orgId, deletedAt: null },
       include: {
@@ -17,6 +19,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, { id }) => {
       },
     });
     if (!task) return notFound();
+    if (!(await canActOnTask(ctx, task))) return forbidden("You don't have access to this task");
 
     const empIds = [
       ...new Set([
@@ -43,14 +46,30 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, { id }) => {
   }
 });
 
-export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, { id }) => {
+export const PATCH = withAuth(async (req: NextRequest, ctx, { id }) => {
   try {
+    const { orgId, userId } = ctx;
     const existing = await prisma.task.findFirst({ where: { id, orgId, deletedAt: null } });
     if (!existing) return notFound();
+    if (!(await canActOnTask(ctx, existing))) return forbidden("You don't have access to this task");
 
     const body = await req.json();
     const parsed = updateTaskSchema.safeParse(body);
     if (!parsed.success) return validationError("Validation failed", parsed.error.flatten().fieldErrors);
+
+    // Validate references belong to this org before writing.
+    if (parsed.data.assigneeId) {
+      const emp = await prisma.employee.findFirst({ where: { id: parsed.data.assigneeId, orgId, deletedAt: null }, select: { id: true } });
+      if (!emp) return notFound("Assignee not found");
+    }
+    if (parsed.data.requestedFor) {
+      const emp = await prisma.employee.findFirst({ where: { id: parsed.data.requestedFor, orgId, deletedAt: null }, select: { id: true } });
+      if (!emp) return notFound("Requested-for employee not found");
+    }
+    if (parsed.data.taskListId) {
+      const tl = await prisma.taskList.findFirst({ where: { id: parsed.data.taskListId, orgId, deletedAt: null }, select: { id: true } });
+      if (!tl) return notFound("Task list not found");
+    }
 
     const data: Record<string, unknown> = { ...parsed.data, updatedBy: userId };
     if (parsed.data.dueDate !== undefined) {
@@ -59,6 +78,10 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, { id }
     if (parsed.data.status === "Completed") {
       data.completedAt = new Date();
       data.completedBy = userId;
+    } else if (parsed.data.status !== undefined) {
+      // Reopening / cancelling clears completion metadata (mirrors the complete route).
+      data.completedAt = null;
+      data.completedBy = null;
     }
 
     const updated = await prisma.task.update({ where: { id }, data });
@@ -110,10 +133,12 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, { id }
   }
 });
 
-export const DELETE = withAuth(async (req: NextRequest, { orgId, userId }, { id }) => {
+export const DELETE = withAuth(async (req: NextRequest, ctx, { id }) => {
   try {
+    const { orgId, userId } = ctx;
     const existing = await prisma.task.findFirst({ where: { id, orgId, deletedAt: null } });
     if (!existing) return notFound();
+    if (!(await canActOnTask(ctx, existing))) return forbidden("You don't have access to this task");
     await prisma.task.update({ where: { id }, data: { deletedAt: new Date(), updatedBy: userId } });
     await createAuditLog({ orgId, userId, action: "Delete", entityType: "Task", entityId: id, request: req });
     return successResponse({ id, deleted: true });

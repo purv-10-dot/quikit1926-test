@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { resolveAndSend } from "@/lib/email/resolve";
 import { generateExitInterviewToken } from "./exit-interview-token";
+import { appBaseUrl } from "@/lib/utils/app-url";
 
 /**
  * Email the departing employee a link to the self-serve exit-interview form.
@@ -26,7 +27,7 @@ export async function sendExitInterviewInvite(orgId: string, instanceId: string)
     const employeeName = emp ? `${emp.firstName} ${emp.lastName}`.trim() : "there";
 
     const { token } = generateExitInterviewToken(instanceId, orgId);
-    const base = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "";
+    const base = appBaseUrl();
     const link = `${base}/exit-interview/${token}`;
 
     const subject = `Exit interview — ${companyName}`;

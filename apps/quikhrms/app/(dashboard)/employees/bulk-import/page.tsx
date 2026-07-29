@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { Select } from "@/components/hrms/select";
 import { useDialog } from "@/components/hrms/dialog";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface ImportResult {
   importId: string;
@@ -1067,6 +1068,8 @@ export default function BulkImportEmployeesPage() {
 
   return (
     <div className="max-w-6xl">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center gap-3 mb-4">
         <Upload className="text-[#22c55e]" />
         <h1 className="text-base font-semibold text-gray-900">

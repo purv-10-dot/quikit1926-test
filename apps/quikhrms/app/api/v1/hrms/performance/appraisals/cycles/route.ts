@@ -24,7 +24,7 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     ]);
     return successResponse(cycles, paginationMeta(page, limit, total));
   } catch (error) { console.error("GET /appraisals/cycles error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.performance.appraise"] });
 
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
   try {
@@ -45,4 +45,4 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     });
     return successResponse(cycle, undefined, 201);
   } catch (error) { console.error("POST /appraisals/cycles error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.performance.appraise"] });

@@ -1,9 +1,10 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, validationError, notFound, internalError } from "@/lib/api-response";
+import { successResponse, validationError, notFound, conflict, internalError } from "@/lib/api-response";
 import { updateOffboardingTaskSchema } from "@/lib/validations/boarding";
 import { createAuditLog } from "@/lib/utils/audit";
+import { advanceAutomation, finalizeOffboardingIfComplete } from "@/lib/services/offboarding-automation";
 
 export const PUT = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
   try {
@@ -17,7 +18,16 @@ export const PUT = withAuth(async (req: NextRequest, { orgId, userId }, params) 
     const task = await prisma.offboardingTask.findFirst({ where: { id: taskId, orgId } });
     if (!task) return notFound("Task not found");
 
-    const { status, assigneeId, notes } = parsed.data;
+    // Freeze tasks once the offboarding is closed — no post-completion edits.
+    const inst = await prisma.offboardingInstance.findFirst({
+      where: { id: task.instanceId, orgId },
+      select: { status: true },
+    });
+    if (inst && inst.status === "OffboardCompleted") {
+      return conflict("This offboarding is already closed — its tasks can no longer be changed.");
+    }
+
+    const { status, assigneeId, notes, dueDate } = parsed.data;
 
     const updated = await prisma.offboardingTask.update({
       where: { id: taskId },
@@ -29,16 +39,17 @@ export const PUT = withAuth(async (req: NextRequest, { orgId, userId }, params) 
       },
     });
 
-    if (status === "TaskCompleted") {
-      const remaining = await prisma.offboardingTask.count({
-        where: { instanceId: task.instanceId, status: { notIn: ["TaskCompleted", "TaskSkipped"] } },
-      });
-      if (remaining === 0) {
-        await prisma.offboardingInstance.update({
-          where: { id: task.instanceId },
-          data: { status: "OffboardCompleted", updatedBy: userId },
-        });
-      }
+    // dueDate is a new column not in the generated client — write it via raw SQL.
+    if (dueDate !== undefined) {
+      await prisma.$executeRaw`
+        UPDATE "app_quikhrms"."OffboardingTask" SET "dueDate" = ${dueDate ? new Date(dueDate) : null} WHERE id = ${taskId}`;
+    }
+
+    if (status === "TaskCompleted" || status === "TaskSkipped") {
+      // Shared finalization (used by every completion path). If it didn't close
+      // the offboarding, chain the automation to send the next step.
+      const finalized = await finalizeOffboardingIfComplete(task.instanceId, orgId, userId);
+      if (!finalized) await advanceAutomation(task.instanceId, orgId);
     }
 
     await createAuditLog({ orgId, userId, action: "Update", entityType: "OffboardingTask", entityId: taskId, changes: parsed.data });
@@ -47,4 +58,4 @@ export const PUT = withAuth(async (req: NextRequest, { orgId, userId }, params) 
     console.error("PUT /offboarding/tasks/[taskId] error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.offboarding.write"] });

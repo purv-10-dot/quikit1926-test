@@ -1,11 +1,14 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Bell, CheckCheck, Info, AlertTriangle, CheckCircle, XCircle, ArrowRight } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonCards } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 
 interface Notif { id: string; type: string; title: string; message: string; link: string | null; isRead: boolean; createdAt: string; entityType: string | null; entityId: string | null; }
 
@@ -21,6 +24,8 @@ export default function NotificationCenterPage() {
   const api = useApiClient();
   const qc = useQueryClient();
   const router = useRouter();
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   const { data, isLoading } = useQuery({
     queryKey: ["notifications", "all"],
@@ -48,10 +53,14 @@ export default function NotificationCenterPage() {
   });
 
   const notifs = data?.data ?? [];
+  const totalPages = Math.max(1, Math.ceil(notifs.length / PAGE_SIZE));
+  const pageItems = notifs.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const unreadCount = unread?.data.count ?? 0;
 
   return (
     <div className="max-w-3xl">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <Bell className="text-[#22c55e]" />
@@ -71,7 +80,7 @@ export default function NotificationCenterPage() {
         </div>
       ) : (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 divide-y divide-gray-100">
-          {notifs.map((n, i) => (
+          {pageItems.map((n, i) => (
             <div
               key={n.id}
               onClick={() => handleOpen(n)}
@@ -100,6 +109,7 @@ export default function NotificationCenterPage() {
               )}
             </div>
           ))}
+          <Pagination page={page} totalPages={totalPages} total={notifs.length} limit={PAGE_SIZE} onPageChange={setPage} />
         </div>
       )}
     </div>

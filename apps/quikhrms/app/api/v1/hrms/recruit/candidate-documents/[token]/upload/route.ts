@@ -4,6 +4,8 @@ import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { verifyCandidateDocToken } from "@/lib/services/candidate-doc-token";
 import { putObject } from "@/lib/storage";
+import { contentMatchesClaim } from "@/lib/utils/file-signature";
+import { rateLimitOrResponse, clientIp } from "@/lib/rate-limit";
 
 const MAX_BYTES = 15 * 1024 * 1024;
 const ALLOWED = new Set([
@@ -26,6 +28,8 @@ const err = (code: string, message: string, status: number) =>
  *   - uploadId: string (optional — re-upload to replace a Rejected slot)
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  const rl = await rateLimitOrResponse("recruit.candidate-doc.upload", clientIp(req), 10, 60);
+  if (rl) return rl;
   const { token } = await params;
   const payload = verifyCandidateDocToken(token);
   if (!payload) return err("INVALID_TOKEN", "Invalid or expired link", 400);
@@ -64,11 +68,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
     if (!dt) return err("VALIDATION", "Invalid document type for this bundle", 422);
   }
 
+  // Cap total uploads per request — stop unbounded storage writes / abuse.
+  // Re-uploads replace an existing row, so they don't count against the cap.
+  if (!reuploadId) {
+    const existingCount = await prisma.candidateDocumentUpload.count({
+      where: { requestId: request.id, orgId: payload.orgId, deletedAt: null },
+    });
+    if (existingCount >= 30) return err("TOO_MANY", "Upload limit reached for this request. Please contact HR.", 429);
+  }
+
   // Upload to Google Cloud Storage
   const ext = path.extname(file.name) || "";
   const safeExt = ext.replace(/[^a-zA-Z0-9.]/g, "").slice(0, 8);
   const key = `candidate-docs/${payload.orgId}/${request.id}/${randomUUID()}${safeExt}`;
   const buf = Buffer.from(await file.arrayBuffer());
+  // Reject content whose real bytes don't match the claimed type (e.g. an
+  // .html/.svg payload renamed .pdf). Never trust file.type alone.
+  if (!contentMatchesClaim(buf, file.type)) {
+    return err("BAD_CONTENT", "File content doesn't match its type. Upload a genuine PDF, image, or document.", 422);
+  }
   await putObject(key, buf, file.type);
   const proxyUrl = `/api/v1/hrms/uploads/proxy?key=${encodeURIComponent(key)}`;
 

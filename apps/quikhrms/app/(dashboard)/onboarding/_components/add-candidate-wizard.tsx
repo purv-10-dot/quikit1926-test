@@ -6,6 +6,7 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
 import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
+import { SalaryBreakdown } from "@/components/hrms/salary-breakdown";
 import { useDepartments, useDesignations, useLocations, useRoles, useSalaryTemplates } from "@/lib/hooks/use-ref-data";
 import { clsx } from "clsx";
 import {
@@ -34,16 +35,18 @@ const emptyCert = (): Certification => ({ name: "", courseName: "", issuingAutho
 const SOURCES = ["Referral", "JobPortal", "LinkedIn", "Agency", "Campus", "Direct", "Other"];
 const RELATIONS = ["Spouse", "Child", "Father", "Mother", "Sibling", "Guardian", "Other"];
 
+// Local (client-side) validation helpers.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const isEmail = (s: string) => EMAIL_RE.test(s.trim());
+const isHttpUrl = (s: string) => /^https?:\/\/\S+$/i.test(s.trim());
+const digits = (s: string) => s.replace(/\D/g, "");
+
 const STEPS: { title: string; subtitle: string; icon: LucideIcon }[] = [
-  { title: "Personal Details", subtitle: "Basic contact information", icon: User },
-  { title: "Identity", subtitle: "KYC details", icon: ShieldCheck },
+  { title: "Personal Details", subtitle: "Contact & KYC details", icon: User },
   { title: "Address", subtitle: "Present & permanent", icon: MapPin },
-  { title: "Emergency Contact", subtitle: "Next of kin / SOS", icon: Phone },
   { title: "Professional", subtitle: "Job & qualifications", icon: Briefcase },
-  { title: "Education", subtitle: "Academic history", icon: GraduationCap },
-  { title: "Experience", subtitle: "Past roles", icon: History },
-  { title: "Family Details", subtitle: "Dependents & relatives", icon: Users },
-  { title: "Certifications", subtitle: "Courses & credentials", icon: Award },
+  { title: "Career & Education", subtitle: "Education, experience & certs", icon: GraduationCap },
+  { title: "Contacts & Family", subtitle: "Emergency & dependents", icon: Users },
 ];
 
 const inputCls = "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 transition";
@@ -87,14 +90,6 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
 
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
 
-  const addRow = (s: number) => {
-    if (s === 3) setEmergency((r) => [...r, emptyEmergency()]);
-    else if (s === 5) setEducations((r) => [...r, emptyEducation()]);
-    else if (s === 6) setExperiences((r) => [...r, emptyExperience()]);
-    else if (s === 7) setFamily((r) => [...r, emptyFamily()]);
-    else if (s === 8) setCerts((r) => [...r, emptyCert()]);
-  };
-
   // Reference data
   const { data: depts } = useDepartments();
   const { data: desigs } = useDesignations();
@@ -102,7 +97,7 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
   const { data: roles } = useRoles();
   const { data: templatesData } = useSalaryTemplates();
   const { data: managers } = useQuery({ queryKey: ["employees-mgrs"], queryFn: () => api.get<RefItem[]>("/api/v1/hrms/employees?limit=200") });
-  const { data: onbTemplates } = useQuery({ queryKey: ["onboarding", "templates"], queryFn: () => api.get<RefItem[]>("/api/v1/hrms/onboarding/templates?isActive=true&limit=100") });
+  const { data: onbTemplates } = useQuery({ queryKey: ["onboarding", "templates", "Onboarding"], queryFn: () => api.get<RefItem[]>("/api/v1/hrms/onboarding/templates?isActive=true&kind=Onboarding&limit=100") });
 
   const deptOpts = ((depts?.data ?? []) as RefItem[]).map((d) => ({ value: d.id, label: d.name ?? "" }));
   const desigOpts = ((desigs?.data ?? []) as RefItem[]).map((d) => ({ value: d.id, label: d.title ?? d.name ?? "" }));
@@ -187,8 +182,25 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
 
   const missingRequired = () => {
     if (!form.firstName.trim() || !form.lastName.trim() || !form.workEmail.trim()) return { step: 0, msg: "First name, last name and work email are required." };
+    if (!isEmail(form.workEmail)) return { step: 0, msg: "Enter a valid work email address." };
+    if (form.personalEmail.trim() && !isEmail(form.personalEmail)) return { step: 0, msg: "Enter a valid personal email address." };
+    if (form.personalPhone.trim() && digits(form.personalPhone).length !== 10) return { step: 0, msg: "Personal phone must be a 10-digit number." };
+    if (form.profilePhoto.trim() && !isHttpUrl(form.profilePhoto)) return { step: 0, msg: "Profile photo must be a valid URL (https://…)." };
+    if (form.panNumber.trim() && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(form.panNumber.trim())) return { step: 0, msg: "PAN must be in the format ABCDE1234F." };
+    if (form.aadhaarNumber.trim() && digits(form.aadhaarNumber).length !== 12) return { step: 0, msg: "Aadhaar must be a 12-digit number." };
+    for (const c of emergency) {
+      if (!(c.name || c.relationship || c.phone || c.email || c.address)) continue;
+      if (c.email.trim() && !isEmail(c.email)) return { step: 4, msg: "Emergency contact email is invalid." };
+      if (c.phone.trim() && digits(c.phone).length !== 10) return { step: 4, msg: "Emergency contact phone must be a 10-digit number." };
+    }
+    if (form.offerLetterUrl.trim() && !isHttpUrl(form.offerLetterUrl)) return { step: 2, msg: "Offer letter must be a valid URL (https://…)." };
+    for (const c of certs) {
+      if (c.credentialUrl.trim() && !isHttpUrl(c.credentialUrl)) return { step: 3, msg: "Certification credential URL must be a valid URL (https://…)." };
+    }
     if (!form.reportingManagerId || !form.roleId || !form.salaryTemplateId || !(form.ctcLpa && form.ctcLpa > 0))
-      return { step: 4, msg: "Reporting manager, role, salary template and CTC (LPA) are required." };
+      return { step: 2, msg: "Reporting manager, role, salary template and CTC (LPA) are required." };
+    if (!form.templateId)
+      return { step: 2, msg: "An onboarding template is required. Pick one in the Employment step (or use Save Draft)." };
     return null;
   };
 
@@ -206,7 +218,8 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
   const Section = STEPS[step];
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-gradient-to-br from-white via-[#f7faf8] to-[#eef4f0]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 bg-black/40">
+      <div className="relative w-full max-w-6xl h-[98vh] max-h-[98vh] flex flex-col overflow-hidden rounded-2xl shadow-2xl bg-gradient-to-br from-white via-[#f7faf8] to-[#eef4f0]">
       {/* Header */}
       <header className="shrink-0 flex items-center justify-between px-6 py-4 bg-white/80 backdrop-blur border-b border-gray-100">
         <div className="flex items-center gap-3">
@@ -262,7 +275,7 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
 
         {/* Main content */}
         <main className="flex-1 min-h-0 overflow-y-auto px-6 lg:px-10 py-8">
-          <div className="max-w-4xl mx-auto">
+          <div className="max-w-5xl mx-auto">
             <div className="flex items-start justify-between gap-4 mb-6">
               <div className="flex items-start gap-3.5">
                 <div className="w-12 h-12 rounded-xl bg-green-50 text-[#16a34a] flex items-center justify-center shrink-0">
@@ -273,14 +286,6 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
                   <p className="text-[14px] text-gray-500 mt-0.5">{stepBlurb(step)}</p>
                 </div>
               </div>
-              {addBtn(step) && (
-                <button
-                  onClick={() => addRow(step)}
-                  className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-[#16a34a]/40 text-[#16a34a] px-3.5 py-2 text-[13px] font-semibold hover:bg-green-50 transition"
-                >
-                  <Plus size={15} /> {addBtn(step)}
-                </button>
-              )}
             </div>
 
             {/* Step body */}
@@ -291,22 +296,15 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
                   <F label="Last Name *"><input className={inputCls} placeholder="Enter last name" value={form.lastName} onChange={(e) => set("lastName", e.target.value)} /></F>
                   <F label="Work Email *"><input type="email" className={inputCls} placeholder="name@company.com" value={form.workEmail} onChange={(e) => set("workEmail", e.target.value)} /></F>
                   <F label="Personal Email"><input type="email" className={inputCls} placeholder="name@gmail.com" value={form.personalEmail} onChange={(e) => set("personalEmail", e.target.value)} /></F>
-                  <F label="Personal Phone"><input className={inputCls} placeholder="+91…" value={form.personalPhone} onChange={(e) => set("personalPhone", e.target.value)} /></F>
+                  <F label="Personal Phone"><input className={inputCls} inputMode="numeric" maxLength={10} placeholder="10-digit mobile number" value={form.personalPhone} onChange={(e) => set("personalPhone", e.target.value.replace(/\D/g, "").slice(0, 10))} /></F>
                   <F label="Profile Photo URL"><input className={inputCls} placeholder="https://…" value={form.profilePhoto} onChange={(e) => set("profilePhoto", e.target.value)} /></F>
+                  <F label="PAN Number"><input className={clsx(inputCls, "font-mono uppercase")} maxLength={10} placeholder="ABCDE1234F" value={form.panNumber} onChange={(e) => set("panNumber", e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10))} /></F>
+                  <F label="Aadhaar Number"><input className={clsx(inputCls, "font-mono")} inputMode="numeric" maxLength={12} placeholder="XXXX XXXX XXXX" value={form.aadhaarNumber} onChange={(e) => set("aadhaarNumber", e.target.value.replace(/\D/g, "").slice(0, 12))} /></F>
                 </Grid2>
               </Card>
             )}
 
             {step === 1 && (
-              <Card>
-                <Grid2>
-                  <F label="PAN Number"><input className={clsx(inputCls, "font-mono uppercase")} maxLength={10} placeholder="ABCDE1234F" value={form.panNumber} onChange={(e) => set("panNumber", e.target.value.toUpperCase())} /></F>
-                  <F label="Aadhaar Number"><input className={clsx(inputCls, "font-mono")} maxLength={12} placeholder="XXXX XXXX XXXX" value={form.aadhaarNumber} onChange={(e) => set("aadhaarNumber", e.target.value)} /></F>
-                </Grid2>
-              </Card>
-            )}
-
-            {step === 2 && (
               <div className="space-y-4">
                 <Card title="Present Address">
                   <AddressFields value={currentAddress} onChange={setCurrentAddress} />
@@ -323,8 +321,10 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
               </div>
             )}
 
-            {step === 3 && (
-              <Card>
+            {step === 4 && (
+              <div className="mb-5">
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-2"><Phone size={15} className="text-[#16a34a]" /> Emergency Contacts</h3>
+                <Card>
                 <RowTable
                   head={["NAME", "RELATION", "PHONE", "EMAIL"]}
                   rows={emergency}
@@ -333,17 +333,18 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
                     <>
                       <input className={inputCls} placeholder="Enter full name" value={row.name} onChange={(e) => updateAt(setEmergency, emergency, i, { name: e.target.value })} />
                       <input className={inputCls} placeholder="e.g. Spouse" value={row.relationship} onChange={(e) => updateAt(setEmergency, emergency, i, { relationship: e.target.value })} />
-                      <input className={inputCls} placeholder="+91…" value={row.phone} onChange={(e) => updateAt(setEmergency, emergency, i, { phone: e.target.value })} />
+                      <input className={inputCls} inputMode="numeric" maxLength={10} placeholder="10-digit mobile" value={row.phone} onChange={(e) => updateAt(setEmergency, emergency, i, { phone: e.target.value.replace(/\D/g, "").slice(0, 10) })} />
                       <input className={inputCls} placeholder="email (optional)" value={row.email} onChange={(e) => updateAt(setEmergency, emergency, i, { email: e.target.value })} />
                     </>
                   )}
                   addLabel="Add Another Contact"
                   onAdd={() => setEmergency([...emergency, emptyEmergency()])}
                 />
-              </Card>
+                </Card>
+              </div>
             )}
 
-            {step === 4 && (
+            {step === 2 && (
               <Card>
                 <Grid2>
                   <F label="Job Title"><input className={inputCls} placeholder="e.g. Software Engineer" value={form.jobTitle} onChange={(e) => set("jobTitle", e.target.value)} /></F>
@@ -354,18 +355,29 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
                   <F label="Role *"><Select value={form.roleId} onChange={(v) => set("roleId", v)} searchable placeholder="Select…" options={roleOpts} /></F>
                   <F label="Salary Template *"><Select value={form.salaryTemplateId} onChange={(v) => set("salaryTemplateId", v)} searchable placeholder="Select…" options={salaryOpts} /></F>
                   <F label="CTC (LPA) *"><NumberInput min={0} value={form.ctcLpa} onChange={(v) => set("ctcLpa", v)} className={inputCls} /></F>
+                  {form.salaryTemplateId && (() => {
+                    const tpl = (templatesData?.data ?? []).find((s) => s.id === form.salaryTemplateId);
+                    if (!tpl) return null;
+                    return (
+                      <div className="md:col-span-2">
+                        <SalaryBreakdown components={tpl.components ?? []} annualCTC={(form.ctcLpa ?? 0) * 100000} />
+                      </div>
+                    );
+                  })()}
                   <F label="Source of Hire"><Select value={form.sourceOfHire} onChange={(v) => set("sourceOfHire", v)} options={SOURCES.map((s) => ({ value: s, label: s }))} /></F>
                   <F label="Previous Experience (months)"><NumberInput allowDecimal={false} min={0} value={form.previousExperience} onChange={(v) => set("previousExperience", v)} className={inputCls} /></F>
                   <F label="Date of Joining"><input type="date" className={inputCls} value={form.dateOfJoining} onChange={(e) => set("dateOfJoining", e.target.value)} /></F>
-                  <F label="Onboarding Template"><Select value={form.templateId} onChange={(v) => set("templateId", v)} searchable placeholder="Use default tasks" options={onbOpts} /></F>
+                  <F label="Onboarding Template *"><Select value={form.templateId} onChange={(v) => set("templateId", v)} searchable placeholder="Select a template" options={onbOpts} /></F>
                   <F label="Highest Qualification"><input className={inputCls} placeholder="e.g. B.Tech" value={form.highestQualification} onChange={(e) => set("highestQualification", e.target.value)} /></F>
                   <F label="Skills (comma-separated)"><input className={inputCls} placeholder="React, SQL…" value={form.skillSet} onChange={(e) => set("skillSet", e.target.value)} /></F>
                 </Grid2>
               </Card>
             )}
 
-            {step === 5 && (
-              <Card>
+            {step === 3 && (
+              <div className="mb-5">
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-2"><GraduationCap size={15} className="text-[#16a34a]" /> Education</h3>
+                <Card>
                 <RowTable
                   head={["SCHOOL / UNIVERSITY", "DEGREE", "FIELD OF STUDY", "COMPLETED"]}
                   rows={educations}
@@ -381,11 +393,14 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
                   addLabel="Add Another Qualification"
                   onAdd={() => setEducations([...educations, emptyEducation()])}
                 />
-              </Card>
+                </Card>
+              </div>
             )}
 
-            {step === 6 && (
-              <Card>
+            {step === 3 && (
+              <div className="mb-5">
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-2"><History size={15} className="text-[#16a34a]" /> Experience</h3>
+                <Card>
                 <RowTable
                   head={["ROLE / OCCUPATION", "COMPANY", "DURATION", "SUMMARY"]}
                   rows={experiences}
@@ -401,11 +416,13 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
                   addLabel="Add Another Role"
                   onAdd={() => setExperiences([...experiences, emptyExperience()])}
                 />
-              </Card>
+                </Card>
+              </div>
             )}
 
-            {step === 7 && (
-              <div className="space-y-6">
+            {step === 4 && (
+              <div className="space-y-3">
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-800"><Users size={15} className="text-[#16a34a]" /> Family Details</h3>
                 <Card>
                   <RowTable
                     head={["NAME", "RELATION", "DATE OF BIRTH", "OCCUPATION"]}
@@ -441,8 +458,10 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
               </div>
             )}
 
-            {step === 8 && (
-              <Card>
+            {step === 3 && (
+              <div className="mb-1">
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-2"><Award size={15} className="text-[#16a34a]" /> Certifications</h3>
+                <Card>
                 <RowTable
                   head={["CERTIFICATION", "ISSUING AUTHORITY", "YEAR", "CREDENTIAL URL"]}
                   rows={certs}
@@ -458,7 +477,8 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
                   addLabel="Add Another Certification"
                   onAdd={() => setCerts([...certs, emptyCert()])}
                 />
-              </Card>
+                </Card>
+              </div>
             )}
           </div>
         </main>
@@ -500,6 +520,7 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
           </button>
         </div>
       </footer>
+      </div>
     </div>
   );
 }
@@ -517,17 +538,45 @@ function Grid2({ children }: { children: React.ReactNode }) {
   return <div className="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">{children}</div>;
 }
 function F({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div><label className={labelCls}>{label}</label>{children}</div>;
+  // Render a trailing "*" (required marker) in red.
+  const required = label.trimEnd().endsWith("*");
+  const text = required ? label.replace(/\s*\*\s*$/, "") : label;
+  return (
+    <div>
+      <label className={labelCls}>{text}{required && <span className="text-red-500"> *</span>}</label>
+      {children}
+    </div>
+  );
 }
 function AddressFields({ value, onChange }: { value: Addr; onChange: (a: Addr) => void }) {
+  const api = useApiClient();
+  const [looking, setLooking] = useState(false);
   const u = (patch: Partial<Addr>) => onChange({ ...value, ...patch });
+
+  // Enter a 6-digit PIN → auto-fill City / State / Country from India Post.
+  const onPin = async (raw: string) => {
+    const pin = raw.replace(/\D/g, "").slice(0, 6);
+    u({ postalCode: pin });
+    if (pin.length !== 6) return;
+    setLooking(true);
+    try {
+      const res = await api.get<{ city: string; state: string; country: string }>(`/api/v1/hrms/util/pincode?pin=${pin}`);
+      const d = res.data;
+      if (d) onChange({ ...value, postalCode: pin, city: d.city, state: d.state, country: d.country });
+    } catch {
+      /* leave fields as-is if lookup fails */
+    } finally {
+      setLooking(false);
+    }
+  };
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">
       <F label="Address Line 1"><input className={inputCls} value={value.line1} onChange={(e) => u({ line1: e.target.value })} /></F>
       <F label="Address Line 2"><input className={inputCls} value={value.line2} onChange={(e) => u({ line2: e.target.value })} /></F>
+      <F label="Postal Code"><input className={inputCls} inputMode="numeric" maxLength={6} placeholder="6-digit PIN — auto-fills city/state" value={value.postalCode} onChange={(e) => onPin(e.target.value)} /></F>
       <F label="City"><input className={inputCls} value={value.city} onChange={(e) => u({ city: e.target.value })} /></F>
-      <F label="State"><input className={inputCls} value={value.state} onChange={(e) => u({ state: e.target.value })} /></F>
-      <F label="Postal Code"><input className={inputCls} value={value.postalCode} onChange={(e) => u({ postalCode: e.target.value })} /></F>
+      <F label={looking ? "State (looking up…)" : "State"}><input className={inputCls} value={value.state} onChange={(e) => u({ state: e.target.value })} /></F>
       <F label="Country"><input className={inputCls} value={value.country} onChange={(e) => u({ country: e.target.value })} /></F>
     </div>
   );
@@ -578,23 +627,10 @@ function updateAt<T>(setter: React.Dispatch<React.SetStateAction<T[]>>, arr: T[]
 /* Per-step helpers */
 function stepBlurb(step: number): string {
   return [
-    "Basic contact information about the candidate.",
-    "Government identity / KYC details.",
+    "Basic contact and government identity / KYC details.",
     "Present and permanent addresses.",
-    "Who to contact in an emergency.",
     "Job, reporting, salary and qualifications.",
-    "Academic background.",
-    "Previous work experience.",
-    "Add spouse, children, parents and other dependents.",
-    "Professional courses and credentials.",
+    "Education, work experience and certifications.",
+    "Emergency contacts and family dependents.",
   ][step];
-}
-function addBtn(step: number): string | null {
-  return {
-    3: "Add Emergency Contact",
-    5: "Add Qualification",
-    6: "Add Role",
-    7: "Add Family Member",
-    8: "Add Certification",
-  }[step] ?? null;
 }

@@ -101,4 +101,4 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
     console.error("GET /recruit/applications/:id/feedback-history error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.recruit.read"] });

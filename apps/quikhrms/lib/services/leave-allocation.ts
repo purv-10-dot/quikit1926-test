@@ -12,21 +12,25 @@
  */
 import { prisma } from "@/lib/prisma";
 
-/** Months remaining in `year` from `joinDate` (join month counted if day ≤ 15). */
-export function proRataMonths(joinDate: Date, year: number): number {
+/**
+ * Months remaining in `year` from `joinDate`. The join month counts only when
+ * the join day is on/before `cutoffDay` — this is the "withhold leave for
+ * late-month joiners" rule (default cut-off day 15).
+ */
+export function proRataMonths(joinDate: Date, year: number, cutoffDay = 15): number {
   const joinYear = joinDate.getUTCFullYear();
   if (joinYear < year) return 12;
   if (joinYear > year) return 0;
   const month = joinDate.getUTCMonth();
   const day = joinDate.getUTCDate();
-  const startMonth = day <= 15 ? month : month + 1;
+  const startMonth = day <= cutoffDay ? month : month + 1;
   return Math.max(0, 12 - startMonth);
 }
 
 /** Pro-rated annual entitlement, rounded to nearest 0.5 day. */
-export function proRataLeaveCount(annual: number, joinDate: Date, year: number): number {
+export function proRataLeaveCount(annual: number, joinDate: Date, year: number, cutoffDay = 15): number {
   if (annual <= 0) return 0;
-  const months = proRataMonths(joinDate, year);
+  const months = proRataMonths(joinDate, year, cutoffDay);
   return Math.round((annual * months / 12) * 2) / 2;
 }
 
@@ -55,14 +59,18 @@ export async function allocateProRataLeaveBalances(
 
   const types = await prisma.leaveType.findMany({
     where: { orgId, deletedAt: null },
-    select: { id: true, code: true, maxBalance: true },
+    select: { id: true, code: true, maxBalance: true, accrualType: true, noAccrualJoinAfterDay: true },
   });
 
   const allocated: AllocatedEntry[] = [];
   for (const t of types) {
     const annual = Number(t.maxBalance) || 0;
     if (annual <= 0) continue;
-    const opening = proRataLeaveCount(annual, dateOfJoining, year);
+    // Monthly-accrual types start at 0 and build up via the accrual engine;
+    // other types get their pro-rated annual entitlement up front. The join
+    // month is withheld when the join day is past the type's cut-off.
+    const cutoff = t.noAccrualJoinAfterDay ?? 15;
+    const opening = t.accrualType === "Monthly" ? 0 : proRataLeaveCount(annual, dateOfJoining, year, cutoff);
 
     const existing = await prisma.leaveBalance.findUnique({
       where: {

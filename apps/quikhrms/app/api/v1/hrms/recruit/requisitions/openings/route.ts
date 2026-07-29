@@ -29,4 +29,4 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     console.error("GET /recruit/requisitions/openings error:", e);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.recruit.read"] });

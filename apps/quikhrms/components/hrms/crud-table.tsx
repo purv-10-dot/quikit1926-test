@@ -4,11 +4,12 @@ import { useState } from "react";
 import { Plus, Pencil, Trash2, Search, X } from "lucide-react";
 import { EmptyState } from "@/components/hrms/empty-state";
 import { Skeleton } from "@/components/hrms/skeleton";
+import { Pagination, type PaginationProps } from "@/components/hrms/pagination";
 
 export interface Column<T> {
   key: string;
   label: string;
-  render?: (item: T) => React.ReactNode;
+  render?: (item: T, index: number) => React.ReactNode;
 }
 
 interface CrudTableProps<T extends { id: string }> {
@@ -24,6 +25,8 @@ interface CrudTableProps<T extends { id: string }> {
   onSearchChange: (v: string) => void;
   /** Optional extra action buttons rendered before Edit in each row's action cell. */
   extraActions?: (item: T) => React.ReactNode;
+  /** Optional server-side pager rendered under the table. */
+  pagination?: PaginationProps;
 }
 
 export function CrudTable<T extends { id: string }>({
@@ -38,6 +41,7 @@ export function CrudTable<T extends { id: string }>({
   search,
   onSearchChange,
   extraActions,
+  pagination,
 }: CrudTableProps<T>) {
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
@@ -59,7 +63,7 @@ export function CrudTable<T extends { id: string }>({
               placeholder={searchPlaceholder}
               value={search}
               onChange={(e) => onSearchChange(e.target.value)}
-              className="w-full ds-control pl-9"
+              className="w-full ds-control !pl-9"
             />
           </div>
         </div>
@@ -122,7 +126,7 @@ export function CrudTable<T extends { id: string }>({
                   {columns.map((col) => (
                     <td key={col.key}>
                       {col.render
-                        ? col.render(item)
+                        ? col.render(item, i)
                         : String((item as Record<string, unknown>)[col.key] ?? "—")}
                     </td>
                   ))}
@@ -165,6 +169,8 @@ export function CrudTable<T extends { id: string }>({
             </tbody>
           </table>
         )}
+
+        {pagination && !isLoading && data.length > 0 && <Pagination {...pagination} />}
       </div>
     </div>
   );

@@ -5,10 +5,12 @@ import { withAuth } from "@/lib/with-auth";
 import { successResponse, validationError, internalError } from "@/lib/api-response";
 import { createKraScorecardSchema } from "@/lib/validations/performance";
 import { createAuditLog } from "@/lib/utils/audit";
+import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
 
 export const GET = withAuth(async (req: NextRequest, { orgId }) => {
   try {
     const { searchParams } = new URL(req.url);
+    const { page, limit } = parsePagination(searchParams);
     const designationId = searchParams.get("designationId");
     const departmentId = searchParams.get("departmentId");
     const includeInactive = searchParams.get("includeInactive") === "true";
@@ -21,23 +23,28 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
       ...(includeInactive ? {} : { isActive: true }),
     };
 
-    const scorecards = await prisma.kraScorecard.findMany({
-      where,
-      orderBy: [{ effectiveFrom: "desc" }, { name: "asc" }],
-      include: {
-        kras: {
-          orderBy: { sortOrder: "asc" },
+    const [scorecards, total] = await Promise.all([
+      prisma.kraScorecard.findMany({
+        where,
+        orderBy: [{ effectiveFrom: "desc" }, { name: "asc" }],
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          kras: {
+            orderBy: { sortOrder: "asc" },
+          },
+          // Pull status of each assignment so we can derive activeCount /
+          // terminalCount client-side without an extra query per row. Cheap
+          // because typical scorecards have <100 assignments.
+          assignments: {
+            where: { deletedAt: null },
+            select: { status: true },
+          },
+          _count: { select: { assignments: { where: { deletedAt: null } } } },
         },
-        // Pull status of each assignment so we can derive activeCount /
-        // terminalCount client-side without an extra query per row. Cheap
-        // because typical scorecards have <100 assignments.
-        assignments: {
-          where: { deletedAt: null },
-          select: { status: true },
-        },
-        _count: { select: { assignments: { where: { deletedAt: null } } } },
-      },
-    });
+      }),
+      prisma.kraScorecard.count({ where }),
+    ]);
 
     // Add derived counts so the UI can decide whether the scorecard is safe to delete.
     const enriched = scorecards.map((sc) => {
@@ -51,7 +58,7 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
       };
     });
 
-    return successResponse(enriched);
+    return successResponse(enriched, paginationMeta(page, limit, total));
   } catch (e) {
     console.error("GET /performance/kra-templates error:", e);
     return internalError();

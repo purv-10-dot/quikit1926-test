@@ -4,8 +4,6 @@ import { processBulkEmployees } from "@/lib/services/gap-fill";
 import { createAuditLog } from "@/lib/utils/audit";
 import { bulkEmployeeRowSchema } from "@/lib/validations/gap-fill";
 
-const rowsSchema = z.array(bulkEmployeeRowSchema);
-
 export interface BulkImportArgs {
   orgId: string;
   userId: string;
@@ -29,21 +27,41 @@ export async function runBulkEmployeeImport(args: BulkImportArgs): Promise<void>
     data: { status: "ImportProcessing" },
   });
 
-  const parsedRows = rowsSchema.parse(rows);
+  // Validate each row individually so ONE malformed value (e.g. a bad PAN or
+  // IFSC) becomes that row's error instead of aborting the whole import. Track
+  // the original file row number so processing errors can be mapped back to it.
+  const schemaErrors: Array<{ row: number; error: string }> = [];
+  const validRows: z.infer<typeof bulkEmployeeRowSchema>[] = [];
+  const originalRowNums: number[] = [];
+  rows.forEach((raw, i) => {
+    const res = bulkEmployeeRowSchema.safeParse(raw);
+    if (res.success) {
+      validRows.push(res.data);
+      originalRowNums.push(i + 1);
+    } else {
+      const msg = res.error.issues.map((iss) => `${iss.path.join(".") || "row"}: ${iss.message}`).join("; ");
+      schemaErrors.push({ row: i + 1, error: msg || "Invalid row" });
+    }
+  });
 
-  const result = await processBulkEmployees(orgId, userId, parsedRows, dryRun, markActive);
+  const result = await processBulkEmployees(orgId, userId, validRows, dryRun, markActive);
+  // Remap processing errors (indexed within validRows) back to original file rows.
+  const processingErrors = result.errors.map((e) => ({ ...e, row: originalRowNums[e.row - 1] ?? e.row }));
+  const allErrors = [...schemaErrors, ...processingErrors].sort((a, b) => a.row - b.row);
+  const success = result.success;
+  const failed = allErrors.length;
 
   await prisma.dataImport.update({
     where: { id: importId },
     data: {
-      processedRows: result.success + result.failed,
-      successRows: result.success,
-      failedRows: result.failed,
-      errors: result.errors.length > 0 ? JSON.parse(JSON.stringify(result.errors)) : undefined,
+      processedRows: success + failed,
+      successRows: success,
+      failedRows: failed,
+      errors: allErrors.length > 0 ? JSON.parse(JSON.stringify(allErrors)) : undefined,
       status:
-        result.failed === 0
+        failed === 0
           ? "ImportCompleted"
-          : result.success === 0
+          : success === 0
             ? "ImportFailed"
             : "ImportPartial",
     },
@@ -54,7 +72,7 @@ export async function runBulkEmployeeImport(args: BulkImportArgs): Promise<void>
     userId,
     action: "Import",
     entityType: "Employee",
-    metadata: { importId, success: result.success, failed: result.failed, dryRun },
+    metadata: { importId, success, failed, dryRun },
   });
 
   // No auto-invite. Imported employees are created only; they show up under

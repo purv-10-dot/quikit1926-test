@@ -21,12 +21,20 @@ const basePayload = {
 };
 
 describe("createLeadSchema extended lead form", () => {
-  it("requires company, contact names, and lead type", () => {
+  it("requires company", () => {
     const missingCompany = createLeadSchema.safeParse({ ...basePayload, company: "" });
     expect(missingCompany.success).toBe(false);
+  });
 
-    const missingType = createLeadSchema.safeParse({ ...basePayload, leadType: undefined });
-    expect(missingType.success).toBe(false);
+  it("allows contact information (first/last name, email, mobile) to be blank", () => {
+    const noContactInfo = createLeadSchema.safeParse({
+      ...basePayload,
+      firstName: undefined,
+      lastName: undefined,
+      email: undefined,
+      mobile: undefined,
+    });
+    expect(noContactInfo.success).toBe(true);
   });
 
   it("accepts purchase timeline and follow-up fields", () => {

@@ -6,6 +6,7 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { History, ArrowRight, Award, User as UserIcon } from "lucide-react";
 import { EmptyState } from "@/components/hrms/empty-state";
 import { EmployeeSelect } from "@/components/hrms/employees/employee-select";
+import { PageBackground } from "@/components/hrms/page-background";
 import { clsx } from "clsx";
 
 interface HistoryEntry {
@@ -55,10 +56,16 @@ export default function EmploymentHistoryPage() {
     refetchOnMount: "always",
   });
 
-  // Default view: all employees' history (no one selected).
+  // Default view: all employees' history (no one selected). Date range is sent
+  // to the server so results aren't limited to just the newest 500 rows.
   const { data: allData } = useQuery({
-    queryKey: ["employee-history", "all"],
-    queryFn: () => api.get<HistoryEntry[]>("/api/v1/hrms/employees/history?limit=500"),
+    queryKey: ["employee-history", "all", fromDate, toDate],
+    queryFn: () => {
+      const qs = new URLSearchParams({ limit: "500" });
+      if (fromDate) qs.set("from", fromDate);
+      if (toDate) qs.set("to", toDate);
+      return api.get<HistoryEntry[]>(`/api/v1/hrms/employees/history?${qs.toString()}`);
+    },
     enabled: !employeeId,
     staleTime: 0,
     refetchOnMount: "always",
@@ -76,10 +83,12 @@ export default function EmploymentHistoryPage() {
 
   return (
     <div>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <History className="text-[#22c55e]" />
-          <h1 className="text-base font-semibold text-gray-900">Employment History</h1>
+          <h1 className="text-base font-semibold text-gray-900">Employee Log</h1>
         </div>
       </div>
 

@@ -13,6 +13,7 @@ import { LWFTab } from "./_tabs/lwf";
 import { BonusTab } from "./_tabs/bonus";
 import { StateMinimumWageTab } from "./_tabs/state-min-wage";
 import { SkeletonLine } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 
 type TabKey = "EPF" | "ESI" | "Professional Tax" | "Labour Welfare Fund" | "Statutory Bonus" | "State Min. Wages";
 const TABS: TabKey[] = ["EPF", "ESI", "Professional Tax", "Labour Welfare Fund", "Statutory Bonus", "State Min. Wages"];
@@ -28,6 +29,8 @@ interface StatutoryStatus {
 export default function StatutoryComponentsPage() {
   return (
     <Suspense fallback={<div className="p-4 space-y-2"><SkeletonLine w="40%" h={16} /><SkeletonLine w="70%" h={12} /><SkeletonLine w="60%" h={12} /></div>}>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <StatutoryComponentsPageInner />
     </Suspense>
   );
