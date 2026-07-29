@@ -43,6 +43,8 @@ export interface CreatePRInput {
   isUrgent?: boolean;
   urgencyJustification?: string | null;
   workCategoryId?: string | null;
+  scopeType?: string | null;
+  scopeId?: string | null;
   deliveryLocationId?: string | null;
   estimatedTotal?: number | null;
   stockCheckSummary?: string | null;
@@ -229,6 +231,8 @@ interface PrRow {
   projectId?: string | null;
   workCategoryId?: string | null;
   deliveryLocationId?: string | null;
+  scopeType?: string | null;
+  scopeId?: string | null;
   lines?: PrLineRow[] | null;
   requestDate?: Date | null;
   requiredDate?: Date | null;
@@ -384,6 +388,8 @@ function enrichPR(
     urgencyJustification: row.urgencyJustification ?? "",
     workCategoryId: row.workCategoryId ?? "",
     workCategoryName: workCategory?.name ?? "",
+    scopeType: row.scopeType ?? "",
+    scopeId: row.scopeId ?? "",
     deliveryLocationId: row.deliveryLocationId ?? "",
     deliveryLocationName: location?.name ?? "",
     stockCheckSummary: row.stockCheckSummary ?? "",
@@ -534,6 +540,8 @@ export async function createPR(
       isUrgent: input.isUrgent ?? false,
       urgencyJustification: input.urgencyJustification ?? null,
       workCategoryId: input.workCategoryId ?? null,
+      scopeType: input.scopeType ?? null,
+      scopeId: input.scopeId ?? null,
       deliveryLocationId: input.deliveryLocationId ?? null,
       estimatedTotal: input.estimatedTotal ?? null,
       stockCheckSummary: input.stockCheckSummary ?? null,

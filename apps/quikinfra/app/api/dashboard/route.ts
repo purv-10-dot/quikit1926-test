@@ -11,12 +11,12 @@ import { logger } from "@/lib/observability/logger";
  * KPI definitions:
  *   activeProjects      → CnProject.status = "active"
  *   pendingApprovals    → PR + PO + DPR + WO awaiting any approval step
- *   openPOs             → CnPurchaseOrder.status = "approved" (active POs only)
+ *   openPOs             → CnPurchaseOrder in a live, awaiting-delivery status
  *   lowStockItems       → items whose summed stock across visible projects
  *                         falls below their master `minStockLevel`
  *   grnThisMonth        → GRNs with grnDate in the current calendar month
  *   issuesThisMonth     → Material issues with issueDate in the current month
- *   activeWOs           → CnWorkOrder.status = "active"
+ *   activeWOs           → CnWorkOrder.status in (approved, in_progress)
  *   pendingDPRApproval  → DPRs whose status is not "approved"
  *
  * Project scoping: when ctx.projectIds is a non-empty array the user is
@@ -31,6 +31,23 @@ const PENDING_APPROVAL_STATUSES = [
   "approved_l1",
   "approved_l2",
 ];
+
+// An "open" PO is approved but still awaiting material. `approved` alone is
+// not enough: the submit / final-approve routes bump the status to `sent` the
+// moment the PO PDF reaches the vendor, and each GRN moves it on to
+// `partially_received`. Mirrors GRN_ELIGIBLE_PO_STATUSES in lib/purchase-service.ts.
+const OPEN_PO_STATUSES = [
+  "approved",
+  "sent",
+  "dispatched",
+  "partially_received",
+];
+
+// Mirrors the Active-WOs definition in the work-orders stats endpoint
+// (app/api/projects/work-orders/route.ts). No WO route ever writes the literal
+// status "active" — create defaults to `draft`, submit sets `pending_approval`,
+// approve sets `approved` — so an equality check on "active" always counted 0.
+const ACTIVE_WO_STATUSES = ["approved", "in_progress"];
 
 type ProjectProgressRow = {
   id: string;
@@ -52,25 +69,15 @@ export async function GET() {
     );
   }
 
-  const { orgId, projectIds, roleKey, permissions } = ctx;
-
-  // Scope resolution.
-  //
-  //   super_admin / "*" permissions  → no org filter (sees everything)
-  //   everyone else                  → orgId filter
-  //
-  // Project-level restriction (projectsAssigned) is independent of the
-  // above and still applies whenever the user has a non-empty list.
- 
+  const { orgId, projectIds } = ctx;
 
   // Every user — platform admin included — is scoped to their own org.
   // Per-org isolation is enforced everywhere in the ERP; cross-tenant
   // visibility is not a dashboard concern.
-//  const tenantScope: Record<string, unknown> = isPlatformAdmin
-//   ? { orgId }
-//   : { orgId };
- const tenantScope = { orgId };
+  const tenantScope = { orgId };
 
+  // Project-level restriction is independent of the org scope above and
+  // applies whenever the caller has a non-empty assigned-projects list.
   const scoped = Array.isArray(projectIds) && projectIds.length > 0;
   const projectScope = scoped ? { projectId: { in: projectIds! } } : {};
 
@@ -101,11 +108,13 @@ export async function GET() {
     recentPRsRaw,
     recentPOsRaw,
   ] = await Promise.all([
-    // 1. Active projects in the DB
+    // 1. Active projects in the DB. Match the projects-repository
+    // convention (active = anything not soft-deleted) instead of an
+    // exact-case "active" string — seed/legacy rows store "Active".
     prisma.cnProject.count({
       where: {
         ...tenantScope,
-        status: "active",
+        status: { not: "inactive" },
         ...(scoped ? { id: { in: projectIds! } } : {}),
       },
     }),
@@ -140,9 +149,13 @@ export async function GET() {
       },
     }),
 
-    // 3. Open / active POs — only approved
+    // 3. Open / active POs — approved through partially-received
     prisma.cnPurchaseOrder.count({
-      where: { ...tenantScope, ...projectScope, status: "approved" },
+      where: {
+        ...tenantScope,
+        ...projectScope,
+        status: { in: OPEN_PO_STATUSES },
+      },
     }),
 
     // 4. GRNs this calendar month
@@ -165,7 +178,11 @@ export async function GET() {
 
     // 6. Active work orders
     prisma.cnWorkOrder.count({
-      where: { ...tenantScope, ...projectScope, status: "active" },
+      where: {
+        ...tenantScope,
+        ...projectScope,
+        status: { in: ACTIVE_WO_STATUSES },
+      },
     }),
 
     // 7. DPRs not yet approved
@@ -253,7 +270,7 @@ export async function GET() {
 
   const projectWhere = {
     ...tenantScope,
-    status: "active" as const,
+    status: { not: "inactive" },
     ...(scoped ? { id: { in: projectIds! } } : {}),
   };
   const projectsTop = await db.cnProject.findMany({

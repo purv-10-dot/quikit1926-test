@@ -15,6 +15,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, Send, Check, X as XIcon, Lock } from "lucide-react";
 import {
+  PageFrame,
   PageHeader, PageContainer, StatusChip, TabBar,
 } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
@@ -781,6 +782,7 @@ export default function MaterialIssuePage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Material Issue"
         subtitle="Issue materials from store to site / contractor / equipment"
@@ -790,7 +792,7 @@ export default function MaterialIssuePage() {
         ]}
       />
       <TabBar tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
-      <PageContainer>
+      <PageContainer fill>
         <DataTable
           id="store-material-issue"
           columns={columns}
@@ -809,6 +811,7 @@ export default function MaterialIssuePage() {
           onSortChange={(k, d) => setSort({ by: k, order: d })}
         />
       </PageContainer>
+      </PageFrame>
       <QuickCreateDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}

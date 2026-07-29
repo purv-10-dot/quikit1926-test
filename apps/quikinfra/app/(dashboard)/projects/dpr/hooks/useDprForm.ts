@@ -10,7 +10,8 @@ import {
   useProjects, useItemGroups, useUOMs,
   useContractors, useLocations, useMachinery,
 } from "@/hooks/use-masters";
-import { useWorkOrders, useBOQ } from "@/hooks/use-projects";
+import { useWorkOrders, useBOQ, useActivities } from "@/hooks/use-projects";
+import type { ActivityLeafOption } from "@/components/ActivityScopePicker";
 import {
   parseStoredWeatherDetail,
   type DprWeatherDetail,
@@ -50,6 +51,7 @@ export function useDprForm(
   const projects = (projectsResult?.data ?? []) as unknown as Array<{
     id: string; name?: string; code?: string; projectCode?: string;
     location?: string; city?: string; state?: string;
+    executionMode?: string;
   }>;
   const itemGroups = (itemGroupsResult?.data ?? []) as Array<{ id: string; name?: string; status?: string; itemCount?: number }>;
   const uoms = (uomsResult?.data ?? []) as Array<{ id: string; code?: string }>;
@@ -71,7 +73,10 @@ export function useDprForm(
   // projects list doesn't include it — otherwise a DPR that already has a
   // project shows the empty "Select Project…" placeholder.
   const projectOptions = useMemo(() => {
-    const opts = projects.map((p) => ({ value: p.id, label: p.name ?? "" }));
+    const opts = projects.map((p) => ({
+      value: p.id,
+      label: `${p.name ?? ""}${p.executionMode === "FREE_SCOPE" ? " · Free-Scope" : ""}`,
+    }));
     if (editData?.projectId && !opts.some((o) => o.value === editData.projectId)) {
       opts.unshift({
         value: editData.projectId,
@@ -88,6 +93,9 @@ export function useDprForm(
         : undefined),
     [projects, projectId, editData?.projectId, editData?.projectName],
   );
+  const isFreeScope =
+    (selectedProject as { executionMode?: string } | undefined)?.executionMode ===
+    "FREE_SCOPE";
 
   // Work Orders for the selected project (drives the Contractor/WO dropdown
   // on each work-done row). Only active WOs are worth picking.
@@ -188,13 +196,17 @@ export function useDprForm(
   const [workItems, setWorkItems] = useState<WorkItem[]>(() =>
     (editData?.workItems ?? []).map((w) => ({
       boqItemId: w.boqItemId ?? "",
+      scopeType: w.scopeType,
+      scopeId: w.scopeId,
       boqNo: w.boqNo ?? "",
       description: w.description ?? "",
       unit: w.unit ?? "",
       totalTarget: Number(w.totalTarget ?? 0),
       prevQty: Number(w.prevQty ?? 0),
       balanceQty:
-        Number(w.totalTarget ?? 0) - Number(w.prevQty ?? 0) - Number(w.todayQty ?? 0),
+        Number(w.totalTarget ?? 0) > 0
+          ? Number(w.totalTarget ?? 0) - Number(w.prevQty ?? 0) - Number(w.todayQty ?? 0)
+          : Number.MAX_SAFE_INTEGER,
       contractorWO: w.workOrderId ?? "",
       todayQty: w.todayQty != null ? String(w.todayQty) : "",
       location: w.location ?? "",
@@ -270,6 +282,10 @@ export function useDprForm(
     () => new Set(workItems.map((w) => w.boqItemId)),
     [workItems]
   );
+  const alreadyAddedScopeIds = useMemo(
+    () => new Set(workItems.map((w) => w.scopeId).filter(Boolean) as string[]),
+    [workItems]
+  );
 
   // Project BOQ tree — used to resolve each work item's parent group so the
   // Work Done table can show a group header row above its line items (the
@@ -277,6 +293,23 @@ export function useDprForm(
   // here for both new and edit mode). Cached by React Query, so it reuses
   // the same fetch the BOQ picker modal makes.
   const { data: boqTreeResult } = useBOQ(projectId || null);
+  const { data: activitiesResult } = useActivities(
+    projectId && isFreeScope ? projectId : null,
+  );
+  const activityItems: ActivityLeafOption[] = useMemo(
+    () =>
+      (activitiesResult?.data ?? []).map((a) => ({
+        id: a.id,
+        activityCode: a.activityCode,
+        description: a.description,
+        uomId: a.uomId,
+        uomCode: a.uomCode,
+        tenderQty: a.tenderQty,
+        scopeQty: a.scopeQty,
+        path: a.path,
+      })),
+    [activitiesResult],
+  );
   const boqRows = useMemo(
     () => boqTreeResult?.items ?? boqTreeResult?.data ?? [],
     [boqTreeResult]
@@ -290,6 +323,34 @@ export function useDprForm(
   );
 
   // ── Work Items handlers ──
+  const addWorkItemFromActivity = (a: ActivityLeafOption) => {
+    // Same precedence the DPR read path applies: a revised scope qty
+    // supersedes the tender baseline, so create and edit agree on the
+    // denominator behind % Completed.
+    const revisedQty = Number(a.scopeQty ?? 0);
+    const totalTarget = revisedQty > 0 ? revisedQty : Number(a.tenderQty ?? 0);
+    const balanceQty = totalTarget > 0 ? totalTarget : Number.MAX_SAFE_INTEGER;
+    setWorkItems((prev) => [
+      ...prev,
+      {
+        boqItemId: "",
+        scopeType: "ACTIVITY",
+        scopeId: a.id,
+        boqNo: a.activityCode,
+        description: a.description,
+        unit: a.uomCode ?? "",
+        totalTarget,
+        prevQty: 0,
+        balanceQty,
+        contractorWO: "",
+        todayQty: "",
+        location: "",
+        remarks: "",
+        images: [],
+        imageKeys: [],
+      },
+    ]);
+  };
   const addWorkItemFromBoq = (row: BoqPickerRow) => {
     const totalTarget = Number(row.scopeQty ?? 0);
     const balance = Number(row.balanceQty ?? totalTarget);
@@ -484,6 +545,8 @@ export function useDprForm(
           const wo = projectWorkOrders.find((x) => x.id === w.contractorWO);
           return {
             boqItemId: w.boqItemId,
+            scopeType: w.scopeType ?? null,
+            scopeId: w.scopeId ?? null,
             boqNo: w.boqNo,
             description: w.description,
             unit: w.unit,
@@ -608,7 +671,8 @@ export function useDprForm(
     isEdit,
     projects, itemGroups, uoms, contractors, locations, machineryMaster,
     projectOptions, selectedProject, projectWorkOrders,
-    alreadyAddedBoqIds, boqRows, groupedWorkItems, materialItemIdsKey,
+    alreadyAddedBoqIds, alreadyAddedScopeIds, boqRows, groupedWorkItems, materialItemIdsKey,
+    isFreeScope, activityItems,
     projectId, setProjectId,
     consumptionLocationId, setConsumptionLocationId,
     reportDate, setReportDate,
@@ -628,7 +692,7 @@ export function useDprForm(
     saving, setSaving,
     error, setError,
     galleryIdx, setGalleryIdx,
-    addWorkItemFromBoq, updateWorkItem, addWorkItemImages, removeWorkItemImage, removeWorkItem,
+    addWorkItemFromBoq, addWorkItemFromActivity, updateWorkItem, addWorkItemImages, removeWorkItemImage, removeWorkItem,
     addMaterial, updateMaterial, removeMaterial,
     addManpower, updateManpower, removeManpower,
     addStaff, updateStaff, removeStaff,

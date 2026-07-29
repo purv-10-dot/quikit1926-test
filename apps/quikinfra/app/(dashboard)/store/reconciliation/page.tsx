@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye } from "lucide-react";
-import { PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { useServerTabList } from "@/hooks/use-server-tab-list";
 import { QuickCreateDrawer, type QuickCreateConfig } from "@/components/QuickCreateDrawer";
@@ -162,13 +162,14 @@ export default function StockReconciliationPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Stock Reconciliation"
         subtitle="Compare physical stock with system records and adjust variances"
         breadcrumbs={[{ label: "Store", href: "/store" }, { label: "Reconciliation" }]}
       />
       <TabBar tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
-      <PageContainer>
+      <PageContainer fill>
         <DataTable
           id="store-reconciliation"
           columns={columns}
@@ -187,6 +188,7 @@ export default function StockReconciliationPage() {
           onSortChange={(k, d) => setSort({ by: k, order: d })}
         />
       </PageContainer>
+      </PageFrame>
       <QuickCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} config={config} />
     </>
   );

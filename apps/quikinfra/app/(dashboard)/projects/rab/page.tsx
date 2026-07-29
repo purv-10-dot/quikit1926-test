@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Eye } from "lucide-react";
-import { PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { useRABs } from "@/hooks/use-projects";
 import { QuickCreateDrawer } from "@/components/QuickCreateDrawer";
@@ -120,13 +120,14 @@ export default function RABPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Running Account Bill (RAB)"
         subtitle="Contractor billing based on approved DPR quantities"
         breadcrumbs={[{ label: "Projects", href: "/projects" }, { label: "RAB" }]}
       />
       <TabBar tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />
-      <PageContainer>
+      <PageContainer fill>
         <DataTable
           id="projects-rab"
           columns={columns}
@@ -147,6 +148,7 @@ export default function RABPage() {
           addLabel="Generate RAB"
         />
       </PageContainer>
+      </PageFrame>
       <QuickCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} config={config} />
     </>
   );

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { QuickCreateDrawer } from "@/components/QuickCreateDrawer";
 import { useProjects } from "@/hooks/use-masters";
@@ -149,13 +149,14 @@ export default function HindrancePage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Hindrance Register"
         subtitle="Track delays, obstructions, and their impact on project timeline"
         breadcrumbs={[{ label: "Projects", href: "/projects" }, { label: "Hindrance Register" }]}
       />
       <TabBar tabs={STATUS_TABS} activeTab={activeTab} onTabChange={setActiveTab} />
-      <PageContainer>
+      <PageContainer fill>
         <DataTable
           id="projects-hindrance"
           columns={columns}
@@ -176,6 +177,7 @@ export default function HindrancePage() {
           addLabel="Report Hindrance"
         />
       </PageContainer>
+      </PageFrame>
       <QuickCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} config={config} />
     </>
   );

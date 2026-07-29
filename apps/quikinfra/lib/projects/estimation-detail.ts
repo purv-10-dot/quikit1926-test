@@ -17,6 +17,8 @@ export interface EstimationDetail {
   status?: string | null;
   approval?: ApprovalInfo | null;
   projectName?: string | null;
+  /** "ACTIVITY" when this estimation is anchored on a FREE_SCOPE activity. */
+  scopeType?: string | null;
   phase?: string | null;
   boqNo?: string | null;
   boqDescription?: string | null;

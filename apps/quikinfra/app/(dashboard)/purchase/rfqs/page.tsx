@@ -12,7 +12,7 @@
 import { toErrorMessage } from "@/lib/api/errors";
 import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { PageHeader, PageContainer, TabBar } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer, TabBar } from "@/components/PageShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DataTable } from "@/components/DataTable";
 import { useIndents, useSubmitRFQ } from "@/hooks/use-approvals";
@@ -607,6 +607,7 @@ export default function RFQsPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Request for Quotation (RFQ)"
         subtitle="Compare vendor quotes for best pricing and terms"
@@ -616,7 +617,7 @@ export default function RFQsPage() {
         ]}
       />
       <TabBar tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
-      <PageContainer>
+      <PageContainer fill>
         <DataTable
           id="purchase-rfqs"
           columns={columns}
@@ -635,6 +636,7 @@ export default function RFQsPage() {
           onSortChange={(k, d) => setSort({ by: k, order: d })}
         />
       </PageContainer>
+      </PageFrame>
       <QuickCreateDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}

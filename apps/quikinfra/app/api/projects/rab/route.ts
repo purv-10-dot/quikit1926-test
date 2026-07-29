@@ -207,9 +207,12 @@ export async function POST(req: NextRequest) {
         where: { woId },
         select: { id: true, boqItemId: true, uomId: true },
       });
-      const woLineByItem = new Map(
-        woLines.map((w): [string, (typeof woLines)[number]] => [w.boqItemId, w]),
-      );
+      // FREE_SCOPE WO lines have a null boqItemId and cannot be matched to a
+      // BOQ leaf, so they never enter the lookup.
+      const woLineByItem = new Map<string, (typeof woLines)[number]>();
+      for (const w of woLines) {
+        if (w.boqItemId) woLineByItem.set(w.boqItemId, w);
+      }
 
       const errors: string[] = [];
       for (const l of rawLines) {
