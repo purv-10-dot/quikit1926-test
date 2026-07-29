@@ -12,6 +12,7 @@ import { PageBackground } from "@/components/hrms/page-background";
 import { Pagination } from "@/components/hrms/pagination";
 import { ShieldCheck, Check, X, MessageSquare, Megaphone, Heart, ThumbsUp } from "lucide-react";
 import { clsx } from "clsx";
+import { TabSwitcher } from "@/components/hrms/tab-switcher";
 
 type Tab = "announcement" | "post" | "recognition" | "feedback";
 
@@ -174,24 +175,12 @@ export default function EngagementApprovalsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-gray-200 mb-4">
-        <div className="flex gap-4 overflow-x-auto">
-          {visibleTabs.map((t) => (
-            <button
-              key={t.value}
-              onClick={() => switchTab(t.value)}
-              className={clsx(
-                "inline-flex items-center gap-1.5 px-1 py-3 text-[13px] font-semibold border-b-2 transition -mb-px whitespace-nowrap",
-                tab === t.value
-                  ? "border-[#22c55e] text-[#22c55e] font-semibold"
-                  : "border-transparent text-gray-500 hover:text-gray-700",
-              )}
-            >
-              {t.icon} {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <TabSwitcher
+        className="mb-4"
+        value={tab}
+        onChange={(v) => switchTab(v as Tab)}
+        tabs={visibleTabs.map((t) => ({ value: t.value, label: t.label, icon: t.icon }))}
+      />
 
       {/* Status filter */}
       <div className="flex items-center gap-2 mb-4">

@@ -25,6 +25,7 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
         take: limit,
         include: {
           _count: { select: { tasks: true } },
+          tasks: { select: { status: true } },
         },
       }),
       prisma.offboardingInstance.count({ where }),
@@ -34,16 +35,36 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     ]);
 
     // OffboardingInstance stores only employeeId (no Prisma relation to Employee),
-    // so resolve names in a single follow-up query and merge them in.
+    // so resolve names + card fields in a single follow-up query and merge them in.
     const employees = await prisma.employee.findMany({
       where: { orgId, id: { in: instances.map((i) => i.employeeId) } },
-      select: { id: true, firstName: true, lastName: true, displayName: true, employeeCode: true },
+      select: {
+        id: true, firstName: true, lastName: true, displayName: true, employeeCode: true,
+        employmentType: true, workLocation: true,
+        department: { select: { name: true } },
+      },
     });
     const employeeById = new Map(employees.map((e) => [e.id, e]));
-    const instancesWithEmployee = instances.map((i) => ({
-      ...i,
-      employee: employeeById.get(i.employeeId) ?? null,
-    }));
+    const instancesWithEmployee = instances.map((i) => {
+      const done = i.tasks.filter((t) => t.status === "TaskCompleted" || t.status === "TaskSkipped").length;
+      const totalTasks = i.tasks.length;
+      const emp = employeeById.get(i.employeeId) ?? null;
+      return {
+        ...i,
+        tasks: undefined, // drop the raw task rows; card uses the computed counts below
+        taskDone: done,
+        taskTotal: totalTasks,
+        progressPct: totalTasks > 0 ? Math.round((done / totalTasks) * 100) : 0,
+        employee: emp
+          ? {
+              id: emp.id, firstName: emp.firstName, lastName: emp.lastName,
+              displayName: emp.displayName, employeeCode: emp.employeeCode,
+              employmentType: emp.employmentType, workLocation: emp.workLocation,
+              department: emp.department?.name ?? null,
+            }
+          : null,
+      };
+    });
 
     return successResponse(
       { instances: instancesWithEmployee, counts },

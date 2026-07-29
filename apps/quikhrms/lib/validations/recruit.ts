@@ -186,6 +186,11 @@ export const createInterviewSchema = z.object({
   duration: z.number().int().default(60),
   location: z.string().optional(),
   meetingLink: z.string().optional(),
+  // Take-Home Task (only used when type === "TakeHome"). All optional — the
+  // interview row is created normally; these are persisted via raw SQL.
+  takeHomeInstructions: z.string().max(10000).optional(),
+  takeHomeAttachmentUrl: z.string().max(1000).optional(),
+  takeHomeDueDate: z.string().optional(),
 });
 
 export const updateInterviewSchema = z.object({

@@ -5,7 +5,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Modal } from "@/components/hrms/modal";
 import { useDialog } from "@/components/hrms/dialog";
-import { UserCheck, Plus, Trash2, Pause, Play, Check } from "lucide-react";
+import {
+  UserCheck, Plus, Trash2, Pause, Play, Check,
+  CalendarCheck, Receipt, Clock, Users, CalendarDays, TrendingUp, Folder, LogIn, Heart, BarChart3,
+} from "lucide-react";
 import { EmptyState } from "@/components/hrms/empty-state";
 import { EmployeeSelect } from "@/components/hrms/employees/employee-select";
 import { Select } from "@/components/hrms/ui/select";
@@ -13,6 +16,7 @@ import { PageBackground } from "@/components/hrms/page-background";
 import { Pagination } from "@/components/hrms/pagination";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 import { clsx } from "clsx";
+import { TabSwitcher } from "@/components/hrms/tab-switcher";
 import { DELEGATION_CATALOG, DELEGATION_PERM_LABELS } from "@/lib/rbac/delegatable";
 
 interface EmpRef { id: string; firstName: string; lastName: string; employeeCode: string | null }
@@ -24,6 +28,20 @@ interface Delegation {
   notifyMode: string; description: string | null; isActive: boolean;
   delegator: EmpRef | null; delegatee: EmpRef | null;
 }
+
+/** Per-module icon + soft tile for the Modules & Permissions picker. */
+const MODULE_UI: Record<string, { icon: React.ElementType; tile: string }> = {
+  Leave:       { icon: CalendarCheck, tile: "bg-green-50 text-green-600" },
+  Performance: { icon: TrendingUp,    tile: "bg-violet-50 text-violet-600" },
+  Expense:     { icon: Receipt,       tile: "bg-emerald-50 text-emerald-600" },
+  Document:    { icon: Folder,        tile: "bg-amber-50 text-amber-600" },
+  Attendance:  { icon: Clock,         tile: "bg-indigo-50 text-indigo-600" },
+  Boarding:    { icon: LogIn,         tile: "bg-teal-50 text-teal-600" },
+  Recruitment: { icon: Users,         tile: "bg-orange-50 text-orange-600" },
+  Engagement:  { icon: Heart,         tile: "bg-purple-50 text-purple-600" },
+  Roster:      { icon: CalendarDays,  tile: "bg-blue-50 text-blue-600" },
+  Reports:     { icon: BarChart3,     tile: "bg-sky-50 text-sky-600" },
+};
 
 function empName(e: EmpRef | null, fallbackId: string): string {
   if (!e) return fallbackId;
@@ -144,14 +162,15 @@ export default function DelegationsPage() {
         </button>
       </div>
 
-      <div className="flex items-center gap-2 mb-4">
-        {(["self", "received"] as const).map((t) => (
-          <button key={t} onClick={() => { setTab(t); setPage(1); }}
-            className={clsx("px-4 py-2 rounded-lg text-[13px] font-semibold", tab === t ? "bg-green-600 text-white" : "bg-white border border-[var(--border)] text-gray-700")}>
-            {t === "self" ? "My Delegations" : "Delegated to Me"}
-          </button>
-        ))}
-      </div>
+      <TabSwitcher
+        className="mb-4"
+        value={tab}
+        onChange={(v) => { setTab(v as "self" | "received"); setPage(1); }}
+        tabs={[
+          { value: "self", label: "My Delegations" },
+          { value: "received", label: "Delegated to Me" },
+        ]}
+      />
 
       {items.length === 0 ? (
         <div className="p-1"><EmptyState variant="bot" title="No Data Found" className="border border-gray-200 shadow-sm" /></div>
@@ -208,113 +227,126 @@ export default function DelegationsPage() {
         </div>
       )}
 
-      <Modal open={showAdd} onClose={() => setShowAdd(false)} title="New Delegation">
+      <Modal
+        open={showAdd}
+        onClose={() => setShowAdd(false)}
+        title="New Delegation"
+        subtitle="Delegate tasks and responsibilities to another employee"
+        size="2xl"
+        bodyClassName="p-0 flex flex-col min-h-0"
+      >
         <form
           onSubmit={(e) => {
             e.preventDefault();
             const today = new Date(); today.setHours(0, 0, 0, 0);
-            if (form.fromDate && new Date(form.fromDate) < today) {
-              alert("From date cannot be in the past.");
-              return;
-            }
-            if (form.toDate && new Date(form.toDate) <= new Date(form.fromDate)) {
-              alert("To date must be after From date.");
-              return;
-            }
+            if (form.fromDate && new Date(form.fromDate) < today) { alert("From date cannot be in the past."); return; }
+            if (form.toDate && new Date(form.toDate) <= new Date(form.fromDate)) { alert("To date must be after From date."); return; }
             const modules = Object.entries(form.selections).map(([module, perms]) => ({ module, permissions: perms }));
-            if (modules.length === 0) {
-              alert("Select at least one module and permission to delegate.");
-              return;
-            }
+            if (modules.length === 0) { alert("Select at least one module and permission to delegate."); return; }
             const { selections: _selections, ...rest } = form;
             createMut.mutate({ ...rest, modules, toDate: form.toDate || undefined });
           }}
-          className="space-y-4"
+          className="flex flex-col min-h-0 flex-1"
         >
-          <EmployeeSelect
-            label="Delegatee"
-            required
-            value={form.delegateeId}
-            onChange={(id) => setForm({ ...form, delegateeId: id })}
-            excludeIds={excludeIds}
-          />
-          <p className="-mt-2 text-xs text-gray-500">
-            You can&apos;t delegate to yourself or to your direct/indirect reports.
-          </p>
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="block text-xs font-medium text-gray-700 mb-1">Notify</label>
-              <Select
-                value={form.notifyMode}
-                onChange={(v) => setForm({ ...form, notifyMode: v })}
-                options={[
-                  { value: "NotifyBoth", label: "Both" },
-                  { value: "NotifyDelegatee", label: "Delegatee only" },
-                ]}
-              /></div>
-            <div><label className="block text-xs font-medium text-gray-700 mb-1">From</label>
-              <input
-                type="date"
-                required
-                min={new Date().toISOString().slice(0, 10)}
-                value={form.fromDate}
-                onChange={(e) => setForm({ ...form, fromDate: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs"
-              /></div>
-            <div><label className="block text-xs font-medium text-gray-700 mb-1">To (optional)</label>
-              <input
-                type="date"
-                min={form.fromDate || new Date().toISOString().slice(0, 10)}
-                value={form.toDate}
-                onChange={(e) => setForm({ ...form, toDate: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs"
-              /></div>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Modules &amp; Permissions</label>
-            {availableModules.length === 0 ? (
-              <p className="text-xs text-gray-500">You don&apos;t have any permissions available to delegate.</p>
-            ) : (
-              <div className="space-y-2">
-                {availableModules.map((mod) => {
-                  const selected = form.selections[mod.module] ?? null;
-                  const isOn = selected !== null;
-                  return (
-                    <div key={mod.module}
-                      className={clsx("rounded-lg border p-2", isOn ? "border-green-500 bg-green-50/40" : "border-gray-200")}>
-                      <button type="button" onClick={() => toggleModule(mod)}
-                        className="flex items-center gap-2 w-full text-left">
-                        <span className={clsx("flex h-4 w-4 items-center justify-center rounded border",
-                          isOn ? "bg-green-600 border-green-600 text-white" : "border-gray-300")}>
-                          {isOn && <Check size={11} />}
-                        </span>
-                        <span className="text-xs font-medium text-gray-800">{mod.label}</span>
-                      </button>
-                      {isOn && (
-                        <div className="flex flex-wrap gap-1.5 mt-2 pl-6">
-                          {mod.permissions.map((p) => {
-                            const on = selected!.includes(p.code);
-                            return (
-                              <button key={p.code} type="button" onClick={() => togglePermission(mod.module, p.code)}
-                                className={clsx("px-2 py-0.5 rounded-md border text-[11px]",
-                                  on ? "bg-green-600 text-white border-green-600" : "bg-white text-gray-600 border-gray-300")}>
-                                {p.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+          <div className="px-6 py-5 overflow-y-auto flex-1 space-y-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
+              <div>
+                <EmployeeSelect
+                  label="Delegatee"
+                  required
+                  value={form.delegateeId}
+                  onChange={(id) => setForm({ ...form, delegateeId: id })}
+                  excludeIds={excludeIds}
+                />
               </div>
-            )}
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 mb-1.5">Notify</label>
+                <Select
+                  value={form.notifyMode}
+                  onChange={(v) => setForm({ ...form, notifyMode: v })}
+                  options={[
+                    { value: "NotifyBoth", label: "Both" },
+                    { value: "NotifyDelegatee", label: "Delegatee only" },
+                  ]}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 mb-1.5">From</label>
+                <input type="date" required min={new Date().toISOString().slice(0, 10)}
+                  value={form.fromDate} onChange={(e) => setForm({ ...form, fromDate: e.target.value })}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-200 focus:border-green-400" />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 mb-1.5">To <span className="text-gray-400 font-normal">(optional)</span></label>
+                <input type="date" min={form.fromDate || new Date().toISOString().slice(0, 10)}
+                  value={form.toDate} onChange={(e) => setForm({ ...form, toDate: e.target.value })}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-200 focus:border-green-400" />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-900 mb-2">Modules &amp; Permissions</label>
+              {availableModules.length === 0 ? (
+                <p className="text-xs text-gray-500">You don&apos;t have any permissions available to delegate.</p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {availableModules.map((mod) => {
+                    const selected = form.selections[mod.module] ?? null;
+                    const isOn = selected !== null;
+                    const ui = MODULE_UI[mod.module] ?? { icon: UserCheck, tile: "bg-gray-100 text-gray-500" };
+                    const Icon = ui.icon;
+                    return (
+                      <div key={mod.module}
+                        className={clsx("rounded-xl border p-3 transition", isOn ? "border-green-400 bg-green-50/40" : "border-gray-200 hover:border-gray-300")}>
+                        <button type="button" onClick={() => toggleModule(mod)} className="flex items-center gap-3 w-full text-left">
+                          <span className={clsx("flex h-5 w-5 items-center justify-center rounded-md border shrink-0",
+                            isOn ? "bg-green-600 border-green-600 text-white" : "border-gray-300 bg-white")}>
+                            {isOn && <Check size={13} />}
+                          </span>
+                          <span className={clsx("w-9 h-9 rounded-lg grid place-items-center shrink-0", ui.tile)}><Icon size={17} /></span>
+                          <span className="text-sm font-medium text-gray-800">{mod.label}</span>
+                        </button>
+                        {isOn && mod.permissions.length > 1 && (
+                          <div className="flex flex-wrap gap-1.5 mt-2.5 pl-[68px]">
+                            {mod.permissions.map((p) => {
+                              const on = selected!.includes(p.code);
+                              return (
+                                <button key={p.code} type="button" onClick={() => togglePermission(mod.module, p.code)}
+                                  className={clsx("px-2 py-0.5 rounded-md border text-[11px] transition",
+                                    on ? "bg-green-600 text-white border-green-600" : "bg-white text-gray-600 border-gray-300 hover:border-gray-400")}>
+                                  {p.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-900 mb-1.5">Description <span className="text-gray-400 font-normal">(optional)</span></label>
+              <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
+                rows={2} placeholder="Add a note about this delegation…"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-200 focus:border-green-400" />
+            </div>
           </div>
-          <div><label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
-            <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
-              className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" rows={2} /></div>
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setShowAdd(false)} className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium">Cancel</button>
-            <button type="submit" disabled={createMut.isPending} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-50">Save</button>
+
+          <div className="border-t border-gray-100 px-6 py-3.5 flex items-center justify-between shrink-0">
+            <button type="button" onClick={() => setShowAdd(false)}
+              className="px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition">
+              Cancel
+            </button>
+            <button type="submit" disabled={createMut.isPending}
+              className="inline-flex items-center gap-1.5 px-5 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 shadow-sm disabled:opacity-50 transition">
+              {createMut.isPending ? "Creating…" : "Create Delegation"}
+            </button>
           </div>
         </form>
       </Modal>

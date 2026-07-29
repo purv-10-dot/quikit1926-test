@@ -6,6 +6,7 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import Link from "next/link";
 import { clsx } from "clsx";
 import { Check } from "lucide-react";
+import { TabSwitcher } from "@/components/hrms/tab-switcher";
 
 interface Task {
   id: string;
@@ -67,18 +68,12 @@ export function MyTasksWidget() {
         <h3 className="text-[13px] font-semibold text-gray-900">My tasks</h3>
         <Link href="/tasks" className="text-[11px] font-semibold text-green-700 hover:underline">View all tasks</Link>
       </div>
-      <div className="flex items-center gap-4 border-b border-gray-100 mb-3">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={clsx("pb-2 text-xs font-medium border-b-2 -mb-px transition",
-              tab === t.key ? "border-green-500 text-green-700" : "border-transparent text-gray-500 hover:text-gray-700")}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <TabSwitcher
+        className="mb-3"
+        value={tab}
+        onChange={(v) => setTab(v as TabKey)}
+        tabs={TABS.map((t) => ({ value: t.key, label: t.label }))}
+      />
       {filtered.length === 0 ? (
         <p className="py-6 text-center text-xs text-gray-400">No tasks here.</p>
       ) : (

@@ -145,6 +145,25 @@ async function apiDownloadPost(url: string, body: unknown, fallbackName?: string
   URL.revokeObjectURL(objectUrl);
 }
 
+/**
+ * Fetch a binary response (with auth) and return a blob object URL. The caller
+ * MUST revoke it (URL.revokeObjectURL) when done. Used by the in-app PDF viewer
+ * so files render inside HRMS instead of navigating the tab to a bare blob URL.
+ */
+async function apiBlobUrl(url: string): Promise<string> {
+  const res = await fetch(withBasePath(url), { headers: getAuthHeaders() });
+  if (!res.ok) {
+    let msg = `Couldn't open file (${res.status})`;
+    try {
+      const data = await res.json();
+      msg = data?.error?.message ?? msg;
+    } catch { /* not JSON */ }
+    throw new ApiError(msg, "VIEW_FAILED", res.status);
+  }
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
 /** Fetch a binary response (with auth) and open it inline in a new tab. */
 async function apiView(url: string): Promise<void> {
   const res = await fetch(withBasePath(url), { headers: getAuthHeaders() });
@@ -181,5 +200,6 @@ export function useApiClient() {
     download: (url: string, filename?: string) => apiDownload(url, filename),
     downloadPost: (url: string, body: unknown, filename?: string) => apiDownloadPost(url, body, filename),
     view: (url: string) => apiView(url),
+    blobUrl: (url: string) => apiBlobUrl(url),
   };
 }

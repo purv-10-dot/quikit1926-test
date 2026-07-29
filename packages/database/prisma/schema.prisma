@@ -12475,6 +12475,22 @@ model Interview {
   lastReminderAt         DateTime?
   reminderCount          Int       @default(0)
 
+  // ─── Take-Home Task (type = TakeHome) ──────────────────────────────
+  // Set when HR assigns a take-home: the brief, an optional attached spec
+  // file, and the deadline. The candidate submits via a tokenised public page
+  // (submissionToken); their work is stored as submissionUrl (uploaded file OR
+  // pasted link) + note. The reviewer scores using the normal scorecard fields
+  // above. Read/written via raw SQL (regen-free).
+  takeHomeInstructions   String?
+  takeHomeAttachmentUrl  String?
+  takeHomeDueDate        DateTime? @db.Date
+  submissionToken        String?   @unique
+  submissionTokenExpiresAt DateTime?
+  submissionUrl          String?
+  submissionFileName     String?
+  submissionNote         String?
+  submittedAt            DateTime?
+
   // Interview scorecard — formerly the separate InterviewScorecard table
   // (1:1, keyed by interviewId). Folded in here. All nullable: an interview
   // has a scorecard once overallRating is set (recommendation submitted).

@@ -9,6 +9,8 @@ import { Wallet, Download, FileText, TrendingUp, TrendingDown, Minus, Info, Load
 import { useToast } from "@/components/hrms/toast";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { PageBackground } from "@/components/hrms/page-background";
+import { PdfViewerModal } from "@/components/hrms/pdf-viewer-modal";
+import { TabSwitcher } from "@/components/hrms/tab-switcher";
 import { clsx } from "clsx";
 
 interface Payslip {
@@ -107,25 +109,15 @@ export default function MyPayrollPage() {
         </div>
       </div>
 
-      <div className="border-b border-gray-200 flex items-center gap-1">
-        {([
-          { key: "payslips", label: "My Payslips" },
-          { key: "structure", label: "Salary Structure" },
-          { key: "revisions", label: "Revision History" },
-        ] as { key: Tab; label: string }[]).map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            data-active={tab === t.key}
-            className={clsx(
-              "tab-underline px-4 py-2 text-[13px] font-semibold -mb-px",
-              tab === t.key ? "text-[#22c55e]" : "text-gray-600 hover:text-gray-900",
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <TabSwitcher
+        value={tab}
+        onChange={(v) => setTab(v as Tab)}
+        tabs={[
+          { value: "payslips", label: "My Payslips" },
+          { value: "structure", label: "Salary Structure" },
+          { value: "revisions", label: "Revision History" },
+        ]}
+      />
 
       {tab === "payslips" && <PayslipsTab />}
       {tab === "structure" && <StructureTab />}
@@ -142,21 +134,17 @@ function PayslipsTab() {
   // Routed through the api client so the dev auth headers actually get sent —
   // a plain <a href> can't carry them and the route returns UNAUTHORIZED.
   const [downloading, setDownloading] = useState<Set<string>>(new Set());
-  const [viewing, setViewing] = useState<Set<string>>(new Set());
+  // In-app PDF viewer — opens the payslip in a modal instead of navigating the
+  // tab to a bare blob URL (which strands the user with no way back).
+  const [viewer, setViewer] = useState<{ url: string; title: string; fileName: string } | null>(null);
 
-  const viewPdf = async (p: Payslip) => {
-    setViewing((s) => new Set(s).add(p.id));
-    try {
-      await api.view(`/api/v1/hrms/payroll/payslips/${p.id}/pdf`);
-    } catch (e) {
-      toast.error("Couldn't open payslip", (e as Error).message);
-    } finally {
-      setViewing((s) => {
-        const next = new Set(s);
-        next.delete(p.id);
-        return next;
-      });
-    }
+  const viewPdf = (p: Payslip) => {
+    const period = new Date(p.periodStart).toLocaleString("en-IN", { month: "short", year: "numeric" }).replace(/\s+/g, "-");
+    setViewer({
+      url: `/api/v1/hrms/payroll/payslips/${p.id}/pdf`,
+      title: `Payslip — ${new Date(p.periodStart).toLocaleString("en-IN", { month: "long", year: "numeric" })}`,
+      fileName: `Payslip-${period}.pdf`,
+    });
   };
 
   const downloadPdf = async (p: Payslip) => {
@@ -257,11 +245,9 @@ function PayslipsTab() {
                       <button
                         type="button"
                         onClick={() => viewPdf(p)}
-                        disabled={viewing.has(p.id)}
-                        className="inline-flex items-center gap-1 px-2 py-1 text-xs border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed rounded"
+                        className="inline-flex items-center gap-1 px-2 py-1 text-xs border border-gray-200 text-gray-700 hover:bg-gray-50 rounded"
                       >
-                        {viewing.has(p.id) ? <Loader2 size={12} className="animate-spin" /> : <Eye size={12} />}
-                        View
+                        <Eye size={12} /> View
                       </button>
                       <button
                         type="button"
@@ -280,6 +266,14 @@ function PayslipsTab() {
           </table>
         )}
       </div>
+
+      <PdfViewerModal
+        open={!!viewer}
+        url={viewer?.url ?? null}
+        title={viewer?.title}
+        fileName={viewer?.fileName}
+        onClose={() => setViewer(null)}
+      />
     </div>
   );
 }

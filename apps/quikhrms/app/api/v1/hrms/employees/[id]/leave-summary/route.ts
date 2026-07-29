@@ -4,6 +4,7 @@ import { withServiceAuth } from "@/lib/with-auth";
 import { successResponse, forbidden, internalError } from "@/lib/api-response";
 import { canAccessEmployee } from "@/lib/rbac/hierarchy";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
+import { appBaseUrl } from "@/lib/utils/app-url";
 
 /**
  * GET /api/v1/hrms/employees/:id/leave-summary?year=YYYY — compact leave-balance
@@ -54,7 +55,7 @@ export const GET = withServiceAuth(async (req: NextRequest, ctx, params) => {
       };
     });
 
-    const base = process.env.NEXT_PUBLIC_QUIKHRMS_URL ?? process.env.APP_URL ?? "";
+    const base = appBaseUrl();
     return successResponse({
       employeeId,
       year,

@@ -7,6 +7,7 @@ import { useDialog } from "@/components/hrms/dialog";
 import { useToast } from "@/components/hrms/toast";
 import { Modal } from "@/components/hrms/modal";
 import { PageBackground } from "@/components/hrms/page-background";
+import { TabSwitcher } from "@/components/hrms/tab-switcher";
 import { Plus, Shield, ShieldCheck, Trash2, Pencil, Search, X, CheckSquare, Square } from "lucide-react";
 import {
   PERMISSION_TREE,
@@ -285,11 +286,15 @@ export default function RolesPage() {
             </div>
 
             {/* Sub-tabs */}
-            <div className="px-5 border-b border-gray-200">
-              <div className="flex gap-1">
-                <TabBtn label="Entities" active={tab === "entities"} onClick={() => setTab("entities")} />
-                <TabBtn label="Navigation" active={tab === "navigation"} onClick={() => setTab("navigation")} />
-              </div>
+            <div className="px-5 pt-4">
+              <TabSwitcher
+                value={tab}
+                onChange={(v) => setTab(v as "entities" | "navigation")}
+                tabs={[
+                  { value: "entities", label: "Entities" },
+                  { value: "navigation", label: "Navigation" },
+                ]}
+              />
             </div>
 
             {/* Info banner */}
@@ -349,19 +354,6 @@ export default function RolesPage() {
 }
 
 // ── Sub-components ────────────────────────────────────────────────
-
-function TabBtn({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`px-4 py-2 text-[13px] font-semibold border-b-2 -mb-px ${
-        active ? "border-[#22c55e] text-[#22c55e]" : "border-transparent text-gray-500 hover:text-gray-700"
-      }`}
-    >
-      {label}
-    </button>
-  );
-}
 
 interface EntityMatrixProps {
   draft: Set<string>;

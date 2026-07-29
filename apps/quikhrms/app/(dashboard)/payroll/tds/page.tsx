@@ -16,6 +16,7 @@ import { clsx } from "clsx";
 import { SkeletonLine } from "@/components/hrms/skeleton";
 import { PageBackground } from "@/components/hrms/page-background";
 import { Pagination } from "@/components/hrms/pagination";
+import { TabSwitcher } from "@/components/hrms/tab-switcher";
 import { RecordChallanModal } from "./_record-challan-modal";
 
 const INR = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
@@ -127,10 +128,14 @@ function TdsPageInner() {
       </div>
 
       {/* Tabs */}
-      <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-gray-100">
-        <TabPill active={tab === "liability"} onClick={() => switchTab("liability")} label="TDS Liability" icon={<IndianRupee size={13} />} />
-        <TabPill active={tab === "challans"} onClick={() => switchTab("challans")} label="Challans" icon={<FileText size={13} />} />
-      </div>
+      <TabSwitcher
+        value={tab}
+        onChange={(v) => switchTab(v as TabKey)}
+        tabs={[
+          { value: "liability", label: "TDS Liability", icon: <IndianRupee size={13} /> },
+          { value: "challans", label: "Challans", icon: <FileText size={13} /> },
+        ]}
+      />
 
       {tab === "liability"
         ? (
@@ -159,21 +164,6 @@ function TdsPageInner() {
           : null}
       />
     </div>
-  );
-}
-
-function TabPill({ active, onClick, label, icon }: { active: boolean; onClick: () => void; label: string; icon: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={clsx(
-        "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-semibold transition",
-        active ? "bg-white text-[#166534] shadow-sm ring-1 ring-gray-200" : "text-gray-600 hover:text-[#166534] hover:bg-white/60",
-      )}
-    >
-      {icon} {label}
-    </button>
   );
 }
 

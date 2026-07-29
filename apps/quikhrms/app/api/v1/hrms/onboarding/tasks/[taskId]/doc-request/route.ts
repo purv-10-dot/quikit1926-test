@@ -5,6 +5,7 @@ import { successResponse, validationError, notFound, internalError } from "@/lib
 import { generateDocUploadToken } from "@/lib/services/doc-upload-token";
 import { resolveAndSend } from "@/lib/email/resolve";
 import { buildDocUploadRequestEmail } from "@/lib/email-templates/doc-upload-request";
+import { appBaseUrl } from "@/lib/utils/app-url";
 
 // HR clicks "Send document request" on a Document Upload task in the onboarding
 // checklist → emails the new hire a secure upload link and marks the task
@@ -33,7 +34,7 @@ export const POST = withAuth(async (_req: NextRequest, { orgId, userId }, params
     if (!to) return validationError("The new hire has no email on file.");
 
     const { token } = generateDocUploadToken(task.id, orgId);
-    const base = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "";
+    const base = appBaseUrl();
     const link = `${base}/doc-upload/${token}`;
     const candidateName = candidate ? `${candidate.firstName} ${candidate.lastName}`.trim() : "there";
     const companyName = company?.companyName ?? "Our Company";

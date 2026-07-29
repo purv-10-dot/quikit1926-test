@@ -7,6 +7,7 @@ import { LeaveRulesWizard, type LeaveTypeRules } from "../_components/leave-rule
 import { CrudTable, type Column } from "@/components/hrms/crud-table";
 import { Modal } from "@/components/hrms/modal";
 import { PageBackground } from "@/components/hrms/page-background";
+import { TabSwitcher } from "@/components/hrms/tab-switcher";
 import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { useToast } from "@/components/hrms/toast";
@@ -228,31 +229,21 @@ export default function LeavePoliciesPage() {
     <div className="space-y-4">
       {/* Subtle HR-themed page background (scoped to this page only). */}
       <PageBackground src="/images/pre-onboarding-bg.png" />
-      <div className="surface-card p-1 inline-flex items-center gap-1 flex-wrap">
-        {showTypes && <TabButton active={tab === "types"} onClick={() => setTab("types")} icon={<Tag size={14} />} label="Leave Types" />}
-        {showGroups && <TabButton active={tab === "groups"} onClick={() => setTab("groups")} icon={<Layers size={14} />} label="Leave Groups" />}
-        {showMembers && <TabButton active={tab === "members"} onClick={() => setTab("members")} icon={<Users size={14} />} label="Employees In Leave Group" />}
-        {showDashboard && <TabButton active={tab === "dashboard"} onClick={() => setTab("dashboard")} icon={<LayoutDashboard size={14} />} label="Leave Dashboard" />}
-      </div>
+      <TabSwitcher
+        value={tab}
+        onChange={(v) => setTab(v as "types" | "groups" | "members" | "dashboard")}
+        tabs={[
+          ...(showTypes ? [{ value: "types" as const, label: "Leave Types", icon: <Tag size={14} /> }] : []),
+          ...(showGroups ? [{ value: "groups" as const, label: "Leave Groups", icon: <Layers size={14} /> }] : []),
+          ...(showMembers ? [{ value: "members" as const, label: "Employees In Leave Group", icon: <Users size={14} /> }] : []),
+          ...(showDashboard ? [{ value: "dashboard" as const, label: "Leave Dashboard", icon: <LayoutDashboard size={14} /> }] : []),
+        ]}
+      />
       {tab === "types" && showTypes && <LeaveTypesTab />}
       {tab === "groups" && showGroups && <LeaveGroupsTab />}
       {tab === "members" && showMembers && <EmployeesInGroupTab />}
       {tab === "dashboard" && showDashboard && <LeaveDashboardTab />}
     </div>
-  );
-}
-
-function TabButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
-  return (
-    <button
-      onClick={onClick}
-      className={clsx(
-        "inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md text-[13px] font-semibold transition",
-        active ? "bg-green-600 text-white shadow-sm" : "text-gray-600 hover:text-[#166534] hover:bg-gray-50",
-      )}
-    >
-      {icon} {label}
-    </button>
   );
 }
 

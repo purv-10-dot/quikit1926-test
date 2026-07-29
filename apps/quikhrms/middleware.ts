@@ -31,6 +31,7 @@ const centralMiddleware = createMiddleware({
     "/candidate-portal",
     "/candidate-documents",
     "/interview-feedback",
+    "/take-home", // tokenised candidate take-home task submission links
     "/offer", // tokenised candidate offer accept/decline links
     "/doc-upload", // tokenised candidate onboarding document upload links
     "/policy-ack", // tokenised candidate policy / training acknowledgement links

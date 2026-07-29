@@ -543,7 +543,9 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
             </div>
           </div>
 
-          <ConfirmationPanel employeeId={employeeId} pendingMandatory={pendingMandatoryCount} />
+          {/* Confirm Employment belongs to the Onboarding phase only — during
+              Pre-Onboarding the action is "Move to Onboarding" first. */}
+          {!isPreOnboarding && <ConfirmationPanel employeeId={employeeId} pendingMandatory={pendingMandatoryCount} />}
           </div>
 
       {(!isSelfView || isAdminViewer) && !inst.tasks.some((t) => t.stepType !== "CompleteProfile" && t.stepType !== "BGV")
