@@ -28,6 +28,9 @@ interface EstimationRow {
   id: string; boqNo?: string; boqDescription?: string; boqUnit?: string;
   boqQuantity?: number | string; materialCount?: number; materials?: unknown[];
   totalCost?: number | string; status?: string; canActOnCurrentStep?: boolean;
+  // Mirrors the server row in lib/projects/estimation-repository.ts — without
+  // these the index signature below widens them to `unknown`.
+  projectId: string; projectName?: string | null;
   [key: string]: unknown;
 }
 

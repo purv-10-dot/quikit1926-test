@@ -231,6 +231,8 @@ interface PrRow {
   projectId?: string | null;
   workCategoryId?: string | null;
   deliveryLocationId?: string | null;
+  scopeType?: string | null;
+  scopeId?: string | null;
   lines?: PrLineRow[] | null;
   requestDate?: Date | null;
   requiredDate?: Date | null;

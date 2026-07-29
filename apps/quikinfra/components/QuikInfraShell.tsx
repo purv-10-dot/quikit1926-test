@@ -137,7 +137,6 @@ const CONSTRUCTION_NAV: NavItem[] = [
   { label: "MASTER DATA", isSection: true },
   {
     label: "Masters",
-    href: "/masters",
     iconComponent: Database,
     moduleKey: "masters",
     featureKey: "masters",
@@ -168,7 +167,6 @@ const CONSTRUCTION_NAV: NavItem[] = [
   { label: "PROJECTS", isSection: true },
   {
     label: "Project Mgmt",
-    href: "/projects",
     iconComponent: FolderKanban,
     moduleKey: "project_mgmt",
     featureKey: "projectMgmt",
@@ -187,7 +185,6 @@ const CONSTRUCTION_NAV: NavItem[] = [
   { label: "PROCUREMENT", isSection: true },
   {
     label: "Purchase",
-    href: "/purchase",
     iconComponent: ShoppingCart,
     moduleKey: "purchase",
     featureKey: "purchase",
@@ -202,7 +199,6 @@ const CONSTRUCTION_NAV: NavItem[] = [
   { label: "INVENTORY", isSection: true },
   {
     label: "Store",
-    href: "/store",
     iconComponent: Warehouse,
     moduleKey: "store",
     featureKey: "store",
@@ -540,21 +536,12 @@ function NavItemComponent({ item, pathname, onNavigate, depth = 0, searchActive 
   if (item.children) {
     const isOpen =
       searchActive || (override?.at === pathname ? override.open : !!hasActiveChild);
-    // Exact match only — a prefix match would light up "Masters" while you sit
-    // on /masters/companies, which belongs to the Organization group.
-    const isSelfActive = item.href ? pathname === item.href : false;
-    const highlighted = hasActiveChild || isSelfActive;
     return (
       <div>
         <button
-          onClick={() => {
-            setOverride({ open: !isOpen, at: pathname });
-            // Groups that have their own landing page (e.g. Masters → /masters
-            // card grid) navigate there as well as toggling.
-            if (item.href) onNavigate(item.href);
-          }}
+          onClick={() => setOverride({ open: !isOpen, at: pathname })}
           className={`group w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-sm font-medium transition-all duration-150 ${
-            highlighted
+            hasActiveChild
               ? "text-slate-800 bg-slate-100"
               : isOpen
                 ? "text-slate-700 bg-slate-50"
@@ -565,7 +552,7 @@ function NavItemComponent({ item, pathname, onNavigate, depth = 0, searchActive 
           {Icon && (
             <Icon
               className={`w-4 h-4 shrink-0 transition-colors ${
-                highlighted
+                hasActiveChild
                   ? "text-slate-600"
                   : isOpen
                     ? "text-slate-500"
