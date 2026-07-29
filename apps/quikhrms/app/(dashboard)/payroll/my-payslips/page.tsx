@@ -8,6 +8,7 @@ import { Select } from "@/components/hrms/ui/select";
 import { Wallet, Download, FileText, TrendingUp, TrendingDown, Minus, Info, Loader2, Eye } from "lucide-react";
 import { useToast } from "@/components/hrms/toast";
 import { SkeletonTable } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 import { clsx } from "clsx";
 
 interface Payslip {
@@ -96,10 +97,12 @@ export default function MyPayrollPage() {
 
   return (
     <div className="space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center gap-3">
         <Wallet className="text-[#22c55e]" />
         <div>
-          <h1 className="text-page-title text-gray-900">My Payroll</h1>
+          <h1 className="text-page-title text-gray-900">My Payslips</h1>
           <p className="text-xs text-gray-500">Your payslips, current salary structure, and revision history.</p>
         </div>
       </div>

@@ -10,6 +10,8 @@ import { Inbox, CheckCircle2, X as XIcon, Briefcase, AlertTriangle, FileText, Pe
 import { clsx } from "clsx";
 import { RequisitionWizard, toReqPayload, emptyReqForm } from "../_components/requisition-wizard";
 import type { ReqFormShape, DeptOption, PipelineOption, EmpOption } from "../_components/requisition-wizard";
+import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 
 interface FullReq {
   id: string; title?: string; jobOpeningName?: string | null; pipelineId?: string | null;
@@ -97,6 +99,10 @@ export default function RequisitionApprovalsPage() {
     queryFn: () => api.get<ApprovalsQueueResponse>("/api/v1/hrms/recruit/requisitions/approvals-queue"),
   });
   const items = data?.data?.mine ?? [];
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
+  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  const pageItems = items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const [decision, setDecision] = useState<{ kind: "approve" | "reject"; item: PendingItem } | null>(null);
   const [comment, setComment] = useState("");
 
@@ -109,6 +115,12 @@ export default function RequisitionApprovalsPage() {
       setDecision(null); setComment("");
       // Approve is a one-click action — send the user to the requisitions list.
       if (vars.kind === "approve") router.push("/recruit/requisitions");
+    },
+    onError: (e: unknown) => {
+      // Surface the failure instead of leaving the row silently "stuck", and
+      // refresh the queue in case the decision was already taken elsewhere.
+      toast.error("Couldn't submit decision", e instanceof Error ? e.message : undefined);
+      qc.invalidateQueries({ queryKey: ["requisition-approvals"] });
     },
   });
 
@@ -198,11 +210,13 @@ export default function RequisitionApprovalsPage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-start justify-between mb-5 gap-3 flex-wrap">
         <div className="flex items-start gap-3">
           <Inbox size={28} className="text-[#22c55e] mt-1.5" />
           <div>
-            <h1 className="text-page-title text-gray-900 leading-tight">Requisition approvals</h1>
+            <h1 className="text-page-title text-gray-900 leading-tight">Approve Requisitions</h1>
             <p className="text-xs text-gray-500 mt-1">Job requisitions raised by managers, awaiting your approval.</p>
           </div>
         </div>
@@ -228,7 +242,7 @@ export default function RequisitionApprovalsPage() {
           </div>
         ) : (
           <ul className="divide-y divide-slate-100">
-            {items.map((it) => {
+            {pageItems.map((it) => {
               const r = it.requisition;
               const raiserName = r.raiser ? `${r.raiser.firstName} ${r.raiser.lastName}`.trim() : "—";
               const budgetHint = it.role === "HR" && it.openDeptHeadcount > 2;
@@ -295,6 +309,9 @@ export default function RequisitionApprovalsPage() {
               );
             })}
           </ul>
+        )}
+        {!isLoading && items.length > 0 && (
+          <Pagination page={page} totalPages={totalPages} total={items.length} limit={PAGE_SIZE} onPageChange={setPage} />
         )}
       </div>
 

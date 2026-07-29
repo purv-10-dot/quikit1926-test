@@ -6,6 +6,7 @@ import { Save, Loader2, Image as ImageIcon, Stamp, PenLine, FileText, Eye, Rotat
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
 import { FileUploadInput } from "@/components/hrms/file-upload-input";
+import { PageBackground } from "@/components/hrms/page-background";
 import { OFFER_LETTER_FIELDS, DEFAULT_OFFER_LETTER_BODY } from "@/lib/recruit/offer-letter-fields";
 
 interface Branding {
@@ -16,6 +17,7 @@ interface Branding {
   signatoryDesignation?: string | null;
   offerLetterFooter?: string | null;
   offerLetterBody?: string | null;
+  joiningLetterBody?: string | null;
   companyName?: string | null;
 }
 
@@ -58,7 +60,7 @@ export default function BrandingSettingsPage() {
     try {
       await api.downloadPost(
         "/api/v1/hrms/settings/branding/preview",
-        { body: form.offerLetterBody ?? "" },
+        { type: "offer", body: form.offerLetterBody ?? "" },
         "Offer-Letter-Sample.pdf",
       );
     } catch {
@@ -101,10 +103,12 @@ export default function BrandingSettingsPage() {
 
   return (
     <div className="p-4 space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div>
         <h1 className="text-base font-semibold text-gray-900">Offer Letter Branding</h1>
         <p className="text-xs text-gray-500 mt-1">
-          Upload letterhead, seal and signature used for generated offer letters.
+          Upload letterhead, seal and signature used for generated offer letters. The same assets are used for the joining letter.
         </p>
       </div>
 
@@ -187,7 +191,7 @@ export default function BrandingSettingsPage() {
               rows={2}
               value={form.offerLetterFooter ?? ""}
               onChange={(e) => setForm(f => ({ ...f, offerLetterFooter: e.target.value }))}
-              placeholder="Printed at the bottom of every offer letter (e.g. address, CIN)."
+              placeholder="Printed at the bottom of every letter (e.g. address, CIN)."
             />
           </div>
           </div>

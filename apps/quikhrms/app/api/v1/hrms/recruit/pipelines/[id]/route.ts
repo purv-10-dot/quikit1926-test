@@ -13,7 +13,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
     if (!p) return notFound("Pipeline not found");
     return successResponse({ ...p, stages: normalizeStages(p.stages) });
   } catch (error) { console.error("GET /recruit/pipelines/:id error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.read"] });
 
 export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
   try {
@@ -47,7 +47,7 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
 
     return successResponse({ ...updated, stages: normalizeStages(updated.stages) });
   } catch (error) { console.error("PATCH /recruit/pipelines/:id error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });
 
 export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }, params) => {
   try {
@@ -72,4 +72,4 @@ export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }, para
     });
     return successResponse({ deleted: true });
   } catch (error) { console.error("DELETE /recruit/pipelines/:id error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });

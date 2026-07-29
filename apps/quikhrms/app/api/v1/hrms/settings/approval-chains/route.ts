@@ -36,7 +36,7 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     console.error("GET /settings/approval-chains error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.settings.write", "hrms.settings.read"], anyPermission: true });
 
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
   try {
@@ -47,6 +47,19 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     }
 
     const { levels, autoApproveAfterDays, ...rest } = parsed.data;
+
+    // Every approver referenced in a level must belong to this org — block
+    // cross-tenant / bogus approver (user or role) ids.
+    const levelUserIds = [...new Set(levels.filter((l) => l.kind === "USER" && l.userId).map((l) => l.userId as string))];
+    const levelRoleIds = [...new Set(levels.filter((l) => l.kind === "ROLE" && l.roleId).map((l) => l.roleId as string))];
+    if (levelUserIds.length) {
+      const n = await prisma.employee.count({ where: { orgId, deletedAt: null, id: { in: levelUserIds } } });
+      if (n !== levelUserIds.length) return validationError("One or more approvers aren't valid employees in your organisation.");
+    }
+    if (levelRoleIds.length) {
+      const n = await prisma.hrmsAppRole.count({ where: { orgId, id: { in: levelRoleIds } } });
+      if (n !== levelRoleIds.length) return validationError("One or more approver roles are invalid.");
+    }
 
     // Only one active chain per module. Creating an active chain deactivates any
     // other active chain for the same module.

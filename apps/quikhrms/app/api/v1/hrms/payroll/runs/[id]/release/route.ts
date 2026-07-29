@@ -22,6 +22,17 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, { id })
     const releasedPayslipIds: string[] = [];
 
     await prisma.$transaction(async (tx) => {
+      // Atomically claim the transition FIRST: only flip to Paid if the status
+      // is still exactly what we read. A second concurrent release matches 0
+      // rows and aborts — otherwise loan EMIs would be processed twice.
+      const claimed = await tx.payRun.updateMany({
+        where: { id, orgId, status: run.status },
+        data: { status: "Paid", updatedBy: userId },
+      });
+      if (claimed.count === 0) {
+        throw new Error("This pay run has already been released or its status changed. Refresh and try again.");
+      }
+
       const payslips = await tx.payslip.findMany({
         where: { payRunId: id, orgId, deletedAt: null },
         include: { lines: { where: { category: "LoanDeduction" } } },
@@ -65,10 +76,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, { id })
         where: { payRunId: id, orgId, deletedAt: null },
         data: { status: "Released", releasedAt: new Date(), updatedBy: userId },
       });
-      await tx.payRun.update({
-        where: { id },
-        data: { status: "Paid", updatedBy: userId },
-      });
+      // (Run status already flipped to Paid atomically at the top of the tx.)
 
       const released = await tx.payslip.findMany({
         where: { payRunId: id, orgId, deletedAt: null, status: "Released" },

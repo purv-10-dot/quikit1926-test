@@ -3,19 +3,37 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
-import { LeaveRulesWizard } from "../_components/leave-rules-wizard";
+import { LeaveRulesWizard, type LeaveTypeRules } from "../_components/leave-rules-wizard";
 import { CrudTable, type Column } from "@/components/hrms/crud-table";
 import { Modal } from "@/components/hrms/modal";
+import { PageBackground } from "@/components/hrms/page-background";
 import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { useToast } from "@/components/hrms/toast";
 import { useDialog } from "@/components/hrms/dialog";
 import { EmptyState } from "@/components/hrms/empty-state";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
+import { EmployeesInGroupTab } from "../_components/employees-in-group-tab";
+import { LeaveDashboardTab } from "../_components/leave-dashboard-tab";
 import {
   Layers, Plus, Trash2, Users, Shield, Tag, UserCircle, Pencil, Check, X, Search,
-  Info, CalendarDays, Hash, SlidersHorizontal, Settings2, ArrowLeft,
+  Info, CalendarDays, Hash, SlidersHorizontal, LayoutDashboard,
+  ChevronRight, MoreVertical, Clock,
 } from "lucide-react";
+
+// Avatar palette for employee initials in the group detail table.
+const AVATAR_COLORS = [
+  "bg-emerald-100 text-emerald-700",
+  "bg-blue-100 text-blue-700",
+  "bg-purple-100 text-purple-700",
+  "bg-amber-100 text-amber-700",
+  "bg-rose-100 text-rose-700",
+  "bg-cyan-100 text-cyan-700",
+];
+function initials(first?: string | null, last?: string | null) {
+  const s = `${(first?.[0] ?? "").toUpperCase()}${(last?.[0] ?? "").toUpperCase()}`;
+  return s || "?";
+}
 import { clsx } from "clsx";
 
 // Shared input styling for the Leave Type modal (matches the sectioned redesign).
@@ -111,6 +129,8 @@ interface LeaveTypeItem {
   applyCutoffDay?: number | null;
   minGapDays?: number | null;
   blockedDuringNotice?: boolean | null;
+  createdByName?: string | null;
+  updatedByName?: string | null;
 }
 
 const EMPLOYMENT_TYPES = ["FullTime", "PartTime", "Contract", "Intern"];
@@ -120,7 +140,7 @@ interface LeaveGroupAssignment {
   assigneeType: "Employee" | "Role";
   employeeId: string | null;
   roleId: string | null;
-  employee?: { id: string; firstName: string; lastName: string; employeeCode: string; jobTitle: string | null; profilePhoto: string | null } | null;
+  employee?: { id: string; firstName: string; lastName: string; employeeCode: string; jobTitle: string | null; profilePhoto: string | null; department?: { name: string } | null } | null;
   role?: { id: string; name: string; code: string } | null;
 }
 
@@ -128,6 +148,7 @@ interface LeaveGroupItem {
   id: string;
   leaveTypeId: string;
   overrideQuota: string | null;
+  rules?: Record<string, unknown> | null;
   leaveType: { id: string; name: string; code: string; color: string | null };
 }
 
@@ -157,15 +178,43 @@ interface Role {
 }
 
 export default function LeavePoliciesPage() {
-  const [tab, setTab] = useState<"types" | "groups">("types");
-  const [rulesOpen, setRulesOpen] = useState(false);
-  const { hasPermission, isLoading: permsLoading } = useDashboardConfig();
+  // Deep-linkable via ?tab= (e.g. the setup checklist links to ?tab=members).
+  const [tab, setTab] = useState<"types" | "groups" | "members" | "dashboard">(() => {
+    const t = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("tab") : null;
+    return t === "groups" || t === "members" || t === "dashboard" ? t : "types";
+  });
+  const { hasPermission, isLoading: permsLoading, navKeys, permissions } = useDashboardConfig();
   // Managing leave types & groups requires hrms.leave.manage (also enforced by
-  // the API). Employees / self-service roles get a read-blocked state instead
-  // of the management UI.
+  // the API). The Leave Dashboard is separately grantable via
+  // hrms.leave.dashboard.read, so a read-only analytics role can see it without
+  // the full management UI. Managers implicitly get the dashboard too.
   const canManage = hasPermission("hrms.leave.manage");
+  const canViewDashboard = canManage || hasPermission("hrms.leave.dashboard.read");
 
-  if (!permsLoading && !canManage) {
+  // Per-tab navigation allow-list (mirrors the sidebar): each Leave Settings tab
+  // is individually grantable in Roles → Navigation. Default-allow — a role with
+  // no configured navKeys (or super-admin) sees every tab its permissions allow.
+  // Legacy "leave.policies" key grants the whole page for older role configs.
+  const isSuper = permissions.includes("*");
+  const navSet = new Set(navKeys);
+  const navConfigured = !isSuper && navSet.size > 0;
+  const legacyAll = navSet.has("leave.policies");
+  const navAllowed = (key: string) => !navConfigured || legacyAll || navSet.has(key);
+
+  const showTypes = canManage && navAllowed("leave.policies.types");
+  const showGroups = canManage && navAllowed("leave.policies.groups");
+  const showMembers = canManage && navAllowed("leave.policies.members");
+  const showDashboard = canViewDashboard && navAllowed("leave.policies.dashboard");
+  const firstVisibleTab = showTypes ? "types" : showGroups ? "groups" : showMembers ? "members" : showDashboard ? "dashboard" : null;
+
+  // Land on (and stay on) the first tab the user can actually see.
+  const visibleMap = { types: showTypes, groups: showGroups, members: showMembers, dashboard: showDashboard };
+  useEffect(() => {
+    if (!permsLoading && !visibleMap[tab] && firstVisibleTab) setTab(firstVisibleTab);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [permsLoading, tab, showTypes, showGroups, showMembers, showDashboard, firstVisibleTab]);
+
+  if (!permsLoading && !firstVisibleTab) {
     return (
       <EmptyState
         variant="folder"
@@ -177,13 +226,18 @@ export default function LeavePoliciesPage() {
 
   return (
     <div className="space-y-4">
-      {!rulesOpen && (
-        <div className="surface-card p-1 inline-flex items-center gap-1">
-          <TabButton active={tab === "types"} onClick={() => setTab("types")} icon={<Tag size={14} />} label="Leave Types" />
-          <TabButton active={tab === "groups"} onClick={() => setTab("groups")} icon={<Layers size={14} />} label="Leave Groups" />
-        </div>
-      )}
-      {tab === "types" ? <LeaveTypesTab onRulesOpenChange={setRulesOpen} /> : <LeaveGroupsTab />}
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
+      <div className="surface-card p-1 inline-flex items-center gap-1 flex-wrap">
+        {showTypes && <TabButton active={tab === "types"} onClick={() => setTab("types")} icon={<Tag size={14} />} label="Leave Types" />}
+        {showGroups && <TabButton active={tab === "groups"} onClick={() => setTab("groups")} icon={<Layers size={14} />} label="Leave Groups" />}
+        {showMembers && <TabButton active={tab === "members"} onClick={() => setTab("members")} icon={<Users size={14} />} label="Employees In Leave Group" />}
+        {showDashboard && <TabButton active={tab === "dashboard"} onClick={() => setTab("dashboard")} icon={<LayoutDashboard size={14} />} label="Leave Dashboard" />}
+      </div>
+      {tab === "types" && showTypes && <LeaveTypesTab />}
+      {tab === "groups" && showGroups && <LeaveGroupsTab />}
+      {tab === "members" && showMembers && <EmployeesInGroupTab />}
+      {tab === "dashboard" && showDashboard && <LeaveDashboardTab />}
     </div>
   );
 }
@@ -204,17 +258,14 @@ function TabButton({ active, onClick, icon, label }: { active: boolean; onClick:
 
 // ─── LEAVE TYPES TAB ─────────────────────────────────────
 
-function LeaveTypesTab({ onRulesOpenChange }: { onRulesOpenChange?: (open: boolean) => void }) {
+function LeaveTypesTab() {
   const api = useApiClient();
   const qc = useQueryClient();
   const toast = useToast();
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [modal, setModal] = useState<{ open: boolean; item: LeaveTypeItem | null }>({ open: false, item: null });
-  // Per-leave-type rules configuration (quota, accrual, carry-forward, etc.).
-  const [rulesTarget, setRulesTarget] = useState<LeaveTypeItem | null>(null);
-  // Tell the parent to hide the page tabs while the full-width Rules view is open.
-  useEffect(() => { onRulesOpenChange?.(!!rulesTarget); }, [rulesTarget, onRulesOpenChange]);
-  useEffect(() => () => onRulesOpenChange?.(false), [onRulesOpenChange]);
   const emptyForm = {
     preset: "",
     name: "",
@@ -261,11 +312,12 @@ function LeaveTypesTab({ onRulesOpenChange }: { onRulesOpenChange?: (open: boole
   });
 
   const columns: Column<LeaveTypeItem>[] = [
-    { key: "name", label: "Name", render: (t) => <span>{t.name}</span> },
-    { key: "code", label: "Code" },
-    { key: "isPaid", label: "Paid", render: (t) => t.isPaid ? "Yes" : "No" },
-    { key: "maxBalance", label: "Leave Count", render: (t) => `${t.maxBalance}` },
-    { key: "isCarryForward", label: "Carry Fwd", render: (t) => t.isCarryForward ? "Yes" : "No" },
+    { key: "sno", label: "S. No.", render: (_t, i) => <span className="text-gray-500">{i + 1}</span> },
+    { key: "name", label: "Leave Name", render: (t) => <span className="font-medium text-gray-900">{t.name}</span> },
+    { key: "code", label: "Short Code" },
+    { key: "description", label: "Description", render: (t) => <span className="text-gray-600">{t.description || "—"}</span> },
+    { key: "createdByName", label: "Created By", render: (t) => t.createdByName || "—" },
+    { key: "updatedByName", label: "Last Updated By", render: (t) => t.updatedByName || "—" },
   ];
 
   const openAdd = () => {
@@ -292,65 +344,23 @@ function LeaveTypesTab({ onRulesOpenChange }: { onRulesOpenChange?: (open: boole
   const filtered = (data?.data ?? []).filter((t) =>
     !search || t.name.toLowerCase().includes(search.toLowerCase()) || t.code.toLowerCase().includes(search.toLowerCase())
   );
-
-  // Rules open as a full-width section (not a modal) — like a dedicated settings
-  // page, with a back arrow to return to the leave-types list.
-  if (rulesTarget) {
-    return (
-      <div className="w-full">
-        <div className="flex items-center gap-3 mb-3">
-          <button
-            type="button"
-            onClick={() => setRulesTarget(null)}
-            title="Back to leave types"
-            className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 shrink-0"
-          >
-            <ArrowLeft size={16} />
-          </button>
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-lg bg-green-50 text-green-600 flex items-center justify-center shrink-0">
-              <SlidersHorizontal size={18} />
-            </div>
-            <div>
-              <h1 className="text-page-title text-gray-900 leading-tight">{rulesTarget.name} · Rules</h1>
-              <p className="text-xs text-gray-500">Configure entitlement, applying rules and restrictions</p>
-            </div>
-          </div>
-        </div>
-        <div className="surface-card p-4 w-full">
-          <LeaveRulesWizard
-            leaveType={rulesTarget}
-            allTypes={data?.data ?? []}
-            onClose={() => setRulesTarget(null)}
-          />
-        </div>
-      </div>
-    );
-  }
+  const typeTotalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const typePageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <>
       <CrudTable
         title="Leave Types"
-        data={filtered}
+        data={typePageItems}
         columns={columns}
         isLoading={isLoading}
         onAdd={openAdd}
         onEdit={openEdit}
         onDelete={(id) => deleteMut.mutate(id)}
         search={search}
-        onSearchChange={setSearch}
+        onSearchChange={(v) => { setSearch(v); setPage(1); }}
         searchPlaceholder="Search leave types..."
-        extraActions={(item) => (
-          <button
-            type="button"
-            onClick={() => setRulesTarget(item)}
-            title="Set rules"
-            className="w-8 h-8 inline-flex items-center justify-center text-gray-400 hover:text-[#22c55e] rounded-lg hover:bg-green-50"
-          >
-            <SlidersHorizontal size={13} />
-          </button>
-        )}
+        pagination={{ page, totalPages: typeTotalPages, total: filtered.length, limit: PAGE_SIZE, onPageChange: setPage }}
       />
 
       <Modal
@@ -484,6 +494,9 @@ function LeaveGroupsTab() {
   const { confirm } = useDialog();
   const [groupModal, setGroupModal] = useState<{ open: boolean; group: LeaveGroup | null }>({ open: false, group: null });
   const [assignModal, setAssignModal] = useState<{ open: boolean; group: LeaveGroup | null }>({ open: false, group: null });
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detailTab, setDetailTab] = useState<"employees" | "types">("employees");
+  const [moveDelete, setMoveDelete] = useState<{ id: string; name: string } | null>(null);
 
   const { data: groupsData, isLoading } = useQuery({
     queryKey: ["leave-groups"],
@@ -496,6 +509,11 @@ function LeaveGroupsTab() {
   });
 
   const handleDelete = async (group: LeaveGroup) => {
+    // A group with assignees can't be deleted until they're moved elsewhere.
+    if (group.assignments.length > 0) {
+      setMoveDelete({ id: group.id, name: group.name });
+      return;
+    }
     const ok = await confirm({
       title: "Delete leave group?",
       description: `"${group.name}" will be removed. This cannot be undone.`,
@@ -507,43 +525,101 @@ function LeaveGroupsTab() {
 
   const groups = groupsData?.data ?? [];
 
+  const selected = groups.find((g) => g.id === selectedId) ?? groups[0] ?? null;
+
   return (
     <>
-      <div className="rounded-b-lg border border-t-0 border-gray-200 bg-white p-4">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-[13px] font-semibold text-gray-900">Leave Groups</h2>
-            <p className="text-xs text-gray-500">Bundle leave types and assign to employees or roles.</p>
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(300px,360px)_1fr] gap-5 items-start">
+        {/* ── LEFT: group list ───────────────────────────── */}
+        <div className="space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-[15px] font-bold text-gray-900">Leave Groups</h2>
+              <p className="text-[11.5px] text-gray-500 mt-0.5 max-w-[230px] leading-snug">Organize employees into leave groups and manage their leave entitlements.</p>
+            </div>
+            <button
+              onClick={() => setGroupModal({ open: true, group: null })}
+              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-semibold shadow-sm"
+            >
+              <Plus size={14} /> Add Group
+            </button>
           </div>
-          <button
-            onClick={() => setGroupModal({ open: true, group: null })}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-xs font-medium shadow-sm"
-          >
-            <Plus size={13} /> New Group
-          </button>
+
+          {isLoading ? (
+            <div className="py-10 text-center text-xs text-gray-500">Loading…</div>
+          ) : groups.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
+              <Layers size={28} className="mx-auto text-gray-300 mb-2" />
+              <p className="text-xs text-gray-500">No leave groups yet.</p>
+              <p className="text-xs text-gray-400">Create one to bundle leave types and assign to employees.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {groups.map((g) => {
+                const active = selected?.id === g.id;
+                const empCount = g.assignments.filter((a) => a.assigneeType === "Employee").length;
+                return (
+                  <div
+                    key={g.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => { setSelectedId(g.id); setDetailTab("employees"); }}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { setSelectedId(g.id); setDetailTab("employees"); } }}
+                    className={clsx(
+                      "w-full cursor-pointer text-left rounded-xl border p-3.5 transition",
+                      active ? "border-green-500 bg-green-50/60 ring-1 ring-green-500/20" : "border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm",
+                    )}
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <div className={clsx("h-9 w-9 shrink-0 rounded-lg grid place-items-center", active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500")}>
+                        <Users size={16} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-[13px] font-semibold text-gray-900 truncate">{g.name}</h3>
+                          <span className={clsx("text-[9.5px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wide", g.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500")}>
+                            {g.isActive ? "Active" : "Inactive"}
+                          </span>
+                        </div>
+                        {g.description && <p className="text-[11.5px] text-gray-500 mt-0.5 truncate">{g.description}</p>}
+                      </div>
+                      <ChevronRight size={15} className={clsx("shrink-0 mt-1", active ? "text-green-600" : "text-gray-300")} />
+                    </div>
+                    <div className="flex items-center justify-between mt-2.5 pl-[46px]">
+                      <div className="flex items-center gap-4 text-[11px] text-gray-500">
+                        <span className="inline-flex items-center gap-1"><Tag size={12} /> {g.items.length} leave type{g.items.length === 1 ? "" : "s"}</span>
+                        <span className="inline-flex items-center gap-1"><Users size={12} /> {empCount} employee{empCount === 1 ? "" : "s"}</span>
+                      </div>
+                      <div className="flex items-center gap-0.5">
+                        <button onClick={(e) => { e.stopPropagation(); setGroupModal({ open: true, group: g }); }} className="p-1.5 rounded hover:bg-white text-gray-400 hover:text-gray-700"><Pencil size={13} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); handleDelete(g); }} className="p-1.5 rounded hover:bg-white text-gray-400 hover:text-red-600"><Trash2 size={13} /></button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
-        {isLoading ? (
-          <div className="py-10 text-center text-xs text-gray-500">Loading…</div>
-        ) : groups.length === 0 ? (
-          <div className="py-12 text-center">
-            <Layers size={28} className="mx-auto text-gray-300 mb-2" />
-            <p className="text-xs text-gray-500">No leave groups yet.</p>
-            <p className="text-xs text-gray-400">Create one to bundle leave types and assign to individuals or roles.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {groups.map((g) => (
-              <GroupCard
-                key={g.id}
-                group={g}
-                onEdit={() => setGroupModal({ open: true, group: g })}
-                onAssign={() => setAssignModal({ open: true, group: g })}
-                onDelete={() => handleDelete(g)}
-              />
-            ))}
-          </div>
-        )}
+        {/* ── RIGHT: group detail ────────────────────────── */}
+        <div>
+          {selected ? (
+            <GroupDetail
+              group={selected}
+              tab={detailTab}
+              setTab={setDetailTab}
+              onAssign={() => setAssignModal({ open: true, group: selected })}
+            />
+          ) : (
+            <div className="rounded-2xl border border-gray-200 bg-white p-12 min-h-[420px] grid place-items-center text-center">
+              <div>
+                <Layers size={32} className="mx-auto text-gray-300 mb-3" />
+                <p className="text-sm text-gray-500">Select a group to view its details.</p>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {groupModal.open && (
@@ -559,61 +635,231 @@ function LeaveGroupsTab() {
           onClose={() => setAssignModal({ open: false, group: null })}
         />
       )}
+
+      {moveDelete && (
+        <LeaveMoveDeleteModal
+          sourceId={moveDelete.id}
+          sourceName={moveDelete.name}
+          targets={groups.filter((g) => g.id !== moveDelete.id).map((g) => ({ id: g.id, name: g.name }))}
+          onClose={() => setMoveDelete(null)}
+          onDeleted={() => {
+            qc.invalidateQueries({ queryKey: ["leave-groups"] });
+            if (selectedId === moveDelete.id) setSelectedId(null);
+            setMoveDelete(null);
+          }}
+        />
+      )}
     </>
   );
 }
 
-function GroupCard({ group, onEdit, onAssign, onDelete }: {
-  group: LeaveGroup; onEdit: () => void; onAssign: () => void; onDelete: () => void;
+function LeaveMoveDeleteModal({ sourceId, sourceName, targets, onClose, onDeleted }: {
+  sourceId: string; sourceName: string; targets: { id: string; name: string }[];
+  onClose: () => void; onDeleted: () => void;
 }) {
-  const empCount = group.assignments.filter((a) => a.assigneeType === "Employee").length;
-  const roleCount = group.assignments.filter((a) => a.assigneeType === "Role").length;
+  const api = useApiClient();
+  const toast = useToast();
+  const [target, setTarget] = useState("");
+  const mut = useMutation({
+    mutationFn: () => api.delete(`/api/v1/hrms/leaves/groups/${sourceId}?moveToGroupId=${target}`),
+    onSuccess: () => { toast.success("Assignees moved & group deleted"); onDeleted(); onClose(); },
+    onError: () => toast.error("Couldn't move & delete"),
+  });
+  return (
+    <Modal open onClose={onClose} title={`Delete "${sourceName}"`} size="md">
+      <div className="space-y-4">
+        <p className="text-sm text-gray-600">This group still has assignees. Move them to another group, then it will be deleted.</p>
+        {targets.length === 0 ? (
+          <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2.5 text-xs text-amber-700">
+            No other leave group to move assignees to. Create one first.
+          </div>
+        ) : (
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Move assignees to</label>
+            <Select placeholder="Select a group…" value={target} onChange={(v) => setTarget(v)} options={targets.map((t) => ({ value: t.id, label: t.name }))} />
+          </div>
+        )}
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" onClick={onClose} className="btn btn-secondary btn-sm">Cancel</button>
+          <button type="button" onClick={() => target && mut.mutate()} disabled={!target || mut.isPending} className="btn btn-danger btn-sm">
+            <Trash2 size={13} /> Move &amp; delete
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ─── GROUP DETAIL (master-detail right pane) ─────────────
+
+function GroupDetail({ group, tab, setTab, onAssign }: {
+  group: LeaveGroup;
+  tab: "employees" | "types";
+  setTab: (t: "employees" | "types") => void;
+  onAssign: () => void;
+}) {
+  const api = useApiClient();
+  // The list endpoint returns assignment rows without hydrated employees, so
+  // fetch the group's own detail (which hydrates employee + department) for the
+  // members table. Falls back to the list row while it loads.
+  const { data: detailData } = useQuery({
+    queryKey: ["leave-group-detail", group.id],
+    queryFn: () => api.get<LeaveGroup>(`/api/v1/hrms/leaves/groups/${group.id}`),
+  });
+  const g = detailData?.data ?? group;
+
+  const empAssignments = g.assignments.filter((a) => a.assigneeType === "Employee");
+  const empCount = empAssignments.length;
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white hover:shadow-md transition p-4">
-      <div className="flex items-start justify-between mb-2">
-        <div className="flex-1 min-w-0">
-          <h3 className="text-[13px] font-semibold text-gray-900 truncate">{group.name}</h3>
-          {group.description && <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{group.description}</p>}
+    <div className="rounded-2xl border border-gray-200 bg-white p-5">
+      {/* header */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-3.5 min-w-0">
+          <div className="h-[52px] w-[52px] shrink-0 rounded-xl bg-green-100 text-green-700 grid place-items-center">
+            <Users size={24} />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-[15px] font-bold text-gray-900">{g.name}</h2>
+              <span className={clsx("text-[9.5px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wide", g.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500")}>
+                {g.isActive ? "Active" : "Inactive"}
+              </span>
+            </div>
+            <p className="text-xs text-gray-500 mt-1 flex items-center gap-2">
+              <span className="inline-flex items-center gap-1"><Tag size={12} /> {g.items.length} leave types</span>
+              <span className="text-gray-300">•</span>
+              <span className="inline-flex items-center gap-1"><Users size={12} /> {empCount} employees</span>
+            </p>
+            {g.description && <p className="text-xs text-gray-400 mt-1 truncate">{g.description}</p>}
+          </div>
         </div>
-        <span className={clsx(
-          "text-[11px] font-medium px-1.5 py-0.5 rounded",
-          group.isActive ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"
-        )}>
-          {group.isActive ? "Active" : "Inactive"}
-        </span>
       </div>
 
-      <div className="flex flex-wrap gap-1 mt-2 mb-3 min-h-[22px]">
-        {group.items.slice(0, 5).map((it) => (
-          <span
-            key={it.id}
-            className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-700 bg-gray-50 border border-gray-200 rounded px-1.5 py-0.5"
-            style={it.leaveType.color ? { borderLeftWidth: 3, borderLeftColor: it.leaveType.color } : {}}
-          >
-            {it.leaveType.code}
-          </span>
-        ))}
-        {group.items.length > 5 && (
-          <span className="text-[11px] text-gray-500 px-1.5 py-0.5">+{group.items.length - 5}</span>
+      {/* tabs */}
+      <div className="flex items-center gap-6 border-b border-gray-200 mt-5">
+        <DetailTab active={tab === "employees"} onClick={() => setTab("employees")} icon={<Users size={14} />} label="Employees" />
+        <DetailTab active={tab === "types"} onClick={() => setTab("types")} icon={<CalendarDays size={14} />} label="Leave Types" />
+      </div>
+
+      {/* content */}
+      <div className="mt-4">
+        {tab === "employees" && (
+          <div>
+            <div className="flex items-start justify-between gap-3 mb-3.5">
+              <div>
+                <h3 className="text-sm font-bold text-gray-900">Employees in this group ({empCount})</h3>
+                <p className="text-xs text-gray-500 mt-0.5">These employees will follow the leave rules and quotas of this group.</p>
+              </div>
+              <button onClick={onAssign} className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-semibold shadow-sm">
+                <Plus size={14} /> Assign Employees
+              </button>
+            </div>
+            {empCount === 0 ? (
+              <div className="rounded-xl border border-dashed border-gray-200 py-10 text-center">
+                <Users size={24} className="mx-auto text-gray-300 mb-2" />
+                <p className="text-xs text-gray-500">No employees assigned yet.</p>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-gray-200 overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-green-50 text-left text-[10.5px] font-semibold uppercase tracking-wide text-gray-500">
+                      <th className="px-4 py-2.5">Employee</th>
+                      <th className="px-4 py-2.5">Job</th>
+                      <th className="px-4 py-2.5">Department</th>
+                      <th className="px-4 py-2.5 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {empAssignments.map((a, i) => {
+                      const e = a.employee;
+                      return (
+                        <tr key={a.id} className="hover:bg-gray-50/60">
+                          <td className="px-4 py-2.5">
+                            <div className="flex items-center gap-2.5">
+                              <div className={clsx("h-8 w-8 rounded-full grid place-items-center text-[11px] font-semibold", AVATAR_COLORS[i % AVATAR_COLORS.length])}>
+                                {initials(e?.firstName, e?.lastName)}
+                              </div>
+                              <div>
+                                <p className="font-semibold text-gray-900 text-[12.5px]">{e ? `${e.firstName} ${e.lastName}` : "—"}</p>
+                                <p className="text-[11px] text-gray-400">{e?.employeeCode ?? "—"}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5 text-gray-600">{e?.jobTitle || "—"}</td>
+                          <td className="px-4 py-2.5 text-gray-600">{e?.department?.name || "—"}</td>
+                          <td className="px-4 py-2.5 text-right">
+                            <button className="p-1.5 rounded hover:bg-gray-100 text-gray-400"><MoreVertical size={15} /></button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         )}
+
+        {tab === "types" && (
+          g.items.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-gray-200 py-10 text-center">
+              <CalendarDays size={24} className="mx-auto text-gray-300 mb-2" />
+              <p className="text-xs text-gray-500">No leave types in this group.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {g.items.map((it) => (
+                <div key={it.id} className="flex items-center gap-3 rounded-xl border border-gray-200 p-3">
+                  <div className="h-8 w-8 shrink-0 rounded-lg grid place-items-center text-white text-[10.5px] font-bold" style={{ background: it.leaveType.color || "#16a34a" }}>
+                    {it.leaveType.code}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-semibold text-gray-900 text-[13px] truncate">{it.leaveType.name}</p>
+                    <p className="text-[11px] text-gray-400">{it.overrideQuota ? `${it.overrideQuota} days` : "Default quota"}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        )}
+
       </div>
 
-      <div className="flex items-center gap-3 text-xs text-gray-600 border-t border-gray-100 pt-2.5">
-        <div className="inline-flex items-center gap-1"><Users size={12} /> {empCount} employee{empCount === 1 ? "" : "s"}</div>
-        <div className="inline-flex items-center gap-1"><Shield size={12} /> {roleCount} role{roleCount === 1 ? "" : "s"}</div>
+      {/* stat cards */}
+      <div className="mt-5 rounded-xl bg-green-50/60 border border-green-100 grid grid-cols-2 md:grid-cols-4 divide-x divide-green-100">
+        <Stat icon={<Users size={17} />} value={empCount} label="Total Employees" />
+        <Stat icon={<CalendarDays size={17} />} value={g.items.length} label="Leave Types" />
+        <Stat icon={<Shield size={17} />} value="Employee-wise" label="Group Type" small />
+        <Stat icon={<Clock size={17} />} value={g.isActive ? "Active" : "Inactive"} label="Status" small />
       </div>
+    </div>
+  );
+}
 
-      <div className="flex items-center gap-1 mt-3">
-        <button onClick={onAssign} className="flex-1 inline-flex items-center justify-center gap-1 px-2.5 py-1 bg-[#f0fdf4] hover:bg-[#dcfce7] text-[#16a34a] rounded text-xs font-normal">
-          <Users size={12} /> Assign
-        </button>
-        <button onClick={onEdit} className="inline-flex items-center gap-1 px-2.5 py-1 border border-gray-200 hover:bg-gray-50 text-gray-700 rounded text-xs font-normal">
-          <Pencil size={12} /> Edit
-        </button>
-        <button onClick={onDelete} className="inline-flex items-center gap-1 px-2.5 py-1 border border-red-200 hover:bg-red-50 text-red-600 rounded text-xs font-normal">
-          <Trash2 size={12} />
-        </button>
+function DetailTab({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
+  return (
+    <button
+      onClick={onClick}
+      className={clsx(
+        "inline-flex items-center gap-1.5 pb-2.5 -mb-px text-[13px] font-medium border-b-2 transition",
+        active ? "border-green-600 text-green-700" : "border-transparent text-gray-500 hover:text-gray-700",
+      )}
+    >
+      {icon} {label}
+    </button>
+  );
+}
+
+
+function Stat({ icon, value, label, small }: { icon: React.ReactNode; value: React.ReactNode; label: string; small?: boolean }) {
+  return (
+    <div className="flex items-center gap-3 px-4 py-3.5">
+      <div className="h-9 w-9 shrink-0 rounded-lg bg-white grid place-items-center text-green-600 shadow-sm">{icon}</div>
+      <div className="min-w-0">
+        <p className={clsx("font-bold text-gray-900 truncate", small ? "text-[13px]" : "text-lg")}>{value}</p>
+        <p className="text-[11px] text-gray-500">{label}</p>
       </div>
     </div>
   );
@@ -638,8 +884,11 @@ function LeaveGroupEditor({ group, onClose }: { group: LeaveGroup | null; onClos
     items: (group?.items ?? []).map((i) => ({
       leaveTypeId: i.leaveTypeId,
       overrideQuota: i.overrideQuota ? Number(i.overrideQuota) : null as number | null,
+      rules: (i.rules ?? null) as Record<string, unknown> | null,
     })),
   });
+  // The leave type whose per-group rules are being edited (opens the wizard).
+  const [rulesFor, setRulesFor] = useState<string | null>(null);
 
   const createMut = useMutation({
     mutationFn: (body: typeof form) => api.post("/api/v1/hrms/leaves/groups", body),
@@ -664,43 +913,35 @@ function LeaveGroupEditor({ group, onClose }: { group: LeaveGroup | null; onClos
   const toggleType = (id: string) => {
     setForm((p) => selectedIds.has(id)
       ? { ...p, items: p.items.filter((i) => i.leaveTypeId !== id) }
-      : { ...p, items: [...p.items, { leaveTypeId: id, overrideQuota: null }] }
+      : { ...p, items: [...p.items, { leaveTypeId: id, overrideQuota: null, rules: null }] }
     );
   };
 
-  const updateQuota = (id: string, q: number | null) => {
-    setForm((p) => ({
-      ...p,
-      items: p.items.map((i) => i.leaveTypeId === id ? { ...i, overrideQuota: q } : i),
-    }));
+  const saveItemRules = async (leaveTypeId: string, payload: Record<string, unknown>) => {
+    const nextItems = form.items.map((i) => i.leaveTypeId === leaveTypeId ? { ...i, rules: payload } : i);
+    setForm((p) => ({ ...p, items: nextItems }));
+    // If the group already exists, persist the rules to the DB immediately so the
+    // user doesn't have to remember to click "Save Changes" afterwards.
+    if (group) {
+      await api.patch(`/api/v1/hrms/leaves/groups/${group.id}`, { ...form, items: nextItems });
+      qc.invalidateQueries({ queryKey: ["leave-groups"] });
+    }
+    setRulesFor(null);
   };
 
   return (
     <Modal open onClose={onClose} title={group ? "Edit Leave Group" : "New Leave Group"} size="xl">
       <form onSubmit={submit} className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Group Name *</label>
-            <input
-              type="text"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              required
-              placeholder="e.g., Full-Time Standard, Intern Plan"
-              className="w-full border border-[var(--border)] rounded-md px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
-            <Select
-              value={form.isActive ? "active" : "inactive"}
-              onChange={(v) => setForm({ ...form, isActive: v === "active" })}
-              options={[
-                { value: "active", label: "Active" },
-                { value: "inactive", label: "Inactive" },
-              ]}
-            />
-          </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Group Name *</label>
+          <input
+            type="text"
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            required
+            placeholder="e.g., Full-Time Standard, Intern Plan"
+            className="w-full border border-[var(--border)] rounded-md px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]"
+          />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
@@ -748,24 +989,40 @@ function LeaveGroupEditor({ group, onClose }: { group: LeaveGroup | null; onClos
                     <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 ring-1 ring-inset ring-black/10" style={{ backgroundColor: t.color || "#cbd5e1" }} />
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-semibold text-gray-900 truncate">{t.name}</div>
-                      <div className="text-[10px] text-gray-500">{t.code} · {t.maxBalance} days/yr</div>
+                      <div className="text-[10px] text-gray-500">
+                        {t.code} · {(() => {
+                          const r = item?.rules as { isUnlimited?: boolean; maxBalance?: number } | undefined;
+                          if (r?.isUnlimited) return "Unlimited";
+                          if (r && typeof r.maxBalance === "number") return `${r.maxBalance} days/yr`;
+                          return `${t.maxBalance} days/yr`;
+                        })()}
+                      </div>
                     </div>
-                    {selected && (
-                      <NumberInput
-                        step={0.5}
-                        placeholder="Quota"
-                        value={item?.overrideQuota ?? null}
-                        onChange={(v) => updateQuota(t.id, v)}
-                        style={{ width: "70px" }}
-                        className="shrink-0 border border-[var(--border)] rounded px-1.5 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-[#166534]"
-                      />
+                    {/* Rules are configured only when editing an existing group
+                        (the "configure after" step). Creating = pick types only. */}
+                    {selected && group && (
+                      <button
+                        type="button"
+                        onClick={() => setRulesFor(t.id)}
+                        title="Configure this leave's rules for this group"
+                        className={clsx(
+                          "shrink-0 w-7 h-7 inline-flex items-center justify-center rounded-md border transition",
+                          item?.rules ? "border-green-300 bg-green-50 text-green-700" : "border-gray-200 text-gray-500 hover:bg-gray-50",
+                        )}
+                      >
+                        <SlidersHorizontal size={13} />
+                      </button>
                     )}
                   </div>
                 );
               })}
             </div>
           )}
-          <p className="text-[11px] text-gray-500 mt-1">Quota field overrides type default for members of this group. Leave empty to inherit.</p>
+          <p className="text-[11px] text-gray-500 mt-1">
+            {group
+              ? "Configure each type's rules (⚙) for this group."
+              : "Pick the leave types for this group. You'll set each one's rules after creating it."}
+          </p>
         </div>
 
         <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
@@ -779,6 +1036,25 @@ function LeaveGroupEditor({ group, onClose }: { group: LeaveGroup | null; onClos
           </button>
         </div>
       </form>
+
+      {rulesFor && (() => {
+        const rt = allTypes.find((t) => t.id === rulesFor);
+        const it = form.items.find((i) => i.leaveTypeId === rulesFor);
+        if (!rt) return null;
+        const stored = (it?.rules ?? {}) as Record<string, unknown>;
+        return (
+          <Modal open onClose={() => setRulesFor(null)} title={`${rt.name} · Rules (this group)`}
+            subtitle="These rules apply to this leave type within this group only." headerIcon={<SlidersHorizontal size={18} />}
+            size="3xl" bodyClassName="p-6 overflow-y-auto">
+            <LeaveRulesWizard
+              leaveType={{ id: rt.id, name: rt.name, code: rt.code, maxBalance: Number(stored.maxBalance ?? rt.maxBalance ?? 0), ...stored } as LeaveTypeRules}
+              allTypes={allTypes.map((t) => ({ id: t.id, name: t.name, code: t.code }))}
+              onClose={() => setRulesFor(null)}
+              onSave={(payload) => saveItemRules(rulesFor, payload)}
+            />
+          </Modal>
+        );
+      })()}
     </Modal>
   );
 }
@@ -856,7 +1132,9 @@ function AssignmentEditor({ group, onClose }: { group: LeaveGroup; onClose: () =
 
   const emps = (empsData?.data ?? []).filter((e) => {
     const full = `${e.firstName} ${e.lastName} ${e.employeeCode}`.toLowerCase();
-    return !assignedEmpIds.has(e.id) && (!search || full.includes(search.toLowerCase()));
+    // Hide employees already in THIS group and anyone already in ANOTHER group
+    // (one employee = one leave group).
+    return !assignedEmpIds.has(e.id) && !otherGroupByEmp.has(e.id) && (!search || full.includes(search.toLowerCase()));
   });
   const roles = (rolesData?.data ?? []).filter((r) =>
     !assignedRoleIds.has(r.id) && (!search || r.name.toLowerCase().includes(search.toLowerCase()))
@@ -864,6 +1142,10 @@ function AssignmentEditor({ group, onClose }: { group: LeaveGroup; onClose: () =
 
   const togglePick = (id: string) =>
     setPicked((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const visibleIds = mode === "Employee" ? emps.map((e) => e.id) : roles.map((r) => r.id);
+  const allVisiblePicked = visibleIds.length > 0 && visibleIds.every((id) => picked.has(id));
+  const toggleSelectAll = () => setPicked(allVisiblePicked ? new Set() : new Set(visibleIds));
 
   const doAssign = () => {
     if (picked.size === 0) return toast.error("Select at least one");
@@ -894,6 +1176,15 @@ function AssignmentEditor({ group, onClose }: { group: LeaveGroup; onClose: () =
               className="w-full pl-7 pr-3 py-1.5 text-xs border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[#166534]"
             />
           </div>
+
+          {visibleIds.length > 0 && (
+            <div className="flex items-center justify-between px-1">
+              <button type="button" onClick={toggleSelectAll} className="text-[11px] font-medium text-green-700 hover:underline">
+                {allVisiblePicked ? "Clear all" : `Select all (${visibleIds.length})`}
+              </button>
+              {picked.size > 0 && <span className="text-[11px] text-gray-500">{picked.size} selected</span>}
+            </div>
+          )}
 
           <div className="max-h-72 overflow-y-auto space-y-1 rounded-md border border-gray-100 p-1">
             {mode === "Employee" ? (

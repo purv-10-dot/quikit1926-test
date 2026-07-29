@@ -5,16 +5,20 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 import { useToast } from "@/components/hrms/toast";
+import { useDialog } from "@/components/hrms/dialog";
 import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { clsx } from "clsx";
 import { Plus, Briefcase, Filter, X, AlertTriangle, Check, XCircle, Pause, Play, Pencil, Sparkles, Target, ChevronDown,
-  ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Users, Search as SearchIcon, IndianRupee, GraduationCap, Gift, Globe, Lock, UserCog, Eye, Star } from "lucide-react";
+  ArrowLeft, ArrowRight, Users, Search as SearchIcon, IndianRupee, GraduationCap, Gift, Globe, Lock, UserCog, Eye, Star,
+  FileText, ClipboardList, ThumbsUp, Gem, HelpCircle } from "lucide-react";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import { RequisitionWizard, toReqPayload, emptyReqForm } from "../_components/requisition-wizard";
 import type { ReqFormShape, DeptOption, PipelineOption, EmpOption, SkillWeightItem } from "../_components/requisition-wizard";
+import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 
 
 interface ReqItem {
@@ -193,11 +197,16 @@ export default function RequisitionsPage() {
   // Creating / editing / deleting requisitions requires recruit write (also
   // enforced by the API). Viewers reach this page via the dashboard "View All".
   const canManage = hasPermission("hrms.recruit.write");
+  const dialog = useDialog();
   const [showCreate, setShowCreate] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [viewReq, setViewReq] = useState<ReqItem | null>(null);
+  // Requisition-detail accordion: only one section open at a time (null = first).
+  const [openSec, setOpenSec] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("ReqOpen"); // default to Open; chips switch to All/others
   const [priorityFilter, setPriorityFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [cancelTarget, setCancelTarget] = useState<ReqItem | null>(null);
   const [reviewTarget, setReviewTarget] = useState<ReqItem | null>(null);
   const [decisions, setDecisions] = useState<Record<string, HeldAction>>({});
@@ -287,6 +296,8 @@ export default function RequisitionsPage() {
   });
 
   const reqs = data?.data ?? [];
+  const totalPages = Math.max(1, Math.ceil(reqs.length / PAGE_SIZE));
+  const pageItems = reqs.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   // Export the currently filtered requisitions (matches the visible table) with
   // the full requisition detail — one row per JR.
@@ -350,42 +361,51 @@ export default function RequisitionsPage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between gap-3 mb-5">
-        <h1 className="text-page-title text-gray-900">Job requisitions</h1>
+        <h1 className="text-page-title text-gray-900">Job Openings</h1>
         <ExcelExportButton filename="requisitions" sheetName="Requisitions" columns={REQ_EXPORT_COLUMNS} rows={reqExportRows} />
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 mb-4">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 px-1 mr-1">
-              <Filter size={15} /> Status
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500"><Filter size={15} /> Status</span>
+              <Select
+                value={statusFilter}
+                onChange={(v) => { setStatusFilter(v); setPage(1); }}
+                size="sm"
+                className="w-40"
+                placeholder="All statuses"
+                options={[
+                  { value: "", label: "All statuses" },
+                  { value: "ReqDraft", label: "Draft" },
+                  { value: "ReqOpen", label: "Open" },
+                  { value: "ReqOnHold", label: "On Hold" },
+                  { value: "ReqClosed", label: "Closed" },
+                  { value: "ReqCancelled", label: "Cancelled" },
+                ]}
+              />
             </div>
-            {[
-              { value: "", label: "All" },
-              { value: "ReqDraft", label: "Draft" },
-              { value: "ReqOpen", label: "Open" },
-              { value: "ReqOnHold", label: "On Hold" },
-              { value: "ReqClosed", label: "Closed" },
-              { value: "ReqCancelled", label: "Cancelled" },
-            ].map((s) => {
-              const active = statusFilter === s.value;
-              return (
-                <button
-                  key={s.value || "all"}
-                  onClick={() => setStatusFilter(s.value)}
-                  className={clsx(
-                    "inline-flex items-center gap-1 px-4 py-1.5 rounded-full text-[13px] font-semibold border transition",
-                    active
-                      ? "bg-green-100 border-green-200 text-green-700"
-                      : "bg-white border-gray-200 text-gray-600 hover:border-green-500/40 hover:text-green-700",
-                  )}
-                >
-                  {s.label}
-                  {active && s.value && <X size={12} className="ml-0.5" />}
-                </button>
-              );
-            })}
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500"><Filter size={15} /> Priority</span>
+              <Select
+                value={priorityFilter}
+                onChange={(v) => { setPriorityFilter(v); setPage(1); }}
+                size="sm"
+                className="w-36"
+                placeholder="All priorities"
+                options={[
+                  { value: "", label: "All priorities" },
+                  { value: "Urgent", label: "Urgent" },
+                  { value: "High", label: "High" },
+                  { value: "Medium", label: "Medium" },
+                  { value: "Low", label: "Low" },
+                ]}
+              />
+            </div>
           </div>
           {canManage && (
             <button onClick={() => { setForm(emptyForm); setEditId(null); setShowCreate(true); }}
@@ -393,36 +413,6 @@ export default function RequisitionsPage() {
               <Plus size={13} /> New requisition
             </button>
           )}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-gray-100">
-          <div className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 px-1 mr-1">
-            <Filter size={15} /> Priority
-          </div>
-          {[
-            { value: "", label: "All" },
-            { value: "Urgent", label: "Urgent" },
-            { value: "High", label: "High" },
-            { value: "Medium", label: "Medium" },
-            { value: "Low", label: "Low" },
-          ].map((p) => {
-            const active = priorityFilter === p.value;
-            return (
-              <button
-                key={p.value || "all"}
-                onClick={() => setPriorityFilter(p.value)}
-                className={clsx(
-                  "inline-flex items-center gap-1 px-4 py-1.5 rounded-full text-[13px] font-semibold border transition",
-                  active
-                    ? "bg-green-100 border-green-200 text-green-700"
-                    : "bg-white border-gray-200 text-gray-600 hover:border-green-500/40 hover:text-green-700",
-                )}
-              >
-                {p.label}
-                {active && p.value && <X size={12} className="ml-0.5" />}
-              </button>
-            );
-          })}
         </div>
       </div>
 
@@ -445,7 +435,7 @@ export default function RequisitionsPage() {
               </tr>
             </thead>
             <tbody>
-              {reqs.map((r, i) => {
+              {pageItems.map((r, i) => {
                 const opened = r.raisedAt ?? r.createdAt;
                 const ageDays = opened ? Math.max(0, Math.floor((Date.now() - new Date(opened).getTime()) / 86400000)) : null;
                 const toClose = r.closedDate ? Math.ceil((new Date(r.closedDate).getTime() - Date.now()) / 86400000) : null;
@@ -492,7 +482,7 @@ export default function RequisitionsPage() {
                   </td>
                   <td className="px-4 py-2.5 text-right">
                     <div className="inline-flex items-center gap-1.5 justify-end">
-                      <ActionBtn title="View" variant="slate" icon={<Eye size={12} />} onClick={() => setViewReq(r)} />
+                      <ActionBtn title="View" variant="slate" icon={<Eye size={12} />} onClick={() => { setOpenSec(null); setViewReq(r); }} />
                       {canManage && (<>
                       {r.status !== "ReqCancelled" && r.status !== "ReqClosed" && (
                         <ActionBtn title="Edit" variant="green" icon={<Pencil size={12} />} onClick={() => {
@@ -507,11 +497,25 @@ export default function RequisitionsPage() {
                       )}
                       {r.status === "ReqOpen" && (
                         <ActionBtn title="Close" variant="slate" icon={<XCircle size={12} />}
-                          onClick={() => updateMut.mutate({ id: r.id, status: "ReqClosed" })} />
+                          onClick={async () => {
+                            const ok = await dialog.confirm({
+                              title: "Close this requisition?",
+                              description: "Hiring for this role will stop. You can reopen it later.",
+                              confirmLabel: "Close",
+                            });
+                            if (ok) updateMut.mutate({ id: r.id, status: "ReqClosed" });
+                          }} />
                       )}
                       {(r.status === "ReqOpen" || r.status === "ReqApproved" || r.status === "ReqDraft") && (
                         <ActionBtn title="On Hold" variant="amber" icon={<Pause size={12} />}
-                          onClick={() => updateMut.mutate({ id: r.id, status: "ReqOnHold" })} />
+                          onClick={async () => {
+                            const ok = await dialog.confirm({
+                              title: "Put this requisition on hold?",
+                              description: "Applications pause until you resume it. Candidates stay in the pipeline.",
+                              confirmLabel: "Put on hold",
+                            });
+                            if (ok) updateMut.mutate({ id: r.id, status: "ReqOnHold" });
+                          }} />
                       )}
                       {r.status === "ReqOnHold" && (
                         <ActionBtn title="Resume" variant="blue" icon={<Play size={12} />}
@@ -533,23 +537,7 @@ export default function RequisitionsPage() {
       </div>
 
       {!isLoading && reqs.length > 0 && (
-        <div className="flex items-center justify-end gap-4 mt-4">
-          <span className="text-xs text-gray-500">Showing 1 to {reqs.length} of {reqs.length} result{reqs.length === 1 ? "" : "s"}</span>
-          <div className="flex items-center gap-1.5">
-            <button type="button" disabled aria-label="Previous page"
-              className="w-9 h-9 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 disabled:opacity-50">
-              <ChevronLeft size={12} />
-            </button>
-            <button type="button" aria-current="page"
-              className="w-9 h-9 rounded-lg bg-green-600 text-white flex items-center justify-center text-xs font-semibold">
-              1
-            </button>
-            <button type="button" disabled aria-label="Next page"
-              className="w-9 h-9 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 disabled:opacity-50">
-              <ChevronRight size={12} />
-            </button>
-          </div>
-        </div>
+        <Pagination page={page} totalPages={totalPages} total={reqs.length} limit={PAGE_SIZE} onPageChange={setPage} className="mt-4" />
       )}
 
       <Modal open={showCreate} onClose={() => { setShowCreate(false); setEditId(null); }}
@@ -606,12 +594,32 @@ export default function RequisitionsPage() {
           ["Closes On", fmtDate(viewReq.closedDate)],
           ["Posted On", fmtDate(viewReq.raisedAt ?? viewReq.createdAt)],
         ];
-        const lists: Array<[string, string[] | null | undefined]> = [
-          ["Requirements", viewReq.requirements],
-          ["Nice to Have", viewReq.niceToHave],
-          ["Responsibilities", viewReq.responsibilities],
-          ["Benefits", viewReq.benefits],
-        ];
+        const listBlock = (items: string[]) => (
+          <ul className="list-disc pl-5 space-y-1 text-gray-700">{items.map((it, i) => <li key={i}>{it}</li>)}</ul>
+        );
+        type AccIcon = React.ComponentType<{ size?: number; className?: string }>;
+        const accordionItems: Array<{ key: string; label: string; Icon: AccIcon; tile: string; body: React.ReactNode }> = [];
+        if (viewReq.jobDescription)
+          accordionItems.push({ key: "jd", label: "Job Description", Icon: FileText, tile: "bg-blue-50 text-blue-600",
+            body: <p className="whitespace-pre-line leading-relaxed text-gray-700">{viewReq.jobDescription}</p> });
+        if (viewReq.requirements?.length)
+          accordionItems.push({ key: "req", label: "Requirements", Icon: ClipboardList, tile: "bg-violet-50 text-violet-600", body: listBlock(viewReq.requirements) });
+        if (viewReq.responsibilities?.length)
+          accordionItems.push({ key: "resp", label: "Responsibilities", Icon: Users, tile: "bg-amber-50 text-amber-600", body: listBlock(viewReq.responsibilities) });
+        if (viewReq.niceToHave?.length)
+          accordionItems.push({ key: "nice", label: "Nice to Have", Icon: ThumbsUp, tile: "bg-green-50 text-green-600", body: listBlock(viewReq.niceToHave) });
+        if (viewReq.benefits?.length)
+          accordionItems.push({ key: "ben", label: "Benefits", Icon: Gem, tile: "bg-sky-50 text-sky-600", body: listBlock(viewReq.benefits) });
+        if (viewReq.technicalQuestions?.length)
+          accordionItems.push({ key: "tech", label: "Technical / Interview Questions", Icon: HelpCircle, tile: "bg-rose-50 text-rose-600",
+            body: <ol className="list-decimal pl-5 space-y-1 text-gray-700">{viewReq.technicalQuestions.map((q, i) => <li key={i}>{q}</li>)}</ol> });
+        if (viewReq.skillWeights?.length)
+          accordionItems.push({ key: "skills", label: "Skills & Weightage", Icon: Star, tile: "bg-indigo-50 text-indigo-600",
+            body: <div className="flex flex-wrap gap-1.5">{viewReq.skillWeights.map((s, i) => (
+              <span key={i} className="inline-flex items-center gap-1 rounded-full bg-green-50 text-green-700 ring-1 ring-green-200 px-2.5 py-1 text-[11px] font-medium">{s.skill} · {s.weight}%</span>
+            ))}</div> });
+        const firstKey = accordionItems[0]?.key;
+        const effectiveOpen = openSec === null ? firstKey : openSec;
         return (
           <Modal open onClose={() => setViewReq(null)} size="2xl"
             title={viewReq.title} subtitle={`${viewReq.requisitionNumber} · ${viewReq.type}`}>
@@ -624,40 +632,22 @@ export default function RequisitionsPage() {
                   </div>
                 ))}
               </div>
-              {viewReq.jobDescription && (
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1">Job Description</p>
-                  <p className="text-gray-700 whitespace-pre-line leading-relaxed">{viewReq.jobDescription}</p>
-                </div>
-              )}
-              {lists.map(([label, items]) =>
-                items && items.length > 0 ? (
-                  <div key={label}>
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1">{label}</p>
-                    <ul className="list-disc pl-5 space-y-0.5 text-gray-700">
-                      {items.map((it, i) => <li key={i}>{it}</li>)}
-                    </ul>
-                  </div>
-                ) : null,
-              )}
-              {viewReq.technicalQuestions && viewReq.technicalQuestions.length > 0 && (
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1">Technical / Interview Questions</p>
-                  <ol className="list-decimal pl-5 space-y-0.5 text-gray-700">
-                    {viewReq.technicalQuestions.map((q, i) => <li key={i}>{q}</li>)}
-                  </ol>
-                </div>
-              )}
-              {viewReq.skillWeights && viewReq.skillWeights.length > 0 && (
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1">Skills &amp; Weightage</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {viewReq.skillWeights.map((s, i) => (
-                      <span key={i} className="inline-flex items-center gap-1 rounded-full bg-green-50 text-green-700 ring-1 ring-green-200 px-2.5 py-1 text-[11px] font-medium">
-                        {s.skill} · {s.weight}%
-                      </span>
-                    ))}
-                  </div>
+              {accordionItems.length > 0 && (
+                <div className="rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+                  {accordionItems.map(({ key, label, Icon, tile, body }) => {
+                    const isOpen = effectiveOpen === key;
+                    return (
+                      <div key={key}>
+                        <button type="button" onClick={() => setOpenSec(isOpen ? "__none__" : key)}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50 transition">
+                          <span className={clsx("w-9 h-9 rounded-lg grid place-items-center shrink-0", tile)}><Icon size={16} /></span>
+                          <span className="flex-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500">{label}</span>
+                          <ChevronDown size={16} className={clsx("text-gray-400 transition-transform", isOpen && "rotate-180")} />
+                        </button>
+                        {isOpen && <div className="px-3 pb-3 pl-[3.25rem]">{body}</div>}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

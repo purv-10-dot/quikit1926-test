@@ -93,4 +93,4 @@ export const POST = withAuth(async (_req: NextRequest, { orgId, userId }) => {
     console.error("POST /leaves/notify-approval-chain error:", error);
     return internalError();
   }
-});
+}, { rateLimit: { max: 3, windowSec: 3600, by: "user", scope: "leaves.notify-chain" } });

@@ -7,9 +7,10 @@ import { Modal } from "@/components/hrms/modal";
 import { useToast } from "@/components/hrms/toast";
 import { Home, Calendar, CheckCircle2, X as XIcon, Inbox, User } from "lucide-react";
 import { clsx } from "clsx";
-import { WfhTabs } from "../_components/wfh-tabs";
 import { PageHeader } from "@/components/hrms/ui/page-header";
+import { PageBackground } from "@/components/hrms/page-background";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
+import { Pagination } from "@/components/hrms/pagination";
 
 interface Approver { id: string; firstName: string; lastName: string; employeeCode: string }
 interface ApprovalRow { id: string; level: number; role: string; status: string; comment: string | null; decidedAt: string | null }
@@ -42,6 +43,10 @@ export default function WfhTeamPage() {
     queryFn: () => api.get<PendingItem[]>("/api/v1/hrms/wfh/team"),
   });
   const items = data?.data ?? [];
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
+  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  const pageItems = items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const [decision, setDecision] = useState<{ kind: "approve" | "reject"; item: PendingItem } | null>(null);
   const [comment, setComment] = useState("");
@@ -81,6 +86,8 @@ export default function WfhTeamPage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <PageHeader
         icon={<Inbox size={28} className="text-[#22c55e]" />}
         title="WFH approvals"
@@ -94,7 +101,6 @@ export default function WfhTeamPage() {
           </>
         }
       />
-      <div className="mb-5"><WfhTabs /></div>
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         {isLoading ? (
@@ -118,7 +124,7 @@ export default function WfhTeamPage() {
               </tr>
             </thead>
             <tbody>
-              {items.map((i, idx) => (
+              {pageItems.map((i, idx) => (
                 <tr key={i.approvalId} className="row-stagger border-b border-slate-100 hover:bg-slate-50/60" style={{ ["--i" as never]: Math.min(idx, 10) }}>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-2">
@@ -163,6 +169,9 @@ export default function WfhTeamPage() {
               ))}
             </tbody>
           </table>
+        )}
+        {!isLoading && items.length > 0 && (
+          <Pagination page={page} totalPages={totalPages} total={items.length} limit={PAGE_SIZE} onPageChange={setPage} />
         )}
       </div>
 

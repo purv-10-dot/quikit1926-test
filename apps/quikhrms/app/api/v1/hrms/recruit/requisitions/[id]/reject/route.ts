@@ -44,10 +44,28 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
       return forbidden("Not your approval level");
     }
 
-    await prisma.requisitionApproval.update({
-      where: { id: nextPending.id },
-      data: { status: "Rejected", comment: parsed.data.comment ?? null, decidedAt: new Date() },
+    // Atomic, guarded rejection: flip the pending row → Rejected, skip any
+    // remaining pending levels, and cancel the requisition — all in one
+    // transaction. The `status: "Pending"` guard makes a double-click /
+    // concurrent decide a no-op conflict instead of a duplicate write.
+    const txResult = await prisma.$transaction(async (tx) => {
+      const upd = await tx.requisitionApproval.updateMany({
+        where: { id: nextPending.id, orgId, status: "Pending" },
+        data: { status: "Rejected", comment: parsed.data.comment ?? null, decidedAt: new Date() },
+      });
+      if (upd.count === 0) return { conflict: true as const };
+      await tx.requisitionApproval.updateMany({
+        where: { requisitionId: requisition.id, orgId, status: "Pending" },
+        data: { status: "Skipped", decidedAt: new Date() },
+      });
+      await tx.jobRequisition.update({
+        where: { id: requisition.id },
+        data: { status: "ReqCancelled", closureReason: parsed.data.comment ?? "Rejected by approver", updatedBy: userId },
+      });
+      return { conflict: false as const };
     });
+
+    if (txResult.conflict) return conflict("This approval level was already decided");
 
     void createAuditLog({
       orgId, userId: employeeId, action: "Reject",
@@ -55,15 +73,8 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
       metadata: { level: nextPending.level, title: requisition.title },
       actor: actor.onBehalfOf ? { delegatedFrom: [{ delegatorId: actor.onBehalfOf, permissions: ["hrms.recruit.write"] }] } : undefined,
     });
-    await prisma.requisitionApproval.updateMany({
-      where: { requisitionId: requisition.id, status: "Pending" },
-      data: { status: "Skipped", decidedAt: new Date() },
-    });
-    await prisma.jobRequisition.update({
-      where: { id: requisition.id },
-      data: { status: "ReqCancelled", closureReason: parsed.data.comment ?? "Rejected by approver", updatedBy: userId },
-    });
 
+    // Email + in-app notifications run OUTSIDE the transaction (best-effort, no DB writes).
     void mailRequisitionDecision({
       orgId, requisitionId: requisition.id,
       raiserName: requisition.raiser ? `${requisition.raiser.firstName} ${requisition.raiser.lastName}`.trim() : "Raiser",

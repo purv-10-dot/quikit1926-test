@@ -4,7 +4,6 @@ import { withAuth } from "@/lib/with-auth";
 import { successResponse, notFound, validationError, conflict, internalError, errorResponse } from "@/lib/api-response";
 import { ErrorCode } from "@/lib/types/api";
 import { generateEmployeeCode } from "@/lib/utils/employee-code";
-import { seedDefaultOnboardingTasks } from "@/lib/utils/default-onboarding-tasks";
 import { createAuditLog } from "@/lib/utils/audit";
 
 /**
@@ -96,6 +95,16 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
     const reqn = application.requisition; // renamed from `req` to avoid clash with the request param above
 
     const employee = await prisma.$transaction(async (tx) => {
+      // Idempotency guard: re-check inside the transaction so two fast clicks
+      // can't both pass the earlier check and create duplicate employees. The
+      // DB unique index on (orgId, workEmail) is the ultimate backstop (P2002,
+      // handled below).
+      const dup = await tx.employee.findFirst({
+        where: { orgId, workEmail: application.candidate.email, deletedAt: null },
+        select: { id: true },
+      });
+      if (dup) throw new Error("EMP_EXISTS");
+
       const emp = await tx.employee.create({
         data: {
           orgId,
@@ -111,7 +120,9 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
           departmentId: reqn.departmentId ?? undefined,
           employmentType: reqn.employmentType,
           workLocation: reqn.workLocation,
-          dateOfJoining: new Date(),
+          // Honour the agreed offer joining date (drives Pre-Onboarding
+          // "joining this week/month" counts); fall back to today if unset.
+          dateOfJoining: application.offerJoiningDate ?? new Date(),
           status: "PreBoarding",
           createdBy: userId,
           updatedBy: userId,
@@ -166,17 +177,25 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
         data: { status: "Hired", updatedBy: userId },
       });
 
-      const newFilled = (reqn.filledPositions ?? 0) + 1;
-      await tx.jobRequisition.update({
-        where: { id: reqn.id },
-        data: {
-          filledPositions: newFilled,
-          status: newFilled >= reqn.positions ? "ReqClosed" : reqn.status,
-          updatedBy: userId,
-        },
+      // Atomic seat claim — increment ONLY if a seat is still free. Two
+      // simultaneous onboards on the last seat can't both succeed: the second
+      // UPDATE's WHERE re-evaluates against the committed row and matches 0 rows.
+      const claim = await tx.jobRequisition.updateMany({
+        where: { id: reqn.id, filledPositions: { lt: reqn.positions } },
+        data: { filledPositions: { increment: 1 }, updatedBy: userId },
       });
+      if (claim.count === 0) throw new Error("SEAT_FULL");
+      // Close the requisition once it's fully filled.
+      const after = await tx.jobRequisition.findUnique({
+        where: { id: reqn.id },
+        select: { filledPositions: true, positions: true, status: true },
+      });
+      if (after && after.filledPositions >= after.positions && after.status !== "ReqClosed") {
+        await tx.jobRequisition.update({ where: { id: reqn.id }, data: { status: "ReqClosed", updatedBy: userId } });
+      }
 
-      // Create onboarding instance + default task checklist.
+      // Create an empty onboarding instance — no system-default checklist. Tasks
+      // are added from a template or manually on the onboarding page.
       const startDate = new Date();
       const onboarding = await tx.onboardingInstance.create({
         data: {
@@ -184,14 +203,52 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
           employeeId: emp.id,
           startDate,
           status: "NotStarted",
+          // New hires start in the PRE-ONBOARDING phase (pre-joining: BGV, docs,
+          // credentials, facilities). Set inside the transaction so a hire can
+          // never be saved without a phase and vanish from the list.
+          phase: "PreOnboarding",
           createdBy: userId,
           updatedBy: userId,
         },
       });
-      await seedDefaultOnboardingTasks(tx, orgId, onboarding.id, startDate);
+      void onboarding; void startDate;
 
       return emp;
     });
+
+    // Copy the candidate's approved recruitment documents into the new
+    // employee's central Documents vault (best-effort — never block onboarding).
+    try {
+      const reqs = await prisma.candidateDocumentRequest.findMany({
+        where: { orgId, applicationId: application.id, deletedAt: null, status: { not: "Cancelled" } },
+        select: {
+          uploads: {
+            where: { deletedAt: null, status: "Approved" },
+            select: { fileUrl: true, fileName: true, fileSize: true, customLabel: true, documentType: { select: { name: true } } },
+          },
+        },
+      });
+      const uploads = reqs.flatMap((r) => r.uploads);
+      if (uploads.length) {
+        await prisma.document.createMany({
+          data: uploads.map((u) => ({
+            orgId,
+            employeeId: employee.id,
+            title: u.documentType?.name ?? u.customLabel ?? u.fileName ?? "Recruitment document",
+            category: "Other" as const,
+            fileUrl: u.fileUrl,
+            fileType: "application/octet-stream",
+            fileSize: u.fileSize ?? 0,
+            status: "Active" as const,
+            uploadedBy: userId,
+            createdBy: userId,
+            updatedBy: userId,
+          })),
+        });
+      }
+    } catch (e) {
+      console.error("copy recruitment docs to vault failed:", e);
+    }
 
     if (force) {
       // Loud audit trail — force-onboards bypass the doc-approval gate.
@@ -210,7 +267,18 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
     // the moment the invitation email goes out (see /employees/[id]/confirm).
     return successResponse({ employee, redirectUrl: `/onboarding/${employee.id}` }, undefined, 201);
   } catch (error) {
+    if (error instanceof Error && error.message === "SEAT_FULL") {
+      return conflict("All positions for this requisition are already filled.");
+    }
+    // In-tx dedup guard, or the (orgId, workEmail) unique index tripping on a
+    // concurrent double-click → return the same friendly conflict, not a 500.
+    if (error instanceof Error && error.message === "EMP_EXISTS") {
+      return conflict("Employee already exists for this candidate email");
+    }
+    if (error && typeof error === "object" && (error as { code?: string }).code === "P2002") {
+      return conflict("Employee already exists for this candidate email");
+    }
     console.error("POST /recruit/applications/:id/onboard error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });

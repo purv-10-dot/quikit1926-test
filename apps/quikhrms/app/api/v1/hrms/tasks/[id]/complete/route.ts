@@ -1,15 +1,18 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, internalError, notFound } from "@/lib/api-response";
+import { successResponse, internalError, notFound, forbidden } from "@/lib/api-response";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
+import { canActOnTask } from "@/lib/rbac/task-access";
 import { createAuditLog } from "@/lib/utils/audit";
 import { notifyTaskCompleted } from "@/lib/services/task-notifications";
 
-export const POST = withAuth(async (req: NextRequest, { orgId, userId }, { id }) => {
+export const POST = withAuth(async (req: NextRequest, ctx, { id }) => {
   try {
+    const { orgId, userId } = ctx;
     const task = await prisma.task.findFirst({ where: { id, orgId, deletedAt: null } });
     if (!task) return notFound();
+    if (!(await canActOnTask(ctx, task))) return forbidden("You don't have access to this task");
 
     const isCompleting = task.status !== "Completed";
     const newStatus = isCompleting ? "Completed" : "Open";

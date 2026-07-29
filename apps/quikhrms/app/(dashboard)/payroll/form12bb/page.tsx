@@ -6,6 +6,7 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
 import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
+import { PageBackground } from "@/components/hrms/page-background";
 import { FileText, Save, Upload, FileIcon, X, Loader2, Paperclip, AlertTriangle } from "lucide-react";
 
 // Each uploaded supporting file. URL points at the proxy returned by
@@ -315,6 +316,8 @@ export default function Form12BBPage() {
 
   return (
     <div className="space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <FileText className="text-[#166534]" />

@@ -14,10 +14,13 @@ import {
   JobOpeningsWidget,
 } from "./_home/dashboard-widgets";
 import { DeferredSection } from "@/components/hrms/deferred-section";
+import { PageBackground } from "@/components/hrms/page-background";
 
 export default function HRMSHomePage() {
   return (
     <div className="w-full px-4 lg:px-6 pb-8">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       {/* Greeting — with a soft decorative backdrop */}
       <div className="relative overflow-hidden rounded-2xl mb-5">
         <div aria-hidden className="pointer-events-none absolute inset-0">

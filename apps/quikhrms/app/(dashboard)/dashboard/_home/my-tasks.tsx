@@ -40,7 +40,7 @@ export function MyTasksWidget() {
   const [tab, setTab] = useState<TabKey>("todo");
 
   const { data: meRes } = useQuery({
-    queryKey: ["me", "my-tasks"],
+    queryKey: ["employees", "me"],
     queryFn: () => api.get<Me>("/api/v1/hrms/employees/me"),
     staleTime: 5 * 60_000,
   });

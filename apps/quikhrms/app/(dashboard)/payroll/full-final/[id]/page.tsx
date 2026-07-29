@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
 import { NumberInput } from "@/components/hrms/ui/number-input";
+import { PageBackground } from "@/components/hrms/page-background";
 import { RefreshCw, Save, Check, BadgeIndianRupee } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -91,6 +92,8 @@ export default function FNFDetailPage() {
 
   return (
     <div className="space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm p-4">
         <div className="flex items-start justify-between">
           <div>

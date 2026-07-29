@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyCandidateDocToken } from "@/lib/services/candidate-doc-token";
+import { rateLimitOrResponse, clientIp } from "@/lib/rate-limit";
 
 const ok = <T>(data: T, status = 200) => NextResponse.json({ success: true, data }, { status });
 const err = (code: string, message: string, status: number) =>
   NextResponse.json({ success: false, error: { code, message } }, { status });
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  const rl = await rateLimitOrResponse("recruit.candidate-doc.get", clientIp(req), 40, 60);
+  if (rl) return rl;
   const { token } = await params;
   const payload = verifyCandidateDocToken(token);
   if (!payload) return err("INVALID_TOKEN", "Invalid or expired link", 400);

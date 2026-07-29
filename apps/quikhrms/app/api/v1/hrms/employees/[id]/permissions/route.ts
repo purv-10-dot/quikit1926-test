@@ -5,6 +5,7 @@ import { successResponse, notFound, validationError, internalError } from "@/lib
 import { createAuditLog } from "@/lib/utils/audit";
 import { splitCode, joinCode } from "@/lib/rbac/registry";
 import { PERMISSION_CODES } from "@/lib/rbac/permissions";
+import { validateGrantableCodes } from "@/lib/rbac/validate-grant";
 import { z } from "zod";
 
 // Back-compat: accept old `{ permissions }` (treated as grants) OR new `{ grants, denies }`.
@@ -56,7 +57,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
  * Atomically replaces the per-user additive grant set with the provided codes.
  * Codes match the same "hrms.<domain>.<action>" wire format as roles.
  */
-export const PUT = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
+export const PUT = withAuth(async (req: NextRequest, { orgId, userId, permissions }, params) => {
   try {
     const employee = await prisma.employee.findFirst({
       where: { id: params.id, orgId, deletedAt: null },
@@ -71,9 +72,14 @@ export const PUT = withAuth(async (req: NextRequest, { orgId, userId }, params) 
     const grants = parsed.data.grants ?? parsed.data.permissions ?? [];
     const denies = parsed.data.denies ?? [];
 
+    // Grants: reject "*"/unknown AND block self-elevation (can't grant a
+    // permission you don't hold). This is the per-user escalation guard.
+    const grantCheck = validateGrantableCodes(grants, permissions);
+    if (!grantCheck.ok) return validationError(grantCheck.error);
+    // Denies only need to be known codes — denying never escalates privilege.
     const known = new Set<string>(PERMISSION_CODES);
-    const unknown = [...grants, ...denies].filter((c) => !known.has(c));
-    if (unknown.length > 0) return validationError(`Unknown permissions: ${unknown.join(", ")}`);
+    const unknownDenies = denies.filter((c) => !known.has(c));
+    if (unknownDenies.length > 0) return validationError(`Unknown permissions: ${unknownDenies.join(", ")}`);
 
     // Same code cannot be both granted and denied.
     const overlap = grants.filter((c) => denies.includes(c));

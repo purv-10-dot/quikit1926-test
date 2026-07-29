@@ -2,6 +2,21 @@
 @tailwind components;
 @tailwind utilities;
 
+/* When a page paints a full-screen background (see components/hrms/page-background.tsx,
+   which sets data-page-bg on <main>), the sticky top nav goes frosted/translucent so
+   the background flows behind it. Frosted (not fully transparent) keeps the greeting +
+   search legible and hides content scrolling underneath. Scoped to those pages only. */
+main[data-page-bg="true"] .hrms-topbar {
+  background-color: rgba(255, 255, 255, 0.5) !important;
+  border-bottom-color: rgba(226, 232, 240, 0.5) !important;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+.dark main[data-page-bg="true"] .hrms-topbar {
+  background-color: rgba(11, 18, 32, 0.5) !important;
+  border-bottom-color: rgba(255, 255, 255, 0.08) !important;
+}
+
 :root {
   /* Premium enterprise palette (Rippling / Deel / Linear / Stripe) */
   --background: #F8FAFC;
