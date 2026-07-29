@@ -68,7 +68,8 @@ import {
   Trophy,
 } from 'lucide-react';
 import { api } from '@/lib/api';
-import { uploadFileWithPreview } from '@/lib/upload-client';
+import { uploadFileWithPreview, SERVER_UPLOAD_MAX_BYTES } from '@/lib/upload-client';
+import { MAX_THUMBNAIL_BYTES, formatMaxSize } from '@/lib/constants/uploads';
 import { v4 as uuidv4 } from 'uuid';
 import QuizBuilderAdvanced from '@/components/QuizBuilderAdvanced';
 import SubModuleResourceEngine from '@/components/SubModuleResourceEngine';
@@ -483,9 +484,15 @@ const MasterCourseStudio = ({ courseId, onClose, onSuccess, isTenantAdmin = fals
       return;
     }
 
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      setError('Image size must be less than 5MB');
+    // The product limit for course art is MAX_THUMBNAIL_BYTES, but never accept
+    // more than the proxy boundary: above it the browser PUTs straight to the
+    // bucket, which needs a CORS policy that is not applied — so the file would
+    // pass this check and then die at the network layer with "the storage bucket
+    // is not accepting uploads from this site", an error no author can act on.
+    // Whichever is smaller is the honest limit, and it tracks the env knob.
+    const maxThumbnailBytes = Math.min(MAX_THUMBNAIL_BYTES, SERVER_UPLOAD_MAX_BYTES);
+    if (file.size > maxThumbnailBytes) {
+      setError(`Image size must be less than ${formatMaxSize(maxThumbnailBytes)}`);
       return;
     }
 

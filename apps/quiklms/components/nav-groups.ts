@@ -111,6 +111,13 @@ function tenantAdminSchoolGroups(): NavGroup[] {
         { label: 'Question Bank',       path: '/question-bank',        icon: Database },
         { label: 'Course Assignment',   path: '/school-courses',       icon: BookPlus },
         { label: 'Create Course',       path: '/create-course',        icon: Sparkles },
+        // The other half of authoring. Corporate tenant admins get this under
+        // Administration and school SUB_ADMINS have it under My Work — the school
+        // TENANT_ADMIN was the only author role without it. It is where you edit,
+        // track or delete a course you wrote, and where the Studio's onSuccess
+        // redirects after a save, so without it a school admin saw the page once
+        // on that redirect and then had no route back to their own course.
+        { label: 'My Submissions',      path: '/my-submissions',       icon: Send },
         { label: 'Session Timestamps',  path: '/session-timestamps',   icon: Clock },
       ],
     },
@@ -179,7 +186,13 @@ function tenantAdminCorporateGroups(): NavGroup[] {
       label: 'Learning',
       items: [
         { label: 'Courses',            path: '/courses',              icon: BookOpen,  feature: 'showCourses' },
-        { label: 'Course Assignments', path: '/course-analytics',     icon: BookPlus,  feature: 'showCourseAssignments' },
+        // `/course-assignments`, not `/course-analytics`. The analytics page
+        // renders ONE course's metrics and is entered per-course from the
+        // dashboard (`/course-analytics/{courseId}`) — reached without an id it
+        // has no course to report on, so the menu item looked broken while the
+        // real assignment manager sat unreachable with no link anywhere.
+        // School tenants keep `/school-courses`, which is their own assignment UI.
+        { label: 'Course Assignments', path: '/course-assignments',   icon: BookPlus,  feature: 'showCourseAssignments' },
         { label: 'Create Course',      path: '/create-course',        icon: Sparkles },
         { label: 'Compliance',         path: '/compliance',           icon: ClipboardCheck, feature: 'showCompliance' },
         { label: 'Quiz Proctoring',    path: '/quiz-proctoring',      icon: Shield },
@@ -326,7 +339,13 @@ function subAdminCorporateGroups(): NavGroup[] {
       label: 'Learning',
       items: [
         { label: 'Courses',            path: '/courses',              icon: BookOpen,  feature: 'showCourses' },
-        { label: 'Course Assignments', path: '/course-analytics',     icon: BookPlus,  feature: 'showCourseAssignments' },
+        // `/course-assignments`, not `/course-analytics`. The analytics page
+        // renders ONE course's metrics and is entered per-course from the
+        // dashboard (`/course-analytics/{courseId}`) — reached without an id it
+        // has no course to report on, so the menu item looked broken while the
+        // real assignment manager sat unreachable with no link anywhere.
+        // School tenants keep `/school-courses`, which is their own assignment UI.
+        { label: 'Course Assignments', path: '/course-assignments',   icon: BookPlus,  feature: 'showCourseAssignments' },
         { label: 'Create Course',      path: '/create-course',        icon: Sparkles },
         { label: 'Compliance',         path: '/compliance',           icon: ClipboardCheck, feature: 'showCompliance' },
         { label: 'Quiz Proctoring',    path: '/quiz-proctoring',      icon: Shield },
@@ -573,15 +592,34 @@ function learnerCorporateGroups(): NavGroup[] {
 
 // ── Main export ──────────────────────────────────────────────────────────────
 
+/**
+ * An UNKNOWN tenant type falls back to CORPORATE, matching `landingPathFor`.
+ *
+ * These two used to disagree about the same unknown. `landingPathFor` documents
+ * corporate as "the safer default (it does not assume school features exist)" and
+ * sends a TENANT_ADMIN with no tenant type to `/tenant-dashboard`; this function
+ * tested `=== 'corporate'` and so fell through to the SCHOOL menus. The result, for
+ * any org with no `app_quiklms.tenants` row — every org created through the launcher
+ * rather than QuikLMS onboarding — was a school sidebar over a corporate landing,
+ * whose "Dashboard" link then pointed at `/school-dashboard`. A freshly invited
+ * corporate admin appeared to be a school admin.
+ *
+ * Both resolvers now answer the same way, so the shell and the landing cannot
+ * disagree. `school` still has to be explicit, which is the point: assuming school
+ * shows menus for batches, attendance, payouts and parents that a corporate tenant
+ * has no features behind.
+ */
+const isSchool = (tenantType: TenantType): boolean => tenantType === 'school';
+
 export function getNavGroups(role: string, tenantType: TenantType): NavGroup[] {
   switch (role) {
     case 'SUPER_ADMIN':  return superAdminGroups();
-    case 'TENANT_ADMIN': return tenantType === 'corporate' ? tenantAdminCorporateGroups() : tenantAdminSchoolGroups();
-    case 'SUB_ADMIN':    return tenantType === 'corporate' ? subAdminCorporateGroups() : subAdminSchoolGroups();
+    case 'TENANT_ADMIN': return isSchool(tenantType) ? tenantAdminSchoolGroups() : tenantAdminCorporateGroups();
+    case 'SUB_ADMIN':    return isSchool(tenantType) ? subAdminSchoolGroups() : subAdminCorporateGroups();
     case 'MANAGER':      return managerGroups();
     case 'TEACHER':      return teacherGroups();
     case 'PARENT':       return parentGroups();
-    case 'LEARNER':      return tenantType === 'corporate' ? learnerCorporateGroups() : learnerSchoolGroups();
+    case 'LEARNER':      return isSchool(tenantType) ? learnerSchoolGroups() : learnerCorporateGroups();
     default:             return [];
   }
 }

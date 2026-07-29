@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { BookOpen, Users, Search, CheckCircle, AlertCircle, X, Layers, Edit, PlusCircle, FolderOpen, Library } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import { toList } from '@/lib/list-response';
 import { useBranding } from '@/app/providers';
 import toast, { Toaster } from 'react-hot-toast';
 
@@ -40,6 +41,13 @@ interface Learner {
   firstName: string;
   lastName: string;
   email: string;
+  /**
+   * `GET /api/users` returns every role in the tenant (`LIST_SELECT` includes
+   * `role`) and this page narrows to LEARNER itself. Declared because the loader
+   * filters on it — the old code passed `(u: any)`, so the field it depended on
+   * was invisible to the compiler.
+   */
+  role: string;
 }
 
 type AssignMode = 'all' | 'batch' | 'select';
@@ -74,21 +82,40 @@ const SchoolCourseAssignmentPage = () => {
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    try {
-      const [coursesRes, batchesRes, usersRes] = await Promise.all([
-        api.get<any>('/course-assignments/courses'),
-        api.get<any>('/batches'),
-        api.get<any>('/users'),
-      ]);
-      setCourses(coursesRes.data || []);
-      setBatches(batchesRes.data.data || batchesRes.data || []);
-      const allUsers = usersRes.data.data || usersRes.data || [];
-      setLearners(allUsers.filter((u: any) => u.role === 'LEARNER'));
-    } catch (err) {
-      console.error('Failed to load data:', err);
-    } finally {
-      setLoading(false);
+
+    // `allSettled` + a per-source unwrap, mirroring (tenant-admin)/batches/page.tsx.
+    //
+    // THE BUG. This was ONE `Promise.all` and ONE `catch`, and it read the batches
+    // response as `batchesRes.data.data`. `GET /api/batches` answers with a BARE
+    // ARRAY (`json(await findAll(...))`), so `batchesRes.data` was `undefined` and
+    // reading `.data` on it THREW. The throw reached the single catch AFTER
+    // `setCourses` had already run but BEFORE `setBatches` and `setLearners` — so
+    // the course list populated while learners and batches stayed empty, and the
+    // Assign Course modal offered "0 learners / 0 batches" to a tenant that had
+    // one learner and could see the course it was trying to assign. The only trace
+    // was a console.error.
+    //
+    // Each source now settles and unwraps independently, so one endpoint's
+    // envelope or failure can no longer zero the other two.
+    const [coursesRes, batchesRes, usersRes] = await Promise.allSettled([
+      api.get<any>('/course-assignments/courses'),
+      api.get<any>('/batches'),
+      api.get<any>('/users'),
+    ]);
+
+    if (coursesRes.status === 'fulfilled') setCourses(toList<Course>(coursesRes.value));
+    else console.error('Failed to load courses:', coursesRes.reason);
+
+    if (batchesRes.status === 'fulfilled') setBatches(toList<Batch>(batchesRes.value));
+    else console.error('Failed to load batches:', batchesRes.reason);
+
+    if (usersRes.status === 'fulfilled') {
+      setLearners(toList<Learner>(usersRes.value).filter((u) => u.role === 'LEARNER'));
+    } else {
+      console.error('Failed to load learners:', usersRes.reason);
     }
+
+    setLoading(false);
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);

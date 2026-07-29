@@ -16,35 +16,54 @@ export function mapPlatformRoleToLmsRole(
   membershipRole: string | undefined,
   isSuperAdmin?: boolean,
   /**
-   * True when the user's org has a QuikLMS `Tenant` row. This is the ONLY
-   * signal that distinguishes the platform operator (whose org has no Tenant
-   * row) from a school/corporate tenant admin (whose org does) — both carry
-   * the same coarse platform role `org_admin`. Callers that can resolve the
-   * Tenant row (getAuthContext / resolveLmsRole) MUST pass it so an admin-tier
-   * member of a real tenant is never mislabeled as the operator.
+   * True when this user is the FOUNDING admin of their org — the earliest
+   * admin-tier `OrgMember` row (see lib/auth/founding-admin.ts). Callers that can
+   * resolve it (`getAuthContext`, `resolveLmsRoles`) pass it; callers that cannot
+   * omit it and every `org_admin` stays `TENANT_ADMIN`.
+   *
+   * This parameter replaces `belongsToTenantOrg`, which inferred the platform
+   * operator from the ABSENCE of an `app_quiklms.tenants` row. That inference was
+   * wrong in both directions — an org provisioned by the launcher or the admin
+   * portal has no tenants row either — so ordinary tenant admins were labelled
+   * SUPER_ADMIN. "Is this the org's first admin?" is a fact, not a guess.
    */
-  belongsToTenantOrg?: boolean,
+  isFoundingOrgAdmin?: boolean,
 ): UserRole {
   if (isSuperAdmin) return "SUPER_ADMIN";
 
   const r = (membershipRole ?? "").toLowerCase().replace(/[-\s]/g, "_");
   switch (r) {
-    // The platform `org_admin` is shared by TWO very different actors:
-    //   - the QuikLMS *operator* — first member of the operator org, which has
-    //     NO `Tenant` row → SUPER_ADMIN.
-    //   - a school/corporate *tenant admin* — first member of a tenant org,
-    //     which DOES have a `Tenant` row → TENANT_ADMIN.
-    // A tenant admin normally has an LMS `User` row (so getAuthContext reads it
-    // directly), but there's a window — right after onboarding, before the LMS
-    // row resolves, or when the LMS DB read misses — where this coarse fallback
-    // runs. Without the Tenant-row check it defaulted every `org_admin` to
-    // SUPER_ADMIN, dumping freshly-onboarded school admins on the super-admin
-    // portal. Gate on `belongsToTenantOrg` so that can't happen.
-    case "super_admin":
+    // The FOUNDING admin of an org gets the top tier; every later `org_admin`
+    // gets TENANT_ADMIN.
+    //
+    // QuikIT's invite form (`POST /api/super/orgs/[id]/members`) offers only
+    // `org_admin | member`, so the admin a platform admin invites to run a NEW org
+    // arrives indistinguishable from the org's fifth admin. Both landed on
+    // `/tenant-dashboard` — the corporate tenant-admin dashboard — which is the
+    // "logged in as corporate admin, expected admin" report this branch answers.
+    //
+    // WHY THIS IS NOT THE OLD CROSS-TENANT LEAK. The previous version of this
+    // branch read `belongsToTenantOrg ? "TENANT_ADMIN" : "SUPER_ADMIN"`, and back
+    // then `tenantWhere()` keyed unscoped reads on the ROLE:
+    //
+    //     if (user.role === 'SUPER_ADMIN') return extra;   // every tenant's rows
+    //
+    // so anything that made `role` resolve to SUPER_ADMIN also handed out every
+    // tenant's data. That is no longer true: `tenantWhere`, `assertTenantMatch`,
+    // `requireFeature` and the `/api/users*` + `/api/tenants/*` handlers all key
+    // their scoping on the platform operator claim `isSuperAdmin`, which only
+    // apps/quikit's audited super-admin console can set and which is checked above.
+    // A founding admin is therefore the top admin OF THEIR OWN ORG: SUPER_ADMIN
+    // decides which dashboard, nav and page guards they get; `isSuperAdmin` decides
+    // what data they can read, and theirs stays filtered to `orgId`.
     case "org_admin":
     case "owner":
     case "administrator":
-      return belongsToTenantOrg ? "TENANT_ADMIN" : "SUPER_ADMIN";
+      return isFoundingOrgAdmin ? "SUPER_ADMIN" : "TENANT_ADMIN";
+    // Retained separately: an explicit `super_admin` MEMBERSHIP role is a
+    // deliberate statement, unlike the `org_admin` inference above.
+    case "super_admin":
+      return "SUPER_ADMIN";
     case "admin":
     case "tenant_admin":
       return "TENANT_ADMIN";

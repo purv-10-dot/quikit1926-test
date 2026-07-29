@@ -9,6 +9,7 @@ import { generateOfferPdf } from "@/lib/services/offer-pdf";
 import { offerSelect, offerFromApplication, type OfferMeta } from "@/lib/recruit/offer-shape";
 import { getObject } from "@/lib/storage";
 import { generateOfferResponseToken } from "@/lib/services/offer-response-token";
+import { appBaseUrl } from "@/lib/utils/app-url";
 
 const bodySchema = z.object({
   applicationId: z.string().min(1).optional(),
@@ -103,7 +104,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
 
     // Candidate self-serve accept/decline link (stateless signed token).
     const { token: responseToken } = generateOfferResponseToken(app.id, orgId);
-    const appBase = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "";
+    const appBase = appBaseUrl();
     const responseUrl = `${appBase}/offer/${responseToken}`;
 
     const offerData = {

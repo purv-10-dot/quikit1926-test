@@ -19,8 +19,65 @@ import { ArrowLeft, Eye, EyeOff, Sun, Moon, ChevronDown } from "lucide-react";
  */
 
 const OTP_LENGTH = 6;
+/**
+ * Fallback OTP window, in seconds. The authoritative value is the server's
+ * `expiresInSeconds` (REGISTRATION_OTP_TTL_SECONDS in apps/auth/lib/otp-store.ts,
+ * currently 300) returned by /api/auth/register and /register/resend-otp — this
+ * constant is only used if that field is missing from the response.
+ */
 const OTP_WINDOW_SECONDS = 300; // 5 minutes
+/**
+ * How long the Resend button stays locked after a code is issued. Purely a
+ * client-side pacing hint so users don't burn through the server's per-email
+ * resend budget (4 sends / 15 min, enforced in /api/auth/register/resend-otp).
+ */
+const RESEND_COOLDOWN_SECONDS = 60;
 const BRAND_NAME = "QuikIT";
+
+/**
+ * Client-side field rules. These MIRROR the server Zod schemas — they only
+ * give faster feedback, the API remains the authority:
+ *   /api/auth/register           → fullName 1..160, email(), organizationName 2..120
+ *   /api/auth/register/complete  → password 8..200
+ *   /api/auth/verify-otp         → otp /^\d{6}$/
+ */
+const NAME_MAX = 160;
+const ORG_MIN = 2;
+const ORG_MAX = 120;
+const PASSWORD_MIN = 8;
+const PASSWORD_MAX = 200;
+// Deliberately permissive — the server's z.string().email() is the real gate.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+/** First problem with the step-1 fields, or null when they're all valid. */
+function validateWorkspaceFields(fullName: string, email: string, organizationName: string): string | null {
+  const name = fullName.trim();
+  const org = organizationName.trim();
+  const mail = email.trim();
+  if (!name) return "Enter your full name.";
+  if (name.length > NAME_MAX) return `Full name must be ${NAME_MAX} characters or fewer.`;
+  if (!mail) return "Enter your work email.";
+  if (!EMAIL_RE.test(mail)) return "Enter a valid email address.";
+  if (org.length < ORG_MIN) return `Organization name must be at least ${ORG_MIN} characters.`;
+  if (org.length > ORG_MAX) return `Organization name must be ${ORG_MAX} characters or fewer.`;
+  return null;
+}
+
+/** First problem with the password step, or null when it's valid. */
+function validatePasswordFields(password: string, confirm: string): string | null {
+  if (password.length < PASSWORD_MIN) return `Password must be at least ${PASSWORD_MIN} characters.`;
+  if (password.length > PASSWORD_MAX) return `Password must be ${PASSWORD_MAX} characters or fewer.`;
+  if (password !== confirm) return "Passwords do not match.";
+  return null;
+}
+
+/** Seconds → `mm:ss` for the OTP countdowns. */
+function formatCountdown(totalSeconds: number): string {
+  const safe = Math.max(0, Math.floor(totalSeconds));
+  const mins = Math.floor(safe / 60);
+  const secs = safe % 60;
+  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
 
 const LAUNCHER_URL = (
   process.env.NEXT_PUBLIC_LAUNCHER_URL ??
@@ -149,7 +206,12 @@ export default function RegisterPage() {
 
   const [otp, setOtp] = useState<string[]>(Array(OTP_LENGTH).fill(""));
   const otpRefs = useRef<Array<HTMLInputElement | null>>([]);
-  const [secondsLeft, setSecondsLeft] = useState(OTP_WINDOW_SECONDS);
+  // Both OTP countdowns are derived from absolute deadlines (epoch ms) plus a
+  // single ticking clock, so they stay accurate even if the tab is throttled or
+  // backgrounded. Set by startOtpWindow() the moment a code is issued.
+  const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
+  const [resendUnlocksAt, setResendUnlocksAt] = useState<number | null>(null);
+  const [nowTs, setNowTs] = useState(0);
   const [resetToken, setResetToken] = useState<string | null>(null);
   const [justResent, setJustResent] = useState(false);
 
@@ -172,14 +234,21 @@ export default function RegisterPage() {
   const [testiIndex, setTestiIndex] = useState(0);
   const [testiStep, setTestiStep] = useState(0);
 
-  const expired = secondsLeft <= 0;
+  const otpSecondsLeft =
+    otpExpiresAt === null ? OTP_WINDOW_SECONDS : Math.max(0, Math.ceil((otpExpiresAt - nowTs) / 1000));
+  const resendSecondsLeft =
+    resendUnlocksAt === null ? 0 : Math.max(0, Math.ceil((resendUnlocksAt - nowTs) / 1000));
+  const expired = otpSecondsLeft <= 0;
+  const resendLocked = resendSecondsLeft > 0;
   const otpValue = useMemo(() => otp.join(""), [otp]);
 
+  // One clock for both countdowns; runs only while the OTP step is on screen.
   useEffect(() => {
-    if (step !== "otp" || secondsLeft <= 0) return;
-    const t = setInterval(() => setSecondsLeft((s) => (s > 0 ? s - 1 : 0)), 1000);
+    if (step !== "otp") return;
+    setNowTs(Date.now());
+    const t = setInterval(() => setNowTs(Date.now()), 1000);
     return () => clearInterval(t);
-  }, [step, secondsLeft]);
+  }, [step]);
 
   // Measure the carousel viewport so the slide step (card width 88% + gap) is
   // correct regardless of panel width, and keep it in sync on resize.
@@ -201,15 +270,36 @@ export default function RegisterPage() {
     return () => clearInterval(t);
   }, []);
 
-  function resetOtpState() {
+  /**
+   * (Re)start both countdowns for a freshly issued code. `expiresInSeconds`
+   * comes straight from the server response so the UI never invents its own
+   * validity window.
+   */
+  function startOtpWindow(expiresInSeconds?: unknown) {
+    const ttl =
+      typeof expiresInSeconds === "number" && Number.isFinite(expiresInSeconds) && expiresInSeconds > 0
+        ? Math.floor(expiresInSeconds)
+        : OTP_WINDOW_SECONDS;
+    const issuedAt = Date.now();
+    setNowTs(issuedAt);
+    setOtpExpiresAt(issuedAt + ttl * 1000);
+    setResendUnlocksAt(issuedAt + RESEND_COOLDOWN_SECONDS * 1000);
+  }
+
+  function resetOtpState(expiresInSeconds?: unknown) {
     setOtp(Array(OTP_LENGTH).fill(""));
-    setSecondsLeft(OTP_WINDOW_SECONDS);
+    startOtpWindow(expiresInSeconds);
     setResetToken(null);
   }
 
   async function handleCreateWorkspace(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    const invalid = validateWorkspaceFields(fullName, email, organizationName);
+    if (invalid) {
+      setError(invalid);
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await fetch("/api/auth/register", {
@@ -222,7 +312,7 @@ export default function RegisterPage() {
         setError(body.error || "Could not start registration.");
         return;
       }
-      resetOtpState();
+      resetOtpState(body.expiresInSeconds);
       setStep("otp");
       setTimeout(() => otpRefs.current[0]?.focus(), 50);
     } catch {
@@ -233,7 +323,10 @@ export default function RegisterPage() {
   }
 
   function setOtpDigit(idx: number, val: string) {
+    // Non-digits are dropped at the source, so the field can only ever hold a
+    // server-valid character. Editing also clears a stale "Invalid code" banner.
     const digit = val.replace(/\D/g, "").slice(-1);
+    if (error) setError(null);
     setOtp((prev) => {
       const next = [...prev];
       next[idx] = digit;
@@ -250,6 +343,7 @@ export default function RegisterPage() {
     const digits = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, OTP_LENGTH);
     if (!digits) return;
     e.preventDefault();
+    if (error) setError(null);
     const next = Array(OTP_LENGTH).fill("");
     for (let i = 0; i < digits.length; i++) next[i] = digits[i];
     setOtp(next);
@@ -259,7 +353,9 @@ export default function RegisterPage() {
   async function handleVerifyOtp(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    if (otpValue.length !== OTP_LENGTH) {
+    // Mirrors the server's z.string().regex(/^\d{6}$/) so a malformed code never
+    // costs the user one of their 5 wrong-attempt slots.
+    if (!/^\d{6}$/.test(otpValue)) {
       setError("Enter the 6-digit code.");
       return;
     }
@@ -291,15 +387,19 @@ export default function RegisterPage() {
   }
 
   async function handleResend() {
+    // Guard as well as disable the button — the cooldown must hold even if the
+    // click arrives from a keyboard/AT while the countdown is running.
+    if (submitting || resendLocked) return;
     setError(null);
     setSubmitting(true);
     try {
-      await fetch("/api/auth/register/resend-otp", {
+      const res = await fetch("/api/auth/register/resend-otp", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email }),
       });
-      resetOtpState();
+      const body = await res.json().catch(() => ({}));
+      resetOtpState(body.expiresInSeconds);
       setJustResent(true);
       setTimeout(() => setJustResent(false), 2500);
       setTimeout(() => otpRefs.current[0]?.focus(), 50);
@@ -313,12 +413,9 @@ export default function RegisterPage() {
   async function handleSetPassword(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
-      return;
-    }
-    if (password !== confirm) {
-      setError("Passwords do not match.");
+    const invalid = validatePasswordFields(password, confirm);
+    if (invalid) {
+      setError(invalid);
       return;
     }
     if (!resetToken) {
@@ -376,6 +473,25 @@ export default function RegisterPage() {
     window.location.assign(target);
   }
 
+  /**
+   * Registration is fully complete when the user finishes the onboarding
+   * screen — email verified, password set, workspace + trial provisioned,
+   * session live. That's the only point we ask the server to send the welcome
+   * email, and only from the two completion exits: Continue and Skip for now.
+   *
+   * Awaited before navigating because `goToLauncher()` does a full page assign,
+   * which would cancel an in-flight request. A failure never blocks the user —
+   * they're already inside the product.
+   */
+  async function finishOnboardingAndGo() {
+    try {
+      await fetch("/api/auth/register/welcome", { method: "POST" });
+    } catch {
+      /* welcome email is best-effort — never block entry to the app */
+    }
+    goToLauncher();
+  }
+
   async function handleSaveDetails(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -396,7 +512,7 @@ export default function RegisterPage() {
         setError(body.error || "Could not save your details. You can skip for now.");
         return;
       }
-      goToLauncher();
+      await finishOnboardingAndGo();
     } catch {
       setError("Network error. You can skip for now.");
     } finally {
@@ -404,8 +520,13 @@ export default function RegisterPage() {
     }
   }
 
-  function handleSkipDetails() {
-    goToLauncher();
+  async function handleSkipDetails() {
+    setSubmitting(true);
+    try {
+      await finishOnboardingAndGo();
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   function handleBack() {
@@ -513,7 +634,7 @@ export default function RegisterPage() {
                 <div className="auth-field">
                   <label htmlFor="reg-name">Full name</label>
                   <input id="reg-name" type="text" autoComplete="name" placeholder="Jane Cooper"
-                    value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+                    value={fullName} onChange={(e) => setFullName(e.target.value)} required maxLength={NAME_MAX} />
                 </div>
                 <div className="auth-field">
                   <label htmlFor="reg-email">Work email</label>
@@ -523,7 +644,8 @@ export default function RegisterPage() {
                 <div className="auth-field">
                   <label htmlFor="reg-org">Organization name</label>
                   <input id="reg-org" type="text" autoComplete="organization" placeholder="Acme Inc."
-                    value={organizationName} onChange={(e) => setOrganizationName(e.target.value)} required minLength={2} />
+                    value={organizationName} onChange={(e) => setOrganizationName(e.target.value)} required
+                    minLength={ORG_MIN} maxLength={ORG_MAX} />
                 </div>
                 <button type="submit" className="auth-submit" disabled={submitting}>
                   {submitting ? form.busy : form.submit}
@@ -550,17 +672,37 @@ export default function RegisterPage() {
                     />
                   ))}
                 </div>
-                {expired && (
-                  <p className="auth-resend"><span className="auth-expired">Your code has expired — request a new one.</span></p>
-                )}
+                <p className="auth-otp-expiry">
+                  {expired ? (
+                    // role="status" announces the expiry once, on mount — the
+                    // ticking countdown itself is deliberately not live-regioned
+                    // so assistive tech isn't interrupted every second.
+                    <span className="auth-expired" role="status">Your code has expired — request a new one.</span>
+                  ) : (
+                    <>
+                      Code expires in{" "}
+                      <span className="auth-countdown" role="timer">{formatCountdown(otpSecondsLeft)}</span>
+                    </>
+                  )}
+                </p>
                 <button type="submit" className="auth-submit"
                   disabled={submitting || expired || otpValue.length !== OTP_LENGTH}>
                   {submitting ? form.busy : form.submit}
                 </button>
                 <p className="auth-resend">
                   Didn&apos;t get a code?{" "}
-                  <button type="button" className="auth-resend-btn" onClick={handleResend} disabled={submitting || justResent}>
-                    {justResent ? "Code sent ✓" : "Resend"}
+                  <button type="button" className="auth-resend-btn" onClick={handleResend}
+                    disabled={submitting || justResent || resendLocked}>
+                    {justResent ? (
+                      "Code sent ✓"
+                    ) : resendLocked ? (
+                      <>
+                        Resend in{" "}
+                        <span className="auth-countdown" role="timer">{formatCountdown(resendSecondsLeft)}</span>
+                      </>
+                    ) : (
+                      "Resend"
+                    )}
                   </button>
                 </p>
                 <button type="button" className="auth-backstep" onClick={() => setStep("workspace")}>
@@ -577,7 +719,8 @@ export default function RegisterPage() {
                   <div className="auth-password">
                     <input id="reg-pass" type={showPassword ? "text" : "password"}
                       autoComplete="new-password" placeholder="minimum 8 characters"
-                      value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} />
+                      value={password} onChange={(e) => setPassword(e.target.value)} required
+                      minLength={PASSWORD_MIN} maxLength={PASSWORD_MAX} />
                     <button type="button" className="auth-eye"
                       onClick={() => setShowPassword((v) => !v)}
                       aria-label={showPassword ? "Hide password" : "Show password"}>
@@ -590,7 +733,8 @@ export default function RegisterPage() {
                   <div className="auth-password">
                     <input id="reg-confirm" type={showConfirm ? "text" : "password"}
                       autoComplete="new-password" placeholder="re-enter password"
-                      value={confirm} onChange={(e) => setConfirm(e.target.value)} required minLength={8} />
+                      value={confirm} onChange={(e) => setConfirm(e.target.value)} required
+                      minLength={PASSWORD_MIN} maxLength={PASSWORD_MAX} />
                     <button type="button" className="auth-eye"
                       onClick={() => setShowConfirm((v) => !v)}
                       aria-label={showConfirm ? "Hide password" : "Show password"}>
@@ -817,6 +961,10 @@ const REG_CSS = `
 .qk-reg .auth-otp-input:focus { border-color:var(--text-primary); background:var(--panel-bg); }
 .qk-reg .auth-otp-input.filled { border-color:var(--text-primary); background:var(--surface); }
 .qk-reg .auth-otp-input:disabled { opacity:.5; cursor:not-allowed; }
+/* Inline OTP countdowns — validity line under the inputs + resend cooldown */
+.qk-reg .auth-otp-expiry { text-align:center; font-size:13px; color:var(--text-muted); margin:10px 0 0; }
+.qk-reg .auth-countdown { font-variant-numeric:tabular-nums; font-weight:600; color:var(--text-primary); }
+.qk-reg .auth-resend-btn:disabled .auth-countdown { color:inherit; }
 .qk-reg .auth-resend { text-align:center; font-size:13px; color:var(--text-muted); margin-top:16px; }
 .qk-reg .auth-expired { color:var(--error); }
 .qk-reg .auth-resend-btn { background:none; border:none; padding:0; font:inherit; color:var(--text-primary); font-weight:500; cursor:pointer; text-decoration:underline; text-underline-offset:3px; }

@@ -1,11 +1,11 @@
 "use client";
 
 import { Suspense, useState } from "react";
-import { clsx } from "clsx";
 import { FileText, Receipt } from "lucide-react";
 import Form16Page from "../form16/page";
 import Form12BBPage from "../form12bb/page";
 import { PageBackground } from "@/components/hrms/page-background";
+import { TabSwitcher } from "@/components/hrms/tab-switcher";
 
 type Tab = "form16" | "form12bb";
 
@@ -24,21 +24,12 @@ export default function TaxFilingsHub() {
       <h1 className="text-page-title text-gray-900 mb-1">Tax Filings</h1>
       <p className="text-xs text-gray-500 mb-5">Statutory tax documents and challans in one place.</p>
 
-      <div className="flex gap-1 rounded-lg border border-gray-200 bg-gray-50 p-1 w-fit mb-5">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            className={clsx(
-              "inline-flex items-center gap-1.5 px-4 py-1.5 text-[13px] font-semibold rounded-md transition",
-              tab === t.id ? "bg-white text-[#166534] shadow-sm" : "text-gray-600 hover:text-gray-900",
-            )}
-          >
-            {t.icon} {t.label}
-          </button>
-        ))}
-      </div>
+      <TabSwitcher
+        className="mb-5"
+        value={tab}
+        onChange={(v) => setTab(v as Tab)}
+        tabs={TABS.map((t) => ({ value: t.id, label: t.label, icon: t.icon }))}
+      />
 
       <Suspense fallback={<div className="text-xs text-gray-400">Loading…</div>}>
         {tab === "form16"   && <Form16Page />}

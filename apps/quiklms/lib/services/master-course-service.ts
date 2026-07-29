@@ -16,7 +16,7 @@ import type { LmsMasterCourse as MasterCourse, LmsMasterCourseStatus as MasterCo
 import { db } from '@/lib/db';
 import { BadRequest, NotFound } from '@/lib/http';
 import { presignFromUrlOrKey, isManagedStorageUrl } from '@/lib/s3';
-import { userHasRole, type AuthUser } from '@/lib/auth/context';
+import { userHasRole, isPlatformOperator, type AuthUser } from '@/lib/auth/context';
 
 type AnyRec = Record<string, unknown>;
 
@@ -248,9 +248,26 @@ export async function create(authorId: string, dto: AnyRec): Promise<MasterCours
   return withSelectedTenants(course);
 }
 
-export async function findAll() {
+/**
+ * @param orgId Scope to ONE org — pass `orgScope(actor)`. `undefined` returns the whole
+ *   catalogue and is for the platform operator alone. A master course has no orgId of
+ *   its own, so "belongs to this org" means it was submitted BY them or distributed TO
+ *   them — the same relation `canTenantAdminEditCourse` uses.
+ */
+export async function findAll(orgId?: string) {
   const courses = await db.lmsMasterCourse.findMany({
-    where: { isMaster: true, parentCourseId: null },
+    where: {
+      isMaster: true,
+      parentCourseId: null,
+      ...(orgId
+        ? {
+            OR: [
+              { submittedByTenantId: orgId },
+              { selectedTenants: { some: { orgId } } },
+            ],
+          }
+        : {}),
+    },
     orderBy: { updatedAt: 'desc' },
   });
   return Promise.all(courses.map(withSelectedTenants));
@@ -535,18 +552,25 @@ export async function reorderSubModules(courseId: string, moduleId: string, subM
 }
 
 // ── approval workflow queries ────────────────────────────────────────────────
-export async function findPendingApprovals() {
+/** @param orgId Scope to ONE org's submissions — pass `orgScope(actor)`. */
+export async function findPendingApprovals(orgId?: string) {
   const courses = await db.lmsMasterCourse.findMany({
-    where: { status: { in: ['PendingApproval', 'Resubmitted'] } },
+    where: {
+      status: { in: ['PendingApproval', 'Resubmitted'] },
+      ...(orgId ? { submittedByTenantId: orgId } : {}),
+    },
     orderBy: { createdAt: 'desc' },
   });
   return Promise.all(courses.map(withSelectedTenants));
 }
 
-export async function findAllApprovalItems() {
+/** @param orgId Scope to ONE org's submissions — pass `orgScope(actor)`. */
+export async function findAllApprovalItems(orgId?: string) {
   const courses = await db.lmsMasterCourse.findMany({
     where: {
-      submittedByTenantId: { not: null },
+      // A scoped caller sees only their OWN org's submissions. Unscoped, this listed
+      // every tenant's pending and rejected courses to anyone holding the role.
+      submittedByTenantId: orgId ? orgId : { not: null },
       status: { in: ['PendingApproval', 'PendingTenantApproval', 'RejectedByTenantAdmin', 'Resubmitted', 'Published', 'Rejected'] },
     },
     orderBy: { updatedAt: 'desc' },
@@ -687,12 +711,32 @@ export async function reject(id: string, rejectedById: string, reason: string) {
 /** Primary or delegated Sub Admin (secondary SUB_ADMIN on a learner). */
 export const isSubAdminActor = (u: AuthUser) => userHasRole(u, 'SUB_ADMIN');
 
-/** Full tenant admin — primary role only, NOT delegated (`role-access.util.ts:19-21`). */
-export const isPrimaryTenantAdmin = (u: AuthUser) => u.role === 'TENANT_ADMIN';
+/**
+ * Full tenant admin — primary role only, NOT delegated (`role-access.util.ts:19-21`).
+ *
+ * A SUPER_ADMIN who is NOT the platform operator counts. That is an org's founding
+ * admin (lib/auth/founding-admin.ts): a tenant person holding the top role. Without
+ * this they fell through every tenant branch onto the operator path — where
+ * `POST /master-courses` honours `dto.status` verbatim and never forces
+ * `selectedTenants` — so they could publish an unscoped master course visible to
+ * every tenant. The same hole the "Fail CLOSED" guard in that route was written to
+ * stop for TENANT_ADMIN/SUB_ADMIN.
+ */
+export const isPrimaryTenantAdmin = (u: AuthUser) =>
+  u.role === 'TENANT_ADMIN' || (u.role === 'SUPER_ADMIN' && !isPlatformOperator(u));
 
-/** Tenant Admin or Sub Admin in any form — used for tenant-scoped admin APIs. */
+/**
+ * Tenant Admin or Sub Admin in any form — used for tenant-scoped admin APIs.
+ *
+ * Includes a non-operator SUPER_ADMIN for the reason above. This is also what makes
+ * `assertCanEditMasterCourse` below actually scope them: it returns early — fully
+ * unscoped — for anyone this predicate rejects, so a founding admin could otherwise
+ * read, overwrite and restructure ANY tenant's master course drafts.
+ */
 export const isTenantOrSubAdminActor = (u: AuthUser) =>
-  userHasRole(u, 'TENANT_ADMIN') || userHasRole(u, 'SUB_ADMIN');
+  userHasRole(u, 'TENANT_ADMIN') ||
+  userHasRole(u, 'SUB_ADMIN') ||
+  (u.role === 'SUPER_ADMIN' && !isPlatformOperator(u));
 
 /**
  * Throw unless `actor` may act on `courseId`. SUPER_ADMIN is unscoped and passes

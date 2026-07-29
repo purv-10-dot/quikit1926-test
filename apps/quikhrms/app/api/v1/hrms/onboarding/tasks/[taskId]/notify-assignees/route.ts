@@ -5,6 +5,7 @@ import { successResponse, validationError, notFound, internalError } from "@/lib
 import { generateTaskActionToken } from "@/lib/services/task-action-token";
 import { resolveAndSend } from "@/lib/email/resolve";
 import { buildTaskAssignedActionEmail } from "@/lib/email-templates/task-assigned-action";
+import { appBaseUrl } from "@/lib/utils/app-url";
 
 // HR clicks "Send to assignee(s)" on a staff-assigned step (Custom Task / Asset /
 // IT Provisioning) → emails every assigned employee a one-click "Mark as done"
@@ -58,7 +59,7 @@ export const POST = withAuth(async (_req: NextRequest, { orgId, userId }, params
     ]);
     const companyName = company?.companyName ?? "Our Company";
     const newHireName = newHire ? `${newHire.firstName} ${newHire.lastName}`.trim() : "the new hire";
-    const base = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "";
+    const base = appBaseUrl();
     const appLink = `${base}/onboarding/${instance.employeeId}`;
     const detail = actionDetail(task.stepType, cfg);
 

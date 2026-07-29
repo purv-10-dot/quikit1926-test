@@ -109,6 +109,21 @@ type TaskTpl = {
   stepType?: string; config?: Record<string, unknown> | null;
 };
 
+type BgvStatus = "Pending" | "In Progress" | "Completed" | null;
+
+/** Derive a coarse BGV status from the instance's BGV step (stepType "BGV"). */
+function bgvStatusOf(tasks: Array<{ status: string; stepType: string | null; config: unknown }>): BgvStatus {
+  const t = tasks.find((x) => x.stepType === "BGV");
+  if (!t) return null;
+  if (t.status === "TaskCompleted") return "Completed";
+  const cfg = (t.config ?? {}) as Record<string, unknown>;
+  const checks = Array.isArray(cfg.bgvChecks) ? (cfg.bgvChecks as string[]) : [];
+  const st = (cfg.bgvStatus ?? {}) as Record<string, string>;
+  if (checks.length > 0 && checks.every((c) => st[c] === "clear")) return "Completed";
+  if (checks.some((c) => st[c])) return "In Progress";
+  return "Pending";
+}
+
 export const GET = withAuth(async (req: NextRequest, { orgId }) => {
   try {
     const { searchParams } = new URL(req.url);
@@ -150,7 +165,10 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     const [instances, salaries] = await Promise.all([
       prisma.onboardingInstance.findMany({
         where: { orgId, employeeId: { in: employeeIds }, deletedAt: null },
-        select: { id: true, employeeId: true, status: true, startDate: true },
+        select: {
+          id: true, employeeId: true, status: true, startDate: true,
+          tasks: { select: { status: true, stepType: true, config: true } },
+        },
       }),
       prisma.employeeSalary.findMany({
         where: { orgId, employeeId: { in: employeeIds }, isActive: true, deletedAt: null },
@@ -160,6 +178,19 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
 
     const instanceMap = new Map(instances.map((i) => [i.employeeId, i]));
     const salaryMap = new Map(salaries.map((s) => [s.employeeId, s]));
+
+    // Per-employee stage progress + BGV status, derived from onboarding tasks.
+    const progressByEmp = new Map<string, { taskDone: number; taskTotal: number; progressPct: number; bgvStatus: BgvStatus }>();
+    for (const inst of instances) {
+      const t = inst.tasks;
+      const done = t.filter((x) => x.status === "TaskCompleted" || x.status === "TaskSkipped").length;
+      progressByEmp.set(inst.employeeId, {
+        taskDone: done,
+        taskTotal: t.length,
+        progressPct: t.length > 0 ? Math.round((done / t.length) * 100) : 0,
+        bgvStatus: bgvStatusOf(t),
+      });
+    }
 
     const candidates = employees
       .map((e) => ({
@@ -202,6 +233,10 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
         familyMembers: (e.customFields as { familyMembers?: unknown[] } | null)?.familyMembers ?? null,
         onboardingStatus: instanceMap.get(e.id)?.status ?? "NotStarted",
         onboardingInstanceId: instanceMap.get(e.id)?.id ?? null,
+        // Card display fields (mirror the pre-onboarding roster shape).
+        employmentType: e.employmentType,
+        workLocation: e.workLocation,
+        ...(progressByEmp.get(e.id) ?? { taskDone: 0, taskTotal: 0, progressPct: 0, bgvStatus: null as BgvStatus }),
       }))
       .filter((c) => !status || c.onboardingStatus === status);
 

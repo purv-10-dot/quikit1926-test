@@ -7,7 +7,7 @@ import { Modal } from "@/components/hrms/modal";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import {
   Calendar, ChevronLeft, ChevronRight, Play, Pause, List, LayoutGrid,
-  CalendarDays,
+  CalendarDays, CalendarCheck, Coffee, Scale,
   Clock4, LogIn, LogOut, Eye, X,
 } from "lucide-react";
 import { clsx } from "clsx";
@@ -100,7 +100,6 @@ export default function AttendancePage() {
     <div className="w-full px-5 py-4">
       {/* Subtle HR-themed page background (scoped to this page only). */}
       <PageBackground src="/images/pre-onboarding-bg.png" />
-      <h1 className="text-base font-semibold text-gray-900 mb-5">My Attendance</h1>
       <AttendanceSummary />
     </div>
   );
@@ -136,6 +135,13 @@ function AttendanceSummary() {
 
   const today = todayData?.data;
   const summary = weekData?.data;
+
+  // Week stat-strip figures, derived from the loaded week.
+  const totalWorkHours = (summary?.days ?? []).reduce((s, d) => s + d.effectiveHours, 0);
+  const totalBreakHours = (summary?.days ?? []).reduce((s, d) => s + Math.max(0, d.grossHours - d.effectiveHours), 0);
+  const daysPresent = summary?.totals?.presentDays ?? (summary?.days ?? []).filter((d) => d.status === "Present").length;
+  const weekOffs = summary?.totals?.weekendDays ?? (summary?.days ?? []).filter((d) => d.status === "Weekend").length;
+  const regCount = (summary?.days ?? []).filter((d) => d.regularizationStatus !== "None").length;
 
   useEffect(() => {
     setLiveSeconds(today?.elapsedSeconds ?? 0);
@@ -179,8 +185,6 @@ function AttendanceSummary() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["attendance-today"] }); qc.invalidateQueries({ queryKey: ["attendance-week"] }); },
   });
 
-  const shiftLabel = today?.shift ? `${today.shift.name} [ ${formatTime(today.shift.start)} - ${formatTime(today.shift.end)} ]` : "General [ 9:00 AM - 6:00 PM ]";
-
   const exportRows = useMemo(
     () =>
       (summary?.days ?? []).map((day) => {
@@ -205,9 +209,15 @@ function AttendanceSummary() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <div />
-        <div className="flex items-center gap-2 surface-card px-2 py-1">
+      <div className="relative flex items-center justify-between gap-3 mb-4 flex-wrap">
+        <div className="flex items-start gap-2.5">
+          <span className="w-9 h-9 rounded-lg bg-green-100 text-green-600 grid place-items-center shrink-0"><Calendar size={18} /></span>
+          <div>
+            <h1 className="text-base font-bold text-gray-900 leading-tight">My Attendance</h1>
+            <p className="text-[11px] text-gray-500">Track your daily attendance and work hours</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 surface-card px-2 py-1 lg:absolute lg:left-1/2 lg:-translate-x-1/2">
           <button onClick={() => shiftWeek(cursor, setCursor, -7)} className="p-1 hover:bg-gray-100 rounded-full"><ChevronLeft size={12} /></button>
           <Calendar size={14} className="text-gray-500" />
           <span className="text-xs font-medium">{fmtDate(cursor)} — {fmtDate(weekEnd)}</span>
@@ -238,37 +248,55 @@ function AttendanceSummary() {
         </div>
       </div>
 
-      <div className="surface-card p-4 mb-4 flex items-center gap-4 bg-gradient-to-br from-white to-slate-50/50">
-        <div className="flex items-center gap-2.5">
-          <div className={clsx("w-9 h-9 rounded-full flex items-center justify-center",
-            today?.checkedIn ? "bg-green-100 text-green-600" : "bg-slate-100 text-slate-500")}>
+      <div className="surface-card p-3 mb-4 flex items-center gap-4 flex-wrap">
+        {/* Shift */}
+        <div className="flex items-center gap-2.5 shrink-0">
+          <div className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-500 flex items-center justify-center">
             <Clock4 size={16} />
           </div>
           <div className="leading-tight">
-            <div className="text-[11px] uppercase tracking-wider text-gray-400 font-semibold">Shift</div>
-            <div className="text-[13px] font-semibold text-gray-900">{shiftLabel}</div>
+            <div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Shift</div>
+            <div className="text-[13px] font-bold text-gray-900">{today?.shift?.name ?? "General"}</div>
+            <div className="text-[11px] text-gray-500 tabular-nums">
+              {today?.shift ? `${formatTime(today.shift.start)} - ${formatTime(today.shift.end)}` : "9:00 AM - 6:00 PM"}
+            </div>
           </div>
         </div>
-        <input value={notes} onChange={(e) => setNotes(e.target.value)}
-          placeholder="Add notes for check-in"
-          className="flex-1 border border-[var(--border)] rounded-full px-4 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#166534]/20 focus:border-[#166534]/40" />
+        {/* Notes */}
+        <div className="flex-1 min-w-[220px] flex items-center gap-2 border border-gray-200 rounded-xl px-3 py-2.5">
+          <Eye size={14} className="text-gray-300" />
+          <input value={notes} onChange={(e) => setNotes(e.target.value)}
+            placeholder="Add notes for check-in..."
+            className="flex-1 text-sm bg-transparent focus:outline-none placeholder:text-gray-400" />
+        </div>
+        {/* Check-in / out box */}
         <button
           onClick={() => {
             if (today?.checkedIn) checkOutMut.mutate({ remarks: notes || undefined });
             else checkInMut.mutate({ source: "Web", remarks: notes || undefined });
           }}
           disabled={checkInMut.isPending || checkOutMut.isPending}
-          title={`Worked today: ${fmtTimer(liveSeconds)}`}
-          className={clsx("px-3 py-1.5 rounded-full text-white font-medium flex items-center gap-3 min-w-[200px] shadow-md hover:shadow-lg transition-all",
-            today?.checkedIn ? "bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700" : "bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700")}>
-          <span className="flex items-center gap-1.5 text-xs">
-            {today?.checkedIn ? <><Pause size={13} fill="currentColor" /> Check-out</> : <><Play size={13} fill="currentColor" /> Check-in</>}
+          className={clsx("shrink-0 flex items-center gap-3 rounded-xl border px-4 py-2.5 transition disabled:opacity-60",
+            today?.checkedIn ? "border-red-200 bg-red-50/50 hover:bg-red-50" : "border-green-200 bg-green-50/50 hover:bg-green-50")}>
+          <span className={clsx("w-9 h-9 rounded-full grid place-items-center text-white shrink-0",
+            today?.checkedIn ? "bg-red-500" : "bg-green-600")}>
+            {today?.checkedIn ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
           </span>
-          <span className="ml-auto flex flex-col items-end leading-tight">
-            <span className="text-[9px] uppercase tracking-wider opacity-80">Worked today</span>
-            <span className="font-mono text-xs bg-white/20 px-2 py-0.5 rounded-md tabular-nums">{fmtTimer(liveSeconds)}</span>
-          </span>
+          <div className="text-left leading-tight">
+            <div className="text-[13px] font-bold text-gray-900">{today?.checkedIn ? "Check-out" : "Check-in"}</div>
+            <div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Worked Today</div>
+          </div>
+          <span className="font-mono text-base font-bold text-gray-900 tabular-nums ml-1">{fmtTimer(liveSeconds)}</span>
         </button>
+      </div>
+
+      {/* Stat strip */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-4">
+        <StatCard icon={Clock4}        tile="bg-indigo-50 text-indigo-500"  value={formatHours(totalWorkHours)}  label="Total Work Hours" />
+        <StatCard icon={Coffee}        tile="bg-orange-50 text-orange-500"  value={formatHours(totalBreakHours)} label="Total Break Hours" />
+        <StatCard icon={CalendarCheck} tile="bg-blue-50 text-blue-500"       value={String(daysPresent)}          label="Days Present" />
+        <StatCard icon={Calendar}      tile="bg-green-50 text-green-600"     value={String(weekOffs)}             label="Week-Offs" />
+        <StatCard icon={Scale}         tile="bg-purple-50 text-purple-500"   value={String(regCount)}             label="Regularizations" />
       </div>
 
       <div className="surface-card p-0 mb-4 overflow-hidden">
@@ -283,7 +311,35 @@ function AttendanceSummary() {
         )}
       </div>
 
+      {/* Legend */}
+      <div className="flex items-center gap-4 flex-wrap text-[11px] text-gray-500 px-1 pb-2">
+        <LegendDot color="bg-yellow-400" label="Week-Off" />
+        <LegendDot color="bg-green-500" label="Present" />
+        <LegendDot color="bg-red-500" label="Absent" />
+        <LegendDot color="bg-blue-500" label="Holiday" />
+        <span className="inline-flex items-center gap-1.5"><Eye size={13} /> View daily log details</span>
+      </div>
     </div>
+  );
+}
+
+function StatCard({ icon: Icon, tile, value, label }: { icon: React.ElementType; tile: string; value: string; label: string }) {
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 flex items-center gap-3">
+      <span className={clsx("w-11 h-11 rounded-full grid place-items-center shrink-0", tile)}><Icon size={19} /></span>
+      <div className="min-w-0">
+        <div className="text-lg font-bold text-gray-900 leading-tight tabular-nums">{value}</div>
+        <div className="text-[11px] text-gray-500 truncate">{label}</div>
+      </div>
+    </div>
+  );
+}
+
+function LegendDot({ color, label }: { color: string; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className={clsx("w-2 h-2 rounded-full", color)} /> {label}
+    </span>
   );
 }
 
@@ -313,8 +369,9 @@ function AttendanceTable({ days, liveSeconds, liveBreakSec, isCheckedIn, hasToda
         <table className="w-full text-xs border-separate border-spacing-0">
           <thead>
             <tr className="bg-gray-50 text-left text-[11px] uppercase tracking-wider text-gray-500 font-semibold">
-              <th className="px-4 py-3 w-14 border-b border-gray-200">S. No.</th>
+              <th className="px-4 py-3 w-14 border-b border-gray-200">S.No.</th>
               <th className="px-4 py-2.5 border-b border-gray-200">Date</th>
+              <th className="px-4 py-2.5 border-b border-gray-200">Day</th>
               <th className="px-4 py-2.5 border-b border-gray-200">Clock-In</th>
               <th className="px-4 py-2.5 border-b border-gray-200">Clock-Out</th>
               <th className="px-4 py-2.5 border-b border-gray-200">Working Time In Office</th>
@@ -355,8 +412,14 @@ function AttendanceTable({ days, liveSeconds, liveBreakSec, isCheckedIn, hasToda
                   <td className="px-4 text-gray-500 tabular-nums">{idx + 1}</td>
                   <td className="px-4">
                     <div className="text-[13px] font-medium text-gray-900">
-                      {d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}, {isToday ? "Today" : d.toLocaleDateString("en-IN", { weekday: "short" })}
+                      {d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
                     </div>
+                  </td>
+                  <td className="px-4">
+                    <span className={clsx("text-[13px] font-medium", (d.getDay() === 0 || d.getDay() === 6) ? "text-red-500" : "text-gray-700")}>
+                      {d.toLocaleDateString("en-IN", { weekday: "short" })}
+                    </span>
+                    {isToday && <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded bg-green-100 text-green-700 text-[10px] font-semibold align-middle">Today</span>}
                   </td>
                   <td className="px-4">
                     {offLabel ? (
@@ -400,7 +463,11 @@ function AttendanceTable({ days, liveSeconds, liveBreakSec, isCheckedIn, hasToda
                     </button>
                   </td>
                   <td className="px-4">
-                    <span className={clsx("text-xs font-medium", REG_STATUS[day.regularizationStatus])}>{REG_LABEL[day.regularizationStatus]}</span>
+                    {day.regularizationStatus === "None" ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-100 text-gray-500 text-[11px] font-medium">No Regularization</span>
+                    ) : (
+                      <span className={clsx("text-xs font-medium", REG_STATUS[day.regularizationStatus])}>{REG_LABEL[day.regularizationStatus]}</span>
+                    )}
                   </td>
                   <td className="px-4 text-right">
                     {canRegularize && (

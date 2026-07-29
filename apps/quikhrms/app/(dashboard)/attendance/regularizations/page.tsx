@@ -4,10 +4,10 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Check, X, Clock, FileText, Loader2 } from "lucide-react";
-import { clsx } from "clsx";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import { PageBackground } from "@/components/hrms/page-background";
 import { Pagination } from "@/components/hrms/pagination";
+import { TabSwitcher } from "@/components/hrms/tab-switcher";
 
 const REG_EXPORT_COLUMNS = [
   { header: "Date", key: "date", width: 16 },
@@ -84,23 +84,14 @@ export default function RegularizationApprovalsPage() {
       <h1 className="text-base font-semibold text-gray-900 mb-1">Approve Regularizations</h1>
       <p className="text-xs text-gray-500 mb-5">Review attendance regularization requests from your team.</p>
 
-      <div className="border-b border-[var(--border)] mb-4">
-        <div className="flex items-center gap-4">
-          {(["Pending", "Approved", "Rejected", "Cancelled"] as Tab[]).map((t) => (
-            <button
-              key={t}
-              onClick={() => { setTab(t); setPage(1); }}
-              className={clsx(
-                "text-[13px] font-semibold py-3 border-b-2 -mb-px transition-colors",
-                tab === t ? "border-[#166534] text-[#166534] font-semibold" : "border-transparent text-gray-600 hover:text-gray-900",
-              )}
-            >
-              {t}
-            </button>
-          ))}
-          <div className="ml-auto pb-2">
-            <ExcelExportButton filename="regularizations" sheetName="Regularizations" columns={REG_EXPORT_COLUMNS} rows={exportRows} label="Excel" />
-          </div>
+      <div className="flex items-center gap-4 mb-4 flex-wrap">
+        <TabSwitcher
+          value={tab}
+          onChange={(v) => { setTab(v as Tab); setPage(1); }}
+          tabs={(["Pending", "Approved", "Rejected", "Cancelled"] as Tab[]).map((t) => ({ value: t, label: t }))}
+        />
+        <div className="ml-auto">
+          <ExcelExportButton filename="regularizations" sheetName="Regularizations" columns={REG_EXPORT_COLUMNS} rows={exportRows} label="Excel" />
         </div>
       </div>
 

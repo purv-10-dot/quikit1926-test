@@ -240,7 +240,9 @@ const MyClassesPage = () => {
 
   const openVideoClass = (cls: ClassSession) => {
     if (meetingMap[cls._id]?.meetingId) {
-      router.push(`/teacher-dashboard/video/${meetingMap[cls._id].meetingId}`);
+      // The player lives at /video/[meetingId] in the (shared) group — route
+      // groups add no URL segment, so it is NOT nested under /teacher-dashboard.
+      router.push(`/video/${meetingMap[cls._id].meetingId}`);
       return;
     }
     setPickerClass(cls);
@@ -295,7 +297,7 @@ const MyClassesPage = () => {
       if (hostUrl && meetingId) {
         const capturedMeetingId = meetingId;
         setMeetingMap((prev) => ({ ...prev, [cls._id]: { meetingId: capturedMeetingId, url: hostUrl! } }));
-        router.push(`/teacher-dashboard/video/${capturedMeetingId}`);
+        router.push(`/video/${capturedMeetingId}`);
       }
 
       // Refresh classes to reflect updated status
