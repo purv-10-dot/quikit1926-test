@@ -38,6 +38,8 @@ function toDecimalOrNull(v: number | string | null | undefined): string | null {
 interface DprWorkItemRow {
   id: string;
   boqItemId?: string | null;
+  scopeType?: string | null;
+  scopeId?: string | null;
   woId?: string | null;
   description?: string | null;
   todayQty?: Numericish;
@@ -110,6 +112,8 @@ interface DprRow {
 interface DprBodyWorkItem {
   boqItemId?: string;
   boqNo?: string;
+  scopeType?: string | null;
+  scopeId?: string | null;
   // Contractor/WO selector: the form sends `workOrderId`; accept `woId` too.
   workOrderId?: string | null;
   woId?: string | null;
@@ -192,11 +196,19 @@ function enrichDPR(
     itemNameById: Map<string, string>;
     uomCodeById: Map<string, string>;
   },
+  activityCodeById?: Map<string, string>,
 ) {
   const workItems = (row.workItems ?? []).map((w: DprWorkItemRow) => ({
     id: w.id,
     boqItemId: w.boqItemId ?? "",
-    boqNo: boqNoById?.get(w.boqItemId ?? "") ?? "",
+    scopeType: w.scopeType ?? null,
+    scopeId: w.scopeId ?? null,
+    // FREE_SCOPE lines carry no boqItemId — resolve their ref from the
+    // activity (scopeId) instead so the "BOQ REF" column isn't blank.
+    boqNo:
+      w.scopeType === "ACTIVITY"
+        ? activityCodeById?.get(w.scopeId ?? "") ?? ""
+        : boqNoById?.get(w.boqItemId ?? "") ?? "",
     woId: w.woId ?? null,
     description: w.description ?? "",
     todayQty: w.todayQty?.toString?.() ?? "0",
@@ -383,6 +395,29 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  // Same batched lookup for FREE_SCOPE work items, which anchor on an
+  // activity (scopeId) instead of a BOQ item → resolve scopeId → activityCode.
+  const allScopeIds = Array.from(
+    new Set(
+      rows.flatMap((r) =>
+        (r.workItems ?? [])
+          .filter((w) => w.scopeType === "ACTIVITY")
+          .map((w) => w.scopeId)
+          .filter((v): v is string => typeof v === "string" && v.length > 0),
+      ),
+    ),
+  );
+  let activityCodeById = new Map<string, string>();
+  if (allScopeIds.length) {
+    const actRows = await db.cnActivityItem.findMany({
+      where: { id: { in: allScopeIds }, orgId: ctx.orgId },
+      select: { id: true, activityCode: true },
+    });
+    activityCodeById = new Map<string, string>(
+      actRows.map((r) => [r.id, r.activityCode ?? ""]),
+    );
+  }
+
   // Batch-resolve material item names + uom codes across every DPR's
   // material entries (denormalized onto each material line for the UI).
   const matMeta = await resolveMaterialMeta(
@@ -391,7 +426,9 @@ export async function GET(req: NextRequest) {
     rows.flatMap((r) => (r.materialEntries ?? []).map((m) => m.uomId)),
   );
 
-  let data = rows.map((r) => enrichDPR(r, r.project, boqNoById, matMeta));
+  let data = rows.map((r) =>
+    enrichDPR(r, r.project, boqNoById, matMeta, activityCodeById),
+  );
 
   // Per-row Approve/Reject visibility — driven by the workflow's current
   // step, not the caller's role. Batch-load every pending instance + its
@@ -544,7 +581,12 @@ export async function POST(req: NextRequest) {
             status: requestedStatus,
             workItems: {
               create: workItems.map((w: DprBodyWorkItem, i: number) => ({
-                boqItemId: String(w.boqItemId ?? w.boqNo ?? ""),
+                boqItemId:
+                  w.scopeType === "ACTIVITY"
+                    ? null
+                    : String(w.boqItemId ?? w.boqNo ?? ""),
+                scopeType: w.scopeType ?? null,
+                scopeId: w.scopeId ?? null,
                 woId: w.workOrderId ?? w.woId ?? null,
                 description: String(w.description ?? ""),
                 todayQty: String(Number(w.todayQty ?? w.qty ?? 0)),
@@ -640,8 +682,33 @@ export async function POST(req: NextRequest) {
         boqRows.map((r) => [r.id, r.boqNo]),
       );
     }
+    // Same resolve for FREE_SCOPE (activity-anchored) work items.
+    const createdScopeIds = Array.from(
+      new Set(
+        (created.workItems ?? [])
+          .filter((w) => w.scopeType === "ACTIVITY")
+          .map((w) => w.scopeId)
+          .filter((v): v is string => typeof v === "string" && v.length > 0),
+      ),
+    );
+    let createdActivityCodeById = new Map<string, string>();
+    if (createdScopeIds.length) {
+      const actRows = await db.cnActivityItem.findMany({
+        where: { id: { in: createdScopeIds }, orgId: ctx.orgId },
+        select: { id: true, activityCode: true },
+      });
+      createdActivityCodeById = new Map<string, string>(
+        actRows.map((r) => [r.id, r.activityCode ?? ""]),
+      );
+    }
     return NextResponse.json(
-      enrichDPR(created, created.project, createdBoqNoById),
+      enrichDPR(
+        created,
+        created.project,
+        createdBoqNoById,
+        undefined,
+        createdActivityCodeById,
+      ),
       { status: 201 },
     );
   } catch (err: unknown) {

@@ -91,7 +91,10 @@ function nextWbsCode(tasks: WbsTask[], parentId: string | null): string {
 
 export default function WbsPlanningPage() {
   const { data: projects } = useProjects();
-  const projectOptions = (projects?.data ?? []).map((p) => ({ value: p.id, label: p.name }));
+  const projectOptions = (projects?.data ?? []).map((p) => ({
+    value: p.id,
+    label: `${p.name}${(p as { executionMode?: string }).executionMode === "FREE_SCOPE" ? " · Free-Scope" : ""}`,
+  }));
 
   const [selectedProject, setSelectedProject] = useState("");
   const [view, setView] = useState<"grid" | "gantt">("gantt");

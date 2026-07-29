@@ -2932,6 +2932,8 @@ model CnProject {
   purchaseLimit    Decimal?  @db.Decimal(18, 2)
   projectManagerId String?
   status           String    @default("active")
+  executionMode    String    @default("BOQ") // BOQ | FREE_SCOPE
+  freeScopeLocked  Boolean   @default(false)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   createdBy        String
@@ -3344,6 +3346,8 @@ model CnPurchaseRequisition {
   isUrgent             Boolean   @default(false)
   urgencyJustification String?
   workCategoryId       String?
+  scopeType            String? // "BOQ" | "ACTIVITY" (FREE_SCOPE optional tag)
+  scopeId              String? // CnActivityItem.id when scopeType = ACTIVITY
   deliveryLocationId   String?
   estimatedTotal       Decimal?  @db.Decimal(18, 2)
   stockCheckSummary    String?
@@ -4123,7 +4127,9 @@ model CnWorkOrderLine {
   id             String  @id @default(cuid())
   woId           String
   lineType       String  @default("boq") // "boq" | "labour"
-  boqItemId      String
+  boqItemId      String? // null in FREE_SCOPE mode
+  scopeType      String? // "BOQ" | "ACTIVITY"
+  scopeId        String? // CnActivityItem.id when scopeType = ACTIVITY
   description    String
   quantity       Decimal @db.Decimal(18, 4)
   uomId          String
@@ -4147,7 +4153,9 @@ model CnWorkOrderLine {
 model CnRABLine {
   id               String  @id @default(cuid())
   rabId            String
-  boqItemId        String
+  boqItemId        String? // null in FREE_SCOPE mode
+  scopeType        String? // "BOQ" | "ACTIVITY"
+  scopeId          String? // CnActivityItem.id when scopeType = ACTIVITY
   woLineId         String
   description      String
   uomId            String
@@ -4509,7 +4517,9 @@ model CnMaterialEstimation {
   orgId           String
   projectId       String
   projectName     String?
-  boqItemId       String
+  boqItemId       String? // null in FREE_SCOPE mode
+  scopeType       String? // "BOQ" | "ACTIVITY"
+  scopeId         String? // CnActivityItem.id when scopeType = ACTIVITY
   boqNo           String?
   boqDescription  String?
   boqQuantity     Decimal?  @db.Decimal(18, 4)
@@ -4622,7 +4632,9 @@ model CnProjectDocument {
 model CnDPRWorkItem {
   id            String   @id @default(cuid())
   dprId         String
-  boqItemId     String
+  boqItemId     String? // null in FREE_SCOPE mode
+  scopeType     String? // "BOQ" | "ACTIVITY"
+  scopeId       String? // CnActivityItem.id when scopeType = ACTIVITY
   woId          String?
   description   String
   todayQty      Decimal  @db.Decimal(18, 4)
@@ -5008,6 +5020,53 @@ model CnBOQItemV2 {
   @@schema("app_quikinfra")
 }
 
+// FREE_SCOPE anchor — a MANUAL BOQ. When CnProject.executionMode = "FREE_SCOPE"
+// the lifecycle is anchored on these activity items instead of imported BOQ
+// leaves (CnBOQItemV2). Same field shape as a BOQ line (tender qty / scope / rate) —
+// the only difference is these are entered by hand instead of imported from
+// Excel. FKs are plain String (no @relation), matching the loose-link convention.
+model CnActivityItem {
+  id           String @id @default(cuid())
+  orgId        String
+  projectId    String
+  activityCode String // unique per project — the manual "BOQ No", e.g. "ACT-001"
+  description  String @default("")
+
+  // Classification / unit
+  category String? // "Civil" | "Electrical" | "Road" | ...
+  uomId    String? // unit of measure (CnUOM.id)
+
+  // Manual baseline — mirrors BOQ tenderQty / rate
+  tenderQty Decimal? @db.Decimal(18, 4)
+  scopeQty  Decimal  @default(0) @db.Decimal(18, 4)
+  rate      Decimal? @db.Decimal(18, 2)
+
+  // Schedule
+  startDate DateTime?
+  endDate   DateTime?
+
+  // Hierarchy — folders (isGroup=true, not anchorable) + leaf line items
+  parentId  String?
+  isGroup   Boolean @default(false)
+  depth     Int     @default(0)
+  sortOrder Int     @default(0)
+
+  status String  @default("active")
+  locked Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String
+  updatedBy String
+
+  @@unique([projectId, activityCode])
+  @@index([orgId])
+  @@index([projectId, parentId])
+  @@index([projectId, isGroup])
+  @@map("Activity_items")
+  @@schema("app_quikinfra")
+}
+
 model CnBOQImportBatch {
   id             String   @id @default(cuid())
   orgId          String
@@ -5069,9 +5128,11 @@ model CnBOQProgressLedger {
   id             String   @id @default(cuid())
   orgId          String
   projectId      String
-  boqItemId      String
-  boqNo          String
-  category       String
+  boqItemId      String? // null in FREE_SCOPE mode
+  boqNo          String? // null in FREE_SCOPE mode
+  category       String? // null in FREE_SCOPE mode
+  scopeType      String? // "BOQ" | "ACTIVITY"
+  scopeId        String? // CnActivityItem.id when scopeType = ACTIVITY
   qty            Decimal  @db.Decimal(18, 4)
   direction      Int // +1 for apply, -1 for reverse
   workType       String // "sub_contractor" | "self"
@@ -5097,9 +5158,11 @@ model CnBOQBillingLedger {
   id             String   @id @default(cuid())
   orgId          String
   projectId      String
-  boqItemId      String
-  boqNo          String
-  category       String
+  boqItemId      String? // null in FREE_SCOPE mode
+  boqNo          String? // null in FREE_SCOPE mode
+  category       String? // null in FREE_SCOPE mode
+  scopeType      String? // "BOQ" | "ACTIVITY"
+  scopeId        String? // CnActivityItem.id when scopeType = ACTIVITY
   qty            Decimal  @db.Decimal(18, 4)
   direction      Int // +1 for bill, -1 for reverse
   rabId          String?

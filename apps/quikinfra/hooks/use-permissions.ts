@@ -148,6 +148,26 @@ export function usePermissions() {
   }
 
   /**
+   * Strict counterpart of `canViewMenu`: true ONLY when the matrix carries an
+   * explicit view grant for this URL's catalog row. Unlike `canViewMenu` this
+   * never falls through to `true` for a missing matrix or an un-catalogued
+   * URL, so it's safe to use as the sole gate.
+   *
+   * Used by the sidebar to rescue a single granted page out of a module the
+   * user doesn't otherwise have — e.g. Projects, which renders in the MASTERS
+   * group while `construction.project` belongs to project_mgmt.
+   */
+  function isMenuGranted(url: string | undefined): boolean {
+    if (isSuper) return true;
+    if (!effectiveMatrix) return false;
+    const key = menuKeyForUrl(url);
+    if (!key) return false;
+    const row = effectiveMatrix[key];
+    if (!row) return false;
+    return row.view !== false;
+  }
+
+  /**
    * Check whether the user can perform a specific action (`add`, `edit`,
    * `delete`, `view`) on the page identified by the given nav URL.
    * Used by the dashboard's Quick Actions to hide create-shortcuts when
@@ -188,6 +208,7 @@ export function usePermissions() {
     hasRole,
     hasModule,
     canViewMenu,
+    isMenuGranted,
     canMenuAction,
     isSuper,
   };

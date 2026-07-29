@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Calculator, Check, Eye, Pencil, Send, Trash2, X as XIcon } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { PageHeader, PageContainer, StatusChip } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer, StatusChip } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { useEstimations, useUpdateEstimation } from "@/hooks/use-projects";
 import { useProjects } from "@/hooks/use-masters";
@@ -105,6 +105,16 @@ export default function EstimationPage() {
     const allow = new Set(allowed);
     return all.filter((p) => allow.has(p.id));
   }, [projects?.data, me?.projectIds]);
+
+  const freeScopeProjectIds = useMemo(
+    () =>
+      new Set(
+        (projects?.data ?? [])
+          .filter((p) => p?.executionMode === "FREE_SCOPE")
+          .map((p) => p.id),
+      ),
+    [projects?.data],
+  );
   const matrixRow = permissionMatrix?.[MENU_KEY];
   const canAdd = isSuper || !matrixRow || matrixRow.add !== false;
   const canEdit = isSuper || !matrixRow || matrixRow.edit !== false;
@@ -198,6 +208,11 @@ export default function EstimationPage() {
     setEditRow(null);
     setDrawerOpen(true);
   };
+  // Edit opens the full-page edit form (mirrors the Work Order edit page)
+  // rather than the read-only detail page or a drawer.
+  const openEdit = (row: EstimationRow) => {
+    router.push(`/projects/estimation/${row.id}/edit`);
+  };
   // Edit now routes to the detail page so the form has a full-page
   // surface and workflow actions don't have to stack modals. The
   // status chip and the Edit icon in the Actions column both use this.
@@ -259,6 +274,16 @@ export default function EstimationPage() {
       label: "Project",
       sortable: true,
       searchable: true,
+      render: (row) => (
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="truncate">{row.projectName}</span>
+          {freeScopeProjectIds.has(row.projectId) && (
+            <span className="shrink-0 whitespace-nowrap rounded bg-accent-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-accent-700 border border-accent-200">
+              Free-Scope
+            </span>
+          )}
+        </div>
+      ),
     },
     {
       key: "boqQuantity",
@@ -355,7 +380,7 @@ export default function EstimationPage() {
                 onClick={(e) => {
                   e.stopPropagation();
                   if (baseLocked) return;
-                  openDetail(row);
+                  openEdit(row);
                 }}
                 disabled={baseLocked}
                 className={`inline-flex items-center justify-center w-7 h-7 rounded-md transition ${
@@ -436,6 +461,7 @@ export default function EstimationPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Material Estimation"
         subtitle="Map BOQ leaf items to material compositions with waste percentages"
@@ -445,7 +471,7 @@ export default function EstimationPage() {
         ]}
       />
 
-      <PageContainer>
+      <PageContainer fill>
         <div className="mb-4 inline-flex items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-3.5 py-2 shadow-sm">
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-slate-500 to-slate-700 text-white">
             <Calculator className="h-4 w-4" />
@@ -480,8 +506,18 @@ export default function EstimationPage() {
           addLabel="New Material Estimation"
           historyEntityType="material_estimations,material_estimation,estimation"
           getHistoryEntityId={(row) => String(row.id ?? "")}
+          // Estimations have no document number, so the drawer's default
+          // label resolution falls through to the raw row id. Build a
+          // readable subtitle from the BOQ ref + item instead.
+          getHistoryRowLabel={(row) => {
+            const desc = String(row.boqDescription ?? "").trim();
+            const short = desc.length > 48 ? `${desc.slice(0, 48).trimEnd()}…` : desc;
+            const label = [row.boqNo, short].filter(Boolean).join(" · ");
+            return label || String(row.projectName ?? "Material Estimation");
+          }}
         />
       </PageContainer>
+      </PageFrame>
 
       <EstimationDrawer
         open={drawerOpen}

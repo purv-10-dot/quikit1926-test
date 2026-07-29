@@ -55,7 +55,6 @@ export const FIELD_GROUP: Record<Exclude<UniversalField, "IGNORE">, UniversalGro
   amt_billed: "Amounts",
 };
 
-export const GROUP_ORDER: UniversalGroup[] = ["Identity", "Quantities", "Amounts"];
 
 export const GROUP_DOT_COLOR: Record<UniversalGroup, string> = {
   Identity: "bg-orange-500",

@@ -33,6 +33,7 @@ import {
   Trash2,
   Loader2,
   AlertTriangle,
+  X,
 } from "lucide-react";
 import { PageContainer } from "@/components/PageShell";
 import { SelectInput } from "@/components/FormDrawer";
@@ -45,10 +46,14 @@ import {
   type LabourScopeLine,
 } from "@/lib/projects/labour-scope";
 import { BOQActivityPickerModal } from "./BOQActivityPickerModal";
+import { ActivityScopePicker, type ActivityLeafOption } from "@/components/ActivityScopePicker";
+import { useActivities } from "@/hooks/use-projects";
 import { LabourScopeTable } from "./LabourScopeTable";
 
 interface ScopeLine {
   boqItemId: string;
+  scopeType?: string;
+  scopeId?: string;
   boqNo: string;
   description: string;
   uomCode: string;
@@ -177,6 +182,23 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
     [scope]
   );
 
+  // FREE_SCOPE: scope lines anchor on activities instead of BOQ items.
+  const selectedProject = projects.find((p) => p.id === projectId);
+  const isFreeScope =
+    (selectedProject as { executionMode?: string } | undefined)?.executionMode === "FREE_SCOPE";
+  const { data: activitiesResp } = useActivities(projectId && isFreeScope ? projectId : null);
+  const activityItems: ActivityLeafOption[] = (activitiesResp?.data ?? []).map((a) => ({
+    id: a.id,
+    activityCode: a.activityCode,
+    description: a.description,
+    uomId: a.uomId,
+    uomCode: a.uomCode,
+    tenderQty: a.tenderQty,
+    path: a.path,
+  }));
+  const alreadyAddedScopeIds = new Set(scope.map((s) => s.scopeId).filter(Boolean) as string[]);
+  const [pickActivity, setPickActivity] = useState<ActivityLeafOption | null>(null);
+
   const addBoqItem = (row: WoBoqPickRow) => {
     const itemId = row.id ?? "";
     const boqNo = row.boq_no ?? "";
@@ -193,6 +215,23 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
         description: row.display_name ?? "",
         uomCode: row.unit ?? "",
         quantity: String(row.balanceQty ?? row.scopeQty ?? ""),
+        rate: "",
+      },
+    ]);
+  };
+
+  const addActivityItem = (a: ActivityLeafOption) => {
+    if (alreadyAddedScopeIds.has(a.id)) return;
+    setScope((prev) => [
+      ...prev,
+      {
+        boqItemId: "",
+        scopeType: "ACTIVITY",
+        scopeId: a.id,
+        boqNo: a.activityCode,
+        description: a.description,
+        uomCode: a.uomCode ?? "",
+        quantity: a.tenderQty != null ? String(a.tenderQty) : "",
         rate: "",
       },
     ]);
@@ -257,6 +296,8 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
             const rate = parseFloat(s.rate) || 0;
             return {
               boqItemId: s.boqItemId,
+              scopeType: s.scopeType ?? null,
+              scopeId: s.scopeId ?? null,
               boqNo: s.boqNo,
               description: s.description,
               uomCode: s.uomCode,
@@ -390,10 +431,20 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
             <Field label="PROJECT" required>
               <SelectInput
                 value={projectId}
-                onChange={setProjectId}
+                onChange={(v) => {
+                  if (v === projectId) return;
+                  // Switching project (incl. BOQ ↔ Free-Scope) invalidates the
+                  // current scope — clear it so stale lines don't carry over.
+                  setProjectId(v);
+                  setScope([]);
+                  setLabourScope([]);
+                  setPickActivity(null);
+                  setBoqModalOpen(false);
+                  setError("");
+                }}
                 disabled={isEdit && hasScopeLines}
                 placeholder="Select project…"
-                options={projects.map((p) => ({ value: p.id, label: p.name }))}
+                options={projects.map((p) => ({ value: p.id, label: `${p.name}${(p as { executionMode?: string }).executionMode === "FREE_SCOPE" ? " · Free-Scope" : ""}` }))}
               />
               {isEdit && hasScopeLines && (
                 <p className="mt-1 text-[10px] text-gray-400">
@@ -478,21 +529,22 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xs font-bold text-accent-700 uppercase tracking-wider flex items-center gap-2">
               <FileText className="w-4 h-4" />{" "}
-              {isLabourOnly ? "WORK ORDER DETAILS" : "BOQ SCOPE"}
+              {isLabourOnly ? "WORK ORDER DETAILS" : isFreeScope ? "ACTIVITY SCOPE" : "BOQ SCOPE"}
             </h2>
             {!isLabourOnly && (
               <button
                 type="button"
                 onClick={() => {
                   if (!projectId) {
-                    setError("Pick a project first before adding BOQ items");
+                    setError(`Pick a project first before adding ${isFreeScope ? "activities" : "BOQ items"}`);
                     return;
                   }
+                  if (isFreeScope) setPickActivity(null);
                   setBoqModalOpen(true);
                 }}
                 className="inline-flex items-center gap-1.5 text-xs font-semibold text-accent-700 hover:text-accent-800 bg-accent-50 hover:bg-accent-100 border border-accent-200 px-3 py-1.5 rounded-lg transition-colors"
               >
-                <Plus className="w-3.5 h-3.5" /> Add BOQ Item
+                <Plus className="w-3.5 h-3.5" /> {isFreeScope ? "Add Activity" : "Add BOQ Item"}
               </button>
             )}
           </div>
@@ -520,9 +572,11 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
               <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-accent-50 text-accent-500 mb-3 ring-4 ring-accent-100">
                 <FileText className="w-6 h-6" />
               </div>
-              <div className="text-sm font-semibold text-slate-800">No BOQ items added yet</div>
+              <div className="text-sm font-semibold text-slate-800">
+                {isFreeScope ? "No activities added yet" : "No BOQ items added yet"}
+              </div>
               <p className="text-xs text-slate-500 mt-1">
-                Add items to define the scope and value of this work order.
+                Add {isFreeScope ? "activities" : "items"} to define the scope and value of this work order.
               </p>
             </button>
           ) : (
@@ -638,16 +692,74 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
         </section>
       </PageContainer>
 
-      {/* BOQ picker modal — only for non-labour work types */}
-      {!isLabourOnly && (
-        <BOQActivityPickerModal
-          open={boqModalOpen}
-          onClose={() => setBoqModalOpen(false)}
-          projectId={projectId}
-          alreadyAddedIds={alreadyAddedIds}
-          onAdd={addBoqItem}
-        />
-      )}
+      {/* Scope picker — activity modal (FREE_SCOPE) or BOQ modal; hidden for labour */}
+      {!isLabourOnly &&
+        (isFreeScope ? (
+          boqModalOpen && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+              onClick={() => setBoqModalOpen(false)}
+            >
+              <div
+                className="w-full max-w-2xl rounded-xl bg-white shadow-xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                  <h3 className="text-sm font-semibold text-gray-900">Add activity to work order</h3>
+                  <button type="button" onClick={() => setBoqModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="p-5 min-h-[340px]">
+                  <ActivityScopePicker
+                    items={activityItems.filter((a) => !alreadyAddedScopeIds.has(a.id))}
+                    value={pickActivity?.id ?? null}
+                    onSelect={setPickActivity}
+                    placeholder="Select activity"
+                  />
+                  {pickActivity && (
+                    <div className="mt-3 rounded-lg border border-accent-200 bg-accent-50/60 px-3 py-2 text-xs text-gray-700">
+                      Selected: <span className="font-semibold">{pickActivity.activityCode}</span> · {pickActivity.description}
+                      {pickActivity.tenderQty != null && (
+                        <span className="text-gray-500"> — Tender {pickActivity.tenderQty}{pickActivity.uomCode ? ` ${pickActivity.uomCode}` : ""}</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div className="flex justify-end gap-2 px-5 py-3 border-t border-gray-100">
+                  <button
+                    type="button"
+                    onClick={() => setBoqModalOpen(false)}
+                    className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!pickActivity}
+                    onClick={() => {
+                      if (!pickActivity) return;
+                      addActivityItem(pickActivity);
+                      setPickActivity(null);
+                      setBoqModalOpen(false);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-accent-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+            </div>
+          )
+        ) : (
+          <BOQActivityPickerModal
+            open={boqModalOpen}
+            onClose={() => setBoqModalOpen(false)}
+            projectId={projectId}
+            alreadyAddedIds={alreadyAddedIds}
+            onAdd={addBoqItem}
+          />
+        ))}
 
       {/* Embedded-mode footer — shows the Save button at the bottom of
           the form when hosted inside a drawer (the top header strip is

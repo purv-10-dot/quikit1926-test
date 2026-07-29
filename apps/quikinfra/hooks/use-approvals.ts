@@ -64,6 +64,9 @@ export function useApproveAction() {
       qc.invalidateQueries({ queryKey: ["grns"] });
       qc.invalidateQueries({ queryKey: ["work-orders"] });
       qc.invalidateQueries({ queryKey: ["dprs"] });
+      // Every entity above feeds a dashboard KPI tile, and an approval is
+      // what moves them between the counted states.
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
     meta: { successMessage: "Decision recorded", errorMessage: "Failed to record decision" },
   });

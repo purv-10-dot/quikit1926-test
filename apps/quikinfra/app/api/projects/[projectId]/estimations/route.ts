@@ -8,6 +8,8 @@ import {
   listEstimations,
   type EstimationMaterialLine,
 } from "@/lib/projects/estimation-repository";
+import { assertScopeBelongsToProject } from "@/lib/scope/scope-resolver";
+import { scopeErrorResponse } from "@/lib/scope/http";
 
 /**
  * Material Estimation routes, project-scoped.
@@ -50,6 +52,8 @@ export async function POST(
   let body: {
     boqItemId?: string;
     boqNo?: string;
+    scopeType?: string;
+    scopeId?: string;
     boqDescription?: string | null;
     boqQuantity?: number | string | null;
     boqUnit?: string | null;
@@ -70,19 +74,12 @@ export async function POST(
       id: params.projectId,
       orgId: ctx.orgId,
     },
-    select: { id: true, name: true },
+    select: { id: true, name: true, executionMode: true },
   });
   if (!project) {
     return NextResponse.json(
       { error: `Project ${params.projectId} not found` },
       { status: 404 },
-    );
-  }
-
-  if (!body.boqItemId || !body.boqNo) {
-    return NextResponse.json(
-      { error: "boqItemId and boqNo are required" },
-      { status: 400 },
     );
   }
 
@@ -94,20 +91,79 @@ export async function POST(
     );
   }
 
-  const record = await createEstimation({
-    orgId: ctx.orgId,
-    createdBy: ctx.userId,
-    projectId: params.projectId,
-    projectName: project.name,
-    boqItemId: body.boqItemId,
-    boqNo: body.boqNo,
-    boqDescription: body.boqDescription ?? null,
-    boqQuantity: body.boqQuantity ?? null,
-    boqUnit: body.boqUnit ?? null,
-    phase: body.phase ?? "Foundation",
-    status: body.status ?? "draft",
-    materials,
-  });
+  const isFreeScope = project.executionMode === "FREE_SCOPE";
 
-  return NextResponse.json(record, { status: 201 });
+  try {
+    let anchor: {
+      boqItemId: string | null;
+      scopeType: string;
+      scopeId: string | null;
+      boqNo: string | null;
+      boqDescription: string | null;
+      boqQuantity: number | string | null;
+      boqUnit: string | null;
+    };
+
+    if (isFreeScope) {
+      if (!body.scopeId) {
+        return NextResponse.json(
+          { error: "scopeId is required for FREE_SCOPE projects" },
+          { status: 400 },
+        );
+      }
+      // Validates the activity exists in this project (throws ScopeError).
+      const line = await assertScopeBelongsToProject(
+        ctx.orgId,
+        params.projectId,
+        "ACTIVITY",
+        body.scopeId,
+      );
+      anchor = {
+        boqItemId: null,
+        scopeType: "ACTIVITY",
+        scopeId: line.scopeId,
+        boqNo: line.code,
+        boqDescription: body.boqDescription ?? line.description,
+        boqQuantity: body.boqQuantity ?? line.plannedQty,
+        boqUnit: body.boqUnit ?? line.uomId,
+      };
+    } else {
+      if (!body.boqItemId || !body.boqNo) {
+        return NextResponse.json(
+          { error: "boqItemId and boqNo are required" },
+          { status: 400 },
+        );
+      }
+      anchor = {
+        boqItemId: body.boqItemId,
+        scopeType: "BOQ",
+        scopeId: null,
+        boqNo: body.boqNo,
+        boqDescription: body.boqDescription ?? null,
+        boqQuantity: body.boqQuantity ?? null,
+        boqUnit: body.boqUnit ?? null,
+      };
+    }
+
+    const record = await createEstimation({
+      orgId: ctx.orgId,
+      createdBy: ctx.userId,
+      projectId: params.projectId,
+      projectName: project.name,
+      boqItemId: anchor.boqItemId,
+      scopeType: anchor.scopeType,
+      scopeId: anchor.scopeId,
+      boqNo: anchor.boqNo,
+      boqDescription: anchor.boqDescription,
+      boqQuantity: anchor.boqQuantity,
+      boqUnit: anchor.boqUnit,
+      phase: body.phase ?? "Foundation",
+      status: body.status ?? "draft",
+      materials,
+    });
+
+    return NextResponse.json(record, { status: 201 });
+  } catch (e: unknown) {
+    return scopeErrorResponse(e, "projects.estimations.create");
+  }
 }

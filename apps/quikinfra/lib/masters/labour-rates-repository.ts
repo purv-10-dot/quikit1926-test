@@ -20,7 +20,6 @@ import { DomainError } from "@/lib/http";
 export const RATE_TYPES = ["DAILY_WAGE", "HOURLY_WAGE"] as const;
 export type RateType = (typeof RATE_TYPES)[number];
 
-export const RATE_APPROVAL_STATUSES = ["DRAFT", "PENDING", "APPROVED", "REJECTED"] as const;
 
 export interface LabourRateRecord {
   id: string;

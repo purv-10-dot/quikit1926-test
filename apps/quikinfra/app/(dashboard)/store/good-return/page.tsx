@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   Eye, Send, Check, X as XIcon, Truck,
 } from "lucide-react";
-import { PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { WorkflowConfirmDialog } from "@/components/WorkflowConfirmDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -434,13 +434,14 @@ export default function GoodReturnPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Good Return (Vendor)"
         subtitle="Return rejected or damaged materials to vendors"
         breadcrumbs={[{ label: "Store", href: "/store" }, { label: "Good Return" }]}
       />
       <TabBar tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
-      <PageContainer>
+      <PageContainer fill>
         <DataTable
           id="store-good-return"
           columns={columns}
@@ -462,6 +463,7 @@ export default function GoodReturnPage() {
           historyEntityType="good_return"
         />
       </PageContainer>
+      </PageFrame>
       <QuickCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} config={config} />
 
       <WorkflowConfirmDialog

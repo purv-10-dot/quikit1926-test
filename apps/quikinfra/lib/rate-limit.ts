@@ -38,5 +38,3 @@ export async function rateLimit(args: RateLimitArgs): Promise<RateLimitResult> {
   return { ok: true, remaining: args.limit - existing.count, resetAt: existing.resetAt };
 }
 
-/** Helper for write endpoints: 30 mutations per minute per user. */
-export const defaultWriteLimit = (userId: string) => ({ key: `write:${userId}`, limit: 30, windowMs: 60_000 });

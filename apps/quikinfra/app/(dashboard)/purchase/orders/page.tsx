@@ -17,6 +17,7 @@ import { Send } from "lucide-react";
 import { toErrorMessage } from "@/lib/api/errors";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
+  PageFrame,
   PageHeader, PageContainer, TabBar,
 } from "@/components/PageShell";
 import { DataTable } from "@/components/DataTable";
@@ -408,6 +409,7 @@ export default function PurchaseOrdersPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Purchase Orders"
         subtitle="Order materials from vendors against approved RFQs and Indents"
@@ -416,7 +418,7 @@ export default function PurchaseOrdersPage() {
 
       <TabBar tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
 
-      <PageContainer>
+      <PageContainer fill>
         <DataTable
           id="purchase-orders"
           columns={columns}
@@ -435,6 +437,7 @@ export default function PurchaseOrdersPage() {
           onSortChange={(k, d) => setSort({ by: k, order: d })}
         />
       </PageContainer>
+      </PageFrame>
 
       <QuickCreateDrawer
         open={drawerOpen}

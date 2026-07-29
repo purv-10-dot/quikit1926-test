@@ -34,6 +34,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import {
+  PageFrame,
   PageHeader,
   PageContainer,
   PrimaryButton,
@@ -355,6 +356,7 @@ export default function UserPermissionMatrixPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="User Management — Permissions"
         subtitle="Manage users, roles, and system access permissions"
@@ -366,20 +368,14 @@ export default function UserPermissionMatrixPage() {
         ]}
       />
       {/* Layout intent: only the matrix table scrolls; the user-summary
-          card, toolbar, page header (sticky), and save bar (fixed) stay
-          fixed in place.
+          card, toolbar, page header and save bar (fixed) stay in place.
 
-          Sizing math: dashboard top bar is h-14 (56px) and PageHeader
-          is ~88px (py-4 + breadcrumb + title), so 144px = 9rem of
-          chrome lives above this wrapper. The wrapper takes the rest
-          of the viewport and uses a flex column inside to give the
-          table the leftover height. The trailing `pb-24` reserves
-          room for the fixed save bar so the table's bottom rows
-          don't sit underneath it.
-
-          The `min-h-[640px]` floor keeps the layout usable on short
-          viewports — without it, the table could collapse to nothing. */}
-      <div className="px-6 max-w-[1600px] mx-auto pt-6 pb-24 h-[calc(100vh-9rem)] min-h-[640px] flex flex-col">
+          Height comes from <PageFrame> (which is exactly as tall as the
+          shell's <main>) rather than viewport math, so no second
+          scrollbar can appear next to the matrix's own. The trailing
+          `pb-24` reserves room for the fixed save bar so the table's
+          bottom rows don't sit underneath it. */}
+      <div className="px-6 max-w-[1600px] mx-auto w-full pt-6 pb-24 flex min-h-0 flex-1 flex-col">
         {/* ── User summary card ───────────────────────────────────────
             Avatar + two-row meta stack. Back to list is a small,
             low-emphasis link at top-right so it doesn't compete with
@@ -547,6 +543,7 @@ export default function UserPermissionMatrixPage() {
           </div>
         </div>
       </div>
+      </PageFrame>
 
       {/* ── Sticky save bar ──────────────────────────────────────────
           Always visible at the bottom so the admin can save without

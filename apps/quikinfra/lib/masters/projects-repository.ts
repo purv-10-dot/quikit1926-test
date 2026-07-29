@@ -28,6 +28,8 @@ export interface ProjectRecord {
   purchaseLimit: string;
   projectManagerId: string | null;
   status: string;
+  executionMode: string;
+  freeScopeLocked: boolean;
   createdAt: string;
   updatedAt: string;
   createdBy: string;
@@ -74,6 +76,8 @@ function toRecord(row: Prisma.CnProjectGetPayload<{ include: { client: { select:
         : "",
     projectManagerId: row.projectManagerId ?? null,
     status: row.status ?? "active",
+    executionMode: row.executionMode ?? "BOQ",
+    freeScopeLocked: row.freeScopeLocked ?? false,
     createdAt: row.createdAt?.toISOString?.() ?? "",
     updatedAt: row.updatedAt?.toISOString?.() ?? "",
     createdBy: row.createdBy,
@@ -188,6 +192,8 @@ export interface CreateProjectInput {
   purchaseLimit?: string | number | null;
   projectManagerId?: string | null;
   status?: string;
+  /** Create-only. Post-create changes must go through setExecutionMode(). */
+  executionMode?: string | null;
 }
 
 export async function createProject(
@@ -224,6 +230,7 @@ export async function createProject(
           : null,
       projectManagerId: input.projectManagerId ?? null,
       status: input.status ?? "active",
+      executionMode: input.executionMode === "FREE_SCOPE" ? "FREE_SCOPE" : "BOQ",
       createdBy: input.createdBy,
       updatedBy: input.createdBy,
     },
