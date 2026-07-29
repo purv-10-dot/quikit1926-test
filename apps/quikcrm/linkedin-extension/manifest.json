@@ -6,8 +6,7 @@
   "permissions": ["scripting", "activeTab", "sidePanel", "tabs", "storage", "identity"],
   "host_permissions": [
     "https://www.linkedin.com/*",
-    "https://uatquiksocial.quikit.ai/*",
-    "https://quiksocial.quikit.ai/*",
+    "https://uatcrm.quikit.ai/*",
     "http://localhost:3008/*",
     "https://localhost:3008/*"
   ],
