@@ -307,7 +307,13 @@ export default function PipelinePage() {
     location: "",
     meetingLink: "",
     jobDescription: "",
+    // Take-Home Task fields (only used when type === "TakeHome").
+    takeHomeInstructions: "",
+    takeHomeAttachmentUrl: "",
+    takeHomeAttachmentName: "",
+    takeHomeDueDate: "",
   });
+  const [takeHomeUploading, setTakeHomeUploading] = useState(false);
   // After scheduling, hold the result so we can show the (possibly auto-generated
   // Teams) meeting link back to the recruiter instead of closing immediately.
   const [scheduleResult, setScheduleResult] = useState<{ meetingLink: string | null; type: string } | null>(null);
@@ -453,7 +459,7 @@ export default function PipelinePage() {
       const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
       tomorrow.setMinutes(0, 0, 0);
       const iso = new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-      setSchedule({ interviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "", jobDescription: app.requisition.jobDescription ?? "" });
+      setSchedule({ interviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "", jobDescription: app.requisition.jobDescription ?? "", takeHomeInstructions: "", takeHomeAttachmentUrl: "", takeHomeAttachmentName: "", takeHomeDueDate: "" });
       setScheduleResult(null);
       setScheduleApp({ app, stage: next });
     } else {
@@ -537,7 +543,7 @@ export default function PipelinePage() {
         const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
         tomorrow.setMinutes(0, 0, 0);
         const iso = new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-        setSchedule({ interviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "", jobDescription: app.requisition.jobDescription ?? "" });
+        setSchedule({ interviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "", jobDescription: app.requisition.jobDescription ?? "", takeHomeInstructions: "", takeHomeAttachmentUrl: "", takeHomeAttachmentName: "", takeHomeDueDate: "" });
         setScheduleResult(null);
         setScheduleApp({ app, stage: vars.target });
       } else {
@@ -572,7 +578,7 @@ export default function PipelinePage() {
         const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
         tomorrow.setMinutes(0, 0, 0);
         const iso = new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-        setSchedule({ interviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "", jobDescription: app.requisition.jobDescription ?? "" });
+        setSchedule({ interviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "", jobDescription: app.requisition.jobDescription ?? "", takeHomeInstructions: "", takeHomeAttachmentUrl: "", takeHomeAttachmentName: "", takeHomeDueDate: "" });
         setScheduleResult(null);
         setScheduleApp({ app, stage: nextStage });
       }
@@ -696,6 +702,12 @@ export default function PipelinePage() {
         meetingLink: schedule.meetingLink || undefined,
         // JD override for technical rounds (target round OR current technical stage).
         jobDescription: (/technical/i.test(scheduleApp.stage) || /technical/i.test(scheduleApp.app.currentStage ?? "")) ? (schedule.jobDescription || undefined) : undefined,
+        // Take-Home Task brief (only meaningful when type === "TakeHome").
+        ...(schedule.type === "TakeHome" && {
+          takeHomeInstructions: schedule.takeHomeInstructions || undefined,
+          takeHomeAttachmentUrl: schedule.takeHomeAttachmentUrl || undefined,
+          takeHomeDueDate: schedule.takeHomeDueDate || undefined,
+        }),
       });
     },
     onSuccess: (res) => {
@@ -1960,7 +1972,14 @@ export default function PipelinePage() {
               if (schedule.interviewerIds.length === 0) return toast.error("Select at least one interviewer");
               if (!schedule.scheduledAt) return toast.error("Date & time required");
               if (schedule.type === "InPerson" && !schedule.location) return toast.error("Location required for in-person");
-              toast.promise(scheduleMut.mutateAsync(), { loading: "Sending interview invite…", success: "Invite sent", error: "Couldn't send invite" });
+              if (schedule.type === "TakeHome" && !schedule.takeHomeInstructions.trim()) return toast.error("Task instructions required for a take-home");
+              if (takeHomeUploading) return toast.error("Please wait for the attachment to finish uploading");
+              const isTakeHome = schedule.type === "TakeHome";
+              toast.promise(scheduleMut.mutateAsync(), {
+                loading: isTakeHome ? "Assigning take-home task…" : "Sending interview invite…",
+                success: isTakeHome ? "Take-home assigned" : "Invite sent",
+                error: isTakeHome ? "Couldn't assign take-home" : "Couldn't send invite",
+              });
             }}
             className="space-y-4"
           >
@@ -2099,6 +2118,65 @@ export default function PipelinePage() {
               </div>
             )}
 
+            {schedule.type === "TakeHome" && (
+              <div className="space-y-3 rounded-lg border border-blue-200 bg-blue-50/40 p-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5"><ClipboardList size={12} /> Task Instructions <span className="text-red-500">*</span></label>
+                  <textarea
+                    rows={5}
+                    value={schedule.takeHomeInstructions}
+                    onChange={(e) => setSchedule({ ...schedule, takeHomeInstructions: e.target.value })}
+                    placeholder="Describe the assignment, deliverables, and any constraints. This is emailed to the candidate."
+                    className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 resize-y"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5"><FileText size={12} /> Task File <span className="text-gray-400 font-normal">(optional)</span></label>
+                    <input
+                      type="file"
+                      onChange={async (e) => {
+                        const f = e.target.files?.[0];
+                        e.currentTarget.value = "";
+                        if (!f) return;
+                        setTakeHomeUploading(true);
+                        try {
+                          const fd = new FormData();
+                          fd.append("file", f);
+                          const res = await api.upload<{ url: string; fileName: string }>("/api/v1/hrms/uploads", fd);
+                          setSchedule((s) => ({ ...s, takeHomeAttachmentUrl: res.data.url, takeHomeAttachmentName: res.data.fileName }));
+                          toast.success("Attached", f.name);
+                        } catch (err) {
+                          toast.error("Upload failed", err instanceof Error ? err.message : undefined);
+                        } finally {
+                          setTakeHomeUploading(false);
+                        }
+                      }}
+                      className="w-full text-xs file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100"
+                    />
+                    {takeHomeUploading && <p className="mt-1 text-[11px] text-gray-500 inline-flex items-center gap-1"><Clock size={11} /> Uploading…</p>}
+                    {!takeHomeUploading && schedule.takeHomeAttachmentName && (
+                      <p className="mt-1 text-[11px] text-green-700 inline-flex items-center gap-1">
+                        <FileCheck2 size={11} /> {schedule.takeHomeAttachmentName}
+                        <button type="button" onClick={() => setSchedule({ ...schedule, takeHomeAttachmentUrl: "", takeHomeAttachmentName: "" })} className="ml-1 text-gray-400 hover:text-red-500"><X size={11} /></button>
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5"><Calendar size={12} /> Due Date <span className="text-gray-400 font-normal">(optional)</span></label>
+                    <input
+                      type="date"
+                      min={new Date().toISOString().slice(0, 10)}
+                      value={schedule.takeHomeDueDate}
+                      onChange={(e) => setSchedule({ ...schedule, takeHomeDueDate: e.target.value })}
+                      className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
+                    />
+                  </div>
+                </div>
+                <p className="text-[11px] text-blue-700">The candidate gets an email with these instructions and a secure link to submit their work (file and/or link).</p>
+              </div>
+            )}
+
             {(/technical/i.test(scheduleApp.stage) || /technical/i.test(scheduleApp.app.currentStage ?? "")) && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5"><FileText size={12} /> Job Description <span className="text-gray-400 font-normal">(sent to interviewers)</span></label>
@@ -2120,7 +2198,7 @@ export default function PipelinePage() {
             <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
               <button type="submit" disabled={scheduleMut.isPending}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium shadow-sm disabled:opacity-50">
-                <CalendarPlus size={13} /> {scheduleMut.isPending ? "Scheduling..." : "Schedule Interview"}
+                <CalendarPlus size={13} /> {scheduleMut.isPending ? (schedule.type === "TakeHome" ? "Assigning..." : "Scheduling...") : (schedule.type === "TakeHome" ? "Assign Take-Home" : "Schedule Interview")}
               </button>
             </div>
           </form>

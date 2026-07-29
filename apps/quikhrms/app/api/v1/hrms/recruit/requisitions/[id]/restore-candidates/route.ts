@@ -7,6 +7,7 @@ import { resolveAndSend } from "@/lib/email/resolve";
 import { buildReconfirmEmail } from "@/lib/email-templates/application-reconfirm";
 import { sendRejectionEmail } from "@/lib/recruit/rejection-mail";
 import { generateReconfirmToken } from "@/lib/services/reconfirm-token";
+import { appBaseUrl } from "@/lib/utils/app-url";
 
 const schema = z.object({
   decisions: z.array(z.object({
@@ -42,7 +43,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
 
     const company = await prisma.companySettings.findUnique({ where: { orgId }, select: { companyName: true } });
     const companyName = company?.companyName ?? "QuikIT HRMS";
-    const base = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "";
+    const base = appBaseUrl();
 
     let invited = 0, restored = 0, rejected = 0, kept = 0;
     const mails: Array<Promise<unknown>> = [];

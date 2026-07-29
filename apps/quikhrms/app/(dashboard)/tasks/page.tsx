@@ -6,7 +6,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { ChevronLeft, Plus, Calendar } from "lucide-react";
 import { Select } from "@/components/hrms/ui/select";
-import { FilterBar, FilterDivider, FilterField, FilterPills, FilterSearch } from "@/components/hrms/ui/filter-bar";
+import { FilterBar, FilterField, FilterSearch } from "@/components/hrms/ui/filter-bar";
+import { TabSwitcher } from "@/components/hrms/tab-switcher";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import { TaskRow, type TaskRowData } from "./_components/task-row";
 import { NewTaskModal } from "./_components/new-task-modal";
@@ -112,17 +113,16 @@ function TasksList({ scope }: { scope: "mine" }) {
 
   return (
     <div className="space-y-3">
+      <TabSwitcher
+        value={statusFilter}
+        onChange={(v) => { setStatusFilter(v); setPage(1); }}
+        tabs={[
+          { value: "Open,InProgress", label: "Incomplete" },
+          { value: "Completed", label: "Completed" },
+          { value: "Open,InProgress,Completed", label: "All" },
+        ]}
+      />
       <FilterBar>
-        <FilterPills
-          value={statusFilter}
-          onChange={(v) => { setStatusFilter(v); setPage(1); }}
-          options={[
-            { value: "Open,InProgress", label: "Incomplete" },
-            { value: "Completed", label: "Completed" },
-            { value: "Open,InProgress,Completed", label: "All" },
-          ]}
-        />
-        <FilterDivider />
         <FilterField icon={<Calendar size={13} className="text-gray-400" />}>
           <Select
             value={datePreset}

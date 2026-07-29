@@ -9,6 +9,7 @@ import { buildWelcomeEmail } from "@/lib/email-templates/welcome";
 import { EMAIL_EVENT_MAP } from "@/lib/email/registry";
 import { emailShell, hero, para, esc } from "@/lib/email-templates/_base";
 import { getJoiningLetterAttachment } from "@/lib/services/joining-letter";
+import { appBaseUrl } from "@/lib/utils/app-url";
 
 // Synthetic template key for the joining-letter PDF (not a registry email event —
 // it's a generated PDF sent as an attachment with a short cover email).
@@ -21,7 +22,7 @@ export const JOINING_LETTER_KEY = "onboarding.joining-letter";
 // the chain — HR does those independently.
 
 const ACTION_STEP_TYPES = new Set(["CustomTask", "AssetAssignment", "ITProvisioning"]);
-const appBase = () => process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "";
+const appBase = () => appBaseUrl();
 
 type TaskRow = { id: string; instanceId: string; title: string; status: string; stepType: string | null; config: unknown };
 

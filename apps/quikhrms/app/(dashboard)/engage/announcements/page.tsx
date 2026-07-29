@@ -8,7 +8,8 @@ import { Modal } from "@/components/hrms/modal";
 import { PageBackground } from "@/components/hrms/page-background";
 import { todayInput } from "@/lib/utils/date-input";
 import { Plus, Pin, Megaphone, Sparkles, Calendar, Globe2, Building2, Users, CalendarClock, Send } from "lucide-react";
-import { FilterBar, FilterDivider, FilterPills, FilterSearch } from "@/components/hrms/ui/filter-bar";
+import { FilterBar, FilterSearch } from "@/components/hrms/ui/filter-bar";
+import { TabSwitcher } from "@/components/hrms/tab-switcher";
 import { SkeletonCards } from "@/components/hrms/skeleton";
 import { Pagination } from "@/components/hrms/pagination";
 
@@ -143,17 +144,16 @@ export default function AnnouncementsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 space-y-4">
           {/* Filter bar */}
+          <TabSwitcher
+            value={filter}
+            onChange={(v) => { setFilter(v as "All" | "Pinned" | "Active"); setPage(1); }}
+            tabs={[
+              { value: "All", label: "All" },
+              { value: "Pinned", label: "Pinned" },
+              { value: "Active", label: "Active" },
+            ]}
+          />
           <FilterBar>
-            <FilterPills
-              value={filter}
-              onChange={(v) => { setFilter(v as "All" | "Pinned" | "Active"); setPage(1); }}
-              options={[
-                { value: "All", label: "All" },
-                { value: "Pinned", label: "Pinned" },
-                { value: "Active", label: "Active" },
-              ]}
-            />
-            <FilterDivider />
             <FilterSearch value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="Search announcements..." />
           </FilterBar>
 

@@ -38,6 +38,8 @@ interface BrandingSettings {
 const STAGE_CATALOG: { value: string; label: string; description?: string }[] = [
   { value: "PhoneScreen", label: "Phone Screen", description: "Quick call to qualify candidate" },
   { value: "TechnicalInterview", label: "Technical Interview", description: "Engineering / skills evaluation" },
+  { value: "TechnicalInterviewL1", label: "Technical Interview - L1", description: "First-level technical round" },
+  { value: "TechnicalInterviewL2", label: "Technical Interview - L2", description: "Second-level technical round" },
   { value: "ManagerInterview", label: "Manager Interview", description: "Hiring manager round" },
   { value: "HODInterview", label: "HOD Interview", description: "Head of Department round" },
   { value: "HRInterview", label: "HR Interview", description: "HR / culture fit round" },

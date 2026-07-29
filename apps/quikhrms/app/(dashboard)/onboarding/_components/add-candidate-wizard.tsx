@@ -42,15 +42,11 @@ const isHttpUrl = (s: string) => /^https?:\/\/\S+$/i.test(s.trim());
 const digits = (s: string) => s.replace(/\D/g, "");
 
 const STEPS: { title: string; subtitle: string; icon: LucideIcon }[] = [
-  { title: "Personal Details", subtitle: "Basic contact information", icon: User },
-  { title: "Identity", subtitle: "KYC details", icon: ShieldCheck },
+  { title: "Personal Details", subtitle: "Contact & KYC details", icon: User },
   { title: "Address", subtitle: "Present & permanent", icon: MapPin },
-  { title: "Emergency Contact", subtitle: "Next of kin / SOS", icon: Phone },
   { title: "Professional", subtitle: "Job & qualifications", icon: Briefcase },
-  { title: "Education", subtitle: "Academic history", icon: GraduationCap },
-  { title: "Experience", subtitle: "Past roles", icon: History },
-  { title: "Family Details", subtitle: "Dependents & relatives", icon: Users },
-  { title: "Certifications", subtitle: "Courses & credentials", icon: Award },
+  { title: "Career & Education", subtitle: "Education, experience & certs", icon: GraduationCap },
+  { title: "Contacts & Family", subtitle: "Emergency & dependents", icon: Users },
 ];
 
 const inputCls = "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 transition";
@@ -93,14 +89,6 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
   const [certs, setCerts] = useState<Certification[]>([emptyCert()]);
 
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
-
-  const addRow = (s: number) => {
-    if (s === 3) setEmergency((r) => [...r, emptyEmergency()]);
-    else if (s === 5) setEducations((r) => [...r, emptyEducation()]);
-    else if (s === 6) setExperiences((r) => [...r, emptyExperience()]);
-    else if (s === 7) setFamily((r) => [...r, emptyFamily()]);
-    else if (s === 8) setCerts((r) => [...r, emptyCert()]);
-  };
 
   // Reference data
   const { data: depts } = useDepartments();
@@ -198,21 +186,21 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
     if (form.personalEmail.trim() && !isEmail(form.personalEmail)) return { step: 0, msg: "Enter a valid personal email address." };
     if (form.personalPhone.trim() && digits(form.personalPhone).length !== 10) return { step: 0, msg: "Personal phone must be a 10-digit number." };
     if (form.profilePhoto.trim() && !isHttpUrl(form.profilePhoto)) return { step: 0, msg: "Profile photo must be a valid URL (https://…)." };
-    if (form.panNumber.trim() && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(form.panNumber.trim())) return { step: 1, msg: "PAN must be in the format ABCDE1234F." };
-    if (form.aadhaarNumber.trim() && digits(form.aadhaarNumber).length !== 12) return { step: 1, msg: "Aadhaar must be a 12-digit number." };
+    if (form.panNumber.trim() && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(form.panNumber.trim())) return { step: 0, msg: "PAN must be in the format ABCDE1234F." };
+    if (form.aadhaarNumber.trim() && digits(form.aadhaarNumber).length !== 12) return { step: 0, msg: "Aadhaar must be a 12-digit number." };
     for (const c of emergency) {
       if (!(c.name || c.relationship || c.phone || c.email || c.address)) continue;
-      if (c.email.trim() && !isEmail(c.email)) return { step: 3, msg: "Emergency contact email is invalid." };
-      if (c.phone.trim() && digits(c.phone).length !== 10) return { step: 3, msg: "Emergency contact phone must be a 10-digit number." };
+      if (c.email.trim() && !isEmail(c.email)) return { step: 4, msg: "Emergency contact email is invalid." };
+      if (c.phone.trim() && digits(c.phone).length !== 10) return { step: 4, msg: "Emergency contact phone must be a 10-digit number." };
     }
-    if (form.offerLetterUrl.trim() && !isHttpUrl(form.offerLetterUrl)) return { step: 4, msg: "Offer letter must be a valid URL (https://…)." };
+    if (form.offerLetterUrl.trim() && !isHttpUrl(form.offerLetterUrl)) return { step: 2, msg: "Offer letter must be a valid URL (https://…)." };
     for (const c of certs) {
-      if (c.credentialUrl.trim() && !isHttpUrl(c.credentialUrl)) return { step: 8, msg: "Certification credential URL must be a valid URL (https://…)." };
+      if (c.credentialUrl.trim() && !isHttpUrl(c.credentialUrl)) return { step: 3, msg: "Certification credential URL must be a valid URL (https://…)." };
     }
     if (!form.reportingManagerId || !form.roleId || !form.salaryTemplateId || !(form.ctcLpa && form.ctcLpa > 0))
-      return { step: 4, msg: "Reporting manager, role, salary template and CTC (LPA) are required." };
+      return { step: 2, msg: "Reporting manager, role, salary template and CTC (LPA) are required." };
     if (!form.templateId)
-      return { step: 4, msg: "An onboarding template is required. Pick one in the Employment step (or use Save Draft)." };
+      return { step: 2, msg: "An onboarding template is required. Pick one in the Employment step (or use Save Draft)." };
     return null;
   };
 
@@ -298,14 +286,6 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
                   <p className="text-[14px] text-gray-500 mt-0.5">{stepBlurb(step)}</p>
                 </div>
               </div>
-              {addBtn(step) && (
-                <button
-                  onClick={() => addRow(step)}
-                  className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-[#16a34a]/40 text-[#16a34a] px-3.5 py-2 text-[13px] font-semibold hover:bg-green-50 transition"
-                >
-                  <Plus size={15} /> {addBtn(step)}
-                </button>
-              )}
             </div>
 
             {/* Step body */}
@@ -318,20 +298,13 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
                   <F label="Personal Email"><input type="email" className={inputCls} placeholder="name@gmail.com" value={form.personalEmail} onChange={(e) => set("personalEmail", e.target.value)} /></F>
                   <F label="Personal Phone"><input className={inputCls} inputMode="numeric" maxLength={10} placeholder="10-digit mobile number" value={form.personalPhone} onChange={(e) => set("personalPhone", e.target.value.replace(/\D/g, "").slice(0, 10))} /></F>
                   <F label="Profile Photo URL"><input className={inputCls} placeholder="https://…" value={form.profilePhoto} onChange={(e) => set("profilePhoto", e.target.value)} /></F>
-                </Grid2>
-              </Card>
-            )}
-
-            {step === 1 && (
-              <Card>
-                <Grid2>
                   <F label="PAN Number"><input className={clsx(inputCls, "font-mono uppercase")} maxLength={10} placeholder="ABCDE1234F" value={form.panNumber} onChange={(e) => set("panNumber", e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10))} /></F>
                   <F label="Aadhaar Number"><input className={clsx(inputCls, "font-mono")} inputMode="numeric" maxLength={12} placeholder="XXXX XXXX XXXX" value={form.aadhaarNumber} onChange={(e) => set("aadhaarNumber", e.target.value.replace(/\D/g, "").slice(0, 12))} /></F>
                 </Grid2>
               </Card>
             )}
 
-            {step === 2 && (
+            {step === 1 && (
               <div className="space-y-4">
                 <Card title="Present Address">
                   <AddressFields value={currentAddress} onChange={setCurrentAddress} />
@@ -348,8 +321,10 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
               </div>
             )}
 
-            {step === 3 && (
-              <Card>
+            {step === 4 && (
+              <div className="mb-5">
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-2"><Phone size={15} className="text-[#16a34a]" /> Emergency Contacts</h3>
+                <Card>
                 <RowTable
                   head={["NAME", "RELATION", "PHONE", "EMAIL"]}
                   rows={emergency}
@@ -365,10 +340,11 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
                   addLabel="Add Another Contact"
                   onAdd={() => setEmergency([...emergency, emptyEmergency()])}
                 />
-              </Card>
+                </Card>
+              </div>
             )}
 
-            {step === 4 && (
+            {step === 2 && (
               <Card>
                 <Grid2>
                   <F label="Job Title"><input className={inputCls} placeholder="e.g. Software Engineer" value={form.jobTitle} onChange={(e) => set("jobTitle", e.target.value)} /></F>
@@ -398,8 +374,10 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
               </Card>
             )}
 
-            {step === 5 && (
-              <Card>
+            {step === 3 && (
+              <div className="mb-5">
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-2"><GraduationCap size={15} className="text-[#16a34a]" /> Education</h3>
+                <Card>
                 <RowTable
                   head={["SCHOOL / UNIVERSITY", "DEGREE", "FIELD OF STUDY", "COMPLETED"]}
                   rows={educations}
@@ -415,11 +393,14 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
                   addLabel="Add Another Qualification"
                   onAdd={() => setEducations([...educations, emptyEducation()])}
                 />
-              </Card>
+                </Card>
+              </div>
             )}
 
-            {step === 6 && (
-              <Card>
+            {step === 3 && (
+              <div className="mb-5">
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-2"><History size={15} className="text-[#16a34a]" /> Experience</h3>
+                <Card>
                 <RowTable
                   head={["ROLE / OCCUPATION", "COMPANY", "DURATION", "SUMMARY"]}
                   rows={experiences}
@@ -435,11 +416,13 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
                   addLabel="Add Another Role"
                   onAdd={() => setExperiences([...experiences, emptyExperience()])}
                 />
-              </Card>
+                </Card>
+              </div>
             )}
 
-            {step === 7 && (
-              <div className="space-y-6">
+            {step === 4 && (
+              <div className="space-y-3">
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-800"><Users size={15} className="text-[#16a34a]" /> Family Details</h3>
                 <Card>
                   <RowTable
                     head={["NAME", "RELATION", "DATE OF BIRTH", "OCCUPATION"]}
@@ -475,8 +458,10 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
               </div>
             )}
 
-            {step === 8 && (
-              <Card>
+            {step === 3 && (
+              <div className="mb-1">
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-2"><Award size={15} className="text-[#16a34a]" /> Certifications</h3>
+                <Card>
                 <RowTable
                   head={["CERTIFICATION", "ISSUING AUTHORITY", "YEAR", "CREDENTIAL URL"]}
                   rows={certs}
@@ -492,7 +477,8 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
                   addLabel="Add Another Certification"
                   onAdd={() => setCerts([...certs, emptyCert()])}
                 />
-              </Card>
+                </Card>
+              </div>
             )}
           </div>
         </main>
@@ -641,23 +627,10 @@ function updateAt<T>(setter: React.Dispatch<React.SetStateAction<T[]>>, arr: T[]
 /* Per-step helpers */
 function stepBlurb(step: number): string {
   return [
-    "Basic contact information about the candidate.",
-    "Government identity / KYC details.",
+    "Basic contact and government identity / KYC details.",
     "Present and permanent addresses.",
-    "Who to contact in an emergency.",
     "Job, reporting, salary and qualifications.",
-    "Academic background.",
-    "Previous work experience.",
-    "Add spouse, children, parents and other dependents.",
-    "Professional courses and credentials.",
+    "Education, work experience and certifications.",
+    "Emergency contacts and family dependents.",
   ][step];
-}
-function addBtn(step: number): string | null {
-  return {
-    3: "Add Emergency Contact",
-    5: "Add Qualification",
-    6: "Add Role",
-    7: "Add Family Member",
-    8: "Add Certification",
-  }[step] ?? null;
 }

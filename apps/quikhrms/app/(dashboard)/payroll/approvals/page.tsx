@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { CheckSquare, Receipt, ShieldCheck, TrendingUp } from "lucide-react";
-import { clsx } from "clsx";
+import { TabSwitcher } from "@/components/hrms/tab-switcher";
 import { ReimbursementsTab } from "./_tabs/reimbursements";
 import { POITab } from "./_tabs/poi";
 import { SalaryRevisionTab } from "./_tabs/salary-revisions";
@@ -52,25 +52,13 @@ export default function PayrollApprovalsPage() {
         </div>
       </div>
 
-      <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
-        <div className="border-b border-gray-200 px-5">
-          <div className="flex gap-4 overflow-x-auto">
-            {TABS.map((t) => (
-              <button
-                key={t.key}
-                onClick={() => switchTab(t.key)}
-                data-active={tab === t.key}
-                className={clsx(
-                  "tab-underline whitespace-nowrap py-3 px-1 text-[13px] font-semibold -mb-px inline-flex items-center gap-1.5",
-                  tab === t.key ? "text-[#22c55e] font-semibold" : "text-gray-500 hover:text-gray-700",
-                )}
-              >
-                {t.icon} {t.label}
-              </button>
-            ))}
-          </div>
-        </div>
+      <TabSwitcher
+        value={tab}
+        onChange={(v) => switchTab(v as TabKey)}
+        tabs={TABS.map((t) => ({ value: t.key, label: t.label, icon: t.icon }))}
+      />
 
+      <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
         <div className="p-4">
           {tab === "Reimbursements" && <ReimbursementsTab />}
           {tab === "ProofOfInvestments" && <POITab />}

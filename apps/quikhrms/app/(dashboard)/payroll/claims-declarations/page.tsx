@@ -9,6 +9,7 @@ import { clsx } from "clsx";
 import { Select } from "@/components/hrms/ui/select";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { PageBackground } from "@/components/hrms/page-background";
+import { TabSwitcher } from "@/components/hrms/tab-switcher";
 import { EmployeeClaimSection } from "./_components/employee-claim-section";
 
 type TabKey = "FBP" | "Reimbursement" | "ITDeclaration" | "POI";
@@ -61,26 +62,12 @@ export default function ClaimsDeclarationsPage() {
         <FileCheck size={28} className="text-[#22c55e] mt-1.5" />
         <h1 className="text-page-title text-gray-900 leading-tight">Claims and declarations</h1>
       </div>
+      <TabSwitcher
+        value={tab}
+        onChange={(v) => setTab(v as TabKey)}
+        tabs={TABS.map((t) => ({ value: t.key, label: t.label, icon: t.icon }))}
+      />
       <div className="surface-card overflow-hidden">
-
-        <div className="border-b border-gray-200 px-4">
-          <div className="flex gap-4 overflow-x-auto">
-            {TABS.map((t) => (
-              <button
-                key={t.key}
-                onClick={() => setTab(t.key)}
-                data-active={tab === t.key}
-                className={clsx(
-                  "tab-underline whitespace-nowrap py-3 px-1 text-[13px] font-semibold -mb-px inline-flex items-center gap-1.5",
-                  tab === t.key ? "text-[#22c55e] font-semibold" : "text-gray-500 hover:text-gray-700",
-                )}
-              >
-                {t.icon} {t.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
         <div className="p-4">
           {isLoading ? (
             <SkeletonTable rows={5} cols={4} />
