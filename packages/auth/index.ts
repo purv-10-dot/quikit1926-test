@@ -576,6 +576,7 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
           "https://uatpeople.quikit.ai",
           "https://uatsupport.quikit.ai",
           "https://uatasset.quikit.ai",
+          "https://uatlms.quikit.ai",
         ];
         const fromEnv = (process.env.AUTH_ALLOWED_RETURN_ORIGINS ?? "")
           .split(",")

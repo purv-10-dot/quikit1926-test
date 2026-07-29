@@ -1,7 +1,9 @@
 import nodemailer, { type Transporter } from "nodemailer";
 import { requireProdEnv } from "@quikit/shared/env";
+import { buildLoginUrl } from "@quikit/shared/login-url";
 import {
   renderInvitationEmail,
+  renderWelcomeEmail,
   sendWithRetry,
   type InviteMethod,
   type SsoProvider,
@@ -156,6 +158,38 @@ export async function sendUserCreatedEmail(params: {
     subject: "Welcome to QuikIT",
     html: `<p>Hi ${esc(params.firstName)},</p><p>Your QuikIT account has been created.</p><p><a href="${getLoginUrl()}">Sign in</a></p>`,
   });
+}
+
+/**
+ * Welcome / trial-started email for a newly created Org Admin. Same shared
+ * text-only renderer as the self-serve path in apps/auth, so both entry points
+ * deliver a byte-identical email.
+ *
+ * Uses this app's existing SMTP transporter + `sendWithRetry` (3 attempts),
+ * same as the onboarding invite — no separate mail configuration.
+ */
+export async function sendWelcomeEmail(params: {
+  to: string;
+  firstName: string;
+}): Promise<{ success: boolean; attempts: number; error?: unknown }> {
+  const transporter = getTransporter();
+  // Same builder the Login / Sign In buttons + this app's middleware use
+  // (`NEXT_PUBLIC_AUTH_URL` + /login). No new env var, no hardcoded host.
+  const { subject, html } = renderWelcomeEmail({
+    firstName: params.firstName,
+    loginUrl: buildLoginUrl(),
+  });
+
+  if (!transporter) {
+    console.log("[email] SMTP not configured — would send welcome email to", params.to);
+    return { success: true, attempts: 0 };
+  }
+
+  const result = await sendWithRetry(
+    () => transporter.sendMail({ from: fromAddress(), to: params.to, subject, html }),
+    { label: `welcome[${params.to}]`, attempts: 3 },
+  );
+  return { success: result.success, attempts: result.attempts, error: result.error };
 }
 
 /**

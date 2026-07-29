@@ -42,6 +42,7 @@ import { redirect } from 'next/navigation';
  * because these endpoints are public API and no client-side change can be the
  * whole fix.
  */
+
 export default function RetiredCoursePlayerPage({ params }: { params: { courseId: string } }) {
   redirect(`/learner/course/${params.courseId}`);
 }

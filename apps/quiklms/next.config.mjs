@@ -47,6 +47,11 @@ if (!process.env.PRISMA_QUERY_ENGINE_LIBRARY) {
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Standalone output (self-contained Node server under .next/standalone) is
+  // only emitted when NEXT_BUILD_STANDALONE=1 — set in apps/quiklms/Dockerfile.
+  // It stays off for local `next build` because standalone symlinks the
+  // monorepo's workspace deps, which requires admin privileges on Windows.
+  output: process.env.NEXT_BUILD_STANDALONE === '1' ? 'standalone' : undefined,
   // Shared platform packages ship raw TS (their package.json "exports" point at
   // .ts) so Next must transpile them. NOTE: `@quikit/database` is transpiled for
   // resolution only — the centralized-auth CONSUMER path (createOAuthClientOptions)
@@ -64,6 +69,9 @@ const nextConfig = {
   // through S3 presigned PUT/GET or the TUS server in /worker. JSON API bodies
   // stay small; this cap is a safety guard for the few multipart routes.
   experimental: {
+    // Trace workspace deps (@quikit/*) into the standalone bundle by rooting
+    // file-tracing at the monorepo root rather than this app's directory.
+    outputFileTracingRoot: path.join(__dirname, '../..'),
     serverActions: {
       bodySizeLimit: '10mb',
     },
