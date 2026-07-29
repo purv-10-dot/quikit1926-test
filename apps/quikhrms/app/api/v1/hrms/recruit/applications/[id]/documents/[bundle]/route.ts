@@ -62,7 +62,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
     console.error("GET docs bundle", e);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.recruit.read"] });
 
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
   try {
@@ -85,4 +85,4 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
     const msg = e instanceof Error ? e.message : "Trigger failed";
     return validationError(msg);
   }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });

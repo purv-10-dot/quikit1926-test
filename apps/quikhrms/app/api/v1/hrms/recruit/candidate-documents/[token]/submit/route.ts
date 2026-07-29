@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyCandidateDocToken } from "@/lib/services/candidate-doc-token";
+import { rateLimitOrResponse, clientIp } from "@/lib/rate-limit";
 
 const ok = <T>(data: T, status = 200) => NextResponse.json({ success: true, data }, { status });
 const err = (code: string, message: string, status: number) =>
@@ -17,7 +18,9 @@ const err = (code: string, message: string, status: number) =>
  * - Idempotent: if already submitted, returns success with the existing timestamp.
  * - Validates that every REQUIRED document type has at least one upload.
  */
-export async function POST(_req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  const rl = await rateLimitOrResponse("recruit.candidate-doc.submit", clientIp(req), 12, 60);
+  if (rl) return rl;
   const { token } = await params;
   const payload = verifyCandidateDocToken(token);
   if (!payload) return err("INVALID_TOKEN", "Invalid or expired link", 400);

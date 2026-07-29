@@ -46,11 +46,17 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     });
     if (existing) return conflict("Leave group with this name already exists");
 
-    const typeIds = data.items.map((i) => i.leaveTypeId);
-    const validTypes = await prisma.leaveType.count({
-      where: { orgId, deletedAt: null, id: { in: typeIds } },
+    // Dedupe items by leaveTypeId (last wins) — a duplicate id would both falsely
+    // trip the count check and violate the (group, type) unique constraint on insert.
+    const uniqueItems = Array.from(new Map(data.items.map((i) => [i.leaveTypeId, i])).values());
+    // Keep only items whose leave type still exists (active); drop dangling refs.
+    const validRows = await prisma.leaveType.findMany({
+      where: { orgId, deletedAt: null, id: { in: uniqueItems.map((i) => i.leaveTypeId) } },
+      select: { id: true },
     });
-    if (validTypes !== typeIds.length) return validationError("Invalid leave type(s) selected");
+    const validSet = new Set(validRows.map((r) => r.id));
+    const keptItems = uniqueItems.filter((i) => validSet.has(i.leaveTypeId));
+    if (keptItems.length === 0) return validationError("Invalid leave type(s) selected");
 
     const group = await prisma.leaveGroup.create({
       data: {
@@ -61,10 +67,11 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         createdBy: userId,
         updatedBy: userId,
         items: {
-          create: data.items.map((i) => ({
+          create: keptItems.map((i) => ({
             orgId,
             leaveTypeId: i.leaveTypeId,
             overrideQuota: i.overrideQuota ?? null,
+            rules: i.rules ? JSON.parse(JSON.stringify(i.rules)) : undefined,
           })),
         },
       },

@@ -107,6 +107,9 @@ export const adjustLeaveBalanceSchema = z.object({
 export const leaveGroupItemSchema = z.object({
   leaveTypeId: z.string().min(1),
   overrideQuota: z.number().nullable().optional(),
+  // Per-group rule set (the leave-rules wizard output). Stored as JSON on the
+  // group item; shape mirrors the LeaveType rule fields.
+  rules: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
 export const createLeaveGroupSchema = z.object({

@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { BarChart3, Users, UserMinus, TrendingUp, Briefcase, UserPlus } from "lucide-react";
 import { BarChartView, MultiColorBar, LineChartView } from "@/components/hrms/charts";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface Overview {
   headcount: { active: number; onLeave: number; newHiresThisMonth: number };
@@ -55,6 +56,8 @@ export default function AnalyticsPage() {
 
   return (
     <div>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center gap-3 mb-4">
         <BarChart3 className="text-[#22c55e]" />
         <h1 className="text-page-title text-gray-900">HR Analytics</h1>

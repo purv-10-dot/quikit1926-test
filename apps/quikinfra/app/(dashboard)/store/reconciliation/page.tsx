@@ -113,7 +113,15 @@ export default function StockReconciliationPage() {
   };
 
   const columns: ColDef<ReconRow>[] = [
-    { key: "reconciliationNumber", label: "Recon No", sortable: true, searchable: true },
+    {
+      key: "reconciliationNumber", label: "Recon No", sortable: true, searchable: true,
+      render: (row) => (
+        <span className="text-accent-600 cursor-pointer hover:underline font-medium"
+              onClick={() => router.push(`/store/reconciliation/${row.id}`)}>
+          {row.reconciliationNumber}
+        </span>
+      ),
+    },
     { key: "projectName", label: "Project", sortable: true, searchable: true },
     { key: "locationName", label: "Location", sortable: true, searchable: true },
     { key: "reconciliationDate", label: "Date", type: "date", sortable: true },

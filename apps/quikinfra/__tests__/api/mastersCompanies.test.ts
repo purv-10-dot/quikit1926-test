@@ -73,7 +73,7 @@ describe("POST /api/masters/companies — withMutationRoute", () => {
     expect((await POST(buildPOST(VALID_COMPANY))).status).toBe(401);
   });
 
-  it("returns 403 when the user lacks construction.masters.create", async () => {
+  it("returns 403 when the user lacks construction.org_company.create", async () => {
     setContext(makeUserCtx([]));
     expect((await POST(buildPOST(VALID_COMPANY))).status).toBe(403);
   });

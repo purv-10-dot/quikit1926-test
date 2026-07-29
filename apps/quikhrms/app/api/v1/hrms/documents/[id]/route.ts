@@ -36,7 +36,8 @@ export const GET = withServiceAuth(async (_req: NextRequest, ctx, params) => {
       sf.employeeIds === undefined ||                                       // unrestricted read
       (!!doc.employeeId && sf.employeeIds.includes(doc.employeeId)) ||      // owner in read-scope
       (!!callerId && doc.employeeId === callerId) ||                        // own document
-      (!!callerId && doc.shares.some((s) => s.sharedWith === callerId));    // shared with caller
+      (!!callerId && doc.shares.some((s) => s.sharedWith === callerId       // shared with caller
+        && (!s.expiresAt || s.expiresAt.getTime() > Date.now())));          // …via a LIVE (non-expired) share
     if (!allowed) return forbidden("You don't have access to this document");
 
     // Enrich acknowledgment entries with employee names (no relation exists on

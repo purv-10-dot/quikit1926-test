@@ -14,7 +14,7 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const ctxOrResp = await requireMastersAction("view");
+  const ctxOrResp = await requireMastersAction("construction.master_labour", "view");
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
 
@@ -26,8 +26,8 @@ export async function GET(
 async function handleUpdate(req: NextRequest, id: string) {
   const ctx = await getTenantContext();
   if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
-  if (!ctx.permissions.has("construction.masters.edit") && !ctx.permissions.has("*")) {
-    return envelopeErr("FORBIDDEN", "Missing permission: construction.masters.edit", 403);
+  if (!ctx.permissions.has("construction.master_labour.edit") && !ctx.permissions.has("*")) {
+    return envelopeErr("FORBIDDEN", "Missing permission: construction.master_labour.edit", 403);
   }
 
   const body = await req.json();
@@ -58,7 +58,7 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const ctxOrResp = await requireMastersAction("delete");
+  const ctxOrResp = await requireMastersAction("construction.master_labour", "delete");
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
   try {

@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, validationError, notFound, internalError } from "@/lib/api-response";
+import { successResponse, validationError, notFound, conflict, internalError } from "@/lib/api-response";
 import { updateOnboardingTemplateSchema } from "@/lib/validations/boarding";
 import { createAuditLog } from "@/lib/utils/audit";
 
@@ -44,6 +44,14 @@ export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }, para
     const { id } = params;
     const existing = await prisma.onboardingTemplate.findFirst({ where: { id, orgId, deletedAt: null } });
     if (!existing) return notFound("Template not found");
+
+    // Block deletion while the template is in use by any onboarding.
+    const inUse = await prisma.onboardingInstance.count({
+      where: { orgId, templateId: id, deletedAt: null },
+    });
+    if (inUse > 0) {
+      return conflict(`Can't delete — this template is used by ${inUse} onboarding${inUse === 1 ? "" : "s"}. Reassign or finish them first.`);
+    }
 
     // Soft delete — keep the row for audit history and any records that reference it.
     await prisma.onboardingTemplate.update({

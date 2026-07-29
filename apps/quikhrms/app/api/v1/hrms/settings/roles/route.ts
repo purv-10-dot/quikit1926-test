@@ -6,6 +6,7 @@ import { createRoleSchema } from "@/lib/validations/rbac";
 import { createAuditLog } from "@/lib/utils/audit";
 import { APP_ID, splitCode, joinCode } from "@/lib/rbac/registry";
 import { PERMISSIONS } from "@/lib/rbac/permissions";
+import { validateGrantableCodes } from "@/lib/rbac/validate-grant";
 
 const PERM_BY_CODE = new Map(PERMISSIONS.map((p) => [p.code, p]));
 
@@ -45,13 +46,19 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }) => {
 }, { requiredPermissions: ["hrms.rbac.manage", "hrms.settings.read"], anyPermission: true });
 
 /** POST /api/v1/hrms/settings/roles */
-export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
+export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissions }) => {
   try {
     const body = await req.json();
     const parsed = createRoleSchema.safeParse(body);
     if (!parsed.success) return validationError("Validation failed", parsed.error.flatten().fieldErrors);
 
     const data = parsed.data;
+
+    // Reject "*" / unknown codes and block self-elevation (can't grant what you
+    // don't hold). Prevents creating a super-role via this path.
+    const grantCheck = validateGrantableCodes(data.permissions, permissions);
+    if (!grantCheck.ok) return validationError(grantCheck.error);
+
     const existing = await prisma.hrmsAppRole.findFirst({
       where: { orgId: orgId, appId: APP_ID, name: data.name },
     });
@@ -59,14 +66,10 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
 
     const permPairs = data.permissions.map(splitCode);
 
-    // Auto-promote: if tenant has no default role, force this one to be default.
-    let isDefault = data.isDefault;
-    if (!isDefault) {
-      const hasAnyDefault = await prisma.hrmsAppRole.count({
-        where: { orgId: orgId, appId: APP_ID, isDefault: true },
-      });
-      if (hasAnyDefault === 0) isDefault = true;
-    }
+    // The default role (what unassigned employees inherit) is set EXPLICITLY —
+    // never silently auto-promote a freshly-created role, or a new role could
+    // mass-grant its permissions to every unassigned employee.
+    const isDefault = data.isDefault;
 
     // If marking this role default, demote any existing default first.
     const role = await prisma.$transaction(async (tx) => {

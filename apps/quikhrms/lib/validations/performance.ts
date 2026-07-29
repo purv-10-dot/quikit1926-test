@@ -53,11 +53,11 @@ export const updateGoalSchema = z.object({
   currentValue: z.number().optional(),
   progress: z.number().min(0).max(100).optional(),
   status: z.enum(["NotStarted", "InProgress", "AtRisk", "Completed", "Exceeded", "Deferred", "Cancelled"]).optional(),
-  weight: z.number().optional(),
+  weight: z.number().min(0, "Weight can’t be negative").max(100, "Weight can’t exceed 100%").optional(),
 });
 
 export const goalCheckInSchema = z.object({
-  currentValue: z.number(),
+  currentValue: z.number().min(0, "Value can’t be negative"),
   note: z.string().optional(),
 });
 
@@ -177,8 +177,14 @@ export const updatePIPSchema = z.object({
   status: z.enum(["PIPActive", "PIPExtended", "PIPCompletedSuccess", "PIPFailed", "PIPWithdrawn"]).optional(),
   outcome: z.enum(["Improved", "Terminated", "Extended", "Probation"]).optional(),
   objectives: z.array(z.unknown()).optional(),
+  startDate: z.string().optional(),
   endDate: z.string().optional(),
-});
+}).refine(
+  // When both dates are in the body, endDate must be on/after startDate. (The
+  // route additionally enforces endDate against the PIP's existing start date.)
+  (d) => !d.endDate || !d.startDate || d.endDate >= d.startDate,
+  { message: "End date must be on or after the PIP start date", path: ["endDate"] },
+);
 
 // ─── KRA / KPI Templates ─────────────────────────────────────────────
 

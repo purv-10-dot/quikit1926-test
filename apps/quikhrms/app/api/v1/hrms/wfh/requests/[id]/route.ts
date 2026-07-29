@@ -4,12 +4,13 @@ import { withAuth } from "@/lib/with-auth";
 import { successResponse, notFound, conflict, internalError, forbidden } from "@/lib/api-response";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 
-export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
+export const GET = withAuth(async (_req: NextRequest, ctx, params) => {
   try {
+    const { orgId, userId } = ctx;
     const wfh = await prisma.wfhRequest.findFirst({
       where: { id: params.id, orgId, deletedAt: null },
       include: {
-        employee: { select: { id: true, firstName: true, lastName: true, employeeCode: true, jobTitle: true, department: { select: { name: true } } } },
+        employee: { select: { id: true, firstName: true, lastName: true, employeeCode: true, jobTitle: true, reportingManagerId: true, department: { select: { name: true } } } },
         approvals: {
           orderBy: { level: "asc" },
           include: { approver: { select: { id: true, firstName: true, lastName: true, employeeCode: true, jobTitle: true } } },
@@ -17,6 +18,19 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
       },
     });
     if (!wfh) return notFound("WFH request not found");
+
+    // Access: the requester, their manager, an assigned approver, or HR/admin.
+    const callerId = await resolveEmployeeId(orgId, userId);
+    const canSeeAll =
+      ctx.permissions.includes("*") ||
+      ctx.roleCode === "admin" ||
+      ctx.permissions.includes("hrms.employee.read");
+    const isOwner = !!callerId && wfh.employeeId === callerId;
+    const isManager = !!callerId && wfh.employee?.reportingManagerId === callerId;
+    const isApprover = !!callerId && wfh.approvals.some((a) => a.approverId === callerId);
+    if (!canSeeAll && !isOwner && !isManager && !isApprover) {
+      return forbidden("You don't have access to this WFH request");
+    }
     return successResponse(wfh);
   } catch (e) {
     console.error("GET /wfh/requests/[id]", e);

@@ -125,4 +125,4 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
     console.error("POST doc review", e);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });

@@ -93,4 +93,4 @@ export const POST = withAuth(async (req: NextRequest) => {
     console.error("POST /recruit/generate-jd error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });

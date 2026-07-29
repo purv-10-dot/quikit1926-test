@@ -1,16 +1,20 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, notFound, conflict, internalError } from "@/lib/api-response";
+import { successResponse, notFound, forbidden, conflict, internalError } from "@/lib/api-response";
 import { buildPolicySnapshot, validateAgainstSnapshot } from "@/lib/services/expenses";
 import { createAuditLog } from "@/lib/utils/audit";
 import { fireWorkflow } from "@/lib/workflows/executor";
+import { resolveEmployeeId } from "@/lib/resolve-employee";
 
 export const POST = withAuth(async (_req: NextRequest, { orgId, userId }, params) => {
   try {
     const { id } = params;
     const claim = await prisma.expenseClaim.findFirst({ where: { id, orgId, deletedAt: null } });
     if (!claim) return notFound("Claim not found");
+    // Owner-only submission.
+    const meId = await resolveEmployeeId(orgId, userId);
+    if (!meId || claim.employeeId !== meId) return forbidden("You can only submit your own expense claim.");
     if (claim.status !== "Draft") return conflict("Only draft claims can be submitted");
 
     let policyViolations: string[] = [];
@@ -24,6 +28,11 @@ export const POST = withAuth(async (_req: NextRequest, { orgId, userId }, params
         claim.receiptUrl,
       );
       policyViolations = validation.violations;
+      // ENFORCE the policy — a claim that breaches caps / receipt rules can't be
+      // submitted (previously violations were recorded but submission proceeded).
+      if (policyViolations.length > 0) {
+        return conflict(`This claim can't be submitted — policy violations: ${policyViolations.join("; ")}`);
+      }
     }
 
     const updated = await prisma.expenseClaim.update({

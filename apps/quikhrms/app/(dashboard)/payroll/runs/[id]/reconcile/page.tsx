@@ -7,6 +7,7 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { Select } from "@/components/hrms/select";
+import { PageBackground } from "@/components/hrms/page-background";
 import { Upload, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -87,6 +88,8 @@ export default function ReconcilePage() {
 
   return (
     <div className="space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm p-4">
         <h1 className="text-page-title text-gray-900">Bank Reconciliation</h1>
         <p className="text-xs text-gray-500 mt-1">

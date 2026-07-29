@@ -101,4 +101,4 @@ export const POST = withAuth(async (_req: NextRequest, { orgId }, params) => {
     console.error("POST /recruit/interviews/:id/send-feedback-reminder error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });

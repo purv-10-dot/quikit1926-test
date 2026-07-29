@@ -9,6 +9,7 @@ import { clsx } from "clsx";
 import { Select } from "@/components/hrms/ui/select";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { Tooltip } from "@/components/hrms/tooltip";
+import { PageBackground } from "@/components/hrms/page-background";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 import { EmployeeClaimSection } from "../payroll/claims-declarations/_components/employee-claim-section";
 import { Form12BBSubmissions } from "../payroll/claims-declarations/_components/form12bb-submissions";
@@ -57,6 +58,8 @@ export default function ClaimsDeclarationsPage() {
 
   return (
     <div className="w-full px-5 py-4 space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-start gap-3 mb-2">
         <FileCheck size={28} className="text-[#22c55e] mt-1.5" />
         <h1 className="text-page-title text-gray-900 leading-tight">Claims and declarations</h1>

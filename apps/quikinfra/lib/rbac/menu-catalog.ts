@@ -34,12 +34,16 @@ const allFour = { add: true, edit: true, delete: true, view: true };
 const readOnly = { add: false, edit: false, delete: false, view: true };
 const writeOnly = { add: true, edit: true, delete: false, view: true };
 
+// Order MUST mirror the sidebar (QuikInfraShell → CONSTRUCTION_NAV):
+// Organization → Masters → Project Mgmt → Purchase → Store → Quality & Safety
+// → Machinery & Equipment → Finance → System. The matrix renders groups in
+// this order (see groupByModule).
 export const MENU_MODULES = [
   "ORGANIZATION",
   "MASTERS",
+  "PROJECT MGMT",
   "PURCHASE",
   "STORE",
-  "PROJECT MGMT",
   "QUALITY & SAFETY",
   "MACHINERY & EQUIPMENT",
   "FINANCE",

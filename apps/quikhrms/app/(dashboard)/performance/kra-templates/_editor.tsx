@@ -335,7 +335,7 @@ export function ScorecardEditor({
                       <NumberInput
                         value={kra.weight}
                         onChange={(v) => setKraField(kraIdx, { weight: v ?? 0 })}
-                        min="0" max="100" step="0.01"
+                        min={0} max={100} step={0.01}
                         className={inputCls + " text-right"}
                       />
                     </Field>
@@ -404,7 +404,7 @@ export function ScorecardEditor({
                               <NumberInput
                                 value={kpi.weight}
                                 onChange={(v) => setKpiField(kraIdx, kpiIdx, { weight: v ?? 0 })}
-                                min="0" max="100" step="0.01"
+                                min={0} max={100} step={0.01}
                                 className={inputCls + " text-right"}
                               />
                             </Field>

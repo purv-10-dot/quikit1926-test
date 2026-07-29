@@ -10,6 +10,7 @@ import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { Modal } from "@/components/hrms/modal";
 import { useToast } from "@/components/hrms/toast";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface LeaveRequest {
   id: string;
@@ -137,8 +138,10 @@ export default function TeamLeavesPage() {
       className="w-full px-6 py-4 flex flex-col overflow-hidden"
       style={{ height: fitHeight ? `${fitHeight}px` : "calc(100dvh - 8rem)" }}
     >
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between gap-3 mb-3 shrink-0">
-        <h1 className="text-base font-semibold text-gray-900">Team leaves</h1>
+        <h1 className="text-base font-semibold text-gray-900">Team Approvals</h1>
         <ExcelExportButton filename="team-leaves" sheetName="Team Leaves" columns={exportColumns} rows={exportRows} label="Export to Excel" />
       </div>
 

@@ -8,6 +8,7 @@ import { buildOfferEmail } from "@/lib/email-templates/offer";
 import { generateOfferPdf } from "@/lib/services/offer-pdf";
 import { offerSelect, offerFromApplication, type OfferMeta } from "@/lib/recruit/offer-shape";
 import { getObject } from "@/lib/storage";
+import { generateOfferResponseToken } from "@/lib/services/offer-response-token";
 
 const bodySchema = z.object({
   applicationId: z.string().min(1).optional(),
@@ -100,6 +101,11 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       });
     }
 
+    // Candidate self-serve accept/decline link (stateless signed token).
+    const { token: responseToken } = generateOfferResponseToken(app.id, orgId);
+    const appBase = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "";
+    const responseUrl = `${appBase}/offer/${responseToken}`;
+
     const offerData = {
       candidateName,
       jobTitle,
@@ -109,6 +115,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       joiningBonus: offer.joiningBonus ? Number(offer.joiningBonus) : null,
       expiresAt: offer.expiresAt ? fmtDate(offer.expiresAt) : null,
       companyName,
+      acceptUrl: responseUrl,
     };
 
     const pdfName = `Offer-${candidate.firstName}-${candidate.lastName}.pdf`.replace(/\s+/g, "");
@@ -152,6 +159,8 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         joiningBonus: offer.joiningBonus ? `₹${Number(offer.joiningBonus).toLocaleString("en-IN")}` : "",
         expiresAt: offerData.expiresAt ?? "",
         companyName,
+        acceptUrl: responseUrl,
+        responseUrl,
       },
       fallback: () => buildOfferEmail(offerData),
       attachments,

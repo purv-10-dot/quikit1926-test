@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { verifyReconfirmToken } from "@/lib/services/reconfirm-token";
 import { notifyCandidateReconfirm } from "@/lib/services/requisition-notifications";
+import { rateLimitOrResponse, clientIp } from "@/lib/rate-limit";
 
 const ok = <T>(data: T, status = 200) => NextResponse.json({ success: true, data }, { status });
 const err = (code: string, message: string, status: number) =>
@@ -33,7 +34,9 @@ function stateOf(status: string, reconfirmSentAt: Date | null): "pending" | "con
 }
 
 /** GET — validate the link and return candidate/role info + current state. */
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  const rl = await rateLimitOrResponse("recruit.reconfirm.get", clientIp(req), 40, 60);
+  if (rl) return rl;
   const { token } = await params;
   const r = await loadByToken(token);
   if (r.error) return err("INVALID_TOKEN", r.error, 400);
@@ -54,6 +57,8 @@ const answerSchema = z.object({ answer: z.enum(["yes", "no"]) });
 
 /** POST { answer } — record the candidate's decision. */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  const rl = await rateLimitOrResponse("recruit.reconfirm.post", clientIp(req), 12, 60);
+  if (rl) return rl;
   const { token } = await params;
   const parsed = answerSchema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return err("BAD_INPUT", "Invalid response.", 400);

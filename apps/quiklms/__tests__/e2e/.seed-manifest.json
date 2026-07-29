@@ -1,0 +1,83 @@
+{
+  "orgId": "cmrtbf3c00000hcqu9anich5q",
+  "tenantId": "cmrtbf3c00000hcqu9anich5q",
+  "subdomain": "quiklms-e2e",
+  "password": "E2ETest123!",
+  "users": {
+    "superAdmin": {
+      "userId": "cmrtbf3er0003hcqup4mmxkxm",
+      "lmsUserId": "cmrtbf3er0003hcqup4mmxkxm",
+      "email": "e2e-superadmin@quiklms.test",
+      "role": "SUPER_ADMIN"
+    },
+    "tenantAdmin": {
+      "userId": "cmrtbf3fo0008hcqubfks3qmp",
+      "lmsUserId": "cmrtbf3fo0008hcqubfks3qmp",
+      "email": "e2e-tenantadmin@quiklms.test",
+      "role": "TENANT_ADMIN"
+    },
+    "subAdmin": {
+      "userId": "cmrtbf3ft000dhcqu37ocjj4f",
+      "lmsUserId": "cmrtbf3ft000dhcqu37ocjj4f",
+      "email": "e2e-subadmin@quiklms.test",
+      "role": "SUB_ADMIN"
+    },
+    "manager": {
+      "userId": "cmrtbf3fx000ihcqux29ugdh5",
+      "lmsUserId": "cmrtbf3fx000ihcqux29ugdh5",
+      "email": "e2e-manager@quiklms.test",
+      "role": "MANAGER"
+    },
+    "teacher": {
+      "userId": "cmrtbf3g1000nhcque0z0nzeu",
+      "lmsUserId": "cmrtbf3g1000nhcque0z0nzeu",
+      "email": "e2e-teacher@quiklms.test",
+      "role": "TEACHER"
+    },
+    "parent": {
+      "userId": "cmrtbf3g5000shcqu0zlhf4i7",
+      "lmsUserId": "cmrtbf3g5000shcqu0zlhf4i7",
+      "email": "e2e-parent@quiklms.test",
+      "role": "PARENT"
+    },
+    "learner": {
+      "userId": "cmrtbf3g9000xhcqu8j88rjld",
+      "lmsUserId": "cmrtbf3g9000xhcqu8j88rjld",
+      "email": "e2e-learner@quiklms.test",
+      "role": "LEARNER"
+    }
+  },
+  "courses": {
+    "published": "2685ec6a-86f2-4831-a0ef-fac6303e07bb",
+    "draft": "d32c0c23-0268-4c70-b12e-1ab06cf0cece"
+  },
+  "modules": [
+    {
+      "id": "6e57079d-a2f7-4dd7-b51c-8334bed5fdec",
+      "lessons": [
+        "bdadd2b1-4bbc-4a7f-8fd0-af816800e0f5",
+        "e0b3c698-e937-4789-b919-0f4971f93bbd",
+        "fa21f945-56d3-4ea0-8203-956f1ee9524c"
+      ]
+    },
+    {
+      "id": "7b2ff2da-1496-445c-8b82-d16d55d1eec5",
+      "lessons": [
+        "5767c384-3ad6-4c57-b36c-1e8b7ff4eca5"
+      ]
+    }
+  ],
+  "assessmentId": "2e0cf39e-9a3f-49d1-b460-2cd0e0328c5f",
+  "batchId": "be963c17-31db-448d-b52b-b79f1b112752",
+  "scheduledClassId": "3c5151ef-8923-464e-90c7-36c9f1980439",
+  "meetingId": "7b76f663-60b5-4034-9dd5-aec0ceadb9e6",
+  "homeworkId": "efe4f5d4-6421-46d7-92f5-3e8f0cbe3447",
+  "conversationId": "9eb5280a-aa62-46ba-a862-a2ade35701a9",
+  "other": {
+    "orgId": "cmrtbf3i00012hcqus4uv03hh",
+    "tenantId": "cmrtbf3i00012hcqus4uv03hh",
+    "adminUserId": "cmrtbf3i50015hcquj346lnxd",
+    "adminEmail": "e2e-other-admin@quiklms.test",
+    "courseId": "36509ad6-235d-458a-8d49-8d4157b83e98"
+  }
+}

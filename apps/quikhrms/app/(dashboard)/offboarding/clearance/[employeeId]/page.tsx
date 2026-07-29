@@ -6,6 +6,7 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { ArrowLeft, CheckCircle, XCircle, Clock, ShieldCheck } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonLine } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface Clearance {
   offboardingId: string;
@@ -49,6 +50,8 @@ export default function ClearancePage({ params }: { params: { employeeId: string
 
   return (
     <div className="max-w-5xl">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <Link href={`/offboarding/${employeeId}`} className="inline-flex items-center gap-1 text-xs font-medium text-[#22c55e] hover:underline mb-4">
         <ArrowLeft size={14} /> Back to offboarding
       </Link>

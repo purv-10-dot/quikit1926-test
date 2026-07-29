@@ -12,6 +12,7 @@ import { Video, Phone, Users, Calendar, Link2, MapPin, Star, Check, X, AlertCirc
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { useToast } from "@/components/hrms/toast";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
+import { PageBackground } from "@/components/hrms/page-background";
 
 const AVATAR_PALETTE: Array<{ bg: string; text: string }> = [
   { bg: "bg-rose-100",    text: "text-rose-700" },
@@ -76,6 +77,8 @@ interface InterviewItem {
   meetingLink: string | null;
   interviewer: { id: string; firstName: string; lastName: string; workEmail?: string | null };
   applicationId: string;
+  // Resolved server-side from the interview's own requisition pipeline.
+  stageName?: string | null;
   application: {
     id: string;
     candidate: { id: string; firstName: string; lastName: string; email: string };
@@ -347,6 +350,12 @@ export default function InterviewsPage() {
     () => Array.from(new Set(interviews.map((i) => i.application.requisition.title))).sort(),
     [interviews],
   );
+  // Stage filter facets = the real (per-pipeline) stage names present in the
+  // loaded interviews — not the form-derived stageForInterview array.
+  const stageFacets = useMemo(
+    () => Array.from(new Set(interviews.map((i) => i.stageName ?? `Round ${i.round}`).filter(Boolean))) as string[],
+    [interviews],
+  );
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
@@ -385,7 +394,7 @@ export default function InterviewsPage() {
       if (filters.status.length && !filters.status.includes(i.status)) return false;
       if (filters.type.length && !filters.type.includes(i.type)) return false;
       if (filters.stage.length) {
-        const stageName = stageForInterview[i.round - 1] ?? `Round ${i.round}`;
+        const stageName = i.stageName ?? `Round ${i.round}`;
         if (!filters.stage.includes(stageName)) return false;
       }
       if (filters.interviewer.length && !filters.interviewer.includes(i.interviewer.id)) return false;
@@ -462,7 +471,7 @@ export default function InterviewsPage() {
       "Meeting Link", "Location", "Rating", "Recommendation",
     ];
     const rows = filtered.map((i) => {
-      const stageName = stageForInterview[i.round - 1] ?? `Round ${i.round}`;
+      const stageName = i.stageName ?? `Round ${i.round}`;
       const rec = i.scorecard?.recommendation ?? "";
       const recLabel = RECOMMENDATION_LABEL[rec]?.label ?? rec;
       return [
@@ -502,7 +511,7 @@ export default function InterviewsPage() {
   const excelRows = useMemo(
     () =>
       filtered.map((i) => {
-        const stageName = stageForInterview[i.round - 1] ?? `Round ${i.round}`;
+        const stageName = i.stageName ?? `Round ${i.round}`;
         const rec = i.scorecard?.recommendation ?? "";
         const recLabel = RECOMMENDATION_LABEL[rec]?.label ?? rec;
         const isPastDue = i.status === "IntScheduled" && new Date(i.scheduledAt).getTime() < Date.now();
@@ -525,6 +534,8 @@ export default function InterviewsPage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-start justify-between mb-5 gap-4 flex-wrap">
         <div>
           <h1 className="text-page-title text-gray-900 leading-tight">Interviews</h1>
@@ -690,7 +701,7 @@ export default function InterviewsPage() {
                         </div>
                       </div>
 
-                      {stageForInterview.length > 0 && (
+                      {stageFacets.length > 0 && (
                         <div>
                           <div className="flex items-center justify-between mb-2">
                             <p className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Pipeline Stage</p>
@@ -699,7 +710,7 @@ export default function InterviewsPage() {
                             )}
                           </div>
                           <div className="flex flex-wrap gap-1.5">
-                            {stageForInterview.map((s) => {
+                            {stageFacets.map((s) => {
                               const on = filters.stage.includes(s);
                               const cls = STAGE_PILL[s] ?? defaultStagePill;
                               return (
@@ -861,7 +872,7 @@ export default function InterviewsPage() {
                 return visible.map(({ interview: i, isChild }, vIdx) => {
                 const idx = gIdx + vIdx;
                 const dt = new Date(i.scheduledAt);
-                const stageName = stageForInterview[i.round - 1] ?? `Round ${i.round}`;
+                const stageName = i.stageName ?? `Round ${i.round}`;
                 const stageCls = STAGE_PILL[stageName] ?? defaultStagePill;
                 // A scheduled interview whose time has passed is shown as "Pending"
                 // (feedback due) — matches how the summary tiles bucket it.
@@ -983,21 +994,36 @@ export default function InterviewsPage() {
                       ) : (
                         <>
                           {new Date(i.scheduledAt).getTime() < Date.now() && (
-                            <Tooltip content={i.feedbackRequestSentAt ? `Send feedback reminder (sent ${i.reminderCount ?? 0}x)` : "Send feedback request"}>
-                              <button
-                                onClick={() => toast.promise(remindMut.mutateAsync({ id: i.id }), { loading: "Sending reminder…", success: "Reminder sent", error: "Couldn't send reminder" })}
-                                disabled={remindMut.isPending && remindMut.variables?.id === i.id}
-                                className="w-8 h-8 inline-flex items-center justify-center rounded-md bg-white text-amber-600 ring-1 ring-amber-200 hover:bg-amber-50 transition disabled:opacity-50"
-                              >
-                                <Bell size={12} />
-                              </button>
-                            </Tooltip>
+                            <>
+                              <Tooltip content="Submit feedback">
+                                <button
+                                  onClick={() => { setFeedback({ overallRating: 7, recommendation: "Hire", strengths: "", concerns: "", overallComments: "" }); setFeedbackTarget(i); }}
+                                  className="w-8 h-8 inline-flex items-center justify-center rounded-md bg-white text-[#22c55e] ring-1 ring-[#bbf7d0] hover:bg-green-50 transition"
+                                >
+                                  <Star size={12} />
+                                </button>
+                              </Tooltip>
+                              <Tooltip content={i.feedbackRequestSentAt ? `Send feedback reminder (sent ${i.reminderCount ?? 0}x)` : "Send feedback request"}>
+                                <button
+                                  onClick={() => toast.promise(remindMut.mutateAsync({ id: i.id }), { loading: "Sending reminder…", success: "Reminder sent", error: "Couldn't send reminder" })}
+                                  disabled={remindMut.isPending && remindMut.variables?.id === i.id}
+                                  className="w-8 h-8 inline-flex items-center justify-center rounded-md bg-white text-amber-600 ring-1 ring-amber-200 hover:bg-amber-50 transition disabled:opacity-50"
+                                >
+                                  <Bell size={12} />
+                                </button>
+                              </Tooltip>
+                            </>
                           )}
                           <Tooltip content="Reschedule interview">
                             <button
                               onClick={() => {
+                                // datetime-local expects LOCAL wall-clock time.
+                                // toISOString() is UTC, so shift by the tz offset
+                                // to prefill the correct local (IST) time.
+                                const d = new Date(i.scheduledAt);
+                                const localVal = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
                                 setRescheduleForm({
-                                  scheduledAt: new Date(i.scheduledAt).toISOString().slice(0, 16),
+                                  scheduledAt: localVal,
                                   meetingLink: i.meetingLink ?? "",
                                   location: i.location ?? "",
                                 });
@@ -1034,15 +1060,25 @@ export default function InterviewsPage() {
                         return (
                           <>
                             {!i.scorecard && (
-                              <Tooltip content={i.feedbackRequestSentAt ? `Send feedback reminder (sent ${i.reminderCount ?? 0}x)` : "Send feedback request"}>
-                                <button
-                                  onClick={() => toast.promise(remindMut.mutateAsync({ id: i.id }), { loading: "Sending reminder…", success: "Reminder sent", error: "Couldn't send reminder" })}
-                                  disabled={remindMut.isPending && remindMut.variables?.id === i.id}
-                                  className="w-8 h-8 inline-flex items-center justify-center rounded-md bg-white text-amber-600 ring-1 ring-amber-200 hover:bg-amber-50 transition disabled:opacity-50"
-                                >
-                                  <Bell size={12} />
-                                </button>
-                              </Tooltip>
+                              <>
+                                <Tooltip content="Submit feedback">
+                                  <button
+                                    onClick={() => { setFeedback({ overallRating: 7, recommendation: "Hire", strengths: "", concerns: "", overallComments: "" }); setFeedbackTarget(i); }}
+                                    className="w-8 h-8 inline-flex items-center justify-center rounded-md bg-white text-[#22c55e] ring-1 ring-[#bbf7d0] hover:bg-green-50 transition"
+                                  >
+                                    <Star size={12} />
+                                  </button>
+                                </Tooltip>
+                                <Tooltip content={i.feedbackRequestSentAt ? `Send feedback reminder (sent ${i.reminderCount ?? 0}x)` : "Send feedback request"}>
+                                  <button
+                                    onClick={() => toast.promise(remindMut.mutateAsync({ id: i.id }), { loading: "Sending reminder…", success: "Reminder sent", error: "Couldn't send reminder" })}
+                                    disabled={remindMut.isPending && remindMut.variables?.id === i.id}
+                                    className="w-8 h-8 inline-flex items-center justify-center rounded-md bg-white text-amber-600 ring-1 ring-amber-200 hover:bg-amber-50 transition disabled:opacity-50"
+                                  >
+                                    <Bell size={12} />
+                                  </button>
+                                </Tooltip>
+                              </>
                             )}
                             {nextStage && passed && !laterRoundExists && (
                               <Tooltip content={`Schedule ${nextStage.replace(/([A-Z])/g, " $1").trim()}`}>
@@ -1078,7 +1114,7 @@ export default function InterviewsPage() {
                                 <button
                                   onClick={() => {
                                     setRescheduleForm({
-                                      scheduledAt: new Date(i.scheduledAt).toISOString().slice(0, 16),
+                                      scheduledAt: new Date(new Date(i.scheduledAt).getTime() - new Date(i.scheduledAt).getTimezoneOffset() * 60000).toISOString().slice(0, 16),
                                       meetingLink: i.meetingLink ?? "",
                                       location: i.location ?? "",
                                     });
@@ -1098,7 +1134,7 @@ export default function InterviewsPage() {
                           <button
                             onClick={() => {
                               setRescheduleForm({
-                                scheduledAt: new Date(i.scheduledAt).toISOString().slice(0, 16),
+                                scheduledAt: new Date(new Date(i.scheduledAt).getTime() - new Date(i.scheduledAt).getTimezoneOffset() * 60000).toISOString().slice(0, 16),
                                 meetingLink: i.meetingLink ?? "",
                                 location: i.location ?? "",
                               });
@@ -1115,7 +1151,7 @@ export default function InterviewsPage() {
                           <button
                             onClick={() => {
                               setRescheduleForm({
-                                scheduledAt: new Date(i.scheduledAt).toISOString().slice(0, 16),
+                                scheduledAt: new Date(new Date(i.scheduledAt).getTime() - new Date(i.scheduledAt).getTimezoneOffset() * 60000).toISOString().slice(0, 16),
                                 meetingLink: i.meetingLink ?? "",
                                 location: i.location ?? "",
                               });

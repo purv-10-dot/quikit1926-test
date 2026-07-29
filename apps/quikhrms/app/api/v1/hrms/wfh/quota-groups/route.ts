@@ -10,6 +10,23 @@ const createSchema = z.object({
   yearlyQuota: z.number().int().min(0).max(366),
   mode: z.enum(["Department", "Employee"]).default("Department"),
   isActive: z.boolean().optional(),
+  // WFH rules
+  maxPerWeek: z.number().int().min(0).max(7).nullable().optional(),
+  maxPerMonth: z.number().int().min(0).max(31).nullable().optional(),
+  maxConsecutiveDays: z.number().int().min(0).max(366).nullable().optional(),
+  advanceNoticeDays: z.number().int().min(0).max(60).nullable().optional(),
+  applicableAfterDays: z.number().int().min(0).max(365).nullable().optional(),
+  requiresApproval: z.boolean().optional(),
+  blockedDuringNotice: z.boolean().optional(),
+}).superRefine((d, ctx) => {
+  if (d.maxPerMonth != null) {
+    if (d.maxPerMonth > 31) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["maxPerMonth"], message: "A month has at most 31 days" });
+    if (d.maxPerMonth > d.yearlyQuota) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["maxPerMonth"], message: `Can't exceed the yearly quota (${d.yearlyQuota})` });
+  }
+  if (d.maxConsecutiveDays != null) {
+    const cap = d.maxPerMonth ?? Math.min(31, d.yearlyQuota);
+    if (d.maxConsecutiveDays > cap) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["maxConsecutiveDays"], message: `Can't exceed ${cap}` });
+  }
 });
 
 export const GET = withAuth(async (req: NextRequest, { orgId }) => {
@@ -48,6 +65,13 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, roleCode,
         yearlyQuota: parsed.data.yearlyQuota,
         mode: parsed.data.mode,
         isActive: parsed.data.isActive ?? true,
+        maxPerWeek: parsed.data.maxPerWeek ?? null,
+        maxPerMonth: parsed.data.maxPerMonth ?? null,
+        maxConsecutiveDays: parsed.data.maxConsecutiveDays ?? null,
+        advanceNoticeDays: parsed.data.advanceNoticeDays ?? null,
+        applicableAfterDays: parsed.data.applicableAfterDays ?? null,
+        requiresApproval: parsed.data.requiresApproval ?? true,
+        blockedDuringNotice: parsed.data.blockedDuringNotice ?? false,
         createdBy: userId,
         updatedBy: userId,
       },

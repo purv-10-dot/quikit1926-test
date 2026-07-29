@@ -1,17 +1,19 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Select } from "@/components/hrms/ui/select";
-import { Plus, Search, Eye, EyeOff, ArrowUpDown, Edit2, Send, Mail, Upload, Download } from "lucide-react";
+import { Plus, Search, Eye, EyeOff, ArrowUpDown, Edit2, Send, Mail, Upload, Download, ArrowRight, Filter } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonLine } from "@/components/hrms/skeleton";
 import { useToast } from "@/components/hrms/toast";
 import { exportCsv as exportCsvFile, fmtDate, formatGroup, formatAddress, type CsvColumn } from "@/lib/utils/csv";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
-import { AddCandidateWizard } from "./_components/add-candidate-wizard";
+import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 
 type SourceOfHire = "Referral" | "JobPortal" | "LinkedIn" | "Agency" | "Campus" | "Direct" | "Other";
 
@@ -62,6 +64,7 @@ interface Candidate {
 }
 
 const STATUSES = ["NotStarted", "InProgress", "OnboardCompleted", "OnboardCancelled"];
+const SOURCES: SourceOfHire[] = ["Referral", "JobPortal", "LinkedIn", "Agency", "Campus", "Direct", "Other"];
 
 const statusColors: Record<string, string> = {
   NotStarted: "bg-gray-100 text-gray-600",
@@ -72,10 +75,12 @@ const statusColors: Record<string, string> = {
 
 export default function OnboardingCandidatesPage() {
   const api = useApiClient();
+  const router = useRouter();
   const toast = useToast();
 
-  const [showAdd, setShowAdd] = useState(false);
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [revealPan, setRevealPan] = useState(false);
   const [revealAadhaar, setRevealAadhaar] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -116,7 +121,6 @@ export default function OnboardingCandidatesPage() {
     dateOfJoining: string;
     jobTitle: string | null;
   }
-  const [mailConfirm, setMailConfirm] = useState<NewJoinee | null>(null);
 
   const qs = new URLSearchParams();
   qs.set("limit", "100");
@@ -127,11 +131,6 @@ export default function OnboardingCandidatesPage() {
     queryFn: () => api.get<Candidate[]>(`/api/v1/hrms/onboarding/candidates?${qs.toString()}`),
   });
 
-  const sendWelcomeMailMut = useMutation({
-    mutationFn: ({ employeeId }: { employeeId: string }) =>
-      api.post("/api/v1/hrms/mail/welcome", { employeeId }),
-    onSuccess: () => { setMailConfirm(null); },
-  });
 
   const candidates = data?.data ?? [];
   const filteredCandidates = candidates.filter((c) => {
@@ -140,6 +139,8 @@ export default function OnboardingCandidatesPage() {
     return true;
   });
   const total = filteredCandidates.length;
+  const totalPages = Math.max(1, Math.ceil(filteredCandidates.length / PAGE_SIZE));
+  const pageItems = filteredCandidates.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const activeFilterCount = filters.status.length + filters.source.length;
 
   // Export EVERY captured field. Nested groups (addresses, emergency contacts,
@@ -222,13 +223,68 @@ export default function OnboardingCandidatesPage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <h1 className="text-page-title text-gray-900 mb-5">Onboarding</h1>
-      <div className="border-b border-gray-100 mb-4">
-        <button className="text-[13px] text-[#22c55e] font-semibold border-b-2 border-[#22c55e] py-2 -mb-px">Candidate</button>
-      </div>
 
       <div className="">
-        <div className="flex items-center justify-end mb-4 gap-3 flex-wrap">
+        <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+          <div className="flex items-center gap-2" ref={filterRef}>
+            <div className="relative">
+              <button type="button" onClick={() => setShowFilters((v) => !v)}
+                className={clsx("inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition",
+                  activeFilterCount > 0 ? "border-green-300 bg-green-50 text-green-700" : "border-gray-300 text-gray-700 hover:bg-gray-50")}>
+                <Filter size={14} /> Filters
+                {activeFilterCount > 0 && <span className="ml-0.5 px-1.5 rounded-full bg-green-600 text-white text-[10px] font-bold">{activeFilterCount}</span>}
+              </button>
+              {showFilters && (
+                <div className="absolute left-0 top-full mt-1.5 z-20 w-64 bg-white border border-gray-200 rounded-lg shadow-lg p-3 space-y-3">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">Onboarding Status</div>
+                    <div className="space-y-1">
+                      {STATUSES.map((s) => (
+                        <label key={s} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+                          <input type="checkbox" className="accent-green-600" checked={filters.status.includes(s)}
+                            onChange={() => { setFilters((f) => ({ ...f, status: f.status.includes(s) ? f.status.filter((x) => x !== s) : [...f.status, s] })); setPage(1); }} />
+                          {s}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="border-t border-gray-100 pt-2.5">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">Source of Hire</div>
+                    <div className="space-y-1">
+                      {SOURCES.map((s) => (
+                        <label key={s} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+                          <input type="checkbox" className="accent-green-600" checked={filters.source.includes(s)}
+                            onChange={() => { setFilters((f) => ({ ...f, source: f.source.includes(s) ? f.source.filter((x) => x !== s) : [...f.source, s] })); setPage(1); }} />
+                          {s}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  {activeFilterCount > 0 && (
+                    <button type="button" onClick={() => { setFilters({ status: [], source: [] }); setPage(1); }}
+                      className="w-full text-center text-[11px] font-medium text-red-600 hover:underline pt-1">
+                      Clear all filters
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+            {filters.status.map((s) => (
+              <span key={`fs-${s}`} className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-green-50 text-green-700 text-[11px] font-medium">
+                {s}
+                <button onClick={() => { setFilters((f) => ({ ...f, status: f.status.filter((x) => x !== s) })); setPage(1); }} className="hover:text-green-900">×</button>
+              </span>
+            ))}
+            {filters.source.map((s) => (
+              <span key={`fr-${s}`} className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-[11px] font-medium">
+                {s}
+                <button onClick={() => { setFilters((f) => ({ ...f, source: f.source.filter((x) => x !== s) })); setPage(1); }} className="hover:text-blue-900">×</button>
+              </span>
+            ))}
+          </div>
           <div className="flex items-center gap-2">
             <button type="button" onClick={exportCsv} disabled={filteredCandidates.length === 0}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 text-xs font-medium hover:bg-gray-50 transition disabled:opacity-50">
@@ -239,176 +295,90 @@ export default function OnboardingCandidatesPage() {
               className="inline-flex items-center gap-1.5 border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 px-3 py-1.5 rounded-md text-xs font-medium shadow-sm transition">
               <Upload size={13} /> Bulk Upload
             </Link>
-            <button onClick={() => setShowAdd(true)}
-              className="inline-flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-md text-xs font-medium shadow-sm transition">
-              <Plus size={13} /> Onboard Candidate
-            </button>
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-          <div className="border-b border-gray-200 px-3 py-2 flex items-center gap-2">
-            <div className="relative flex-1 max-w-xs">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input placeholder="Search candidates..." value={search} onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]" />
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+          {([
+            ["Not Started", "NotStarted"],
+            ["In Progress", "InProgress"],
+            ["Completed", "OnboardCompleted"],
+            ["Cancelled", "OnboardCancelled"],
+          ] as const).map(([label, key]) => (
+            <div key={key} className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
+              <div className="text-xs text-gray-500 uppercase">{label}</div>
+              <div className="text-base md:text-lg font-bold text-gray-900 mt-1">
+                {candidates.filter((c) => c.onboardingStatus === key).length}
+              </div>
             </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead className="bg-gray-50 text-table-head text-gray-600 border-b border-gray-200">
-                <tr>
-                  <th className="w-10 px-4 py-2.5">
-                    <Edit2 size={12} className="text-gray-400" />
-                  </th>
-                  <th className="w-10 px-4 py-2.5">
-                    <input type="checkbox" checked={selected.size === filteredCandidates.length && filteredCandidates.length > 0} onChange={toggleAll} />
-                  </th>
-                  <HeaderCell label="First name" />
-                  <HeaderCell label="Last name" />
-                  <HeaderCell label="Email ID" />
-                  <HeaderCell label="Official Email" />
-                  <HeaderCell label="Onboarding Status" />
-                  <HeaderCell label="Department" />
-                  <HeaderCell label="Source of Hire" />
-                  <HeaderCell label="PAN card number" action={
-                    <button onClick={() => setRevealPan((v) => !v)} className="text-gray-400 hover:text-gray-600">
-                      {revealPan ? <EyeOff size={12} /> : <Eye size={12} />}
-                    </button>
-                  } />
-                  <HeaderCell label="Aadhaar card number" action={
-                    <button onClick={() => setRevealAadhaar((v) => !v)} className="text-gray-400 hover:text-gray-600">
-                      {revealAadhaar ? <EyeOff size={12} /> : <Eye size={12} />}
-                    </button>
-                  } />
-                  <HeaderCell label="UAN number" action={<Eye size={12} className="text-gray-400" />} />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {isLoading ? (
-                  Array.from({ length: 6 }).map((_, r) => (
-                    <tr key={`sk-${r}`}>
-                      {Array.from({ length: 12 }).map((__, c) => (
-                        <td key={c} className="px-4 py-2.5"><SkeletonLine w="80%" h={10} /></td>
-                      ))}
-                    </tr>
-                  ))
-                ) : filteredCandidates.length === 0 ? (
-                  <tr><td colSpan={12} className="text-center py-12 text-gray-500">{activeFilterCount > 0 ? "No candidates match filters." : "No candidates. Click \"Onboard Candidate\" to get started."}</td></tr>
-                ) : filteredCandidates.map((c, i) => (
-                  <tr key={c.id} className="row-stagger hover:bg-gray-50" style={{ ["--i" as never]: Math.min(i, 10) }}>
-                    <td className="px-4 py-2.5"></td>
-                    <td className="px-4 py-2.5">
-                      <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggle(c.id)} />
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <Link href={c.onboardingInstanceId ? `/onboarding/${c.id}` : "#"} className="text-[13px] font-medium text-gray-900 hover:text-[#22c55e]">
-                        {c.firstName}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-2.5 text-gray-900">{c.lastName}</td>
-                    <td className="px-4 py-2.5">
-                      <span className="text-gray-700">{truncate(c.personalEmail ?? "", 22)}</span>
-                    </td>
-                    <td className="px-4 py-2.5 text-gray-700">{truncate(c.workEmail, 22)}</td>
-                    <td className="px-4 py-2.5">
-                      <span className={clsx("px-2 py-0.5 rounded-full text-[11px] font-medium", statusColors[c.onboardingStatus] ?? "bg-gray-100 text-gray-600")}>
-                        {c.onboardingStatus}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2.5 text-gray-700">{c.department ?? "—"}</td>
-                    <td className="px-4 py-2.5 text-gray-700">{c.sourceOfHire ?? "—"}</td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-gray-700">{mask(c.panNumber, revealPan, 10)}</td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-gray-700">{mask(c.aadhaarNumber, revealAadhaar, 10)}</td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-gray-700">{mask(c.uanNumber, false, 9)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="border-t border-gray-200 px-4 py-3 flex items-center justify-between text-xs">
-            <div>
-              Total Record Count : <span className="text-[#22c55e] font-medium">{total}</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <Select
-                value="10"
-                onChange={() => {}}
-                size="sm"
-                options={[
-                  { value: "10", label: "10" },
-                  { value: "25", label: "25" },
-                  { value: "50", label: "50" },
-                  { value: "100", label: "100" },
-                ]}
-                className="w-20"
-              />
-              <span className="text-gray-500">1 - {Math.min(total, 10)}</span>
-              <button className="p-1 border border-[var(--border)] rounded hover:bg-gray-50">‹</button>
-              <button className="p-1 border border-[var(--border)] rounded hover:bg-gray-50">›</button>
-            </div>
-          </div>
+          ))}
         </div>
-      </div>
 
-      <AddCandidateWizard
-        open={showAdd}
-        onClose={() => setShowAdd(false)}
-        onCreated={(emp, draft) => { if (!draft) setMailConfirm(emp); }}
-      />
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 mb-4 flex items-center gap-2 max-w-md">
+          <Search size={14} className="text-gray-400" />
+          <input placeholder="Search candidates…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            className="flex-1 text-sm focus:outline-none" />
+        </div>
 
-      {mailConfirm && (() => {
-        const e = mailConfirm;
-        const to = e.personalEmail || e.workEmail;
-        return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center">
-            <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm"
-              onClick={() => !sendWelcomeMailMut.isPending && setMailConfirm(null)} />
-            <div className="relative bg-white rounded-xl shadow-2xl ring-1 ring-slate-200 w-full max-w-md mx-4 overflow-hidden">
-              <div className="p-4">
-                <div className="flex items-start gap-4">
-                  <div className="shrink-0 flex items-center justify-center w-12 h-12 rounded-full ring-4 bg-emerald-50 ring-emerald-50/60">
-                    <Mail className="w-6 h-6 text-emerald-600" />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-lg font-semibold text-slate-900">Send Welcome Email?</h3>
-                    <p className="mt-1.5 text-xs text-slate-500 leading-relaxed">New joinee will receive a welcome email with employee code, joining date and onboarding details.</p>
-                    <div className="mt-3 text-xs bg-slate-50 border border-slate-100 rounded-md px-2.5 py-2 text-slate-600 space-y-0.5">
-                      <div className="font-semibold text-slate-800">{e.firstName} {e.lastName}</div>
-                      <div className="text-[11px] text-slate-500">To: {to}</div>
-                      <div className="text-[11px] text-slate-500">Employee Code: {e.employeeCode}</div>
-                      {e.jobTitle && <div className="text-[11px] text-slate-500">Role: {e.jobTitle}</div>}
-                      <div className="text-[11px] text-slate-500">Date of Joining: {new Date(e.dateOfJoining).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</div>
-                    </div>
-                  </div>
+        {isLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="surface-card p-4 flex items-center gap-3">
+                <SkeletonLine w={40} h={40} />
+                <div className="flex-1 space-y-1.5">
+                  <SkeletonLine w="60%" h={12} />
+                  <SkeletonLine w="45%" h={10} />
+                  <SkeletonLine w="70%" h={10} />
                 </div>
               </div>
-              <div className="flex justify-end gap-2 px-5 py-4 bg-slate-50 border-t border-slate-100">
-                <button type="button" onClick={() => setMailConfirm(null)} disabled={sendWelcomeMailMut.isPending}
-                  className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-                  Skip
-                </button>
-                <button type="button"
-                  onClick={() => toast.promise(sendWelcomeMailMut.mutateAsync({ employeeId: e.id }), {
-                    loading: "Sending welcome email…",
-                    success: "Welcome email sent",
-                    error: "Couldn't send the welcome email",
-                  })}
-                  disabled={sendWelcomeMailMut.isPending}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-white rounded-lg text-xs font-medium shadow-sm disabled:opacity-50 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700">
-                  <Send size={13} />
-                  {sendWelcomeMailMut.isPending ? "Sending..." : "Send Welcome Email"}
-                </button>
-              </div>
-              {sendWelcomeMailMut.isError && (
-                <div className="px-6 pb-3 text-xs text-red-600">Mail send failed. Check SMTP config.</div>
-              )}
-            </div>
+            ))}
           </div>
-        );
-      })()}
+        ) : filteredCandidates.length === 0 ? (
+          <div className="surface-card p-8 text-center text-gray-500">
+            <Plus size={30} className="mx-auto mb-2 text-gray-300" />
+            <p>{activeFilterCount > 0 ? "No candidates match filters." : "No candidates yet."}</p>
+            <p className="text-xs mt-1">Candidates move here from Pre-Onboarding once they&rsquo;re ready for Day 1.</p>
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {pageItems.map((c, i) => {
+                const name = `${c.firstName} ${c.lastName}`.trim();
+                const inits = `${c.firstName?.[0] ?? ""}${c.lastName?.[0] ?? ""}`.toUpperCase() || "?";
+                const role = c.designation ?? c.jobTitle;
+                return (
+                  <Link key={c.id} href={`/onboarding/${c.id}`}
+                    className="row-stagger surface-card p-4 flex items-center gap-3 hover:border-[#166534]/30 hover:shadow-md transition group"
+                    style={{ ["--i" as never]: Math.min(i, 10) }}>
+                    <span className="w-10 h-10 rounded-full bg-[#166534]/10 text-[#166534] grid place-items-center text-sm font-bold shrink-0">{inits}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <div className="text-[13px] font-semibold text-gray-900 truncate group-hover:text-[#166534]">{name}</div>
+                        <span className={clsx("px-2 py-0.5 rounded-full text-[10px] font-medium shrink-0", statusColors[c.onboardingStatus] ?? "bg-gray-100 text-gray-600")}>
+                          {c.onboardingStatus}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-gray-400 truncate">
+                        {c.employeeCode}{role ? ` · ${role}` : ""}
+                      </div>
+                      <div className="text-[11px] text-gray-500 mt-0.5 truncate">
+                        {c.dateOfJoining ? `Joins ${new Date(c.dateOfJoining).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}` : "Joining date TBD"}
+                        {c.department ? ` · ${c.department}` : ""}
+                      </div>
+                    </div>
+                    <ArrowRight size={15} className="text-gray-300 shrink-0 group-hover:text-[#166534]" />
+                  </Link>
+                );
+              })}
+            </div>
+            <Pagination page={page} totalPages={totalPages} total={filteredCandidates.length} limit={PAGE_SIZE} onPageChange={setPage} className="border-t-0 px-0" />
+            <div className="mt-4 text-xs text-gray-500">
+              Total Record Count : <span className="text-[#22c55e] font-medium">{total}</span>
+            </div>
+          </>
+        )}
+      </div>
+
     </div>
   );
 }

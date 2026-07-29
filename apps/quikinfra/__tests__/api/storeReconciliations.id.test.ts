@@ -31,7 +31,7 @@ function reconRow(over: Record<string, unknown> = {}) {
     approvedById: null,
     approvalId: null,
     status: "draft",
-    lines: [],
+    materials: [],
     createdBy: TEST_USER,
     updatedBy: TEST_USER,
     createdAt: new Date(),

@@ -100,7 +100,7 @@ describe("POST /api/masters/vendors — auth", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns 403 when the user lacks construction.masters.create", async () => {
+  it("returns 403 when the user lacks construction.master_vendor.create", async () => {
     setContext(makeUserCtx([]));
     const res = await POST(buildPOST(VALID));
     expect(res.status).toBe(403);
@@ -108,7 +108,7 @@ describe("POST /api/masters/vendors — auth", () => {
 
   it("returns 403 when the permission matrix denies add", async () => {
     setContext(
-      makeUserCtx(["construction.masters.create"], {
+      makeUserCtx(["construction.master_vendor.create"], {
         permissionMatrix: { "master.vendor": { add: false } },
       }),
     );

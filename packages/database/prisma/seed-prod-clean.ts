@@ -131,6 +131,7 @@ async function seedAppsAndOAuth(): Promise<void> {
   const ADMIN_BASE = resolveAppUrl("ADMIN_URL");
   const QUIKINFRA_BASE = resolveAppUrl("QUIKINFRA_URL");
   const QUIKVC_BASE = resolveAppUrl("QUIKVC_URL");
+  const QUIKLMS_BASE = resolveAppUrl("QUIKLMS_URL");
 
   const APPS = [
     {
@@ -183,6 +184,19 @@ async function seedAppsAndOAuth(): Promise<void> {
         clientId: "quikvc",
         clientSecretPlain: resolveClientSecret("QUIKVC_OAUTH_CLIENT_SECRET"),
         redirectUris: [`${QUIKVC_BASE}/api/auth/callback/quikit`],
+      },
+    },
+    {
+      slug: "quiklms",
+      name: "QuikLMS",
+      description:
+        "Learning Management System — courses, batches, exams, attendance, certificates, teacher/learner portals.",
+      baseUrl: QUIKLMS_BASE,
+      iconUrl: "/app-icons/quiklms.png",
+      oauth: {
+        clientId: "quiklms",
+        clientSecretPlain: resolveClientSecret("QUIKLMS_OAUTH_CLIENT_SECRET"),
+        redirectUris: [`${QUIKLMS_BASE}/api/auth/callback/quikit`],
       },
     },
   ];

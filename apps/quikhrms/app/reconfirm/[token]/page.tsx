@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, XCircle, AlertTriangle, Loader2, Briefcase } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -20,6 +20,7 @@ export default function ReconfirmPage({ params }: { params: { token: string } })
   const [state, setState] = useState<State | null>(null);
   const [submitting, setSubmitting] = useState<"yes" | "no" | null>(null);
   const [intent, setIntent] = useState<"yes" | "no" | null>(null);
+  const didAuto = useRef(false);
 
   useEffect(() => {
     const a = new URLSearchParams(window.location.search).get("a");
@@ -54,6 +55,15 @@ export default function ReconfirmPage({ params }: { params: { token: string } })
       setSubmitting(null);
     }
   };
+
+  // The email's Yes/No buttons already carry the choice (?a=yes|no) — act on it
+  // automatically so the candidate isn't asked the same thing a second time.
+  useEffect(() => {
+    if (state === "pending" && intent && !didAuto.current) {
+      didAuto.current = true;
+      void answer(intent);
+    }
+  }, [state, intent]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="min-h-dvh bg-slate-50 flex items-center justify-center px-4 py-10">
@@ -107,7 +117,7 @@ export default function ReconfirmPage({ params }: { params: { token: string } })
                   )}
                 >
                   {submitting === "yes" ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-                  Yes, I'm still interested
+                  Yes, I&apos;m still interested
                 </button>
                 <button
                   onClick={() => answer("no")}
@@ -124,7 +134,7 @@ export default function ReconfirmPage({ params }: { params: { token: string } })
               </div>
 
               <p className="mt-4 text-[11px] text-slate-400 text-center">
-                We won't move your application forward until you confirm above.
+                We won&apos;t move your application forward until you confirm above.
               </p>
             </div>
           )}

@@ -283,22 +283,6 @@ const EVENTS: EmailEvent[] = [
     ],
   },
   {
-    key: "recruit.joining-letter", label: "Joining Letter → Candidate", group: "Recruitment",
-    variables: [
-      CANDIDATE, JOB_TITLE, EMP_CODE,
-      v("designation", "Designation", "Senior Engineer"),
-      v("offeredCTC", "Offered CTC", "₹18,00,000"),
-      v("joiningDate", "Joining date", "1 Aug 2026"),
-      v("department", "Department", "Engineering"),
-      v("reportingTo", "Reporting manager", "Anita Rao"),
-      v("workLocation", "Work location", "Indore"),
-      v("companyAddress", "Company address", "Indore"),
-      v("signatoryName", "Signatory name", "Anita Rao"),
-      v("signatoryDesignation", "Signatory designation", "Head HR"),
-      v("letterDate", "Letter date", "10 Jul 2026"),
-    ],
-  },
-  {
     key: "recruit.rejection", label: "Application Rejected → Candidate", group: "Recruitment",
     variables: [
       CANDIDATE, JOB_TITLE,
