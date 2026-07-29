@@ -1,14 +1,16 @@
 import { z } from 'zod';
 import { route, json } from '@/lib/http';
 import { parseBody } from '@/lib/validation';
-import { requireAuth, requireRoles } from '@/lib/auth/context';
+import { requireAuth, requireRoles, visibleOrgIds } from '@/lib/auth/context';
 import { createTenant, findAllTenants } from '@/lib/services/tenants-service';
 
-// GET /api/tenants — SUPER_ADMIN
+// GET /api/tenants — SUPER_ADMIN. Scoped to the orgs this caller may see: their own
+// plus every org they onboarded (see lib/auth/context.ts `visibleOrgIds`). The platform
+// operator gets all of them.
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['SUPER_ADMIN']);
-  return json({ success: true, data: await findAllTenants() });
+  return json({ success: true, data: await findAllTenants(await visibleOrgIds(actor)) });
 });
 
 /** GST format from `CreateTenantDto` (`create-tenant.dto.ts`) — copied verbatim. */

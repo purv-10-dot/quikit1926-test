@@ -2,6 +2,7 @@ import { route, json } from '@/lib/http';
 import { requireAuth } from '@/lib/auth/context';
 import { db } from '@/lib/db';
 import { ensureLmsAppRolesSeeded } from '@/lib/api/seed-lms-app-roles';
+import { ensureLmsRbacSeeded } from '@/lib/api/seed-lms-permissions';
 
 /**
  * GET /api/me — current authenticated user.
@@ -26,6 +27,12 @@ export const GET = route(async (req) => {
   if (actor.orgId) {
     try {
       await ensureLmsAppRolesSeeded(actor.orgId);
+      // …and the grants behind the catalogue. Authorisation fails closed now, so an
+      // org with roles but no `RolePermission` rows refuses every request. This is
+      // the lazy safety net for an org provisioned before the cutover or by a path
+      // that predates it; both are per-process cached, so it is a no-op after the
+      // first load rather than 392 grants on every page view.
+      await ensureLmsRbacSeeded(actor.orgId);
     } catch {
       /* advisory — retried on the next load; provision-roles is the eager path */
     }
@@ -54,8 +61,25 @@ export const GET = route(async (req) => {
     email: dbUser?.email ?? actor.email,
     firstName: dbUser?.firstName ?? actor.firstName,
     lastName: dbUser?.lastName ?? actor.lastName,
-    role: dbUser?.role ?? actor.role,
+    /**
+     * The ACTIVE role, not the `LmsUser.role` column.
+     *
+     * This read `dbUser?.role ?? actor.role`, which meant the client was told the
+     * user's PRIMARY role even after they switched — so a teacher who switched to
+     * Sub Admin got sub-admin pages driven by a `user.role` of TEACHER. `actor.role`
+     * is itself resolved from that same row (getAuthContext reads it), so nothing is
+     * lost by preferring it, and `primaryRole` below keeps the raw column available.
+     */
+    role: actor.role,
+    /** The `LmsUser.role` column — the role they are when not switched. */
+    primaryRole: dbUser?.role ?? actor.roles[0],
     secondaryRole: dbUser?.secondaryRole ?? actor.secondaryRole,
+    /**
+     * Every role they may act as, default first. The header switcher renders from
+     * THIS rather than from `localStorage.qs_roles`, which is what let the role set
+     * go stale (and vanish) across a switch. See components/AppShell.tsx.
+     */
+    roles: actor.roles,
     orgId: dbUser?.orgId ?? actor.orgId,
     tenantType: actor.tenantType,
     managerId: dbUser?.managerId ?? null,

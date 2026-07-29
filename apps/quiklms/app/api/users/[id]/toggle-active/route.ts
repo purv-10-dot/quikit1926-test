@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { route, json } from '@/lib/http';
 import { parseBody } from '@/lib/validation';
-import { requireAuth, requireRoles } from '@/lib/auth/context';
+import { requireAuth, requireRoles, orgScope } from '@/lib/auth/context';
 import { toggleActive } from '@/lib/services/users-service';
 import { applyTeacherPrivacy } from '@/lib/privacy';
 
@@ -12,7 +12,7 @@ export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
   const { isActive } = await parseBody(req, schema);
-  const orgId = actor.role === 'SUPER_ADMIN' ? undefined : actor.orgId ?? undefined;
+  const orgId = orgScope(actor);
   const data = await toggleActive(params!.id, orgId, isActive);
   return json({
     success: true,

@@ -149,9 +149,14 @@ export async function findAllForTenant(orgId: string) {
   return merged;
 }
 
-export async function findAllMaster() {
+/**
+ * @param orgId Scope to ONE org — pass `orgScope(actor)`. `undefined` is the whole
+ *   catalogue, for the platform operator alone. `LmsCourse` carries `orgId`, so unlike
+ *   `LmsMasterCourse` this is a direct filter.
+ */
+export async function findAllMaster(orgId?: string) {
   return db.lmsCourse.findMany({
-    where: { isMaster: true },
+    where: { isMaster: true, ...(orgId ? { orgId } : {}) },
     include: MODULES_INCLUDE,
     orderBy: { createdAt: 'desc' },
   });

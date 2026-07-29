@@ -11,16 +11,24 @@
  */
 import { createHash, randomBytes } from 'crypto';
 import bcrypt from 'bcryptjs';
-import { SUBSCRIPTION_STATUS, TENANT_PLANS } from '@quikit/shared';
+import {
+  SUBSCRIPTION_STATUS,
+  TENANT_PLANS,
+  INVITE_METHOD,
+  renderInvitationEmail,
+  type SsoProvider,
+} from '@quikit/shared';
 import { generateTempPassword } from '@quikit/shared/temp-password';
+import { classifySsoProviderAsync } from '@quikit/shared/sso-domain-server';
 import type { LmsUserRole } from '@prisma/client';
 import { orgDb, ORG_DB_ENABLED } from '@/lib/org-db';
 import { db } from '@/lib/db';
-import { seedLmsAppRoles, ensureUserOnLmsRole } from '@/lib/api/seed-lms-app-roles';
+import { ensureUserOnLmsRole, LMS_SYSTEM_ADMIN_ROLE } from '@/lib/api/seed-lms-app-roles';
+import { ensureLmsRbacSeeded } from '@/lib/api/seed-lms-permissions';
 import { registerUser, type RegisterUserInput } from '@/lib/services/auth-service';
 import { BadRequest } from '@/lib/http';
 import { sendEmail } from '@/lib/email';
-import { invitationEmail } from '@/lib/email-templates';
+import { roleDisplayNameFor } from '@/lib/email-templates';
 
 const QUIKLMS_SLUG = 'quiklms';
 
@@ -36,16 +44,18 @@ const LOGIN_URL = `${(process.env.NEXTAUTH_URL || 'http://localhost:3014').repla
 const INVITATION_TTL_DAYS = 7;
 
 /**
- * The CANONICAL accept link, hosted by the central auth app. Deliberately not
- * an LMS URL: `apps/auth/app/api/invitations/accept` is the one place that
- * validates the single-use token, enforces the 7-day TTL, blocks replay against
- * an already-active membership, sets the password, and calls `assignAppRoles`.
- * Pointing invitees at the LMS login form instead is what bypassed all of it.
+ * Base URL for the invitation email's links.
+ *
+ * MUST be the central auth host. `apps/auth/app/api/invitations/accept` is the one
+ * place that validates the single-use token, enforces the 7-day TTL, blocks replay
+ * against an already-active membership, sets the password and calls
+ * `assignAppRoles`. `renderInvitationEmail` appends `/login` and
+ * `/invitations/accept?token=…` to whatever it is given, so handing it the LMS
+ * origin would produce a login form that cannot accept anything.
  */
-function acceptUrlFor(token: string): string | null {
-  const base = (process.env.NEXT_PUBLIC_AUTH_URL ?? '').replace(/\/+$/, '');
-  if (!base) return null; // No central auth host configured — fall back to the login link.
-  return `${base}/invitations/accept?token=${encodeURIComponent(token)}`;
+function invitationBaseUrl(): string {
+  const central = (process.env.NEXT_PUBLIC_AUTH_URL ?? '').replace(/\/+$/, '');
+  return central || LOGIN_URL.replace(/\/login$/, '');
 }
 
 /**
@@ -63,6 +73,11 @@ async function sendInvitation(params: {
   tempPassword: string | null;
   /** Single-use central invitation token; null when there was nothing to accept. */
   invitationToken: string | null;
+  /** Display name of the admin who invited them — the other apps show this. */
+  inviterName?: string;
+  /** `native` (temp password) or `sso` (Google/Microsoft), as in quikscale. */
+  inviteMethod?: (typeof INVITE_METHOD)[keyof typeof INVITE_METHOD];
+  ssoProvider?: SsoProvider | null;
 }): Promise<void> {
   try {
     // Both lookups are COSMETIC — they only choose the org name and the role
@@ -92,15 +107,39 @@ async function sendInvitation(params: {
     } catch {
       /* cosmetic only — keep the default vocabulary and still send */
     }
-    const { subject, html } = invitationEmail({
+    // THE SHARED TEMPLATE, not the LMS's own.
+    //
+    // quikscale, quikasset, quikinfra, quiktrack and quiksupport all send
+    // `renderInvitationEmail` from `@quikit/shared`; QuikLMS was the only app with
+    // a private template, so an LMS invitee received a visibly different email from
+    // the same person invited by any other app. `lib/email-templates.ts`
+    // `invitationEmail()` stays for the flows that still use it (welcome kit,
+    // admin reset) — only the invitation switches.
+    //
+    // The school/corporate vocabulary is NOT lost in the move: the shared
+    // template's `role` is free text, so `roleDisplayNameFor` still turns
+    // TENANT_ADMIN into "School Administrator" for a school tenant. That was the
+    // one thing the private template had and the shared one does not compute.
+    const tenantType = tenant?.tenantType === 'school' ? 'school' : 'corporate';
+    const { subject, html } = renderInvitationEmail({
+      to: params.email,
       firstName: params.firstName,
-      email: params.email,
-      role: params.role,
-      orgName: org?.name,
-      tempPassword: params.tempPassword,
-      loginUrl: LOGIN_URL,
-      acceptUrl: params.invitationToken ? acceptUrlFor(params.invitationToken) : null,
-      tenantType: tenant?.tenantType === 'school' ? 'school' : 'corporate',
+      orgName: org?.name ?? 'your organisation',
+      orgLogoUrl: null,
+      orgBrandColor: null,
+      inviterName: params.inviterName ?? 'QuikSkill Admin',
+      role: roleDisplayNameFor(params.role, tenantType),
+      appNames: ['QuikSkill LMS'],
+      token: params.invitationToken ?? '',
+      // The shared template builds `${appBaseUrl}/login` and
+      // `${appBaseUrl}/invitations/accept?token=…` itself, so this must be the
+      // CENTRAL AUTH host — the only place that validates the token, enforces the
+      // 7-day TTL and sets the password. Pointing it at the LMS would hand the
+      // invitee a login form that cannot accept anything.
+      appBaseUrl: invitationBaseUrl(),
+      inviteMethod: params.inviteMethod ?? INVITE_METHOD.NATIVE,
+      ssoProvider: params.ssoProvider ?? null,
+      tempPassword: params.tempPassword ?? '',
     });
     await sendEmail({ to: params.email, subject, html });
   } catch (err) {
@@ -142,6 +181,15 @@ export interface CreateCentralIdentityInput {
   sendInvite?: boolean;
   /** Platform `User.id` of the admin performing the invite — `OrgMember.createdBy`. */
   createdByUserId?: string;
+  /**
+   * `native` seeds a temp password; `sso` seeds NONE and the invitee signs in with
+   * Google/Microsoft. Ported from quikscale's `invitationMethod`, which every other
+   * app offers and QuikLMS hardcoded to `native` — so an LMS-created person could
+   * never be an SSO-only user even in an org that uses SSO exclusively.
+   */
+  inviteMethod?: (typeof INVITE_METHOD)[keyof typeof INVITE_METHOD];
+  /** Display name of the inviting admin, shown in the email. */
+  inviterName?: string;
 }
 
 export interface CreateCentralIdentityResult {
@@ -149,10 +197,12 @@ export interface CreateCentralIdentityResult {
   tempPassword: string | null; // null when the platform user already had a password
   reused: boolean; // true when an existing platform User was linked
   /**
-   * True when a pending invitation was minted — the membership is `invited` and
-   * access is withheld until it is accepted (by the emailed link or by the
-   * invitee's first login). False when they were ALREADY an active member of
-   * the org, in which case nothing was gated and no token was issued.
+   * True when an invitation was minted — a single-use token was issued and mailed.
+   *
+   * It no longer means access is withheld: the membership is created `active`, as in
+   * every other app, so the token is the deep-link to the set-password screen rather
+   * than a gate. False when they were ALREADY an active member of the org, in which
+   * case there was nothing to invite them to and no token was issued.
    */
   invited: boolean;
 }
@@ -173,6 +223,19 @@ export async function createCentralIdentity(
   const membershipRole = toMembershipRole(lmsRole);
   const appRole = toAppRole(lmsRole);
 
+  // FR-SA-004, as quikscale enforces it: an SSO invitation must resolve to a known
+  // provider, or we would create a passwordless user who can never sign in. Fail
+  // BEFORE any row is written rather than leaving a dead account behind.
+  const inviteMethod = input.inviteMethod ?? INVITE_METHOD.NATIVE;
+  const isSso = inviteMethod === INVITE_METHOD.SSO;
+  let ssoProvider: SsoProvider | null = null;
+  if (isSso) {
+    ssoProvider = await classifySsoProviderAsync(email);
+    if (!ssoProvider) {
+      throw BadRequest('SSO invitations require a Google or Microsoft email address.');
+    }
+  }
+
   // 1) User — reuse by email or create with a fresh temp password.
   const existing = await orgDb.user.findUnique({
     where: { email },
@@ -180,17 +243,20 @@ export async function createCentralIdentity(
   });
 
   let userId: string;
-  let tempPassword: string | null = generateTempPassword();
+  // SSO invitees get NO password at all — `auth.User.password` is nullable, so the
+  // credentials provider cannot authenticate them and only Google/Microsoft will
+  // work. Same rule as quikscale: `mustChangePassword` is meaningless without one.
+  let tempPassword: string | null = isSso ? null : generateTempPassword();
 
   if (existing) {
     userId = existing.id;
-    if (!existing.password) {
+    if (!existing.password && tempPassword) {
       await orgDb.user.update({
         where: { id: userId },
         data: { password: await bcrypt.hash(tempPassword, 10), mustChangePassword: true },
       });
     } else {
-      tempPassword = null; // keep their existing password
+      tempPassword = null; // keep their existing password (or stay passwordless for SSO)
     }
   } else {
     const created = await orgDb.user.create({
@@ -198,8 +264,8 @@ export async function createCentralIdentity(
         email,
         firstName,
         lastName,
-        password: await bcrypt.hash(tempPassword, 10),
-        mustChangePassword: true,
+        password: tempPassword ? await bcrypt.hash(tempPassword, 10) : null,
+        mustChangePassword: !isSso,
       },
       select: { id: true },
     });
@@ -240,29 +306,34 @@ export async function createCentralIdentity(
   const invitationToken = alreadyActive ? null : randomBytes(32).toString('hex');
 
   /**
-   * The membership is created `invited` — the invitation GATES access, exactly
-   * as the platform protocol intends (baseline §6A).
+   * `active`, matching every other app on the platform.
    *
-   * HISTORY, worth keeping. This was briefly forced to `active` because
-   * `invited` broke every LMS-created login: `packages/auth/get-tenant-id.ts`
-   * resolves a user's org with `status: "active"`, so an invited person had no
-   * org, could not get a session, and bounced to the launcher. Confirmed in
-   * production — active memberships stopped at 07:26 while everything created
-   * after sat at `invited`.
+   * THE CONVENTION, measured rather than assumed. quikscale, quikasset,
+   * quikinfra, quiktrack and quiksupport all create the membership `active` and
+   * use the `invitationToken` purely as the deep-link to the set-password screen.
+   * Across those five apps there are ZERO writes of `status: "invited"`. QuikLMS
+   * was the only app that gated access on acceptance, which is what made an
+   * LMS-created person behave differently from the same person created anywhere
+   * else in the suite.
    *
-   * The ROOT CAUSE was not this constant. It was in `packages/auth/index.ts`:
-   * the `jwt` callback's auto-accept filtered on `inviteMethod: "native"`, and
-   * the `signIn` callback's on `"sso"`. Invitations minted here are `native`
-   * (a temp password is seeded), so an invitee who signed in with Google or
-   * Microsoft matched NEITHER and was never accepted. That filter is gone; the
-   * jwt callback now accepts any pending invitation for the authenticated user,
-   * on every sign-in path.
+   * WHAT THIS GIVES UP, stated plainly: access is no longer withheld until the
+   * invitation is accepted. An invitee can sign in with the temp password before
+   * clicking the emailed link. The token remains single-use and 7-day TTL'd
+   * (enforced by `apps/auth/app/api/invitations/accept`), so the set-password flow
+   * and the replay guard are unchanged — but it is no longer an access gate.
    *
-   * With that fixed, `invited` is safe: the membership activates on whichever
-   * comes first — the emailed accept link, or the invitee's first login by any
-   * method — and access is genuinely withheld until one of them happens.
+   * HISTORY, so nobody re-reverts this by accident. `invited` was chosen for
+   * baseline §6A, briefly forced to `active` when it broke every LMS login
+   * (`packages/auth/get-tenant-id.ts` resolves an org only when the membership is
+   * `active`, so an invited person had no org and bounced to the launcher), then
+   * set back to `invited` once the real cause was fixed in `packages/auth` — the
+   * `jwt` auto-accept had been filtering on `inviteMethod: "native"`, so SSO
+   * invitees matched nothing and were never accepted. That fix stands and is why
+   * `invited` WORKED. This change is not a bug fix; it is a deliberate move to the
+   * platform convention, requested so that first-invitation behaviour is identical
+   * in every app.
    */
-  const memberStatus = 'invited';
+  const memberStatus = 'active';
 
   await orgDb.$transaction(async (tx) => {
     if (alreadyActive) {
@@ -281,7 +352,8 @@ export async function createCentralIdentity(
           invitationToken,
           invitedAt: new Date(),
           acceptedAt: null,
-          inviteMethod: 'native',
+          inviteMethod,
+          inviteProvider: ssoProvider,
           inviteAppIds: app ? [app.id] : [],
           ...(input.createdByUserId ? { createdBy: input.createdByUserId } : {}),
         },
@@ -295,7 +367,8 @@ export async function createCentralIdentity(
           status: memberStatus,
           invitationToken,
           invitedAt: new Date(),
-          inviteMethod: 'native',
+          inviteMethod,
+          inviteProvider: ssoProvider,
           // Consumed by the auto-accept path to grant access on activation.
           inviteAppIds: app ? [app.id] : [],
           ...(input.createdByUserId ? { createdBy: input.createdByUserId } : {}),
@@ -366,6 +439,9 @@ export async function createCentralIdentity(
       orgId,
       tempPassword,
       invitationToken,
+      inviterName: input.inviterName,
+      inviteMethod,
+      ssoProvider,
     });
   }
 
@@ -511,7 +587,10 @@ export async function provisionOrgForTenant(input: ProvisionOrgInput): Promise<s
   // failure must not fail tenant onboarding (the lazy seed / provision-roles
   // endpoint remain the safety net).
   try {
-    await seedLmsAppRoles(org.id);
+    // Catalogue AND grants. Grants are not optional any more: authorisation fails
+    // closed, so a new tenant with roles but no `RolePermission` rows would refuse
+    // every request its own admin makes on first login.
+    await ensureLmsRbacSeeded(org.id);
   } catch {
     /* advisory — see note above */
   }
@@ -530,15 +609,68 @@ export interface ProvisionLmsUserResult extends CreateCentralIdentityResult {
   lms?: { id: string; employeeId?: string; [k: string]: unknown };
 }
 
+/** LMS roles that carry organisation-administrator authority. */
+const ADMIN_TIER_ROLES = new Set(['SUPER_ADMIN', 'TENANT_ADMIN', LMS_SYSTEM_ADMIN_ROLE]);
+
+/**
+ * The first person provisioned into an org becomes its administrator.
+ *
+ * Ported from quikscale's `POST /api/org/users`, which counts holders of the admin
+ * AppRole and hands the role to the first invitee when there are none:
+ *
+ *     const adminMemberCount = await db.userAppRole.count({ where: { orgId, roleId: adminRoleId } });
+ *     const targetRoleId = adminMemberCount === 0 ? adminRoleId : userRoleId;
+ *
+ * WHY IT MATTERS MORE HERE THAN THERE. Authorisation now fails closed off
+ * `app_quiklms.UserAppRole`, so an org with no admin ASSIGNMENT has nobody who can
+ * create one — not the tenant admin, not a sub admin. It is unrecoverable from
+ * inside the product; it needs a script. QuikLMS previously had no such guard: the
+ * only reason it never bit is that `onboardTenant` happens to provision its
+ * TENANT_ADMIN first, so any flow that reached an org by another route (a bulk
+ * upload into a fresh org, a re-provisioned tenant whose admin creation failed
+ * midway) could leave one permanently locked.
+ *
+ * Counts ASSIGNMENTS, not `LmsUser.role`, because assignments are what authorise.
+ * An org whose only admin has an `LmsUser.role` of TENANT_ADMIN but no assignment is
+ * effectively admin-less, and the right repair for that is
+ * `scripts/backfill-user-app-roles.ts`, not silently promoting the next newcomer.
+ */
+async function roleForNewMember(orgId: string, requested: string): Promise<string> {
+  if (ADMIN_TIER_ROLES.has(requested)) return requested;
+
+  try {
+    const admins = await db.lmsUserAppRole.count({
+      where: { orgId, role: { name: { in: ['TENANT_ADMIN', LMS_SYSTEM_ADMIN_ROLE] } } },
+    });
+    if (admins > 0) return requested;
+  } catch {
+    // Can't tell — leave the caller's intent alone rather than mint an admin off a
+    // failed read. The org keeps whatever admin it has.
+    return requested;
+  }
+
+  // eslint-disable-next-line no-console
+  console.warn(
+    `[identity] org ${orgId} has no administrator; provisioning its first member as ` +
+      `TENANT_ADMIN instead of ${requested} so the org is not left unadministrable.`,
+  );
+  return 'TENANT_ADMIN';
+}
+
 export async function provisionLmsUser(
   input: CreateCentralIdentityInput & Partial<RegisterUserInput>,
 ): Promise<ProvisionLmsUserResult> {
+  // Decided ONCE, before any of the three writes that consume it — the central
+  // identity mapping, the LMS row, and the RBAC assignment. Deriving it per write
+  // is how the four representations of a role drift apart.
+  const lmsRole = await roleForNewMember(input.orgId, input.lmsRole);
+
   const identity = await createCentralIdentity({
     email: input.email,
     firstName: input.firstName,
     lastName: input.lastName,
     orgId: input.orgId,
-    lmsRole: input.lmsRole,
+    lmsRole,
     createdByUserId: input.createdByUserId,
     // `skipEmail` is the flag the CALLERS actually set — the students roster
     // exposes it as a checkbox, and bulk upload sets it per row. It was never
@@ -548,6 +680,11 @@ export async function provisionLmsUser(
     // email — so every such row mailed an invitation into the void.
     // An explicit `sendInvite` still wins, for callers that pass it directly.
     sendInvite: input.sendInvite ?? (input.skipEmail === true ? false : undefined),
+    // Forwarded rather than defaulted here: `createCentralIdentity` owns the SSO
+    // domain check and the "no password for SSO" rule, so passing these straight
+    // through keeps one implementation of both. Undefined → native, as before.
+    inviteMethod: input.inviteMethod,
+    inviterName: input.inviterName,
   });
 
   // LMS row with the shared central id (idempotent — skip if already linked).
@@ -563,7 +700,7 @@ export async function provisionLmsUser(
       email: input.email,
       firstName: input.firstName,
       lastName: input.lastName,
-      role: input.lmsRole,
+      role: lmsRole,
       orgId: input.orgId,
     });
     lms = res.data;
@@ -574,7 +711,7 @@ export async function provisionLmsUser(
   // app_quiklms.UserAppRole path the other apps use. Best-effort (self-seeds the
   // role catalogue); a failure never blocks user creation.
   try {
-    await ensureUserOnLmsRole(identity.userId, input.orgId, input.lmsRole as LmsUserRole);
+    await ensureUserOnLmsRole(identity.userId, input.orgId, lmsRole as LmsUserRole);
   } catch {
     /* advisory — the assignment is re-derivable from LmsUser.role */
   }

@@ -1,5 +1,5 @@
 import { route, json } from '@/lib/http';
-import { requireAuth } from '@/lib/auth/context';
+import { requireAuth, orgScope } from '@/lib/auth/context';
 import { searchUsers } from '@/lib/services/users-service';
 import { applyTeacherPrivacy } from '@/lib/privacy';
 
@@ -25,7 +25,7 @@ export const GET = route(async (req) => {
   const url = new URL(req.url);
   const q = url.searchParams.get('q') || undefined;
   const role = url.searchParams.get('role') || undefined;
-  const orgId = actor.role === 'SUPER_ADMIN' ? undefined : actor.orgId ?? undefined;
+  const orgId = orgScope(actor);
   const excludeRoles = actor.tenantType === 'corporate' ? ['TEACHER', 'PARENT'] : [];
   const users = await searchUsers(orgId, q, role, excludeRoles);
   return json({ success: true, data: await applyTeacherPrivacy(actor, req, users) });

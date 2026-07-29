@@ -1,24 +1,38 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-const h = vi.hoisted(() => ({ userFindUnique: vi.fn(), tenantFindUnique: vi.fn() }));
+const h = vi.hoisted(() => ({
+  userFindUnique: vi.fn(),
+  tenantFindUnique: vi.fn(),
+  appRoleFindFirst: vi.fn(),
+  orgMemberFindFirst: vi.fn(),
+}));
 vi.mock('@/lib/db', () => ({
   db: {
     lmsUser: { findUnique: h.userFindUnique },
     lmsTenant: { findUnique: h.tenantFindUnique },
+    lmsUserAppRole: { findFirst: h.appRoleFindFirst },
+    orgMember: { findFirst: h.orgMemberFindFirst },
   },
 }));
 
 import { resolveLmsRole } from '@/lib/auth/resolve-role';
+import { _clearFoundingAdminCache } from '@/lib/auth/founding-admin';
 
 beforeEach(() => {
   h.userFindUnique.mockReset();
   h.tenantFindUnique.mockReset();
+  h.appRoleFindFirst.mockReset();
+  h.orgMemberFindFirst.mockReset();
+  // No platform-assigned app role unless a test says otherwise.
+  h.appRoleFindFirst.mockResolvedValue(null);
+  _clearFoundingAdminCache();
 });
 
 /**
- * The landing redirect must agree with the API guards: prefer the LMS row's
- * fine-grained role, fall back to the coarse membership mapping (operator with
- * no LMS row → SUPER_ADMIN).
+ * The landing redirect must agree with the API guards: prefer the platform-assigned
+ * app role, then the LMS row's fine-grained role, then the coarse membership
+ * mapping — and on that last path, distinguish an org's FOUNDING admin from a
+ * later one.
  */
 describe('resolveLmsRole', () => {
   it('prefers the LMS User.role row over the coarse membership role', async () => {
@@ -29,27 +43,74 @@ describe('resolveLmsRole', () => {
     expect(role).toBe('TEACHER');
   });
 
-  it('falls back to SUPER_ADMIN for the operator (org_admin, no LMS row)', async () => {
+  /**
+   * THE REGRESSION THIS FILE EXISTS FOR.
+   *
+   * QuikIT invites the admin of a brand-new org with membershipRole `org_admin`
+   * (its form offers only `org_admin | member`). That person has no LMS row and no
+   * app-role assignment on their first login, so they land on this coarse fallback
+   * — and they were resolved TENANT_ADMIN, which `landingPathFor` sends to
+   * `/tenant-dashboard`, the CORPORATE tenant-admin dashboard. Reported as
+   * "invited an admin for a new org, logged in as corporate admin".
+   */
+  it('resolves the FOUNDING admin of an org to SUPER_ADMIN', async () => {
     h.userFindUnique.mockResolvedValue(null);
-    const role = await resolveLmsRole({ id: 'op', membershipRole: 'org_admin', isSuperAdmin: false });
+    h.orgMemberFindFirst.mockResolvedValue({ userId: 'founder' });
+    const role = await resolveLmsRole({
+      id: 'founder',
+      orgId: 'org1',
+      membershipRole: 'org_admin',
+      isSuperAdmin: false,
+    });
     expect(role).toBe('SUPER_ADMIN');
   });
 
-  // Regression: a freshly-onboarded school admin (org_admin, LMS row not yet
-  // resolvable) whose org HAS a Tenant row must land on TENANT_ADMIN — not the
-  // super-admin portal.
-  it('falls back to TENANT_ADMIN when no LMS row but the org has a Tenant row', async () => {
+  it('resolves a LATER org_admin of the same org to TENANT_ADMIN', async () => {
+    // Same org, but the founding admin is somebody else — the second admin is an
+    // ordinary tenant admin and lands on /tenant-dashboard as before.
     h.userFindUnique.mockResolvedValue(null);
-    h.tenantFindUnique.mockResolvedValue({ id: 'org1' });
-    const role = await resolveLmsRole({ id: 'u1', orgId: 'org1', membershipRole: 'org_admin', isSuperAdmin: false });
+    h.orgMemberFindFirst.mockResolvedValue({ userId: 'founder' });
+    const role = await resolveLmsRole({
+      id: 'second-admin',
+      orgId: 'org1',
+      membershipRole: 'org_admin',
+      isSuperAdmin: false,
+    });
     expect(role).toBe('TENANT_ADMIN');
-    expect(h.tenantFindUnique).toHaveBeenCalledWith({ where: { id: 'org1' }, select: { id: true } });
   });
 
-  it('stays SUPER_ADMIN when no LMS row and no Tenant row for the org', async () => {
+  it('does not promote a plain member who happens to be the org\'s first row', async () => {
+    // The founding-admin signal only ever upgrades an ADMIN-tier membership role.
     h.userFindUnique.mockResolvedValue(null);
-    h.tenantFindUnique.mockResolvedValue(null);
-    const role = await resolveLmsRole({ id: 'op', orgId: 'operator-org', membershipRole: 'org_admin', isSuperAdmin: false });
+    h.orgMemberFindFirst.mockResolvedValue({ userId: 'u1' });
+    const role = await resolveLmsRole({
+      id: 'u1',
+      orgId: 'org1',
+      membershipRole: 'member',
+      isSuperAdmin: false,
+    });
+    expect(role).toBe('LEARNER');
+  });
+
+  it('degrades to TENANT_ADMIN when the founding-admin lookup fails', async () => {
+    // Fail-safe direction: never mint the top tier off a failed read.
+    h.userFindUnique.mockResolvedValue(null);
+    h.orgMemberFindFirst.mockRejectedValue(new Error('central DB unavailable'));
+    const role = await resolveLmsRole({
+      id: 'u1',
+      orgId: 'org1',
+      membershipRole: 'org_admin',
+      isSuperAdmin: false,
+    });
+    expect(role).toBe('TENANT_ADMIN');
+  });
+
+  it('resolves the platform operator to SUPER_ADMIN from the isSuperAdmin claim', async () => {
+    // The operator is identified by the claim, never inferred — no OrgMember read
+    // is even needed.
+    h.userFindUnique.mockResolvedValue(null);
+    h.orgMemberFindFirst.mockResolvedValue(null);
+    const role = await resolveLmsRole({ id: 'op', orgId: 'op-org', membershipRole: 'org_admin', isSuperAdmin: true });
     expect(role).toBe('SUPER_ADMIN');
   });
 

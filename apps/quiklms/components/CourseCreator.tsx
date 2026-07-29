@@ -26,7 +26,8 @@ import { X, Upload, FileText, Plus, Trash2, CheckCircle, AlertCircle, ArrowRight
 import { DragDropContext, Droppable, Draggable, DropResult } from 'react-beautiful-dnd';
 import VideoPlayer from '@/components/VideoPlayer';
 import { api } from '@/lib/api';
-import { uploadFile } from '@/lib/upload-client';
+import { uploadFile, SERVER_UPLOAD_MAX_BYTES } from '@/lib/upload-client';
+import { MAX_THUMBNAIL_BYTES, formatMaxSize } from '@/lib/constants/uploads';
 
 interface CourseCreatorProps {
   onClose: () => void;
@@ -307,8 +308,11 @@ const CourseCreator: React.FC<CourseCreatorProps> = ({ onClose, onSuccess, cours
         setError('Please select an image file');
         return;
       }
-      if (file.size > 5 * 1024 * 1024) { // 5MB
-        setError('Thumbnail size must be less than 5MB');
+      // Same rule as MasterCourseStudio: the product limit, floored by the proxy
+      // boundary so a thumbnail never lands on the CORS-dependent direct path.
+      const maxThumbnailBytes = Math.min(MAX_THUMBNAIL_BYTES, SERVER_UPLOAD_MAX_BYTES);
+      if (file.size > maxThumbnailBytes) {
+        setError(`Thumbnail size must be less than ${formatMaxSize(maxThumbnailBytes)}`);
         return;
       }
       setThumbnail(file);
@@ -923,7 +927,7 @@ const CourseCreator: React.FC<CourseCreatorProps> = ({ onClose, onSuccess, cours
                       <p className="text-sm font-medium text-gray-700 mb-1">
                         Click to upload thumbnail
                       </p>
-                      <p className="text-xs text-gray-500">Image file (max 5MB)</p>
+                      <p className="text-xs text-gray-500">Image file (max 4MB)</p>
                     </label>
                   </div>
                 )}
@@ -950,8 +954,11 @@ const CourseCreator: React.FC<CourseCreatorProps> = ({ onClose, onSuccess, cours
                               <p className="text-xs text-yellow-700 mb-2">
                                 Please configure your OpenAI API key in Profile Settings to use AI thumbnail generation.
                               </p>
+                              {/* Was /dashboard/profile-settings, which is not a
+                                  route — the profile screen is /profile, in the
+                                  (shared) group. */}
                               <a
-                                href="/dashboard/profile-settings"
+                                href="/profile"
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-xs text-purple-600 hover:text-purple-700 underline font-medium"
