@@ -6,10 +6,15 @@ import { findTenant } from '@/lib/services/tenants-service';
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
 
-  // SUPER_ADMIN is the operator — its org has no Tenant row (schools/corporates
-  // are separate orgs it onboards). Return platform-level defaults rather than
-  // 404ing on findTenant. Also covers a platform super-admin with no org.
-  if (actor.role === 'SUPER_ADMIN' || !actor.orgId) {
+  // The platform OPERATOR's org has no Tenant row (schools/corporates are separate
+  // orgs it onboards). Return platform-level defaults rather than 404ing on
+  // findTenant. Also covers a platform super-admin with no org.
+  //
+  // Keyed on the `isSuperAdmin` claim, not the role: an org's founding admin now
+  // resolves to an LMS role of SUPER_ADMIN (lib/auth/founding-admin.ts) but has a
+  // real tenant, and the role test served them the "QuikSkill Platform" placeholder
+  // instead of their own org's name, branding and localization.
+  if (actor.isSuperAdmin === true || !actor.orgId) {
     return json({
       success: true,
       data: {

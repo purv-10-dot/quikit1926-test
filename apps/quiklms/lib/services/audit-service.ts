@@ -28,10 +28,27 @@ function sumModuleFileSizes(modules: unknown): number {
   return total;
 }
 
-export async function getGlobalStorageUsage() {
-  const courses = await db.lmsMasterCourse.findMany({ select: { modules: true } });
+/**
+ * @param orgIds The orgs this caller may see — pass `await visibleOrgIds(actor)`.
+ *   `undefined` is platform-wide and for the operator alone. Unscoped, this told any
+ *   holder of the SUPER_ADMIN role the platform's total storage and tenant count.
+ */
+export async function getGlobalStorageUsage(orgIds?: string[]) {
+  const courses = await db.lmsMasterCourse.findMany({
+    where: orgIds
+      ? {
+          OR: [
+            { submittedByTenantId: { in: orgIds } },
+            { selectedTenants: { some: { orgId: { in: orgIds } } } },
+          ],
+        }
+      : undefined,
+    select: { modules: true },
+  });
   const totalUsed = courses.reduce((sum, c) => sum + sumModuleFileSizes(c.modules), 0);
-  const totalTenants = await db.lmsTenant.count();
+  const totalTenants = await db.lmsTenant.count({
+    where: orgIds ? { id: { in: orgIds } } : undefined,
+  });
   return {
     totalUsed,
     totalUsedMB: totalUsed / (1024 * 1024),
@@ -49,9 +66,22 @@ export interface TenantStorageRow {
   lastActivity?: Date;
 }
 
-export async function getTenantStorageBreakdown(): Promise<TenantStorageRow[]> {
+/**
+ * @param orgIds The orgs this caller may see — pass `await visibleOrgIds(actor)`.
+ *   Unscoped, this returned a row per tenant (org name + storage + last activity) to any
+ *   holder of the SUPER_ADMIN role, which is a directory of every customer on the platform.
+ */
+export async function getTenantStorageBreakdown(orgIds?: string[]): Promise<TenantStorageRow[]> {
   // Per-tenant storage from mastercourses: combine selectedTenants[] and submittedByTenantId.
   const courses = await db.lmsMasterCourse.findMany({
+    where: orgIds
+      ? {
+          OR: [
+            { submittedByTenantId: { in: orgIds } },
+            { selectedTenants: { some: { orgId: { in: orgIds } } } },
+          ],
+        }
+      : undefined,
     select: {
       modules: true,
       updatedAt: true,
@@ -74,13 +104,19 @@ export async function getTenantStorageBreakdown(): Promise<TenantStorageRow[]> {
     }
   }
 
-  const tenants = await db.lmsTenant.findMany({ select: { id: true, orgName: true } });
+  // Scoped too — the loop below only emits rows for `usageByTenant`, but reading every
+  // tenant's orgName into memory for a scoped caller is a leak waiting for the next
+  // person to widen the return shape.
+  const tenants = await db.lmsTenant.findMany({
+    where: orgIds ? { id: { in: orgIds } } : undefined,
+    select: { id: true, orgName: true },
+  });
   const tenantMap = new Map(tenants.map((t) => [t.id, t.orgName]));
 
   // Last activity per tenant (activity logs)
   const activityLogs = await db.lmsActivityLog.groupBy({
     by: ['orgId'],
-    where: { orgId: { not: null } },
+    where: orgIds ? { orgId: { in: orgIds } } : { orgId: { not: null } },
     _max: { timestamp: true },
   });
   const activityMap = new Map<string, Date | null>();
@@ -117,8 +153,13 @@ export async function getTenantStorageBreakdown(): Promise<TenantStorageRow[]> {
   return breakdown.sort((a, b) => b.storageUsedMB - a.storageUsedMB);
 }
 
-export async function getActivityLogs(limit = 50, skip = 0, orgId?: string) {
-  const where = orgId ? { orgId } : {};
+/**
+ * @param orgIds Restrict to these orgs. A single-element array targets one org (the
+ *   `?orgId=` case, already authorised by `assertOrgAccess`); the caller's full visible
+ *   set is the default. `undefined` is platform-wide — the operator alone.
+ */
+export async function getActivityLogs(limit = 50, skip = 0, orgIds?: string[]) {
+  const where = orgIds ? { orgId: { in: orgIds } } : {};
   const [rows, total] = await Promise.all([
     db.lmsActivityLog.findMany({ where, orderBy: { timestamp: 'desc' }, take: limit, skip }),
     db.lmsActivityLog.count({ where }),

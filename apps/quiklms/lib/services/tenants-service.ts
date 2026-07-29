@@ -406,8 +406,21 @@ export async function createTenantAdminsForAllTenants(): Promise<{
  * The shape callers receive is unchanged: they still get `status: 'Active' |
  * 'Paused'`, so the super-admin screens need no edit.
  */
-export async function findAllTenants() {
-  const tenants = await db.lmsTenant.findMany({ orderBy: { createdAt: 'desc' } });
+/**
+ * @param orgIds The orgs this caller may see — pass `await visibleOrgIds(actor)`, i.e.
+ *   their own org plus every org they onboarded. `undefined` returns every tenant and is
+ *   for the platform operator alone.
+ *
+ *   This was unconditionally platform-wide, which showed every tenant to an org's
+ *   founding admin once that role resolved to SUPER_ADMIN. It must NOT be narrowed to a
+ *   single `id === actor.orgId` either: `onboardTenant` gives each new tenant its OWN
+ *   org id, so that filter hid every tenant the admin had just created.
+ */
+export async function findAllTenants(orgIds?: string[]) {
+  const tenants = await db.lmsTenant.findMany({
+    where: orgIds ? { id: { in: orgIds } } : undefined,
+    orderBy: { createdAt: 'desc' },
+  });
   if (tenants.length === 0) return [];
 
   const orgs = await db.org.findMany({

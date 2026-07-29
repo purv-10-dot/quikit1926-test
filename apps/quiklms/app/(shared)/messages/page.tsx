@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { getMessagesSocket } from '@/lib/socket';
-import { useBranding } from '@/app/providers';
+import { useBranding, useCurrentUser } from '@/app/providers';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -159,7 +159,14 @@ const MessagesPage = () => {
   const primaryColor = branding.primaryColor;
   const secondaryColor = branding.secondaryColor;
   const currentUserId = useRef(getCurrentUserId()).current;
-  const currentUserRole = useRef(getCurrentUserRole()).current;
+  // Server-resolved ACTIVE role (GET /api/me), which honours the role switcher —
+  // so a user who switched to Sub Admin gets the sub-admin recipient filters.
+  // The `qs_role` cookie is only the pre-hydration fallback now: read alone it
+  // was empty for anyone who had never switched, leaving the filter unpopulated,
+  // and it is client-writable. NOT a useRef — `user` arrives asynchronously, so
+  // pinning it on first render would freeze the fallback in place.
+  const { user: currentUser } = useCurrentUser();
+  const currentUserRole = currentUser?.role ?? getCurrentUserRole();
   const isCorporateTenant = false; // default school tenant
 
   const [conversations, setConversations] = useState<Conversation[]>([]);

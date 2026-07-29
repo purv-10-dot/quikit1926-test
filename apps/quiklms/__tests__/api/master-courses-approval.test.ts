@@ -40,6 +40,9 @@ vi.mock('@/lib/auth/context', () => ({
   // disable the very ownership guards these tests exist to protect.
   userHasRole: (u: { role?: string; secondaryRole?: string | null }, role: string) =>
     u?.role === role || u?.secondaryRole === role,
+  // Likewise real: the tenant/operator split is exactly what decides whether the
+  // create path forces `selectedTenants` + the approval workflow.
+  isPlatformOperator: (u: { isSuperAdmin?: boolean }) => u?.isSuperAdmin === true,
 }));
 // master-course-service imports lib/s3 for presigned enrichment, and lib/s3
 // validates the whole environment at import time.
@@ -232,10 +235,35 @@ describe('POST /api/master-courses — fail closed without an orgId', () => {
     expect(h.create).not.toHaveBeenCalled();
   });
 
-  it('still lets a SUPER_ADMIN create without a tenant', async () => {
-    h.requireAuth.mockResolvedValue({ id: 'u-su', role: 'SUPER_ADMIN', secondaryRole: null, orgId: null, isActive: true });
+  it('still lets the platform OPERATOR create without a tenant', async () => {
+    // `isSuperAdmin: true` — the operator authors the shared catalogue and has no
+    // tenant of their own, so the fail-closed guard must not catch them.
+    h.requireAuth.mockResolvedValue({ id: 'u-su', role: 'SUPER_ADMIN', secondaryRole: null, orgId: null, isActive: true, isSuperAdmin: true });
     const res = await createPOST(body({ title: 'X' }), {});
     expect(res.status).toBe(200);
     expect(h.create).toHaveBeenCalled();
+  });
+
+  it('400s a founding admin (SUPER_ADMIN role) with no orgId', async () => {
+    // Regression: a non-operator SUPER_ADMIN is a tenant actor, so the same
+    // fail-closed guard applies. Previously they fell through onto the operator path,
+    // where `dto.status` is honoured verbatim and `selectedTenants` is never forced —
+    // letting them publish an unscoped master course visible to every tenant.
+    h.requireAuth.mockResolvedValue({ id: 'u-fa', role: 'SUPER_ADMIN', secondaryRole: null, orgId: null, isActive: true, isSuperAdmin: false });
+    const res = await createPOST(body({ title: 'X', status: 'Published' }), {});
+    expect(res.status).toBe(400);
+    expect(h.create).not.toHaveBeenCalled();
+  });
+
+  it('forces a founding admin’s course into their own org, not the whole platform', async () => {
+    h.requireAuth.mockResolvedValue({ id: 'u-fa', role: 'SUPER_ADMIN', secondaryRole: null, orgId: 'org-mine', isActive: true, isSuperAdmin: false });
+    await createPOST(body({ title: 'X', status: 'Published', selectedTenants: ['org-other'] }), {});
+    expect(h.create).toHaveBeenCalled();
+    // Prisma-level mock, same as the sibling assertions above.
+    const data = h.create.mock.calls[0][0].data as Record<string, unknown>;
+    // Stamped as their own org's submission, and the status comes from the approval
+    // workflow rather than being honoured from the request body.
+    expect(data.submittedByTenantId).toBe('org-mine');
+    expect(data.status).not.toBe('Published');
   });
 });

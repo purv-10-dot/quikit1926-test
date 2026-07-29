@@ -24,6 +24,7 @@
  * callers cannot tell which one ran.
  */
 import { api } from '@/lib/api';
+import { UPLOAD_PROXY_MAX_BYTES } from '@/lib/constants/uploads';
 
 interface UploadResponse {
   /** Present only when the server wants US to send the bytes. */
@@ -53,11 +54,11 @@ export interface UploadResult {
 /**
  * Largest file we hand to our own API route.
  *
- * Vercel caps a serverless function's request body at 4.5MB and rejects the
- * request before any of our code runs, so this sits under that with room for
- * the multipart envelope. Anything larger has to go direct to the bucket.
+ * Now sourced from `UPLOAD_PROXY_MAX_BYTES` so the route's own multipart cap and
+ * this strategy switch can never disagree — see the note on that constant for why
+ * it is host-dependent. The name is kept because callers import it.
  */
-export const SERVER_UPLOAD_MAX_BYTES = 4 * 1024 * 1024;
+export const SERVER_UPLOAD_MAX_BYTES = UPLOAD_PROXY_MAX_BYTES;
 
 /**
  * Turn a rejected cross-origin PUT into something a human can act on.

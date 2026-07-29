@@ -16,9 +16,13 @@ const ALL_FEATURES: FeatureSet = {
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
 
-  // SUPER_ADMIN is the operator — its org has no Tenant row. Return all
-  // features enabled at platform level rather than 404ing on findTenant.
-  if (actor.role === 'SUPER_ADMIN' || !actor.orgId) {
+  // The platform OPERATOR's org has no Tenant row. Return all features enabled at
+  // platform level rather than 404ing on findTenant. Keyed on the `isSuperAdmin`
+  // claim, not the role — a founding org admin resolves to SUPER_ADMIN but must get
+  // the feature set their OWN tenant is configured for, not the platform superset
+  // (which would light up school-only menus for a corporate org). Mirrors the same
+  // change in `requireFeature` and `/api/tenants/current`.
+  if (actor.isSuperAdmin === true || !actor.orgId) {
     return json({
       success: true,
       data: {

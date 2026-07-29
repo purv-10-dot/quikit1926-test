@@ -26,6 +26,7 @@ import { presignPut, presignGet, putObject, S3_BUCKET } from '@/lib/s3';
 import { BadRequest } from '@/lib/http';
 import { parseMultipart } from '@/lib/multipart';
 import { parseBody } from '@/lib/validation';
+import { UPLOAD_PROXY_MAX_BYTES } from '@/lib/constants/uploads';
 
 /**
  * Canonical permanent URL for a stored object.
@@ -95,7 +96,12 @@ export type UploadIntent =
  * multipart above ~4MB, and the platform rejects a body over 4.5MB before it
  * reaches us, so this only fires on a hand-rolled request.
  */
-const MAX_PROXY_BYTES = 8 * 1024 * 1024;
+/**
+ * Cap on a proxied (multipart) upload. Shared with the browser's strategy switch
+ * via UPLOAD_PROXY_MAX_BYTES, so the two cannot disagree — this used to be a bare
+ * 8MB while the client switched at 4MB.
+ */
+const MAX_PROXY_BYTES = UPLOAD_PROXY_MAX_BYTES;
 
 const uploadMetaSchema = z.object({
   fileName: z.string(),

@@ -159,8 +159,11 @@ const CorporateDashboard = () => {
   const primaryColor = branding?.primaryColor;
   const secondaryColor = branding?.secondaryColor;
 
-  // In Next.js App Router each role has its own layout — basePath is fixed
-  const basePath = '/tenant-dashboard';
+  // No basePath. `(tenant-admin)` is a ROUTE GROUP — parentheses add no URL
+  // segment — so every page in this group is a sibling at the root: /courses,
+  // /compliance, /branding, /course-analytics, /user-management. The old
+  // `basePath = '/tenant-dashboard'` prefixed all six links below with this
+  // page's own path, and /tenant-dashboard has no children, so each one 404'd.
 
   const [stats, setStats] = useState<DashboardStats>({
     totalLearners: 0,
@@ -590,7 +593,10 @@ const CorporateDashboard = () => {
 
           {selectedCourseId && (
             <button
-              onClick={() => router.push(`${basePath}/course-analytics/${selectedCourseId}`)}
+              // /course-analytics reads the id from the QUERY STRING
+              // (`searchParams.get('courseId')`) and returns early without it —
+              // there is no [courseId] path segment.
+              onClick={() => router.push(`/course-analytics?courseId=${selectedCourseId}`)}
               className="flex items-center gap-2 px-4 py-2.5 border border-indigo-200 bg-white text-indigo-600 rounded-xl text-sm font-bold hover:bg-indigo-50 hover:shadow-md transition-all shadow-sm"
             >
               <BarChart3 className="w-4 h-4" /> Full Analytics
@@ -1201,7 +1207,7 @@ const CorporateDashboard = () => {
                     <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                       <button
                         onClick={() =>
-                          router.push(`${basePath}/course-analytics/${course.courseId}`)
+                          router.push(`/course-analytics?courseId=${course.courseId}`)
                         }
                         className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md border border-[var(--brand-primary-light)]/50 bg-[var(--brand-primary-light)]/10 text-[var(--brand-primary)] hover:bg-[var(--brand-primary-light)]/20 text-xs font-medium transition"
                       >
@@ -1227,28 +1233,32 @@ const CorporateDashboard = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {[
             {
-              href: `${basePath}/learners`,
+              // There is no `/learners` route — users are managed on
+              // /user-management, which is where "add or remove users" lives.
+              href: '/user-management',
               icon: Users,
               label: 'Manage Learners',
               color: '#3b82f6',
               desc: 'Add or remove users',
             },
             {
-              href: `${basePath}/courses`,
+              // "Select courses for learners" is assignment, not the catalogue:
+              // /course-assignments. /courses is the course list.
+              href: '/course-assignments',
               icon: BookOpen,
               label: 'Assign Courses',
               color: '#6366f1',
               desc: 'Select courses for learners',
             },
             {
-              href: `${basePath}/compliance`,
+              href: '/compliance',
               icon: FileCheck,
               label: 'Compliance',
               color: '#10b981',
               desc: 'Check training status',
             },
             {
-              href: `${basePath}/branding`,
+              href: '/branding',
               icon: Palette,
               label: 'Branding',
               color: '#06b6d4',

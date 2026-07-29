@@ -66,26 +66,21 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
   const roleLabel = ROLE_LABELS[role] ?? role.replace(/_/g, ' ');
 
   // â”€â”€ Role switcher (users with a secondary role) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // The user's own roles â€” primary + secondary (de-duped). Multi-role users get
-  // an in-place switcher; single-role users get the dev account picker.
-  // We persist the role set (qs_roles) so the switcher round-trips: the dev auth
-  // resolves each role-cookie to a different seed identity, which would
-  // otherwise drop the "other" role after switching.
-  const [storedRoles, setStoredRoles] = useState<string[]>([]);
-  useEffect(() => {
-    try { setStoredRoles(JSON.parse(localStorage.getItem('qs_roles') || '[]')); } catch { /* ignore */ }
-  }, []);
-  useEffect(() => {
-    if (user?.secondaryRole && user.role) {
-      const roles = Array.from(new Set([user.role, user.secondaryRole]));
-      localStorage.setItem('qs_roles', JSON.stringify(roles));
-      setStoredRoles(roles);
-    }
-  }, [user?.role, user?.secondaryRole]);
-
-  const myRoles = Array.from(
-    new Set([role, user?.role, user?.secondaryRole, ...storedRoles].filter(Boolean)),
-  ) as string[];
+  // The roles this user may act as, straight from the server (`GET /api/me` →
+  // `roles`, derived from their resolved role plus `LmsUser.secondaryRole`).
+  //
+  // This used to be reconstructed on the client and cached in
+  // `localStorage.qs_roles`, because under the retired dev auth each role cookie
+  // resolved to a DIFFERENT seed identity and the "other" role vanished after a
+  // switch. Under real SSO the server knows the whole set on every request, so the
+  // cache is gone — a stale one is also how a revoked sub-admin kept being offered
+  // the switch after `revokeSubAdmin` had cleared it.
+  //
+  // Server order first (default role at index 0) so the list does not reorder as
+  // the active role changes; `role` — what the layout's page guard actually
+  // admitted — is unioned in so the current role is listed even on the first paint,
+  // before /api/me resolves.
+  const myRoles = Array.from(new Set([...(user?.roles ?? []), role]));
   const isMultiRole = myRoles.length > 1;
 
   const [menuOpen, setMenuOpen] = useState(false);
@@ -163,7 +158,13 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
   function activateRole(r: string) {
     if (r === role) { setMenuOpen(false); return; }
     const maxAge = 60 * 60 * 24 * 365;
-    document.cookie = `qs_role=${r}; path=/; max-age=${maxAge}; SameSite=Lax`;
+    // The server now reads this cookie back as a REQUEST to act as `r`, and honours
+    // it only when `r` is one of the roles the database says this user holds (see
+    // lib/auth/active-role.ts). Until that existed nothing server-side read it, so
+    // picking a role wrote a cookie, navigated, and was bounced straight back by the
+    // destination's `requirePageRoles` — the switcher looked broken because it was.
+    // `path=/` so the page guards AND the API routes both see it.
+    document.cookie = `qs_role=${encodeURIComponent(r)}; path=/; max-age=${maxAge}; SameSite=Lax`;
     localStorage.setItem('qs_role', r);
     // Full navigation so providers re-fetch /api/me and the shell rebuilds.
     // School tenant admins belong on /school-dashboard, not the corporate one.
