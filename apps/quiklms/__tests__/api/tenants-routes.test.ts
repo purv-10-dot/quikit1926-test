@@ -18,6 +18,15 @@ vi.mock('@/lib/auth/context', () => ({
   requireAuth: h.requireAuth,
   requireRoles: h.requireRoles,
   assertTenantMatch: h.assertTenantMatch,
+  // REAL implementation, not a stub. `/api/tenants/:id` takes the org id from the
+  // PATH, and `requireRoles(['SUPER_ADMIN'])` was its only gate — so any holder of
+  // that role could read, PATCH or DELETE another org's tenant by naming it in the
+  // URL. Stubbing this guard would hide exactly that.
+  assertOrgAccess: (u: { isSuperAdmin?: boolean; orgId?: string | null }, target?: string | null) => {
+    if (u?.isSuperAdmin === true) return;
+    if (!target) return;
+    if (target !== u?.orgId) throw new Error('Access denied: cross-tenant access not allowed');
+  },
 }));
 // `org` is mocked because tenant STATUS now lives on the platform Org, not on a
 // column of `tenants` — the service reads it back on every tenant read and

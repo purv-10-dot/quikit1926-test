@@ -128,6 +128,18 @@ export async function ensureUserOnLmsRole(
   const roleId = roles.get(roleName);
   if (!roleId) return;
 
+  // The LMS row must exist FIRST. `app_quiklms.UserAppRole.userId` is a foreign key
+  // to `app_quiklms.users(id)` — an assignment cannot precede the person.
+  //
+  // Callers that create the row themselves (provisionLmsUser) are fine, but the
+  // launcher's `POST /api/internal/provision-roles` passes CENTRAL user ids for
+  // admins who may never have been provisioned into the LMS, and every one of those
+  // raised `Foreign key constraint violated: UserAppRole_userId_fkey` and 500'd the
+  // endpoint. Returning quietly matches the two no-ops above: the assignment is
+  // re-derivable, and `provisionLmsUser` writes it the moment the person is created.
+  const lmsUser = await db.lmsUser.findUnique({ where: { id: userId }, select: { id: true } });
+  if (!lmsUser) return;
+
   const existing = await db.lmsUserAppRole.findFirst({
     where: { userId, orgId },
     select: { roleId: true },

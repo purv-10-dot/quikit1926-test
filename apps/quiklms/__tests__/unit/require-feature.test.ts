@@ -93,9 +93,24 @@ describe('requireFeature — enforcement', () => {
 });
 
 describe('requireFeature — deliberate fail-open paths', () => {
-  it('lets SUPER_ADMIN through without reading a tenant row', async () => {
-    await expect(requireFeature(actor({ role: 'SUPER_ADMIN' }), 'showBatches')).resolves.toBeNull();
+  it('lets the platform OPERATOR through without reading a tenant row', async () => {
+    // Keyed on the `isSuperAdmin` claim, not the LMS role: the operator's own org
+    // has no tenant row to read a feature config from.
+    await expect(
+      requireFeature(actor({ role: 'SUPER_ADMIN', isSuperAdmin: true }), 'showBatches'),
+    ).resolves.toBeNull();
     expect(h.tenantFindUnique).not.toHaveBeenCalled();
+  });
+
+  it('still reads the tenant row for a founding admin whose ROLE is SUPER_ADMIN', async () => {
+    // Regression: an org's founding admin resolves to an LMS role of SUPER_ADMIN
+    // (lib/auth/founding-admin.ts) but HAS a tenant. Short-circuiting on the role
+    // returned null here, which silently disabled every feature flag for them.
+    h.tenantFindUnique.mockResolvedValue({ id: 'org-1', tenantType: 'school', featureConfig: {} });
+    await expect(
+      requireFeature(actor({ role: 'SUPER_ADMIN', isSuperAdmin: false }), 'showBatches'),
+    ).resolves.toEqual({ id: 'org-1', tenantType: 'school' });
+    expect(h.tenantFindUnique).toHaveBeenCalled();
   });
 
   it('allows when the org has no LmsTenant row (operator / not yet onboarded)', async () => {

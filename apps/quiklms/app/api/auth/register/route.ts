@@ -1,3 +1,4 @@
+import { INVITE_METHOD } from '@quikit/shared';
 import { route, json, Conflict, BadRequest, Forbidden } from '@/lib/http';
 import { requireAuth, requireRoles } from '@/lib/auth/context';
 import { canAssignRole, isUserRole } from '@/lib/auth/role-policy';
@@ -49,10 +50,51 @@ export const POST = route(async (req) => {
     throw Forbidden(`Your role (${actor.role}) cannot assign the role ${lmsRole}.`);
   }
 
+  // `secondaryRole` gets the SAME policy check as `role`, and must.
+  //
+  // The body is spread into `provisionLmsUser` (`...(body as Partial<RegisterUserInput>)`),
+  // which passes it to `registerUser`, which writes `secondaryRole` to the LMS row
+  // with no validation at all. That was inert while nothing read the column, but a
+  // second role is now a role the holder can actually SWITCH INTO
+  // (lib/auth/active-role.ts) — so an unchecked `secondaryRole: 'TENANT_ADMIN'`
+  // would let a SUB_ADMIN mint an account above their own tier and have its
+  // credentials mailed to an address they chose. Same rank rule as the primary:
+  // strictly below the caller, and never SUPER_ADMIN.
+  const rawSecondary = String(body.secondaryRole ?? '').trim().toUpperCase();
+  let secondaryRole: string | undefined;
+  if (rawSecondary) {
+    if (!isUserRole(rawSecondary)) throw BadRequest(`Invalid secondary role: ${rawSecondary}`);
+    if (!canAssignRole(actor.role, rawSecondary)) {
+      throw Forbidden(`Your role (${actor.role}) cannot assign the role ${rawSecondary}.`);
+    }
+    secondaryRole = rawSecondary;
+  }
+
+  // Invitation method — `native` (temp password) or `sso` (Google/Microsoft),
+  // matching quikscale's `invitationMethod`. Validated here rather than trusted:
+  // anything other than the two known values is a client bug, and silently
+  // treating it as `native` would mail a password to someone the admin meant to
+  // put on SSO. `createCentralIdentity` owns the domain check that follows.
+  const rawMethod = String((body as { invitationMethod?: unknown }).invitationMethod ?? '')
+    .trim()
+    .toLowerCase();
+  let inviteMethod: (typeof INVITE_METHOD)[keyof typeof INVITE_METHOD] | undefined;
+  if (rawMethod) {
+    if (rawMethod !== INVITE_METHOD.NATIVE && rawMethod !== INVITE_METHOD.SSO) {
+      throw BadRequest(`Invalid invitationMethod: ${rawMethod}. Expected "native" or "sso".`);
+    }
+    inviteMethod = rawMethod;
+  }
+
   // Platform Org id — the scope key (orgId-native). Forced to the caller's
-  // session; super-admins may target another org via body.orgId.
+  // session; only the platform OPERATOR may target another org via body.orgId.
+  //
+  // Keyed on the `isSuperAdmin` claim rather than the role. With the role test, an
+  // org's founding admin — who resolves to an LMS role of SUPER_ADMIN
+  // (lib/auth/founding-admin.ts) — could pass any `orgId` in the body and mint users
+  // inside somebody else's tenant.
   const orgId =
-    actor.role === 'SUPER_ADMIN'
+    actor.isSuperAdmin === true
       ? body.orgId ?? actor.orgId ?? undefined
       : actor.orgId ?? undefined;
   if (!orgId) throw BadRequest('No organization context to create the user in.');
@@ -67,9 +109,18 @@ export const POST = route(async (req) => {
       lastName,
       orgId,
       lmsRole,
+      // The NORMALISED value, so what gets written is what was policy-checked
+      // above — the raw body could be `sub_admin`, which passes the check after
+      // upper-casing but would reach Prisma as an invalid enum member.
+      secondaryRole,
       // Session-derived, never from the body — it is an audit field and the
       // `grantedBy` on the resulting app-access grant.
       createdByUserId: actor.id,
+      inviteMethod,
+      // Shown as "invited by" in the shared email template. Session-derived for the
+      // same reason as `createdByUserId`: a client-supplied name would let the
+      // sender of an invitation be forged.
+      inviterName: `${actor.firstName} ${actor.lastName}`.trim() || undefined,
     });
 
     // The roster fields the identity path does not write. Best-effort — the

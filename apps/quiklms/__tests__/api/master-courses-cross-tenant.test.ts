@@ -26,9 +26,12 @@ const h = vi.hoisted(() => ({
 vi.mock('@/lib/auth/context', () => ({
   requireAuth: h.requireAuth,
   requireRoles: h.requireRoles,
-  // Real predicate — stubbing it would disable the guards under test.
+  // Real predicates — stubbing them would disable the guards under test.
   userHasRole: (u: { role?: string; secondaryRole?: string | null }, role: string) =>
     u?.role === role || u?.secondaryRole === role,
+  // Cross-tenant access is keyed on the PLATFORM CLAIM, not the role: an org's
+  // founding admin holds the SUPER_ADMIN role but must stay scoped.
+  isPlatformOperator: (u: { isSuperAdmin?: boolean }) => u?.isSuperAdmin === true,
 }));
 vi.mock('@/lib/env', () => ({ optionalEnv: () => 'ap-south-1', env: { ENCRYPTION_KEY: 'k'.repeat(32) } }));
 vi.mock('@/lib/s3', () => ({ presignFromUrlOrKey: vi.fn(async (u: string) => u), s3: { send: vi.fn() }, S3_BUCKET: 'b' }));
@@ -80,8 +83,13 @@ beforeEach(() => {
 });
 
 /** An attacker: a legitimate admin, but of a DIFFERENT tenant. */
-function actAs(role: string, secondaryRole: string | null = null, orgId = 'org-attacker') {
-  h.requireAuth.mockResolvedValue({ id: 'u-att', role, secondaryRole, orgId, isActive: true });
+function actAs(
+  role: string,
+  secondaryRole: string | null = null,
+  orgId = 'org-attacker',
+  isSuperAdmin = false,
+) {
+  h.requireAuth.mockResolvedValue({ id: 'u-att', role, secondaryRole, orgId, isActive: true, isSuperAdmin });
 }
 
 const attackers: Array<[string, string, string | null]> = [
@@ -151,8 +159,12 @@ describe('the owning tenant is unaffected', () => {
   });
 });
 
-describe('SUPER_ADMIN stays unscoped', () => {
-  beforeEach(() => actAs('SUPER_ADMIN', null, 'org-operator'));
+describe('the platform OPERATOR stays unscoped', () => {
+  // `isSuperAdmin: true` — the platform claim, written only by apps/quikit's audited
+  // super-admin console. The ROLE alone is no longer enough and must not be: an org's
+  // founding admin resolves to SUPER_ADMIN (lib/auth/founding-admin.ts) and is covered
+  // by the scoped case below.
+  beforeEach(() => actAs('SUPER_ADMIN', null, 'org-operator', true));
 
   it('can auto-save any course', async () => {
     const res = await autoSavePOST(req('POST', { ok: true }), ctx);
@@ -167,6 +179,32 @@ describe('SUPER_ADMIN stays unscoped', () => {
   it('can reorder any course', async () => {
     const res = await reorderModulesPUT(req('PUT', { moduleIds: ['mod-1'] }), ctx);
     expect(res.status).toBe(200);
+  });
+});
+
+/**
+ * An org's FOUNDING admin holds the SUPER_ADMIN role with `isSuperAdmin: false`
+ * (lib/auth/founding-admin.ts). Before the role/claim split, `assertCanEditMasterCourse`
+ * returned early — completely unscoped — for anyone whose ROLE was SUPER_ADMIN, so a
+ * founding admin could read, overwrite and restructure any other tenant's master-course
+ * drafts. They must be treated exactly like the tenant admin they are.
+ */
+describe('a founding admin (SUPER_ADMIN role, not the operator) is scoped', () => {
+  beforeEach(() => actAs('SUPER_ADMIN', null, 'org-attacker', false));
+
+  it('cannot auto-save another tenant’s course', async () => {
+    const res = await autoSavePOST(req('POST', { ok: true }), ctx);
+    expect(res.status).not.toBe(200);
+  });
+
+  it('cannot read another tenant’s draft', async () => {
+    const res = await draftGET(req('GET'), ctx);
+    expect(res.status).not.toBe(200);
+  });
+
+  it('cannot reorder another tenant’s course', async () => {
+    const res = await reorderModulesPUT(req('PUT', { moduleIds: ['mod-1'] }), ctx);
+    expect(res.status).not.toBe(200);
   });
 });
 

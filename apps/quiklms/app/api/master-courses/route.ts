@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { route, json, BadRequest } from '@/lib/http';
 import { parseBody } from '@/lib/validation';
-import { requireAuth, requireRoles } from '@/lib/auth/context';
+import { requireAuth, requireRoles, orgScope } from '@/lib/auth/context';
 import * as svc from '@/lib/services/master-course-service';
 
 /**
@@ -77,6 +77,6 @@ export const POST = route(async (req) => {
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['SUPER_ADMIN']);
-  const data = await svc.enrichCoursesWithPresignedUrls(await svc.findAll());
+  const data = await svc.enrichCoursesWithPresignedUrls(await svc.findAll(orgScope(actor)));
   return json({ success: true, data });
 });
