@@ -44,6 +44,23 @@ export const PATCH = withOrgAuth<{ id: string }>(
       );
     }
 
+    // Optimistic concurrency: if the client's expected status is stale (another
+    // move landed first), reject rather than silently overwrite.
+    if (
+      parsed.data.expectedStatusId != null &&
+      parsed.data.expectedStatusId !== issue.statusId
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "This item moved since you loaded it. Refresh and try again.",
+          code: "STALE_STATUS",
+          currentStatusId: issue.statusId,
+        },
+        { status: 409 },
+      );
+    }
+
     // Workflow gate: a status change must follow a transition on the project's
     // active workflow, whose conditions/validators pass; its post-functions then
     // yield a field patch (e.g. set resolution). No-ops and projects without a

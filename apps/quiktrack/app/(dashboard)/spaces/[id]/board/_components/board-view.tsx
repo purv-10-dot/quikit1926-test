@@ -233,18 +233,29 @@ export function BoardView({ projectId }: { projectId: string }) {
       const issueId = e.dataTransfer.getData("application/quiktrack-issue");
       if (issueId) {
         e.preventDefault();
+        const expectedStatusId =
+          e.dataTransfer.getData("application/quiktrack-issue-status") || undefined;
+        if (expectedStatusId === targetId) return; // dropped on the same column
         try {
-          const res = await fetch(`/api/issues/${issueId}`, {
+          const r = await fetch(`/api/issues/${issueId}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ statusId: targetId }),
-          }).then((r) => r.json());
+            body: JSON.stringify({ statusId: targetId, expectedStatusId }),
+          });
+          const res = await r.json();
           if (res?.success) {
             window.dispatchEvent(
               new CustomEvent("quiktrack:issue-updated", {
                 detail: { projectId, issueId },
               }),
             );
+          } else if (r.status === 422 && res?.code === "TRANSITION_VALIDATION_FAILED") {
+            // A validator blocked the move (e.g. resolution required).
+            window.alert(res.error ?? "This move needs more information.");
+            setRefreshKey((k) => k + 1);
+          } else if (r.status === 409 || r.status === 403) {
+            // Illegal transition, stale move, or blocked by a condition — resync.
+            setRefreshKey((k) => k + 1);
           }
         } catch {
           // ignore — next refresh reconciles

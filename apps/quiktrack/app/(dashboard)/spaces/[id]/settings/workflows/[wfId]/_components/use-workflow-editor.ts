@@ -9,6 +9,7 @@ import type {
   PublishError,
   TransitionType,
 } from "./editor-types";
+import type { MigrationItem } from "../../_components/migration-dialog";
 
 /** Small client-side unique id for new transitions (crypto.randomUUID). */
 function newId(): string {
@@ -25,6 +26,7 @@ function newId(): string {
 export function useWorkflowEditor(wfId: string, initial: EditorDraft) {
   const [draft, setDraft] = useState<EditorDraft>(initial);
   const [publishErrors, setPublishErrors] = useState<PublishError[]>([]);
+  const [migration, setMigration] = useState<MigrationItem[] | null>(null);
 
   const save = useMutation({
     mutationFn: async (next: EditorDraft) => {
@@ -39,15 +41,24 @@ export function useWorkflowEditor(wfId: string, initial: EditorDraft) {
   });
 
   const publish = useMutation({
-    mutationFn: async () => {
-      const r = await fetch(`/api/workflows/${wfId}/publish`, { method: "POST" });
+    mutationFn: async (statusMapping?: Record<string, string>) => {
+      const r = await fetch(`/api/workflows/${wfId}/publish`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ statusMapping: statusMapping ?? {} }),
+      });
       const j = await r.json();
+      if (r.status === 422 && j.code === "NEEDS_MIGRATION") {
+        setMigration(j.migration as MigrationItem[]);
+        throw new Error("NEEDS_MIGRATION");
+      }
       if (r.status === 422 && Array.isArray(j.errors)) {
         setPublishErrors(j.errors as PublishError[]);
         throw new Error(j.error ?? "The workflow is not valid.");
       }
       if (!r.ok || !j.success) throw new Error(j.error ?? "Publish failed");
       setPublishErrors([]);
+      setMigration(null);
       return j.data;
     },
   });
@@ -175,6 +186,8 @@ export function useWorkflowEditor(wfId: string, initial: EditorDraft) {
     saveError: save.error as Error | null,
     publish,
     publishErrors,
+    migration,
+    clearMigration: () => setMigration(null),
     addStatus,
     removeStatus,
     moveNode,

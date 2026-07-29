@@ -13,8 +13,11 @@ import {
 import { recalcParentRollup } from "@/lib/services/subtaskRollup";
 import { notifyMentions } from "@/lib/services/mentions";
 import {
-  assertTransitionForIssue,
+  executeTransition,
   TransitionNotAllowedError,
+  ConditionsFailedError,
+  ValidationFailedError,
+  type ExecuteResult,
 } from "@/lib/services/workflow";
 import {
   getActiveFieldsForProject,
@@ -117,6 +120,7 @@ export const PATCH = withOrgAuth<{ id: string }>(
         id: true,
         key: true,
         projectId: true,
+        resolutionId: true, // for the workflow pipeline (resolution post-functions)
         description: true, // for the mention diff (only email newly-added @mentions)
         // Snapshot every tracked field for the activity-history diff.
         // (`title`, `statusId`, `assigneeId` are part of this snapshot too.)
@@ -149,8 +153,9 @@ export const PATCH = withOrgAuth<{ id: string }>(
     // Custom field values travel under `customFields` (not real QtIssue
     // columns) — pull them out before the column update and validate up-front
     // so a bad value can't half-apply.
-    const { customFields, ...issueFields } = parsed.data as typeof parsed.data & {
+    const { customFields, expectedStatusId, ...issueFields } = parsed.data as typeof parsed.data & {
       customFields?: Record<string, FieldValue>;
+      expectedStatusId?: string;
     };
     if (customFields) {
       const valid = await validateIssueValues({
@@ -182,25 +187,52 @@ export const PATCH = withOrgAuth<{ id: string }>(
     // sets it; an absent key leaves it unchanged.
     const allowedFields = allowed as typeof parsed.data;
 
-    // Workflow gate: if this patch changes statusId, it must follow a legal
-    // transition on the issue's active workflow. No-ops and projects without a
-    // published scheme fall through (opt-in enforcement).
-    if (
-      allowedFields.statusId != null &&
-      allowedFields.statusId !== issue.statusId
-    ) {
+    // Workflow pipeline: a statusId change must follow a legal transition whose
+    // conditions/validators pass; its post-functions yield a field patch (e.g.
+    // set resolution). No-ops and unpublished projects fall through (opt-in).
+    const isStatusChange =
+      allowedFields.statusId != null && allowedFields.statusId !== issue.statusId;
+    let workflowPatch: ExecuteResult["patch"] = {};
+    if (isStatusChange) {
+      // Optimistic concurrency: reject a stale move rather than overwrite.
+      if (expectedStatusId != null && expectedStatusId !== issue.statusId) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "This item moved since you loaded it. Refresh and try again.",
+            code: "STALE_STATUS",
+            currentStatusId: issue.statusId,
+          },
+          { status: 409 },
+        );
+      }
       try {
-        await assertTransitionForIssue({
-          projectId: issue.projectId,
-          issueType: issue.type ?? "TASK",
-          fromStatusId: issue.statusId,
-          toStatusId: allowedFields.statusId,
+        const res = await executeTransition({
+          issue: {
+            id: issue.id,
+            orgId,
+            projectId: issue.projectId,
+            type: issue.type ?? "TASK",
+            statusId: issue.statusId as string,
+            assigneeId: issue.assigneeId ?? null,
+            resolutionId: issue.resolutionId ?? null,
+            priority: issue.priority ?? null,
+          },
+          toStatusId: allowedFields.statusId as string,
+          userId,
         });
+        workflowPatch = res.patch ?? {};
       } catch (error: unknown) {
         if (error instanceof TransitionNotAllowedError) {
+          return NextResponse.json({ success: false, error: error.message, code: error.code }, { status: 409 });
+        }
+        if (error instanceof ConditionsFailedError) {
+          return NextResponse.json({ success: false, error: error.message, code: error.code }, { status: 403 });
+        }
+        if (error instanceof ValidationFailedError) {
           return NextResponse.json(
-            { success: false, error: error.message, code: error.code },
-            { status: 409 },
+            { success: false, error: error.message, code: error.code, failures: error.failures },
+            { status: 422 },
           );
         }
         throw error;
@@ -219,9 +251,26 @@ export const PATCH = withOrgAuth<{ id: string }>(
         ...allowedFields,
         startDate: dateValue("startDate"),
         dueDate: dateValue("dueDate"),
+        // Workflow post-function effects (resolution / assignee / priority).
+        ...("assigneeId" in workflowPatch ? { assigneeId: workflowPatch.assigneeId } : {}),
+        ...("resolutionId" in workflowPatch ? { resolutionId: workflowPatch.resolutionId } : {}),
+        ...(typeof workflowPatch.priority === "string" ? { priority: workflowPatch.priority } : {}),
         updatedBy: userId,
       },
     });
+
+    // Append-only transition audit for a status change (parity with /move).
+    if (isStatusChange) {
+      void db.qtIssueTransitionLog.create({
+        data: {
+          orgId,
+          issueId: issue.id,
+          fromStatusId: issue.statusId,
+          toStatusId: allowedFields.statusId as string,
+          actorId: userId,
+        },
+      });
+    }
 
     // Activity history — fire-and-forget. `updated` already contains every
     // tracked field, so we can diff against the pre-update snapshot directly.

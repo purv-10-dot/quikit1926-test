@@ -9,6 +9,7 @@ import { DiagramCanvas, errorStatusIdSet } from "./diagram-canvas";
 import { TextView } from "./text-view";
 import { AddStatusDialog, AddTransitionDialog } from "./editor-dialogs";
 import { RulePanel } from "./rule-panel";
+import { MigrationDialog } from "../../_components/migration-dialog";
 import {
   draftFromReadModel,
   type StatusMeta,
@@ -152,7 +153,7 @@ function EditorBody({
           {ed.saving && <span className="text-xs text-gray-400">Saving…</span>}
           <button
             type="button"
-            onClick={() => ed.publish.mutate()}
+            onClick={() => ed.publish.mutate(undefined)}
             disabled={ed.publish.isPending}
             className="rounded bg-accent-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-700 disabled:opacity-60"
           >
@@ -184,10 +185,21 @@ function EditorBody({
           </ul>
         </div>
       )}
-      {ed.saveError && (
+      {ed.saveError && ed.saveError.message !== "NEEDS_MIGRATION" && (
         <div className="border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
           {ed.saveError.message}
         </div>
+      )}
+
+      {ed.migration && (
+        <MigrationDialog
+          projectId={projectId}
+          items={ed.migration}
+          applying={ed.publish.isPending}
+          error={null}
+          onCancel={ed.clearMigration}
+          onApply={(mapping) => ed.publish.mutate(mapping)}
+        />
       )}
 
       {/* Body + optional rule panel */}

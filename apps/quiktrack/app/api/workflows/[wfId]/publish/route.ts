@@ -24,7 +24,20 @@ import {
  * See apps/quiktrack/WORKFLOW_INTEGRATION_PLAN.md §8.
  */
 export const POST = withOrgAuth<{ wfId: string }>(
-  async ({ orgId, userId }, _req, { params }) => {
+  async ({ orgId, userId }, req, { params }) => {
+    // Optional { statusMapping: { oldStatusId: newStatusId } } for the migration
+    // step (empty on a first publish attempt).
+    let statusMapping: Record<string, string> = {};
+    try {
+      const body: unknown = await req.json();
+      if (body && typeof body === "object" && "statusMapping" in body) {
+        const m = (body as { statusMapping?: unknown }).statusMapping;
+        if (m && typeof m === "object") statusMapping = m as Record<string, string>;
+      }
+    } catch {
+      // no body → first attempt, no mapping
+    }
+
     const wf = await db.qtWorkflow.findFirst({
       where: { id: params.wfId, orgId, isDeleted: false },
       select: { id: true, projectId: true },
@@ -38,9 +51,11 @@ export const POST = withOrgAuth<{ wfId: string }>(
         { status: 400 },
       );
     }
+    // Stable non-null binding — the narrowing above doesn't reach nested closures.
+    const projectId: string = wf.projectId;
     const canEdit =
       (await hasAdminAccess(userId, orgId)) ||
-      (await userCanInProject(userId, orgId, wf.projectId, "Project", "update"));
+      (await userCanInProject(userId, orgId, projectId, "Project", "update"));
     if (!canEdit) {
       return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
     }
@@ -68,7 +83,7 @@ export const POST = withOrgAuth<{ wfId: string }>(
     const projectStatusIds = new Set(
       (
         await db.qtIssueStatus.findMany({
-          where: { projectId: wf.projectId, isDeleted: false },
+          where: { projectId, isDeleted: false },
           select: { id: true },
         })
       ).map((s) => s.id),
@@ -113,9 +128,72 @@ export const POST = withOrgAuth<{ wfId: string }>(
       }
     }
 
+    // Status migration (Jira "Publish Workflows" step 1). If the new draft drops
+    // a status that existing issues currently sit on, those issues must be
+    // remapped to a status that IS in the new workflow. Classic case: the scheme
+    // maps every type to this one workflow, so we scope by project.
+    const draftStatusIds = new Set(draft.statuses.map((s) => s.statusId));
+    const affected = await db.qtIssue.groupBy({
+      by: ["statusId"],
+      where: { projectId, isDeleted: false },
+      _count: { _all: true },
+    });
+    const droppedInUse = affected.filter((a) => !draftStatusIds.has(a.statusId));
+
+    // Which dropped statuses still lack a valid mapping into the new set?
+    const unmapped = droppedInUse.filter((a) => {
+      const to = statusMapping[a.statusId];
+      return !to || !draftStatusIds.has(to);
+    });
+    if (unmapped.length > 0) {
+      const names = await db.qtIssueStatus.findMany({
+        where: { id: { in: unmapped.map((u) => u.statusId) } },
+        select: { id: true, name: true },
+      });
+      const nameById = new Map(names.map((n) => [n.id, n.name]));
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Some work items are on statuses this workflow removes. Map them first.",
+          code: "NEEDS_MIGRATION",
+          migration: unmapped.map((u) => ({
+            statusId: u.statusId,
+            statusName: nameById.get(u.statusId) ?? u.statusId,
+            count: u._count._all,
+          })),
+        },
+        { status: 422 },
+      );
+    }
+
     // Apply: rebuild nodes + transitions to match the draft, set the initial
-    // transition, activate, clear the draft — all atomically.
+    // transition, activate, clear the draft, migrate affected issues — all atomically.
     await db.$transaction(async (tx) => {
+      // Migrate issues off dropped statuses first (mapping is fully covered here).
+      for (const a of droppedInUse) {
+        const toStatusId = statusMapping[a.statusId];
+        const moved = await tx.qtIssue.findMany({
+          where: { projectId, statusId: a.statusId, isDeleted: false },
+          select: { id: true },
+        });
+        await tx.qtIssue.updateMany({
+          where: { projectId, statusId: a.statusId, isDeleted: false },
+          data: { statusId: toStatusId, updatedBy: userId },
+        });
+        if (moved.length > 0) {
+          await tx.qtIssueTransitionLog.createMany({
+            data: moved.map((m) => ({
+              orgId,
+              issueId: m.id,
+              fromStatusId: a.statusId,
+              toStatusId,
+              actorId: userId,
+              reason: "migration",
+            })),
+          });
+        }
+      }
+
       await tx.qtWorkflowStatus.deleteMany({ where: { workflowId: wf.id } });
       // Deleting transitions cascades their from-joins and rules.
       await tx.qtWorkflowTransition.deleteMany({ where: { workflowId: wf.id } });
@@ -180,7 +258,7 @@ export const POST = withOrgAuth<{ wfId: string }>(
       });
 
       await tx.qtWorkflowScheme.update({
-        where: { projectId: wf.projectId as string },
+        where: { projectId },
         data: { hasDraft: false, draftJson: Prisma.DbNull },
       });
     });

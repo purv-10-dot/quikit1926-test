@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Pencil, Users } from "lucide-react";
 import { AssignTypesDialog } from "./assign-types-dialog";
+import { MigrationDialog, type MigrationItem } from "./migration-dialog";
 import { toOverviewRows, type WorkflowSchemeResponse } from "./types";
 
 async function fetchScheme(projectId: string): Promise<WorkflowSchemeResponse> {
@@ -24,6 +25,9 @@ const QKEY = (projectId: string) => ["quiktrack", "workflow-scheme", projectId];
 export function WorkflowsOverview({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
   const [assignOpen, setAssignOpen] = useState(false);
+  // When a publish needs status migration, hold the affected statuses so the
+  // MigrationDialog can collect an old→new mapping and re-publish.
+  const [migration, setMigration] = useState<MigrationItem[] | null>(null);
   const { data, isLoading, error } = useQuery({
     queryKey: QKEY(projectId),
     queryFn: () => fetchScheme(projectId),
@@ -33,12 +37,28 @@ export function WorkflowsOverview({ projectId }: { projectId: string }) {
   const anyDraftWorkflowId = scheme?.items[0]?.workflow.id ?? null;
 
   const publish = useMutation({
-    mutationFn: async (wfId: string) => {
-      const r = await fetch(`/api/workflows/${wfId}/publish`, { method: "POST" });
+    mutationFn: async (vars: { wfId: string; statusMapping?: Record<string, string> }) => {
+      const r = await fetch(`/api/workflows/${vars.wfId}/publish`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ statusMapping: vars.statusMapping ?? {} }),
+      });
       const j = await r.json();
+      if (r.status === 422 && j.code === "NEEDS_MIGRATION") {
+        // Signal the caller to open the migration dialog rather than error out.
+        const err = new Error("NEEDS_MIGRATION") as Error & { migration?: MigrationItem[] };
+        err.migration = j.migration as MigrationItem[];
+        throw err;
+      }
       if (!r.ok || !j.success) throw new Error(j.error ?? "Publish failed");
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: QKEY(projectId) }),
+    onSuccess: () => {
+      setMigration(null);
+      qc.invalidateQueries({ queryKey: QKEY(projectId) });
+    },
+    onError: (err: Error & { migration?: MigrationItem[] }) => {
+      if (err.migration) setMigration(err.migration);
+    },
   });
 
   const discard = useMutation({
@@ -88,7 +108,7 @@ export function WorkflowsOverview({ projectId }: { projectId: string }) {
           <div className="ml-auto flex items-center gap-2">
             <button
               type="button"
-              onClick={() => publish.mutate(anyDraftWorkflowId)}
+              onClick={() => publish.mutate({ wfId: anyDraftWorkflowId })}
               disabled={publish.isPending}
               className="rounded bg-accent-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-700 disabled:opacity-60"
             >
@@ -118,10 +138,25 @@ export function WorkflowsOverview({ projectId }: { projectId: string }) {
         {scheme?.name ?? "This space has no workflow scheme yet."}
       </p>
 
-      {publish.error && (
+      {publish.error && (publish.error as Error).message !== "NEEDS_MIGRATION" && (
         <div className="mb-4 rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
           {(publish.error as Error).message}
         </div>
+      )}
+
+      {migration && anyDraftWorkflowId && (
+        <MigrationDialog
+          projectId={projectId}
+          items={migration}
+          applying={publish.isPending}
+          error={
+            publish.error && (publish.error as Error).message !== "NEEDS_MIGRATION"
+              ? (publish.error as Error).message
+              : null
+          }
+          onCancel={() => setMigration(null)}
+          onApply={(statusMapping) => publish.mutate({ wfId: anyDraftWorkflowId, statusMapping })}
+        />
       )}
 
       {scheme ? (
