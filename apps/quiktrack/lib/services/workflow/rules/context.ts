@@ -76,10 +76,18 @@ export interface ValidatorHandler {
   validateConfig?: (config: Record<string, unknown>) => string[];
 }
 
-/** Post-functions return a partial patch merged into the issue update. */
+/** Post-functions return a partial patch + optional side effects to apply in-txn. */
 export interface PostFunctionResult {
   /** Fields to write on the issue (e.g. { resolutionId, assigneeId }). */
   patch?: Partial<Pick<RuleIssueSnapshot, "assigneeId" | "resolutionId" | "priority">>;
+  /** Comment bodies to append to the issue (add_comment post-function). */
+  comments?: string[];
+}
+
+/** The aggregated effects of all post-functions on a transition. */
+export interface PostFunctionEffects {
+  patch: Partial<Pick<RuleIssueSnapshot, "assigneeId" | "resolutionId" | "priority">>;
+  comments: string[];
 }
 
 export interface PostFunctionHandler {

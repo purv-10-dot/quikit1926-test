@@ -2,13 +2,15 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
-import { Loader2, Plus, GitBranch, X } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Loader2, Columns, GitBranch, Zap, Bot } from "lucide-react";
 import { useWorkflowEditor } from "./use-workflow-editor";
-import { DiagramCanvas, errorStatusIdSet } from "./diagram-canvas";
+import { errorStatusIdSet } from "./diagram-canvas";
 import { TextView } from "./text-view";
 import { AddStatusDialog, AddTransitionDialog } from "./editor-dialogs";
-import { RulePanel } from "./rule-panel";
+import { FlowCanvas } from "./flow/flow-canvas";
+import { StatusPanel } from "./flow/status-panel";
+import { TransitionPanel } from "./flow/transition-panel";
 import { MigrationDialog } from "../../_components/migration-dialog";
 import {
   draftFromReadModel,
@@ -69,6 +71,11 @@ export function WorkflowEditor({ projectId, wfId }: { projectId: string; wfId: s
   );
 }
 
+type Selection =
+  | { kind: "status"; statusId: string }
+  | { kind: "transition"; transitionId: string }
+  | null;
+
 function EditorBody({
   projectId,
   wfId,
@@ -82,12 +89,13 @@ function EditorBody({
   pool: StatusMeta[];
   onClose: () => void;
 }) {
+  const qc = useQueryClient();
   const ed = useWorkflowEditor(wfId, initialDraft);
   const [tab, setTab] = useState<"diagram" | "text">("diagram");
+  const [showLabels, setShowLabels] = useState(true);
   const [addStatusOpen, setAddStatusOpen] = useState(false);
   const [addTransitionOpen, setAddTransitionOpen] = useState(false);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [ruleTransitionId, setRuleTransitionId] = useState<string | null>(null);
+  const [selection, setSelection] = useState<Selection>(null);
 
   const resolutions = useQuery({
     queryKey: ["quiktrack", "resolutions", projectId],
@@ -96,14 +104,126 @@ function EditorBody({
 
   const statusMeta = useMemo(() => new Map(pool.map((s) => [s.id, s])), [pool]);
   const errorStatusIds = errorStatusIdSet(ed.publishErrors);
-  const ruleTransition = ed.draft.transitions.find((t) => t.id === ruleTransitionId) ?? null;
+
+  const selectedTransition =
+    selection?.kind === "transition"
+      ? ed.draft.transitions.find((t) => t.id === selection.transitionId) ?? null
+      : null;
+  const selectedStatusId = selection?.kind === "status" ? selection.statusId : null;
+
+  // Create a NORMAL transition when the user drags between two node handles.
+  const createTransition = (sourceStatusId: string, targetStatusId: string) => {
+    const targetName = statusMeta.get(targetStatusId)?.name ?? "Transition";
+    // Reuse an existing NORMAL transition into the target if present (add a source),
+    // else create a new one — mirrors Jira merging arrows into the same action.
+    const existing = ed.draft.transitions.find(
+      (t) => t.type === "NORMAL" && t.toStatusId === targetStatusId,
+    );
+    if (existing) {
+      if (!existing.fromStatusIds.includes(sourceStatusId)) {
+        ed.updateTransition(existing.id, {
+          fromStatusIds: [...existing.fromStatusIds, sourceStatusId],
+        });
+      }
+      setSelection({ kind: "transition", transitionId: existing.id });
+      return;
+    }
+    ed.addTransition({
+      name: targetName,
+      type: "NORMAL",
+      toStatusId: targetStatusId,
+      fromStatusIds: [sourceStatusId],
+    });
+  };
+
+  // Persist a status name/category edit to the project status, then refresh the pool.
+  const patchStatus = async (statusId: string, body: { name?: string; category?: string }) => {
+    await fetch(`/api/projects/${projectId}/statuses/${statusId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    qc.invalidateQueries({ queryKey: ["quiktrack", "statuses", projectId] });
+  };
+
+  const ToolButton = ({
+    icon: Icon,
+    label,
+    onClick,
+    disabled,
+  }: {
+    icon: typeof GitBranch;
+    label: string;
+    onClick?: () => void;
+    disabled?: boolean;
+  }) => (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="flex flex-col items-center gap-0.5 rounded px-3 py-1 text-[11px] text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+    >
+      <Icon className="h-4 w-4" />
+      {label}
+    </button>
+  );
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Toolbar */}
-      <div className="flex items-center gap-2 border-b border-gray-200 px-4 py-2">
-        <div className="text-sm font-semibold text-gray-900">{ed.draft.name}</div>
-        <div className="ml-4 flex rounded border border-gray-300 text-sm">
+    // Pin to the viewport (minus the top nav) so the diagram body is bounded and
+    // fully on-screen — otherwise React Flow's 100%-height pane overflows below
+    // the fold and fitView centres content off-screen.
+    <div className="flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden">
+      {/* Toolbar (Jira-style) */}
+      <div className="flex items-center gap-3 border-b border-gray-200 px-4 py-2">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold text-gray-900">{ed.draft.name}</div>
+          <div className="text-[11px] text-gray-400">Used in 1 space</div>
+        </div>
+
+        <div className="mx-auto flex items-center gap-1">
+          <ToolButton icon={Columns} label="Add status" onClick={() => setAddStatusOpen(true)} />
+          <ToolButton
+            icon={GitBranch}
+            label="Add Transition"
+            onClick={() => setAddTransitionOpen(true)}
+            disabled={ed.draft.statuses.length < 1}
+          />
+          <ToolButton
+            icon={Zap}
+            label="Add Rule"
+            onClick={() => {
+              // "Add Rule" selects the first transition so its rule accordions open.
+              const first = ed.draft.transitions[0];
+              if (first) setSelection({ kind: "transition", transitionId: first.id });
+            }}
+            disabled={ed.draft.transitions.length < 1}
+          />
+          <ToolButton icon={Bot} label="Add agent" disabled />
+        </div>
+
+        <div className="flex items-center gap-2">
+          {ed.saving && <span className="text-xs text-gray-400">Saving…</span>}
+          <button
+            type="button"
+            onClick={() => ed.publish.mutate(undefined)}
+            disabled={ed.publish.isPending}
+            className="rounded bg-accent-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-700 disabled:opacity-60"
+          >
+            {ed.publish.isPending ? "Publishing…" : "Update workflow"}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
+          >
+            Discard changes
+          </button>
+        </div>
+      </div>
+
+      {/* Sub-toolbar: Diagram/Text + Show transition labels */}
+      <div className="flex items-center gap-3 border-b border-gray-200 px-4 py-1.5">
+        <div className="flex rounded border border-gray-300 text-sm">
           <button
             type="button"
             onClick={() => setTab("diagram")}
@@ -119,57 +239,20 @@ function EditorBody({
             Text
           </button>
         </div>
-
-        <button
-          type="button"
-          onClick={() => setAddStatusOpen(true)}
-          className="ml-4 inline-flex items-center gap-1.5 rounded border border-gray-300 px-2.5 py-1 text-sm text-gray-700 hover:bg-gray-100"
-        >
-          <Plus className="h-3.5 w-3.5" /> Add status
-        </button>
-        <button
-          type="button"
-          onClick={() => setAddTransitionOpen(true)}
-          disabled={ed.draft.statuses.length < 1}
-          className="inline-flex items-center gap-1.5 rounded border border-gray-300 px-2.5 py-1 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50"
-        >
-          <GitBranch className="h-3.5 w-3.5" /> Add transition
-        </button>
-
-        {/* Rules: pick a transition to edit its conditions/validators/post-functions. */}
-        <select
-          value={ruleTransitionId ?? ""}
-          onChange={(e) => setRuleTransitionId(e.target.value || null)}
-          className="rounded border border-gray-300 px-2 py-1 text-sm text-gray-700"
-          title="Edit rules on a transition"
-        >
-          <option value="">Add rule…</option>
-          {ed.draft.transitions.map((t) => (
-            <option key={t.id} value={t.id}>Rules: {t.name}</option>
-          ))}
-        </select>
-
-        <div className="ml-auto flex items-center gap-2">
-          {ed.saving && <span className="text-xs text-gray-400">Saving…</span>}
-          <button
-            type="button"
-            onClick={() => ed.publish.mutate(undefined)}
-            disabled={ed.publish.isPending}
-            className="rounded bg-accent-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-700 disabled:opacity-60"
-          >
-            {ed.publish.isPending ? "Publishing…" : "Update workflow"}
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="inline-flex items-center gap-1 rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
-          >
-            <X className="h-3.5 w-3.5" /> Close
-          </button>
-        </div>
+        {tab === "diagram" && (
+          <label className="ml-auto flex items-center gap-1.5 text-sm text-gray-600">
+            <input
+              type="checkbox"
+              checked={showLabels}
+              onChange={(e) => setShowLabels(e.target.checked)}
+              className="rounded border-gray-300 text-accent-600"
+            />
+            Show transition labels
+          </label>
+        )}
       </div>
 
-      {/* Error / success banners */}
+      {/* Banners */}
       {ed.publish.isSuccess && (
         <div className="border-b border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700">
           Workflow published.
@@ -202,17 +285,22 @@ function EditorBody({
         />
       )}
 
-      {/* Body + optional rule panel */}
+      {/* Body + contextual right panel */}
       <div className="flex min-h-0 flex-1">
         <div className="min-h-0 flex-1">
           {tab === "diagram" ? (
-            <DiagramCanvas
+            <FlowCanvas
               draft={ed.draft}
               statusMeta={statusMeta}
               errorStatusIds={errorStatusIds}
+              showLabels={showLabels}
+              selectedStatusId={selectedStatusId}
+              selectedTransitionId={selectedTransition?.id ?? null}
               onMoveNode={ed.moveNode}
-              onNodeClick={setSelected}
-              selectedStatusId={selected}
+              onCreateTransition={createTransition}
+              onSelectStatus={(statusId) => setSelection({ kind: "status", statusId })}
+              onSelectTransition={(transitionId) => setSelection({ kind: "transition", transitionId })}
+              onClearSelection={() => setSelection(null)}
             />
           ) : (
             <TextView
@@ -224,13 +312,33 @@ function EditorBody({
             />
           )}
         </div>
-        {ruleTransition && (
-          <RulePanel
-            transition={ruleTransition}
+
+        {tab === "diagram" && selectedStatusId && (
+          <StatusPanel
+            statusId={selectedStatusId}
+            meta={statusMeta.get(selectedStatusId)}
+            draft={ed.draft}
+            onRenamed={(name) => patchStatus(selectedStatusId, { name })}
+            onRecategorised={(category) => patchStatus(selectedStatusId, { category })}
+            onSelectTransition={(transitionId) => setSelection({ kind: "transition", transitionId })}
+            onRemove={() => {
+              ed.removeStatus(selectedStatusId);
+              setSelection(null);
+            }}
+          />
+        )}
+        {tab === "diagram" && selectedTransition && (
+          <TransitionPanel
+            transition={selectedTransition}
+            statusMeta={statusMeta}
             resolutions={resolutions.data ?? []}
-            onAddRule={(rule) => ed.addRule(ruleTransition.id, rule)}
-            onRemoveRule={(i) => ed.removeRule(ruleTransition.id, i)}
-            onClose={() => setRuleTransitionId(null)}
+            onRename={(name) => ed.updateTransition(selectedTransition.id, { name })}
+            onAddRule={(rule) => ed.addRule(selectedTransition.id, rule)}
+            onRemoveRule={(i) => ed.removeRule(selectedTransition.id, i)}
+            onDelete={() => {
+              ed.removeTransition(selectedTransition.id);
+              setSelection(null);
+            }}
           />
         )}
       </div>

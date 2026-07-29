@@ -38,6 +38,12 @@ function seedIssue(over: Record<string, unknown> = {}) {
   mockDb.qtIssue.update.mockImplementation((args: { data: unknown }) =>
     Promise.resolve({ id: ISSUE, ...(args.data as object) }) as never,
   );
+  mockDb.qtIssueTransitionLog.create.mockResolvedValue({} as never);
+  // The route wraps update + log in db.$transaction — run the callback against
+  // mockDb so qtIssue.update still records its call.
+  (mockDb.$transaction as unknown as { mockImplementation: (fn: unknown) => void }).mockImplementation(
+    (cb: unknown) => (cb as (t: typeof mockDb) => Promise<unknown>)(mockDb),
+  );
 }
 
 /** No published workflow → any→any (opt-in off). */

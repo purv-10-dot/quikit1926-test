@@ -193,6 +193,7 @@ export const PATCH = withOrgAuth<{ id: string }>(
     const isStatusChange =
       allowedFields.statusId != null && allowedFields.statusId !== issue.statusId;
     let workflowPatch: ExecuteResult["patch"] = {};
+    let workflowComments: string[] = [];
     if (isStatusChange) {
       // Optimistic concurrency: reject a stale move rather than overwrite.
       if (expectedStatusId != null && expectedStatusId !== issue.statusId) {
@@ -222,6 +223,7 @@ export const PATCH = withOrgAuth<{ id: string }>(
           userId,
         });
         workflowPatch = res.patch ?? {};
+        workflowComments = res.comments ?? [];
       } catch (error: unknown) {
         if (error instanceof TransitionNotAllowedError) {
           return NextResponse.json({ success: false, error: error.message, code: error.code }, { status: 409 });
@@ -245,32 +247,46 @@ export const PATCH = withOrgAuth<{ id: string }>(
           ? new Date(allowedFields[key]!)
           : null
         : undefined;
-    const updated = await db.qtIssue.update({
-      where: { id: params.id },
-      data: {
-        ...allowedFields,
-        startDate: dateValue("startDate"),
-        dueDate: dateValue("dueDate"),
-        // Workflow post-function effects (resolution / assignee / priority).
-        ...("assigneeId" in workflowPatch ? { assigneeId: workflowPatch.assigneeId } : {}),
-        ...("resolutionId" in workflowPatch ? { resolutionId: workflowPatch.resolutionId } : {}),
-        ...(typeof workflowPatch.priority === "string" ? { priority: workflowPatch.priority } : {}),
-        updatedBy: userId,
-      },
-    });
-
-    // Append-only transition audit for a status change (parity with /move).
-    if (isStatusChange) {
-      void db.qtIssueTransitionLog.create({
+    // Atomic: status change + post-function patch + transition-log row commit or
+    // roll back together (WF-4.2/4.3, parity with /move).
+    const updated = await db.$transaction(async (tx) => {
+      const issueAfter = await tx.qtIssue.update({
+        where: { id: params.id },
         data: {
-          orgId,
-          issueId: issue.id,
-          fromStatusId: issue.statusId,
-          toStatusId: allowedFields.statusId as string,
-          actorId: userId,
+          ...allowedFields,
+          startDate: dateValue("startDate"),
+          dueDate: dateValue("dueDate"),
+          // Workflow post-function effects (resolution / assignee / priority).
+          ...("assigneeId" in workflowPatch ? { assigneeId: workflowPatch.assigneeId } : {}),
+          ...("resolutionId" in workflowPatch ? { resolutionId: workflowPatch.resolutionId } : {}),
+          ...(typeof workflowPatch.priority === "string" ? { priority: workflowPatch.priority } : {}),
+          updatedBy: userId,
         },
       });
-    }
+      if (isStatusChange) {
+        await tx.qtIssueTransitionLog.create({
+          data: {
+            orgId,
+            issueId: issue.id,
+            fromStatusId: issue.statusId,
+            toStatusId: allowedFields.statusId as string,
+            actorId: userId,
+          },
+        });
+      }
+      if (workflowComments.length > 0) {
+        await tx.qtIssueComment.createMany({
+          data: workflowComments.map((body) => ({
+            orgId,
+            projectId: issue.projectId,
+            issueId: issue.id,
+            userId,
+            body,
+          })),
+        });
+      }
+      return issueAfter;
+    });
 
     // Activity history — fire-and-forget. `updated` already contains every
     // tracked field, so we can diff against the pre-update snapshot directly.

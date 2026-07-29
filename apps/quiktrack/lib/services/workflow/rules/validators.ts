@@ -54,7 +54,48 @@ const permissionRequired: ValidatorHandler = {
   },
 };
 
+/** field_regex — a field must match a pattern. config: { fieldId, pattern } */
+const fieldRegex: ValidatorHandler = {
+  validate: async (ctx, config, errorMessage) => {
+    const fieldId = String(config.fieldId ?? "");
+    const pattern = String(config.pattern ?? "");
+    if (!fieldId || !pattern) return null;
+    const value = resolveFieldValue(fieldId, {
+      inputs: ctx.inputs,
+      issue: ctx.issue as unknown as Record<string, unknown>,
+    });
+    // Empty value is a "required" concern, not a "format" concern — pass here.
+    if (value === null || value === undefined || value === "") return null;
+    let re: RegExp;
+    try {
+      re = new RegExp(pattern);
+    } catch {
+      // A bad pattern shouldn't have saved (validateConfig catches it), but if
+      // it slips through, fail the transition loudly rather than silently pass.
+      return { field: fieldId, message: errorMessage || `Invalid pattern for ${fieldId}.` };
+    }
+    return re.test(String(value))
+      ? null
+      : { field: fieldId, message: errorMessage || `${fieldId} does not match the required format.` };
+  },
+  validateConfig: (config) => {
+    const errs: string[] = [];
+    if (!config.fieldId) errs.push("fieldId is required for field_regex");
+    if (!config.pattern) {
+      errs.push("pattern is required for field_regex");
+    } else {
+      try {
+        new RegExp(String(config.pattern));
+      } catch {
+        errs.push("pattern is not a valid regular expression");
+      }
+    }
+    return errs;
+  },
+};
+
 export const VALIDATOR_REGISTRY: Record<string, ValidatorHandler> = {
   field_required: fieldRequired,
   permission_required: permissionRequired,
+  field_regex: fieldRegex,
 };

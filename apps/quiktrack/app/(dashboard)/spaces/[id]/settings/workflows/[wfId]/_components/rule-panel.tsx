@@ -14,12 +14,14 @@ const RULE_CATALOG: Record<RuleKind, { type: string; label: string; fields: stri
   VALIDATOR: [
     { type: "field_required", label: "Field required", fields: ["fieldId"] },
     { type: "permission_required", label: "Permission required", fields: ["resource", "action"] },
+    { type: "field_regex", label: "Field matches pattern", fields: ["fieldId", "pattern"] },
   ],
   POSTFUNCTION: [
     { type: "set_resolution", label: "Set resolution", fields: ["resolutionId"] },
     { type: "clear_resolution", label: "Clear resolution (reopen)", fields: [] },
     { type: "assign", label: "Assign", fields: ["to"] },
     { type: "set_field", label: "Set field", fields: ["fieldId", "value"] },
+    { type: "add_comment", label: "Add comment", fields: ["text"] },
   ],
 };
 

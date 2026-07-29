@@ -51,6 +51,8 @@ export interface ExecuteResult {
   gated: boolean;
   /** Field patch from post-functions to merge into the issue update. */
   patch: Partial<Pick<RuleIssueSnapshot, "assigneeId" | "resolutionId" | "priority">>;
+  /** Comment bodies from add_comment post-functions (persist in the same txn). */
+  comments: string[];
   /** The transition id taken (for the audit log), if gated. */
   transitionId: string | null;
 }
@@ -75,7 +77,7 @@ export async function executeTransition(params: {
   inputs?: Record<string, unknown>;
 }): Promise<ExecuteResult> {
   const { issue, toStatusId, userId, inputs = {} } = params;
-  const noop: ExecuteResult = { gated: false, patch: {}, transitionId: null };
+  const noop: ExecuteResult = { gated: false, patch: {}, comments: [], transitionId: null };
   if (issue.statusId === toStatusId) return noop;
 
   const graph = await resolveWorkflowGraph(issue.projectId, issue.type);
@@ -120,8 +122,14 @@ export async function executeTransition(params: {
   const failures = await runValidators(ctx, validators);
   if (failures.length > 0) throw new ValidationFailedError(failures);
 
-  // 4. post-functions — collect the patch (caller applies it in its update TX).
-  const patch = (await runPostFunctions(ctx, postFns)) ?? {};
+  // 4. post-functions — collect the patch + side effects (caller applies both
+  //    in the same DB transaction as the status write).
+  const effects = await runPostFunctions(ctx, postFns);
 
-  return { gated: true, patch, transitionId: transition.id };
+  return {
+    gated: true,
+    patch: effects.patch,
+    comments: effects.comments,
+    transitionId: transition.id,
+  };
 }

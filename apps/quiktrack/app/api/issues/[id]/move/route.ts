@@ -68,6 +68,7 @@ export const PATCH = withOrgAuth<{ id: string }>(
     const isStatusChange =
       parsed.data.statusId != null && parsed.data.statusId !== issue.statusId;
     let workflowPatch: ExecuteResult["patch"] = {};
+    let workflowComments: string[] = [];
     if (isStatusChange) {
       try {
         const res = await executeTransition({
@@ -85,6 +86,7 @@ export const PATCH = withOrgAuth<{ id: string }>(
           userId,
         });
         workflowPatch = res.patch ?? {};
+        workflowComments = res.comments ?? [];
       } catch (error: unknown) {
         if (error instanceof TransitionNotAllowedError) {
           return NextResponse.json({ success: false, error: error.message, code: error.code }, { status: 409 });
@@ -102,34 +104,48 @@ export const PATCH = withOrgAuth<{ id: string }>(
       }
     }
 
-    const updated = await db.qtIssue.update({
-      where: { id: params.id },
-      data: {
-        statusId: parsed.data.statusId,
-        sprintId: parsed.data.sprintId === undefined ? undefined : parsed.data.sprintId,
-        parentId: parsed.data.parentId === undefined ? undefined : parsed.data.parentId,
-        orderInColumn: parsed.data.orderInColumn,
-        // Apply post-function effects. assigneeId/resolutionId are nullable
-        // columns; priority is non-null so a null patch is ignored.
-        ...("assigneeId" in workflowPatch ? { assigneeId: workflowPatch.assigneeId } : {}),
-        ...("resolutionId" in workflowPatch ? { resolutionId: workflowPatch.resolutionId } : {}),
-        ...(typeof workflowPatch.priority === "string" ? { priority: workflowPatch.priority } : {}),
-        updatedBy: userId,
-      },
-    });
-
-    // Append-only transition audit (only when the status actually changed).
-    if (isStatusChange) {
-      void db.qtIssueTransitionLog.create({
+    // Atomic: the status change, the post-function field patch, and the
+    // append-only transition-log row must commit or roll back together (WF-4.2/4.3).
+    const updated = await db.$transaction(async (tx) => {
+      const issueAfter = await tx.qtIssue.update({
+        where: { id: params.id },
         data: {
-          orgId,
-          issueId: issue.id,
-          fromStatusId: issue.statusId,
-          toStatusId: parsed.data.statusId as string,
-          actorId: userId,
+          statusId: parsed.data.statusId,
+          sprintId: parsed.data.sprintId === undefined ? undefined : parsed.data.sprintId,
+          parentId: parsed.data.parentId === undefined ? undefined : parsed.data.parentId,
+          orderInColumn: parsed.data.orderInColumn,
+          // Apply post-function effects. assigneeId/resolutionId are nullable
+          // columns; priority is non-null so a null patch is ignored.
+          ...("assigneeId" in workflowPatch ? { assigneeId: workflowPatch.assigneeId } : {}),
+          ...("resolutionId" in workflowPatch ? { resolutionId: workflowPatch.resolutionId } : {}),
+          ...(typeof workflowPatch.priority === "string" ? { priority: workflowPatch.priority } : {}),
+          updatedBy: userId,
         },
       });
-    }
+      if (isStatusChange) {
+        await tx.qtIssueTransitionLog.create({
+          data: {
+            orgId,
+            issueId: issue.id,
+            fromStatusId: issue.statusId,
+            toStatusId: parsed.data.statusId as string,
+            actorId: userId,
+          },
+        });
+      }
+      if (workflowComments.length > 0) {
+        await tx.qtIssueComment.createMany({
+          data: workflowComments.map((body) => ({
+            orgId,
+            projectId: issue.projectId,
+            issueId: issue.id,
+            userId,
+            body,
+          })),
+        });
+      }
+      return issueAfter;
+    });
     void recordIssueChanges({
       orgId,
       projectId: issue.projectId,

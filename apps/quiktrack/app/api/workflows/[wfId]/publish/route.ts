@@ -166,6 +166,32 @@ export const POST = withOrgAuth<{ wfId: string }>(
       );
     }
 
+    // Non-blocking config warnings (WF-7.3): a transition INTO a DONE-category
+    // status that has no set_resolution post-function will leave issues "stuck"
+    // (done on the board but resolution IS NULL / still counted as open work).
+    const doneStatusIds = new Set(
+      (
+        await db.qtIssueStatus.findMany({
+          where: { projectId, isDeleted: false, category: "DONE" },
+          select: { id: true },
+        })
+      ).map((s) => s.id),
+    );
+    const warnings: Array<{ code: string; message: string; transitionId?: string }> = [];
+    for (const t of draft.transitions) {
+      if (!doneStatusIds.has(t.toStatusId)) continue;
+      const hasSetResolution = (t.rules ?? []).some(
+        (r) => r.kind === "POSTFUNCTION" && r.type === "set_resolution",
+      );
+      if (!hasSetResolution) {
+        warnings.push({
+          code: "DONE_WITHOUT_RESOLUTION",
+          message: `Transition "${t.name}" moves issues to a Done status but does not set a resolution — those issues will still count as open.`,
+          transitionId: t.id,
+        });
+      }
+    }
+
     // Apply: rebuild nodes + transitions to match the draft, set the initial
     // transition, activate, clear the draft, migrate affected issues — all atomically.
     await db.$transaction(async (tx) => {
@@ -263,6 +289,6 @@ export const POST = withOrgAuth<{ wfId: string }>(
       });
     });
 
-    return NextResponse.json({ success: true, data: { active: true } });
+    return NextResponse.json({ success: true, data: { active: true, warnings } });
   },
 );

@@ -14,7 +14,7 @@ import { CONDITION_REGISTRY } from "./conditions";
 import { VALIDATOR_REGISTRY } from "./validators";
 import { POSTFUNCTION_REGISTRY } from "./post-functions";
 import type {
-  PostFunctionResult,
+  PostFunctionEffects,
   RuleContext,
   RuleSpec,
   ValidatorFailure,
@@ -67,20 +67,25 @@ export async function runValidators(
   return failures;
 }
 
-/** Run post-functions in orderNo order; merge their patches (later wins). */
+/**
+ * Run post-functions in orderNo order; merge their patches (later wins) and
+ * collect side effects (comments). The caller applies the result in the same
+ * DB transaction as the status write.
+ */
 export async function runPostFunctions(
   ctx: RuleContext,
   postFunctions: RuleSpec[],
-): Promise<PostFunctionResult["patch"]> {
-  let patch: PostFunctionResult["patch"] = {};
+): Promise<PostFunctionEffects> {
+  const effects: PostFunctionEffects = { patch: {}, comments: [] };
   const ordered = [...postFunctions].sort((a, b) => a.orderNo - b.orderNo);
   for (const p of ordered) {
     const handler = POSTFUNCTION_REGISTRY[p.type];
     if (!handler) continue;
     const res = await handler.run(ctx, p.config);
-    if (res.patch) patch = { ...patch, ...res.patch };
+    if (res.patch) effects.patch = { ...effects.patch, ...res.patch };
+    if (res.comments) effects.comments.push(...res.comments);
   }
-  return patch;
+  return effects;
 }
 
 /** Save-time config validation for one rule. Returns error strings (empty = ok). */

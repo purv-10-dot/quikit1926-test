@@ -47,9 +47,28 @@ const setField: PostFunctionHandler = {
     config.fieldId ? [] : ["fieldId is required for set_field"],
 };
 
+/**
+ * add_comment — append a comment to the issue on transition. config: { text }.
+ * Supports {actor} (the acting user id) and {status} (the target status id)
+ * tokens. The route persists the returned comment bodies in the same txn.
+ */
+const addComment: PostFunctionHandler = {
+  run: async (ctx, config) => {
+    const raw = String(config.text ?? "").trim();
+    if (!raw) return {};
+    const body = raw
+      .replace(/\{actor\}/g, ctx.userId)
+      .replace(/\{status\}/g, ctx.toStatusId);
+    return { comments: [body] };
+  },
+  validateConfig: (config) =>
+    config.text ? [] : ["text is required for add_comment"],
+};
+
 export const POSTFUNCTION_REGISTRY: Record<string, PostFunctionHandler> = {
   set_resolution: setResolution,
   clear_resolution: clearResolution,
   assign,
   set_field: setField,
+  add_comment: addComment,
 };
