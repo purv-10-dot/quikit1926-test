@@ -13401,6 +13401,12 @@ model OnboardingTask {
   stepType String?
   config   Json?
 
+  // Which lifecycle phase this task belongs to: "PreOnboarding" (pre-joining
+  // checklist) or "Onboarding" (Day-1+ checklist). Lets one instance hold both
+  // checklists; the tracker shows only the tasks for the instance's current
+  // phase. Read/written via raw SQL (no prisma generate). Default = Onboarding.
+  phase String @default("Onboarding")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

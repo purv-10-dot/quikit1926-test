@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
+import { Prisma } from "@quikit/database";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, validationError, conflict, internalError } from "@/lib/api-response";
@@ -182,7 +183,7 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
         where: { orgId, employeeId: { in: employeeIds }, deletedAt: null },
         select: {
           id: true, employeeId: true, status: true, startDate: true,
-          tasks: { select: { status: true, stepType: true, config: true } },
+          tasks: { select: { id: true, status: true, stepType: true, config: true } },
         },
       }),
       prisma.employeeSalary.findMany({
@@ -194,10 +195,20 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     const instanceMap = new Map(instances.map((i) => [i.employeeId, i]));
     const salaryMap = new Map(salaries.map((s) => [s.employeeId, s]));
 
-    // Per-employee stage progress + BGV status, derived from onboarding tasks.
+    // Per-task phase (raw-SQL column). This list is the Onboarding roster, so we
+    // count only ONBOARDING-phase tasks — pre-onboarding tasks (and their BGV)
+    // must not inflate the Day-1 progress. Null/absent phase = Onboarding.
+    const instanceIds = instances.map((i) => i.id);
+    const taskPhaseRows = instanceIds.length
+      ? await prisma.$queryRaw<Array<{ id: string; phase: string | null }>>`
+          SELECT id, phase FROM "app_quikhrms"."OnboardingTask" WHERE "instanceId" IN (${Prisma.join(instanceIds)})`
+      : [];
+    const phaseOf = new Map(taskPhaseRows.map((r) => [r.id, r.phase ?? "Onboarding"]));
+
+    // Per-employee stage progress + BGV status, derived from ONBOARDING-phase tasks.
     const progressByEmp = new Map<string, { taskDone: number; taskTotal: number; progressPct: number; bgvStatus: BgvStatus }>();
     for (const inst of instances) {
-      const t = inst.tasks;
+      const t = inst.tasks.filter((x) => (phaseOf.get(x.id) ?? "Onboarding") === "Onboarding");
       const done = t.filter((x) => x.status === "TaskCompleted" || x.status === "TaskSkipped").length;
       progressByEmp.set(inst.employeeId, {
         taskDone: done,
@@ -429,6 +440,10 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
       if (body?.phase === "PreOnboarding") {
         await prisma.$executeRaw`
           UPDATE "app_quikhrms"."OnboardingInstance" SET phase = 'PreOnboarding' WHERE id = ${instance.id}`;
+        // Tag every seeded task as a pre-onboarding task so the onboarding phase
+        // starts with a fresh checklist later. (phase is a raw-SQL column.)
+        await prisma.$executeRaw`
+          UPDATE "app_quikhrms"."OnboardingTask" SET phase = 'PreOnboarding' WHERE "instanceId" = ${instance.id}`;
       }
 
       await createAuditLog({

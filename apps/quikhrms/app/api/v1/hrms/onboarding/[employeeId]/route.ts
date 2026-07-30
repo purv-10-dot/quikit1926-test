@@ -63,13 +63,20 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId, permissio
       SELECT phase FROM "app_quikhrms"."OnboardingInstance" WHERE id = ${instance.id} LIMIT 1`;
     const phase = phaseRows[0]?.phase ?? "Onboarding";
 
+    // Per-task phase (raw-SQL column) — the tracker shows ONLY the tasks that
+    // belong to the instance's current phase, so pre-onboarding and onboarding
+    // have completely separate checklists.
+    let taskPhaseRows = await prisma.$queryRaw<Array<{ id: string; phase: string | null }>>`
+      SELECT id, phase FROM "app_quikhrms"."OnboardingTask" WHERE "instanceId" = ${instance.id}`;
+    let phaseOf = new Map(taskPhaseRows.map((r) => [r.id, r.phase ?? "Onboarding"]));
+
     const isClosed = instance.status === "OnboardCompleted" || instance.status === "OnboardCancelled";
     const sysStep = phase === "PreOnboarding"
       ? { stepType: "BGV", title: "Background Verification", config: { bgvChecks: ["Education", "Employment", "Criminal", "Address"], bgvStatus: {} } }
       : { stepType: "CompleteProfile", title: "Complete Profile", config: undefined as Record<string, unknown> | undefined };
-    const hasSysStep = instance.tasks.some((t) => t.stepType === sysStep.stepType);
+    const hasSysStep = instance.tasks.some((t) => t.stepType === sysStep.stepType && (phaseOf.get(t.id) ?? "Onboarding") === phase);
     if (!hasSysStep && !isClosed) {
-      await prisma.onboardingTask.create({
+      const createdSys = await prisma.onboardingTask.create({
         data: {
           orgId,
           instanceId: instance.id,
@@ -83,6 +90,11 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId, permissio
           config: sysStep.config as object | undefined,
         },
       });
+      // New tasks default to phase='Onboarding'; tag the pre-onboarding BGV step.
+      if (phase === "PreOnboarding") {
+        await prisma.$executeRaw`
+          UPDATE "app_quikhrms"."OnboardingTask" SET phase = 'PreOnboarding' WHERE id = ${createdSys.id}`;
+      }
       instance = await prisma.onboardingInstance.findFirst({
         where: { id: instance.id },
         include: {
@@ -91,10 +103,15 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId, permissio
         },
       });
       if (!instance) return notFound("Onboarding not found");
+      taskPhaseRows = await prisma.$queryRaw<Array<{ id: string; phase: string | null }>>`
+        SELECT id, phase FROM "app_quikhrms"."OnboardingTask" WHERE "instanceId" = ${instance.id}`;
+      phaseOf = new Map(taskPhaseRows.map((r) => [r.id, r.phase ?? "Onboarding"]));
     }
 
-    const total = instance.tasks.length;
-    const completed = instance.tasks.filter((t) => t.status === "TaskCompleted" || t.status === "TaskSkipped").length;
+    // Only the current phase's tasks are surfaced + counted.
+    const phaseTasks = instance.tasks.filter((t) => (phaseOf.get(t.id) ?? "Onboarding") === phase);
+    const total = phaseTasks.length;
+    const completed = phaseTasks.filter((t) => t.status === "TaskCompleted" || t.status === "TaskSkipped").length;
     const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
 
     const employee = await prisma.employee.findFirst({
@@ -109,7 +126,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId, permissio
 
     const automated = await isAutomated(instance.id, orgId);
 
-    return successResponse({ ...instance, employee, progress, totalTasks: total, completedTasks: completed, automated, phase });
+    return successResponse({ ...instance, tasks: phaseTasks, employee, progress, totalTasks: total, completedTasks: completed, automated, phase });
   } catch (error) {
     console.error("GET /onboarding/[employeeId] error:", error);
     return internalError();

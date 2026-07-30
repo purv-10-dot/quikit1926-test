@@ -58,20 +58,54 @@ function inr(n: number): string {
   return `Rs. ${n.toLocaleString("en-IN")}`;
 }
 
-async function fetchImage(pdf: PDFDocument, key: string): Promise<PDFImage | null> {
+type RawImage = { body: Uint8Array; contentType: string };
+
+/** Download image bytes from storage (the slow, network-bound step). */
+async function fetchImageBytes(key: string): Promise<RawImage | null> {
   try {
     const obj = await getObject(key);
-    const ct = (obj.contentType || "").toLowerCase();
-    if (ct.includes("png")) return await pdf.embedPng(obj.body);
-    if (ct.includes("jpeg") || ct.includes("jpg")) return await pdf.embedJpg(obj.body);
-    // Fallback sniff by magic bytes
-    if (obj.body[0] === 0x89 && obj.body[1] === 0x50) return await pdf.embedPng(obj.body);
-    if (obj.body[0] === 0xff && obj.body[1] === 0xd8) return await pdf.embedJpg(obj.body);
-    return null;
+    return { body: obj.body, contentType: obj.contentType };
   } catch (err) {
     console.error(`[offer-pdf] image fetch failed (${key}):`, err);
     return null;
   }
+}
+
+/** Embed already-downloaded bytes into the PDF (fast, but mutates the doc — keep sequential). */
+async function embedImageBytes(pdf: PDFDocument, raw: RawImage | null): Promise<PDFImage | null> {
+  if (!raw) return null;
+  try {
+    const ct = (raw.contentType || "").toLowerCase();
+    if (ct.includes("png")) return await pdf.embedPng(raw.body);
+    if (ct.includes("jpeg") || ct.includes("jpg")) return await pdf.embedJpg(raw.body);
+    // Fallback sniff by magic bytes
+    if (raw.body[0] === 0x89 && raw.body[1] === 0x50) return await pdf.embedPng(raw.body);
+    if (raw.body[0] === 0xff && raw.body[1] === 0xd8) return await pdf.embedJpg(raw.body);
+    return null;
+  } catch (err) {
+    console.error("[offer-pdf] image embed failed:", err);
+    return null;
+  }
+}
+
+/**
+ * Load letterhead, signature and seal in ONE parallel network round-trip, then
+ * embed sequentially (pdf-lib mutates the document, so concurrent embeds are
+ * avoided). This is the main speed-up — the three storage fetches used to run
+ * one after another.
+ */
+async function loadBranding(pdf: PDFDocument, input: OfferPdfInput): Promise<{
+  letterhead: PDFImage | null; signature: PDFImage | null; seal: PDFImage | null;
+}> {
+  const [lhRaw, sigRaw, sealRaw] = await Promise.all([
+    input.letterheadKey ? fetchImageBytes(input.letterheadKey) : Promise.resolve(null),
+    input.signatureKey ? fetchImageBytes(input.signatureKey) : Promise.resolve(null),
+    input.sealKey ? fetchImageBytes(input.sealKey) : Promise.resolve(null),
+  ]);
+  const letterhead = await embedImageBytes(pdf, lhRaw);
+  const signature = await embedImageBytes(pdf, sigRaw);
+  const seal = await embedImageBytes(pdf, sealRaw);
+  return { letterhead, signature, seal };
 }
 
 function wrapText(text: string, maxChars: number): string[] {
@@ -108,12 +142,12 @@ export async function generateOfferPdf(input: OfferPdfInput): Promise<Buffer> {
   const page = pdf.addPage(A4); // A4
   const { width, height } = page.getSize();
 
+  // Prefetch letterhead + signature + seal in parallel (one round-trip).
+  const branding = await loadBranding(pdf, input);
+
   // Letterhead background (full page)
-  if (input.letterheadKey) {
-    const img = await fetchImage(pdf, input.letterheadKey);
-    if (img) {
-      page.drawImage(img, { x: 0, y: 0, width, height });
-    }
+  if (branding.letterhead) {
+    page.drawImage(branding.letterhead, { x: 0, y: 0, width, height });
   }
 
   // Content margins allow letterhead header/footer zones to show
@@ -189,13 +223,11 @@ export async function generateOfferPdf(input: OfferPdfInput): Promise<Buffer> {
   y -= 50;
 
   // Signature image
-  if (input.signatureKey) {
-    const sig = await fetchImage(pdf, input.signatureKey);
-    if (sig) {
-      const sigDims = sig.scale(0.35);
-      const capped = sigDims.width > 160 ? sig.scale((160 / sigDims.width) * 0.35) : sigDims;
-      page.drawImage(sig, { x: marginX, y, width: capped.width, height: capped.height });
-    }
+  if (branding.signature) {
+    const sig = branding.signature;
+    const sigDims = sig.scale(0.35);
+    const capped = sigDims.width > 160 ? sig.scale((160 / sigDims.width) * 0.35) : sigDims;
+    page.drawImage(sig, { x: marginX, y, width: capped.width, height: capped.height });
   }
   y -= 10;
 
@@ -210,18 +242,15 @@ export async function generateOfferPdf(input: OfferPdfInput): Promise<Buffer> {
   page.drawText(input.companyName, { x: marginX, y, size: 10, font, color: black });
 
   // Seal (bottom-right)
-  if (input.sealKey) {
-    const seal = await fetchImage(pdf, input.sealKey);
-    if (seal) {
-      const sealSize = 90;
-      page.drawImage(seal, {
-        x: width - marginX - sealSize,
-        y: 110,
-        width: sealSize,
-        height: sealSize,
-        opacity: 0.85,
-      });
-    }
+  if (branding.seal) {
+    const sealSize = 90;
+    page.drawImage(branding.seal, {
+      x: width - marginX - sealSize,
+      y: 110,
+      width: sealSize,
+      height: sealSize,
+      opacity: 0.85,
+    });
   }
 
   // Footer text
@@ -256,8 +285,8 @@ async function renderTemplatePdf(
   const topY = height - 150; // leave room for the letterhead header band
   const bottomY = 130; // leave room for seal / footer
 
-  const letterhead = input.letterheadKey ? await fetchImage(pdf, input.letterheadKey) : null;
-  const signature = input.signatureKey ? await fetchImage(pdf, input.signatureKey) : null;
+  // Prefetch letterhead + signature + seal in parallel (one round-trip).
+  const { letterhead, signature, seal } = await loadBranding(pdf, input);
 
   const newPage = () => {
     const p = pdf.addPage(A4);
@@ -302,12 +331,9 @@ async function renderTemplatePdf(
   if (!signatureDrawn) drawSignature();
 
   // Seal (bottom-right) on the final page.
-  if (input.sealKey) {
-    const seal = await fetchImage(pdf, input.sealKey);
-    if (seal) {
-      const s = 90;
-      page.drawImage(seal, { x: width - marginX - s, y: 110, width: s, height: s, opacity: 0.85 });
-    }
+  if (seal) {
+    const s = 90;
+    page.drawImage(seal, { x: width - marginX - s, y: 110, width: s, height: s, opacity: 0.85 });
   }
 
   // Footer text on the final page.
