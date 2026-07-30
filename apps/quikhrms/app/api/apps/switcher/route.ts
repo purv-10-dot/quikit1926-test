@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { ADMIN_TIER_ROLES, HIDDEN_APP_SLUGS } from "@quikit/shared";
 
-/**
+ /**
  * GET /api/apps/switcher
  *
  * Returns the apps the current user can open from the in-app AppSwitcher (the
