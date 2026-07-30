@@ -66,6 +66,26 @@ const config: Config = {
           700: '#334155',
           800: '#1e293b',
         },
+        // Accent scale. Each shade reads a --accent-* CSS variable with a
+        // FALLBACK to QuikInfra's own construction orange. QuikInfra never sets
+        // those variables (it has no colour picker and does NOT apply the
+        // per-user accent shared across apps), so `accent-*` always renders the
+        // brand orange — the app stays on-brand regardless of a colour chosen
+        // in another QuikIT app.
+        // (accent-300 = #FFAF55, the golden top of the primary-button gradient.)
+        accent: {
+          50:  'var(--accent-50, #fff7ed)',
+          100: 'var(--accent-100, #ffedd5)',
+          200: 'var(--accent-200, #fed7aa)',
+          300: 'var(--accent-300, #FFAF55)',
+          400: 'var(--accent-400, #fb923c)',
+          500: 'var(--accent-500, #f97316)',
+          600: 'var(--accent-600, #ea580c)',
+          700: 'var(--accent-700, #c2410c)',
+          800: 'var(--accent-800, #9a3412)',
+          900: 'var(--accent-900, #7c2d12)',
+          DEFAULT: 'var(--accent-color, #ea580c)',
+        },
       },
       boxShadow: {
         'brand': '0 4px 14px 0 rgba(234, 88, 12, 0.18)',

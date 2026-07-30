@@ -11,7 +11,7 @@ import {
   Activity, Star, FileText, Clock, PhoneCall, PhoneIncoming, PhoneOutgoing,
   StickyNote, TrendingUp, RotateCcw, FileCheck, BadgeCheck, LogIn, Zap,
   TrendingDown, Minus, DollarSign, AlertCircle, ChevronRight,
-  BarChart2,
+  BarChart2, Target,
   // Export additions
   Download, FileDown, Send, X, ChevronDown, Loader2,
 } from "lucide-react";
@@ -29,6 +29,7 @@ import type {
   SalespersonHeatmapDay,
   SalespersonCallDurationBucket,
   SalespersonFunnelStage,
+  SalespersonActivityTarget,
 } from "@/lib/dashboard/salesperson-detail-types";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -236,6 +237,73 @@ function KpiCard({ icon, label, value, color, highlight, sparkData, sparkColor, 
       <div className="flex items-center justify-between gap-1">
         <p className="text-xs text-crm-muted">{label}</p>
         {sparkData && delta}
+      </div>
+    </div>
+  );
+}
+
+// ── Activity Target ───────────────────────────────────────────────────────────
+// Semantic status colors are hardcoded (data state — per CLAUDE.md, NOT accent-*).
+// Thresholds and numbers come straight from the shared backend service.
+
+const AT_STATUS_META: Record<
+  SalespersonActivityTarget["status"],
+  { label: string; badge: string; bar: string; text: string }
+> = {
+  green: { label: "On Target", badge: "bg-green-100 text-green-700", bar: "bg-green-500", text: "text-green-700" },
+  yellow: { label: "At Risk", badge: "bg-yellow-100 text-yellow-700", bar: "bg-yellow-500", text: "text-yellow-700" },
+  red: { label: "Below Target", badge: "bg-red-100 text-red-700", bar: "bg-red-500", text: "text-red-700" },
+};
+
+function ActivityTargetSection({ at }: { at: SalespersonActivityTarget }) {
+  const meta = AT_STATUS_META[at.status];
+  const barPct = Math.min(100, at.completionPct);
+
+  const tiles: { label: string; value: number | string; accent?: boolean }[] = [
+    { label: "Daily Target", value: at.dailyTarget },
+    { label: "Today's Activities", value: at.todayActivities, accent: true },
+    { label: "Remaining", value: at.remaining },
+    { label: "Completion %", value: `${at.completionPct}%`, accent: true },
+    { label: "Weekly Target", value: at.weeklyTarget },
+    { label: "Weekly Activities", value: at.weeklyActivities },
+  ];
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between px-1">
+        <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-crm-muted">
+          <Target className="h-3.5 w-3.5" /> Activity Target
+        </p>
+        <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${meta.badge}`}>
+          {meta.label}
+        </span>
+      </div>
+
+      <div className="crm-card p-4">
+        {/* Completion bar */}
+        <div className="mb-4">
+          <div className="mb-1 flex items-center justify-between text-xs">
+            <span className="text-crm-muted">
+              Today: <span className="font-semibold text-crm-text">{at.todayActivities}</span> / {at.dailyTarget}
+            </span>
+            <span className={`font-semibold ${meta.text}`}>{at.completionPct}%</span>
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+            <div className={`h-full rounded-full ${meta.bar}`} style={{ width: `${barPct}%` }} />
+          </div>
+        </div>
+
+        {/* KPI tiles */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          {tiles.map((t) => (
+            <div key={t.label} className="rounded-lg border border-crm-border p-3">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-crm-muted">{t.label}</p>
+              <p className={`mt-1 text-xl font-bold tabular-nums ${t.accent ? meta.text : "text-crm-text"}`}>
+                {t.value}
+              </p>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -998,7 +1066,13 @@ export function SalespersonDetailClient({ userId }: { userId: string }) {
   useEffect(() => {
     setLoading(true);
     const qs = searchParams.toString();
-    fetch(`/api/dashboard/salesperson/${userId}${qs ? `?${qs}` : ""}`)
+    // Send the client tz explicitly so activity-target windows (today/week) are
+    // correct even on a cold deep-link where the `tz` cookie isn't set yet.
+    let tz = "UTC";
+    try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch { /* keep UTC */ }
+    fetch(`/api/dashboard/salesperson/${userId}${qs ? `?${qs}` : ""}`, {
+      headers: { "X-Client-TZ": tz },
+    })
       .then((r) => { if (!r.ok) throw new Error("Failed to load."); return r.json() as Promise<SalespersonDetailDto>; })
       .then((d) => { setData(d); setLoading(false); })
       .catch((e: unknown) => { setError(e instanceof Error ? e.message : "Error"); setLoading(false); });
@@ -1143,6 +1217,9 @@ export function SalespersonDetailClient({ userId }: { userId: string }) {
           </div>
         </div>
       </div>
+
+      {/* ── Activity Target ── */}
+      {data.activityTarget && <ActivityTargetSection at={data.activityTarget} />}
 
       {/* ── KPI row 1 — Pipeline ── */}
       <div>
@@ -1511,7 +1588,7 @@ export function SalespersonDetailClient({ userId }: { userId: string }) {
         <div className="crm-card overflow-hidden">
           <div className="border-b border-crm-border px-5 py-4">
             <h2 className="text-sm font-semibold text-crm-text">Lead sources</h2>
-            <p className="mt-0.5 text-xs text-crm-muted">Where this salesperson's leads come from</p>
+            <p className="mt-0.5 text-xs text-crm-muted">Where this salesperson&apos;s leads come from</p>
           </div>
           {data.sourceBreakdown.length === 0 ? (
             <div className="flex h-40 items-center justify-center"><p className="text-sm text-crm-muted">No source data.</p></div>

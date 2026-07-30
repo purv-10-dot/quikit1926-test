@@ -18,8 +18,9 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { useUpdateEstimation } from "@/hooks/use-projects";
 import { useQueryClient } from "@tanstack/react-query";
 import { BOQCascadingPicker, type BoqRow } from "@/components/BOQCascadingPicker";
-import { useBOQ } from "@/hooks/use-projects";
-import { useItems, useItemGroups } from "@/hooks/use-masters";
+import { ActivityScopePicker, type ActivityLeafOption } from "@/components/ActivityScopePicker";
+import { useBOQ, useActivities } from "@/hooks/use-projects";
+import { useItemGroups } from "@/hooks/use-masters";
 import { PrimaryButton, SecondaryButton } from "@/components/PageShell";
 import { SelectInput, RIGHT_DRAWER_BACKDROP, RIGHT_DRAWER_FRAME, RIGHT_DRAWER_PANEL } from "@/components/FormDrawer";
 import { GroupedMaterialSelect, type GroupedMaterialSelectItem } from "@/components/GroupedMaterialSelect";
@@ -39,6 +40,7 @@ interface EstimationMaterial {
 }
 interface EstimationEditData {
   id?: string; boqItemId?: string; boqNo?: string;
+  scopeType?: string; scopeId?: string;
   projectId?: string; phase?: string; status?: string;
   materials?: EstimationMaterial[];
 }
@@ -50,7 +52,7 @@ interface Props {
   /** Pre-select this project if the list page has a project filter active. */
   defaultProjectId?: string;
   /** Project list from the parent so the drawer doesn't re-fetch. */
-  projects: Array<{ id: string; name: string; code?: string }>;
+  projects: Array<{ id: string; name: string; code?: string; executionMode?: string }>;
   /**
    * When present, the drawer opens in edit mode: form fields are
    * pre-filled from this row and Save hits PUT /api/estimations/:id
@@ -151,11 +153,16 @@ export function EstimationDrawer({
   // is used as the initial value.
   const [projectId, setProjectId] = useState<string>("");
 
-  // Only fetch BOQ once a project is chosen in the drawer.
+  const selectedProject = projects.find((p) => p.id === projectId);
+  const isFreeScope = selectedProject?.executionMode === "FREE_SCOPE";
+
+  // Only fetch BOQ once a project is chosen in the drawer (BOQ mode only).
   const { data: boqData, isLoading: boqLoading } = useBOQ(
-    open && projectId ? projectId : null
+    open && projectId && !isFreeScope ? projectId : null
   );
-  const { data: itemsData } = useItems();
+  const { data: activitiesResp, isLoading: activitiesLoading } = useActivities(
+    open && projectId && isFreeScope ? projectId : null
+  );
   const { data: itemGroupsData } = useItemGroups();
 
   const boqItems: BoqRow[] = useMemo(() => {
@@ -180,11 +187,25 @@ export function EstimationDrawer({
     }));
   }, [boqData]);
 
-  const items = (itemsData?.data ?? []) as unknown as EstimationItemNode[];
+  const activityItems: ActivityLeafOption[] = useMemo(
+    () =>
+      (activitiesResp?.data ?? []).map((a) => ({
+        id: a.id,
+        activityCode: a.activityCode,
+        description: a.description,
+        uomId: a.uomId,
+        uomCode: a.uomCode,
+        tenderQty: a.tenderQty,
+        path: a.path,
+      })),
+    [activitiesResp]
+  );
+
   const itemGroups = itemGroupsData?.data ?? [];
 
   // Form state
   const [selectedLeaf, setSelectedLeaf] = useState<BoqRow | null>(null);
+  const [selectedActivity, setSelectedActivity] = useState<ActivityLeafOption | null>(null);
   const [phase, setPhase] = useState(PHASES[0]);
   const [status, setStatus] = useState(STATUSES[0]);
   const [lines, setLines] = useState<MaterialLine[]>([newLine()]);
@@ -221,9 +242,11 @@ export function EstimationDrawer({
       // selectedLeaf is populated by the effect below once the BOQ
       // tree for this project finishes loading.
       setSelectedLeaf(null);
+      setSelectedActivity(null);
     } else {
       setProjectId(defaultProjectId ?? "");
       setSelectedLeaf(null);
+      setSelectedActivity(null);
       setPhase(PHASES[0]);
       setStatus(STATUSES[0]);
       setLines([newLine()]);
@@ -239,6 +262,7 @@ export function EstimationDrawer({
   useEffect(() => {
     if (isEdit) return; // edit flow handles leaf rehydrate separately
     setSelectedLeaf(null);
+    setSelectedActivity(null);
   }, [projectId, isEdit]);
 
   // Edit-mode rehydrate: once the BOQ tree for the row's project has
@@ -250,8 +274,20 @@ export function EstimationDrawer({
     if (leaf) setSelectedLeaf(leaf);
   }, [open, isEdit, boqItems, editData?.boqItemId]);
 
+  useEffect(() => {
+    if (!open || !isEdit || activityItems.length === 0) return;
+    if (!editData?.scopeId) return;
+    const found = activityItems.find((a) => a.id === editData.scopeId);
+    if (found) setSelectedActivity(found);
+  }, [open, isEdit, activityItems, editData?.scopeId]);
+
   const boqQuantity = selectedLeaf?.tender_qty ?? null;
   const boqUnit = selectedLeaf?.unit ?? "";
+
+  // Unified scope selection — works for both BOQ and FREE_SCOPE modes.
+  const scopeQuantity = isFreeScope ? selectedActivity?.tenderQty ?? null : boqQuantity;
+  const scopeUnit = isFreeScope ? selectedActivity?.uomCode ?? "" : boqUnit;
+  const hasScope = isFreeScope ? !!selectedActivity : !!selectedLeaf;
 
   const addLine = () => setLines((prev) => [...prev, newLine()]);
   const removeLine = (idx: number) =>
@@ -263,20 +299,12 @@ export function EstimationDrawer({
         if (i !== idx) return row;
         const next = { ...row, [field]: value };
 
-        // Auto-fill name + UOM + rate when a material is picked
-        if (field === "itemId") {
-          if (value) {
-            const item = items.find((it) => it.id === value);
-            if (item) {
-              next.itemName = item.name ?? "";
-              next.uomCode = item.uomCode ?? "";
-              next.standardRate = item.standardRate?.toString() ?? "";
-            }
-          } else {
-            next.itemName = "";
-            next.uomCode = "";
-            next.standardRate = "";
-          }
+        // Clearing the material clears its derived fields; the auto-fill on
+        // pick is handled by the picker's onSelect (lazy — no full item load).
+        if (field === "itemId" && !value) {
+          next.itemName = "";
+          next.uomCode = "";
+          next.standardRate = "";
         }
         return next;
       })
@@ -290,12 +318,16 @@ export function EstimationDrawer({
       setError("Pick a project first");
       return;
     }
-    if (!selectedLeaf) {
-      setError("Pick a BOQ leaf item");
+    if (!hasScope) {
+      setError(isFreeScope ? "Pick an activity" : "Pick a BOQ leaf item");
       return;
     }
-    if (boqQuantity == null) {
-      setError("Selected BOQ row has no tender quantity");
+    if (scopeQuantity == null) {
+      setError(
+        isFreeScope
+          ? "Selected activity has no planned quantity"
+          : "Selected BOQ row has no tender quantity"
+      );
       return;
     }
     const validLines = lines.filter((l) => l.itemId && l.qtyPerUnit);
@@ -316,19 +348,30 @@ export function EstimationDrawer({
 
     setSaving(true);
     try {
+      const anchorFields = isFreeScope
+        ? {
+            scopeType: "ACTIVITY",
+            scopeId: selectedActivity!.id,
+            boqDescription: selectedActivity!.description,
+            boqQuantity: scopeQuantity,
+            boqUnit: scopeUnit,
+          }
+        : {
+            boqItemId: selectedLeaf!.id,
+            boqNo: selectedLeaf!.boq_no,
+            boqDescription: selectedLeaf!.display_name,
+            boqQuantity: scopeQuantity,
+            boqUnit: scopeUnit,
+          };
       const payload = {
-        boqItemId: selectedLeaf.id,
-        boqNo: selectedLeaf.boq_no,
-        boqDescription: selectedLeaf.display_name,
-        boqQuantity,
-        boqUnit,
+        ...anchorFields,
         phase,
         status,
         materials: validLines.map((l) => {
           const qtyPerUnit = parseFloat(l.qtyPerUnit) || 0;
           const wastePercent = parseFloat(l.wasteFactor) || 0;
           const rate = parseFloat(l.standardRate) || 0;
-          const requiredQty = qtyPerUnit * (boqQuantity ?? 0);
+          const requiredQty = qtyPerUnit * (scopeQuantity ?? 0);
           const totalQty = requiredQty * (1 + wastePercent / 100);
           return {
             itemId: l.itemId,
@@ -552,20 +595,37 @@ export function EstimationDrawer({
                 placeholder="Select project…"
                 options={projects.map((p) => ({
                   value: p.id,
-                  label: `${p.name}${p.code ? ` · ${p.code}` : ""}`,
+                  label: `${p.name}${p.code ? ` · ${p.code}` : ""}${p.executionMode === "FREE_SCOPE" ? " · Free-Scope" : ""}`,
                 }))}
               />
             </div>
 
-            {/* ── BOQ Item cascading picker (spans full width) ── */}
+            {/* ── Scope picker: BOQ leaf (BOQ mode) or activity (FREE_SCOPE) ── */}
             <div className="md:col-span-2">
               <label className="block text-xs font-semibold text-gray-600 mb-2">
-                BOQ Item <span className="text-red-500">*</span>
+                {isFreeScope ? "Activity" : "BOQ Item"} <span className="text-red-500">*</span>
               </label>
               {!projectId ? (
                 <div className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-                  Pick a project above to load its BOQ tree.
+                  Pick a project above to load its {isFreeScope ? "activities" : "BOQ tree"}.
                 </div>
+              ) : isFreeScope ? (
+                activitiesLoading ? (
+                  <div className="flex items-center text-sm text-gray-500 py-2">
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" /> Loading activities…
+                  </div>
+                ) : activityItems.length === 0 ? (
+                  <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    This project has no activities yet. Go to Projects → Activity Scope to add them.
+                  </div>
+                ) : (
+                  <ActivityScopePicker
+                    items={activityItems}
+                    value={selectedActivity?.id ?? null}
+                    onSelect={setSelectedActivity}
+                    placeholder="Select activity"
+                  />
+                )
               ) : boqLoading ? (
                 <div className="flex items-center text-sm text-gray-500 py-2">
                   <Loader2 className="w-4 h-4 animate-spin mr-2" /> Loading BOQ…
@@ -608,37 +668,46 @@ export function EstimationDrawer({
               />
             </div>
 
-            {/* ── BOQ Quantity (auto-filled, read-only) ── */}
+            {/* ── Scope Quantity (auto-filled, read-only) ── */}
             <div>
               <label className="block text-xs font-semibold text-gray-600 mb-1">
-                BOQ Quantity <span className="text-gray-400 font-normal">(Auto-filled)</span>
+                {isFreeScope ? "Planned Quantity" : "BOQ Quantity"}{" "}
+                <span className="text-gray-400 font-normal">(Auto-filled)</span>
               </label>
               <div className="relative">
                 <input
                   type="text"
-                  value={boqQuantity != null ? String(boqQuantity) : ""}
+                  value={scopeQuantity != null ? String(scopeQuantity) : ""}
                   readOnly
-                  placeholder={selectedLeaf ? "" : "Pick a BOQ leaf above"}
+                  placeholder={
+                    hasScope
+                      ? ""
+                      : isFreeScope
+                      ? "Pick an activity above"
+                      : "Pick a BOQ leaf above"
+                  }
                   className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-700 font-medium"
                 />
-                {boqUnit && (
+                {scopeUnit && (
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] uppercase font-semibold text-gray-400">
-                    {boqUnit}
+                    {scopeUnit}
                   </span>
                 )}
               </div>
             </div>
 
-            {/* ── BOQ Description mirror ── */}
-            {selectedLeaf && (
+            {/* ── Selected scope mirror ── */}
+            {hasScope && (
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1">
                   Selected
                 </label>
                 <div className="text-xs text-gray-700 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2 truncate">
-                  <span className="font-mono font-semibold">{selectedLeaf.boq_no}</span>
+                  <span className="font-semibold">
+                    {isFreeScope ? selectedActivity!.activityCode : selectedLeaf!.boq_no}
+                  </span>
                   {" · "}
-                  {selectedLeaf.display_name}
+                  {isFreeScope ? selectedActivity!.description : selectedLeaf!.display_name}
                 </div>
               </div>
             )}
@@ -661,7 +730,7 @@ export function EstimationDrawer({
               <button
                 type="button"
                 onClick={addLine}
-                className="inline-flex items-center gap-1 text-xs font-semibold text-orange-700 hover:text-orange-800 border border-orange-200 bg-orange-50 hover:bg-orange-100 px-3 py-1.5 rounded-lg"
+                className="inline-flex items-center gap-1 text-xs font-semibold text-accent-700 hover:text-accent-800 border border-accent-200 bg-accent-50 hover:bg-accent-100 px-3 py-1.5 rounded-lg"
               >
                 <Plus className="w-3.5 h-3.5" /> Add Material
               </button>
@@ -680,7 +749,7 @@ export function EstimationDrawer({
                 const qtyPerUnit = parseFloat(line.qtyPerUnit) || 0;
                 const waste = parseFloat(line.wasteFactor) || 0;
                 const rate = parseFloat(line.standardRate) || 0;
-                const req = (boqQuantity ?? 0) * qtyPerUnit;
+                const req = (scopeQuantity ?? 0) * qtyPerUnit;
                 const total = req * (1 + waste / 100);
                 const cost = total * rate;
                 return (
@@ -698,13 +767,33 @@ export function EstimationDrawer({
                           Material <span className="text-red-500">*</span>
                         </label>
                         <GroupedMaterialSelect
+                          lazy
                           value={line.itemId}
+                          selectedLabel={line.itemName}
                           onChange={(v) => updateLine(idx, "itemId", v)}
-                          items={items}
+                          onSelect={(item) => {
+                            if (!item) return;
+                            const it = item as EstimationItemNode;
+                            setLines((prev) =>
+                              prev.map((row, i) =>
+                                i === idx
+                                  ? {
+                                      ...row,
+                                      itemName: it.name ?? "",
+                                      uomCode: it.uomCode ?? "",
+                                      standardRate:
+                                        it.standardRate?.toString() ?? "",
+                                    }
+                                  : row,
+                              ),
+                            );
+                          }}
+                          items={[]}
                           groups={itemGroups.map((g) => ({
                             id: g.id,
                             name: g.name,
                             status: g.status,
+                            itemCount: g.itemCount,
                           }))}
                           placeholder="Select material…"
                           size="md"
@@ -852,7 +941,7 @@ export function EstimationDrawer({
             </SecondaryButton>
             <PrimaryButton
               onClick={handleSubmit}
-              disabled={saving || workflowPending || !projectId || !selectedLeaf}
+              disabled={saving || workflowPending || !projectId || !hasScope}
             >
               {saving ? (
                 <>

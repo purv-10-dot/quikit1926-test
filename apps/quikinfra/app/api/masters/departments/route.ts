@@ -8,31 +8,43 @@ import {
   countDepartments,
   createDepartment,
 } from "@/lib/masters/departments-repository";
-import { parsePagination, paginateDb } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
 
 export async function GET(req: NextRequest) {
-  const ctxOrResp = await requireMastersAction("view");
+  const ctxOrResp = await requireMastersAction("construction.org_department", "view");
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
 
   const { searchParams } = new URL(req.url);
   const search = searchParams.get("search") ?? "";
+  const statusParam = (searchParams.get("status") ?? "").toLowerCase();
+  const status: "active" | "inactive" | "all" | undefined =
+    statusParam === "active" ? "active"
+    : statusParam === "inactive" ? "inactive"
+    : statusParam === "all" ? "all"
+    : undefined;
   const baseOpts = {
     orgId: ctx.orgId,
     createdBy: ctx.userId,
     search,
+    status,
   };
 
+  const { orderBy } = parseSort(
+    searchParams,
+    ["code", "name", "status", "createdAt"],
+    { field: "createdAt", order: "desc" },
+  );
   const result = await paginateDb(
     parsePagination(req),
-    (paging) => listDepartments({ ...baseOpts, ...paging }),
+    (paging) => listDepartments({ ...baseOpts, ...paging, orderBy }),
     () => countDepartments(baseOpts),
   );
   return NextResponse.json(result);
 }
 
 export async function POST(req: NextRequest) {
-  const ctxOrResp = await requireMastersAction("create");
+  const ctxOrResp = await requireMastersAction("construction.org_department", "create");
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "org.department", "add")) {

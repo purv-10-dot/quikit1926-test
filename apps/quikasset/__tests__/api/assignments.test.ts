@@ -3,7 +3,7 @@ import { mockDb, resetMockDb } from "../helpers/mockDb";
 import { makeReq } from "../helpers/req";
 import { setSession } from "../setup";
 
-import { POST } from "@/app/api/assignments/route";
+import { GET, POST } from "@/app/api/assignments/route";
 import { PATCH, DELETE } from "@/app/api/assignments/[id]/route";
 
 function grantAll() {
@@ -124,6 +124,40 @@ describe("POST /api/assignments — assign guard (A2)", () => {
     const res = await POST(makeReq("/api/assignments", { method: "POST", body: { assetId: "a1", userId: "u3", assignedDate: "2026-07-17" } }), { params: {} });
     expect(res.status).toBe(409);
     expect(mockDb.astAssignment.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("Actor attribution (Assigned by)", () => {
+  beforeEach(() => resetMockDb());
+
+  it("POST stamps assignedByUserId with the actor (session user), distinct from the assignee", async () => {
+    setSession(ADMIN);
+    grantAll();
+    runTxInline();
+    mockDb.astAsset.findFirst.mockResolvedValue({ id: "a1", assetStatus: "Available", condition: "New" } as never);
+    mockDb.astEmployee.findFirst.mockResolvedValue({ id: "e1" } as never);
+    mockDb.astAssignment.create.mockResolvedValue({ id: "as1", assetId: "a1", asset: { itemName: "L" }, user: { name: "N" } } as never);
+    mockDb.astAsset.update.mockResolvedValue({} as never);
+
+    const res = await POST(makeReq("/api/assignments", { method: "POST", body: { assetId: "a1", userId: "e1", assignedDate: "2026-07-17" } }), { params: {} });
+    expect(res.status).toBe(201);
+    const created = dataOf(mockDb.astAssignment.create.mock.calls[0]?.[0]);
+    expect(created.assignedByUserId).toBe("admin"); // actor
+    expect(created.userId).toBe("e1"); // assignee — unchanged
+  });
+
+  it("GET resolves assignedByName from the User table", async () => {
+    setSession(ADMIN);
+    grantAll();
+    mockDb.astAssignment.findMany.mockResolvedValue([
+      { id: "as1", assignedByUserId: "admin", asset: null, user: null },
+    ] as never);
+    mockDb.user.findMany.mockResolvedValue([{ id: "admin", firstName: "Ada", lastName: "Admin", email: "ada@x.com" }] as never);
+
+    const res = await GET(makeReq("/api/assignments"), { params: {} });
+    const json = await res.json();
+    expect(res.status).toBe(200);
+    expect(json.data[0].assignedByName).toBe("Ada Admin");
   });
 });
 

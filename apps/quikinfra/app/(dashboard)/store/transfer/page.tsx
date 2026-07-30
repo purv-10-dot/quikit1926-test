@@ -6,18 +6,18 @@ import { useRouter } from "next/navigation";
 import {
   Eye, Send, Check, X as XIcon, Truck, PackageCheck,
 } from "lucide-react";
-import { PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { WorkflowConfirmDialog } from "@/components/WorkflowConfirmDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { useStockTransfers } from "@/hooks/use-store";
+import { useServerTabList } from "@/hooks/use-server-tab-list";
 import { QuickCreateDrawer, type QuickCreateConfig } from "@/components/QuickCreateDrawer";
 import { GroupedMaterialSelect, type GroupedMaterialSelectItem } from "@/components/GroupedMaterialSelect";
-import { useProjects, useItems, useItemGroups, useLocations, useUOMs, useAssets } from "@/hooks/use-masters";
+import { useProjects, useItemGroups, useLocations, useUOMs, useAssets } from "@/hooks/use-masters";
 import { usePermissions, useMenuActions } from "@/hooks/use-permissions";
 import { useQueryClient } from "@tanstack/react-query";
 import { INDIAN_STATES, citiesForState } from "@/lib/data/india-geo";
-import { buildTabCounts, filterByTab, type TabSpec } from "@/lib/tab-counts";
+import { type TabSpec } from "@/lib/tab-counts";
 import { toast } from "@/lib/toast";
 
 const MENU_KEY = "store.transfer";
@@ -203,13 +203,30 @@ export default function StockTransferPage() {
     }
   };
 
-  const { data: result } = useStockTransfers({ status: "all" });
-  const allRows = result?.data ?? [];
-  const tabs = useMemo(() => buildTabCounts(allRows, TABS), [allRows]);
-  const data = useMemo(() => filterByTab(allRows, activeTab, TABS), [allRows, activeTab]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sort, setSort] = useState<{ by?: string; order?: "asc" | "desc" }>({
+    by: "transferDate",
+    order: "desc",
+  });
+  const {
+    items: data,
+    total,
+    page,
+    pageSize,
+    setPage,
+    setPageSize,
+    tabs,
+    isLoading,
+  } = useServerTabList<TransferRow>("stock-transfers", "/api/store/transfers", {
+    activeTab,
+    tabs: TABS,
+    search: searchQuery,
+    sortBy: sort.by,
+    sortOrder: sort.order,
+    initialPageSize: 25,
+  });
 
   const { data: projectsData } = useProjects();
-  const { data: itemsData } = useItems();
   const { data: itemGroupsData } = useItemGroups();
   const { data: locationsData } = useLocations();
   const { data: uomsData } = useUOMs();
@@ -218,16 +235,10 @@ export default function StockTransferPage() {
   const projects = (projectsData?.data ?? []) as { id: string; name?: string }[];
   const projectOptions = projects.map((p) => ({ value: p.id, label: p.name ?? "" }));
 
-  // Items + UOM lookups for the per-line grid. `itemById` lets the
-  // onChange resolver fill UOM and Available Stock from the item
-  // master without a second pick.
-  const items = (itemsData?.data ?? []) as unknown as TransferItemNode[];
+  // Lazy picker fetches items per-group on demand; onSelect supplies the
+  // picked item for autofill, so no full item-master load / itemById map.
+  const items: TransferItemNode[] = [];
   const itemGroups = itemGroupsData?.data ?? [];
-  const itemById = useMemo(() => {
-    const m = new Map<string, TransferItemNode>();
-    for (const i of items) m.set(i.id, i);
-    return m;
-  }, [items]);
   const uomOptions = (uomsData?.data ?? []).filter((u) => u?.status === "active").map((u) => ({
     value: u.code,
     label: u.code,
@@ -520,29 +531,24 @@ export default function StockTransferPage() {
           required: true,
           render: (line, update: (patch: Record<string, unknown>) => void) => (
             <GroupedMaterialSelect
+              lazy
               value={line.itemId ?? ""}
               onChange={(v) => {
-                const item = v ? itemById.get(v) : null;
-                if (!item) {
-                  update({
-                    itemId: v,
-                    itemName: "",
-                    itemCode: "",
-                    uomCode: "",
-                    availableStock: "0",
-                  });
+                if (!v) {
+                  update({ itemId: "", itemName: "", itemCode: "", uomCode: "", availableStock: "0" });
                   return;
                 }
+                update({ itemId: v });
+              }}
+              onSelect={(item) => {
+                if (!item) return;
+                const it = item as TransferItemNode;
                 update({
-                  itemId: v,
-                  itemName: item.name ?? "",
-                  itemCode: item.code ?? "",
-                  uomCode: item.uomCode ?? "",
+                  itemName: it.name ?? "",
+                  itemCode: it.code ?? "",
+                  uomCode: it.uomCode ?? "",
                   availableStock: String(
-                    item.currentStock ??
-                      item.stockOnHand ??
-                      item.minStockLevel ??
-                      "0",
+                    it.currentStock ?? it.stockOnHand ?? it.minStockLevel ?? "0",
                   ),
                 });
               }}
@@ -551,6 +557,7 @@ export default function StockTransferPage() {
                 id: g.id,
                 name: g.name,
                 status: g.status,
+                itemCount: g.itemCount,
               }))}
               placeholder={
                 items.length === 0 ? "No items in master" : "Select material..."
@@ -644,7 +651,15 @@ export default function StockTransferPage() {
   };
 
   const columns: ColDef<TransferRow>[] = [
-    { key: "transferNumber", label: "Transfer No", sortable: true, searchable: true },
+    {
+      key: "transferNumber", label: "Transfer No", sortable: true, searchable: true,
+      render: (row) => (
+        <span className="text-accent-600 cursor-pointer hover:underline font-medium"
+              onClick={() => router.push(`/store/transfer/${row.id}`)}>
+          {row.transferNumber}
+        </span>
+      ),
+    },
     { key: "fromLocationName", label: "From", sortable: true, searchable: true },
     { key: "toLocationName", label: "To", sortable: true, searchable: true },
     { key: "transferDate", label: "Date", type: "date", sortable: true },
@@ -762,13 +777,14 @@ export default function StockTransferPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Stock Transfer (Inter-Site)"
         subtitle="Transfer materials between projects, sites, and warehouses"
         breadcrumbs={[{ label: "Store", href: "/store" }, { label: "Stock Transfer" }]}
       />
       <TabBar tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
-      <PageContainer>
+      <PageContainer fill>
         <DataTable
           id="store-transfer"
           columns={columns}
@@ -776,8 +792,18 @@ export default function StockTransferPage() {
           onAdd={canAdd ? () => setDrawerOpen(true) : undefined}
           addLabel="New Transfer"
           historyEntityType="transfer"
+          loading={isLoading}
+          serverMode
+          serverTotal={total}
+          serverPage={page}
+          serverPageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          onSearchChange={setSearchQuery}
+          onSortChange={(k, d) => setSort({ by: k, order: d })}
         />
       </PageContainer>
+      </PageFrame>
       <QuickCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} config={config} />
 
       <WorkflowConfirmDialog

@@ -11,16 +11,17 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, Send, FileText } from "lucide-react";
-import { PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
-import { useGRNs, usePurchaseOrders, useSubmitGRN } from "@/hooks/use-purchase";
+import { usePurchaseOrders, useSubmitGRN } from "@/hooks/use-purchase";
 import { QuickCreateDrawer, type QuickCreateConfig } from "@/components/QuickCreateDrawer";
-import { useProjects, useItems, useLocations, useVendors } from "@/hooks/use-masters";
+import { useProjects, useLocations, useVendors } from "@/hooks/use-masters";
 import { useMenuActions } from "@/hooks/use-permissions";
 import { useQueryClient } from "@tanstack/react-query";
 import { renderGrnLine } from "@/components/GrnLineRow";
 import { buildGrnFields } from "@/lib/grn-form-fields";
-import { buildTabCounts, filterByTab, type TabSpec } from "@/lib/tab-counts";
+import { type TabSpec } from "@/lib/tab-counts";
+import { useServerTabList } from "@/hooks/use-server-tab-list";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { toErrorMessage } from "@/lib/api/errors";
 
@@ -55,16 +56,31 @@ export default function GRNPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { canAdd } = useMenuActions("/store/grn");
 
-  const { data: result, isLoading } = useGRNs({ status: "all", search: "" });
   const submitMutation = useSubmitGRN();
   const [submitTarget, setSubmitTarget] = useState<{ id: string; grnNumber: string | null } | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const allRows = result?.data ?? [];
-  const tabs = useMemo(() => buildTabCounts(allRows, STATUS_TABS), [allRows]);
-  const data = useMemo(
-    () => filterByTab(allRows, activeTab, STATUS_TABS),
-    [allRows, activeTab],
-  );
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sort, setSort] = useState<{ by?: string; order?: "asc" | "desc" }>({
+    by: "grnDate",
+    order: "desc",
+  });
+  const {
+    items: data,
+    total,
+    page,
+    pageSize,
+    setPage,
+    setPageSize,
+    tabs,
+    isLoading,
+  } = useServerTabList<GrnRow>("grns", "/api/purchase/grn", {
+    activeTab,
+    tabs: STATUS_TABS,
+    search: searchQuery,
+    sortBy: sort.by,
+    sortOrder: sort.order,
+    initialPageSize: 25,
+  });
 
   // Submit-for-approval opens a lightweight ConfirmDialog instead of a
   // browser confirm().
@@ -86,7 +102,6 @@ export default function GRNPage() {
   };
 
   const { data: projectsData } = useProjects();
-  const { data: itemsData } = useItems();
   const { data: locationsData } = useLocations();
   const { data: vendorsData } = useVendors();
   // Indexed vendor lookup so we can always resolve a name from the
@@ -97,7 +112,6 @@ export default function GRNPage() {
   for (const v of (vendorsData?.data ?? []) as unknown as GrnVendorNode[]) vendorById.set(v.id, v);
 
   const projectOptions = (projectsData?.data ?? []).map((p) => ({ value: p.id, label: p.name }));
-  const itemOptions = (itemsData?.data ?? []).map((i) => ({ value: i.id, label: i.name }));
   const locationOptions = (locationsData?.data ?? []).filter((l) => l?.status === "active").map((l) => ({ value: l.id, label: l.name }));
   // Only offer POs that are approved/sent/partially-received — draft
   // POs can't yet receive goods, and fully-received ones don't make
@@ -119,11 +133,12 @@ export default function GRNPage() {
     title: "Record GRN",
     subtitle: "Receive and inspect goods against a purchase order",
     apiEndpoint: "/api/purchase/grn",
-    onSuccess: (created: unknown) => {
+    submitLabel: "Create (Draft)",
+    onSuccess: () => {
+      // Stay on the GRN list after create (draft) — just refresh the
+      // table, matching the Purchase Indent flow. The user can open the
+      // new draft from the row when ready.
       qc.invalidateQueries({ queryKey: ["grns"] });
-      const c = created as { id?: string; data?: { id?: string } } | null;
-      const newId = c?.id ?? c?.data?.id;
-      if (newId) router.push(`/store/grn/${newId}`);
     },
     // Shared field list — see `buildGrnFields` for the canonical
     // shape. The only thing that differs between the two GRN entry
@@ -328,7 +343,7 @@ export default function GRNPage() {
     {
       key: "grnNumber", label: "GRN No", sortable: true, searchable: true,
       render: (row) => (
-        <span className="text-orange-600 cursor-pointer hover:underline font-medium"
+        <span className="text-accent-600 cursor-pointer hover:underline font-medium"
               onClick={() => router.push(`/store/grn/${row.id}`)}>
           {row.grnNumber}
         </span>
@@ -375,7 +390,7 @@ export default function GRNPage() {
                 "noopener",
               );
             }}
-            className="p-1.5 rounded hover:bg-orange-50 text-gray-500 hover:text-orange-600"
+            className="p-1.5 rounded hover:bg-accent-50 text-gray-500 hover:text-accent-600"
             title="View PDF"
           >
             <FileText className="w-4 h-4" />
@@ -399,6 +414,7 @@ export default function GRNPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Goods Receipt Notes (GRN)"
         subtitle="Receive, inspect, and accept deliveries against purchase orders"
@@ -407,7 +423,7 @@ export default function GRNPage() {
 
       <TabBar tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
 
-      <PageContainer>
+      <PageContainer fill>
         <DataTable
           id="store-grn"
           columns={columns}
@@ -415,8 +431,18 @@ export default function GRNPage() {
           onAdd={canAdd ? () => setDrawerOpen(true) : undefined}
           addLabel="Record GRN"
           historyEntityType="grn"
+          loading={isLoading}
+          serverMode
+          serverTotal={total}
+          serverPage={page}
+          serverPageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          onSearchChange={setSearchQuery}
+          onSortChange={(k, d) => setSort({ by: k, order: d })}
         />
       </PageContainer>
+      </PageFrame>
       <QuickCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} config={config} />
 
       <ConfirmDialog

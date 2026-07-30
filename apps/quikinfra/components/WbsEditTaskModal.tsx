@@ -125,17 +125,17 @@ export function WbsEditTaskModal({
           <div className="flex-1 min-h-0 overflow-y-auto">
             <div
               aria-hidden
-              className="h-1 w-full bg-gradient-to-r from-orange-400 via-orange-500 to-orange-600"
+              className="h-1 w-full bg-gradient-to-r from-accent-400 via-accent-500 to-accent-600"
             />
             <div className="flex items-center gap-3 px-6 py-4 pr-14 border-b border-slate-200 bg-white">
-              <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-orange-50 to-orange-100 text-orange-600 ring-1 ring-orange-200/60 shrink-0">
+              <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-accent-50 text-accent-600 ring-1 ring-accent-200 shrink-0">
                 <Pencil className="w-5 h-5" />
               </div>
               <div className="min-w-0">
                 <h2 className="text-base font-semibold text-slate-900 truncate">
                   Edit Task
                 </h2>
-                <p className="text-xs text-slate-500 mt-0.5 truncate font-mono">
+                <p className="text-xs text-slate-500 mt-0.5 truncate">
                   {task.wbsCode}
                 </p>
               </div>
@@ -179,7 +179,7 @@ export function WbsEditTaskModal({
                     type="date"
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full h-9 px-2.5 text-sm border border-slate-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400"
+                    className="w-full h-9 px-2.5 text-sm border border-slate-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400"
                   />
                 </Field>
                 <Field label="End Date" required>
@@ -188,7 +188,7 @@ export function WbsEditTaskModal({
                     value={endDate}
                     min={startDate || undefined}
                     onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full h-9 px-2.5 text-sm border border-slate-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400"
+                    className="w-full h-9 px-2.5 text-sm border border-slate-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400"
                   />
                 </Field>
 
@@ -226,7 +226,7 @@ export function WbsEditTaskModal({
                           return (
                             <span
                               key={pid}
-                              className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-orange-50 text-orange-700 text-xs font-medium border border-orange-200"
+                              className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-accent-50 text-accent-700 text-xs font-medium border border-accent-200"
                             >
                               {opt?.label ?? pid}
                               <button
@@ -237,7 +237,7 @@ export function WbsEditTaskModal({
                                     predecessors.filter((x) => x !== pid),
                                   )
                                 }
-                                className="text-orange-400 hover:text-orange-700 leading-none text-sm"
+                                className="text-accent-400 hover:text-accent-700 leading-none text-sm"
                               >
                                 ×
                               </button>
@@ -259,7 +259,7 @@ export function WbsEditTaskModal({
                             setPredecessors([...predecessors, v]);
                           }
                         }}
-                        className="w-full h-9 px-2.5 text-sm border border-slate-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400"
+                        className="w-full h-9 px-2.5 text-sm border border-slate-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400"
                       >
                         <option value="">+ Add a predecessor…</option>
                         {availablePredecessors.map((o) => (
@@ -294,7 +294,7 @@ export function WbsEditTaskModal({
               type="button"
               onClick={handleSave}
               disabled={!canSave || updateTask.isPending}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-gradient-to-b from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg shadow-sm transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-gradient-to-b from-accent-500 to-accent-600 hover:from-accent-600 hover:to-accent-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg shadow-sm transition-colors"
             >
               {updateTask.isPending ? (
                 <>

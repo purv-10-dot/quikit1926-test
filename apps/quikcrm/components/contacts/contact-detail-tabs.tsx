@@ -17,12 +17,14 @@ import {
   type UnifiedTimelineSeed,
 } from "@/components/leads/dashboard/unified-timeline";
 import { LeadDashboardErrorBoundary } from "@/components/leads/dashboard/error-boundary";
+import { EmailThreadPanel } from "@/components/email/email-thread-panel";
 import type { ContactDashboardSnapshot } from "@/lib/services/contacts/dashboard-snapshot";
 import type { Contact360Row } from "@/lib/services/contacts/full-record";
 
 export const CONTACT_TABS = [
   { key: "overview", label: "Overview" },
   { key: "timeline", label: "Timeline" },
+  { key: "emails", label: "Emails" },
   { key: "notes", label: "Notes" },
   { key: "tasks", label: "Tasks" },
   { key: "opportunities", label: "Opportunities" },
@@ -137,6 +139,16 @@ export function ContactDetailTabs({
                 emptyDescription="Contact, lead, and account touchpoints roll up here as your team engages this person."
               />
             </LeadDashboardErrorBoundary>
+          </div>
+        )}
+
+        {mountedTabs.has("emails") && (
+          <div hidden={active !== "emails"}>
+            <EmailThreadPanel
+              relatedKind="Contact"
+              relatedObjectId={contact.id}
+              defaultTo={contact.email ? [contact.email] : []}
+            />
           </div>
         )}
 

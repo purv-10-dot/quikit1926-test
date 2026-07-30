@@ -10,7 +10,7 @@ const MODELS = [
   "cnProject", "cnItem", "cnItemGroup", "cnVendor", "cnContractor",
   "cnCustomer", "cnLocation", "cnUOM", "cnGSTCode", "cnTDSCode",
   "cnDepartment", "cnWorkCategory", "cnCostCenter",
-  "cnMachinery", "cnCompany", "cnFinancialYear", "cnTermsCondition",
+  "cnMachinery", "cnCompany", "cnTermsCondition",
 ];
 
 beforeEach(() => {

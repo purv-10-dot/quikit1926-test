@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Eye } from "lucide-react";
-import { PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { useRABs } from "@/hooks/use-projects";
 import { QuickCreateDrawer } from "@/components/QuickCreateDrawer";
@@ -29,8 +29,26 @@ export default function RABPage() {
   const [activeTab, setActiveTab] = useState("all");
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const { data: result, isLoading } = useRABs({ status: activeTab });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("createdAt");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
+  useEffect(() => {
+    setPage(1);
+  }, [activeTab, search, sortBy, sortOrder, pageSize]);
+
+  const { data: result, isLoading } = useRABs({
+    status: activeTab,
+    search: search || undefined,
+    page,
+    pageSize,
+    sortBy,
+    sortOrder,
+  });
   const data = result?.data ?? [];
+  const total = result?.total ?? 0;
 
   const { data: projectsData } = useProjects();
   const { data: contractorsData } = useContractors();
@@ -74,10 +92,10 @@ export default function RABPage() {
 
   const columns: ColDef<RabRow>[] = [
     { key: "rabNumber", label: "RAB No", sortable: true, searchable: true },
-    { key: "projectName", label: "Project", sortable: true, searchable: true },
-    { key: "contractorName", label: "Contractor", sortable: true, searchable: true },
+    { key: "projectName", label: "Project", sortable: false, searchable: true },
+    { key: "contractorName", label: "Contractor", sortable: false, searchable: true },
     {
-      key: "billPeriod", label: "Period",
+      key: "billPeriod", label: "Period", sortable: false,
       render: (row) => `${row.billPeriodFrom} — ${row.billPeriodTo}`,
     },
     {
@@ -102,21 +120,35 @@ export default function RABPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Running Account Bill (RAB)"
         subtitle="Contractor billing based on approved DPR quantities"
         breadcrumbs={[{ label: "Projects", href: "/projects" }, { label: "RAB" }]}
       />
       <TabBar tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />
-      <PageContainer>
+      <PageContainer fill>
         <DataTable
           id="projects-rab"
           columns={columns}
           data={data as unknown as RabRow[]}
+          loading={isLoading}
+          serverMode
+          serverTotal={total}
+          serverPage={page}
+          serverPageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          onSearchChange={setSearch}
+          onSortChange={(key, dir) => {
+            setSortBy(key);
+            setSortOrder(dir);
+          }}
           onAdd={() => setDrawerOpen(true)}
           addLabel="Generate RAB"
         />
       </PageContainer>
+      </PageFrame>
       <QuickCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} config={config} />
     </>
   );

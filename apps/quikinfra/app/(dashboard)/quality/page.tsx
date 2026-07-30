@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ClipboardCheck, Search, CheckCircle2, XCircle } from "lucide-react";
-import { PageHeader, PageContainer, KPICard } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer, KPICard } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { QuickCreateDrawer } from "@/components/QuickCreateDrawer";
 import { useProjects } from "@/hooks/use-masters";
@@ -17,15 +17,40 @@ interface InspectionRow {
 export default function QualityPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { canAdd } = useMenuActions("/quality");
+  const qc = useQueryClient();
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, pageSize]);
 
   const { data: chkResult } = useQuery({
     queryKey: ["quality-checklists"],
     queryFn: () => fetch("/api/quality/checklists").then(r => r.json()),
   });
 
-  const { data: inspResult } = useQuery({
-    queryKey: ["quality-inspections"],
-    queryFn: () => fetch("/api/quality/inspections").then(r => r.json()),
+  const { data: inspResult, isLoading: inspLoading } = useQuery({
+    queryKey: ["quality-inspections", { page, pageSize, search }],
+    queryFn: () => {
+      const qs = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+      if (search) qs.set("search", search);
+      return fetch(`/api/quality/inspections?${qs.toString()}`).then(r => r.json());
+    },
+    placeholderData: (prev) => prev,
+  });
+
+  // KPI tiles from a server-side groupBy so they reflect full totals, not one page.
+  const { data: statsResult } = useQuery({
+    queryKey: ["quality-inspections", "stats", search],
+    queryFn: () => {
+      const qs = new URLSearchParams({ stats: "1" });
+      if (search) qs.set("search", search);
+      return fetch(`/api/quality/inspections?${qs.toString()}`).then(r => r.json());
+    },
+    placeholderData: (prev) => prev,
   });
 
   const { data: projectsData } = useProjects();
@@ -33,9 +58,10 @@ export default function QualityPage() {
 
   const checklists = chkResult?.data ?? [];
   const inspections = (inspResult?.data ?? []) as InspectionRow[];
-  const pendingInspections = inspections.filter((i) => i.result === "Conditional").length;
-  const passed = inspections.filter((i) => i.result === "Pass").length;
-  const failed = inspections.filter((i) => i.result === "Fail").length;
+  const inspTotal: number = inspResult?.total ?? 0;
+  const pendingInspections = statsResult?.stats?.pending ?? 0;
+  const passed = statsResult?.stats?.passed ?? 0;
+  const failed = statsResult?.stats?.failed ?? 0;
 
   const projectOptions = useMemo(
     () => projects.map((p) => ({ value: p.id, label: `${p.code ?? p.id} — ${p.name ?? ""}`.trim() })),
@@ -46,7 +72,10 @@ export default function QualityPage() {
     title: "New Inspection/Checklist",
     subtitle: "Create checklist and record inspection in one step",
     apiEndpoint: "/api/quality/inspections",
-    onSuccess: () => {},
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["quality-inspections"] });
+      qc.invalidateQueries({ queryKey: ["quality-checklists"] });
+    },
     fields: [
       { key: "projectId", label: "Project", type: "select" as const, required: true, options: projectOptions, placeholder: "Select project", searchable: true },
       { key: "date", label: "Inspection Date", type: "date" as const, required: true },
@@ -76,7 +105,7 @@ export default function QualityPage() {
         { key: "acceptanceCriteria", label: "Acceptance Criteria", type: "text" as const, placeholder: "Pass/Fail criteria", width: "wide" },
       ],
     },
-  }), [projectOptions]);
+  }), [projectOptions, qc]);
 
   const projectNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -110,7 +139,7 @@ export default function QualityPage() {
         options: ["Concrete", "Steel", "MEP", "General", "Other"],
         sortable: true,
         render: (row) => (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-50 text-orange-700">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-accent-50 text-accent-700">
             {row.category ?? "—"}
           </span>
         ),
@@ -131,11 +160,12 @@ export default function QualityPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Inspection/Checklist"
         subtitle="Single workflow for checklist + inspection tracking"
       />
-      <PageContainer>
+      <PageContainer fill>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <KPICard title="Total Checklists" value={checklists.length}
             icon={<ClipboardCheck className="w-5 h-5" />} color="blue" />
@@ -147,16 +177,25 @@ export default function QualityPage() {
             icon={<XCircle className="w-5 h-5" />} color="red" />
         </div>
 
-        <div className="mt-6">
+        <div className="mt-6 flex min-h-0 flex-1 flex-col">
           <DataTable
             id="inspection-checklist"
-            columns={columns}
+            columns={columns.map((c) => ({ ...c, sortable: false }))}
             data={inspections}
+            loading={inspLoading}
+            serverMode
+            serverTotal={inspTotal}
+            serverPage={page}
+            serverPageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+            onSearchChange={setSearch}
             onAdd={canAdd ? () => setDrawerOpen(true) : undefined}
             addLabel="New Inspection/Checklist"
           />
         </div>
       </PageContainer>
+      </PageFrame>
 
       <QuickCreateDrawer
         open={drawerOpen}

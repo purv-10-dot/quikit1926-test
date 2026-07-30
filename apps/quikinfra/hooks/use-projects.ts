@@ -54,6 +54,161 @@ export function useBOQ(projectId: string | null) {
   });
 }
 
+export interface ActivityLeafRow {
+  id: string;
+  activityCode: string;
+  description: string;
+  category: string | null;
+  uomId: string | null;
+  uomCode: string | null;
+  tenderQty: number | null;
+  scopeQty: number | null;
+  rate: number | null;
+  path?: string;
+}
+
+/** Leaf activities for a FREE_SCOPE project — feeds the ActivityScopePicker. */
+export function useActivities(projectId: string | null) {
+  return useQuery({
+    queryKey: ["activities", projectId],
+    queryFn: () =>
+      fetchApi<{ data: ActivityLeafRow[] }>(
+        `/api/projects/${projectId}/activities?leaves=true`,
+      ),
+    enabled: !!projectId,
+  });
+}
+
+export interface ActivityTreeRow {
+  id: string;
+  projectId: string;
+  activityCode: string;
+  description: string;
+  category: string | null;
+  uomId: string | null;
+  uomCode: string | null;
+  tenderQty: number | null;
+  scopeQty: number | null;
+  rate: number | null;
+  startDate: string | null;
+  endDate: string | null;
+  parentId: string | null;
+  isGroup: boolean;
+  depth: number;
+  sortOrder: number;
+  status: string;
+  locked: boolean;
+  /** Ancestor breadcrumb — only present on flattened search results. */
+  path?: string;
+}
+
+/**
+ * All folders in the scope, unpaginated — the "Parent folder" pickers must
+ * offer every folder even when only part of the tree is loaded.
+ */
+export function useActivityFolders(projectId: string | null) {
+  return useQuery({
+    queryKey: ["activity-folders", projectId],
+    queryFn: () =>
+      fetchApi<{ data: ActivityTreeRow[] }>(
+        `/api/projects/${projectId}/activities?folders=true`,
+      ),
+    enabled: !!projectId,
+  });
+}
+
+/**
+ * Activity tree for the Activity Scope screen, scroll-loaded a page at a time.
+ *
+ * Pages are depth-first slices, so accumulating them yields a valid tree at
+ * every point. With `search` set the server returns flat matches instead —
+ * the screen renders them as a list, not a tree.
+ */
+export function useActivityTreeInfinite(
+  projectId: string | null,
+  opts?: { search?: string; pageSize?: number },
+) {
+  const pageSize = opts?.pageSize ?? 100;
+  const search = opts?.search?.trim() ?? "";
+  return useInfiniteQuery({
+    queryKey: ["activity-tree", projectId, search, pageSize],
+    queryFn: ({ pageParam }) => {
+      const qs = new URLSearchParams();
+      qs.set("page", String(pageParam));
+      qs.set("pageSize", String(pageSize));
+      if (search) qs.set("search", search);
+      return fetchApi<{
+        data: ActivityTreeRow[];
+        total: number;
+        isLocked: boolean;
+        page: number;
+        pageSize: number;
+        hasMore: boolean;
+      }>(`/api/projects/${projectId}/activities?${qs.toString()}`);
+    },
+    enabled: !!projectId,
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) =>
+      lastPage.hasMore ? lastPage.page + 1 : undefined,
+  });
+}
+
+export function useCreateActivity() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, data }: { projectId: string; data: unknown }) =>
+      mutateApi(`/api/projects/${projectId}/activities`, "POST", data),
+    onSuccess: (_r, { projectId }) => {
+      qc.invalidateQueries({ queryKey: ["activity-tree", projectId] });
+      qc.invalidateQueries({ queryKey: ["activity-folders", projectId] });
+      qc.invalidateQueries({ queryKey: ["activities", projectId] });
+    },
+    meta: entityMeta("create", "Activity"),
+  });
+}
+
+export function useUpdateActivity() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, activityId, data }: { projectId: string; activityId: string; data: unknown }) =>
+      mutateApi(`/api/projects/${projectId}/activities/${activityId}`, "PATCH", data),
+    onSuccess: (_r, { projectId }) => {
+      qc.invalidateQueries({ queryKey: ["activity-tree", projectId] });
+      qc.invalidateQueries({ queryKey: ["activity-folders", projectId] });
+      qc.invalidateQueries({ queryKey: ["activities", projectId] });
+    },
+    meta: entityMeta("update", "Activity"),
+  });
+}
+
+export function useDeleteActivity() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, activityId }: { projectId: string; activityId: string }) =>
+      mutateApi(`/api/projects/${projectId}/activities/${activityId}`, "DELETE"),
+    onSuccess: (_r, { projectId }) => {
+      qc.invalidateQueries({ queryKey: ["activity-tree", projectId] });
+      qc.invalidateQueries({ queryKey: ["activity-folders", projectId] });
+      qc.invalidateQueries({ queryKey: ["activities", projectId] });
+    },
+    meta: entityMeta("delete", "Activity"),
+  });
+}
+
+export function useSetActivitiesLock() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, locked }: { projectId: string; locked: boolean }) =>
+      mutateApi(`/api/projects/${projectId}/activities/lock`, "POST", { locked }),
+    onSuccess: (_r, { projectId }) => {
+      qc.invalidateQueries({ queryKey: ["activity-tree", projectId] });
+      qc.invalidateQueries({ queryKey: ["activity-folders", projectId] });
+      qc.invalidateQueries({ queryKey: ["activities", projectId] });
+    },
+    meta: entityMeta("update", "Activity lock"),
+  });
+}
+
 /**
  * Infinite-scroll variant of useBOQ — emits one page at a time so the UI
  * can render the table progressively as the user scrolls. Server-side
@@ -124,11 +279,33 @@ export function useImportBOQ() {
  * or pass null/undefined to get everything (used by the list page which
  * no longer gates on project selection).
  */
-export function useEstimations(projectId?: string | null) {
-  const qs = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+export function useEstimations(
+  projectId?: string | null,
+  opts?: {
+    search?: string;
+    page?: number;
+    pageSize?: number;
+    sortBy?: string;
+    sortOrder?: "asc" | "desc";
+    excludeInactive?: boolean;
+  },
+) {
+  const qs = new URLSearchParams();
+  if (projectId) qs.set("projectId", projectId);
+  if (opts?.search) qs.set("search", opts.search);
+  if (opts?.page) qs.set("page", String(opts.page));
+  if (opts?.pageSize) qs.set("pageSize", String(opts.pageSize));
+  if (opts?.sortBy) qs.set("sortBy", opts.sortBy);
+  if (opts?.sortOrder) qs.set("sortOrder", opts.sortOrder);
+  if (opts?.excludeInactive) qs.set("excludeInactive", "1");
+  const query = qs.toString();
   return useQuery({
-    queryKey: ["estimations", projectId ?? "__all__"],
-    queryFn: () => fetchApi<{ data: Estimation[] }>(`/api/estimations${qs}`),
+    queryKey: ["estimations", query || "__all__"],
+    queryFn: () =>
+      fetchApi<{ data: Estimation[]; total: number }>(
+        `/api/estimations${query ? `?${query}` : ""}`,
+      ),
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -163,17 +340,46 @@ export function useUpdateEstimation() {
 
 // ─── Work Orders ───────────────────────────────────────────────────
 
-export function useWorkOrders(params?: { status?: string; projectId?: string; contractorId?: string; search?: string }) {
+export function useWorkOrders(params?: {
+  status?: string;
+  projectId?: string;
+  contractorId?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+}) {
   const qs = new URLSearchParams();
   if (params?.status && params.status !== "all") qs.set("status", params.status);
   if (params?.projectId) qs.set("projectId", params.projectId);
   if (params?.contractorId) qs.set("contractorId", params.contractorId);
   if (params?.search) qs.set("search", params.search);
+  if (params?.page) qs.set("page", String(params.page));
+  if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+  if (params?.sortBy) qs.set("sortBy", params.sortBy);
+  if (params?.sortOrder) qs.set("sortOrder", params.sortOrder);
   const query = qs.toString();
 
   return useQuery({
     queryKey: ["work-orders", query],
     queryFn: () => fetchApi<{ data: WorkOrderListRow[]; total: number }>(`/api/projects/work-orders${query ? `?${query}` : ""}`),
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useWorkOrderStats(params?: { search?: string; projectId?: string }) {
+  const qs = new URLSearchParams({ stats: "1" });
+  if (params?.search) qs.set("search", params.search);
+  if (params?.projectId) qs.set("projectId", params.projectId);
+  const query = qs.toString();
+  return useQuery({
+    queryKey: ["work-orders", "stats", query],
+    queryFn: () =>
+      fetchApi<{ stats: { total: number; active: number; totalValue: number; avgProgress: number } }>(
+        `/api/projects/work-orders?${query}`,
+      ),
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -185,11 +391,21 @@ export function useWorkOrder(id: string | null) {
   });
 }
 
+/**
+ * A work-order write can change the dashboard's Active Work Orders count, so
+ * both caches have to drop together — otherwise the tile keeps serving a stale
+ * number until the next navigation.
+ */
+function invalidateWorkOrders(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ["work-orders"] });
+  qc.invalidateQueries({ queryKey: ["dashboard"] });
+}
+
 export function useCreateWorkOrder() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: unknown) => mutateApi("/api/projects/work-orders", "POST", data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["work-orders"] }),
+    onSuccess: () => invalidateWorkOrders(qc),
     meta: entityMeta("create", "Work order"),
   });
 }
@@ -199,7 +415,7 @@ export function useUpdateWorkOrder() {
   return useMutation({
     mutationFn: ({ id, ...data }: { id: string } & Record<string, unknown>) =>
       mutateApi(`/api/projects/work-orders/${id}`, "PUT", data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["work-orders"] }),
+    onSuccess: () => invalidateWorkOrders(qc),
     meta: entityMeta("update", "Work order"),
   });
 }
@@ -209,25 +425,55 @@ export function useDeleteWorkOrder() {
   return useMutation({
     mutationFn: (id: string) =>
       mutateApi(`/api/projects/work-orders/${id}`, "DELETE"),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["work-orders"] }),
+    onSuccess: () => invalidateWorkOrders(qc),
     meta: entityMeta("delete", "Work order"),
   });
 }
 
 // ─── DPR ───────────────────────────────────────────────────────────
 
-export function useDPRs(params?: { status?: string; projectId?: string; fromDate?: string; toDate?: string; search?: string }) {
+export function useDPRs(params?: {
+  status?: string;
+  projectId?: string;
+  fromDate?: string;
+  toDate?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+}) {
   const qs = new URLSearchParams();
   if (params?.status && params.status !== "all") qs.set("status", params.status);
   if (params?.projectId) qs.set("projectId", params.projectId);
   if (params?.fromDate) qs.set("fromDate", params.fromDate);
   if (params?.toDate) qs.set("toDate", params.toDate);
   if (params?.search) qs.set("search", params.search);
+  if (params?.page) qs.set("page", String(params.page));
+  if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+  if (params?.sortBy) qs.set("sortBy", params.sortBy);
+  if (params?.sortOrder) qs.set("sortOrder", params.sortOrder);
   const query = qs.toString();
 
   return useQuery({
     queryKey: ["dprs", query],
     queryFn: () => fetchApi<{ data: unknown[]; total: number }>(`/api/projects/dpr${query ? `?${query}` : ""}`),
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useDPRStats(params?: { search?: string; projectId?: string }) {
+  const qs = new URLSearchParams({ stats: "1" });
+  if (params?.search) qs.set("search", params.search);
+  if (params?.projectId) qs.set("projectId", params.projectId);
+  const query = qs.toString();
+  return useQuery({
+    queryKey: ["dprs", "stats", query],
+    queryFn: () =>
+      fetchApi<{ stats: { total: number; approved: number; pending: number; halted: number } }>(
+        `/api/projects/dpr?${query}`,
+      ),
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -248,18 +494,6 @@ export function useCreateDPR() {
   });
 }
 
-export function useUpdateDPR() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, ...data }: { id: string } & Record<string, unknown>) =>
-      mutateApi(`/api/projects/dpr/${id}`, "PUT", data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["dprs"] });
-      qc.invalidateQueries({ queryKey: ["dpr"] });
-    },
-    meta: entityMeta("update", "DPR"),
-  });
-}
 
 export function useDeleteDPR() {
   const qc = useQueryClient();
@@ -284,16 +518,31 @@ export function useSubmitDPR() {
 
 // ─── RAB ───────────────────────────────────────────────────────────
 
-export function useRABs(params?: { status?: string; projectId?: string; contractorId?: string }) {
+export function useRABs(params?: {
+  status?: string;
+  projectId?: string;
+  contractorId?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+}) {
   const qs = new URLSearchParams();
   if (params?.status && params.status !== "all") qs.set("status", params.status);
   if (params?.projectId) qs.set("projectId", params.projectId);
   if (params?.contractorId) qs.set("contractorId", params.contractorId);
+  if (params?.search) qs.set("search", params.search);
+  if (params?.page) qs.set("page", String(params.page));
+  if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+  if (params?.sortBy) qs.set("sortBy", params.sortBy);
+  if (params?.sortOrder) qs.set("sortOrder", params.sortOrder);
   const query = qs.toString();
 
   return useQuery({
     queryKey: ["rabs", query],
     queryFn: () => fetchApi<{ data: unknown[]; total: number }>(`/api/projects/rab${query ? `?${query}` : ""}`),
+    placeholderData: (prev) => prev,
   });
 }
 

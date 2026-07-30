@@ -6,9 +6,10 @@ import { Prisma } from "@quikit/database";
 import { BOQError } from "@/lib/boq";
 import { tenantCreate, hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
-import { parsePagination } from "@/lib/http/pagination";
+import { parsePagination, parseSort } from "@/lib/http/pagination";
 import { parseStoredWeatherDetail } from "@/lib/weather/dpr-weather";
 import { canActOnCurrentStep } from "@/lib/approvals/workflow-rbac";
+import { resolveMaterialMeta } from "@/lib/projects/dpr-material-meta";
 import { persistDprImages } from "@/lib/dpr/dpr-images";
 
 /**
@@ -37,11 +38,14 @@ function toDecimalOrNull(v: number | string | null | undefined): string | null {
 interface DprWorkItemRow {
   id: string;
   boqItemId?: string | null;
+  scopeType?: string | null;
+  scopeId?: string | null;
   woId?: string | null;
   description?: string | null;
   todayQty?: Numericish;
   cumulativeQty?: Numericish;
   uomId?: string | null;
+  location?: string | null;
   remarks?: string | null;
 }
 interface DprLabourRow {
@@ -108,12 +112,17 @@ interface DprRow {
 interface DprBodyWorkItem {
   boqItemId?: string;
   boqNo?: string;
+  scopeType?: string | null;
+  scopeId?: string | null;
+  // Contractor/WO selector: the form sends `workOrderId`; accept `woId` too.
+  workOrderId?: string | null;
   woId?: string | null;
   description?: string;
   todayQty?: number | string;
   qty?: number | string;
   cumulativeQty?: number | string;
   uomId?: string;
+  location?: string | null;
   remarks?: string | null;
   images?: unknown;
   imageKeys?: unknown;
@@ -183,16 +192,29 @@ function enrichDPR(
   row: DprRow,
   project?: DprProject,
   boqNoById?: Map<string, string>,
+  matMeta?: {
+    itemNameById: Map<string, string>;
+    uomCodeById: Map<string, string>;
+  },
+  activityCodeById?: Map<string, string>,
 ) {
   const workItems = (row.workItems ?? []).map((w: DprWorkItemRow) => ({
     id: w.id,
     boqItemId: w.boqItemId ?? "",
-    boqNo: boqNoById?.get(w.boqItemId ?? "") ?? "",
+    scopeType: w.scopeType ?? null,
+    scopeId: w.scopeId ?? null,
+    // FREE_SCOPE lines carry no boqItemId — resolve their ref from the
+    // activity (scopeId) instead so the "BOQ REF" column isn't blank.
+    boqNo:
+      w.scopeType === "ACTIVITY"
+        ? activityCodeById?.get(w.scopeId ?? "") ?? ""
+        : boqNoById?.get(w.boqItemId ?? "") ?? "",
     woId: w.woId ?? null,
     description: w.description ?? "",
     todayQty: w.todayQty?.toString?.() ?? "0",
     cumulativeQty: w.cumulativeQty?.toString?.() ?? "0",
     uomId: w.uomId ?? "",
+    location: w.location ?? "",
     remarks: w.remarks ?? "",
   }));
   const labour = (row.labourEntries ?? []).map((l: DprLabourRow) => ({
@@ -224,8 +246,10 @@ function enrichDPR(
   const materials = (row.materialEntries ?? []).map((m: DprMaterialRow) => ({
     id: m.id,
     itemId: m.itemId ?? "",
+    itemName: matMeta?.itemNameById.get(m.itemId ?? "") ?? "",
     consumedQty: m.consumedQty?.toString?.() ?? "0",
     uomId: m.uomId ?? "",
+    uomCode: matMeta?.uomCodeById.get(m.uomId ?? "") ?? "",
     remarks: m.remarks ?? null,
   }));
 
@@ -282,7 +306,58 @@ export async function GET(req: NextRequest) {
   where.status = { not: "inactive" };
   if (status && status !== "all") where.status = status;
   if (projectId) where.projectId = projectId;
+  // Push search into the DB so it stays correct under pagination (the old
+  // in-memory filter dropped matches once take/skip were applied).
+  const q = search.trim();
+  if (q) {
+    where.OR = [
+      { dprNumber: { contains: q, mode: "insensitive" } },
+      { remarks: { contains: q, mode: "insensitive" } },
+      { project: { is: { name: { contains: q, mode: "insensitive" } } } },
+    ];
+  }
 
+  // KPI tiles (Total / Approved / Pending / Halted) over the filtered set,
+  // ignoring any specific status filter so the tiles reflect all statuses.
+  if (searchParams.get("stats") === "1") {
+    const statsWhere: Record<string, unknown> = { ...where, status: { not: "inactive" } };
+    const groups = await db.cnDailyProgressReport.groupBy({
+      by: ["status"],
+      where: statsWhere,
+      _count: { _all: true },
+    });
+    // `workHalted` isn't persisted in the current schema (enrichDPR always
+    // returns false), so the Halted tile is always 0 — mirror that here.
+    const halted = 0;
+    let total = 0;
+    let approved = 0;
+    let pending = 0;
+    for (const g of groups) {
+      const c = g._count._all;
+      total += c;
+      if (g.status === "approved") approved += c;
+      if (g.status === "submitted" || g.status === "approved_l1") pending += c;
+    }
+    return NextResponse.json({ stats: { total, approved, pending, halted } });
+  }
+
+  // Date-range filter (calendar view fetches one month at a time instead of
+  // pulling every DPR). Applied after the stats block so KPI tiles stay
+  // scope-wide, not month-scoped.
+  const fromDate = searchParams.get("fromDate") ?? "";
+  const toDate = searchParams.get("toDate") ?? "";
+  if (fromDate || toDate) {
+    const range: Record<string, Date> = {};
+    if (fromDate) range.gte = new Date(fromDate);
+    if (toDate) range.lte = new Date(`${toDate}T23:59:59.999Z`);
+    where.reportDate = range;
+  }
+
+  const { orderBy } = parseSort(
+    searchParams,
+    ["dprNumber", "reportDate", "status", "createdAt"],
+    { field: "reportDate", order: "desc" },
+  );
   const p = parsePagination(req);
   const rows = await db.cnDailyProgressReport.findMany({
     where,
@@ -293,7 +368,7 @@ export async function GET(req: NextRequest) {
       machineryEntries: true,
       materialEntries: true,
     },
-    orderBy: [{ reportDate: "desc" }, { createdAt: "desc" }],
+    orderBy,
     ...(p.paginated ? { take: p.take, skip: p.skip } : {}),
   });
 
@@ -320,7 +395,40 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  let data = rows.map((r) => enrichDPR(r, r.project, boqNoById));
+  // Same batched lookup for FREE_SCOPE work items, which anchor on an
+  // activity (scopeId) instead of a BOQ item → resolve scopeId → activityCode.
+  const allScopeIds = Array.from(
+    new Set(
+      rows.flatMap((r) =>
+        (r.workItems ?? [])
+          .filter((w) => w.scopeType === "ACTIVITY")
+          .map((w) => w.scopeId)
+          .filter((v): v is string => typeof v === "string" && v.length > 0),
+      ),
+    ),
+  );
+  let activityCodeById = new Map<string, string>();
+  if (allScopeIds.length) {
+    const actRows = await db.cnActivityItem.findMany({
+      where: { id: { in: allScopeIds }, orgId: ctx.orgId },
+      select: { id: true, activityCode: true },
+    });
+    activityCodeById = new Map<string, string>(
+      actRows.map((r) => [r.id, r.activityCode ?? ""]),
+    );
+  }
+
+  // Batch-resolve material item names + uom codes across every DPR's
+  // material entries (denormalized onto each material line for the UI).
+  const matMeta = await resolveMaterialMeta(
+    ctx.orgId,
+    rows.flatMap((r) => (r.materialEntries ?? []).map((m) => m.itemId)),
+    rows.flatMap((r) => (r.materialEntries ?? []).map((m) => m.uomId)),
+  );
+
+  let data = rows.map((r) =>
+    enrichDPR(r, r.project, boqNoById, matMeta, activityCodeById),
+  );
 
   // Per-row Approve/Reject visibility — driven by the workflow's current
   // step, not the caller's role. Batch-load every pending instance + its
@@ -356,20 +464,14 @@ export async function GET(req: NextRequest) {
     };
   });
 
-  if (search) {
-    data = data.filter((d) =>
-      [d.dprNumber, d.projectName, d.siteRemarks]
-        .some((v) => typeof v === "string" && v.toLowerCase().includes(search))
-    );
-  }
-
   if (p.paginated) {
+    const total = await db.cnDailyProgressReport.count({ where });
     return NextResponse.json({
       data,
-      total: data.length,
+      total,
       page: p.page,
       pageSize: p.pageSize,
-      hasMore: data.length === p.pageSize,
+      hasMore: p.skip + data.length < total,
     });
   }
   return NextResponse.json({ data, total: data.length });
@@ -407,21 +509,13 @@ export async function POST(req: NextRequest) {
     const reportDateStr =
       body.reportDate ?? new Date().toISOString().split("T")[0];
     const compactDate = String(reportDateStr).replace(/-/g, "");
+    // Full sanitized project code — do NOT truncate. A short slice collapses
+    // distinct projects (e.g. AAKAR010, AAKAR011) into one slug, so the
+    // org-wide-unique dprNumber collides across projects on the same date.
     const slug =
       String(project.code ?? project.name ?? "SITE")
         .replace(/[^a-zA-Z0-9]/g, "")
-        .toUpperCase()
-        .slice(0, 6) || "SITE";
-
-    const sameDayCount = await db.cnDailyProgressReport.count({
-      where: {
-        orgId: ctx.orgId,
-        projectId: body.projectId,
-        reportDate: new Date(reportDateStr),
-      },
-    });
-    const seq = String(sameDayCount + 1).padStart(3, "0");
-    const dprNumber = body.dprNumber ?? `DPR-${slug}-${compactDate}-${seq}`;
+        .toUpperCase() || "SITE";
 
     const requestedStatus = body.status === "submitted" ? "submitted" : "draft";
 
@@ -445,83 +539,129 @@ export async function POST(req: NextRequest) {
       ),
     );
 
-    const created = await db.cnDailyProgressReport.create({
-      data: tenantCreate(ctx, {
-        dprNumber,
-        projectId: project.id,
-        reportDate: new Date(reportDateStr),
-        submittedById: ctx.userId,
-        weatherCondition: body.weatherCondition ?? body.weather ?? null,
-        weatherDetail: (parseStoredWeatherDetail(body.weatherDetail) as Prisma.InputJsonValue | null) ?? Prisma.JsonNull,
-        remarks: body.siteRemarks ?? null,
-        consumptionLocationId: body.consumptionLocationId ?? null,
-        status: requestedStatus,
-        workItems: {
-          create: workItems.map((w: DprBodyWorkItem, i: number) => ({
-            boqItemId: String(w.boqItemId ?? w.boqNo ?? ""),
-            woId: w.woId ?? null,
-            description: String(w.description ?? ""),
-            todayQty: String(Number(w.todayQty ?? w.qty ?? 0)),
-            cumulativeQty: String(Number(w.cumulativeQty ?? w.todayQty ?? w.qty ?? 0)),
-            uomId: String(w.uomId ?? ""),
-            remarks: w.remarks ?? null,
-            images: workItemImageKeys[i] ?? [],
-          })),
+    // The dprNumber is org-wide unique. Counting same-day DPRs then inserting is
+    // not atomic and different projects can still race, so build the number and
+    // retry on a P2002 collision, bumping the sequence until the insert lands.
+    // A caller-supplied dprNumber is fixed — no retry, surface the conflict.
+    const MAX_DPR_NUMBER_ATTEMPTS = 10;
+    let created:
+      | Prisma.CnDailyProgressReportGetPayload<{
+          include: {
+            project: { select: { id: true; name: true; code: true } };
+            workItems: true;
+            labourEntries: true;
+            machineryEntries: true;
+            materialEntries: true;
+            staffEntries: true;
+          };
+        }>
+      | null = null;
+    for (let attempt = 1; attempt <= MAX_DPR_NUMBER_ATTEMPTS; attempt++) {
+      const sameDayCount = await db.cnDailyProgressReport.count({
+        where: {
+          orgId: ctx.orgId,
+          projectId: body.projectId,
+          reportDate: new Date(reportDateStr),
         },
-        labourEntries: {
-          create: manpower.map((l) => ({
-            category: String(l.category ?? l.role ?? ""),
-            skillType: String(l.skillType ?? l.skill ?? ""),
-            count: Number(l.count ?? l.headcount ?? 0),
-            hoursWorked: String(Number(l.hoursWorked ?? l.hours ?? 0)),
-            contractorId: l.contractorId ?? null,
-            workingArea: l.workingArea ?? null,
-            messan: toDecimalOrNull(l.messan),
-            maleHelper: toDecimalOrNull(l.maleHelper),
-            femaleHelper: toDecimalOrNull(l.femaleHelper),
-            carpenter: toDecimalOrNull(l.carpenter),
-            fitter: toDecimalOrNull(l.fitter),
-            painter: toDecimalOrNull(l.painter),
-            plumber: toDecimalOrNull(l.plumber),
-            electrician: toDecimalOrNull(l.electrician),
-            operator: toDecimalOrNull(l.operator),
-          })),
-        },
-        machineryEntries: {
-          create: machinery.map((m) => ({
-            description: String(m.description ?? ""),
-            condition: m.condition ?? null,
-            requiredQty: Number(m.requiredQty ?? 0),
-            actualQty: Number(m.actualQty ?? 0),
-            remarks: m.remarks ?? null,
-          })),
-        },
-        materialEntries: {
-          create: materials.map((m) => ({
-            itemId: String(m.itemId ?? ""),
-            consumedQty: String(Number(m.consumedQty ?? m.quantity ?? 0)),
-            uomId: String(m.uomId ?? ""),
-            remarks: m.remarks ?? null,
-          })),
-        },
-        staffEntries: {
-          create: staff.map((s) => ({
-            name: String(s.name ?? ""),
-            designation: s.designation ?? null,
-            present: s.present !== undefined ? !!s.present : true,
-            reason: s.reason ?? null,
-          })),
-        },
-      }),
-      include: {
-        project: { select: { id: true, name: true, code: true } },
-        workItems: true,
-        labourEntries: true,
-        machineryEntries: true,
-        materialEntries: true,
-        staffEntries: true,
-      },
-    });
+      });
+      const seq = String(sameDayCount + attempt).padStart(3, "0");
+      const dprNumber =
+        body.dprNumber ?? `DPR-${slug}-${compactDate}-${seq}`;
+      try {
+        created = await db.cnDailyProgressReport.create({
+          data: tenantCreate(ctx, {
+            dprNumber,
+            projectId: project.id,
+            reportDate: new Date(reportDateStr),
+            submittedById: ctx.userId,
+            weatherCondition: body.weatherCondition ?? body.weather ?? null,
+            weatherDetail: (parseStoredWeatherDetail(body.weatherDetail) as Prisma.InputJsonValue | null) ?? Prisma.JsonNull,
+            remarks: body.siteRemarks ?? null,
+            consumptionLocationId: body.consumptionLocationId ?? null,
+            status: requestedStatus,
+            workItems: {
+              create: workItems.map((w: DprBodyWorkItem, i: number) => ({
+                boqItemId:
+                  w.scopeType === "ACTIVITY"
+                    ? null
+                    : String(w.boqItemId ?? w.boqNo ?? ""),
+                scopeType: w.scopeType ?? null,
+                scopeId: w.scopeId ?? null,
+                woId: w.workOrderId ?? w.woId ?? null,
+                description: String(w.description ?? ""),
+                todayQty: String(Number(w.todayQty ?? w.qty ?? 0)),
+                cumulativeQty: String(Number(w.cumulativeQty ?? w.todayQty ?? w.qty ?? 0)),
+                uomId: String(w.uomId ?? ""),
+                location: w.location ?? null,
+                remarks: w.remarks ?? null,
+                images: workItemImageKeys[i] ?? [],
+              })),
+            },
+            labourEntries: {
+              create: manpower.map((l) => ({
+                category: String(l.category ?? l.role ?? ""),
+                skillType: String(l.skillType ?? l.skill ?? ""),
+                count: Number(l.count ?? l.headcount ?? 0),
+                hoursWorked: String(Number(l.hoursWorked ?? l.hours ?? 0)),
+                contractorId: l.contractorId ?? null,
+                workingArea: l.workingArea ?? null,
+                messan: toDecimalOrNull(l.messan),
+                maleHelper: toDecimalOrNull(l.maleHelper),
+                femaleHelper: toDecimalOrNull(l.femaleHelper),
+                carpenter: toDecimalOrNull(l.carpenter),
+                fitter: toDecimalOrNull(l.fitter),
+                painter: toDecimalOrNull(l.painter),
+                plumber: toDecimalOrNull(l.plumber),
+                electrician: toDecimalOrNull(l.electrician),
+                operator: toDecimalOrNull(l.operator),
+              })),
+            },
+            machineryEntries: {
+              create: machinery.map((m) => ({
+                description: String(m.description ?? ""),
+                condition: m.condition ?? null,
+                requiredQty: Number(m.requiredQty ?? 0),
+                actualQty: Number(m.actualQty ?? 0),
+                remarks: m.remarks ?? null,
+              })),
+            },
+            materialEntries: {
+              create: materials.map((m) => ({
+                itemId: String(m.itemId ?? ""),
+                consumedQty: String(Number(m.consumedQty ?? m.quantity ?? 0)),
+                uomId: String(m.uomId ?? ""),
+                remarks: m.remarks ?? null,
+              })),
+            },
+            staffEntries: {
+              create: staff.map((s) => ({
+                name: String(s.name ?? ""),
+                designation: s.designation ?? null,
+                present: s.present !== undefined ? !!s.present : true,
+                reason: s.reason ?? null,
+              })),
+            },
+          }),
+          include: {
+            project: { select: { id: true, name: true, code: true } },
+            workItems: true,
+            labourEntries: true,
+            machineryEntries: true,
+            materialEntries: true,
+            staffEntries: true,
+          },
+        });
+        break;
+      } catch (e) {
+        const isLastAttempt = attempt >= MAX_DPR_NUMBER_ATTEMPTS;
+        if (body.dprNumber || getErrorCode(e) !== "P2002" || isLastAttempt) {
+          throw e;
+        }
+      }
+    }
+    if (!created) {
+      throw new Error("Failed to allocate a unique DPR number");
+    }
 
     // Resolve boqItemId → boqNo on the freshly-created rows so the
     // client gets the human-readable BOQ ref back without a refetch.
@@ -542,8 +682,33 @@ export async function POST(req: NextRequest) {
         boqRows.map((r) => [r.id, r.boqNo]),
       );
     }
+    // Same resolve for FREE_SCOPE (activity-anchored) work items.
+    const createdScopeIds = Array.from(
+      new Set(
+        (created.workItems ?? [])
+          .filter((w) => w.scopeType === "ACTIVITY")
+          .map((w) => w.scopeId)
+          .filter((v): v is string => typeof v === "string" && v.length > 0),
+      ),
+    );
+    let createdActivityCodeById = new Map<string, string>();
+    if (createdScopeIds.length) {
+      const actRows = await db.cnActivityItem.findMany({
+        where: { id: { in: createdScopeIds }, orgId: ctx.orgId },
+        select: { id: true, activityCode: true },
+      });
+      createdActivityCodeById = new Map<string, string>(
+        actRows.map((r) => [r.id, r.activityCode ?? ""]),
+      );
+    }
     return NextResponse.json(
-      enrichDPR(created, created.project, createdBoqNoById),
+      enrichDPR(
+        created,
+        created.project,
+        createdBoqNoById,
+        undefined,
+        createdActivityCodeById,
+      ),
       { status: 201 },
     );
   } catch (err: unknown) {

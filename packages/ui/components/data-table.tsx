@@ -121,6 +121,7 @@ export function DataTable<T>({
             return (
               <th
                 key={col.key}
+                data-col-key={col.key}
                 className={[
                   TH_BASE,
                   !isLast && "border-r",

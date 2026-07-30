@@ -1,22 +1,22 @@
 "use client";
 
 import { toErrorMessage } from "@/lib/api/errors";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Eye, Send, Check, X as XIcon, Truck,
 } from "lucide-react";
-import { PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { WorkflowConfirmDialog } from "@/components/WorkflowConfirmDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { useGoodReturns } from "@/hooks/use-store";
+import { useGoodReturns, useGoodReturnCounts } from "@/hooks/use-store";
 import { QuickCreateDrawer, type QuickCreateConfig } from "@/components/QuickCreateDrawer";
 import { GroupedMaterialSelect, type GroupedMaterialSelectItem } from "@/components/GroupedMaterialSelect";
-import { useProjects, useLocations, useVendors, useItems, useItemGroups, useUOMs } from "@/hooks/use-masters";
+import { useProjects, useLocations, useVendors, useItemGroups, useUOMs } from "@/hooks/use-masters";
 import { usePermissions, useMenuActions } from "@/hooks/use-permissions";
 import { useQueryClient } from "@tanstack/react-query";
-import { buildTabCounts, filterByTab, type TabSpec } from "@/lib/tab-counts";
+import { type TabSpec } from "@/lib/tab-counts";
 import { toast } from "@/lib/toast";
 
 const MENU_KEY = "store.good_return";
@@ -143,15 +143,46 @@ export default function GoodReturnPage() {
     }
   };
 
-  const { data: result } = useGoodReturns({ status: "all" });
-  const allRows = result?.data ?? [];
-  const tabs = useMemo(() => buildTabCounts(allRows, TABS), [allRows]);
-  const data = useMemo(() => filterByTab(allRows, activeTab, TABS), [allRows, activeTab]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("returnDate");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
+  useEffect(() => {
+    setPage(1);
+  }, [activeTab, search, sortBy, sortOrder, pageSize]);
+
+  const { data: result, isLoading } = useGoodReturns({
+    status: activeTab,
+    search: search || undefined,
+    page,
+    pageSize,
+    sortBy,
+    sortOrder,
+  });
+  const data = result?.data ?? [];
+  const total = result?.total ?? 0;
+
+  // Tab badges from a separate per-status count query so they show full
+  // totals even though the list itself is paged.
+  const { data: counts } = useGoodReturnCounts();
+  const tabs = useMemo(
+    () =>
+      TABS.map((t) => ({
+        key: t.key,
+        label: t.label,
+        count:
+          t.key === "all"
+            ? counts?.total ?? 0
+            : counts?.byStatus?.[t.key] ?? 0,
+      })),
+    [counts],
+  );
 
   const { data: projectsData } = useProjects();
   const { data: locationsData } = useLocations();
   const { data: vendorsData } = useVendors();
-  const { data: itemsData } = useItems();
   const { data: itemGroupsData } = useItemGroups();
   const { data: uomsData } = useUOMs();
 
@@ -164,10 +195,9 @@ export default function GoodReturnPage() {
       value: v.id,
       label: v.companyName || v.name || v.id,
     }));
-  const items = (itemsData?.data ?? []) as unknown as GroupedMaterialSelectItem[];
+  // Lazy picker fetches items per-group; onSelect supplies the picked item.
+  const items: GroupedMaterialSelectItem[] = [];
   const itemGroups = itemGroupsData?.data ?? [];
-  const itemById = new Map<string, GroupedMaterialSelectItem>();
-  for (const i of items) itemById.set(i.id, i);
   const uomOptions = (uomsData?.data ?? []).filter((u) => u?.status === "active").map((u) => ({
     value: u.code,
     label: u.code,
@@ -262,28 +292,27 @@ export default function GoodReturnPage() {
           width: "wide",
           render: (line, update: (patch: Record<string, unknown>) => void) => (
             <GroupedMaterialSelect
+              lazy
               value={line.itemId ?? ""}
               onChange={(v) => {
-                const item = v ? itemById.get(v) : null;
-                if (!item) {
-                  update({ itemId: v, itemName: "", uomCode: "" });
+                if (!v) {
+                  update({ itemId: "", itemName: "", uomCode: "" });
                   return;
                 }
-                update({
-                  itemId: v,
-                  itemName: item.name ?? "",
-                  uomCode: item.uomCode ?? "",
-                });
+                update({ itemId: v });
+              }}
+              onSelect={(item) => {
+                if (!item) return;
+                update({ itemName: item.name ?? "", uomCode: item.uomCode ?? "" });
               }}
               items={items}
               groups={itemGroups.map((g) => ({
                 id: g.id,
                 name: g.name,
                 status: g.status,
+                itemCount: g.itemCount,
               }))}
-              placeholder={
-                items.length === 0 ? "No items in master" : "Select material..."
-              }
+              placeholder="Select material..."
               size="sm"
             />
           ),
@@ -298,11 +327,19 @@ export default function GoodReturnPage() {
   };
 
   const columns: ColDef<GoodReturnRow>[] = [
-    { key: "returnNumber", label: "Return No", sortable: true, searchable: true },
-    { key: "projectName", label: "Project", sortable: true, searchable: true },
+    {
+      key: "returnNumber", label: "Return No", sortable: true, searchable: true,
+      render: (row) => (
+        <span className="text-accent-600 cursor-pointer hover:underline font-medium"
+              onClick={() => router.push(`/store/good-return/${row.id}`)}>
+          {row.returnNumber}
+        </span>
+      ),
+    },
+    { key: "projectName", label: "Project", sortable: false, searchable: true },
     { key: "vendorName", label: "Vendor", sortable: true, searchable: true },
     { key: "returnDate", label: "Date", type: "date", sortable: true },
-    { key: "reason", label: "Reason", searchable: true, render: (row) => row.reason ? row.reason.replace(/_/g, " ") : "—" },
+    { key: "reason", label: "Reason", sortable: false, searchable: true, render: (row) => row.reason ? row.reason.replace(/_/g, " ") : "—" },
     {
       key: "status", label: "Status", type: "select",
       options: ["draft", "pending_approval", "approved", "rejected", "dispatched"],
@@ -313,6 +350,7 @@ export default function GoodReturnPage() {
       key: "_actions",
       label: "Actions",
       width: "140px",
+      sortable: false,
       // Icon-only row matching the Gate Pass list — View eye plus a
       // status-driven action icon (Submit / Approve / Reject /
       // Dispatch). Matches the Material Issue / Gate Pass UX so the
@@ -396,22 +434,36 @@ export default function GoodReturnPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Good Return (Vendor)"
         subtitle="Return rejected or damaged materials to vendors"
         breadcrumbs={[{ label: "Store", href: "/store" }, { label: "Good Return" }]}
       />
       <TabBar tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
-      <PageContainer>
+      <PageContainer fill>
         <DataTable
           id="store-good-return"
           columns={columns}
           data={data as unknown as GoodReturnRow[]}
+          loading={isLoading}
+          serverMode
+          serverTotal={total}
+          serverPage={page}
+          serverPageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          onSearchChange={setSearch}
+          onSortChange={(key, dir) => {
+            setSortBy(key);
+            setSortOrder(dir);
+          }}
           onAdd={canAdd ? () => setDrawerOpen(true) : undefined}
           addLabel="New Return"
           historyEntityType="good_return"
         />
       </PageContainer>
+      </PageFrame>
       <QuickCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} config={config} />
 
       <WorkflowConfirmDialog

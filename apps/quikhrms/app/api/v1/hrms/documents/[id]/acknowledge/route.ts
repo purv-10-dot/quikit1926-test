@@ -1,13 +1,15 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, validationError, notFound, internalError } from "@/lib/api-response";
+import { successResponse, validationError, notFound, forbidden, internalError } from "@/lib/api-response";
 import { acknowledgeDocumentSchema } from "@/lib/validations/documents";
 import { createAuditLog } from "@/lib/utils/audit";
 import { fireWorkflow } from "@/lib/workflows/executor";
+import { resolveDocumentAccessById } from "@/lib/rbac/document-access";
 
-export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
+export const POST = withAuth(async (req: NextRequest, ctx, params) => {
   try {
+    const { orgId, userId } = ctx;
     const { id } = params;
     const body = await req.json();
     const parsed = acknowledgeDocumentSchema.safeParse(body);
@@ -15,8 +17,10 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
       return validationError("Validation failed", parsed.error.flatten().fieldErrors);
     }
 
-    const doc = await prisma.document.findFirst({ where: { id, orgId, deletedAt: null } });
-    if (!doc) return notFound("Document not found");
+    // You can only acknowledge a document you're allowed to see.
+    const access = await resolveDocumentAccessById(ctx, id);
+    if (!access.doc) return notFound("Document not found");
+    if (!access.allow) return forbidden("You don't have access to this document");
 
     const ipAddress = req.headers.get("x-forwarded-for") ?? req.headers.get("x-real-ip") ?? undefined;
 

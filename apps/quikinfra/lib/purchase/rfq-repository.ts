@@ -62,6 +62,8 @@ export interface ListRfqsOptions {
   /** Pagination — passed straight through to Prisma findMany. */
   take?: number;
   skip?: number;
+  /** Server-side sort (from `parseSort`). Defaults to newest-first. */
+  orderBy?: Array<Record<string, "asc" | "desc">>;
 }
 
 // ─── UOM resolver (create-on-miss to keep saves non-blocking) ──────
@@ -438,7 +440,9 @@ async function augmentVendorsWithQuoteFields(
 
 // ─── Queries ───────────────────────────────────────────────────────
 
-export async function listRfqs(opts: ListRfqsOptions): Promise<EnrichedRfq[]> {
+function buildRfqsWhere(
+  opts: Pick<ListRfqsOptions, "orgId" | "projectIds" | "status" | "projectId" | "sourceIndentId" | "search">,
+): Record<string, unknown> {
   const where: Record<string, unknown> = { orgId: opts.orgId };
   if (opts.status && opts.status !== "all") where.status = opts.status;
   if (opts.projectId) where.projectId = opts.projectId;
@@ -450,19 +454,41 @@ export async function listRfqs(opts: ListRfqsOptions): Promise<EnrichedRfq[]> {
         : "__none__"
       : { in: opts.projectIds };
   }
-  if (opts.search) {
-    const q = opts.search.toLowerCase();
+  const q = (opts.search ?? "").trim();
+  if (q) {
     where.OR = [
       { rfqNumber: { contains: q, mode: "insensitive" } },
       { sourceIndentNumber: { contains: q, mode: "insensitive" } },
       { purpose: { contains: q, mode: "insensitive" } },
     ];
   }
+  return where;
+}
 
+export async function countRfqs(
+  opts: Pick<ListRfqsOptions, "orgId" | "projectIds" | "status" | "projectId" | "sourceIndentId" | "search">,
+): Promise<number> {
+  return db.cnRfq.count({ where: buildRfqsWhere(opts) });
+}
+
+export async function rfqStatusCounts(
+  opts: Pick<ListRfqsOptions, "orgId" | "projectIds" | "projectId" | "sourceIndentId" | "search">,
+): Promise<Record<string, number>> {
+  const groups = await db.cnRfq.groupBy({
+    by: ["status"],
+    where: buildRfqsWhere({ ...opts, status: undefined }),
+    _count: { _all: true },
+  });
+  const out: Record<string, number> = {};
+  for (const g of groups) out[String(g.status)] = g._count._all;
+  return out;
+}
+
+export async function listRfqs(opts: ListRfqsOptions): Promise<EnrichedRfq[]> {
   const rows = await db.cnRfq.findMany({
-    where,
+    where: buildRfqsWhere(opts),
     include: { lines: true, vendors: true },
-    orderBy: { rfqDate: "desc" },
+    orderBy: opts.orderBy ?? [{ rfqDate: "desc" }, { createdAt: "desc" }],
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
   });
@@ -591,30 +617,6 @@ export async function createRfq(input: CreateRfqInput): Promise<EnrichedRfq> {
   return enrichRfq(row, itemById, uomById, vendorById, projectById);
 }
 
-export async function updateRfqStatus(
-  orgId: string,
-  id: string,
-  status: string,
-  updatedBy: string,
-  extras?: { approvalId?: string | null },
-): Promise<EnrichedRfq | null> {
-  const existing = await db.cnRfq.findFirst({
-    where: { id, orgId },
-    select: { id: true },
-  });
-  if (!existing) return null;
-  await db.cnRfq.update({
-    where: { id },
-    data: {
-      status,
-      updatedBy,
-      ...(extras?.approvalId !== undefined
-        ? { approvalId: extras.approvalId }
-        : {}),
-    },
-  });
-  return findRfqById(orgId, id);
-}
 
 export interface SaveQuoteInput {
   orgId: string;

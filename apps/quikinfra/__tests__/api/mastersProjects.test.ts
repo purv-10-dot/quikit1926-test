@@ -80,6 +80,34 @@ describe("GET /api/masters/projects — happy path", () => {
 });
 
 // ═══════════════════════════════════════════════
+// GET /api/masters/projects — soft-delete visibility
+//
+// Regression: a project set to status "inactive" must stay hidden from the
+// default list (pickers, other modules) but MUST be fetchable via
+// includeInactive=true so the Masters list's Inactive/All tabs can surface
+// it for restore. Before the fix the route ignored includeInactive, so an
+// inactive project was permanently unrecoverable from the Projects module.
+// ═══════════════════════════════════════════════
+
+describe("GET /api/masters/projects — inactive visibility", () => {
+  beforeEach(() => setContext(makeAdminCtx()));
+
+  it("excludes inactive projects by default", async () => {
+    db.cnProject.findMany.mockResolvedValue([]);
+    await GET(buildGET());
+    const where = db.cnProject.findMany.mock.calls[0][0].where;
+    expect(where.status).toEqual({ not: "inactive" });
+  });
+
+  it("includes inactive projects when includeInactive=true", async () => {
+    db.cnProject.findMany.mockResolvedValue([]);
+    await GET(buildGET("includeInactive=true"));
+    const where = db.cnProject.findMany.mock.calls[0][0].where;
+    expect(where.status).toBeUndefined();
+  });
+});
+
+// ═══════════════════════════════════════════════
 // POST /api/masters/projects
 // ═══════════════════════════════════════════════
 
@@ -89,7 +117,7 @@ describe("POST /api/masters/projects — auth", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns 403 when the user lacks construction.masters.create", async () => {
+  it("returns 403 when the user lacks construction.project.create", async () => {
     setContext(makeUserCtx([]));
     const res = await POST(buildPOST(VALID));
     expect(res.status).toBe(403);
@@ -97,7 +125,7 @@ describe("POST /api/masters/projects — auth", () => {
 
   it("returns 403 when the permission matrix denies add", async () => {
     setContext(
-      makeUserCtx(["construction.masters.create"], {
+      makeUserCtx(["construction.project.create"], {
         permissionMatrix: { "master.project": { add: false } },
       }),
     );

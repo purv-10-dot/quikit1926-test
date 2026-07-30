@@ -10,13 +10,15 @@ import { humanizeApiError } from "@/lib/utils/humanizeError";
 import { notify } from "@/lib/utils/notify";
 import type { KPIRow as KPI } from "@/lib/types/kpi";
 import type { User } from "@/lib/types/kpi";
-import { fiscalYearLabel, MEASUREMENT_UNITS, ALL_QUARTERS, weeksArray, weekDateLabel } from "@/lib/utils/fiscal";
+import { fiscalYearLabel, MEASUREMENT_UNITS, KPI_TYPES, ALL_QUARTERS, weeksArray, weekDateLabel } from "@/lib/utils/fiscal";
 import { CURRENCIES, getScales, getMultiplier, formatActual, shortScaleLabel, scaleDownForDisplay, scaleUpFromInput } from "@/lib/utils/currency";
 import { UnitSelect } from "./UnitSelect";
+import { QuarterField } from "./QuarterField";
 import { UserPicker, UserMultiPicker, RightPanel, RightPanelFooter, DropdownPicker } from "@quikit/ui";
 import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
-import { useCurrentWeek, useWeekLabels, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useWeekLabels, useQuarterWeekCount, useQuarterPosition } from "@/lib/hooks/useCurrentWeek";
+import { isWeekInPast } from "@/lib/utils/weekLock";
 import { Lock, ChevronDown } from "lucide-react";
 import {
   buildBreakdown,
@@ -27,6 +29,7 @@ import {
   sumBreakdown,
   checkBreakdownBalance,
   isTargetValueLocked,
+  isStandaloneCellEditable,
   TARGET_LOCK_TIP,
   type DivisionType,
 } from "./kpiModalHelpers";
@@ -109,7 +112,10 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
       quarter: kpi?.quarter ?? defaultQuarter ?? "Q1",
       year: String(kpi?.year ?? defaultYear ?? CURRENT_YEAR),
       measurementUnit,
-      target: displayTarget > 0 ? String(displayTarget) : "",
+      // Show the saved target — including exactly 0 (a valid zero goal). Only a
+      // fresh create (no kpi) or a genuinely unset target starts blank. A bare
+      // `> 0` check here blanked the edit form for zero-target KPIs.
+      target: kpi?.target != null ? String(displayTarget) : "",
       status: kpi?.status ?? "active",
       currency,
       targetScale: savedScale,
@@ -121,6 +127,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
       divisionType,
       reverseColor: kpi?.reverseColor ?? false,
       frequency: (kpi?.frequency as "daily" | "weekly" | "monthly" | "yearly" | undefined) ?? "weekly",
+      kpiType: (kpi?.kpiType as "NA" | "Leading" | "Lagging" | undefined) ?? "NA",
       weeklyBreakdown,
     };
   });
@@ -385,6 +392,10 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
   // Past-week feature flags
   const { canAddPastWeek, loaded: flagsLoaded } = usePastWeekFlags();
   const currentWeek = useCurrentWeek(parseInt(form.year) || null, form.quarter);
+  // Quarter/year position so a fully-past quarter treats ALL its weeks as past
+  // (the clamped `currentWeek` mis-reads a past quarter's last week as current).
+  const createQuarterPos = useQuarterPosition(parseInt(form.year) || null, form.quarter);
+  const isWeekPast = (w: number): boolean => isWeekInPast(createQuarterPos ?? "current", w, currentWeek);
   const weekLabels = useWeekLabels(parseInt(form.year) || null, form.quarter);
   // Weeks in the selected quarter (Custom Quarter Settings). Defaults to 13.
   const weekCount = useQuarterWeekCount(parseInt(form.year) || null, form.quarter);
@@ -412,7 +423,12 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
   // data flag is enabled (the flag controls *editability* of past cells, not
   // default distribution). Standalone mode ignores this — every week gets the
   // full target.
-  const firstEditableWeek = (currentWeek !== null && currentWeek > 1) ? currentWeek : 1;
+  // Exception: in past-week mode, a fully-PAST selected quarter has every week
+  // open for retroactive planning, so distribute across all weeks (week 1)
+  // instead of dumping the whole target on the clamped last week.
+  const firstEditableWeek = (pastWeekAllowed && createQuarterPos === "past")
+    ? 1
+    : ((currentWeek !== null && currentWeek > 1) ? currentWeek : 1);
 
   // When firstEditableWeek resolves (async from API), recalculate the breakdown.
   //  - Create mode: always re-derive so blocked weeks get 0 and editable weeks share the target.
@@ -465,6 +481,29 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weekCount]);
 
+  // Quarter change (past-week mode only). Rebuilding the weekly breakdown for
+  // the NEW quarter can't happen synchronously here — the derived
+  // `firstEditableWeek` + `weekCount` for the new quarter resolve async from the
+  // quarter-settings cache — so we flag the switch and let the effect below
+  // rebuild once they settle. See the effect keyed on [form.quarter, …].
+  const quarterTouchedRef = useRef(false);
+  useEffect(() => {
+    if (!quarterTouchedRef.current) return;
+    setForm(f => {
+      const tNum = f.measurementUnit === "Currency"
+        ? (parseFloat(f.target) || 0) * getMultiplier(f.currency, f.targetScale)
+        : parseFloat(f.target) || 0;
+      if (tNum <= 0) return f;
+      const next = {
+        ...f,
+        weeklyBreakdown: buildBreakdown(f.divisionType, tNum, f.measurementUnit, firstEditableWeek, weekCount),
+      };
+      if (isTeamScope) next.weeklyOwnerBreakdown = computeAllOwnerBreakdowns(next);
+      return next;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.quarter, firstEditableWeek, weekCount]);
+
   const createKPI = useCreateKPI();
   const updateKPI = useUpdateKPI(kpi?.id ?? "");
 
@@ -473,6 +512,13 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
   function set(key: string, val: string) {
     setForm(f => ({ ...f, [key]: val }));
     setErrors(e => { const n = { ...e }; delete n[key]; return n; });
+  }
+
+  /** Change the KPI's quarter (only reachable when "Add Past Week Data" is on). */
+  function setQuarter(q: string) {
+    quarterTouchedRef.current = true;
+    setForm(f => ({ ...f, quarter: q }));
+    setErrors(e => { const n = { ...e }; delete n.quarter; return n; });
   }
 
   function setMeasurementUnit(val: string) {
@@ -554,8 +600,12 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
     if (!form.frequency) errs.frequency = "Please choose a frequency.";
 
     const targetNum = parseFloat(form.target);
-    if (form.target === "" || isNaN(targetNum) || targetNum <= 0) {
-      errs.target = "Please enter a target value greater than 0.";
+    // Target is required but may be 0 (e.g. a "zero defects" KPI). Only empty,
+    // non-numeric, or negative values are rejected. The whole breakdown/calc
+    // stack (buildBreakdown, checkBreakdownBalance, colorLogic) already treats
+    // target ≤ 0 safely, so 0 flows through without special-casing here.
+    if (form.target === "" || isNaN(targetNum) || targetNum < 0) {
+      errs.target = "Please enter a target value of 0 or greater.";
     }
     if (!form.divisionType) errs.divisionType = "Please choose a division type.";
     if (form.reverseColor === undefined || form.reverseColor === null) {
@@ -636,6 +686,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
         scaledDisplay: isCurr && !!form.targetScale ? form.scaledDisplay : false,
         reverseColor: form.reverseColor,
         frequency: form.frequency,
+        kpiType: form.kpiType as "NA" | "Leading" | "Lagging",
         // In team scope: derive weeklyTargets (total per week) as the live sum of per-owner cells.
         // In individual scope: use the editable weeklyBreakdown as-is.
         weeklyTargets: isTeamScope && form.ownerIds.length > 0
@@ -677,9 +728,12 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
       if (mode === "create") {
         await createKPI.mutateAsync(payload);
       } else {
-        // Strip immutable fields on edit — quarter, owner, measurementUnit, currency cannot change
-        // ownerIds + ownerContributions remain editable for team KPIs
-        const { quarter: _q, measurementUnit: _mu, currency: _c, owner: _o, ...editPayload } = payload;
+        // Strip immutable fields on edit — owner, measurementUnit, currency cannot change.
+        // ownerIds + ownerContributions remain editable for team KPIs. Quarter (and its
+        // year) are immutable UNLESS "Add Past Week Data" is on, in which case the user
+        // could pick a different quarter via the dropdown, so we send them through.
+        const { quarter, year, measurementUnit: _mu, currency: _c, owner: _o, ...rest } = payload;
+        const editPayload = pastWeekAllowed ? { ...rest, quarter, year } : rest;
         await updateKPI.mutateAsync(editPayload);
       }
       notify.saved(isTeamScope ? "Team KPI" : "Individual KPI", mode === "create" ? "created" : "updated", { tint });
@@ -700,6 +754,12 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
   const scaledTarget = isCurrency
     ? (parseFloat(form.target) || 0) * getMultiplier(form.currency, form.targetScale)
     : parseFloat(form.target) || 0;
+
+  // Show the weekly Target-Breakdown grid whenever a VALID non-negative target
+  // is entered — including exactly 0 (a zero goal spreads 0 across every week).
+  // Still hidden while the field is empty/invalid so a fresh form stays clean.
+  const targetEntered = form.target.trim() !== "" && !isNaN(parseFloat(form.target));
+  const showBreakdown = targetEntered && scaledTarget >= 0;
 
   // Scaled-display: when the toggle is on for a Currency KPI with a scale, the
   // weekly breakdown cells SHOW + ACCEPT values in the scale unit (e.g. Cr)
@@ -942,16 +1002,17 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
             </div>
           )}
 
-          {/* Quarter (read-only) + Frequency */}
+          {/* Quarter (editable dropdown when "Add Past Week Data" is on) + Frequency */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                Quarter <span className="text-red-500">*</span>
-              </label>
-              <div className="px-3 py-2 text-xs border border-gray-100 rounded-lg bg-gray-50 text-gray-600">
-                {fiscalYearLabel(parseInt(form.year))} · {form.quarter}
-              </div>
-              {errors.quarter && <p className="text-[10px] text-red-500 mt-0.5">{errors.quarter}</p>}
+              <QuarterField
+                year={parseInt(form.year)}
+                quarter={form.quarter}
+                editable={pastWeekAllowed}
+                onChange={setQuarter}
+                error={errors.quarter}
+                required
+              />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">
@@ -999,6 +1060,21 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                 />
               </div>
             )}
+          </div>
+
+          {/* KPI Type — Leading (predictive input) vs Lagging (outcome); NA = unset. */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                KPI Type
+              </label>
+              <DropdownPicker
+                value={form.kpiType}
+                onChange={(v) => set("kpiType", v)}
+                options={KPI_TYPES.map(t => ({ value: t, label: t }))}
+              />
+              {errors.kpiType && <p className="text-[10px] text-red-500 mt-0.5">{errors.kpiType}</p>}
+            </div>
           </div>
 
           {/* Target Value */}
@@ -1210,7 +1286,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
           </div>
 
           {/* Target Breakdown (editable weekly) */}
-          {scaledTarget > 0 && (
+          {showBreakdown && (
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-2">
                 Target Breakdown (Weekly)
@@ -1234,7 +1310,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                         </th>
                       )}
                       {weeksArray(weekCount).map(w => {
-                        const isPast = currentWeek !== null && w < currentWeek && !pastWeekAllowed;
+                        const isPast = isWeekPast(w) && !pastWeekAllowed;
                         return (
                         <th key={w} className={`px-2 py-1.5 text-center font-medium border-r border-gray-200 last:border-r-0 whitespace-nowrap ${isPast ? "text-gray-300" : "text-gray-500"}`}>
                           <div className="flex items-center justify-center gap-1">
@@ -1257,7 +1333,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                         </td>
                       )}
                       {weeksArray(weekCount).map(w => {
-                        const isPast = currentWeek !== null && w < currentWeek && !pastWeekAllowed;
+                        const isPast = isWeekPast(w) && !pastWeekAllowed;
                         const isStandalone = form.divisionType === "Standalone";
                         const isLocked = isStandalone || isPast;
 
@@ -1298,15 +1374,11 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                           );
                         }
 
-                        // Individual scope — Standalone division.
-                        // Standalone semantics: each week independently carries the full target.
-                        //  - Past weeks WITH the past-week toggle on → editable <select> 0/target
-                        //    (lets the user retroactively mark a past week as skipped).
-                        //  - All other Standalone cells (current..13, plus past with toggle off)
-                        //    → locked <input> showing the cell's current value (target or 0).
-                        const isStandalonePastEditable =
-                          isStandalone && currentWeek != null && w < currentWeek && pastWeekAllowed;
-                        if (isStandalonePastEditable) {
+                        // Individual scope — Standalone division. Current & future
+                        // weeks are ALWAYS an editable <select> 0/target; past weeks
+                        // become editable only when "Add Past Week Data" is ON (else
+                        // they stay locked). See isStandaloneCellEditable.
+                        if (isStandaloneCellEditable(form.divisionType, isWeekPast(w), pastWeekAllowed)) {
                           const isNumUnit = form.measurementUnit === "Number";
                           // Use properly-formatted strings that match what buildBreakdown stores
                           const zeroStr = isNumUnit ? "0" : "0.00";
@@ -1380,15 +1452,14 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                             <span className="ml-1 text-gray-400">({pct.toFixed(0)}%)</span>
                           </td>
                           {weeksArray(weekCount).map(w => {
-                            const isPast = currentWeek !== null && w < currentWeek && !pastWeekAllowed;
+                            const isPast = isWeekPast(w) && !pastWeekAllowed;
                             const isStandalone = form.divisionType === "Standalone";
                             const isLocked = isStandalone || isPast;
-                            // Standalone per-owner: editable 0/sub-target toggle is shown
-                            // ONLY for past weeks when the past-week toggle is enabled.
-                            // Current..13 are locked at the owner sub-target.
-                            const isStandalonePastEditable =
-                              isStandalone && currentWeek != null && w < currentWeek && pastWeekAllowed;
-                            if (isStandalonePastEditable) {
+                            // Standalone per-owner: current & future weeks are ALWAYS an
+                            // editable 0/sub-target <select>; past weeks become editable
+                            // only when "Add Past Week Data" is ON (else locked at the
+                            // owner sub-target). See isStandaloneCellEditable.
+                            if (isStandaloneCellEditable(form.divisionType, isWeekPast(w), pastWeekAllowed)) {
                               const isNumUnit = form.measurementUnit === "Number";
                               const ownerTarget = (pct / 100) * scaledTarget;
                               const zeroStr = isNumUnit ? "0" : "0.00";

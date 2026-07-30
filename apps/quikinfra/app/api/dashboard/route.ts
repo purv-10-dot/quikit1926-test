@@ -11,12 +11,12 @@ import { logger } from "@/lib/observability/logger";
  * KPI definitions:
  *   activeProjects      → CnProject.status = "active"
  *   pendingApprovals    → PR + PO + DPR + WO awaiting any approval step
- *   openPOs             → CnPurchaseOrder.status = "approved" (active POs only)
+ *   openPOs             → CnPurchaseOrder in a live, awaiting-delivery status
  *   lowStockItems       → items whose summed stock across visible projects
  *                         falls below their master `minStockLevel`
  *   grnThisMonth        → GRNs with grnDate in the current calendar month
  *   issuesThisMonth     → Material issues with issueDate in the current month
- *   activeWOs           → CnWorkOrder.status = "active"
+ *   activeWOs           → CnWorkOrder.status in (approved, in_progress)
  *   pendingDPRApproval  → DPRs whose status is not "approved"
  *
  * Project scoping: when ctx.projectIds is a non-empty array the user is
@@ -32,9 +32,29 @@ const PENDING_APPROVAL_STATUSES = [
   "approved_l2",
 ];
 
+// An "open" PO is approved but still awaiting material. `approved` alone is
+// not enough: the submit / final-approve routes bump the status to `sent` the
+// moment the PO PDF reaches the vendor, and each GRN moves it on to
+// `partially_received`. Mirrors GRN_ELIGIBLE_PO_STATUSES in lib/purchase-service.ts.
+const OPEN_PO_STATUSES = [
+  "approved",
+  "sent",
+  "dispatched",
+  "partially_received",
+];
+
+// Mirrors the Active-WOs definition in the work-orders stats endpoint
+// (app/api/projects/work-orders/route.ts). No WO route ever writes the literal
+// status "active" — create defaults to `draft`, submit sets `pending_approval`,
+// approve sets `approved` — so an equality check on "active" always counted 0.
+const ACTIVE_WO_STATUSES = ["approved", "in_progress"];
+
 type ProjectProgressRow = {
   id: string;
   name: string;
+  location: string | null;
+  startDate: string | null;
+  endDate: string | null;
   physicalPct: number;
   budgetPct: number;
   band: "on_track" | "in_progress" | "early_stage";
@@ -49,25 +69,15 @@ export async function GET() {
     );
   }
 
-  const { orgId, projectIds, roleKey, permissions } = ctx;
-
-  // Scope resolution.
-  //
-  //   super_admin / "*" permissions  → no org filter (sees everything)
-  //   everyone else                  → orgId filter
-  //
-  // Project-level restriction (projectsAssigned) is independent of the
-  // above and still applies whenever the user has a non-empty list.
- 
+  const { orgId, projectIds } = ctx;
 
   // Every user — platform admin included — is scoped to their own org.
   // Per-org isolation is enforced everywhere in the ERP; cross-tenant
   // visibility is not a dashboard concern.
-//  const tenantScope: Record<string, unknown> = isPlatformAdmin
-//   ? { orgId }
-//   : { orgId };
- const tenantScope = { orgId };
+  const tenantScope = { orgId };
 
+  // Project-level restriction is independent of the org scope above and
+  // applies whenever the caller has a non-empty assigned-projects list.
   const scoped = Array.isArray(projectIds) && projectIds.length > 0;
   const projectScope = scoped ? { projectId: { in: projectIds! } } : {};
 
@@ -98,11 +108,13 @@ export async function GET() {
     recentPRsRaw,
     recentPOsRaw,
   ] = await Promise.all([
-    // 1. Active projects in the DB
+    // 1. Active projects in the DB. Match the projects-repository
+    // convention (active = anything not soft-deleted) instead of an
+    // exact-case "active" string — seed/legacy rows store "Active".
     prisma.cnProject.count({
       where: {
         ...tenantScope,
-        status: "active",
+        status: { not: "inactive" },
         ...(scoped ? { id: { in: projectIds! } } : {}),
       },
     }),
@@ -137,9 +149,13 @@ export async function GET() {
       },
     }),
 
-    // 3. Open / active POs — only approved
+    // 3. Open / active POs — approved through partially-received
     prisma.cnPurchaseOrder.count({
-      where: { ...tenantScope, ...projectScope, status: "approved" },
+      where: {
+        ...tenantScope,
+        ...projectScope,
+        status: { in: OPEN_PO_STATUSES },
+      },
     }),
 
     // 4. GRNs this calendar month
@@ -162,7 +178,11 @@ export async function GET() {
 
     // 6. Active work orders
     prisma.cnWorkOrder.count({
-      where: { ...tenantScope, ...projectScope, status: "active" },
+      where: {
+        ...tenantScope,
+        ...projectScope,
+        status: { in: ACTIVE_WO_STATUSES },
+      },
     }),
 
     // 7. DPRs not yet approved
@@ -250,55 +270,104 @@ export async function GET() {
 
   const projectWhere = {
     ...tenantScope,
-    status: "active" as const,
+    status: { not: "inactive" },
     ...(scoped ? { id: { in: projectIds! } } : {}),
   };
   const projectsTop = await db.cnProject.findMany({
     where: projectWhere,
     orderBy: { updatedAt: "desc" },
-    take: 3,
-    select: { id: true, name: true },
+    take: 12,
+    select: {
+      id: true,
+      name: true,
+      city: true,
+      state: true,
+      startDate: true,
+      expectedEndDate: true,
+    },
   });
 
   let projectProgress: ProjectProgressRow[] = [];
   if (projectsTop.length > 0) {
     const ids = projectsTop.map((p: { id: string }) => p.id);
-    const aggs = await db.cnBOQItem.groupBy({
-      by: ["projectId"],
+    // Progress is computed value-weighted from the v2 BOQ leaves: each leaf's
+    // contribution is qty × rate, so mixed units (m², m³, nos) roll up in a
+    // single currency basis instead of averaging incomparable raw percentages.
+    //   physicalPct = executed value ÷ estimate value
+    //   budgetPct   = billed value   ÷ estimate value
+    const leaves = await db.cnBOQItemV2.findMany({
       where: {
         ...tenantScope,
         projectId: { in: ids },
-        isLeaf: true,
-        status: "active",
+        isGroup: false,
+        deletedAt: null,
       },
-      _avg: { progressPercent: true },
-      _sum: { contractAmount: true, executedAmount: true },
+      select: {
+        projectId: true,
+        tenderQty: true,
+        rate: true,
+        estimateAmt: true,
+        subDoneQty: true,
+        selfDoneQty: true,
+        billedQty: true,
+      },
     });
-    const aggByProject = new Map(
-      aggs.map((a) => [
-        a.projectId,
-        {
-          avgProg: Number(a._avg?.progressPercent ?? 0),
-          contract: Number(a._sum?.contractAmount ?? 0),
-          executed: Number(a._sum?.executedAmount ?? 0),
-        },
-      ]),
+
+    const aggByProject = new Map<
+      string,
+      { estimate: number; executed: number; billed: number }
+    >();
+    for (const l of leaves) {
+      const rate = Number(l.rate ?? 0);
+      const estimate =
+        Number(l.estimateAmt ?? 0) || Number(l.tenderQty ?? 0) * rate;
+      const executed = (Number(l.subDoneQty) + Number(l.selfDoneQty)) * rate;
+      const billed = Number(l.billedQty) * rate;
+      const cur =
+        aggByProject.get(l.projectId) ??
+        { estimate: 0, executed: 0, billed: 0 };
+      cur.estimate += estimate;
+      cur.executed += executed;
+      cur.billed += billed;
+      aggByProject.set(l.projectId, cur);
+    }
+
+    const clampPct = (n: number) => Math.min(100, Math.max(0, Math.round(n)));
+    projectProgress = projectsTop.map(
+      (p: {
+        id: string;
+        name: string;
+        city: string | null;
+        state: string | null;
+        startDate: Date | null;
+        expectedEndDate: Date | null;
+      }) => {
+        const a = aggByProject.get(p.id);
+        const estimate = a?.estimate ?? 0;
+        const physicalPct =
+          estimate > 0 ? clampPct((a!.executed / estimate) * 100) : 0;
+        const budgetPct =
+          estimate > 0 ? clampPct((a!.billed / estimate) * 100) : 0;
+        const band =
+          physicalPct >= 65
+            ? ("on_track" as const)
+            : physicalPct >= 30
+              ? ("in_progress" as const)
+              : ("early_stage" as const);
+        const location =
+          [p.city, p.state].filter(Boolean).join(", ") || null;
+        return {
+          id: p.id,
+          name: p.name,
+          location,
+          startDate: p.startDate ? p.startDate.toISOString() : null,
+          endDate: p.expectedEndDate ? p.expectedEndDate.toISOString() : null,
+          physicalPct,
+          budgetPct,
+          band,
+        };
+      },
     );
-    projectProgress = projectsTop.map((p: { id: string; name: string }) => {
-      const a = aggByProject.get(p.id);
-      const physicalPct = Math.min(100, Math.max(0, Math.round(a?.avgProg ?? 0)));
-      const c = a?.contract ?? 0;
-      const e = a?.executed ?? 0;
-      const budgetPct =
-        c > 0 ? Math.min(100, Math.max(0, Math.round((e / c) * 100))) : 0;
-      const band =
-        physicalPct >= 65
-          ? ("on_track" as const)
-          : physicalPct >= 30
-            ? ("in_progress" as const)
-            : ("early_stage" as const);
-      return { id: p.id, name: p.name, physicalPct, budgetPct, band };
-    });
   }
 
   return NextResponse.json({ kpis, recentActivity: { prs, pos }, projectProgress });

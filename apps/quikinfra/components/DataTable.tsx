@@ -8,6 +8,7 @@ import {
   LayoutGrid, Columns, ChevronDown, ChevronUp, ChevronsUpDown,
 } from 'lucide-react';
 import { formatDate } from '@/lib/format/datetime';
+import { Pager } from './Pager';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -43,10 +44,13 @@ interface DataTableProps<T = Record<string, unknown>> {
   defaultSortDir?: 'asc' | 'desc';
   auditEnabled?: boolean;
   /**
-   * When true, the table grows with its content instead of capping at 65vh
-   * with an internal scrollbar. Use this on pages that already have other
-   * content above the table so scrolling stays at the page level rather
-   * than producing a nested scrollbar inside the table.
+   * When true, the grid grows with its content and the page supplies the
+   * scrollbar, instead of the grid claiming the remaining height and
+   * scrolling internally. Use this only on pages that stack several grids
+   * (the equipment dashboards) — a page-level scrollbar is the single
+   * scrollbar there. Everywhere else, leave it off and wrap the page in
+   * <PageFrame> + <PageContainer fill> so the grid owns the scroll and the
+   * pager stays pinned to its footer.
    */
   fitToContent?: boolean;
   /**
@@ -76,9 +80,35 @@ interface DataTableProps<T = Record<string, unknown>> {
   emptyHint?: string;
   /** When true, show a centered loading spinner instead of rows / empty state. */
   loading?: boolean;
+  /**
+   * Opt-in server-driven mode. When true the table stops paginating,
+   * sorting, and searching `data` in the browser — `data` is rendered
+   * as-is (the server already sliced/sorted/filtered it) and the
+   * rows-per-page pager is replaced by a scroll sentinel. Search box and
+   * sortable headers emit {@link onSearchChange} / {@link onSortChange}
+   * instead of mutating local state. Off by default, so every existing
+   * caller (and the 4 locked tables) behaves exactly as before.
+   */
+  serverMode?: boolean;
+  /** Server-reported total row count (drives the "X of N" pager). */
+  serverTotal?: number;
+  /** Controlled current page (1-indexed) in serverMode. */
+  serverPage?: number;
+  /** Controlled rows-per-page in serverMode. */
+  serverPageSize?: number;
+  /** Page-change callback (serverMode). */
+  onPageChange?: (page: number) => void;
+  /** Rows-per-page callback (serverMode). */
+  onPageSizeChange?: (size: number) => void;
+  /** Debounced search term callback (serverMode). */
+  onSearchChange?: (q: string) => void;
+  /** Sort column/direction callback (serverMode). */
+  onSortChange?: (key: string, dir: 'asc' | 'desc') => void;
+  /** Hide the toolbar Filter button/dropdown. Off by default. */
+  hideFilter?: boolean;
+  /** Hide the toolbar Columns button/dropdown. Off by default. */
+  hideColumns?: boolean;
 }
-
-const PAGE_SIZES = [10, 25, 50, 100];
 
 // ─── Audit columns (auto-appended to every grid) ──────────────────────────────
 
@@ -199,7 +229,7 @@ const HISTORY_LABEL_FIELDS = [
   'woNumber', 'estimationNumber', 'dprNumber',
   'invoiceNumber', 'billNumber', 'paymentNumber', 'receiptNumber',
   'name', 'fullName', 'displayName',
-  'code', 'projectCode',
+  'code', 'projectCode', 'boqNo',
 ];
 
 function historyRowLabel(row: unknown): string {
@@ -654,7 +684,7 @@ function QuickFilterPanel<T extends Record<string, unknown>>({
             <div className="text-xs text-slate-400 italic">No active filters</div>
           ) : recentFilters.map((rf, i) => (
             <button key={i} onClick={() => onToggle(rf.colKey, rf.val)}
-              className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg hover:bg-orange-50 text-sm mb-0.5 bg-orange-50/70 border border-orange-100">
+              className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg hover:bg-accent-50 text-sm mb-0.5 bg-accent-50 border border-accent-100">
               <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${chipColors[i % chipColors.length]}`} />
               <span className="truncate text-xs text-slate-700">{rf.colLabel}: {rf.val}</span>
               <span className="ml-auto text-[10px] text-slate-400">{getCount(rf.colKey, rf.val)}</span>
@@ -674,7 +704,7 @@ function QuickFilterPanel<T extends Record<string, unknown>>({
                   const count = getCount(col.key, val);
                   return (
                     <button key={val} onClick={() => onToggle(col.key, val)}
-                      className={`flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg text-xs mb-0.5 transition-colors ${active ? 'bg-orange-50 border border-orange-200 text-orange-700' : 'hover:bg-slate-50 text-slate-700'}`}>
+                      className={`flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg text-xs mb-0.5 transition-colors ${active ? 'bg-accent-50 border border-accent-200 text-accent-700' : 'hover:bg-slate-50 text-slate-700'}`}>
                       <span className={`w-2 h-2 rounded-full shrink-0 ${chipColors[ci % chipColors.length]}`} />
                       <span className="truncate flex-1">{val}</span>
                       <span className="text-[10px] text-slate-400 shrink-0">{count}</span>
@@ -696,7 +726,7 @@ function QuickFilterPanel<T extends Record<string, unknown>>({
 
       {/* Footer */}
       <div className="border-t px-5 py-3 flex items-center justify-between">
-        <button onClick={onSwitchAdvanced} className="text-xs text-orange-600 hover:text-orange-700 font-semibold hover:underline">
+        <button onClick={onSwitchAdvanced} className="text-xs text-accent-600 hover:text-accent-700 font-semibold hover:underline">
           Switch to advanced filters →
         </button>
       </div>
@@ -737,8 +767,8 @@ function AdvancedFilterPanel<T extends Record<string, unknown>>({
     return Array.from(s).sort();
   };
 
-  const sel = 'rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400';
-  const inp = 'rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400';
+  const sel = 'rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400';
+  const inp = 'rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400';
 
   return (
     <div className="w-full rounded-2xl border border-slate-200 bg-white shadow-2xl">
@@ -771,7 +801,7 @@ function AdvancedFilterPanel<T extends Record<string, unknown>>({
               <span className="text-sm font-medium text-slate-500 w-12 text-right shrink-0">
                 {idx === 0 ? 'Where' : (
                   <select value={cond.logic} onChange={e => update(cond.id, { logic: e.target.value as 'AND' | 'OR' })}
-                    className="text-xs font-semibold text-orange-600 bg-transparent border-none focus:outline-none cursor-pointer">
+                    className="text-xs font-semibold text-accent-600 bg-transparent border-none focus:outline-none cursor-pointer">
                     <option value="AND">And</option>
                     <option value="OR">Or</option>
                   </select>
@@ -792,8 +822,8 @@ function AdvancedFilterPanel<T extends Record<string, unknown>>({
                 col?.type === 'select' || col?.options ? (
                   <div className="flex items-center gap-1 flex-wrap min-w-[160px] rounded-xl border px-2 py-1.5 bg-white">
                     {cond.value && cond.value.split(',').filter(Boolean).map(v => (
-                      <span key={v} className="inline-flex items-center gap-1 rounded-full bg-orange-100 text-orange-700 px-2 py-0.5 text-xs">
-                        <span className="w-1.5 h-1.5 rounded-full bg-orange-500" />
+                      <span key={v} className="inline-flex items-center gap-1 rounded-full bg-accent-100 text-accent-700 px-2 py-0.5 text-xs">
+                        <span className="w-1.5 h-1.5 rounded-full bg-accent-500" />
                         {v}
                         <button onClick={() => update(cond.id, { value: cond.value.split(',').filter(x => x !== v).join(',') })} className="hover:text-rose-500">×</button>
                       </span>
@@ -820,7 +850,7 @@ function AdvancedFilterPanel<T extends Record<string, unknown>>({
             </div>
           );
         })}
-        <button onClick={addCond} className="text-sm text-orange-600 hover:text-orange-700 font-semibold flex items-center gap-1 mt-2">
+        <button onClick={addCond} className="text-sm text-accent-600 hover:text-accent-700 font-semibold flex items-center gap-1 mt-2">
           + Add new filter
         </button>
       </div>
@@ -833,7 +863,7 @@ function AdvancedFilterPanel<T extends Record<string, unknown>>({
 
       {/* Footer */}
       <div className="border-t px-5 py-3">
-        <button onClick={onSwitchQuick} className="text-xs text-orange-600 hover:text-orange-700 font-semibold hover:underline">
+        <button onClick={onSwitchQuick} className="text-xs text-accent-600 hover:text-accent-700 font-semibold hover:underline">
           Switch to quick filters →
         </button>
       </div>
@@ -873,7 +903,7 @@ function SortControls<T extends Record<string, unknown>>({
       </div>
       {sortable.length > sorts.length && (
         <button onClick={() => onChange([...sorts, { key: sortable[0].key, dir: 'asc' }])}
-          className="mt-2 text-sm text-orange-600 hover:text-orange-700 font-semibold hover:underline">+ Add sort</button>
+          className="mt-2 text-sm text-accent-600 hover:text-accent-700 font-semibold hover:underline">+ Add sort</button>
       )}
       {sorts.length > 0 && (
         <button onClick={() => onChange([])} className="mt-1 block text-xs text-slate-400 hover:text-rose-500">Clear all sorts</button>
@@ -894,7 +924,7 @@ function GroupByPanel<T extends Record<string, unknown>>({
         <button onClick={onClose} className="text-slate-400 hover:text-slate-600">×</button>
       </div>
       <select value={groupBy ?? ''} onChange={e => onChange(e.target.value || null)}
-        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400">
+        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400">
         <option value="">No grouping</option>
         {columns.filter(c => c.type === 'select' || c.options).map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
       </select>
@@ -930,7 +960,7 @@ function ColPanel<T extends Record<string, unknown>>({
           </label>
           {col.freezable !== false && (
             <button onClick={() => onToggleFreeze(col.key)} title="Freeze"
-              className={`text-xs px-2 py-0.5 rounded-lg border transition-colors ${frozen.has(col.key) ? 'bg-orange-100 text-orange-700 border-orange-200' : 'text-slate-400 border-transparent hover:border-slate-200 hover:text-orange-600'}`}>
+              className={`text-xs px-2 py-0.5 rounded-lg border transition-colors ${frozen.has(col.key) ? 'bg-accent-100 text-accent-700 border-accent-200' : 'text-slate-400 border-transparent hover:border-slate-200 hover:text-accent-600'}`}>
               📌
             </button>
           )}
@@ -948,6 +978,9 @@ export function DataTable<T extends Record<string, unknown>>({
   fitToContent = false,
   historyEntityType, getHistoryEntityId, getHistoryRowLabel,
   emptyTitle, emptyHint, loading = false,
+  serverMode = false, serverTotal, serverPage, serverPageSize,
+  onPageChange, onPageSizeChange, onSearchChange, onSortChange,
+  hideFilter = false, hideColumns = false,
 }: DataTableProps<T>) {
   // Merge audit cols
   const columns = useMemo(() => {
@@ -991,6 +1024,13 @@ export function DataTable<T extends Record<string, unknown>>({
     try { localStorage.setItem(`dt-${id}`, JSON.stringify({ hidden: Array.from(hiddenCols), frozen: Array.from(frozenCols), ps: pageSize })); } catch {}
   }, [id, hiddenCols, frozenCols, pageSize]);
 
+  // serverMode: debounce the global search box into the server callback.
+  useEffect(() => {
+    if (!serverMode || !onSearchChange) return;
+    const t = setTimeout(() => onSearchChange(globalQ.trim()), 300);
+    return () => clearTimeout(t);
+  }, [globalQ, serverMode, onSearchChange]);
+
   // Close panels on outside click (portal panels live outside anchor refs)
   useEffect(() => {
     const h = (e: MouseEvent) => {
@@ -1008,7 +1048,10 @@ export function DataTable<T extends Record<string, unknown>>({
   // Filtering
   const filtered = useMemo(() => {
     let rows = [...data];
-    if (globalQ.trim()) {
+    // In server-driven mode the global search and sort are applied by the
+    // API (see onSearchChange / onSortChange), so skip them here. Quick /
+    // advanced filters still run client-side over the loaded page.
+    if (!serverMode && globalQ.trim()) {
       const q = globalQ.toLowerCase();
       rows = rows.filter(row => columns.some(col => getVal(col, row).toLowerCase().includes(q)));
     }
@@ -1025,7 +1068,7 @@ export function DataTable<T extends Record<string, unknown>>({
         return results.some(Boolean);
       });
     }
-    if (sorts.length > 0) {
+    if (!serverMode && sorts.length > 0) {
       rows = [...rows].sort((a, b) => {
         for (const s of sorts) {
           const col = columns.find(c => c.key === s.key);
@@ -1039,7 +1082,7 @@ export function DataTable<T extends Record<string, unknown>>({
     }
     return rows;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, globalQ, quickFilters, advancedConds, sorts]);
+  }, [data, globalQ, quickFilters, advancedConds, sorts, serverMode]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const curPage = Math.min(page, totalPages);
@@ -1061,7 +1104,7 @@ export function DataTable<T extends Record<string, unknown>>({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtered, groupBy, columns]);
 
-  const pageRows = groupBy ? null : filtered.slice(start, start + pageSize);
+  const pageRows = groupBy ? null : (serverMode ? filtered : filtered.slice(start, start + pageSize));
 
   const visibleCols = columns.filter(c => !hiddenCols.has(c.key));
   const orderedCols = [...visibleCols.filter(c => frozenCols.has(c.key)), ...visibleCols.filter(c => !frozenCols.has(c.key))];
@@ -1124,7 +1167,7 @@ export function DataTable<T extends Record<string, unknown>>({
   const renderRows = (rows: T[]) => rows.map((row, i) => (
     <tr
       key={i}
-      className="relative border-t border-slate-100 even:bg-slate-50/40 hover:bg-orange-50/60 hover:shadow-[inset_3px_0_0_0_rgb(249,115,22)] transition-all duration-150 group"
+      className="relative border-t border-slate-100 even:bg-slate-50/40 hover:bg-accent-50 hover:shadow-[inset_3px_0_0_0_var(--accent-500)] transition-all duration-150 group"
     >
       {allCols.map(col => {
         const left = frozenLeft(col.key);
@@ -1133,8 +1176,8 @@ export function DataTable<T extends Record<string, unknown>>({
           <td key={col.key}
             className={
               col.key === '__history'
-                ? 'w-12 min-w-[48px] max-w-[48px] bg-inherit px-1.5 py-3 align-middle text-center text-sm text-slate-700 group-hover:bg-orange-50/60'
-                : `px-4 py-3 text-sm text-slate-700 ${frozen ? 'sticky z-10 bg-white group-hover:bg-orange-50/60 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]' : ''}`
+                ? 'w-12 min-w-[48px] max-w-[48px] bg-inherit px-1.5 py-3 align-middle text-center text-sm text-slate-700 group-hover:bg-accent-50'
+                : `px-4 py-3 text-sm text-slate-700 ${frozen ? 'sticky z-10 bg-white group-hover:bg-accent-50 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]' : ''}`
             }
             style={col.key === '__history' ? undefined : { left: frozen ? left : undefined }}>
             {col.render
@@ -1163,9 +1206,13 @@ export function DataTable<T extends Record<string, unknown>>({
         />
       )}
 
-      <div className="space-y-4">
+      {/* Fill-height grid: the card below claims the remaining height and
+          owns the only vertical scrollbar, so the page itself never adds a
+          second one. `fitToContent` opts back into page-level scrolling for
+          tables embedded under other content. */}
+      <div className={fitToContent ? 'space-y-4' : 'flex min-h-0 flex-1 flex-col gap-4'}>
         {/* ── Toolbar ── */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="shrink-0 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="relative min-w-0 w-full max-w-md">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden />
             <input
@@ -1176,25 +1223,26 @@ export function DataTable<T extends Record<string, unknown>>({
                 setGlobalQ(e.target.value);
                 setPage(1);
               }}
-              className="w-full rounded-xl border border-slate-200 py-2 pl-9 pr-3 text-sm placeholder:text-slate-400 transition-shadow focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
+              className="w-full rounded-xl border border-slate-200 py-2 pl-9 pr-3 text-sm placeholder:text-slate-400 transition-shadow focus:border-accent-400 focus:outline-none focus:ring-2 focus:ring-accent-200"
             />
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-2 sm:shrink-0">
+            {!hideFilter && (
             <div className="relative" ref={filterRef}>
               <button
                 type="button"
                 onClick={() => setShowFilter((s) => !s)}
                 className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
                   showFilter || filterCount > 0
-                    ? "border-orange-300 bg-orange-50 text-orange-700"
-                    : "border-slate-200 text-slate-600 hover:border-orange-200 hover:bg-orange-50/60 hover:text-orange-700"
+                    ? "border-accent-300 bg-accent-50 text-accent-700"
+                    : "border-slate-200 text-slate-600 hover:border-accent-200 hover:bg-accent-50 hover:text-accent-700"
                 }`}
               >
                 <Filter className="h-4 w-4 shrink-0" />
                 Filter
                 {filterCount > 0 && (
-                  <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-orange-600 px-1 text-[10px] font-bold text-white">
+                  <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-accent-600 px-1 text-[10px] font-bold text-white">
                     {filterCount}
                   </span>
                 )}
@@ -1218,6 +1266,7 @@ export function DataTable<T extends Record<string, unknown>>({
               />
             </ToolbarDropdownPortal>
           </div>
+            )}
 
           {/* Group by — temporarily hidden (logic retained below)
           <div className="relative" ref={groupRef}>
@@ -1227,7 +1276,7 @@ export function DataTable<T extends Record<string, unknown>>({
               className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
                 groupBy
                   ? "border-amber-300 bg-amber-50 text-amber-700"
-                  : "border-slate-200 text-slate-600 hover:border-orange-200 hover:bg-orange-50/60 hover:text-orange-700"
+                  : "border-slate-200 text-slate-600 hover:border-accent-200 hover:bg-accent-50 hover:text-accent-700"
               }`}
             >
               <LayoutGrid className="h-4 w-4 shrink-0" />
@@ -1242,6 +1291,7 @@ export function DataTable<T extends Record<string, unknown>>({
           </div>
           */}
 
+          {!hideColumns && (
           <div className="relative" ref={colRef}>
             <button
               type="button"
@@ -1249,7 +1299,7 @@ export function DataTable<T extends Record<string, unknown>>({
               className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
                 showColPanel
                   ? "border-slate-400 bg-slate-100 text-slate-800"
-                  : "border-slate-200 text-slate-600 hover:border-orange-200 hover:bg-orange-50/60 hover:text-orange-700"
+                  : "border-slate-200 text-slate-600 hover:border-accent-200 hover:bg-accent-50 hover:text-accent-700"
               }`}
             >
               <Columns className="h-4 w-4 shrink-0" />
@@ -1259,12 +1309,13 @@ export function DataTable<T extends Record<string, unknown>>({
               <ColPanel<T> columns={columns} hidden={hiddenCols} frozen={frozenCols} onToggleHide={k => setHiddenCols(p => { const s = new Set(p); s.has(k) ? s.delete(k) : s.add(k); return s; })} onToggleFreeze={k => setFrozenCols(p => { const s = new Set(p); s.has(k) ? s.delete(k) : s.add(k); return s; })} onClose={() => setShowColPanel(false)} />
             </ToolbarDropdownPortal>
           </div>
+          )}
 
             {onAdd && (
               <button
                 type="button"
                 onClick={onAdd}
-                className="flex items-center gap-1.5 rounded-xl bg-gradient-to-b from-[#FFAF55] to-[#ea580c] px-4 py-2 text-sm font-semibold text-white shadow-brand transition-all hover:from-[#f5a245] hover:to-[#c2410c] active:translate-y-[1px]"
+                className="flex items-center gap-1.5 rounded-xl bg-gradient-to-b from-accent-300 to-accent-600 px-4 py-2 text-sm font-semibold text-white shadow-brand transition-all hover:from-accent-400 hover:to-accent-700 active:translate-y-[1px]"
               >
                 <span className="text-base leading-none">+</span> {addLabel}
               </button>
@@ -1278,7 +1329,7 @@ export function DataTable<T extends Record<string, unknown>>({
             {Object.entries(quickFilters).flatMap(([k, vals]) => {
               const col = columns.find(c => c.key === k);
               return vals.map(v => (
-                <span key={`${k}-${v}`} className="inline-flex items-center gap-1.5 rounded-full bg-orange-50 border border-orange-200 px-2.5 py-0.5 text-xs text-orange-700">
+                <span key={`${k}-${v}`} className="inline-flex items-center gap-1.5 rounded-full bg-accent-50 border border-accent-200 px-2.5 py-0.5 text-xs text-accent-700">
                   <strong>{col?.label}</strong> is <span className="font-medium">{v}</span>
                   <button onClick={() => toggleQF(k, v)} className="hover:text-rose-500 font-bold ml-0.5">×</button>
                 </span>
@@ -1297,11 +1348,9 @@ export function DataTable<T extends Record<string, unknown>>({
           </div>
         )}
 
-        {/* ── Table ── */}
-        <div
-          className={`min-h-[200px] rounded-2xl ring-1 ring-slate-200 bg-white shadow-[0_4px_24px_-12px_rgba(15,23,42,0.12)] ${fitToContent ? 'overflow-x-auto' : 'overflow-auto'}`}
-          style={fitToContent ? undefined : { maxHeight: '65vh' }}
-        >
+        {/* ── Grid card: scrollable body + pinned pager footer ── */}
+        <div className={`flex flex-col overflow-hidden rounded-2xl ring-1 ring-slate-200 bg-white shadow-[0_4px_24px_-12px_rgba(15,23,42,0.12)] ${fitToContent ? 'min-h-[200px]' : 'min-h-0 flex-1'}`}>
+        <div className={fitToContent ? 'overflow-x-auto' : 'min-h-0 flex-1 overflow-auto'}>
           <table className="min-w-full text-sm border-separate border-spacing-0">
             <thead className="text-left sticky top-0 z-20">
               <tr>
@@ -1319,11 +1368,19 @@ export function DataTable<T extends Record<string, unknown>>({
                       {col.sortable !== false ? (
                         <button onClick={() => {
                           const existing = sorts.find(s => s.key === col.key);
-                          if (existing) setSorts(sorts.map(s => s.key === col.key ? { ...s, dir: s.dir === 'asc' ? 'desc' : 'asc' } : s));
-                          else setSorts([{ key: col.key, dir: 'asc' }, ...sorts.slice(0, 2)]);
-                        }} className={`flex items-center gap-1.5 transition-colors group ${btnAlignCls} ${isSorted ? 'text-orange-700' : 'hover:text-orange-700'}`}>
+                          const nextDir: 'asc' | 'desc' = existing ? (existing.dir === 'asc' ? 'desc' : 'asc') : 'asc';
+                          if (serverMode) {
+                            // Single-column server sort: replace, don't stack.
+                            setSorts([{ key: col.key, dir: nextDir }]);
+                            onSortChange?.(col.key, nextDir);
+                          } else if (existing) {
+                            setSorts(sorts.map(s => s.key === col.key ? { ...s, dir: nextDir } : s));
+                          } else {
+                            setSorts([{ key: col.key, dir: 'asc' }, ...sorts.slice(0, 2)]);
+                          }
+                        }} className={`flex items-center gap-1.5 transition-colors group ${btnAlignCls} ${isSorted ? 'text-accent-700' : 'hover:text-accent-700'}`}>
                           {col.label}
-                          <span className={`inline-flex items-center justify-center w-4 h-4 rounded transition-all ${isSorted ? 'opacity-100 text-orange-600 bg-orange-100' : 'opacity-30 group-hover:opacity-70 text-slate-400'}`}>
+                          <span className={`inline-flex items-center justify-center w-4 h-4 rounded transition-all ${isSorted ? 'opacity-100 text-accent-600 bg-accent-100' : 'opacity-30 group-hover:opacity-70 text-slate-400'}`}>
                             {isSorted
                               ? (isSorted.dir === 'asc' ? <ChevronUp className="h-3 w-3" strokeWidth={2.5} /> : <ChevronDown className="h-3 w-3" strokeWidth={2.5} />)
                               : <ChevronsUpDown className="h-3 w-3" strokeWidth={2} />}
@@ -1354,7 +1411,7 @@ export function DataTable<T extends Record<string, unknown>>({
                 <tr>
                   <td colSpan={allCols.length} className="px-4 py-24 text-center bg-gradient-to-b from-white to-slate-50/40">
                     <div className="flex flex-col items-center justify-center">
-                      <div className="w-8 h-8 rounded-full border-2 border-orange-200 border-t-orange-500 animate-spin mb-3" />
+                      <div className="w-8 h-8 rounded-full border-2 border-accent-200 border-t-accent-500 animate-spin mb-3" />
                       <div className="text-sm font-medium text-slate-500">Loading…</div>
                     </div>
                   </td>
@@ -1382,7 +1439,7 @@ export function DataTable<T extends Record<string, unknown>>({
                         {onAdd && (
                           <button
                             onClick={onAdd}
-                            className="mt-5 inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-b from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 px-4 py-2 text-sm font-semibold text-white shadow-brand active:translate-y-[1px] transition-all"
+                            className="mt-5 inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-b from-accent-500 to-accent-600 hover:from-accent-600 hover:to-accent-700 px-4 py-2 text-sm font-semibold text-white shadow-brand active:translate-y-[1px] transition-all"
                           >
                             <span className="text-base leading-none">+</span> {addLabel}
                           </button>
@@ -1399,7 +1456,7 @@ export function DataTable<T extends Record<string, unknown>>({
                               if (filterCount > 0) clearFilters();
                               if (globalQ) setGlobalQ('');
                             }}
-                            className="mt-3 inline-flex items-center gap-1 text-orange-600 hover:text-orange-700 hover:bg-orange-50 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+                            className="mt-3 inline-flex items-center gap-1 text-accent-600 hover:text-accent-700 hover:bg-accent-50 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
                           >
                             Clear {filterCount > 0 && globalQ ? 'filters & search' : filterCount > 0 ? 'all filters' : 'search'}
                           </button>
@@ -1413,33 +1470,35 @@ export function DataTable<T extends Record<string, unknown>>({
           </table>
         </div>
 
-        {/* ── Pagination (not shown when grouped) ── */}
-        {!groupBy && (
-          <div className="flex items-center justify-between gap-3 flex-wrap text-sm px-1">
-            <div className="flex items-center gap-2 text-slate-500 text-xs">
-              <span className="font-medium">Rows per page:</span>
-              <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
-                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400 hover:border-slate-300 transition-colors">
-                {PAGE_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-              <span className="text-slate-400">·</span>
-              <span className="text-slate-500">
-                Showing <strong className="text-slate-700">{filtered.length === 0 ? 0 : start + 1}–{Math.min(start + pageSize, filtered.length)}</strong> of <strong className="text-slate-700">{filtered.length}</strong>
-              </span>
-            </div>
-            <div className="flex items-center gap-1 bg-white rounded-xl ring-1 ring-slate-200 p-1 shadow-sm">
-              {([['«', () => setPage(1)], ['‹', () => setPage(p => Math.max(1, p - 1))]] as const).map(([l, a]) => (
-                <button key={l} onClick={a} disabled={curPage === 1} className="rounded-lg w-7 h-7 text-xs text-slate-500 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-orange-50 hover:text-orange-700 transition-colors flex items-center justify-center">{l}</button>
-              ))}
-              <span className="px-3 h-7 inline-flex items-center text-xs font-bold rounded-lg bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-sm">
-                {curPage} <span className="opacity-60 mx-1">/</span> {totalPages}
-              </span>
-              {([['›', () => setPage(p => Math.min(totalPages, p + 1))], ['»', () => setPage(totalPages)]] as const).map(([l, a]) => (
-                <button key={l} onClick={a} disabled={curPage === totalPages} className="rounded-lg w-7 h-7 text-xs text-slate-500 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-orange-50 hover:text-orange-700 transition-colors flex items-center justify-center">{l}</button>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* ── Pagination — pinned to the card's bottom edge so it stays put
+            while the rows scroll. Client-side or server-driven (offset);
+            grouped mode has no pager. ── */}
+        {!groupBy && (() => {
+          const effPageSize = serverMode ? (serverPageSize ?? pageSize) : pageSize;
+          const effTotal = serverMode ? (serverTotal ?? 0) : filtered.length;
+          const effPage = serverMode ? (serverPage ?? 1) : curPage;
+          const effTotalPages = Math.max(1, Math.ceil(effTotal / effPageSize));
+          const goPage = (p: number) => {
+            const next = Math.min(Math.max(1, p), effTotalPages);
+            if (serverMode) onPageChange?.(next);
+            else setPage(next);
+          };
+          const changeSize = (s: number) => {
+            if (serverMode) onPageSizeChange?.(s);
+            else { setPageSize(s); setPage(1); }
+          };
+          return (
+            <Pager
+              variant="footer"
+              page={effPage}
+              pageSize={effPageSize}
+              total={effTotal}
+              onPageChange={goPage}
+              onPageSizeChange={changeSize}
+            />
+          );
+        })()}
+        </div>
       </div>
     </>
   );

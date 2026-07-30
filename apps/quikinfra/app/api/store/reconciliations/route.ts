@@ -5,12 +5,13 @@ import { db } from "@/lib/db";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { generateDocNumber } from "@/lib/db/doc-number";
-import { parsePagination } from "@/lib/http/pagination";
+import { parsePagination, parseSort } from "@/lib/http/pagination";
 
 /**
  * Stock Reconciliation — list + create.
  *
- * Persists to `cn_stock_reconciliations` + `cn_stock_reconciliation_lines`.
+ * Persists to `cn_stock_reconciliations`; lines live inline in the JSONB
+ * `materials` column (single-table pattern, same as issues/transfers).
  * The earlier stub stored rows in a request-scoped JS array, so creates
  * never reached Postgres and the approval flow had nothing to act on.
  *
@@ -49,10 +50,28 @@ export async function GET(req: NextRequest) {
       : { in: ctx.projectIds };
   }
 
+  if (searchParams.get("counts") === "1") {
+    const countsWhere = { ...where };
+    delete countsWhere.status;
+    const groups = await db.cnStockReconciliation.groupBy({
+      by: ["status"],
+      where: countsWhere,
+      _count: { _all: true },
+    });
+    const counts: Record<string, number> = {};
+    for (const g of groups) counts[String(g.status)] = g._count._all;
+    return NextResponse.json({ counts });
+  }
+
+  const { orderBy } = parseSort(
+    searchParams,
+    ["reconciliationNumber", "reconciliationDate", "status", "createdAt"],
+    { field: "reconciliationDate", order: "desc" },
+  );
   const p = parsePagination(req);
   const rows = await db.cnStockReconciliation.findMany({
     where,
-    orderBy: { reconciliationDate: "desc" },
+    orderBy,
     select: {
       id: true,
       reconciliationNumber: true,
@@ -64,8 +83,8 @@ export async function GET(req: NextRequest) {
       status: true,
       createdAt: true,
       updatedAt: true,
+      lineCount: true,
       project: { select: { name: true } },
-      _count: { select: { lines: true } },
     },
     ...(p.paginated ? { take: p.take, skip: p.skip } : {}),
   });
@@ -97,18 +116,19 @@ export async function GET(req: NextRequest) {
     conductedById: r.conductedById,
     approvedById: r.approvedById,
     status: r.status,
-    lineCount: r._count?.lines ?? 0,
+    lineCount: r.lineCount ?? 0,
     createdAt: r.createdAt?.toISOString() ?? "",
     updatedAt: r.updatedAt?.toISOString() ?? "",
   }));
 
   if (p.paginated) {
+    const total = await db.cnStockReconciliation.count({ where });
     return NextResponse.json({
       data,
-      total: data.length,
+      total,
       page: p.page,
       pageSize: p.pageSize,
-      hasMore: data.length === p.pageSize,
+      hasMore: p.skip + data.length < total,
     });
   }
   return NextResponse.json({ data, total: data.length });
@@ -181,7 +201,7 @@ export async function POST(req: NextRequest) {
           physicalQty,
           varianceQty: physicalQty - systemQty,
           uomId: uomByItemId.get(l.itemId) ?? "",
-          reason: l.varianceReason ?? l.reason ?? null,
+          reason: l.varianceReason ?? l.reason ?? "",
         };
       })
       .filter((l) => l.uomId); // drop lines whose item lookup failed
@@ -197,11 +217,11 @@ export async function POST(req: NextRequest) {
         status: body.status === "submitted" ? "submitted" : "draft",
         createdBy: ctx.userId,
         updatedBy: ctx.userId,
-        lines: linesData.length ? { create: linesData } : undefined,
+        lineCount: linesData.length,
+        materials: linesData,
       },
       include: {
         project: { select: { name: true } },
-        lines: true,
       },
     });
 
@@ -215,7 +235,7 @@ export async function POST(req: NextRequest) {
         reconciliationDate: created.reconciliationDate.toISOString().slice(0, 10),
         conductedById: created.conductedById,
         status: created.status,
-        lineCount: created.lines.length,
+        lineCount: created.lineCount,
         createdAt: created.createdAt.toISOString(),
       },
       { status: 201 },

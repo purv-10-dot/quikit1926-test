@@ -4,7 +4,7 @@ import { withAuth, invalidatePermissionCache } from "@/lib/with-auth";
 import { successResponse, validationError, internalError } from "@/lib/api-response";
 import { createAuditLog } from "@/lib/utils/audit";
 import { ensureSuperAdminRemains } from "@/lib/rbac/guards";
-import { APP_ID } from "@/lib/rbac/registry";
+import { APP_ID, joinCode } from "@/lib/rbac/registry";
 import { mirrorHrmsRolesToCentral } from "@/lib/rbac/mirrorRole";
 import { z } from "zod";
 
@@ -20,7 +20,7 @@ const bulkRoleSchema = z.object({
  * Replaces every listed employee's UserAppRole rows with one row pointing at
  * roleId (or deletes them if roleId is null).
  */
-export const PUT = withAuth(async (req: NextRequest, { orgId, userId }) => {
+export const PUT = withAuth(async (req: NextRequest, { orgId, userId, permissions }) => {
   try {
     const body = await req.json();
     const parsed = bulkRoleSchema.safeParse(body);
@@ -32,10 +32,21 @@ export const PUT = withAuth(async (req: NextRequest, { orgId, userId }) => {
     if (roleId) {
       const role = await prisma.hrmsAppRole.findFirst({
         where: { id: roleId, orgId: orgId, appId: APP_ID },
-        select: { id: true, name: true },
+        select: { id: true, name: true, permissions: { select: { resource: true, action: true } } },
       });
       if (!role) return validationError("Role not found");
       roleName = role.name;
+
+      // Tier guard: can't bulk-assign a role carrying permissions you don't hold.
+      if (!permissions.includes("*")) {
+        const held = new Set(permissions);
+        const missing = role.permissions
+          .map((p) => joinCode(p.resource, p.action))
+          .filter((c) => !held.has(c));
+        if (missing.length) {
+          return validationError(`You can't assign a role with permissions you don't hold: ${missing.join(", ")}`);
+        }
+      }
     }
 
     try {

@@ -8,13 +8,13 @@ import {
   FolderOpen, Folder, FileText, Search, List, LayoutGrid, SlidersHorizontal,
   Lock, Unlock, AlertTriangle, Pencil, Trash2, X, Loader2,
 } from "lucide-react";
-import { PageContainer, EmptyState, PrimaryButton, SecondaryButton } from "@/components/PageShell";
+import { PageFrame, PageContainer, EmptyState, PrimaryButton, SecondaryButton } from "@/components/PageShell";
 import { QuickCreateDrawer, exportCSV } from "@/components/QuickCreateDrawer";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { SelectInput } from "@/components/FormDrawer";
 import dynamic from "next/dynamic";
 const BOQImportDrawer = dynamic(
-  () => import("./BOQImportDrawer").then((m) => m.BOQImportDrawer),
+  () => import("./components/BOQImportDrawer").then((m) => m.BOQImportDrawer),
   { ssr: false },
 );
 import { useBOQInfinite } from "@/hooks/use-projects";
@@ -292,9 +292,9 @@ export default function BOQPage() {
       const valColor = isGrp ? "text-indigo-700" : "";
 
       result.push(
-        <tr key={node.id ?? node.boqNo} className={`border-b border-gray-200/60 hover:bg-orange-50/40 ${grpBg} ${neg ? "bg-red-50/40" : ""}`}>
+        <tr key={node.id ?? node.boqNo} className={`border-b border-gray-200/60 hover:bg-accent-50 ${grpBg} ${neg ? "bg-red-50/40" : ""}`}>
           {/* BOQ No */}
-          <td className="px-2 py-1.5 text-[11px] font-mono text-gray-500 whitespace-nowrap border-r border-gray-100">{node.boqNo}</td>
+          <td className="px-2 py-1.5 text-[11px] text-gray-500 whitespace-nowrap border-r border-gray-100">{node.boqNo}</td>
 
           {/* Description with folder/file icons + indent */}
           <td className="py-1.5 border-r border-gray-100 max-w-[350px]" style={{ paddingLeft: `${6 + depth * 20}px` }}>
@@ -316,19 +316,19 @@ export default function BOQPage() {
           {/* Unit */}
           <td className="px-1 py-1.5 text-[10px] text-center text-gray-500 border-r border-gray-100 uppercase">{node.uomCode || ""}</td>
           {/* Start Date */}
-          <td className="px-1 py-1.5 text-[10px] text-center text-gray-600 border-r border-gray-100 font-mono whitespace-nowrap">{node.startDate ? String(node.startDate).slice(0, 10) : ""}</td>
+          <td className="px-1 py-1.5 text-[10px] text-center text-gray-600 border-r border-gray-100 whitespace-nowrap">{node.startDate ? String(node.startDate).slice(0, 10) : ""}</td>
           {/* End Date */}
-          <td className="px-1 py-1.5 text-[10px] text-center text-gray-600 border-r border-gray-100 font-mono whitespace-nowrap">{node.endDate ? String(node.endDate).slice(0, 10) : ""}</td>
+          <td className="px-1 py-1.5 text-[10px] text-center text-gray-600 border-r border-gray-100 whitespace-nowrap">{node.endDate ? String(node.endDate).slice(0, 10) : ""}</td>
           {/* Rate */}
-          <td className="px-1 py-1.5 text-[10px] text-right text-gray-600 border-r border-gray-100 font-mono">{v.rate > 0 ? INR(v.rate) : ""}</td>
+          <td className="px-1 py-1.5 text-[10px] text-right text-gray-600 border-r border-gray-100">{v.rate > 0 ? INR(v.rate) : ""}</td>
 
           {/* ── Quantities ── */}
-          <td className="px-1 py-1.5 text-[10px] text-right border-r border-gray-100 font-mono">{isGrp ? <span className={valColor}>{NUM(v.tender)}</span> : (v.tender !== 0 ? NUM(v.tender) : "")}</td>
-          <td className="px-1 py-1.5 text-[10px] text-right border-r border-gray-100 font-mono">{isGrp ? <span className={valColor}>{NUM(v.scope)}</span> : (v.scope > 0 ? NUM(v.scope) : "")}</td>
-          <td className="px-1 py-1.5 text-[10px] text-right border-r border-gray-100 font-mono">{isGrp ? <span className={valColor}>{NUM(v.subCo)}</span> : (v.subCo > 0 ? NUM(v.subCo) : "")}</td>
-          <td className="px-1 py-1.5 text-[10px] text-right border-r border-gray-100 font-mono">{isGrp ? <span className={valColor}>{NUM(v.self)}</span> : (v.self > 0 ? NUM(v.self) : "")}</td>
-          <td className={`px-1 py-1.5 text-[10px] text-right border-r border-gray-100 font-mono font-bold ${v.totalDone > 0 ? "text-green-700" : ""}`}>{isGrp ? <span className="text-green-700">{NUM(v.totalDone)}</span> : (v.totalDone > 0 ? NUM(v.totalDone) : "")}</td>
-          <td className="px-1 py-1.5 text-[10px] text-right border-r border-gray-100 font-mono">{v.tender > 0 ? NUM(v.balance) : ""}</td>
+          <td className="px-1 py-1.5 text-[10px] text-right border-r border-gray-100">{isGrp ? <span className={valColor}>{NUM(v.tender)}</span> : (v.tender !== 0 ? NUM(v.tender) : "")}</td>
+          <td className="px-1 py-1.5 text-[10px] text-right border-r border-gray-100">{isGrp ? <span className={valColor}>{NUM(v.scope)}</span> : (v.scope > 0 ? NUM(v.scope) : "")}</td>
+          <td className="px-1 py-1.5 text-[10px] text-right border-r border-gray-100">{isGrp ? <span className={valColor}>{NUM(v.subCo)}</span> : (v.subCo > 0 ? NUM(v.subCo) : "")}</td>
+          <td className="px-1 py-1.5 text-[10px] text-right border-r border-gray-100">{isGrp ? <span className={valColor}>{NUM(v.self)}</span> : (v.self > 0 ? NUM(v.self) : "")}</td>
+          <td className={`px-1 py-1.5 text-[10px] text-right border-r border-gray-100 font-bold ${v.totalDone > 0 ? "text-green-700" : ""}`}>{isGrp ? <span className="text-green-700">{NUM(v.totalDone)}</span> : (v.totalDone > 0 ? NUM(v.totalDone) : "")}</td>
+          <td className="px-1 py-1.5 text-[10px] text-right border-r border-gray-100">{v.tender > 0 ? NUM(v.balance) : ""}</td>
 
           {/* Progress */}
           <td className="px-1 py-1.5 text-center border-r border-gray-100">
@@ -402,8 +402,9 @@ export default function BOQPage() {
 
   return (
     <>
+      <PageFrame>
       {/* Top toolbar matching reference UI */}
-      <div className="sticky top-0 z-20 bg-white border-b border-gray-200 px-4 py-2">
+      <div className="shrink-0 bg-white border-b border-gray-200 px-4 py-2">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             {/* Project selector */}
@@ -432,7 +433,7 @@ export default function BOQPage() {
             {/* Category tabs */}
             {categoryTabs.map(tab => (
               <button key={tab.key} onClick={() => setCategoryFilter(tab.key)}
-                className={`px-2 py-1 text-[11px] font-medium rounded-md ${categoryFilter === tab.key ? "bg-orange-100 text-orange-700" : "text-gray-500 hover:bg-gray-100"}`}>
+                className={`px-2 py-1 text-[11px] font-medium rounded-md ${categoryFilter === tab.key ? "bg-accent-100 text-accent-700" : "text-gray-500 hover:bg-gray-100"}`}>
                 {tab.label} ({tab.count})
               </button>
             ))}
@@ -442,7 +443,7 @@ export default function BOQPage() {
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
               <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Search BOQ items..." className="pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg w-52 focus:outline-none focus:ring-2 focus:ring-orange-500" />
+                placeholder="Search BOQ items..." className="pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg w-52 focus:outline-none focus:ring-2 focus:ring-accent-500" />
             </div>
             {/* Upload Revision */}
             <PrimaryButton onClick={() => selectedProject ? setImportDrawerOpen(true) : toast.warning("Select a project first")}
@@ -470,13 +471,13 @@ export default function BOQPage() {
         </div>
       </div>
 
-      <PageContainer className="!p-3 !pt-2">
+      <PageContainer fill className="!p-3 !pt-2">
         {!selectedProject ? (
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm py-16">
             <EmptyState title="Select a project" description="Choose a project to view its BOQ." icon={<FileSpreadsheet className="w-8 h-8" />} />
           </div>
         ) : (
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="flex min-h-0 flex-1 flex-col bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
             {/* Locked banner */}
             {lockState.isLocked && (
               <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border-b border-amber-200 text-amber-800 text-xs">
@@ -500,7 +501,7 @@ export default function BOQPage() {
             ) : items.length === 0 ? (
               <div className="py-12"><EmptyState title="No BOQ items" description="Import from Excel or add manually." icon={<FileSpreadsheet className="w-8 h-8" />} /></div>
             ) : (
-              <div className="overflow-x-auto max-h-[calc(100vh-240px)] overflow-y-auto">
+              <div className="min-h-0 flex-1 overflow-auto">
                 <table className="w-full border-collapse">
                   <thead className="sticky top-0 z-10">
                     {/* Two-level header matching reference */}
@@ -551,6 +552,7 @@ export default function BOQPage() {
           </div>
         )}
       </PageContainer>
+      </PageFrame>
 
       <QuickCreateDrawer open={addDrawerOpen} onClose={() => setAddDrawerOpen(false)} config={addConfig} />
       <BOQImportDrawer
@@ -701,7 +703,7 @@ function BOQItemEditModal({
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 rounded-t-2xl">
           <div>
             <h2 className="text-base font-semibold text-gray-900">Edit BOQ Item</h2>
-            <p className="text-xs text-gray-500 font-mono mt-0.5">{item.boqNo}</p>
+            <p className="text-xs text-gray-500 mt-0.5">{item.boqNo}</p>
           </div>
           <button
             onClick={onClose}

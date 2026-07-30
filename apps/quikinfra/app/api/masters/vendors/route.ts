@@ -18,7 +18,7 @@ import {
 } from "@/lib/masters/vendors-repository";
 import { isWhitebooksGstVerifyEnabled } from "@/lib/integrations/whitebooks-gst";
 import { cachedJson } from "@/lib/http/cache";
-import { parsePagination, paginateDb } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
 import { requireMastersAction } from "@/lib/auth/requireMastersAction";
 
 /**
@@ -30,28 +30,40 @@ import { requireMastersAction } from "@/lib/auth/requireMastersAction";
  */
 
 export async function GET(req: NextRequest) {
-  const ctxOrResp = await requireMastersAction("view");
+  const ctxOrResp = await requireMastersAction("construction.master_vendor", "view");
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
 
   const { searchParams } = new URL(req.url);
   const search = searchParams.get("search") ?? "";
+  const statusParam = (searchParams.get("status") ?? "").toLowerCase();
+  const status: "all" | "inactive" | "blacklisted" | undefined =
+    statusParam === "all" ? "all"
+    : statusParam === "inactive" ? "inactive"
+    : statusParam === "blacklisted" ? "blacklisted"
+    : undefined;
 
   const baseOpts = {
     orgId: ctx.orgId,
     createdBy: ctx.userId,
     search,
+    status,
   };
+  const { orderBy } = parseSort(
+    searchParams,
+    ["code", "name", "companyName", "vendorType", "category", "phone", "gstin", "city", "state", "status", "createdAt"],
+    { field: "createdAt", order: "desc" },
+  );
   const result = await paginateDb(
     parsePagination(req),
-    (paging) => listVendors({ ...baseOpts, ...paging }),
+    (paging) => listVendors({ ...baseOpts, ...paging, orderBy }),
     () => countVendors(baseOpts),
   );
   return cachedJson(result, "short");
 }
 
 export async function POST(req: NextRequest) {
-  const ctxOrResp = await requireMastersAction("create");
+  const ctxOrResp = await requireMastersAction("construction.master_vendor", "create");
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "master.vendor", "add")) {

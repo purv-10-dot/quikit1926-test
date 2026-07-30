@@ -5,6 +5,7 @@ import { successResponse, notFound, validationError, internalError } from "@/lib
 import { checkOutSchema } from "@/lib/validations/attendance";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { fireWorkflow } from "@/lib/workflows/executor";
+import { attendanceDayStart } from "@/lib/attendance/day";
 
 type Punch = { in: string; out: string | null };
 
@@ -18,8 +19,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     const employeeId = await resolveEmployeeId(orgId, userId);
     if (!employeeId) return validationError("Employee record not found");
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = attendanceDayStart();
 
     const record = await prisma.attendanceRecord.findFirst({
       where: { orgId, employeeId, date: today, deletedAt: null },

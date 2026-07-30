@@ -15,11 +15,12 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, Send, Check, X as XIcon, Lock } from "lucide-react";
 import {
+  PageFrame,
   PageHeader, PageContainer, StatusChip, TabBar,
 } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { WorkflowConfirmDialog } from "@/components/WorkflowConfirmDialog";
-import { useMaterialIssues } from "@/hooks/use-store";
+import { useServerTabList } from "@/hooks/use-server-tab-list";
 import { usePurchaseRequisitions } from "@/hooks/use-purchase";
 import { useWorkOrders } from "@/hooks/use-projects";
 import { useMenuActions } from "@/hooks/use-permissions";
@@ -28,14 +29,13 @@ import { SelectInput } from "@/components/FormDrawer";
 import { GroupedMaterialSelect, type GroupedMaterialSelectItem } from "@/components/GroupedMaterialSelect";
 import {
   useProjects,
-  useItems,
   useItemGroups,
   useLocations,
   useContractors,
 } from "@/hooks/use-masters";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useQueryClient } from "@tanstack/react-query";
-import { buildTabCounts, filterByTab, type TabSpec } from "@/lib/tab-counts";
+import { type TabSpec } from "@/lib/tab-counts";
 import { toast } from "@/lib/toast";
 
 const MENU_KEY = "store.issue";
@@ -158,13 +158,30 @@ export default function MaterialIssuePage() {
     }
   };
 
-  const { data: result } = useMaterialIssues({ status: "all" });
-  const allRows = result?.data ?? [];
-  const tabs = useMemo(() => buildTabCounts(allRows, TABS), [allRows]);
-  const data = useMemo(() => filterByTab(allRows, activeTab, TABS), [allRows, activeTab]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sort, setSort] = useState<{ by?: string; order?: "asc" | "desc" }>({
+    by: "issueDate",
+    order: "desc",
+  });
+  const {
+    items: data,
+    total,
+    page,
+    pageSize,
+    setPage,
+    setPageSize,
+    tabs,
+    isLoading,
+  } = useServerTabList<IssueRow>("material-issues", "/api/store/issues", {
+    activeTab,
+    tabs: TABS,
+    search: searchQuery,
+    sortBy: sort.by,
+    sortOrder: sort.order,
+    initialPageSize: 25,
+  });
 
   const { data: projectsData } = useProjects();
-  const { data: itemsData } = useItems();
   const { data: itemGroupsData } = useItemGroups();
   const { data: contractorsData } = useContractors();
   const { data: locData } = useLocations();
@@ -212,13 +229,10 @@ export default function MaterialIssuePage() {
     value: p.id,
     label: p.name,
   }));
-  const items = (itemsData?.data ?? []) as unknown as IssueItemNode[];
+  // Lazy picker fetches items per-group on demand; no full item-master load.
+  // onSelect supplies the picked item for autofill, so itemById isn't needed.
+  const items: IssueItemNode[] = [];
   const itemGroups = itemGroupsData?.data ?? [];
-  const itemById = useMemo(() => {
-    const m = new Map<string, IssueItemNode>();
-    for (const i of items) m.set(i.id, i);
-    return m;
-  }, [items]);
   // Only active contractors are selectable (inactive/deleted/blacklisted excluded).
   const contractorOptions = (contractorsData?.data ?? [])
     .filter((c) => c.status === "active")
@@ -478,32 +492,33 @@ export default function MaterialIssuePage() {
               </label>
               <div className="mt-1">
                 <GroupedMaterialSelect
+                  lazy
                   value={line.itemId ?? ""}
                   onChange={(v) => {
-                    const item = v ? itemById.get(v) : null;
-                    const patch: Record<string, unknown> = { itemId: v };
-                    if (item) {
-                      patch.itemName = item.name ?? "";
-                      patch.uomCode = item.uomCode ?? "";
-                      patch.availableStock = String(
-                        item.minStockLevel ??
-                          item.currentStock ??
-                          item.stockOnHand ??
-                          "0",
-                      );
-                    } else {
-                      patch.itemName = "";
-                      patch.uomCode = "";
-                      patch.availableStock = "0";
-                    }
-                    update(patch);
+                    update(
+                      v
+                        ? { itemId: v }
+                        : { itemId: "", itemName: "", uomCode: "", availableStock: "0" },
+                    );
                     fetchStock(v, formProjectId, line.sourceLocationId ?? "");
+                  }}
+                  onSelect={(item) => {
+                    if (!item) return;
+                    const it = item as IssueItemNode;
+                    update({
+                      itemName: it.name ?? "",
+                      uomCode: it.uomCode ?? "",
+                      availableStock: String(
+                        it.minStockLevel ?? it.currentStock ?? it.stockOnHand ?? "0",
+                      ),
+                    });
                   }}
                   items={items}
                   groups={itemGroups.map((g) => ({
                     id: g.id,
                     name: g.name,
                     status: g.status,
+                    itemCount: g.itemCount,
                   }))}
                   placeholder="Select material…"
                   size="md"
@@ -559,7 +574,7 @@ export default function MaterialIssuePage() {
                 value={line.reqQty ?? ""}
                 onChange={(e) => update({ reqQty: e.target.value })}
                 placeholder="0"
-                className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-orange-500"
+                className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-accent-500"
               />
             </div>
             <div>
@@ -573,7 +588,7 @@ export default function MaterialIssuePage() {
                 value={line.quantity ?? ""}
                 onChange={(e) => update({ quantity: e.target.value })}
                 placeholder="0"
-                className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-orange-500"
+                className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-accent-500"
               />
             </div>
             <div>
@@ -585,7 +600,7 @@ export default function MaterialIssuePage() {
                 value={line.batchNo ?? ""}
                 onChange={(e) => update({ batchNo: e.target.value })}
                 placeholder="Batch"
-                className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
               />
             </div>
             <div>
@@ -597,7 +612,7 @@ export default function MaterialIssuePage() {
                 value={line.equipmentNo ?? ""}
                 onChange={(e) => update({ equipmentNo: e.target.value })}
                 placeholder="Eqpt No."
-                className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
               />
             </div>
           </div>
@@ -612,7 +627,7 @@ export default function MaterialIssuePage() {
               value={line.remarks ?? ""}
               onChange={(e) => update({ remarks: e.target.value })}
               placeholder="Line-level notes"
-              className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+              className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
             />
           </div>
         </div>
@@ -627,6 +642,12 @@ export default function MaterialIssuePage() {
       label: "Issue No",
       sortable: true,
       searchable: true,
+      render: (row) => (
+        <span className="text-accent-600 cursor-pointer hover:underline font-medium"
+              onClick={() => router.push(`/store/issue/${row.id}`)}>
+          {row.issueNumber}
+        </span>
+      ),
     },
     { key: "projectName", label: "Project", sortable: true, searchable: true },
     {
@@ -761,6 +782,7 @@ export default function MaterialIssuePage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Material Issue"
         subtitle="Issue materials from store to site / contractor / equipment"
@@ -770,7 +792,7 @@ export default function MaterialIssuePage() {
         ]}
       />
       <TabBar tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
-      <PageContainer>
+      <PageContainer fill>
         <DataTable
           id="store-material-issue"
           columns={columns}
@@ -778,8 +800,18 @@ export default function MaterialIssuePage() {
           onAdd={canAdd ? () => setDrawerOpen(true) : undefined}
           addLabel="Issue Material"
           historyEntityType="issue,material_issues"
+          loading={isLoading}
+          serverMode
+          serverTotal={total}
+          serverPage={page}
+          serverPageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          onSearchChange={setSearchQuery}
+          onSortChange={(k, d) => setSort({ by: k, order: d })}
         />
       </PageContainer>
+      </PageFrame>
       <QuickCreateDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}

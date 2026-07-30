@@ -34,7 +34,9 @@ export interface CreateEstimationInput {
   createdBy: string;
   projectId: string;
   projectName?: string | null;
-  boqItemId: string;
+  boqItemId?: string | null; // null in FREE_SCOPE mode
+  scopeType?: string | null; // "BOQ" | "ACTIVITY"
+  scopeId?: string | null; // CnActivityItem.id when scopeType = ACTIVITY
   boqNo?: string | null;
   boqDescription?: string | null;
   boqQuantity?: number | string | null;
@@ -78,7 +80,9 @@ interface EstimationRow {
   orgId: string;
   projectId: string;
   projectName?: string | null;
-  boqItemId: string;
+  boqItemId?: string | null;
+  scopeType?: string | null;
+  scopeId?: string | null;
   boqNo?: string | null;
   boqDescription?: string | null;
   boqQuantity?: Numericish;
@@ -140,7 +144,9 @@ function mapRow(row: EstimationRow | null) {
     orgId: row.orgId,
     projectId: row.projectId,
     projectName: row.projectName ?? null,
-    boqItemId: row.boqItemId,
+    boqItemId: row.boqItemId ?? null,
+    scopeType: row.scopeType ?? null,
+    scopeId: row.scopeId ?? null,
     boqNo: row.boqNo ?? null,
     boqDescription: row.boqDescription ?? null,
     boqQuantity: row.boqQuantity != null ? Number(row.boqQuantity) : null,
@@ -195,7 +201,7 @@ export async function listEstimations(
     ? await db.$queryRaw<EstimationRow[]>`
         SELECT
           id, "orgId", "projectId", "projectName",
-          "boqItemId", "boqNo", "boqDescription", "boqQuantity", "boqUnit",
+          "boqItemId", "scopeType", "scopeId", "boqNo", "boqDescription", "boqQuantity", "boqUnit",
           phase, status, "totalQty", "totalCost", "materialCount", materials,
           "approvalId", "rejectionReason", "returnReason",
           "submittedAt", "submittedBy", "approvedAt", "approvedBy",
@@ -208,7 +214,7 @@ export async function listEstimations(
     : await db.$queryRaw<EstimationRow[]>`
         SELECT
           id, "orgId", "projectId", "projectName",
-          "boqItemId", "boqNo", "boqDescription", "boqQuantity", "boqUnit",
+          "boqItemId", "scopeType", "scopeId", "boqNo", "boqDescription", "boqQuantity", "boqUnit",
           phase, status, "totalQty", "totalCost", "materialCount", materials,
           "approvalId", "rejectionReason", "returnReason",
           "submittedAt", "submittedBy", "approvedAt", "approvedBy",
@@ -236,6 +242,106 @@ export async function listEstimations(
   return mapped;
 }
 
+export interface ListEstimationsPagedOptions {
+  allowedProjectIds?: string[] | null;
+  projectId?: string | null;
+  search?: string | null;
+  excludeInactive?: boolean;
+  sortBy?: string | null;
+  sortOrder?: "asc" | "desc" | null;
+  take?: number | null;
+  skip?: number | null;
+}
+
+// Whitelist: sortBy key → a pre-built SQL identifier fragment. Only keys in
+// this map can reach ORDER BY, so no caller string is ever interpolated raw.
+const EST_SORT_COLUMNS: Record<string, Prisma.Sql> = {
+  boqNo: Prisma.sql`"boqNo"`,
+  phase: Prisma.sql`phase`,
+  status: Prisma.sql`status`,
+  totalCost: Prisma.sql`"totalCost"`,
+  projectName: Prisma.sql`"projectName"`,
+  createdAt: Prisma.sql`"createdAt"`,
+};
+
+function estimationOrderBy(
+  sortBy?: string | null,
+  sortOrder?: "asc" | "desc" | null,
+): Prisma.Sql {
+  const col = sortBy ? EST_SORT_COLUMNS[sortBy] : undefined;
+  if (!col) return Prisma.sql`ORDER BY "createdAt" DESC`;
+  const dir = sortOrder === "asc" ? Prisma.sql`ASC` : Prisma.sql`DESC`;
+  return Prisma.sql`ORDER BY ${col} ${dir} NULLS LAST, "createdAt" DESC`;
+}
+
+/**
+ * Paginated variant of {@link listEstimations} — pushes the project scope,
+ * `status != inactive` visibility filter, search, sort, and LIMIT/OFFSET
+ * into SQL and returns a real total. The unpaged `listEstimations` is kept
+ * for callers that need the full array (budget consumption, PR drawer).
+ */
+export async function listEstimationsPaged(
+  orgId: string,
+  opts: ListEstimationsPagedOptions = {},
+): Promise<{ data: Estimation[]; total: number }> {
+  const allowed = opts.allowedProjectIds ?? null;
+  if (allowed !== null && allowed.length === 0) return { data: [], total: 0 };
+
+  const conds: Prisma.Sql[] = [Prisma.sql`"orgId" = ${orgId}`];
+  if (allowed !== null && allowed.length > 0) {
+    conds.push(Prisma.sql`"projectId" = ANY(${allowed}::text[])`);
+  }
+  if (opts.projectId) {
+    conds.push(Prisma.sql`"projectId" = ${opts.projectId}`);
+  }
+  if (opts.excludeInactive) {
+    conds.push(Prisma.sql`LOWER(COALESCE(status, '')) <> 'inactive'`);
+  }
+  const search = opts.search?.trim();
+  if (search) {
+    const like = `%${search.toLowerCase()}%`;
+    conds.push(Prisma.sql`(
+      LOWER(COALESCE("boqNo", '')) LIKE ${like}
+      OR LOWER(COALESCE("boqDescription", '')) LIKE ${like}
+      OR LOWER(COALESCE(phase, '')) LIKE ${like}
+      OR LOWER(COALESCE("projectName", '')) LIKE ${like}
+    )`);
+  }
+  const where = Prisma.join(conds, " AND ");
+  const orderBy = estimationOrderBy(opts.sortBy, opts.sortOrder);
+  const limit =
+    opts.take != null
+      ? Prisma.sql`LIMIT ${opts.take} OFFSET ${opts.skip ?? 0}`
+      : Prisma.empty;
+
+  const [rows, countRows] = await Promise.all([
+    db.$queryRaw<EstimationRow[]>`
+      SELECT
+        id, "orgId", "projectId", "projectName",
+        "boqItemId", "scopeType", "scopeId", "boqNo", "boqDescription", "boqQuantity", "boqUnit",
+        phase, status, "totalQty", "totalCost", "materialCount", materials,
+        "approvalId", "rejectionReason", "returnReason",
+        "submittedAt", "submittedBy", "approvedAt", "approvedBy",
+        "rejectedAt", "rejectedBy", "returnedAt", "returnedBy",
+        "createdAt", "updatedAt", "createdBy", "updatedBy"
+      FROM app_quikinfra."Material_estimations"
+      WHERE ${where}
+      ${orderBy}
+      ${limit}
+    `,
+    db.$queryRaw<{ count: number }[]>`
+      SELECT COUNT(*)::int AS count
+      FROM app_quikinfra."Material_estimations"
+      WHERE ${where}
+    `,
+  ]);
+
+  const data = rows
+    .map(mapRow)
+    .filter((r): r is NonNullable<typeof r> => r !== null);
+  return { data, total: Number(countRows[0]?.count ?? 0) };
+}
+
 export async function findEstimationById(
   orgId: string,
   id: string,
@@ -243,7 +349,7 @@ export async function findEstimationById(
   const rows = await db.$queryRaw<EstimationRow[]>`
     SELECT
       id, "orgId", "projectId", "projectName",
-      "boqItemId", "boqNo", "boqDescription", "boqQuantity", "boqUnit",
+      "boqItemId", "scopeType", "scopeId", "boqNo", "boqDescription", "boqQuantity", "boqUnit",
       phase, status, "totalQty", "totalCost", "materialCount", materials,
       "approvalId", "rejectionReason", "returnReason",
       "submittedAt", "submittedBy", "approvedAt", "approvedBy",
@@ -267,13 +373,13 @@ export async function createEstimation(
   await db.$executeRaw`
     INSERT INTO app_quikinfra."Material_estimations" (
       id, "orgId", "projectId", "projectName",
-      "boqItemId", "boqNo", "boqDescription", "boqQuantity", "boqUnit",
+      "boqItemId", "scopeType", "scopeId", "boqNo", "boqDescription", "boqQuantity", "boqUnit",
       phase, status, "totalQty", "totalCost", "materialCount", materials,
       "createdAt", "updatedAt", "createdBy", "updatedBy"
     ) VALUES (
       ${id}, ${input.orgId}, ${input.projectId},
       ${input.projectName ?? null},
-      ${input.boqItemId}, ${input.boqNo ?? null},
+      ${input.boqItemId ?? null}, ${input.scopeType ?? null}, ${input.scopeId ?? null}, ${input.boqNo ?? null},
       ${input.boqDescription ?? null},
       ${input.boqQuantity != null ? String(input.boqQuantity) : null}::numeric,
       ${input.boqUnit ?? null},

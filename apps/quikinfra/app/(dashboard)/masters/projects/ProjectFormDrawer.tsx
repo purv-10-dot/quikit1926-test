@@ -38,6 +38,13 @@ const PROJECT_STATUSES = [
   { value: "inactive", label: "Inactive (deleted)" },
 ];
 
+// Chosen once at creation; normally immutable afterwards (conversion is a
+// guarded super-admin operation via the execution-mode endpoint).
+const EXECUTION_MODES = [
+  { value: "BOQ", label: "BOQ (priced schedule)" },
+  { value: "FREE_SCOPE", label: "Free-Scope (no BOQ / day-work)" },
+];
+
 interface ProjectEditData {
   id?: string; code?: string; name?: string; description?: string;
   projectType?: string; clientId?: string; address?: string; city?: string;
@@ -45,6 +52,7 @@ interface ProjectEditData {
   startDate?: string; expectedEndDate?: string; actualEndDate?: string;
   projectValue?: number | string | null; budget?: number | string | null;
   purchaseLimit?: number | string | null; status?: string;
+  executionMode?: string;
 }
 
 interface Props { open: boolean; onClose: () => void; editData?: ProjectEditData; }
@@ -56,6 +64,7 @@ const emptyForm = {
   startDate: "", expectedEndDate: "", actualEndDate: "",
   projectValue: "", budget: "", purchaseLimit: "",
   status: "active",
+  executionMode: "BOQ",
 };
 
 const rules: ValidationRules<typeof emptyForm> = {
@@ -114,6 +123,7 @@ export function ProjectFormDrawer({ open, onClose, editData }: Props) {
           purchaseLimit:
             editData.purchaseLimit != null ? String(editData.purchaseLimit) : "",
           status: editData.status ?? "active",
+          executionMode: editData.executionMode ?? "BOQ",
         });
       } else {
         setForm(emptyForm);
@@ -197,6 +207,31 @@ export function ProjectFormDrawer({ open, onClose, editData }: Props) {
           <Field label="Status">
             <SelectInput value={form.status} onChange={v => set("status", v)} options={PROJECT_STATUSES} />
             {form.status === "inactive" && <InactiveStatusNotice entityName="Project" />}
+          </Field>
+        </FormRow>
+        <FormRow>
+          <Field
+            label="Execution Mode"
+            span={2}
+            hint={editData?.id ? undefined : "How the whole project is anchored — cannot be changed after creation"}
+          >
+            {editData?.id ? (
+              <>
+                <div className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-600 font-medium flex items-center justify-between">
+                  <span>{EXECUTION_MODES.find((m) => m.value === form.executionMode)?.label ?? form.executionMode}</span>
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">🔒 Locked</span>
+                </div>
+                <p className="mt-1 text-xs text-amber-600">
+                  Execution mode is fixed once a project is created — it anchors the
+                  entire lifecycle (estimation, work orders, DPR and billing), so
+                  switching it would orphan those records. A mode conversion is a
+                  guarded super-admin action, allowed only when the project has no
+                  such transactions.
+                </p>
+              </>
+            ) : (
+              <SelectInput value={form.executionMode} onChange={v => set("executionMode", v)} options={EXECUTION_MODES} />
+            )}
           </Field>
         </FormRow>
         <Field label="Description">

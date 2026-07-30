@@ -8,12 +8,14 @@ import { err as envelopeErr } from "@/lib/http/envelope";
 import { findProjectById } from "@/lib/masters/projects-repository";
 import {
   listPRs,
+  countPRs,
+  prStatusCounts,
   createPR,
   nextPrNumber,
   withPrNumberRetry,
 } from "@/lib/purchase/pr-repository";
 import { procurementByPr } from "@/lib/purchase/procurement-status";
-import { parsePagination } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
 import {
   validatePrLinesAgainstBudget,
   formatBreachMessage,
@@ -40,41 +42,43 @@ export async function GET(req: NextRequest) {
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
 
-  // Pagination is opt-in: `?page=` or `?pageSize=` activates it. Without
-  // those params the route returns the legacy "all rows" shape so any
-  // caller that hasn't migrated yet keeps working.
-  const p = parsePagination(req);
-  const data = await listPRs({
+  const baseOpts = {
     orgId: ctx.orgId,
     projectIds: ctx.projectIds ?? null,
     status: status || undefined,
     projectId: projectId || undefined,
     search: search || undefined,
-    ...(p.paginated ? { take: p.take, skip: p.skip } : {}),
-  });
+  };
 
-  // Attach a rolled-up PO/GRN status per PR so the list can show
-  // procurement tracking ("ordered? / arrived?") without opening each PR.
-  const rows = data as Array<{ id?: string }>;
-  const procByPr = await procurementByPr(
-    ctx.orgId,
-    rows.map((r) => r?.id ?? "").filter(Boolean),
-  );
-  const enriched = rows.map((r) => ({
-    ...r,
-    procurement: (r?.id && procByPr.get(r.id)) || null,
-  }));
-
-  if (p.paginated) {
-    return NextResponse.json({
-      data: enriched,
-      total: enriched.length,
-      page: p.page,
-      pageSize: p.pageSize,
-      hasMore: enriched.length === p.pageSize,
-    });
+  if (searchParams.get("counts") === "1") {
+    const counts = await prStatusCounts(baseOpts);
+    return NextResponse.json({ counts });
   }
-  return NextResponse.json({ data: enriched, total: enriched.length });
+
+  const p = parsePagination(req);
+  const { orderBy } = parseSort(
+    searchParams,
+    ["prNumber", "requestDate", "status", "estimatedTotal", "createdAt"],
+    { field: "createdAt", order: "desc" },
+  );
+  // Each page of PRs is enriched with a rolled-up PO/GRN procurement status
+  // so the list can show "ordered? / arrived?" without opening each PR.
+  const result = await paginateDb(
+    p,
+    async (paging) => {
+      const rows = await listPRs({ ...baseOpts, ...paging, orderBy });
+      const procByPr = await procurementByPr(
+        ctx.orgId,
+        rows.map((r: { id?: string }) => r?.id ?? "").filter(Boolean),
+      );
+      return rows.map((r: { id?: string }) => ({
+        ...r,
+        procurement: (r?.id && procByPr.get(r.id)) || null,
+      }));
+    },
+    () => countPRs(baseOpts),
+  );
+  return NextResponse.json(result);
 }
 
 export async function POST(req: NextRequest) {
@@ -163,6 +167,8 @@ export async function POST(req: NextRequest) {
           isUrgent,
           urgencyJustification: body.urgencyJustification ?? null,
           workCategoryId: body.workCategoryId || null,
+          scopeType: body.scopeType || null,
+          scopeId: body.scopeId || null,
           deliveryLocationId: body.deliveryLocationId || null,
           estimatedTotal: Math.round(estimatedTotal),
           stockCheckSummary,

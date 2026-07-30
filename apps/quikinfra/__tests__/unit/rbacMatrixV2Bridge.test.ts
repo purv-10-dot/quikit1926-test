@@ -3,6 +3,7 @@ import {
   matrixToRevokes,
   revokesToMatrix,
   managedPairs,
+  siblingMenuKeys,
   MENU_TO_RESOURCE,
   type PermissionMatrix,
 } from "@/lib/rbac/matrixV2Bridge";
@@ -125,6 +126,67 @@ describe("round-trip: matrixToRevokes → revokesToMatrix", () => {
   });
 });
 
+// Per-page split (Phase 4): every MASTERS page now owns its OWN resource, so
+// pages are independently grant/revoke-able. Unchecking one page revokes only
+// that page's resource and never touches its neighbours.
+describe("per-page masters resources", () => {
+  it("each masters page maps to its own resource (Labour/Workmen included)", () => {
+    expect(MENU_TO_RESOURCE["master.vendor"]).toBe("construction.master_vendor");
+    expect(MENU_TO_RESOURCE["master.item"]).toBe("construction.master_item");
+    expect(MENU_TO_RESOURCE["master.labour"]).toBe("construction.master_labour");
+    expect(MENU_TO_RESOURCE["master.workman"]).toBe("construction.master_workman");
+    // Projects keeps its own resource; not part of the masters cluster.
+    expect(MENU_TO_RESOURCE["master.project"]).toBe("construction.project");
+  });
+
+  it("organization pages map to their own construction.org_* resources", () => {
+    expect(MENU_TO_RESOURCE["org.company"]).toBe("construction.org_company");
+    expect(MENU_TO_RESOURCE["org.gst"]).toBe("construction.org_gst");
+    expect(MENU_TO_RESOURCE["org.terms"]).toBe("construction.org_terms");
+  });
+
+  it("a masters page is now its OWN only sibling (independent)", () => {
+    expect(siblingMenuKeys("master.vendor")).toEqual(["master.vendor"]);
+    expect(siblingMenuKeys("master.labour")).toEqual(["master.labour"]);
+  });
+
+  it("an unbridged key is its own only sibling", () => {
+    expect(siblingMenuKeys("totally.unknown")).toEqual(["totally.unknown"]);
+  });
+
+  it("unchecking ONE masters page revokes ONLY that page, not its neighbours", () => {
+    const matrix: PermissionMatrix = {
+      "master.vendor":     { add: false, edit: false, delete: false, view: false },
+      "master.item":       { add: true,  edit: true,  delete: true,  view: true },
+      "master.contractor": { add: true,  edit: true,  delete: true,  view: true },
+    };
+    const revokes = matrixToRevokes(matrix);
+    // Vendor's own resource is revoked…
+    expect(revokes).toContainEqual({ resource: "construction.master_vendor", action: "view" });
+    expect(revokes).toContainEqual({ resource: "construction.master_vendor", action: "create" });
+    expect(revokes).toContainEqual({ resource: "construction.master_vendor", action: "edit" });
+    expect(revokes).toContainEqual({ resource: "construction.master_vendor", action: "delete" });
+    // …and Items / Contractors are left completely untouched.
+    expect(revokes.some((r) => r.resource === "construction.master_item")).toBe(false);
+    expect(revokes.some((r) => r.resource === "construction.master_contractor")).toBe(false);
+  });
+
+  it("unchecking one page persists (round-trips false) without affecting others", () => {
+    const matrix: PermissionMatrix = {
+      "master.vendor": { add: false, edit: false, delete: false, view: false },
+      "master.item":   { add: true,  edit: true,  delete: true,  view: true },
+    };
+    const rebuilt = revokesToMatrix(matrixToRevokes(matrix));
+    expect(rebuilt["master.vendor"]).toEqual({
+      add: false, edit: false, delete: false, view: false,
+    });
+    // Items stays fully granted.
+    expect(rebuilt["master.item"]).toEqual({
+      add: true, edit: true, delete: true, view: true,
+    });
+  });
+});
+
 describe("managedPairs", () => {
   it("returns deduped (resource, action) pairs — no duplicates", () => {
     const pairs = managedPairs();
@@ -133,12 +195,26 @@ describe("managedPairs", () => {
     expect(pairs.length).toBeGreaterThan(0);
   });
 
-  it("every pair uses a v2 action and a resource present in MENU_TO_RESOURCE values", () => {
+  it("every pair uses a managed action and a resource present in MENU_TO_RESOURCE values", () => {
     const resources = new Set(Object.values(MENU_TO_RESOURCE));
-    const v2Actions = new Set(["view", "create", "edit", "delete"]);
+    // The matrix now manages the FULL action set per resource, not just the
+    // 4 columns — extra actions (import/export/approve/reverse/lock/receive)
+    // are revoked/granted alongside them. `manage` (settings tier) is excluded.
+    const managedActions = new Set([
+      "view", "create", "edit", "delete",
+      "import", "export", "approve", "reverse", "lock", "receive",
+    ]);
     for (const p of managedPairs()) {
       expect(resources.has(p.resource)).toBe(true);
-      expect(v2Actions.has(p.action)).toBe(true);
+      expect(managedActions.has(p.action)).toBe(true);
     }
+  });
+
+  it("includes extra actions like construction.master_item import/export", () => {
+    const pairs = managedPairs();
+    expect(pairs).toContainEqual({ resource: "construction.master_item", action: "import" });
+    expect(pairs).toContainEqual({ resource: "construction.master_item", action: "export" });
+    // Settings-tier `manage` is never matrix-managed.
+    expect(pairs).not.toContainEqual({ resource: "construction.workflows", action: "manage" });
   });
 });

@@ -13,8 +13,8 @@ export interface RejectionEmailData {
 export function buildRejectionEmail(data: RejectionEmailData): { subject: string; html: string } {
   const coolNote = data.coolingMonths && data.coolingMonths > 0 && data.coolingUntil
     ? alert(
-        "info",
-        `In line with our hiring policy, we're unable to consider a new application from you for the next <strong>${data.coolingMonths} month${data.coolingMonths > 1 ? "s" : ""}</strong> — until <strong>${esc(data.coolingUntil)}</strong>. You're warmly welcome to apply for our openings again after that date.`,
+        "danger",
+        `As per our current hiring policy, there is a <strong>${data.coolingMonths}-month</strong> waiting period before a fresh application can be considered. You are warmly welcome to apply again for any suitable opening <strong>on or after ${esc(data.coolingUntil)}</strong>.`,
         "Please note",
       )
     : "";
@@ -24,9 +24,11 @@ export function buildRejectionEmail(data: RejectionEmailData): { subject: string
     subtitle: `Thank you for your interest in ${esc(data.companyName)}.`,
     accent: "blue",
   })}${para(`Dear <strong>${esc(data.candidateName)}</strong>,`)}${para(
-    `Thank you for taking the time to apply for the <strong>${esc(data.jobTitle)}</strong> role and for sharing your background with us.`,
+    `Thank you for taking the time to apply for the <strong>${esc(data.jobTitle)}</strong> role at ${esc(data.companyName)} and for sharing your background with us.`,
   )}${para(
-    `After careful consideration, we have decided not to move forward with your application at this time. This was a difficult decision — we were genuinely impressed by your experience, and we encourage you to apply for future openings that match your skills.`,
+    `After careful consideration, we've decided not to move forward with your application for this position. Please know this was a difficult decision — we genuinely valued the experience you bring, and this outcome reflects the needs of this specific role rather than your abilities.`,
+  )}${para(
+    `We'd be glad to see you apply again for future openings that match your skills, and we'll keep your profile on record.`,
   )}${coolNote}${para(`We wish you all the very best in your career, and we hope our paths cross again.`)}`;
 
   const html = emailShell({

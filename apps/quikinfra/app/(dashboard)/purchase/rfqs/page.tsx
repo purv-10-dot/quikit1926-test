@@ -12,11 +12,10 @@
 import { toErrorMessage } from "@/lib/api/errors";
 import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, Send, CheckCircle2, GitCompare, FileText } from "lucide-react";
-import { PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer, TabBar } from "@/components/PageShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { DataTable, type ColDef } from "@/components/DataTable";
-import { useRFQs, useIndents, useSubmitRFQ } from "@/hooks/use-approvals";
+import { DataTable } from "@/components/DataTable";
+import { useIndents, useSubmitRFQ } from "@/hooks/use-approvals";
 import { useMenuActions } from "@/hooks/use-permissions";
 import { QuickCreateDrawer, type QuickCreateConfig } from "@/components/QuickCreateDrawer";
 import dynamic from "next/dynamic";
@@ -41,92 +40,20 @@ const CompareQuotesModal = dynamic(
 import { ListChecks } from "lucide-react";
 import { GroupedMaterialSelect, GROUPED_MATERIAL_OTHERS_GROUP_ID } from "@/components/GroupedMaterialSelect";
 import { WhitebooksVendorSelect } from "@/components/WhitebooksVendorSelect";
-import { useProjects, useItems, useItemGroups, useVendors, useTermsConditions } from "@/hooks/use-masters";
+import { useProjects, useItemGroups, useVendors, useTermsConditions } from "@/hooks/use-masters";
 import { useQueryClient } from "@tanstack/react-query";
-import { buildTabCounts, filterByTab, type TabSpec } from "@/lib/tab-counts";
+import { useServerTabList } from "@/hooks/use-server-tab-list";
 import { buildRfqLinesFromIndent } from "@/lib/purchase/rfq-line-seed";
-
-const STATUS_TABS: TabSpec[] = [
-  { key: "all", label: "All" },
-  { key: "draft", label: "Draft" },
-  { key: "pending_approval", label: "Pending" },
-  { key: "approved", label: "Approved" },
-  { key: "sent", label: "Sent" },
-  { key: "responses_received", label: "Responses" },
-  { key: "evaluated", label: "Evaluated" },
-  { key: "closed", label: "Closed" },
-];
-
-interface RfqVendor {
-  id: string;
-  vendorId?: string;
-  vendorName: string;
-  email?: string;
-  quotedRates?: Array<{ lineId: string; rate: string; remarks?: string }>;
-}
-
-interface RfqLine {
-  id?: string;
-  lineId?: string;
-  itemId?: string;
-  itemName?: string;
-  itemCode?: string;
-  quantity?: number | string;
-  uomCode?: string;
-}
-
-interface RfqRow {
-  [key: string]: unknown;
-  id: string;
-  rfqNumber?: string;
-  sourceIndentNumber?: string;
-  sourceIndentId?: string;
-  projectName?: string;
-  dueDate?: string;
-  lineCount?: number;
-  status?: string;
-  vendors?: RfqVendor[];
-  lines?: RfqLine[];
-}
-
-interface TermRow {
-  id: string;
-  status?: string;
-  applicableTo?: string;
-  title?: string;
-  body?: string;
-  isDefault?: boolean;
-}
-
-interface ProjectRow {
-  id: string;
-  name?: string;
-  address?: string;
-  city?: string;
-  state?: string;
-  pincode?: string;
-}
-
-interface ItemRow {
-  id: string;
-  name?: string;
-  code?: string;
-  uomCode?: string;
-  groupId?: string;
-  groupName?: string;
-}
-
-interface IndentLine {
-  id?: string;
-  lineId?: string;
-  itemId?: string;
-  itemCode?: string;
-  itemName?: string;
-  qtyRequested?: number | string;
-  indentedQty?: number | string;
-  quantity?: number | string;
-  uomCode?: string;
-}
+import { STATUS_TABS } from "./lib/constants";
+import { buildRfqColumns } from "./components/columns";
+import type {
+  RfqVendor,
+  RfqLine,
+  RfqRow,
+  TermRow,
+  ProjectRow,
+  IndentLine,
+} from "./lib/types";
 
 export default function RFQsPage() {
   const router = useRouter();
@@ -176,14 +103,29 @@ export default function RFQsPage() {
     lines: RfqLine[];
   } | null>(null);
 
-  const { data: result } = useRFQs({ status: "all", search: "" });
   const submitMutation = useSubmitRFQ();
-  const allRows = result?.data ?? [];
-  const tabs = useMemo(() => buildTabCounts(allRows, STATUS_TABS), [allRows]);
-  const data = useMemo(
-    () => filterByTab(allRows, activeTab, STATUS_TABS),
-    [allRows, activeTab],
-  );
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sort, setSort] = useState<{ by?: string; order?: "asc" | "desc" }>({
+    by: "rfqDate",
+    order: "desc",
+  });
+  const {
+    items: data,
+    total,
+    page,
+    pageSize,
+    setPage,
+    setPageSize,
+    tabs,
+    isLoading,
+  } = useServerTabList<RfqRow>("rfqs", "/api/purchase/rfqs", {
+    activeTab,
+    tabs: STATUS_TABS,
+    search: searchQuery,
+    sortBy: sort.by,
+    sortOrder: sort.order,
+    initialPageSize: 25,
+  });
 
   const doSubmit = async () => {
     if (!submitTarget) return;
@@ -198,7 +140,6 @@ export default function RFQsPage() {
   };
 
   const { data: projectsData } = useProjects();
-  const { data: itemsData } = useItems();
   const { data: itemGroupsData } = useItemGroups();
   const { data: vendorsData } = useVendors();
   // T&C templates — show ones scoped to RFQ, plus "general" templates
@@ -259,40 +200,12 @@ export default function RFQsPage() {
     [p?.address, p?.city, p?.state, p?.pincode]
       .filter((x) => x && String(x).trim())
       .join(", ");
-  const allItems = itemsData?.data ?? [];
   const itemGroups = useMemo(() => {
     const raw = itemGroupsData?.data ?? [];
     return raw.filter(
       (g) => (g?.status ?? "active").toLowerCase() !== "inactive",
     );
   }, [itemGroupsData]);
-  const itemOptions = allItems.map((i) => ({
-    value: i.id,
-    label: i.name,
-  }));
-  // Indexed lookup so the Material picker onChange can pull UOM off
-  // the item master in O(1), mirroring the Indent form.
-  const itemById = useMemo(() => {
-    const map = new Map<string, ItemRow>();
-    for (const i of allItems) map.set(i.id, i);
-    return map;
-  }, [allItems]);
-
-  const resolveItemMatch = useCallback(
-    (l: IndentLine) =>
-      (l.itemCode && allItems.find((it) => it.code === l.itemCode)) ||
-      (l.itemName && allItems.find((it) => it.name === l.itemName)) ||
-      (l.itemId && allItems.find((it) => it.id === l.itemId)) ||
-      null,
-    [allItems],
-  );
-
-  const prefillGroupIdForMatch = (match: ItemRow | null | undefined) => {
-    const gid = String(match?.groupId ?? "").trim();
-    const gname = String(match?.groupName ?? "").trim();
-    if (!gid || !gname) return GROUPED_MATERIAL_OTHERS_GROUP_ID;
-    return gid;
-  };
 
   const allVendors = vendorsData?.data ?? [];
   // Only active vendors are selectable (inactive/deleted/blacklisted excluded).
@@ -355,14 +268,15 @@ export default function RFQsPage() {
           // stuck reading "Not ordered".
           const lines = buildRfqLinesFromIndent(
             (indent.lines ?? []) as IndentLine[],
-            (l: IndentLine) => {
-              const match = resolveItemMatch(l);
-              return {
-                itemId: match?.id ?? "",
-                prefillGroupId: prefillGroupIdForMatch(match),
-                uomCode: match?.uomCode ?? "",
-              };
-            },
+            // Prefill from the indent line's own denormalized fields — the
+            // lazy picker no longer holds the full item master, so group
+            // auto-scroll is dropped (itemId + label stay correct).
+            (l: IndentLine) => ({
+              itemId: l.itemId ?? "",
+              itemName: l.itemName ?? "",
+              prefillGroupId: GROUPED_MATERIAL_OTHERS_GROUP_ID,
+              uomCode: l.uomCode ?? "",
+            }),
           );
           return { fields, lines };
         },
@@ -554,10 +468,9 @@ export default function RFQsPage() {
             const pickerItems: ItemPickerItem[] = primaryLines
               .map((pl, idx: number) => {
                 if (!pl.itemId) return null;
-                const master = itemById.get(pl.itemId);
                 return {
                   id: `row-${idx}`,
-                  label: master?.name ?? pl.itemId,
+                  label: pl.itemName ?? pl.itemId,
                   sublabel: [
                     pl.quantity ? `Qty ${pl.quantity}` : null,
                     pl.uomCode ?? null,
@@ -602,7 +515,7 @@ export default function RFQsPage() {
                 className={`w-full inline-flex items-center justify-between gap-2 px-2 py-1.5 rounded border text-xs ${
                   pickerItems.length === 0
                     ? "border-gray-200 text-gray-400 bg-gray-50 cursor-not-allowed"
-                    : "border-gray-300 hover:border-orange-400 hover:bg-orange-50 text-gray-700"
+                    : "border-gray-300 hover:border-accent-400 hover:bg-accent-50 text-gray-700"
                 }`}
               >
                 <span className="inline-flex items-center gap-1.5 truncate">
@@ -646,19 +559,21 @@ export default function RFQsPage() {
           width: "wide",
           render: (line, update: (patch: Record<string, unknown>) => void) => (
             <GroupedMaterialSelect
+              lazy
               value={line.itemId ?? ""}
+              selectedLabel={line.itemName ?? ""}
               onChange={(v) => {
-                if (!v) {
-                  update({ itemId: "", uomCode: "" });
-                  return;
-                }
-                const item = itemById.get(v);
-                const patch: Record<string, string> = { itemId: v };
-                if (item?.uomCode) patch.uomCode = String(item.uomCode);
+                if (!v) update({ itemId: "", itemName: "", uomCode: "" });
+                else update({ itemId: v });
+              }}
+              onSelect={(item) => {
+                if (!item) return;
+                const patch: Record<string, string> = { itemName: item.name ?? "" };
+                if (item.uomCode) patch.uomCode = String(item.uomCode);
                 update(patch);
               }}
-              items={allItems}
-              groups={itemGroups.map((g) => ({ id: g.id, name: g.name, status: g.status }))}
+              items={[]}
+              groups={itemGroups.map((g) => ({ id: g.id, name: g.name, status: g.status, itemCount: g.itemCount }))}
               initialGroupId={line.prefillGroupId ?? null}
               placeholder="Select material…"
               size="sm"
@@ -681,269 +596,18 @@ export default function RFQsPage() {
     },
   };
 
-  const columns: ColDef<RfqRow>[] = [
-    {
-      key: "rfqNumber",
-      label: "RFQ No",
-      sortable: true,
-      searchable: true,
-      render: (row) => (
-        <span
-          className="text-orange-600 cursor-pointer hover:underline font-medium"
-          onClick={() => router.push(`/purchase/rfqs/${row.id}`)}
-        >
-          {row.rfqNumber}
-        </span>
-      ),
-    },
-    {
-      key: "sourceIndentNumber",
-      label: "Source Indent",
-      sortable: true,
-      searchable: true,
-      render: (row) =>
-        row.sourceIndentNumber && row.sourceIndentId ? (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setPeekTarget({ type: "indent", id: row.sourceIndentId ?? "" });
-            }}
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 text-[11px] font-medium hover:bg-orange-100 transition-colors"
-            title="View Indent details"
-          >
-            {row.sourceIndentNumber}
-          </button>
-        ) : (
-          <span className="text-[11px] text-gray-400 italic">—</span>
-        ),
-    },
-    { key: "projectName", label: "Project", sortable: true, searchable: true },
-    { key: "dueDate", label: "Due Date", type: "date", sortable: true },
-    {
-      key: "lineCount",
-      label: "Items",
-      type: "number",
-      sortable: true,
-      render: (row) => `${row.lineCount ?? 0} items`,
-    },
-    {
-      // Vendors column — per-vendor status row. Each vendor gets its
-      // own line with an "Add Quote" link that flips to a green
-      // "Quoted" badge the moment rates are saved for that vendor.
-      // Progress pill on top gives a quick glance; overflow beyond 4
-      // vendors collapses to "+N more" (hover to see the names).
-      key: "_vendors",
-      label: "Vendors",
-      width: "190px",
-      render: (row) => {
-        const vendors: RfqVendor[] = Array.isArray(row.vendors) ? row.vendors : [];
-        if (vendors.length === 0) {
-          return <span className="text-[11px] text-gray-400 italic">—</span>;
-        }
-        const quotedCount = vendors.filter(
-          (v) => Array.isArray(v.quotedRates) && v.quotedRates.length > 0,
-        ).length;
-        const total = vendors.length;
-        const allQuoted = quotedCount === total;
-        const MAX_VISIBLE = 4;
-        const visible = vendors.slice(0, MAX_VISIBLE);
-        const overflow = total - visible.length;
-
-        return (
-          <div className="flex flex-col gap-1.5">
-            <span
-              className={
-                allQuoted
-                  ? "self-start inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-700 px-2 py-0.5 text-[10px] font-semibold"
-                  : "self-start inline-flex items-center gap-1 rounded-full bg-gray-100 text-gray-600 px-2 py-0.5 text-[10px] font-semibold"
-              }
-            >
-              {allQuoted && <CheckCircle2 className="w-3 h-3" />}
-              {quotedCount}/{total} quoted
-            </span>
-            <ul className="space-y-0.5">
-              {visible.map((v, i) => {
-                const hasQuoted =
-                  Array.isArray(v.quotedRates) && v.quotedRates.length > 0;
-                const name =
-                  v.vendorName || v.vendorId || `Vendor ${i + 1}`;
-                const tip = v.email ? `${name} \u2014 ${v.email}` : name;
-                return (
-                  <li
-                    key={v.id ?? v.vendorId ?? i}
-                    title={`${tip} \u00B7 ${hasQuoted ? "Quoted" : "Pending"}`}
-                    className="flex items-center gap-2 text-xs"
-                  >
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span
-                        className={
-                          hasQuoted
-                            ? "w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"
-                            : "w-1.5 h-1.5 rounded-full bg-gray-300 shrink-0"
-                        }
-                      />
-                      <span
-                        className={
-                          hasQuoted
-                            ? "text-gray-800 truncate max-w-[100px]"
-                            : "text-gray-500 truncate max-w-[100px]"
-                        }
-                      >
-                        {name}
-                      </span>
-                    </div>
-                    {hasQuoted ? (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setAddQuoteCtx({
-                            rfqId: row.id,
-                            rfqNumber: row.rfqNumber ?? "",
-                            vendors,
-                            lines: Array.isArray(row.lines) ? row.lines : [],
-                            initialVendorRowId: v.id,
-                          });
-                        }}
-                        title="Click to edit this quote"
-                        className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-emerald-600 hover:text-emerald-700 hover:underline shrink-0"
-                      >
-                        <CheckCircle2 className="w-3 h-3" />
-                        Quoted
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setAddQuoteCtx({
-                            rfqId: row.id,
-                            rfqNumber: row.rfqNumber ?? "",
-                            vendors,
-                            lines: Array.isArray(row.lines) ? row.lines : [],
-                            initialVendorRowId: v.id,
-                          });
-                        }}
-                        className="text-[11px] text-orange-600 hover:text-orange-700 hover:underline font-medium shrink-0"
-                      >
-                        Add Quote
-                      </button>
-                    )}
-                  </li>
-                );
-              })}
-              {overflow > 0 && (
-                <li
-                  title={vendors
-                    .slice(MAX_VISIBLE)
-                    .map((v) => v.vendorName || v.vendorId || "Vendor")
-                    .join(", ")}
-                  className="text-[11px] text-gray-400 italic pl-3.5"
-                >
-                  +{overflow} more
-                </li>
-              )}
-            </ul>
-          </div>
-        );
-      },
-    },
-    {
-      key: "status",
-      label: "Status",
-      type: "select",
-      options: [
-        "draft",
-        "pending_approval",
-        "approved",
-        "sent",
-        "responses_received",
-        "evaluated",
-        "closed",
-        "rejected",
-      ],
-      sortable: true,
-      render: (row) => <StatusChip status={row.status ?? ""} />,
-    },
-    {
-      key: "_actions",
-      label: "Actions",
-      width: "210px",
-      sortable: false,
-      align: "right",
-      render: (row) => {
-        const rowVendors: RfqVendor[] = Array.isArray(row.vendors) ? row.vendors : [];
-        const anyQuoted = rowVendors.some(
-          (v) => Array.isArray(v.quotedRates) && v.quotedRates.length > 0,
-        );
-        const isDraft = row.status === "draft";
-        return (
-          <div className="flex items-center justify-end gap-1.5">
-            {anyQuoted && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setCompareCtx({
-                    rfqId: row.id,
-                    rfqNumber: row.rfqNumber ?? "",
-                    projectName: row.projectName ?? "",
-                    vendors: rowVendors,
-                    lines: Array.isArray(row.lines) ? row.lines : [],
-                  });
-                }}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-orange-700 bg-orange-50 border border-orange-200 hover:bg-orange-100"
-                title="Compare vendor quotes"
-              >
-                <GitCompare className="w-3.5 h-3.5" />
-                Compare
-              </button>
-            )}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                router.push(`/purchase/rfqs/${row.id}`);
-              }}
-              className="p-1.5 rounded hover:bg-gray-100 text-gray-500"
-              title="View"
-            >
-              <Eye className="w-4 h-4" />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                window.open(
-                  `/api/purchase/rfqs/${row.id}/preview/pdf`,
-                  "_blank",
-                  "noopener",
-                );
-              }}
-              className="p-1.5 rounded hover:bg-orange-50 text-gray-500 hover:text-orange-600"
-              title="View PDF"
-            >
-              <FileText className="w-4 h-4" />
-            </button>
-            {isDraft && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSubmitError(null);
-                  setSubmitTarget(row);
-                }}
-                className="p-1.5 rounded hover:bg-gray-100 text-orange-500"
-                title="Submit for Approval"
-              >
-                <Send className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-        );
-      },
-    },
-  ];
+  const columns = buildRfqColumns({
+    router,
+    setPeekTarget,
+    setAddQuoteCtx,
+    setCompareCtx,
+    setSubmitError,
+    setSubmitTarget,
+  });
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Request for Quotation (RFQ)"
         subtitle="Compare vendor quotes for best pricing and terms"
@@ -953,7 +617,7 @@ export default function RFQsPage() {
         ]}
       />
       <TabBar tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
-      <PageContainer>
+      <PageContainer fill>
         <DataTable
           id="purchase-rfqs"
           columns={columns}
@@ -961,8 +625,18 @@ export default function RFQsPage() {
           onAdd={canAdd ? () => setDrawerOpen(true) : undefined}
           addLabel="New RFQ"
           historyEntityType="rfq"
+          loading={isLoading}
+          serverMode
+          serverTotal={total}
+          serverPage={page}
+          serverPageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          onSearchChange={setSearchQuery}
+          onSortChange={(k, d) => setSort({ by: k, order: d })}
         />
       </PageContainer>
+      </PageFrame>
       <QuickCreateDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}

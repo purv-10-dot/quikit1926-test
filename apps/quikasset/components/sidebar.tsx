@@ -142,9 +142,14 @@ export function Sidebar({ permissions, isAdmin, displayName, roleName, mobileOpe
       >
         <div className="flex h-14 items-center justify-between border-b border-white/10 px-4">
           <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/15">
-              <Package className="h-4 w-4" />
-            </div>
+            {/* Fixed dark (accent-800) surface, so we always use the light
+                (white-badge) monogram — the dark badge would blend in. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/brand/quikasset-light.svg"
+              alt="QuikAsset"
+              className="h-7 w-7 rounded-lg object-contain"
+            />
             <div>
               <p className="text-sm font-bold leading-tight">QuikAsset</p>
               <p className="text-[10px] leading-tight text-white/50">Asset management</p>

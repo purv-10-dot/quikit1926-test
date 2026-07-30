@@ -115,6 +115,8 @@ export interface ListLogsOptions {
   fromDate?: string;
   toDate?: string;
   projectIds?: string[];
+  search?: string;
+  orderBy?: Prisma.CnEquipmentLogOrderByWithRelationInput[];
   take?: number;
   skip?: number;
 }
@@ -140,6 +142,15 @@ function buildWhere(opts: ListLogsOptions): Prisma.CnEquipmentLogWhereInput {
     if (opts.toDate) range.lte = new Date(opts.toDate);
     where.logDate = range;
   }
+  const search = opts.search?.trim();
+  if (search) {
+    where.OR = [
+      { equipment: { code: { contains: search, mode: "insensitive" } } },
+      { equipment: { name: { contains: search, mode: "insensitive" } } },
+      { operatorName: { contains: search, mode: "insensitive" } },
+      { remarks: { contains: search, mode: "insensitive" } },
+    ];
+  }
   return where;
 }
 
@@ -149,7 +160,7 @@ export async function listEquipmentLogs(opts: ListLogsOptions) {
     db.cnEquipmentLog.findMany({
       where,
       include: logInclude,
-      orderBy: [{ logDate: "desc" }, { createdAt: "desc" }],
+      orderBy: opts.orderBy ?? [{ logDate: "desc" }, { createdAt: "desc" }],
       ...(opts.take != null ? { take: opts.take, skip: opts.skip ?? 0 } : {}),
     }),
     db.cnEquipmentLog.count({ where }),

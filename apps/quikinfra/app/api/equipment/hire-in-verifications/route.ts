@@ -2,20 +2,46 @@ import { toErrorMessage } from "@/lib/api/errors";
 import { requireEquipmentAction } from "@/lib/auth/requireEquipmentAction";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
+import { parsePagination, parseSort } from "@/lib/http/pagination";
 import {
   createHireInVerification,
   listHireInVerifications,
 } from "@/lib/equipment/hire-rent-service";
 import { NextRequest, NextResponse } from "next/server";
 
-export async function GET() {
+const HIRE_IN_SORT_COLUMNS = [
+  "periodFrom",
+  "createdAt",
+  "status",
+] as const;
+
+export async function GET(req: NextRequest) {
   const ctxOrResp = await requireEquipmentAction(
     "construction.equipment_hire_rent",
     "view",
   );
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
 
-  const result = await listHireInVerifications({ orgId: ctxOrResp.orgId });
+  const search = new URL(req.url).searchParams.get("search") ?? "";
+  const p = parsePagination(req);
+  const sort = parseSort(req, HIRE_IN_SORT_COLUMNS, {
+    field: "periodFrom",
+    order: "desc",
+  });
+  const result = await listHireInVerifications({
+    orgId: ctxOrResp.orgId,
+    search: search || undefined,
+    orderBy: sort.orderBy as never,
+    ...(p.paginated ? { take: p.take, skip: p.skip } : {}),
+  });
+  if (p.paginated) {
+    return NextResponse.json({
+      ...result,
+      page: p.page,
+      pageSize: p.pageSize,
+      hasMore: p.skip + result.data.length < result.total,
+    });
+  }
   return NextResponse.json(result);
 }
 

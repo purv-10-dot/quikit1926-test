@@ -97,7 +97,7 @@ export async function listInspections(
 ): Promise<InspectionRecord[]> {
   const rows = await db.cnQCInspection.findMany({
     where: buildWhere(opts),
-    orderBy: { inspectionDate: "desc" },
+    orderBy: [{ inspectionDate: "desc" }, { createdAt: "desc" }],
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
   });
@@ -108,6 +108,30 @@ export async function countInspections(
   opts: Pick<ListInspectionsOptions, "orgId" | "search" | "projectId" | "projectIds">,
 ): Promise<number> {
   return db.cnQCInspection.count({ where: buildWhere(opts) });
+}
+
+/** KPI tile counts (Total / Passed / Failed / Pending) grouped by result. */
+export async function inspectionResultCounts(
+  opts: Pick<ListInspectionsOptions, "orgId" | "search" | "projectId" | "projectIds">,
+): Promise<{ total: number; passed: number; failed: number; pending: number }> {
+  const groups = await db.cnQCInspection.groupBy({
+    by: ["result"],
+    where: buildWhere(opts) as never,
+    _count: { _all: true },
+  });
+  let total = 0;
+  let passed = 0;
+  let failed = 0;
+  let pending = 0;
+  for (const g of groups) {
+    const c = g._count._all;
+    total += c;
+    const r = (g.result ?? "").toLowerCase();
+    if (r === "pass") passed += c;
+    else if (r === "fail") failed += c;
+    else if (r === "conditional") pending += c;
+  }
+  return { total, passed, failed, pending };
 }
 
 export async function findInspectionById(

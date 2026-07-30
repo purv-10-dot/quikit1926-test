@@ -31,10 +31,9 @@ import {
 const auth = withOrgAuthForResource("construction.users");
 
 // The 4 permission pairs that unlock Settings (Users / Roles / Workflows).
-// Mirrors the dedicated role-swap route (/api/org/users/[id]/role) and the
-// invite flow so "Grant Settings access" behaves identically no matter which
-// screen the admin saved from. Written as additive grants (revoke=false) so
-// they survive the sub-admin settings-strip in getTenantContext.
+// Mirrors the invite flow so "Grant Settings access" behaves identically no
+// matter which screen the admin saved from. Written as additive grants
+// (revoke=false) so they survive the sub-admin settings-strip in getTenantContext.
 const SETTINGS_PERMS = [
   { resource: "construction.settings", action: "manage" },
   { resource: "construction.users", action: "manage" },
@@ -495,8 +494,12 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
   // actually hand out access, matching what the green checkboxes imply and
   // staying consistent with the Edit-User module flow (applyModuleRevokes).
   //
-  // Skipped for admin role — admins bypass via wildcards anyway.
-  if (touchingMatrix && !isAdminUserType && authUserId) {
+  // Runs for admin-role users too. Only the CENTRAL admin truly bypasses via
+  // the "*" wildcard (and its matrix is locked read-only in the UI). An
+  // app-level admin invited into the org ("sub-admin") gets concrete keys
+  // minus revokes, so the matrix MUST be able to save for them — otherwise
+  // ticking a page here silently did nothing and reverted on reload.
+  if (touchingMatrix && authUserId) {
     try {
       const desiredRevokes = matrixToRevokes(matrixIncoming ?? null);
       const revokedSet = new Set(

@@ -217,7 +217,7 @@ export default function ComparativeStatementDetailPage() {
         <div className="min-w-0">
           <h1 className="text-xl font-semibold text-gray-900">
             Comparative Statement{" "}
-            <span className="text-orange-600 font-medium">
+            <span className="text-accent-600 font-medium">
               &mdash; Comparison Qty Wise
             </span>
           </h1>
@@ -237,7 +237,7 @@ export default function ComparativeStatementDetailPage() {
                 ? "Create a PO for the shortlisted vendor"
                 : "Shortlist a vendor first"
             }
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-gradient-to-b from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 shadow-brand active:translate-y-[1px] transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-gradient-to-b from-accent-500 to-accent-600 hover:from-accent-600 hover:to-accent-700 shadow-brand active:translate-y-[1px] transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
           >
             <FileText className="w-4 h-4" /> Create PO
           </button>
@@ -256,7 +256,7 @@ export default function ComparativeStatementDetailPage() {
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-6 py-4 mb-4 flex items-center justify-between">
         <div>
           <div className="text-[11px] text-gray-500">Quotation Registration No</div>
-          <div className="text-sm font-semibold text-gray-900 font-mono mt-0.5">
+          <div className="text-sm font-semibold text-gray-900 mt-0.5">
             {rfq.rfqNumber ?? "—"}
           </div>
         </div>
@@ -325,7 +325,7 @@ export default function ComparativeStatementDetailPage() {
       {/* Item-wise comparison */}
       <div className="flex items-center justify-between mb-3 mt-2">
         <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-          <span className="w-1 h-4 rounded-full bg-gradient-to-b from-orange-500 to-orange-600" />
+          <span className="w-1 h-4 rounded-full bg-gradient-to-b from-accent-500 to-accent-600" />
           Item-wise Comparison
         </h2>
         <span className="text-[11px] text-gray-500">
@@ -457,7 +457,7 @@ export default function ComparativeStatementDetailPage() {
                 rows={4}
                 autoFocus
                 placeholder="e.g. L1 vendor's delivery lead time exceeds the site schedule; L2 can deliver within the required window."
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500 resize-none"
               />
               <p
                 className={`text-[11px] tabular-nums mt-1 text-right ${
@@ -490,7 +490,7 @@ export default function ComparativeStatementDetailPage() {
                     setPerLineSelection({});
                   }
                 }}
-                className="px-4 py-1.5 rounded-lg text-sm font-semibold text-white bg-orange-600 hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-1.5 rounded-lg text-sm font-semibold text-white bg-accent-600 hover:bg-accent-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Confirm selection
               </button>
@@ -656,7 +656,7 @@ function VendorLineCard({
             step="0.01"
             value={offeredQty}
             onChange={(e) => onOfferedQtyChange(e.target.value)}
-            className="w-20 px-1.5 py-0.5 rounded border border-gray-200 text-xs text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-orange-500"
+            className="w-20 px-1.5 py-0.5 rounded border border-gray-200 text-xs text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-accent-500"
           />
         </div>
       </div>

@@ -38,7 +38,7 @@ export function ProcurementCells({
                   router.push(`/purchase/orders/${po.id}`);
                 }}
                 title={`Open ${po.poNumber}`}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 text-[11px] font-medium whitespace-nowrap hover:bg-orange-100 transition-colors"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-accent-50 text-accent-700 text-[11px] font-medium whitespace-nowrap hover:bg-accent-100 transition-colors"
               >
                 <span>{po.poNumber}</span>
               </button>

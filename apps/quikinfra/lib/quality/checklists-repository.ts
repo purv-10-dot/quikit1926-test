@@ -56,7 +56,7 @@ export async function listChecklists(
 ): Promise<ChecklistRecord[]> {
   const rows = await db.cnSafetyChecklist.findMany({
     where: buildWhere(opts),
-    orderBy: { checklistDate: "desc" },
+    orderBy: [{ checklistDate: "desc" }, { createdAt: "desc" }],
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
   });

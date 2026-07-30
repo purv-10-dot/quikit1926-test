@@ -8,6 +8,7 @@ import { Modal } from "@/components/hrms/modal";
 import { FileCheck2, Clock, CheckCircle2, XCircle, Inbox, Paperclip, Filter as FilterIcon, ChevronRight, ChevronDown, User } from "lucide-react";
 import { clsx } from "clsx";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
+import { PageBackground } from "@/components/hrms/page-background";
 
 const DOC_EXPORT_COLUMNS = [
   { header: "Candidate", key: "candidate", width: 22 },
@@ -130,6 +131,7 @@ export default function DocumentReviewQueue() {
       qc.invalidateQueries({ queryKey: ["doc-reviews"] });
       setDecision(null); setReason("");
     },
+    onError: (e: unknown) => toast.error("Action failed", e instanceof Error ? e.message : undefined),
   });
 
   const stats = {
@@ -140,6 +142,8 @@ export default function DocumentReviewQueue() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-start justify-between mb-5 gap-3 flex-wrap">
         <div className="flex items-start gap-3">
           <FileCheck2 size={28} className="text-[#22c55e] mt-1.5" />

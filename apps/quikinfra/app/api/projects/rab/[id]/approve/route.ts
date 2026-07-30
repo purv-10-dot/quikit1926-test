@@ -173,7 +173,7 @@ export async function POST(
     if (isFinalApprove) {
       const boqItemIds = (rab.lines ?? [])
         .map((l) => l.boqItemId)
-        .filter(Boolean);
+        .filter((v): v is string => !!v);
       if (boqItemIds.length) {
         const boqRows = await db.cnBOQItemV2.findMany({
           where: { id: { in: boqItemIds }, orgId: ctx.orgId, projectId: rab.projectId },
@@ -212,7 +212,7 @@ export async function POST(
           for (const line of rab.lines ?? []) {
             const qty = Number(line.currentQty?.toString() ?? "0");
             if (qty <= 0) continue;
-            const boqNo = boqNoById.get(line.boqItemId);
+            const boqNo = line.boqItemId ? boqNoById.get(line.boqItemId) : null;
             if (!boqNo) continue;
 
             await boqService.applyRABBillingTxn(tx, ctx, rab.projectId, boqNo, qty, {

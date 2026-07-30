@@ -4,7 +4,7 @@ import { toErrorMessage } from "@/lib/api/errors";
 import { useState } from "react";
 import { Users } from "lucide-react";
 import { MasterListPage, type MasterColumnDef } from "@/components/MasterListPage";
-import { useDepartments, useCreateDepartment, useUpdateDepartment, useDeleteDepartment } from "@/hooks/use-masters";
+import { useCreateDepartment, useUpdateDepartment, useDeleteDepartment } from "@/hooks/use-masters";
 import { FormDrawer, FormSection, FormRow, Field, TextInput, SelectInput, InactiveStatusNotice } from "@/components/FormDrawer";
 import dynamic from "next/dynamic";
 import type { ImportFieldDef } from "@/components/ImportDataDrawer";
@@ -48,7 +48,6 @@ const rules: ValidationRules<typeof emptyForm> = {
 };
 
 export default function DepartmentsPage() {
-  const { data: result, isLoading } = useDepartments();
   const createMutation = useCreateDepartment();
   const updateMutation = useUpdateDepartment();
   const deleteMutation = useDeleteDepartment();
@@ -107,7 +106,13 @@ export default function DepartmentsPage() {
     <>
       <MasterListPage title="Departments" entityName="Department" permissionUrl="/masters/departments" columns={columns}
         showStatusTabs
-        data={result?.data ?? []} total={result?.total ?? 0} isLoading={isLoading}
+        infinite={{
+          queryKey: "departments-infinite",
+          endpoint: "/api/masters/departments",
+          pageSize: 25,
+          defaultSortBy: "createdAt",
+          defaultSortOrder: "desc",
+        }}
         canImport canExport
         historyEntityType="department"
         onImport={() => setImportOpen(true)}
@@ -118,7 +123,7 @@ export default function DepartmentsPage() {
           <>
             Delete department{" "}
             <span className="font-semibold text-gray-900">“{item.name}”</span>
-            {item.code ? <> (<span className="font-mono">{item.code}</span>)</> : null}?
+            {item.code ? <> (<span className="">{item.code}</span>)</> : null}?
             <br />
             It will be removed from the list. To keep a department but pause it,
             set its status to Inactive instead — those stay under the Inactive tab.

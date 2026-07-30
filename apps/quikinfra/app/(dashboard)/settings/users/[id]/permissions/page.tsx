@@ -34,6 +34,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import {
+  PageFrame,
   PageHeader,
   PageContainer,
   PrimaryButton,
@@ -52,6 +53,7 @@ import {
   type MenuItem,
 } from "@/lib/rbac/menu-catalog";
 import { getUserTypeDescriptor } from "@/lib/rbac/user-types";
+import { siblingMenuKeys } from "@/lib/rbac/matrixV2Bridge";
 
 /**
  * Icon + color mapping for the four action columns. Picked so a green
@@ -160,17 +162,39 @@ export default function UserPermissionMatrixPage() {
     },
   });
 
+  // Pages that share one v2 resource (e.g. every MASTERS page →
+  // construction.masters) cannot be granted/revoked independently — the
+  // permission store is resource-level. So a toggle fans out to ALL pages
+  // sharing the resource. Without this, unchecking a single page wrote no
+  // revoke (matrixToRevokes only revokes a shared resource when EVERY page
+  // on it is denied) and the cell reverted to checked on reload.
   const toggleCell = (menuKey: string, action: MatrixAction) => {
     if (locked) return; // central admin matrix is read-only
     const item = MENU_CATALOG.find((m) => m.key === menuKey);
     if (!item || !item.supports[action]) return; // unsupported cell stays off
-    setMatrix((prev) => ({
-      ...prev,
-      [menuKey]: {
-        ...prev[menuKey],
-        [action]: !prev[menuKey]?.[action],
-      },
-    }));
+    const nextValue = !matrix[menuKey]?.[action];
+    const keys = siblingMenuKeys(menuKey);
+    setMatrix((prev) => {
+      const next = { ...prev };
+      for (const k of keys) {
+        const sib = MENU_CATALOG.find((m) => m.key === k);
+        if (!sib || !sib.supports[action]) continue; // skip pages lacking it
+        const row = { ...next[k], [action]: nextValue };
+        // View is a prerequisite for any action: you can't add/edit/delete a
+        // page you can't see. So enabling add/edit/delete auto-enables view,
+        // and disabling view clears add/edit/delete.
+        if (nextValue && action !== "view" && sib.supports.view) {
+          row.view = true;
+        }
+        if (!nextValue && action === "view") {
+          if (sib.supports.add) row.add = false;
+          if (sib.supports.edit) row.edit = false;
+          if (sib.supports.delete) row.delete = false;
+        }
+        next[k] = row;
+      }
+      return next;
+    });
     setDirty(true);
   };
 
@@ -178,15 +202,21 @@ export default function UserPermissionMatrixPage() {
     if (locked) return; // central admin matrix is read-only
     const item = MENU_CATALOG.find((m) => m.key === menuKey);
     if (!item) return;
-    setMatrix((prev) => ({
-      ...prev,
-      [menuKey]: {
-        add: item.supports.add && value,
-        edit: item.supports.edit && value,
-        delete: item.supports.delete && value,
-        view: item.supports.view && value,
-      },
-    }));
+    const keys = siblingMenuKeys(menuKey);
+    setMatrix((prev) => {
+      const next = { ...prev };
+      for (const k of keys) {
+        const sib = MENU_CATALOG.find((m) => m.key === k);
+        if (!sib) continue;
+        next[k] = {
+          add: sib.supports.add && value,
+          edit: sib.supports.edit && value,
+          delete: sib.supports.delete && value,
+          view: sib.supports.view && value,
+        };
+      }
+      return next;
+    });
     setDirty(true);
   };
 
@@ -194,6 +224,28 @@ export default function UserPermissionMatrixPage() {
 
   const grouped = useMemo(() => groupByModule(), []);
   const descriptor = user ? getUserTypeDescriptor(user.userType) : null;
+
+  // Pages that share one backend permission are controlled together (see
+  // toggleCell/toggleRow). Surface those groups so admins understand why
+  // ticking one row also ticks its neighbours — the permission store is
+  // resource-level, not page-level, so independent control isn't possible
+  // for these.
+  const sharedGroups = useMemo(() => {
+    const seen = new Set<string>();
+    const groups: string[] = [];
+    for (const item of MENU_CATALOG) {
+      const keys = siblingMenuKeys(item.key);
+      if (keys.length <= 1) continue;
+      const id = [...keys].sort().join(",");
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const labels = keys
+        .map((k) => MENU_CATALOG.find((m) => m.key === k)?.label)
+        .filter((l): l is string => !!l);
+      groups.push(labels.join(", "));
+    }
+    return groups;
+  }, []);
 
   // Overall grant summary — "12 of 36 pages" — shown in the sticky footer
   // and as a micro-stat next to the user name. Recomputes on every matrix
@@ -228,7 +280,7 @@ export default function UserPermissionMatrixPage() {
               the page doesn't reflow when data arrives. */}
           <div className="bg-white rounded-lg border border-gray-200 px-3 py-2 mb-3 animate-pulse">
             <div className="flex items-center gap-3">
-              <div className="h-8 w-8 shrink-0 rounded-full bg-orange-200" />
+              <div className="h-8 w-8 shrink-0 rounded-full bg-accent-200" />
               <div className="h-4 w-32 rounded bg-gray-200" />
               <div className="h-3 w-16 rounded bg-gray-100" />
               <div className="h-4 w-24 rounded bg-gray-100" />
@@ -284,7 +336,7 @@ export default function UserPermissionMatrixPage() {
             aria-live="polite"
             className="mt-4 flex items-center justify-center gap-2 text-xs text-gray-500"
           >
-            <Loader2 className="w-3.5 h-3.5 animate-spin text-orange-500" />
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-accent-500" />
             Loading user permissions…
           </div>
         </div>
@@ -304,6 +356,7 @@ export default function UserPermissionMatrixPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="User Management — Permissions"
         subtitle="Manage users, roles, and system access permissions"
@@ -315,20 +368,14 @@ export default function UserPermissionMatrixPage() {
         ]}
       />
       {/* Layout intent: only the matrix table scrolls; the user-summary
-          card, toolbar, page header (sticky), and save bar (fixed) stay
-          fixed in place.
+          card, toolbar, page header and save bar (fixed) stay in place.
 
-          Sizing math: dashboard top bar is h-14 (56px) and PageHeader
-          is ~88px (py-4 + breadcrumb + title), so 144px = 9rem of
-          chrome lives above this wrapper. The wrapper takes the rest
-          of the viewport and uses a flex column inside to give the
-          table the leftover height. The trailing `pb-24` reserves
-          room for the fixed save bar so the table's bottom rows
-          don't sit underneath it.
-
-          The `min-h-[640px]` floor keeps the layout usable on short
-          viewports — without it, the table could collapse to nothing. */}
-      <div className="px-6 max-w-[1600px] mx-auto pt-6 pb-24 h-[calc(100vh-9rem)] min-h-[640px] flex flex-col">
+          Height comes from <PageFrame> (which is exactly as tall as the
+          shell's <main>) rather than viewport math, so no second
+          scrollbar can appear next to the matrix's own. The trailing
+          `pb-24` reserves room for the fixed save bar so the table's
+          bottom rows don't sit underneath it. */}
+      <div className="px-6 max-w-[1600px] mx-auto w-full pt-6 pb-24 flex min-h-0 flex-1 flex-col">
         {/* ── User summary card ───────────────────────────────────────
             Avatar + two-row meta stack. Back to list is a small,
             low-emphasis link at top-right so it doesn't compete with
@@ -342,14 +389,14 @@ export default function UserPermissionMatrixPage() {
             on desktop, wraps gracefully on narrow viewports. */}
         <div className="bg-white rounded-lg border border-gray-200 px-3 py-2 mb-3 shrink-0">
           <div className="flex items-center gap-3 flex-wrap">
-            <div className="h-8 w-8 shrink-0 rounded-full bg-orange-500 text-white text-[11px] font-semibold flex items-center justify-center">
+            <div className="h-8 w-8 shrink-0 rounded-full bg-accent-500 text-white text-[11px] font-semibold flex items-center justify-center">
               {initials(user.fullName)}
             </div>
             <div className="min-w-0 flex items-center gap-2 flex-wrap">
               <span className="text-sm font-semibold text-gray-900 truncate">
                 {user.fullName}
               </span>
-              <span className="font-mono text-[11px] text-gray-400">
+              <span className="text-[11px] text-gray-400">
                 @{user.username}
               </span>
               {descriptor && (
@@ -364,7 +411,7 @@ export default function UserPermissionMatrixPage() {
                 </span>
               )}
               {assignedModuleCount > 0 && (
-                <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-orange-50 text-orange-700">
+                <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-accent-50 text-accent-700">
                   <Layers className="w-3 h-3" />
                   {assignedModuleCount} module{assignedModuleCount === 1 ? "" : "s"}
                 </span>
@@ -413,6 +460,29 @@ export default function UserPermissionMatrixPage() {
               — full access to every page by design. Permissions are locked
               for this account and can&apos;t be edited. (Admins you invite
               through the app remain editable here.)
+            </span>
+          </div>
+        )}
+
+        {/* Grouped-permission notice — some pages share one backend
+            permission and are toggled together. Shown only when there are
+            such groups and the matrix isn't locked. */}
+        {!locked && sharedGroups.length > 0 && (
+          <div className="mb-3 shrink-0 flex items-start gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] text-sky-800 leading-snug">
+            <Layers className="w-3.5 h-3.5 mt-0.5 shrink-0 text-sky-600" />
+            <span>
+              <strong className="font-semibold">
+                Some pages share a single access permission
+              </strong>{" "}
+              and are controlled together — changing one updates its whole
+              group. Grouped pages:{" "}
+              {sharedGroups.map((g, i) => (
+                <span key={g}>
+                  {i > 0 && "; "}
+                  <span className="font-medium">{g}</span>
+                </span>
+              ))}
+              .
             </span>
           </div>
         )}
@@ -473,6 +543,7 @@ export default function UserPermissionMatrixPage() {
           </div>
         </div>
       </div>
+      </PageFrame>
 
       {/* ── Sticky save bar ──────────────────────────────────────────
           Always visible at the bottom so the admin can save without
@@ -651,7 +722,7 @@ function ModuleGroup({
         return (
           <tr
             key={item.key}
-            className={`${zebra} border-t border-gray-100 hover:bg-orange-50/30 transition-colors`}
+            className={`${zebra} border-t border-gray-100 hover:bg-accent-50 transition-colors`}
           >
             <td className="px-4 py-2.5 pl-11">
               <div className="flex items-center gap-2">
@@ -663,7 +734,7 @@ function ModuleGroup({
                 {item.url ? (
                   <Link
                     href={item.url}
-                    className="text-sm text-gray-800 hover:text-orange-600 hover:underline decoration-dotted underline-offset-2 transition-colors"
+                    className="text-sm text-gray-800 hover:text-accent-600 hover:underline decoration-dotted underline-offset-2 transition-colors"
                     title={`Open ${item.label}`}
                   >
                     {item.label}
@@ -673,7 +744,7 @@ function ModuleGroup({
                 )}
               </div>
             </td>
-            <td className="px-4 py-2.5 text-[11px] font-mono text-gray-400">
+            <td className="px-4 py-2.5 text-[11px] text-gray-400">
               {item.url ?? "—"}
             </td>
             {MATRIX_ACTIONS.map((a) => {
@@ -696,7 +767,7 @@ function ModuleGroup({
                       checked={checked}
                       disabled={locked || !supported}
                       onChange={() => onToggleCell(item.key, a)}
-                      className="w-4 h-4 rounded border-gray-300 text-orange-600 focus:ring-2 focus:ring-orange-500 disabled:cursor-not-allowed"
+                      className="w-4 h-4 rounded border-gray-300 text-accent-600 focus:ring-2 focus:ring-accent-500 disabled:cursor-not-allowed"
                     />
                   </label>
                 </td>

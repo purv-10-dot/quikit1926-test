@@ -18,7 +18,7 @@
  */
 
 import { toErrorMessage } from "@/lib/api/errors";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -27,7 +27,6 @@ import {
   IndianRupee,
   Percent,
   Search,
-  Filter as FilterIcon,
   Download,
   Calendar,
   Building2,
@@ -40,16 +39,30 @@ import {
   Check,
   X as XIcon,
 } from "lucide-react";
-import { PageHeader, PageContainer } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer } from "@/components/PageShell";
+import { Pager } from "@/components/Pager";
+import { FilterPopoverButton } from "@/components/FilterPopoverButton";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { WorkOrderDrawer } from "./new/WorkOrderDrawer";
 import {
   useWorkOrders,
+  useWorkOrderStats,
   useUpdateWorkOrder,
 } from "@/hooks/use-projects";
+import { useProjects, useContractors } from "@/hooks/use-masters";
 import { usePermissions, useMenuActions } from "@/hooks/use-permissions";
 
 const MENU_KEY = "pm.work_orders";
+
+// Status options for the Filter popover. Values map 1:1 to the DB status the
+// list route matches on (`where.status = status`); "all" clears the filter.
+const STATUS_FILTERS: Array<{ value: string; label: string }> = [
+  { value: "all", label: "All statuses" },
+  { value: "draft", label: "Draft" },
+  { value: "pending_approval", label: "Pending Approval" },
+  { value: "approved", label: "Approved" },
+  { value: "rejected", label: "Rejected" },
+];
 
 const STATUS_COLORS: Record<string, string> = {
   draft:            "bg-slate-50 text-slate-600 border-slate-200",
@@ -75,6 +88,10 @@ export default function WorkOrdersPage() {
   const router = useRouter();
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
+  // Server-side filters (Filter popover): status / project / contractor.
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [projectFilter, setProjectFilter] = useState("");
+  const [contractorFilter, setContractorFilter] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
   const [deleting, setDeleting] = useState(false);
   const { canAdd } = useMenuActions("/projects/work-orders");
@@ -96,8 +113,71 @@ export default function WorkOrdersPage() {
   // browser alert.
   const [workflowError, setWorkflowError] = useState<string | null>(null);
 
-  const { data: result, isLoading } = useWorkOrders({ search });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, statusFilter, projectFilter, contractorFilter, pageSize]);
+
+  const { data: result, isLoading } = useWorkOrders({
+    search,
+    status: statusFilter,
+    projectId: projectFilter,
+    contractorId: contractorFilter,
+    page,
+    pageSize,
+  });
+  const total = result?.total ?? 0;
+  // KPI tiles stay scope-wide (search + project aware); status/contractor are
+  // intentionally excluded so the tiles keep reflecting the full breakdown.
+  const { data: statsResult } = useWorkOrderStats({ search, projectId: projectFilter });
   const updateMutation = useUpdateWorkOrder();
+
+  // Filter-popover option sources + helpers.
+  const { data: projectsResult } = useProjects();
+  const projectOptions = useMemo(
+    () => (projectsResult?.data ?? []) as Array<{ id: string; name?: string }>,
+    [projectsResult],
+  );
+  const freeScopeProjectIds = useMemo(
+    () =>
+      new Set(
+        ((projectsResult?.data ?? []) as Array<{ id: string; executionMode?: string }>)
+          .filter((p) => p.executionMode === "FREE_SCOPE")
+          .map((p) => p.id),
+      ),
+    [projectsResult],
+  );
+  const { data: contractorsResult } = useContractors();
+  const contractorOptions = useMemo(
+    () => (contractorsResult?.data ?? []) as Array<{ id: string; name?: string }>,
+    [contractorsResult],
+  );
+  const activeFilterCount =
+    (statusFilter !== "all" ? 1 : 0) +
+    (projectFilter ? 1 : 0) +
+    (contractorFilter ? 1 : 0);
+  const clearFilters = () => {
+    setStatusFilter("all");
+    setProjectFilter("");
+    setContractorFilter("");
+  };
+  // Server-side export — hands the current filters to /export, which builds
+  // the same WHERE and streams a multi-sheet .xlsx (summary + WO lines).
+  const handleExport = () => {
+    const qs = new URLSearchParams();
+    if (search) qs.set("search", search);
+    if (statusFilter !== "all") qs.set("status", statusFilter);
+    if (projectFilter) qs.set("projectId", projectFilter);
+    if (contractorFilter) qs.set("contractorId", contractorFilter);
+    const q = qs.toString();
+    const a = document.createElement("a");
+    a.href = `/api/projects/work-orders/export${q ? `?${q}` : ""}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
 
   // RBAC — mirrors the Material Estimation gate.
   const { permissionMatrix, isSuper } = usePermissions();
@@ -168,22 +248,15 @@ export default function WorkOrdersPage() {
     }
   };
 
-  const allRows = useMemo(() => (result?.data ?? []) as unknown as WorkOrderRow[], [result]);
-  const rows = useMemo(
-    () => allRows.filter((r) => r.status !== "inactive"),
-    [allRows]
-  );
+  // Server already excludes inactive rows from the list.
+  const rows = useMemo(() => (result?.data ?? []) as unknown as WorkOrderRow[], [result]);
 
-  // KPIs
-  const totalWOs = rows.length;
-  const activeWOs = rows.filter(
-    (r) => r.status === "approved" || r.status === "in_progress"
-  ).length;
-  const totalValue = rows.reduce((s, r) => s + (Number(r.totalAmount) || 0), 0);
-  const avgProgress =
-    rows.length === 0
-      ? 0
-      : rows.reduce((s, r) => s + (Number(r.progressPct) || 0), 0) / rows.length;
+  // KPIs come from a server-side aggregate (scope-wide, search-aware) so they
+  // stay correct regardless of pagination.
+  const totalWOs = statsResult?.stats?.total ?? 0;
+  const activeWOs = statsResult?.stats?.active ?? 0;
+  const totalValue = statsResult?.stats?.totalValue ?? 0;
+  const avgProgress = statsResult?.stats?.avgProgress ?? 0;
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
@@ -202,6 +275,7 @@ export default function WorkOrdersPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Work Orders"
         subtitle="Assign BOQ scope to contractors with negotiated rates"
@@ -214,7 +288,7 @@ export default function WorkOrdersPage() {
             <button
               type="button"
               onClick={() => setAddDrawerOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold text-white bg-gradient-to-b from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 shadow-brand active:translate-y-[1px] transition-all"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold text-white bg-gradient-to-b from-accent-500 to-accent-600 hover:from-accent-600 hover:to-accent-700 shadow-brand active:translate-y-[1px] transition-all"
             >
               <Plus className="w-4 h-4" /> New Work Order
             </button>
@@ -222,7 +296,7 @@ export default function WorkOrdersPage() {
         }
       />
 
-      <PageContainer>
+      <PageContainer fill>
         {/* ── KPI cards ── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
           <KPICard
@@ -254,8 +328,8 @@ export default function WorkOrdersPage() {
         </div>
 
         {/* ── Action strip ── */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-soft overflow-hidden">
-          <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
+        <div className="flex min-h-0 flex-1 flex-col bg-white rounded-2xl border border-slate-200 shadow-soft overflow-hidden">
+          <div className="shrink-0 flex items-center gap-3 px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
             <div className="flex items-center gap-2 flex-1 max-w-sm">
               <div className="relative w-full">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -264,28 +338,76 @@ export default function WorkOrdersPage() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search Work Orders…"
-                  className="w-full text-sm pl-9 pr-3 py-2 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400 transition-shadow"
+                  className="w-full text-sm pl-9 pr-3 py-2 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400 transition-shadow"
                 />
               </div>
             </div>
+            <FilterPopoverButton activeCount={activeFilterCount} onClear={clearFilters}>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                  Status
+                </label>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400"
+                >
+                  {STATUS_FILTERS.map((s) => (
+                    <option key={s.value} value={s.value}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                  Project
+                </label>
+                <select
+                  value={projectFilter}
+                  onChange={(e) => setProjectFilter(e.target.value)}
+                  className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400"
+                >
+                  <option value="">All projects</option>
+                  {projectOptions.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name ?? p.id}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                  Contractor
+                </label>
+                <select
+                  value={contractorFilter}
+                  onChange={(e) => setContractorFilter(e.target.value)}
+                  className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400"
+                >
+                  <option value="">All contractors</option>
+                  {contractorOptions.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name ?? c.id}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </FilterPopoverButton>
             <button
               type="button"
-              className="p-2 text-slate-400 hover:text-orange-700 hover:bg-orange-50 rounded-lg border border-transparent hover:border-orange-200 transition-colors"
-              title="Filters"
-            >
-              <FilterIcon className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              className="p-2 text-slate-400 hover:text-orange-700 hover:bg-orange-50 rounded-lg border border-transparent hover:border-orange-200 transition-colors"
-              title="Export"
+              onClick={handleExport}
+              className="p-2 text-slate-400 hover:text-accent-700 hover:bg-accent-50 rounded-lg border border-transparent hover:border-accent-200 transition-colors"
+              title="Export to Excel"
             >
               <Download className="w-4 h-4" />
             </button>
           </div>
 
           {/* ── Table ── */}
-          <div className="overflow-x-auto">
+          <div className="min-h-0 flex-1 overflow-auto">
             <table className="w-full">
               <thead className="bg-gradient-to-b from-slate-50 to-slate-100/70 border-b border-slate-200">
                 <tr className="text-[11px] uppercase font-bold text-slate-600 tracking-wider">
@@ -308,14 +430,14 @@ export default function WorkOrdersPage() {
                 ) : rows.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="px-4 py-16 text-center">
-                      <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-orange-50 text-orange-500 mb-3 ring-4 ring-orange-50/60">
+                      <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-accent-50 text-accent-500 mb-3 ring-4 ring-accent-100">
                         <Briefcase className="w-6 h-6" />
                       </div>
                       <div className="text-sm font-semibold text-slate-800">
                         No work orders yet
                       </div>
                       <p className="text-xs text-slate-500 mt-1">
-                        Click <b className="text-orange-700">New Work Order</b> to create one.
+                        Click <b className="text-accent-700">New Work Order</b> to create one.
                       </p>
                     </td>
                   </tr>
@@ -324,6 +446,7 @@ export default function WorkOrdersPage() {
                     <WorkOrderRow
                       key={row.id}
                       row={row}
+                      isFreeScope={freeScopeProjectIds.has(String(row.projectId ?? ""))}
                       canEdit={canEdit}
                       canDelete={canDelete}
                       canSubmit={canSubmit}
@@ -342,8 +465,19 @@ export default function WorkOrdersPage() {
               </tbody>
             </table>
           </div>
+          {total > 0 && (
+            <Pager
+              variant="footer"
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
+          )}
         </div>
       </PageContainer>
+      </PageFrame>
 
       <ConfirmDialog
         open={!!deleteTarget}
@@ -476,12 +610,12 @@ function KPICard({
   // KPIs across modules share one visual language (no indigo/green tone
   // contention with brand orange).
   const toneClasses = {
-    indigo: "bg-orange-50 text-orange-600 ring-orange-100",      // Primary metric → brand
+    indigo: "bg-accent-50 text-accent-600 ring-accent-100",      // Primary metric → brand
     green:  "bg-emerald-50 text-emerald-600 ring-emerald-100",   // Success / active
     amber:  "bg-amber-50 text-amber-600 ring-amber-100",         // Warn / progress
   }[tone];
   const stripe = {
-    indigo: "from-orange-400 to-orange-600",
+    indigo: "from-accent-400 to-accent-600",
     green:  "from-emerald-400 to-emerald-600",
     amber:  "from-sky-400 to-sky-600",
   }[tone];
@@ -501,6 +635,7 @@ function KPICard({
 
 function WorkOrderRow({
   row,
+  isFreeScope,
   canEdit,
   canDelete,
   canSubmit,
@@ -513,6 +648,7 @@ function WorkOrderRow({
   onReject,
 }: {
   row: WorkOrderRow;
+  isFreeScope?: boolean;
   canEdit: boolean;
   canDelete: boolean;
   canSubmit: boolean;
@@ -545,11 +681,11 @@ function WorkOrderRow({
   const totalAmount = Number(row.totalAmount) || 0;
 
   return (
-    <tr className="border-t border-slate-100 hover:bg-orange-50/40 transition-colors">
+    <tr className="border-t border-slate-100 hover:bg-accent-50 transition-colors">
       {/* WO Details */}
       <td className="px-4 py-3">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-orange-50 to-orange-100 text-orange-600 flex items-center justify-center shrink-0 ring-1 ring-orange-100">
+          <div className="w-9 h-9 rounded-lg bg-accent-50 text-accent-600 flex items-center justify-center shrink-0 ring-1 ring-accent-100">
             <FileText className="w-4 h-4" />
           </div>
           <div className="min-w-0">
@@ -561,11 +697,16 @@ function WorkOrderRow({
 
       {/* Project & Type */}
       <td className="px-4 py-3">
-        <div className="text-sm font-semibold text-slate-900">
-          {row.projectName ?? "—"}
+        <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
+          <span>{row.projectName ?? "—"}</span>
+          {isFreeScope && (
+            <span className="inline-block text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-accent-100 text-accent-700 border border-accent-200">
+              Free-Scope
+            </span>
+          )}
         </div>
         <div className="flex gap-1.5 mt-1">
-          <span className="inline-block text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 border border-orange-200">
+          <span className="inline-block text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-accent-50 text-accent-700 border border-accent-200">
             {row.type ?? "Work Order"}
           </span>
           <span className="inline-block text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-50 text-slate-600 border border-slate-200">
@@ -634,7 +775,7 @@ function WorkOrderRow({
               className={`p-1.5 rounded-lg transition-colors ${
                 baseLocked
                   ? "text-slate-300 cursor-not-allowed"
-                  : "text-slate-500 hover:bg-orange-50 hover:text-orange-700"
+                  : "text-slate-500 hover:bg-accent-50 hover:text-accent-700"
               }`}
               title={baseLocked ? lockReason : "Edit"}
             >
@@ -726,7 +867,7 @@ function WorkOrderRow({
                 "noopener",
               );
             }}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-orange-700 hover:bg-orange-50 transition-colors"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-accent-700 hover:bg-accent-50 transition-colors"
             title="View PDF"
           >
             <FileText className="w-4 h-4" />
@@ -735,7 +876,7 @@ function WorkOrderRow({
           <button
             type="button"
             onClick={onOpen}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-orange-700 hover:bg-orange-50 transition-colors"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-accent-700 hover:bg-accent-50 transition-colors"
             title="Open"
           >
             <ChevronRight className="w-4 h-4" />

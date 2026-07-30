@@ -252,6 +252,10 @@ export async function getHireRentSummary(opts: { orgId: string }): Promise<HireR
 export async function listHireRates(opts: {
   orgId: string;
   direction?: string;
+  search?: string;
+  orderBy?: Prisma.CnHireRentRecordOrderByWithRelationInput[];
+  take?: number;
+  skip?: number;
 }) {
   const where: Prisma.CnHireRentRecordWhereInput = {
     orgId: opts.orgId,
@@ -261,16 +265,32 @@ export async function listHireRates(opts: {
   if (opts.direction && opts.direction !== "all") {
     where.direction = opts.direction;
   }
+  const search = opts.search?.trim();
+  if (search) {
+    where.OR = [
+      { referenceNumber: { contains: search, mode: "insensitive" } },
+      { equipmentType: { contains: search, mode: "insensitive" } },
+      { sacCode: { contains: search, mode: "insensitive" } },
+      { equipment: { code: { contains: search, mode: "insensitive" } } },
+      { equipment: { name: { contains: search, mode: "insensitive" } } },
+      { vendor: { name: { contains: search, mode: "insensitive" } } },
+      { customer: { name: { contains: search, mode: "insensitive" } } },
+    ];
+  }
 
-  const rows = await db.cnHireRentRecord.findMany({
-    where,
-    include: hireRateInclude,
-    orderBy: { createdAt: "desc" },
-  });
+  const [rows, total] = await Promise.all([
+    db.cnHireRentRecord.findMany({
+      where,
+      include: hireRateInclude,
+      orderBy: opts.orderBy ?? [{ createdAt: "desc" }],
+      ...(opts.take != null ? { take: opts.take, skip: opts.skip ?? 0 } : {}),
+    }),
+    db.cnHireRentRecord.count({ where }),
+  ]);
 
   return {
     data: rows.map(toHireRateRecord),
-    total: rows.length,
+    total,
   };
 }
 
@@ -318,13 +338,37 @@ export async function createHireRate(input: CreateHireRateInput) {
   return toHireRateRecord(row);
 }
 
-export async function listHireInVerifications(opts: { orgId: string }) {
-  const rows = await db.cnHireRentRecord.findMany({
-    where: { orgId: opts.orgId, recordType: HIRE_IN },
-    include: verificationInclude,
-    orderBy: { periodFrom: "desc" },
-  });
-  return { data: rows.map(toVerificationRecord), total: rows.length };
+export async function listHireInVerifications(opts: {
+  orgId: string;
+  search?: string;
+  orderBy?: Prisma.CnHireRentRecordOrderByWithRelationInput[];
+  take?: number;
+  skip?: number;
+}) {
+  const where: Prisma.CnHireRentRecordWhereInput = {
+    orgId: opts.orgId,
+    recordType: HIRE_IN,
+  };
+  const search = opts.search?.trim();
+  if (search) {
+    where.OR = [
+      { referenceNumber: { contains: search, mode: "insensitive" } },
+      { equipmentType: { contains: search, mode: "insensitive" } },
+      { equipment: { code: { contains: search, mode: "insensitive" } } },
+      { equipment: { name: { contains: search, mode: "insensitive" } } },
+      { vendor: { name: { contains: search, mode: "insensitive" } } },
+    ];
+  }
+  const [rows, total] = await Promise.all([
+    db.cnHireRentRecord.findMany({
+      where,
+      include: verificationInclude,
+      orderBy: opts.orderBy ?? [{ periodFrom: "desc" }, { createdAt: "desc" }],
+      ...(opts.take != null ? { take: opts.take, skip: opts.skip ?? 0 } : {}),
+    }),
+    db.cnHireRentRecord.count({ where }),
+  ]);
+  return { data: rows.map(toVerificationRecord), total };
 }
 
 export interface CreateHireInVerificationInput {
@@ -544,13 +588,37 @@ export async function patchHireInVerificationWorkflowStatus(
   return toVerificationRecord(updated);
 }
 
-export async function listRentOutBills(opts: { orgId: string }) {
-  const rows = await db.cnHireRentRecord.findMany({
-    where: { orgId: opts.orgId, recordType: RENT_OUT },
-    include: billInclude,
-    orderBy: { periodFrom: "desc" },
-  });
-  return { data: rows.map(toBillRecord), total: rows.length };
+export async function listRentOutBills(opts: {
+  orgId: string;
+  search?: string;
+  orderBy?: Prisma.CnHireRentRecordOrderByWithRelationInput[];
+  take?: number;
+  skip?: number;
+}) {
+  const where: Prisma.CnHireRentRecordWhereInput = {
+    orgId: opts.orgId,
+    recordType: RENT_OUT,
+  };
+  const search = opts.search?.trim();
+  if (search) {
+    where.OR = [
+      { referenceNumber: { contains: search, mode: "insensitive" } },
+      { equipmentType: { contains: search, mode: "insensitive" } },
+      { equipment: { code: { contains: search, mode: "insensitive" } } },
+      { equipment: { name: { contains: search, mode: "insensitive" } } },
+      { customer: { name: { contains: search, mode: "insensitive" } } },
+    ];
+  }
+  const [rows, total] = await Promise.all([
+    db.cnHireRentRecord.findMany({
+      where,
+      include: billInclude,
+      orderBy: opts.orderBy ?? [{ periodFrom: "desc" }, { createdAt: "desc" }],
+      ...(opts.take != null ? { take: opts.take, skip: opts.skip ?? 0 } : {}),
+    }),
+    db.cnHireRentRecord.count({ where }),
+  ]);
+  return { data: rows.map(toBillRecord), total };
 }
 
 export interface CreateRentOutBillInput {

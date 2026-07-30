@@ -10,6 +10,7 @@ import { Building2, Save, Upload, X, Globe, Mail, Phone, MapPin, Landmark, Image
 import { clsx } from "clsx";
 import { withBasePath } from "@/lib/utils/base-path";
 import { SkeletonLine } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 import { useToast } from "@/components/hrms/toast";
 import { PAN_PATTERN, TAN_PATTERN, GSTIN_PATTERN, CIN_PATTERN, ID_TITLES } from "@/lib/validations/identifiers";
 
@@ -57,6 +58,8 @@ const MONTHS = [
 export default function CompanySettingsPage() {
   return (
     <Suspense fallback={<div className="p-4 space-y-2"><SkeletonLine w="40%" h={16} /><SkeletonLine w="70%" h={12} /><SkeletonLine w="60%" h={12} /></div>}>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <CompanySettingsPageInner />
     </Suspense>
   );

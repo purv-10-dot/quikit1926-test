@@ -8,6 +8,7 @@ import { requireOwnership } from "@/lib/auth/ownership";
 import { resolveUserNames } from "@/lib/users/resolve-names";
 import { parseStoredWeatherDetail } from "@/lib/weather/dpr-weather";
 import { canActOnCurrentStep } from "@/lib/approvals/workflow-rbac";
+import { resolveMaterialMeta } from "@/lib/projects/dpr-material-meta";
 import { persistDprImages, signDprImageKeys } from "@/lib/dpr/dpr-images";
 
 /**
@@ -31,11 +32,14 @@ function toDecimalOrNull(v: number | string | null | undefined): string | null {
 interface DprWorkItemRow {
   id: string;
   boqItemId?: string | null;
+  scopeType?: string | null;
+  scopeId?: string | null;
   woId?: string | null;
   description?: string | null;
   todayQty?: Numericish;
   cumulativeQty?: Numericish;
   uomId?: string | null;
+  location?: string | null;
   remarks?: string | null;
   images?: unknown;
 }
@@ -111,12 +115,17 @@ interface DprRow {
 interface DprBodyWorkItem {
   boqItemId?: string;
   boqNo?: string;
+  scopeType?: string | null;
+  scopeId?: string | null;
+  // Contractor/WO selector: the form sends `workOrderId`; accept `woId` too.
+  workOrderId?: string | null;
   woId?: string | null;
   description?: string;
   todayQty?: number | string;
   qty?: number | string;
   cumulativeQty?: number | string;
   uomId?: string;
+  location?: string | null;
   remarks?: string | null;
   images?: unknown;
   imageKeys?: unknown;
@@ -211,10 +220,70 @@ async function enrichDPR(row: DprRow, project?: DprProject) {
     );
   }
 
+  // FREE_SCOPE projects anchor work items to a CnActivityItem instead of a
+  // BOQ line (boqItemId is null, scopeType = "ACTIVITY"). Without this second
+  // lookup the BOQ join above misses entirely and the edit form renders a
+  // blank ref/unit with Total Target 0 — which makes % Completed stick at 0.0%
+  // no matter how much qty is booked.
+  const scopeIds = Array.from(
+    new Set(
+      (row.workItems ?? [])
+        .filter((w) => w.scopeType === "ACTIVITY")
+        .map((w) => w.scopeId)
+        .filter((v): v is string => typeof v === "string" && v.length > 0),
+    ),
+  );
+  const activityInfoById = new Map<
+    string,
+    { boqNo: string; unit: string; scopeQty: number }
+  >();
+  if (scopeIds.length) {
+    const activityRows = await db.cnActivityItem.findMany({
+      where: { id: { in: scopeIds }, orgId: row.orgId },
+      select: {
+        id: true,
+        activityCode: true,
+        uomId: true,
+        tenderQty: true,
+        scopeQty: true,
+      },
+    });
+    const uomIds = Array.from(
+      new Set(
+        activityRows
+          .map((a) => a.uomId)
+          .filter((v): v is string => typeof v === "string" && v.length > 0),
+      ),
+    );
+    const uomCodeById = new Map<string, string>();
+    if (uomIds.length) {
+      const uoms = await db.cnUOM.findMany({
+        where: { id: { in: uomIds }, orgId: row.orgId },
+        select: { id: true, code: true },
+      });
+      for (const u of uoms) uomCodeById.set(u.id, u.code);
+    }
+    for (const a of activityRows) {
+      // `scopeQty` is the optional revised/variation qty on an activity —
+      // when set it supersedes the tender baseline, matching how the
+      // Activity Scope drawer describes the two fields.
+      const revised = Number(a.scopeQty ?? 0);
+      activityInfoById.set(a.id, {
+        boqNo: a.activityCode ?? "",
+        unit: a.uomId ? uomCodeById.get(a.uomId) ?? "" : "",
+        scopeQty: revised > 0 ? revised : Number(a.tenderQty ?? 0),
+      });
+    }
+  }
+
   const workItems = await Promise.all(
     (row.workItems ?? []).map(async (w) => {
       const keys = Array.isArray(w.images) ? w.images : [];
-      const boq = boqInfoById.get(w.boqItemId ?? "") ?? { boqNo: "", unit: "", scopeQty: 0 };
+      const boq =
+        (w.scopeType === "ACTIVITY"
+          ? activityInfoById.get(w.scopeId ?? "")
+          : boqInfoById.get(w.boqItemId ?? "")) ??
+        { boqNo: "", unit: "", scopeQty: 0 };
       const todayNum = Number(w.todayQty ?? 0);
       const cumulativeNum = Number(w.cumulativeQty ?? 0);
       // Not stored on the work item — derived so the edit form can show
@@ -223,8 +292,12 @@ async function enrichDPR(row: DprRow, project?: DprProject) {
       return {
         id: w.id,
         boqItemId: w.boqItemId ?? "",
+        // Round-tripped so the edit form's PUT keeps the activity anchor —
+        // dropping these turns a FREE_SCOPE row into an orphan on save.
+        scopeType: w.scopeType ?? null,
+        scopeId: w.scopeId ?? null,
         boqNo: boq.boqNo,
-        // BOQ-derived so the form's Unit / Total Target / % Completed render.
+        // Scope-derived so the form's Unit / Total Target / % Completed render.
         unit: boq.unit,
         totalTarget: boq.scopeQty,
         prevQty,
@@ -235,6 +308,7 @@ async function enrichDPR(row: DprRow, project?: DprProject) {
         todayQty: w.todayQty?.toString?.() ?? "0",
         cumulativeQty: w.cumulativeQty?.toString?.() ?? "0",
         uomId: w.uomId ?? "",
+        location: w.location ?? "",
         remarks: w.remarks ?? "",
         // Stored S3 keys + aligned signed URLs for display. The edit form
         // sends `imageKeys` back so existing photos aren't re-uploaded.
@@ -269,11 +343,20 @@ async function enrichDPR(row: DprRow, project?: DprProject) {
     actualQty: m.actualQty ?? 0,
     remarks: m.remarks ?? null,
   }));
+  const matMeta = await resolveMaterialMeta(
+    row.orgId ?? "",
+    (row.materialEntries ?? []).map((m) => m.itemId),
+    (row.materialEntries ?? []).map((m) => m.uomId),
+  );
   const materials = (row.materialEntries ?? []).map((m: DprMaterialRow) => ({
     id: m.id,
     itemId: m.itemId ?? "",
+    // Denormalized so the edit form's lazy picker shows the name + UOM
+    // without loading the whole item master.
+    itemName: matMeta.itemNameById.get(m.itemId ?? "") ?? "",
     consumedQty: m.consumedQty?.toString?.() ?? "0",
     uomId: m.uomId ?? "",
+    uomCode: matMeta.uomCodeById.get(m.uomId ?? "") ?? "",
     remarks: m.remarks ?? null,
   }));
   const staff = (row.staffEntries ?? []).map((s: DprStaffRow) => ({
@@ -506,12 +589,20 @@ export async function PUT(req: NextRequest, ctx: { params: { id: string } }) {
           await tx.cnDPRWorkItem.createMany({
             data: items.map((w: DprBodyWorkItem, i: number) => ({
               dprId: ctx.params.id,
-              boqItemId: String(w.boqItemId ?? w.boqNo ?? ""),
-              woId: w.woId ?? null,
+              // Mirrors the create route: FREE_SCOPE rows anchor on
+              // scopeId and must leave boqItemId null.
+              boqItemId:
+                w.scopeType === "ACTIVITY"
+                  ? null
+                  : String(w.boqItemId ?? w.boqNo ?? ""),
+              scopeType: w.scopeType ?? null,
+              scopeId: w.scopeId ?? null,
+              woId: w.workOrderId ?? w.woId ?? null,
               description: String(w.description ?? ""),
               todayQty: String(Number(w.todayQty ?? w.qty ?? 0)),
               cumulativeQty: String(Number(w.cumulativeQty ?? w.todayQty ?? w.qty ?? 0)),
               uomId: String(w.uomId ?? ""),
+              location: w.location ?? null,
               remarks: w.remarks ?? null,
               images: workItemImageKeys[i] ?? [],
             })),

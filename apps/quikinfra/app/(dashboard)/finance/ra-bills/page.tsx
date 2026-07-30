@@ -1,9 +1,9 @@
 "use client";
 
 import { toErrorMessage } from "@/lib/api/errors";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FileText, Send, CheckCircle2, XCircle } from "lucide-react";
-import { PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { useRABs, useSubmitRAB, useApproveRAB } from "@/hooks/use-projects";
 import { useTermsConditions } from "@/hooks/use-masters";
@@ -47,8 +47,26 @@ export default function RABillsPage() {
     setTermsForRab(null);
   }
 
-  const { data: result, isLoading } = useRABs({ status: activeTab });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("createdAt");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
+  useEffect(() => {
+    setPage(1);
+  }, [activeTab, search, sortBy, sortOrder, pageSize]);
+
+  const { data: result, isLoading } = useRABs({
+    status: activeTab,
+    search: search || undefined,
+    page,
+    pageSize,
+    sortBy,
+    sortOrder,
+  });
   const data = result?.data ?? [];
+  const total = result?.total ?? 0;
 
   const submitRAB = useSubmitRAB();
   const approveRAB = useApproveRAB();
@@ -85,11 +103,12 @@ export default function RABillsPage() {
 
   const columns: ColDef<RaBillRow>[] = [
     { key: "rabNumber", label: "RAB No", sortable: true, searchable: true },
-    { key: "projectName", label: "Project", sortable: true, searchable: true },
-    { key: "contractorName", label: "Contractor", sortable: true, searchable: true },
+    { key: "projectName", label: "Project", sortable: false, searchable: true },
+    { key: "contractorName", label: "Contractor", sortable: false, searchable: true },
     {
       key: "billPeriod",
       label: "Period",
+      sortable: false,
       render: (row) => `${row.billPeriodFrom} — ${row.billPeriodTo}`,
     },
     { key: "currentBillAmount", label: "Current Bill", type: "number", sortable: true, render: (row) => inr(row.currentBillAmount) },
@@ -105,6 +124,7 @@ export default function RABillsPage() {
     {
       key: "actions",
       label: "Actions",
+      sortable: false,
       render: (row) => (
         <div className="flex items-center gap-2">
           <button
@@ -118,7 +138,7 @@ export default function RABillsPage() {
             <button
               onClick={() => openAction("submit", row)}
               title="Submit for approval"
-              className="flex items-center gap-1 text-xs text-orange-700 hover:underline"
+              className="flex items-center gap-1 text-xs text-accent-700 hover:underline"
             >
               <Send size={14} /> Submit
             </button>
@@ -148,22 +168,35 @@ export default function RABillsPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="RA Bills (Sub-Contractor)"
         subtitle="Running Account Bills against work orders, from approved DPR progress"
         breadcrumbs={[{ label: "Finance", href: "/finance" }, { label: "RA Bills" }]}
       />
       <TabBar tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />
-      <PageContainer>
+      <PageContainer fill>
         <DataTable
           id="finance-ra-bills"
           columns={columns}
           data={data as unknown as RaBillRow[]}
           loading={isLoading}
+          serverMode
+          serverTotal={total}
+          serverPage={page}
+          serverPageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          onSearchChange={setSearch}
+          onSortChange={(key, dir) => {
+            setSortBy(key);
+            setSortOrder(dir);
+          }}
           onAdd={() => setShowForm(true)}
           addLabel="Generate RA Bill"
         />
       </PageContainer>
+      </PageFrame>
 
       <GenerateRABillForm
         open={showForm}

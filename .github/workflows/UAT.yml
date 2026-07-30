@@ -60,6 +60,8 @@ jobs:
               - 'apps/quikasset/**'
             quikchat:
               - 'apps/quikchat/**'
+            quiklms:
+              - 'apps/quiklms/**'
             realtime:
               - 'services/realtime/**'
 
@@ -68,7 +70,7 @@ jobs:
         shell: bash
         run: |
           APPS=()
-          ALL=(quikit auth admin quikscale quiktrack quikhrms quikinfra quikcrm quiksupport quikasset quikchat realtime)
+          ALL=(quikit auth admin quikscale quiktrack quikhrms quikinfra quikcrm quiksupport quikasset quikchat quiklms realtime)
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ steps.filter.outputs.shared }}" = "true" ]; then
             APPS=("${ALL[@]}")
@@ -84,6 +86,7 @@ jobs:
             [ "${{ steps.filter.outputs.quiksupport }}" = "true" ] && APPS+=("quiksupport")
             [ "${{ steps.filter.outputs.quikasset }}" = "true" ] && APPS+=("quikasset")
             [ "${{ steps.filter.outputs.quikchat }}" = "true" ] && APPS+=("quikchat")
+            [ "${{ steps.filter.outputs.quiklms }}" = "true" ] && APPS+=("quiklms")
             [ "${{ steps.filter.outputs.realtime }}" = "true" ] && APPS+=("realtime")
           fi
 
@@ -159,9 +162,9 @@ jobs:
           cache-to: type=gha,scope=${{ matrix.app }},mode=max
           platforms: linux/amd64
           build-args: |
-            NEXT_PUBLIC_LAUNCHER_URL=https://uat.quikit.ai
+            NEXT_PUBLIC_LAUNCHER_URL=https://uatapps.quikit.ai
             NEXT_PUBLIC_AUTH_URL=https://uatauthn.quikit.ai
-            NEXT_PUBLIC_QUIKIT_URL=https://uat.quikit.ai
+            NEXT_PUBLIC_QUIKIT_URL=https://uatapps.quikit.ai
             NEXT_PUBLIC_QUIKSCALE_URL=https://uatscale.quikit.ai
             NEXT_PUBLIC_ADMIN_URL=https://uatorgadmin.quikit.ai
             NEXT_PUBLIC_LOGIN_URL=https://uatauthn.quikit.ai/login
@@ -173,8 +176,9 @@ jobs:
             NEXTAUTH_URL=https://uatauthn.quikit.ai
             NEXT_PUBLIC_QUIKASSET_URL=https://uatasset.quikit.ai
             NEXT_PUBLIC_QUIKCHAT_URL=https://uatchat.quikit.ai
+            NEXT_PUBLIC_QUIKLMS_URL=https://uatlms.quikit.ai
             NEXT_PUBLIC_REALTIME_WS_URL=ws://uatsockets.quikit.ai
-
+            NEXT_PUBLIC_QUIKTRACK_URL=https://uattrack.quikit.ai
   update-gitops:
     name: Update GitOps Repository
     needs:
@@ -246,6 +250,10 @@ jobs:
               quikchat)
                 FILE="chat-deployment.yaml"
                 IMAGE="ghcr.io/akhileshgandhi/quikchat-runtime:${TAG}"
+                ;;
+              quiklms)
+                FILE="lms-deployment.yaml"
+                IMAGE="ghcr.io/akhileshgandhi/quiklms-runtime:${TAG}"
                 ;;
               realtime)
                 FILE="socket-deployment.yaml"

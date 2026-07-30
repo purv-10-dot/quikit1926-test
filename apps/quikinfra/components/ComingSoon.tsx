@@ -9,7 +9,7 @@ import { Clock } from "lucide-react";
 export function ComingSoon({ title }: { title: string }) {
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 text-center">
-      <div className="flex h-16 w-16 items-center justify-center rounded-full bg-accent-100 text-accent-700">
+      <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 text-slate-700">
         <Clock className="h-8 w-8" />
       </div>
       <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">{title}</h1>

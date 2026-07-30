@@ -3,9 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
+import { parsePagination } from "@/lib/http/pagination";
 import {
   createGoodReturn,
   listGoodReturns,
+  goodReturnStatusCounts,
   countGoodReturnsForDate,
   type GoodReturnLine,
 } from "@/lib/store/good-return-repository";
@@ -34,14 +36,39 @@ export async function GET(req: NextRequest) {
   const projectId = searchParams.get("projectId") ?? "";
   const search = searchParams.get("search") ?? "";
 
-  const data = await listGoodReturns(ctx.orgId, {
+  // Tab badges: per-status counts over the caller's scope, kept separate
+  // from the (paged) list so badges reflect full totals, not one page.
+  if (searchParams.get("counts") === "1") {
+    const counts = await goodReturnStatusCounts(ctx.orgId, {
+      allowedProjectIds: ctx.projectIds ?? null,
+    });
+    return NextResponse.json(counts);
+  }
+
+  const sortBy = searchParams.get("sortBy");
+  const sortOrder = searchParams.get("sortOrder") === "asc" ? "asc" : "desc";
+  const p = parsePagination(req);
+
+  const { data, total } = await listGoodReturns(ctx.orgId, {
     status: status || null,
     projectId: projectId || null,
     search: search || null,
     allowedProjectIds: ctx.projectIds ?? null,
+    sortBy,
+    sortOrder,
+    ...(p.paginated ? { take: p.take, skip: p.skip } : {}),
   });
 
-  return NextResponse.json({ data, total: data.length });
+  if (p.paginated) {
+    return NextResponse.json({
+      data,
+      total,
+      page: p.page,
+      pageSize: p.pageSize,
+      hasMore: p.skip + data.length < total,
+    });
+  }
+  return NextResponse.json({ data, total });
 }
 
 export async function POST(req: NextRequest) {

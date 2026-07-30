@@ -5,26 +5,29 @@ import { successResponse, notFound, validationError, internalError } from "@/lib
 import { setRolePermissionsSchema } from "@/lib/validations/rbac";
 import { createAuditLog } from "@/lib/utils/audit";
 import { APP_ID, splitCode } from "@/lib/rbac/registry";
-import { PERMISSION_CODES } from "@/lib/rbac/permissions";
+import { validateGrantableCodes } from "@/lib/rbac/validate-grant";
 
 /**
  * PUT /api/v1/hrms/settings/roles/:id/permissions
  * Atomically replaces the role's (resource, action) set with the provided codes.
  */
-export const PUT = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
+export const PUT = withAuth(async (req: NextRequest, { orgId, userId, permissions }, params) => {
   try {
     const role = await prisma.hrmsAppRole.findFirst({
       where: { id: params.id, orgId: orgId, appId: APP_ID },
     });
     if (!role) return notFound("Role not found");
+    // System roles (admin, etc.) are immutable — their permission set is the
+    // product's baseline and must not be rewritten.
+    if (role.isSystem) return validationError("System roles can't have their permissions changed.");
 
     const body = await req.json();
     const parsed = setRolePermissionsSchema.safeParse(body);
     if (!parsed.success) return validationError("Validation failed", parsed.error.flatten().fieldErrors);
 
-    const knownCodes = new Set<string>(PERMISSION_CODES);
-    const unknown = parsed.data.permissions.filter((c) => !knownCodes.has(c));
-    if (unknown.length > 0) return validationError(`Unknown permissions: ${unknown.join(", ")}`);
+    // Reject "*" / unknown codes and block self-elevation.
+    const grantCheck = validateGrantableCodes(parsed.data.permissions, permissions);
+    if (!grantCheck.ok) return validationError(grantCheck.error);
 
     const pairs = parsed.data.permissions.map(splitCode);
 

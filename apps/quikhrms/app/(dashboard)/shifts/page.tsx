@@ -6,6 +6,7 @@ import { ArrowLeft } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { CrudTable, type Column } from "@/components/hrms/crud-table";
+import { PageBackground } from "@/components/hrms/page-background";
 import { Modal } from "@/components/hrms/modal";
 import { FormActions, FormField, FormInput } from "@/components/hrms/form";
 import { NumberInput } from "@/components/hrms/ui/number-input";
@@ -30,6 +31,8 @@ export default function ShiftsPage() {
   const router = useRouter();
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [modal, setModal] = useState<{ open: boolean; item: ShiftItem | null }>({ open: false, item: null });
   const [formError, setFormError] = useState<string | null>(null);
   const [form, setForm] = useState<{
@@ -89,9 +92,13 @@ export default function ShiftsPage() {
   };
 
   const filtered = (data?.data ?? []).filter((s) => !search || s.name.toLowerCase().includes(search.toLowerCase()));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <button
         type="button"
         onClick={() => {
@@ -103,9 +110,10 @@ export default function ShiftsPage() {
       >
         <ArrowLeft size={14} /> Back
       </button>
-      <CrudTable title="Shift Policies" data={filtered} columns={columns} isLoading={isLoading}
+      <CrudTable title="Shift Policies" data={pageItems} columns={columns} isLoading={isLoading}
         onAdd={openAdd} onEdit={openEdit} onDelete={(id) => deleteMut.mutate(id)}
-        search={search} onSearchChange={setSearch} searchPlaceholder="Search shifts..." />
+        search={search} onSearchChange={(v) => { setSearch(v); setPage(1); }} searchPlaceholder="Search shifts..."
+        pagination={{ page, totalPages, total: filtered.length, limit: PAGE_SIZE, onPageChange: setPage }} />
 
       <Modal open={modal.open} onClose={() => setModal({ open: false, item: null })} title={modal.item ? "Edit Shift" : "Add Shift"}>
         <form

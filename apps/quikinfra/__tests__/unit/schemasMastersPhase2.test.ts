@@ -5,7 +5,6 @@ import {
   gstCodeCreateSchema,
   tdsCodeCreateSchema,
   termsCreateSchema,
-  financialYearCreateSchema,
   projectCreateSchema,
   machineryCreateSchema,
   assetCreateSchema,
@@ -47,20 +46,6 @@ describe("termsCreateSchema", () => {
   });
   it("rejects bad applicableTo", () => {
     expect(termsCreateSchema.safeParse({ title: "T", body: "B", applicableTo: "xx" }).success).toBe(false);
-  });
-});
-
-describe("financialYearCreateSchema refinement", () => {
-  const base = { companyId: "c1", label: "FY 2025-26", startDate: "2025-04-01", endDate: "2026-03-31" };
-  it("accepts endDate after startDate", () => {
-    expect(financialYearCreateSchema.safeParse(base).success).toBe(true);
-  });
-  it("rejects endDate not after startDate", () => {
-    const r = financialYearCreateSchema.safeParse({ ...base, endDate: "2025-01-01" });
-    expect(r.success).toBe(false);
-    if (!r.success) {
-      expect(r.error.issues.some((i) => i.path.includes("endDate"))).toBe(true);
-    }
   });
 });
 

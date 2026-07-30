@@ -17,7 +17,6 @@ export interface GRNLineInput {
   acceptedQty?: string | number | null;
   rejectedQty?: string | number | null;
   batchNo?: string | null;
-  heatNo?: string | null;
   condition?: string | null;
   testCertRef?: string | null;
   remarks?: string | null;
@@ -91,7 +90,6 @@ interface GrnLineRow {
   amount?: Numericish;
   qualityStatus?: string | null;
   batchNo?: string | null;
-  heatNo?: string | null;
   condition?: string | null;
   testCertRef?: string | null;
   remarks?: string | null;
@@ -109,6 +107,10 @@ interface GrnPoRel {
   id?: string | null;
   poNumber?: string | null;
 }
+interface GrnLocationRel {
+  name?: string | null;
+  code?: string | null;
+}
 interface GrnRow {
   id: string;
   orgId: string;
@@ -120,6 +122,7 @@ interface GrnRow {
   project?: GrnProjectRel | null;
   vendor?: GrnVendorRel | null;
   po?: GrnPoRel | null;
+  location?: GrnLocationRel | null;
   grnDate?: Date | string | null;
   locationId?: string | null;
   storageLocationId?: string | null;
@@ -185,7 +188,6 @@ function enrichLine(row: GrnLineRow, itemById: Map<string, ItemLookup>, uomById:
     amount: String(row.amount ?? "0"),
     qualityStatus: row.qualityStatus ?? "pending",
     batchNo: row.batchNo ?? "",
-    heatNo: row.heatNo ?? "",
     condition: row.condition ?? "Good",
     testCertRef: row.testCertRef ?? "",
     remarks: row.remarks ?? "",
@@ -197,6 +199,7 @@ function enrichGRN(row: GrnRow, itemById: Map<string, ItemLookup>, uomById: Map<
   const project = row.project ?? null;
   const vendor = row.vendor ?? null;
   const po = row.po ?? null;
+  const location = row.location ?? null;
   const grnTotalExGST = lines.reduce(
     (s, l) => s + (parseFloat(l.amount) || 0),
     0,
@@ -216,6 +219,7 @@ function enrichGRN(row: GrnRow, itemById: Map<string, ItemLookup>, uomById: Map<
     grnDate: isoDate(row.grnDate),
     locationId: row.locationId ?? null,
     storageLocationId: row.storageLocationId ?? null,
+    storageLocationName: location?.name ?? "",
     supplierInvoiceNo: row.supplierInvoiceNo ?? "",
     vendorInvoiceNo: row.supplierInvoiceNo ?? "",
     supplierInvoiceDate: isoDate(row.supplierInvoiceDate),
@@ -290,24 +294,50 @@ export interface ListGRNsOptions {
   /** Pagination — passed straight through to Prisma findMany. */
   take?: number;
   skip?: number;
+  /** Server-side sort (from `parseSort`). Defaults to newest-first. */
+  orderBy?: Array<Record<string, "asc" | "desc">>;
 }
 
-export async function listGRNs(opts: ListGRNsOptions): Promise<EnrichedGRN[]> {
+function buildGRNsWhere(
+  opts: Pick<ListGRNsOptions, "orgId" | "projectIds" | "status" | "search">,
+): Record<string, unknown> {
   const where: Record<string, unknown> = { orgId: opts.orgId };
   if (opts.status && opts.status !== "all") where.status = opts.status;
   if (Array.isArray(opts.projectIds)) {
     where.projectId = { in: opts.projectIds };
   }
-  if (opts.search) {
-    const q = opts.search.toLowerCase();
+  const q = (opts.search ?? "").trim();
+  if (q) {
     where.OR = [
       { grnNumber: { contains: q, mode: "insensitive" } },
       { supplierInvoiceNo: { contains: q, mode: "insensitive" } },
     ];
   }
+  return where;
+}
 
+export async function countGRNs(
+  opts: Pick<ListGRNsOptions, "orgId" | "projectIds" | "status" | "search">,
+): Promise<number> {
+  return db.cnGoodsReceiptNote.count({ where: buildGRNsWhere(opts) });
+}
+
+export async function grnStatusCounts(
+  opts: Pick<ListGRNsOptions, "orgId" | "projectIds" | "search">,
+): Promise<Record<string, number>> {
+  const groups = await db.cnGoodsReceiptNote.groupBy({
+    by: ["status"],
+    where: buildGRNsWhere({ ...opts, status: undefined }),
+    _count: { _all: true },
+  });
+  const out: Record<string, number> = {};
+  for (const g of groups) out[String(g.status)] = g._count._all;
+  return out;
+}
+
+export async function listGRNs(opts: ListGRNsOptions): Promise<EnrichedGRN[]> {
   const rows = await db.cnGoodsReceiptNote.findMany({
-    where,
+    where: buildGRNsWhere(opts),
     include: {
       lines: true,
       po: { select: { id: true, poNumber: true } },
@@ -316,7 +346,7 @@ export async function listGRNs(opts: ListGRNsOptions): Promise<EnrichedGRN[]> {
         select: { id: true, name: true, companyName: true, gstin: true },
       },
     },
-    orderBy: { grnDate: "desc" },
+    orderBy: opts.orderBy ?? [{ grnDate: "desc" }, { createdAt: "desc" }],
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
   });
@@ -337,6 +367,7 @@ export async function findGRNById(
       vendor: {
         select: { id: true, name: true, companyName: true, gstin: true },
       },
+      location: { select: { id: true, name: true, code: true } },
     },
   });
   if (!row) return null;
@@ -431,7 +462,6 @@ export async function createGRN(input: CreateGRNInput): Promise<EnrichedGRN> {
           : "rejected"
         : "accepted",
     batchNo: l.batchNo ?? null,
-    heatNo: l.heatNo ?? null,
     condition: l.condition ?? "Good",
     testCertRef: l.testCertRef ?? null,
     remarks: l.remarks ?? null,

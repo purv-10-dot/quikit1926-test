@@ -67,11 +67,16 @@ export const PERMISSION_TREE: readonly PermissionModule[] = [
     key: "Organization",
     label: "Organization",
     leaves: [
-      {
-        resource: "construction.organization",
-        label: "Organization",
-        actions: ["view", "create", "edit", "delete"],
-      },
+      // Per-page resources (per-page-permissions split). Each Organization
+      // page owns its resource; the umbrella `construction.organization` was
+      // retired in Phase 5.
+      { resource: "construction.org_company",       label: "Companies",          actions: ["view", "create", "edit", "delete"] },
+      { resource: "construction.org_department",    label: "Departments",        actions: ["view", "create", "edit", "delete"] },
+      { resource: "construction.org_gst",           label: "GST Codes",          actions: ["view", "create", "edit", "delete"] },
+      { resource: "construction.org_tds",           label: "TDS Codes",          actions: ["view", "create", "edit", "delete"] },
+      { resource: "construction.org_uom",           label: "UOM",                actions: ["view", "create", "edit", "delete"] },
+      { resource: "construction.org_work_category", label: "Work Categories",    actions: ["view", "create", "edit", "delete"] },
+      { resource: "construction.org_terms",         label: "Terms & Conditions", actions: ["view", "create", "edit", "delete"] },
     ],
   },
   {
@@ -89,11 +94,20 @@ export const PERMISSION_TREE: readonly PermissionModule[] = [
     key: "Masters",
     label: "Masters",
     leaves: [
-      {
-        resource: "construction.masters",
-        label: "Masters",
-        actions: ["view", "create", "edit", "delete", "import", "export"],
-      },
+      // Per-page resources (per-page-permissions split). Each Masters page
+      // owns its resource; the umbrella `construction.masters` was retired in
+      // Phase 5. Projects keeps its own `construction.project` (defined below).
+      { resource: "construction.master_item",        label: "Items / Materials", actions: ["view", "create", "edit", "delete", "import", "export"] },
+      { resource: "construction.master_item_group",  label: "Item Groups",       actions: ["view", "create", "edit", "delete"] },
+      { resource: "construction.master_vendor",      label: "Vendors",           actions: ["view", "create", "edit", "delete"] },
+      { resource: "construction.master_contractor",  label: "Contractors",       actions: ["view", "create", "edit", "delete"] },
+      { resource: "construction.master_customer",    label: "Customers",         actions: ["view", "create", "edit", "delete"] },
+      { resource: "construction.master_location",    label: "Locations / Sites", actions: ["view", "create", "edit", "delete"] },
+      { resource: "construction.master_machinery",   label: "Machinery",         actions: ["view", "create", "edit", "delete"] },
+      { resource: "construction.master_asset",       label: "Assets / Tools",    actions: ["view", "create", "edit", "delete"] },
+      { resource: "construction.master_cost_center", label: "Cost Centers",      actions: ["view", "create", "edit", "delete"] },
+      { resource: "construction.master_labour",      label: "Labour Master",     actions: ["view", "create", "edit", "delete", "approve"] },
+      { resource: "construction.master_workman",     label: "Workmen",           actions: ["view", "create", "edit", "delete"] },
     ],
   },
   {
@@ -420,8 +434,33 @@ export const NAV_RESOURCE: Record<string, string> = {
 // governed purely by role + UserPermissionExtra grants.
 
 export const MODULE_TO_RESOURCES: Readonly<Record<string, readonly string[]>> = {
-  organization: ["construction.organization"],
-  masters: ["construction.masters"],
+  // Per-page-permissions split (Phase 4): the ORGANIZATION and MASTERS modules
+  // now list their per-page resources instead of the retired umbrellas
+  // (construction.organization / construction.masters). This keeps the
+  // view-based module derivation (modulesFromRevokes / modulesFromPermissions)
+  // consistent once the matrix + routes write/read per-page resources.
+  organization: [
+    "construction.org_company",
+    "construction.org_department",
+    "construction.org_gst",
+    "construction.org_tds",
+    "construction.org_uom",
+    "construction.org_work_category",
+    "construction.org_terms",
+  ],
+  masters: [
+    "construction.master_item",
+    "construction.master_item_group",
+    "construction.master_vendor",
+    "construction.master_contractor",
+    "construction.master_customer",
+    "construction.master_location",
+    "construction.master_machinery",
+    "construction.master_asset",
+    "construction.master_cost_center",
+    "construction.master_labour",
+    "construction.master_workman",
+  ],
   purchase: [
     "construction.pr",
     "construction.indent",
@@ -451,11 +490,19 @@ export const MODULE_TO_RESOURCES: Readonly<Record<string, readonly string[]>> = 
     "construction.gantt",
     "construction.hindrance",
     "construction.documents",
-    "construction.rab",
   ],
   quality_safety: ["construction.quality_safety"],
   machinery_equipment: ["construction.equipment_log", "construction.equipment_maintenance", "construction.equipment_deployment", "construction.equipment_fleet", "construction.equipment_hire_rent", "construction.equipment_fixed_assets"],
-  finance: ["construction.finance"],
+  // FINANCE's only real page today is RA Bills (construction.rab); the other
+  // finance links (vendor payments, client billing, …) are placeholders not
+  // yet in MENU_CATALOG. Keying the module to construction.rab — the resource
+  // the permission matrix actually manages (finance.rab → construction.rab) —
+  // is what lets the matrix turn Finance off. It used to point at
+  // construction.finance, which no menu page maps to, so the matrix could
+  // never revoke it and Finance stayed "assigned" forever. RA Bills moved out
+  // of PROJECT MGMT to here, so construction.rab is dropped from project_mgmt
+  // above (it lives under the FINANCE menu group, not Project Mgmt).
+  finance: ["construction.rab"],
 } as const;
 
 /**

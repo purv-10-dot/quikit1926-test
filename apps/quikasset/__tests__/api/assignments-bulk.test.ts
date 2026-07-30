@@ -117,6 +117,7 @@ describe("POST /api/assignments/bulk", () => {
     expect(mockDb.astAssignment.create).toHaveBeenCalledTimes(2);
     // Every assignment gets the resolved employee id + inherits the asset condition + persists the date.
     expect(dataOf(mockDb.astAssignment.create.mock.calls[0]?.[0]).userId).toBe("e1");
+    expect(dataOf(mockDb.astAssignment.create.mock.calls[0]?.[0]).assignedByUserId).toBe("admin"); // actor stamped
     expect(dataOf(mockDb.astAssignment.create.mock.calls[0]?.[0]).condition).toBe("Good");
     expect(dataOf(mockDb.astAssignment.create.mock.calls[0]?.[0]).assignedAt).toBeInstanceOf(Date);
     expect(dataOf(mockDb.astAssignment.create.mock.calls[1]?.[0]).condition).toBe("Fair");

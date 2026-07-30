@@ -13,7 +13,7 @@ interface Me {
 export function HeroBanner() {
   const api = useApiClient();
   const { data: meRes } = useQuery({
-    queryKey: ["me", "home-hero"],
+    queryKey: ["employees", "me"],
     queryFn: () => api.get<Me>("/api/v1/hrms/employees/me"),
     staleTime: 5 * 60_000,
   });

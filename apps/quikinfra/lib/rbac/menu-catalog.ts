@@ -34,12 +34,16 @@ const allFour = { add: true, edit: true, delete: true, view: true };
 const readOnly = { add: false, edit: false, delete: false, view: true };
 const writeOnly = { add: true, edit: true, delete: false, view: true };
 
+// Order MUST mirror the sidebar (QuikInfraShell → CONSTRUCTION_NAV):
+// Organization → Masters → Project Mgmt → Purchase → Store → Quality & Safety
+// → Machinery & Equipment → Finance → System. The matrix renders groups in
+// this order (see groupByModule).
 export const MENU_MODULES = [
   "ORGANIZATION",
   "MASTERS",
+  "PROJECT MGMT",
   "PURCHASE",
   "STORE",
-  "PROJECT MGMT",
   "QUALITY & SAFETY",
   "MACHINERY & EQUIPMENT",
   "FINANCE",
@@ -75,6 +79,8 @@ export const MENU_CATALOG: MenuItem[] = [
   { key: "master.machinery",    label: "Machinery",         url: "/masters/machinery",    module: "MASTERS", supports: allFour },
   { key: "master.asset",        label: "Assets / Tools",    url: "/masters/assets",       module: "MASTERS", supports: allFour },
   { key: "master.cost_center",  label: "Cost Centers",      url: "/masters/cost-centers", module: "MASTERS", supports: allFour },
+  { key: "master.labour",       label: "Labour Master",     url: "/masters/labour",       module: "MASTERS", supports: allFour },
+  { key: "master.workman",      label: "Workmen",           url: "/masters/workmen",      module: "MASTERS", supports: allFour },
 
   // ─── PURCHASE ────────────────────────────────────────────────────
   { key: "purchase.mr",     label: "Purchase Requisitions", url: "/purchase/requisitions", module: "PURCHASE", supports: allFour },
@@ -215,6 +221,46 @@ export const MODULE_KEY_TO_MENU_MODULE: Record<string, MenuModule> = {
 };
 
 /**
+ * Extra module keys that put a page in scope, beyond its own menu group.
+ *
+ * Matrix display and the sidebar fallback both scope pages by module, but
+ * `modulesAssigned` is derived from the RESOURCE side
+ * (MODULE_TO_RESOURCES → modulesFromRevokes / modulesFromPermissions).
+ * When a page's menu group and its resource's module disagree, the page
+ * silently disappears: the grant IS written to CnUserPermissionExtra, but
+ * the row renders off because its display module looks unassigned — and
+ * the next save then revokes the grant for real.
+ *
+ * Projects is the one such page. It sits under MASTERS in the sidebar and
+ * in MENU_CATALOG, but `construction.project` belongs to the `project_mgmt`
+ * resource list, not `masters`. Listing project_mgmt here is a UNION, not a
+ * swap — Projects stays in scope for the masters module too, so nothing a
+ * masters-only user could see before is taken away.
+ */
+const MENU_KEY_EXTRA_SCOPE_MODULES: Record<string, readonly string[]> = {
+  "master.project": ["project_mgmt"],
+};
+
+/**
+ * Module keys that put a page in scope: its own menu group plus any extra
+ * owners above. SYSTEM pages map to no assignable module and return an
+ * empty list (never auto-granted).
+ */
+function scopeModuleKeys(item: MenuItem): string[] {
+  const out: string[] = [];
+  for (const [moduleKey, menuModule] of Object.entries(MODULE_KEY_TO_MENU_MODULE)) {
+    if (menuModule === item.module) out.push(moduleKey);
+  }
+  out.push(...(MENU_KEY_EXTRA_SCOPE_MODULES[item.key] ?? []));
+  return out;
+}
+
+/** True when any module that puts this page in scope is assigned. */
+function inScope(item: MenuItem, assigned: ReadonlySet<string>): boolean {
+  return scopeModuleKeys(item).some((k) => assigned.has(k));
+}
+
+/**
  * Build a permission matrix that grants everything under the given
  * assigned modules and denies everything else. Used to seed a new user's
  * permissions from their `modulesAssigned` selection so admins don't
@@ -225,13 +271,11 @@ export function buildMatrixFromModules(
   modulesAssigned: string[] | null | undefined,
 ): PermissionMatrix {
   const assigned = new Set(
-    (modulesAssigned ?? [])
-      .map((k) => MODULE_KEY_TO_MENU_MODULE[k])
-      .filter(Boolean),
+    (modulesAssigned ?? []).filter((k) => MODULE_KEY_TO_MENU_MODULE[k]),
   );
   const out: PermissionMatrix = {};
   for (const item of MENU_CATALOG) {
-    const grant = assigned.has(item.module);
+    const grant = inScope(item, assigned);
     // Assigning a module grants the FULL action set (add/edit/delete/view)
     // on its pages by default — so a user given a module can actually
     // operate it, matching the role's grants. Unassigned modules get nothing.
@@ -268,14 +312,12 @@ export function buildModuleScopedMatrix(
   saved: PermissionMatrix | null | undefined,
 ): PermissionMatrix {
   const assigned = new Set(
-    (modulesAssigned ?? [])
-      .map((k) => MODULE_KEY_TO_MENU_MODULE[k])
-      .filter(Boolean),
+    (modulesAssigned ?? []).filter((k) => MODULE_KEY_TO_MENU_MODULE[k]),
   );
   const out = buildMatrixFromModules(modulesAssigned);
   if (!saved) return out;
   for (const item of MENU_CATALOG) {
-    if (!assigned.has(item.module)) continue; // unassigned → keep base (off)
+    if (!inScope(item, assigned)) continue; // unassigned → keep base (off)
     const row = saved[item.key];
     if (!row) continue;
     out[item.key] = {

@@ -65,7 +65,7 @@ describe("GET /api/store/reconciliations", () => {
         createdAt: new Date(),
         updatedAt: new Date(),
         project: { name: "Acme Tower" },
-        _count: { lines: 2 },
+        lineCount: 2,
       },
     ]);
     const res = await GET(buildGET());
@@ -133,7 +133,7 @@ describe("POST /api/store/reconciliations", () => {
       conductedById: TEST_USER,
       status: "draft",
       project: { name: "Acme Tower" },
-      lines: [{ id: "l1" }],
+      lineCount: 1,
       createdAt: new Date(),
     });
     const res = await POST(buildPOST(VALID_BODY));
@@ -143,6 +143,10 @@ describe("POST /api/store/reconciliations", () => {
     const data = db.cnStockReconciliation.create.mock.calls[0][0].data;
     expect(data.orgId).toBe(TEST_TENANT);
     expect(data.conductedById).toBe(TEST_USER);
+    // Lines persist inline as a JSONB materials array, not a relational create.
+    expect(Array.isArray(data.materials)).toBe(true);
+    expect(data.lineCount).toBe(1);
+    expect(data.lines).toBeUndefined();
   });
 
   it("maps a Prisma P2002 unique violation to 409", async () => {

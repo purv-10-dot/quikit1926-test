@@ -48,5 +48,11 @@ export interface ReportDefinition {
   description: string;
   category: ReportCategory;
   usesDateRange?: boolean; // UI hint: show the From/To pickers for this report
+  /**
+   * Permission required to RUN this report. When omitted, the registry derives
+   * it from the category (see reportRequiredPermission) — sensitive categories
+   * (Payroll/Statutory/Tax) default to the elevated hrms.reports.manage.
+   */
+  requiredPermission?: string;
   run: (ctx: ReportContext) => Promise<ReportResult>;
 }

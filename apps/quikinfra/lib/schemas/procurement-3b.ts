@@ -76,26 +76,6 @@ export const goodReturnCreateSchema = z.object({
 });
 export type GoodReturnCreateInput = z.infer<typeof goodReturnCreateSchema>;
 
-// Internal Return
-export const internalReturnLineSchema = z.object({
-  itemId: z.string().min(1),
-  returnQty: z.number().positive(),
-  uomId: z.string().min(1),
-  unitRate: z.number().min(0),
-  remarks: z.string().optional().nullable(),
-});
-export const internalReturnCreateSchema = z.object({
-  returnNumber: z.string().min(1).max(50),
-  issueId: z.string().min(1),
-  projectId: z.string().min(1),
-  locationId: z.string().min(1),
-  returnDate: z.string().min(1),
-  returnedBy: z.string().min(1),
-  reason: z.string().optional().nullable(),
-  lines: z.array(internalReturnLineSchema).min(1),
-});
-export type InternalReturnCreateInput = z.infer<typeof internalReturnCreateSchema>;
-
 // Stock Transfer
 export const transferLineSchema = z.object({
   itemId: z.string().min(1),

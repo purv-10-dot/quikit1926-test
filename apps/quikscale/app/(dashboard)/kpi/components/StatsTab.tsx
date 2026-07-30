@@ -18,8 +18,8 @@
 
 import type { KPIRow } from "@/lib/types/kpi";
 import { fmt, formatScaledKpiValue, getProgressBadgeColors } from "@/lib/utils/kpiHelpers";
-import { computeKPIStats, computeQtd } from "./kpiStats";
-import { useCurrentWeek, useQtdReferenceWeek, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
+import { computeKPIStats, computeQtd, weeklyGoalTile } from "./kpiStats";
+import { useQtdReferenceWeek, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
 
 export function StatsTab({ kpi }: { kpi: KPIRow }) {
   // Scaled-display: when the KPI's toggle is on, currency values render in the
@@ -50,12 +50,10 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
   const weekCount = useQuarterWeekCount(kpi.year, kpi.quarter);
   const { filledWeeks, avgPerWeek, bestWeek, bestValue } = computeKPIStats(kpi, weekCount);
 
-  // Week-of-quarter — DB-driven, respects tenant's QuarterSetting. Used for the
-  // Weekly Goal tile (latest reported week) below.
-  const currentWeek = useCurrentWeek(kpi.year, kpi.quarter);
   // QTD reference week — past/current/future aware. For a fully-past quarter
   // this is `weekCount + 1` so QTD counts ALL completed weeks (the clamped
-  // `currentWeek` would drop the final week). See `qtdReferenceWeek`.
+  // display week would drop the final week). See `qtdReferenceWeek`. Drives
+  // both the QTD totals and the Weekly Goal tile (last completed week) below.
   const qtdWeek = useQtdReferenceWeek(kpi.year, kpi.quarter);
 
   // Compute QTD totals over the completed weeks. Falls back to full-quarter
@@ -82,29 +80,19 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
     ? getProgressBadgeColors(achieved, target, hasAnyWeeklyValue, kpi.reverseColor ?? false)
     : { bar: "bg-gray-300", text: "text-gray-500", label: "—" };
 
-  // Weekly Goal tile shows "<latest reported value> / <that week's target>".
-  // We look at the most recent week (≤ currentWeek when known, else any week)
-  // that has a non-null actual entered. If nothing's been entered yet, fall
-  // back to "— / <current-week target>" so the tile still shows a target.
-  const weekAvg = target > 0 ? target / weekCount : 0;
-  const wt = kpi.weeklyTargets ?? {};
-  const weekTargetFor = (w: number): number => {
-    const raw = wt[String(w)];
-    // Use the saved per-week target as-is (including explicit 0).
-    // Fall back to the flat average only when no per-week breakdown exists (undefined).
-    return typeof raw === "number" ? raw : weekAvg;
-  };
-
-  // Weekly Goal = (currentWeek-1) actual value / (currentWeek-1) target.
-  const prevWeek = currentWeek != null && currentWeek > 1 ? currentWeek - 1 : null;
-  const prevWeekValue = prevWeek != null
-    ? ((kpi.weeklyValues ?? []).find(v => v.weekNumber === prevWeek)?.value ?? null)
-    : null;
-  const prevWeekTarget = prevWeek != null ? weekTargetFor(prevWeek) : 0;
+  // Weekly Goal tile shows "<last completed week's value> / <that week's target>".
+  // The completed week is derived from the QTD reference week (qtdWeek - 1), so a
+  // fully-past quarter correctly reflects its FINAL week instead of dropping it
+  // — the clamped display week used to point one week too early. See weeklyGoalTile.
+  const weeklyTile = weeklyGoalTile(kpi, qtdWeek, weekCount);
+  // Zero-target KPI: every week's goal is a real 0, so show "0" rather than "—".
+  const isZeroTargetKPI = target === 0;
   const weeklyGoalDisplay = (() => {
-    if (prevWeek == null) return "—";
-    const valueStr = prevWeekValue != null ? fmtStat(prevWeekValue) : "—";
-    const targetStr = prevWeekTarget > 0 ? fmtStat(prevWeekTarget) : "—";
+    if (weeklyTile == null) return "—";
+    const valueStr = weeklyTile.value != null ? fmtStat(weeklyTile.value) : "—";
+    const targetStr = weeklyTile.target > 0
+      ? fmtStat(weeklyTile.target)
+      : isZeroTargetKPI ? fmtStat(0) : "—";
     if (valueStr === "—" && targetStr === "—") return "—";
     return `${valueStr} / ${targetStr}`;
   })();

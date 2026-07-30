@@ -19,14 +19,12 @@ import type { ContractorRecord } from "@/lib/masters/contractors-repository";
 import type { CustomerRecord } from "@/lib/masters/customers-repository";
 import type { ItemGroupRecord } from "@/lib/masters/item-groups-repository";
 import type { GSTCodeRecord } from "@/lib/masters/gst-codes-repository";
-import type { TDSCodeRecord } from "@/lib/masters/tds-codes-repository";
 import type { WorkCategoryRecord } from "@/lib/masters/work-categories-repository";
-import type { CostCenterRecord } from "@/lib/masters/cost-centers-repository";
 import type { MachineryRecord } from "@/lib/masters/machinery-repository";
 import type { CompanyRecord } from "@/lib/masters/companies-repository";
-import type { FinancialYearRecord } from "@/lib/masters/financial-years-repository";
 import type { TermsConditionRecord } from "@/lib/masters/terms-repository";
 import type { AssetRecord } from "@/lib/masters/assets-repository";
+import type { LabourCategoryRecord } from "@/lib/masters/labour-categories-repository";
 
 const fetchApi = fetchJson;
 const mutateApi = mutateJson;
@@ -37,7 +35,9 @@ const mutateApi = mutateJson;
 export function useProjects(params?: { search?: string; status?: string }) {
   const qs = new URLSearchParams();
   if (params?.search) qs.set("search", params.search);
-  if (params?.status) qs.set("status", params.status);
+  // status:"all" powers the master list's Inactive tab. Pickers omit status and
+  // get active-only (inactive/deleted excluded) from the API default.
+  if (params?.status === "all") qs.set("includeInactive", "true");
   const query = qs.toString();
 
   return useQuery({
@@ -287,16 +287,6 @@ export function useCreateGSTCode() {
 
 // ─── TDS Codes ─────────────────────────────────────────────────────
 
-export function useTDSCodes(params?: { search?: string }) {
-  const qs = new URLSearchParams();
-  if (params?.search) qs.set("search", params.search);
-  const query = qs.toString();
-
-  return useQuery({
-    queryKey: ["tds-codes", query],
-    queryFn: () => fetchApi<{ data: TDSCodeRecord[]; total: number }>(`/api/masters/tds${query ? `?${query}` : ""}`),
-  });
-}
 
 export function useCreateTDSCode() {
   const qc = useQueryClient();
@@ -353,17 +343,6 @@ export function useCreateWorkCategory() {
 
 // ─── Cost Centers ──────────────────────────────────────────────────
 
-export function useCostCenters(params?: { search?: string; projectId?: string }) {
-  const qs = new URLSearchParams();
-  if (params?.search) qs.set("search", params.search);
-  if (params?.projectId) qs.set("projectId", params.projectId);
-  const query = qs.toString();
-
-  return useQuery({
-    queryKey: ["cost-centers", query],
-    queryFn: () => fetchApi<{ data: CostCenterRecord[]; total: number }>(`/api/masters/cost-centers${query ? `?${query}` : ""}`),
-  });
-}
 
 export function useCreateCostCenter() {
   const qc = useQueryClient();
@@ -416,28 +395,6 @@ export function useCreateCompany() {
     mutationFn: (data: unknown) => mutateApi("/api/masters/companies", "POST", data),
     onSuccess: async () => { await refreshListQueries(qc, "companies"); },
     meta: entityMeta("create", "Company"),
-  });
-}
-
-// ─── Financial Years ───────────────────────────────────────────────
-
-export function useFinancialYears(params?: { search?: string }) {
-  const qs = new URLSearchParams();
-  if (params?.search) qs.set("search", params.search);
-  const query = qs.toString();
-
-  return useQuery({
-    queryKey: ["financial-years", query],
-    queryFn: () => fetchApi<{ data: FinancialYearRecord[]; total: number }>(`/api/masters/financial-years${query ? `?${query}` : ""}`),
-  });
-}
-
-export function useCreateFinancialYear() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (data: unknown) => mutateApi("/api/masters/financial-years", "POST", data),
-    onSuccess: async () => { await refreshListQueries(qc, "financial-years"); },
-    meta: entityMeta("create", "Financial year"),
   });
 }
 
@@ -562,10 +519,59 @@ export const useDeleteMachinery = makeDeleteHook("/api/masters/machinery", "mach
 export const useUpdateCompany = makeUpdateHook("/api/masters/companies", "companies", "Company");
 export const useDeleteCompany = makeDeleteHook("/api/masters/companies", "companies", "Company");
 
-// Financial Years
-export const useUpdateFinancialYear = makeUpdateHook("/api/masters/financial-years", "financial-years", "Financial year");
-export const useDeleteFinancialYear = makeDeleteHook("/api/masters/financial-years", "financial-years", "Financial year");
 
 // Terms & Conditions
 export const useUpdateTermsCondition = makeUpdateHook("/api/masters/terms", "terms-conditions", "Terms & conditions");
 export const useDeleteTermsCondition = makeDeleteHook("/api/masters/terms", "terms-conditions", "Terms & conditions");
+
+
+// ─── Labour Masters (Category / Rate / Workman) ─────────────────────
+
+export function useLabourCategories(params?: { search?: string; status?: string }) {
+  const qs = new URLSearchParams();
+  if (params?.search) qs.set("search", params.search);
+  if (params?.status) qs.set("status", params.status);
+  const query = qs.toString();
+  return useQuery({
+    queryKey: ["labour-categories", query],
+    queryFn: () =>
+      fetchApi<{ data: LabourCategoryRecord[]; total: number }>(
+        `/api/masters/labour-categories${query ? `?${query}` : ""}`,
+      ),
+  });
+}
+
+export function useCreateLabourCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: unknown) => mutateApi("/api/masters/labour-categories", "POST", data),
+    onSuccess: async () => { await refreshListQueries(qc, "labour-categories"); },
+    meta: entityMeta("create", "Labour category"),
+  });
+}
+export const useUpdateLabourCategory = makeUpdateHook("/api/masters/labour-categories", "labour-categories", "Labour category");
+export const useDeleteLabourCategory = makeDeleteHook("/api/masters/labour-categories", "labour-categories", "Labour category");
+
+
+export function useCreateLabourRate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: unknown) => mutateApi("/api/masters/labour-rates", "POST", data),
+    onSuccess: async () => { await refreshListQueries(qc, "labour-rates"); },
+    meta: entityMeta("create", "Labour rate"),
+  });
+}
+export const useUpdateLabourRate = makeUpdateHook("/api/masters/labour-rates", "labour-rates", "Labour rate");
+export const useDeleteLabourRate = makeDeleteHook("/api/masters/labour-rates", "labour-rates", "Labour rate");
+
+
+export function useCreateWorkman() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: unknown) => mutateApi("/api/masters/workmen", "POST", data),
+    onSuccess: async () => { await refreshListQueries(qc, "workmen"); },
+    meta: entityMeta("create", "Workman"),
+  });
+}
+export const useUpdateWorkman = makeUpdateHook("/api/masters/workmen", "workmen", "Workman");
+export const useDeleteWorkman = makeDeleteHook("/api/masters/workmen", "workmen", "Workman");

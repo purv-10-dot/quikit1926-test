@@ -3,15 +3,15 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye } from "lucide-react";
-import { PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
-import { useStockReconciliations } from "@/hooks/use-store";
+import { useServerTabList } from "@/hooks/use-server-tab-list";
 import { QuickCreateDrawer, type QuickCreateConfig } from "@/components/QuickCreateDrawer";
 import { GroupedMaterialSelect, type GroupedMaterialSelectItem } from "@/components/GroupedMaterialSelect";
-import { useProjects, useLocations, useItems, useItemGroups } from "@/hooks/use-masters";
+import { useProjects, useLocations, useItemGroups } from "@/hooks/use-masters";
 import { useMenuActions } from "@/hooks/use-permissions";
 import { useQueryClient } from "@tanstack/react-query";
-import { buildTabCounts, filterByTab, type TabSpec } from "@/lib/tab-counts";
+import { type TabSpec } from "@/lib/tab-counts";
 
 const TABS: TabSpec[] = [
   { key: "all", label: "All" },
@@ -34,19 +34,39 @@ export default function StockReconciliationPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { canAdd } = useMenuActions("/store/reconciliation");
 
-  const { data: result, isLoading } = useStockReconciliations({ status: "all" });
-  const allRows = result?.data ?? [];
-  const tabs = useMemo(() => buildTabCounts(allRows, TABS), [allRows]);
-  const data = useMemo(() => filterByTab(allRows, activeTab, TABS), [allRows, activeTab]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sort, setSort] = useState<{ by?: string; order?: "asc" | "desc" }>({
+    by: "reconciliationDate",
+    order: "desc",
+  });
+  const {
+    items: data,
+    total,
+    page,
+    pageSize,
+    setPage,
+    setPageSize,
+    tabs,
+    isLoading,
+  } = useServerTabList<ReconRow>("stock-reconciliations", "/api/store/reconciliations", {
+    activeTab,
+    tabs: TABS,
+    search: searchQuery,
+    sortBy: sort.by,
+    sortOrder: sort.order,
+    initialPageSize: 25,
+  });
 
   const { data: projectsData } = useProjects();
   const { data: locationsData } = useLocations();
-  const { data: itemsData } = useItems();
   const { data: itemGroupsData } = useItemGroups();
 
   const projectOptions = (projectsData?.data ?? []).map((p) => ({ value: p.id, label: p.name }));
   const locationOptions = (locationsData?.data ?? []).filter((l) => l?.status === "active").map((l) => ({ value: l.id, label: l.name }));
-  const items = (itemsData?.data ?? []) as unknown as GroupedMaterialSelectItem[];
+  // Lazy picker fetches items per-group on demand, so we no longer load the
+  // whole item master here. Empty seed is fine — the picker caches what it
+  // fetches for label display.
+  const items: GroupedMaterialSelectItem[] = [];
   const itemGroups = itemGroupsData?.data ?? [];
 
   const config: QuickCreateConfig = {
@@ -70,6 +90,7 @@ export default function StockReconciliationPage() {
           width: "wide",
           render: (line, update: (patch: Record<string, unknown>) => void) => (
             <GroupedMaterialSelect
+              lazy
               value={line.itemId ?? ""}
               onChange={(v) => update({ itemId: v })}
               items={items}
@@ -77,10 +98,9 @@ export default function StockReconciliationPage() {
                 id: g.id,
                 name: g.name,
                 status: g.status,
+                itemCount: g.itemCount,
               }))}
-              placeholder={
-                items.length === 0 ? "No items in master" : "Select material"
-              }
+              placeholder="Select material"
               size="sm"
             />
           ),
@@ -93,7 +113,15 @@ export default function StockReconciliationPage() {
   };
 
   const columns: ColDef<ReconRow>[] = [
-    { key: "reconciliationNumber", label: "Recon No", sortable: true, searchable: true },
+    {
+      key: "reconciliationNumber", label: "Recon No", sortable: true, searchable: true,
+      render: (row) => (
+        <span className="text-accent-600 cursor-pointer hover:underline font-medium"
+              onClick={() => router.push(`/store/reconciliation/${row.id}`)}>
+          {row.reconciliationNumber}
+        </span>
+      ),
+    },
     { key: "projectName", label: "Project", sortable: true, searchable: true },
     { key: "locationName", label: "Location", sortable: true, searchable: true },
     { key: "reconciliationDate", label: "Date", type: "date", sortable: true },
@@ -134,13 +162,14 @@ export default function StockReconciliationPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Stock Reconciliation"
         subtitle="Compare physical stock with system records and adjust variances"
         breadcrumbs={[{ label: "Store", href: "/store" }, { label: "Reconciliation" }]}
       />
       <TabBar tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
-      <PageContainer>
+      <PageContainer fill>
         <DataTable
           id="store-reconciliation"
           columns={columns}
@@ -148,8 +177,18 @@ export default function StockReconciliationPage() {
           onAdd={canAdd ? () => setDrawerOpen(true) : undefined}
           addLabel="New Reconciliation"
           historyEntityType="recon"
+          loading={isLoading}
+          serverMode
+          serverTotal={total}
+          serverPage={page}
+          serverPageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          onSearchChange={setSearchQuery}
+          onSortChange={(k, d) => setSort({ by: k, order: d })}
         />
       </PageContainer>
+      </PageFrame>
       <QuickCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} config={config} />
     </>
   );

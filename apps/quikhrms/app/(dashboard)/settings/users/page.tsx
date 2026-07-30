@@ -8,6 +8,7 @@ import { useDialog } from "@/components/hrms/dialog";
 import { useToast } from "@/components/hrms/toast";
 import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/select";
+import { PageBackground } from "@/components/hrms/page-background";
 import { clsx } from "clsx";
 import * as XLSX from "xlsx";
 import { UserPlus, Mail, RotateCw, Ban, Send, Upload, FileSpreadsheet, Download, X, Trash2, Search } from "lucide-react";
@@ -390,6 +391,8 @@ export default function UsersPage() {
 
   return (
     <div className="w-full">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
           <h1 className="text-base font-semibold text-gray-900">Users & Invitations</h1>

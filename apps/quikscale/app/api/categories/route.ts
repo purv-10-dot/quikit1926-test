@@ -12,23 +12,42 @@ import { writeAuditLog } from "@/lib/api/auditLog";
 // app/api/categories/[id]/route.ts and app/api/categories/logs/route.ts.
 const CATEGORY_AUDIT_ENTITY_ID = "category-mgmt";
 
-// GET /api/categories — list all categories for tenant
+// Sortable columns — allow-list keyed by the FeatureGrid column key. Anything
+// off-list falls back to the manual `position` order (drag-to-reorder view).
+const CATEGORY_SORT_MAP: Record<string, string> = {
+  name: "name",
+  dataType: "dataType",
+  currency: "currency",
+  categoryType: "categoryType",
+  createdAt: "createdAt",
+};
+
+// GET /api/categories — list categories for the tenant. Supports search,
+// dataType filter, server pagination, sort, and the Trash view (includeDeleted).
 export const GET = auth.view(async ({ orgId }, request) => {
-  const search = request.nextUrl.searchParams.get("search") || undefined;
-  const dataType = request.nextUrl.searchParams.get("dataType") || undefined;
+  const sp = request.nextUrl.searchParams;
+  const search = sp.get("search") || undefined;
+  const dataType = sp.get("dataType") || undefined;
+  const includeDeleted = sp.get("includeDeleted") === "true";
+  const sortBy = sp.get("sortBy") || "";
+  const sortOrder = sp.get("sortOrder") === "desc" ? "desc" : "asc";
   const { page, limit, skip, take } = parsePagination(request);
 
   const where: Record<string, unknown> = { orgId };
+  // Default view hides soft-deleted rows; the Trash view shows ONLY them.
+  where.deletedAt = includeDeleted ? { not: null } : null;
   if (dataType) where.dataType = dataType;
   if (search) where.name = { contains: search, mode: "insensitive" };
 
+  // Explicit sort when a valid column is chosen; else the manual drag order
+  // (position asc, nulls last) with createdAt as a stable tiebreaker.
+  const sortCol = CATEGORY_SORT_MAP[sortBy];
+  const orderBy = sortCol
+    ? [{ [sortCol]: sortOrder }, { id: "asc" as const }]
+    : [{ position: "asc" as const }, { createdAt: "asc" as const }];
+
   const [items, total] = await Promise.all([
-    db.categoryMaster.findMany({
-      where,
-      orderBy: { createdAt: "asc" },
-      skip,
-      take,
-    }),
+    db.categoryMaster.findMany({ where, orderBy, skip, take }),
     db.categoryMaster.count({ where }),
   ]);
 

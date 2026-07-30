@@ -247,7 +247,7 @@ export default function ReconciliationDetailPage() {
               </div>
               <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5 px-6 py-5 text-sm">
                 <OverviewStat label="Recon No">
-                  <span className="font-mono text-xs font-semibold text-gray-900 px-1.5 py-0.5 rounded bg-sky-50 border border-sky-100">
+                  <span className="text-xs font-semibold text-gray-900 px-1.5 py-0.5 rounded bg-sky-50 border border-sky-100">
                     {recon.reconciliationNumber ?? "—"}
                   </span>
                 </OverviewStat>
@@ -315,7 +315,7 @@ export default function ReconciliationDetailPage() {
                         const negative = variance < 0;
                         return (
                           <tr key={l.id ?? l.lineNo} className="hover:bg-indigo-50/20 transition-colors">
-                            <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
+                            <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">
                               {String(l.lineNo).padStart(2, "0")}
                             </td>
                             <td className="px-4 py-3">
@@ -330,7 +330,7 @@ export default function ReconciliationDetailPage() {
                                 )}
                               </div>
                               {l.itemCode && (
-                                <div className="text-[10px] text-gray-500 mt-0.5 font-mono">
+                                <div className="text-[10px] text-gray-500 mt-0.5">
                                   {l.itemCode}
                                 </div>
                               )}

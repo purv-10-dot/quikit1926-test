@@ -19,10 +19,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Eye, Send, AlertCircle } from "lucide-react";
 import { toast } from "@/lib/toast";
-import { PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DataTable, type ColDef } from "@/components/DataTable";
-import { useIndents, useSubmitIndent } from "@/hooks/use-approvals";
+import { useSubmitIndent } from "@/hooks/use-approvals";
 import { usePurchaseRequisitions } from "@/hooks/use-purchase";
 import { useMenuActions } from "@/hooks/use-permissions";
 import { QuickCreateDrawer, type QuickCreateConfig } from "@/components/QuickCreateDrawer";
@@ -33,9 +33,10 @@ const SourceDocPeekModal = dynamic(
   { ssr: false },
 );
 import { GroupedMaterialSelect, GROUPED_MATERIAL_OTHERS_GROUP_ID } from "@/components/GroupedMaterialSelect";
-import { useProjects, useItems, useItemGroups } from "@/hooks/use-masters";
+import { useProjects, useItemGroups } from "@/hooks/use-masters";
 import { useQueryClient } from "@tanstack/react-query";
-import { buildTabCounts, filterByTab, type TabSpec } from "@/lib/tab-counts";
+import { type TabSpec } from "@/lib/tab-counts";
+import { useServerTabList } from "@/hooks/use-server-tab-list";
 
 const STATUS_TABS: TabSpec[] = [
   { key: "all", label: "All" },
@@ -76,14 +77,29 @@ export default function IndentsPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const { canAdd } = useMenuActions("/purchase/indents");
 
-  const { data: result } = useIndents({ status: "all", search: "" });
   const submitMutation = useSubmitIndent();
-  const allRows = result?.data ?? [];
-  const tabs = useMemo(() => buildTabCounts(allRows, STATUS_TABS), [allRows]);
-  const data = useMemo(
-    () => filterByTab(allRows, activeTab, STATUS_TABS),
-    [allRows, activeTab],
-  );
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sort, setSort] = useState<{ by?: string; order?: "asc" | "desc" }>({
+    by: "indentDate",
+    order: "desc",
+  });
+  const {
+    items: data,
+    total,
+    page,
+    pageSize,
+    setPage,
+    setPageSize,
+    tabs,
+    isLoading,
+  } = useServerTabList<IndentRow>("indents", "/api/purchase/indents", {
+    activeTab,
+    tabs: STATUS_TABS,
+    search: searchQuery,
+    sortBy: sort.by,
+    sortOrder: sort.order,
+    initialPageSize: 25,
+  });
 
   const doSubmit = async () => {
     if (!submitTarget) return;
@@ -98,7 +114,6 @@ export default function IndentsPage() {
   };
 
   const { data: projectsData } = useProjects();
-  const { data: itemsData } = useItems();
   const { data: itemGroupsData } = useItemGroups();
 
   // Source PR candidates: PRs that have been approved AND flagged as
@@ -112,18 +127,10 @@ export default function IndentsPage() {
     value: p.id,
     label: p.name,
   }));
-  const allItems = (itemsData?.data ?? []) as unknown as IndentItemNode[];
   const itemGroups = useMemo(() => {
     const raw = itemGroupsData?.data ?? [];
     return raw.filter((g) => (g?.status ?? "active").toLowerCase() !== "inactive");
   }, [itemGroupsData]);
-  // Indexed lookup so the Material picker's onChange can pull UOM +
-  // standard rate off the master in O(1) when a material is selected.
-  const itemById = useMemo(() => {
-    const map = new Map<string, IndentItemNode>();
-    for (const i of allItems) map.set(i.id, i);
-    return map;
-  }, [allItems]);
   const sourcePrOptions = useMemo(
     () =>
       approvedPrs.map((pr) => ({
@@ -133,67 +140,27 @@ export default function IndentsPage() {
     [approvedPrs]
   );
 
-  const resolveItemMatch = useCallback(
-    (l: PrSourceLine): IndentItemNode | null => {
-      if (l.itemCode) {
-        const m = allItems.find((i) => i.code === l.itemCode);
-        if (m) return m;
-      }
-      if (l.itemName) {
-        const m = allItems.find((i) => i.name === l.itemName);
-        if (m) return m;
-      }
-      if (l.itemId) {
-        const m = allItems.find((i) => i.id === l.itemId);
-        if (m) return m;
-      }
-      return null;
-    },
-    [allItems],
-  );
-
-  const groupBucketId = (match: IndentItemNode | null) => {
-    if (!match) return "__ungrouped__";
-    const gid = String(match.groupId ?? "").trim();
-    const gname = String(match.groupName ?? "").trim();
-    if (!gid || !gname) return "__ungrouped__";
-    return gid;
-  };
-
   const buildIndentLinesFromPr = useCallback(
     (pr: { lines?: PrSourceLine[] } | null | undefined) => {
       const rawLines: PrSourceLine[] = Array.isArray(pr?.lines) ? pr.lines : [];
-      return rawLines.map((l) => {
-        const match = resolveItemMatch(l);
-        const bid = groupBucketId(match);
-        const prefillGroupId =
-          bid === "__ungrouped__"
-            ? GROUPED_MATERIAL_OTHERS_GROUP_ID
-            : (String(match?.groupId ?? "").trim() || GROUPED_MATERIAL_OTHERS_GROUP_ID);
-
-        return {
-          // Auto-select the material when we can reconcile it to the current master.
-          // If the match fails, keep it blank and force the user to pick.
-          itemId: match?.id ?? "",
-          // Carry the PR line id so the PR → Indent link persists — the
-          // indent route stores this as `prLineId`, which the PR's "PO"
-          // column rollup walks (PR line → indent line → PO line).
-          prLineId: l.id ?? l.lineId ?? null,
-          // UI hint: start the picker scoped to the PR line's group.
-          prefillGroupId,
-          qtyRequested: String(l.quantity ?? l.qtyRequired ?? l.qtyRequested ?? ""),
-          uom: l.uomCode ?? l.uom ?? match?.uomCode ?? "",
-          estimatedRate: String(
-            l.estimatedRate ??
-              l.rate ??
-              l.unitRate ??
-              match?.standardRate ??
-              "",
-          ),
-        };
-      });
+      // Prefill straight from the PR line's own denormalized fields (itemId /
+      // itemName / uom / rate) — the lazy picker no longer holds the full item
+      // master, so we can't resolve the item's group for auto-scroll; the
+      // picker just opens on the group list (itemId + label stay correct).
+      return rawLines.map((l) => ({
+        itemId: l.itemId ?? "",
+        itemName: l.itemName ?? "",
+        // Carry the PR line id so the PR → Indent link persists — the
+        // indent route stores this as `prLineId`, which the PR's "PO"
+        // column rollup walks (PR line → indent line → PO line).
+        prLineId: l.id ?? l.lineId ?? null,
+        prefillGroupId: GROUPED_MATERIAL_OTHERS_GROUP_ID,
+        qtyRequested: String(l.quantity ?? l.qtyRequired ?? l.qtyRequested ?? ""),
+        uom: l.uomCode ?? l.uom ?? "",
+        estimatedRate: String(l.estimatedRate ?? l.rate ?? l.unitRate ?? ""),
+      }));
     },
-    [resolveItemMatch],
+    [],
   );
 
   const config: QuickCreateConfig = {
@@ -284,26 +251,29 @@ export default function IndentsPage() {
           width: "wide",
           render: (line, update: (patch: Record<string, unknown>) => void) => (
             <GroupedMaterialSelect
+              lazy
               value={line.itemId ?? ""}
+              selectedLabel={line.itemName ?? ""}
               onChange={(v) => {
-                if (!v) {
-                  update({ itemId: "", uom: "", estimatedRate: "" });
-                  return;
-                }
-                const item = itemById.get(v);
-                const patch: Record<string, string> = { itemId: v };
-                if (item?.uomCode) patch.uom = String(item.uomCode);
+                if (!v) update({ itemId: "", itemName: "", uom: "", estimatedRate: "" });
+                else update({ itemId: v });
+              }}
+              onSelect={(item) => {
+                if (!item) return;
+                const it = item as IndentItemNode;
+                const patch: Record<string, string> = { itemName: it.name ?? "" };
+                if (it.uomCode) patch.uom = String(it.uomCode);
                 if (
-                  item?.standardRate !== undefined &&
-                  item?.standardRate !== null &&
-                  item.standardRate !== ""
+                  it.standardRate !== undefined &&
+                  it.standardRate !== null &&
+                  it.standardRate !== ""
                 ) {
-                  patch.estimatedRate = String(item.standardRate);
+                  patch.estimatedRate = String(it.standardRate);
                 }
                 update(patch);
               }}
-              items={allItems}
-              groups={itemGroups.map((g) => ({ id: g.id, name: g.name, status: g.status }))}
+              items={[]}
+              groups={itemGroups.map((g) => ({ id: g.id, name: g.name, status: g.status, itemCount: g.itemCount }))}
               initialGroupId={line.prefillGroupId ?? null}
               placeholder="Select material…"
               size="sm"
@@ -340,7 +310,7 @@ export default function IndentsPage() {
       searchable: true,
       render: (row) => (
         <span
-          className="text-orange-600 cursor-pointer hover:underline font-medium"
+          className="text-accent-600 cursor-pointer hover:underline font-medium"
           onClick={() => router.push(`/purchase/indents/${row.id}`)}
         >
           {row.indentNumber}
@@ -360,7 +330,7 @@ export default function IndentsPage() {
               e.stopPropagation();
               setPeekTarget({ type: "pr", id: row.sourceMrId ?? "" });
             }}
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 text-[11px] font-medium hover:bg-orange-100 transition-colors"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-accent-50 text-accent-700 text-[11px] font-medium hover:bg-accent-100 transition-colors"
             title="View PR details"
           >
             {row.sourceMrNumber}
@@ -430,6 +400,7 @@ export default function IndentsPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Purchase Indents"
         subtitle="Consolidate approved material requirements for ordering"
@@ -439,7 +410,7 @@ export default function IndentsPage() {
         ]}
       />
       <TabBar tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
-      <PageContainer>
+      <PageContainer fill>
         {approvedPrs.length === 0 && (
           <div className="mb-4 flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600" />
@@ -470,8 +441,18 @@ export default function IndentsPage() {
           } : undefined}
           addLabel="New Indent"
           historyEntityType="indent,purchase_indents"
+          loading={isLoading}
+          serverMode
+          serverTotal={total}
+          serverPage={page}
+          serverPageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          onSearchChange={setSearchQuery}
+          onSortChange={(k, d) => setSort({ by: k, order: d })}
         />
       </PageContainer>
+      </PageFrame>
       <QuickCreateDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}

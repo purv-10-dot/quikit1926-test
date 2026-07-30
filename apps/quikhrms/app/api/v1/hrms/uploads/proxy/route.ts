@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/with-auth";
 import { getObject } from "@/lib/storage";
+import { resolveDocumentAccessByKey } from "@/lib/rbac/document-access";
 
 // Stored object keys, all shaped `<prefix>/<orgId>/…/<file>.<ext>` so the
 // tenant segment is always index [1] (see the various upload routes):
@@ -30,6 +31,23 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
   // Tenant isolation: `uploads/<orgId>/...` — only your own tenant's objects.
   if (key.split("/")[1] !== ctx.orgId) {
     return NextResponse.json({ success: false, error: { code: "FORBIDDEN", message: "Not allowed" } }, { status: 403 });
+  }
+
+  // Document-level authorization: if this key backs a Document row, the caller
+  // must actually have access to that document (owner / read-scope / live
+  // share) — not merely belong to the tenant. Keys owned by other modules
+  // (candidate docs, offer letters, leave policies…) have no Document row, so
+  // the tenant check above stays the gate for them.
+  const isDownload = !!searchParams.get("dl");
+  const access = await resolveDocumentAccessByKey(ctx, key);
+  if (access.doc) {
+    if (!access.allow) {
+      return NextResponse.json({ success: false, error: { code: "FORBIDDEN", message: "You don't have access to this document." } }, { status: 403 });
+    }
+    // A View-only share must not be downloadable.
+    if (isDownload && access.accessLevel !== "Download") {
+      return NextResponse.json({ success: false, error: { code: "FORBIDDEN", message: "This document is shared as view-only." } }, { status: 403 });
+    }
   }
 
   try {

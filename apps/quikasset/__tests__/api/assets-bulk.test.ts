@@ -91,9 +91,10 @@ describe("POST /api/assets/bulk", () => {
     expect(res.status).toBe(201);
     expect(mockDb.astAsset.create).toHaveBeenCalledTimes(3);
     expect((await res.json()).data).toHaveLength(3);
-    const call = mockDb.astAsset.create.mock.calls[0]?.[0] as { data: { assetType: string; orgId: string } };
+    const call = mockDb.astAsset.create.mock.calls[0]?.[0] as { data: { assetType: string; orgId: string; createdByUserId: string } };
     expect(call.data.assetType).toBe("Fixed");
     expect(call.data.orgId).toBe("org1");
+    expect(call.data.createdByUserId).toBe("admin"); // actor stamped on every unit
   });
 
   it("400s a batch over the max quantity", async () => {

@@ -8,7 +8,8 @@ import type { PriorityRow } from "@/lib/types/priority";
 import { fiscalYearLabel, ALL_QUARTERS, getFiscalYear, weekDateLabel, getWeekDateRange, weeksArray } from "@/lib/utils/fiscal";
 import { STATUS_META, STATUS_PILL_OPTIONS } from "@/lib/constants/status";
 import { UserPicker } from "@quikit/ui";
-import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useWeekLabels, useQuarterPosition } from "@/lib/hooks/useCurrentWeek";
+import { weekEditState } from "@/lib/utils/weekLock";
 import { usePastWeekFlags, useCustomQuarterSettings, useWeeklyMeetingDay } from "@/lib/hooks/useFeatureFlags";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 import { useQuarterStartDates } from "@/lib/hooks/useQuarterStartDates";
@@ -46,8 +47,12 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
   // Past/future-week locks — same pattern as KPI. Past respects the
   // `canEditPastWeek` feature flag (admin opt-in); future is always disabled
   // so users can't pre-fill statuses ahead of time.
-  const { canEditPastWeek } = usePastWeekFlags();
+  const { canEditPastWeek, loaded: flagsLoaded } = usePastWeekFlags();
   const priorityCurrentWeek = useCurrentWeek(priority.year, priority.quarter);
+  // Quarter/year position (past/current/future) so the gate locks a past
+  // quarter's last week and a future quarter's first week correctly — the
+  // clamped `priorityCurrentWeek` alone can't distinguish those.
+  const priorityQuarterPos = useQuarterPosition(priority.year, priority.quarter);
   const priorityWeekLabels = useWeekLabels(priority.year, priority.quarter);
 
   // Edit tab state
@@ -169,6 +174,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
       await updatePriority.mutateAsync({
         name: form.name.trim(),
         description: form.description || undefined,
+        owner: form.owner,
         startWeek: parseInt(form.startWeek),
         endWeek: parseInt(form.endWeek),
         notes: tab === "notes" ? notes : undefined,
@@ -186,9 +192,12 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
   // the user clicks "Save Weekly changes". When the user marks a week as
   // "completed", cascade Completed forward to every subsequent week up to the
   // end of the quarter (week 13); existing notes on cascaded weeks are
-  // preserved. If the priority's endWeek is shorter, the grid auto-extends to
-  // 13 locally so the cascaded weeks are visible — the extend is committed to
-  // the priority on Save (handleSaveWeekly).
+  // preserved. This deliberately fills FUTURE weeks too — "Completed" is a
+  // terminal, forward-propagating state, so the server relaxes the future-week
+  // lock for a `completed` write (see `isWeeklyWriteAllowed`). If the
+  // priority's endWeek is shorter, the grid auto-extends to 13 locally so the
+  // cascaded weeks are visible — the extend is committed to the priority on
+  // Save (handleSaveWeekly).
   function handleWeeklyStatusChange(weekNumber: number, status: string) {
     const QUARTER_END = weekCount;
     const currentEnd = parseInt(form.endWeek) || QUARTER_END;
@@ -327,7 +336,10 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
                   <label className="block text-xs font-medium text-gray-600 mb-1">
                     Owner <span className="text-red-500">*</span>
                   </label>
-                  <UserPicker value={form.owner} onChange={() => {}} users={users} error={false} disabled />
+                  {/* Single-owner reassignment. Edit never fans out — changing the
+                      owner just moves this one priority to a new person. */}
+                  <UserPicker value={form.owner} onChange={v => setField("owner", v)} users={users} error={!!errors.owner} />
+                  {errors.owner && <p className="text-[10px] text-red-500 mt-0.5">{errors.owner}</p>}
                 </div>
               </div>
 
@@ -389,10 +401,17 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
               </p>
               {Array.from({ length: endWeek - startWeek + 1 }, (_, i) => startWeek + i).map(weekNum => {
                 const data = weeklyData[weekNum] ?? { status: "", notes: "" };
-                // Past-week lock honors the admin feature flag; future-week lock is absolute.
-                const isPast = !canEditPastWeek && priorityCurrentWeek !== null && weekNum < priorityCurrentWeek;
-                const isFuture = priorityCurrentWeek !== null && weekNum > priorityCurrentWeek;
-                const weekLocked = readOnly || isPast || isFuture;
+                // Quarter-aware gate: future quarter/week always locked; past
+                // weeks respect the edit-past flag; when it's OFF the current
+                // week + one previous week stay editable (PAST_WEEK_EDIT_GRACE).
+                const { isPast, isFuture, locked } = weekEditState({
+                  quarterPosition: priorityQuarterPos ?? "current",
+                  week: weekNum,
+                  currentWeek: priorityCurrentWeek,
+                  canEditPastWeek,
+                  flagsLoaded: flagsLoaded && priorityQuarterPos !== null,
+                });
+                const weekLocked = readOnly || locked;
                 const weekTitle =
                   isFuture ? "Future week — not yet available"
                   : isPast ? "Past week locked — enable editing in Settings > Configurations"

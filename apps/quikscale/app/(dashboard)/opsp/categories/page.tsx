@@ -1,12 +1,15 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Search, Plus, Trash2, X, ChevronDown, Check, Info, History } from "lucide-react";
+import { useState, useRef, useEffect, useMemo } from "react";
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
+import { Search, Plus, Trash2, RotateCcw, X, ChevronDown, Check, Info, History } from "lucide-react";
 import { CURRENCIES } from "@/lib/utils/currency";
 import { AddButton } from "@quikit/ui";
 import { CategoryHistoryDrawer } from "./CategoryHistoryDrawer";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
+import { FeatureGrid, useGridSort, type FeatureGridColumn } from "@/components/table/FeatureGrid";
+import { MasterDataMoreActions, TrashBanner } from "@/components/table/MasterDataMoreActions";
+import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import {
   CATEGORY_TYPE_LABELS,
   CATEGORY_TYPE_INFO,
@@ -416,6 +419,22 @@ function CategoryPanel({
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
+// FeatureGrid column keys → labels for the Manage Columns modal.
+const CATEGORY_COLUMN_META = [
+  { key: "seq", label: "ID" },
+  { key: "name", label: "Category Name" },
+  { key: "dataType", label: "Data Type" },
+  { key: "currency", label: "Currency" },
+  { key: "categoryType", label: "Category Type" },
+  { key: "description", label: "Description" },
+];
+
+interface CategoryListResponse {
+  success: boolean;
+  data: CategoryItem[];
+  meta?: { page: number; limit: number; total: number; totalPages: number };
+}
+
 export default function CategoryMgmtPage() {
   const { canCreate, canUpdate, canDelete } = useResourcePermissions("OPSP.Categories");
   const queryClient = useQueryClient();
@@ -424,18 +443,41 @@ export default function CategoryMgmtPage() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [editItem, setEditItem] = useState<CategoryItem | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [viewTrash, setViewTrash] = useState(false);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
 
-  const { data, isLoading } = useQuery<{ success: boolean; data: CategoryItem[] }>({
-    queryKey: ["categories", search],
+  const { sortBy, sortOrder, sortParam } = useGridSort("categories");
+  const { hiddenCols, setHiddenCols } = useTablePrefs("categories");
+
+  // Reset to page 1 whenever the result set changes shape.
+  useEffect(() => { setPage(1); }, [search, viewTrash, sortParam]);
+  // Selection doesn't carry between the active list and the Trash view.
+  useEffect(() => { setSelected(new Set()); }, [viewTrash]);
+
+  const { data, isLoading, isFetching } = useQuery<CategoryListResponse>({
+    queryKey: ["categories", { search, sortParam, viewTrash, page, limit }],
+    placeholderData: keepPreviousData,
     queryFn: async () => {
       const params = new URLSearchParams();
       if (search) params.set("search", search);
+      if (viewTrash) params.set("includeDeleted", "true");
+      if (sortBy) { params.set("sortBy", sortBy); params.set("sortOrder", sortOrder); }
+      params.set("page", String(page));
+      params.set("limit", String(limit));
       const res = await fetch(`/api/categories?${params}`);
       return res.json();
     },
   });
 
-  const items: CategoryItem[] = data?.data ?? [];
+  const items: CategoryItem[] = useMemo(() => data?.data ?? [], [data]);
+  const meta = data?.meta ?? { page, limit, total: items.length, totalPages: 1 };
+  // 1-based sequence across pages (matches the old "ID" column).
+  const seqById = useMemo(() => {
+    const m = new Map<string, number>();
+    items.forEach((it, i) => m.set(it.id, (meta.page - 1) * meta.limit + i + 1));
+    return m;
+  }, [items, meta.page, meta.limit]);
 
   const deleteMutation = useMutation({
     mutationFn: async (ids: string[]) => {
@@ -447,12 +489,37 @@ export default function CategoryMgmtPage() {
     },
   });
 
-  const allChecked = items.length > 0 && items.every(i => selected.has(i.id));
+  const restoreMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const res = await fetch("/api/categories/bulk-restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      if (!res.ok) throw new Error("Failed to restore");
+    },
+    onSuccess: () => {
+      setSelected(new Set());
+      queryClient.invalidateQueries({ queryKey: ["categories"] });
+    },
+  });
+
+  const reorderMutation = useMutation({
+    mutationFn: async (body: { id: string; beforeId: string | null; afterId: string | null }) => {
+      const res = await fetch("/api/categories/reorder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error("Failed to reorder");
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["categories"] }),
+  });
 
   function toggleAll() {
+    const allChecked = items.length > 0 && items.every(i => selected.has(i.id));
     setSelected(allChecked ? new Set() : new Set(items.map(i => i.id)));
   }
-
   function toggleOne(id: string) {
     setSelected(prev => {
       const next = new Set(prev);
@@ -465,6 +532,59 @@ export default function CategoryMgmtPage() {
   function openEdit(item: CategoryItem) { setEditItem(item); setPanelOpen(true); }
   function closePanel() { setPanelOpen(false); setEditItem(null); }
 
+  // Manual drag order only makes sense in the default, unsorted, non-trash view.
+  const rowReorderEnabled = !viewTrash && !sortBy && canUpdate;
+
+  const columns: FeatureGridColumn<CategoryItem>[] = [
+    {
+      key: "seq",
+      label: "ID",
+      defaultWidth: 64,
+      render: (item) => <span className="text-accent-600 font-semibold">{seqById.get(item.id) ?? "—"}</span>,
+    },
+    {
+      key: "name",
+      label: "Category Name",
+      sortable: true,
+      defaultWidth: 260,
+      render: (item) => <span className="font-medium text-gray-800">{item.name}</span>,
+    },
+    {
+      key: "dataType",
+      label: "Data Type",
+      sortable: true,
+      defaultWidth: 140,
+      render: (item) => <span className="text-gray-600">{item.dataType}</span>,
+    },
+    {
+      key: "currency",
+      label: "Currency",
+      sortable: true,
+      defaultWidth: 120,
+      render: (item) =>
+        currencySymbol(item.currency) ? (
+          <span className="text-green-600 font-semibold">{item.currency}</span>
+        ) : (
+          <span className="text-gray-400">-</span>
+        ),
+    },
+    {
+      key: "categoryType",
+      label: "Category Type",
+      sortable: true,
+      defaultWidth: 220,
+      render: (item) => <BreakdownBadges categoryType={item.categoryType} />,
+    },
+    {
+      key: "description",
+      label: "Description",
+      defaultWidth: 260,
+      render: (item) => (
+        <span className="text-gray-500 block truncate max-w-xs">{item.description || "—"}</span>
+      ),
+    },
+  ];
+
   return (
     <div className="flex flex-col h-full bg-gray-50">
       {/* Header */}
@@ -473,7 +593,7 @@ export default function CategoryMgmtPage() {
           <div className="flex items-center gap-3">
             <h1 className="text-xl font-bold text-gray-900">Category Mgmt</h1>
             <span className="bg-gray-100 text-gray-600 text-xs font-semibold px-2.5 py-0.5 rounded-full">
-              {items.length} {items.length === 1 ? "item" : "items"}
+              {meta.total} {meta.total === 1 ? "item" : "items"}
             </span>
           </div>
 
@@ -489,8 +609,8 @@ export default function CategoryMgmtPage() {
               />
             </div>
 
-            {/* Bulk delete */}
-            {selected.size > 0 && canDelete && (
+            {/* Bulk delete (active view) / bulk restore (trash view) */}
+            {selected.size > 0 && canDelete && !viewTrash && (
               <button
                 onClick={() => deleteMutation.mutate([...selected])}
                 disabled={deleteMutation.isPending}
@@ -498,6 +618,16 @@ export default function CategoryMgmtPage() {
               >
                 <Trash2 className="h-4 w-4" />
                 Delete ({selected.size})
+              </button>
+            )}
+            {selected.size > 0 && canDelete && viewTrash && (
+              <button
+                onClick={() => restoreMutation.mutate([...selected])}
+                disabled={restoreMutation.isPending}
+                className="flex items-center gap-1.5 px-3 py-2 bg-green-50 border border-green-200 text-green-700 rounded-lg text-sm font-medium hover:bg-green-100 disabled:opacity-50"
+              >
+                <RotateCcw className="h-4 w-4" />
+                Restore ({selected.size})
               </button>
             )}
 
@@ -509,6 +639,15 @@ export default function CategoryMgmtPage() {
               <History className="h-4 w-4" />
             </button>
 
+            <MasterDataMoreActions
+              columns={CATEGORY_COLUMN_META}
+              hiddenCols={hiddenCols}
+              onHiddenColsChange={setHiddenCols}
+              isTrashActive={viewTrash}
+              onToggleTrash={setViewTrash}
+              showTrash={canDelete}
+            />
+
             {canCreate && <AddButton onClick={openAdd}>Add Category</AddButton>}
           </div>
         </div>
@@ -518,92 +657,40 @@ export default function CategoryMgmtPage() {
 
       {/* Table */}
       <div className="flex-1 overflow-auto px-6 py-4 min-h-0">
+        {viewTrash && (
+          <div className="mb-3">
+            <TrashBanner count={meta.total} onExit={() => setViewTrash(false)} />
+          </div>
+        )}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-accent-50 border-b border-gray-200">
-                <th className="w-10 px-3 py-3">
-                  <label
-                    onClickCapture={(e) => {
-                      if (!canDelete) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        notify.error("You don't have permission to delete");
-                      }
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={allChecked}
-                      onChange={toggleAll} disabled={!canDelete}
-                      className={`w-4 h-4 rounded border-gray-300 accent-blue-600 ${!canDelete ? "opacity-40 cursor-not-allowed" : ""}`}
-                    />
-                  </label>
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider w-16">ID</th>
-                <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Category Name</th>
-                <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider w-36">Data Type</th>
-                <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider w-28">Currency</th>
-                <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider w-60">Category Type</th>
-                <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Description</th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading && (
-                <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-sm text-gray-400">Loading…</td>
-                </tr>
-              )}
-              {!isLoading && items.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-sm text-gray-400">
-                    No categories yet. Click <strong>Add Category</strong> to create one.
-                  </td>
-                </tr>
-              )}
-              {items.map((item, idx) => {
-                const sym = currencySymbol(item.currency);
-                const isChecked = selected.has(item.id);
-                return (
-                  <tr
-                    key={item.id}
-                    className={`border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors ${isChecked ? "bg-accent-50" : ""}`}
-                    onClick={() => openEdit(item)}
-                  >
-                    <td className="w-10 px-3 py-3" onClick={e => {
-                      e.stopPropagation();
-                      if (!canDelete) {
-                        notify.error("You don't have permission to delete");
-                        return;
-                      }
-                      toggleOne(item.id);
-                    }}>
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => { if (canDelete) toggleOne(item.id); }} disabled={!canDelete}
-                        className={`w-4 h-4 rounded border-gray-300 accent-blue-600 ${!canDelete ? "opacity-40 cursor-not-allowed" : ""}`}
-                      />
-                    </td>
-                    <td className="px-4 py-3 text-accent-600 font-semibold">{idx + 1}</td>
-                    <td className="px-4 py-3 font-medium text-gray-800">{item.name}</td>
-                    <td className="px-4 py-3 text-gray-600">{item.dataType}</td>
-                    <td className="px-4 py-3">
-                      {sym ? (
-                        <span className="text-green-600 font-semibold">{item.currency}</span>
-                      ) : (
-                        <span className="text-gray-400">-</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <BreakdownBadges categoryType={item.categoryType} />
-                    </td>
-                    <td className="px-4 py-3 text-gray-500 truncate max-w-xs">{item.description || "—"}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <FeatureGrid<CategoryItem>
+            table="categories"
+            columns={columns}
+            rows={items}
+            getRowId={(item) => item.id}
+            getRowLabel={(item) => item.name}
+            loading={isLoading || isFetching}
+            emptyMessage={
+              viewTrash
+                ? "Trash is empty."
+                : "No categories yet. Click Add Category to create one."
+            }
+            selectable
+            selected={selected}
+            onToggleRow={toggleOne}
+            onToggleAll={toggleAll}
+            selectionDisabled={!canDelete}
+            onSelectionBlocked={() => notify.error("You don't have permission to delete")}
+            onRowClick={viewTrash ? undefined : openEdit}
+            onReorderRow={(args) => reorderMutation.mutate(args)}
+            rowReorderEnabled={rowReorderEnabled}
+            page={meta.page}
+            totalPages={meta.totalPages}
+            total={meta.total}
+            limit={meta.limit}
+            onPageChange={setPage}
+            onPageSizeChange={(s) => { setLimit(s); setPage(1); }}
+          />
         </div>
       </div>
 

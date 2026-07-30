@@ -9,6 +9,7 @@ import { NumberInput } from "@/components/hrms/ui/number-input";
 import { Check, X, Plus } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonTable } from "@/components/hrms/skeleton";
+import { Pagination } from "@/components/hrms/pagination";
 
 interface Revision {
   id: string;
@@ -42,12 +43,16 @@ export function SalaryRevisionTab() {
   const [status, setStatus] = useState<(typeof STATUSES)[number]>("Pending");
   const [createOpen, setCreateOpen] = useState(false);
   const [target, setTarget] = useState<{ rev: Revision; action: "approve" | "reject" } | null>(null);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   const { data, isLoading } = useQuery({
     queryKey: ["payroll", "approvals", "salary-revisions", status],
     queryFn: () => api.get<Revision[]>(`/api/v1/hrms/payroll/approvals/salary-revisions?status=${status}`),
   });
   const rows = data?.data ?? [];
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const pageItems = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const approveMut = useMutation({
     mutationFn: (id: string) => api.post(`/api/v1/hrms/payroll/approvals/salary-revisions/${id}/approve`, {}),
@@ -66,7 +71,7 @@ export function SalaryRevisionTab() {
           {STATUSES.map((s) => (
             <button
               key={s}
-              onClick={() => setStatus(s)}
+              onClick={() => { setStatus(s); setPage(1); }}
               className={clsx(
                 "px-3 py-1 text-xs rounded-full border transition",
                 status === s ? "bg-green-600 text-white border-[#22c55e]" : "bg-white text-gray-600 border-gray-300 hover:border-[#86efac]",
@@ -101,7 +106,7 @@ export function SalaryRevisionTab() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r, i) => {
+              {pageItems.map((r, i) => {
                 const diff = Number(r.proposedCTC) - Number(r.currentCTC);
                 const pct = ((diff / Number(r.currentCTC)) * 100).toFixed(1);
                 return (
@@ -136,6 +141,7 @@ export function SalaryRevisionTab() {
               })}
             </tbody>
           </table>
+          <Pagination page={page} totalPages={totalPages} total={rows.length} limit={PAGE_SIZE} onPageChange={setPage} />
         </div>
       )}
 

@@ -6,6 +6,7 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
+import { PageBackground } from "@/components/hrms/page-background";
 import { ClipboardList, Lock, ArrowLeft, CheckCircle2, Send, Star } from "lucide-react";
 
 interface SurveyQuestion {
@@ -103,6 +104,8 @@ export default function TakeSurveyPage() {
 
   return (
     <div className="max-w-2xl mx-auto">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <Link href="/engage/surveys/my" className="inline-flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 mb-4">
         <ArrowLeft size={14} /> My surveys
       </Link>

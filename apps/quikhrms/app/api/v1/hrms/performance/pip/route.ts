@@ -1,21 +1,34 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, validationError, internalError } from "@/lib/api-response";
+import { successResponse, validationError, forbidden, internalError } from "@/lib/api-response";
 import { createPIPSchema } from "@/lib/validations/performance";
 import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
 import { fireWorkflow } from "@/lib/workflows/executor";
+import { resolveScope, employeeScopeFilter, getCallerEmployeeId } from "@/lib/rbac/scope";
+import { PERF_READ_MAP, isDirectManagerOf } from "@/lib/rbac/performance-access";
 
-export const GET = withAuth(async (req: NextRequest, { orgId }) => {
+export const GET = withAuth(async (req: NextRequest, ctx) => {
   try {
+    const { orgId } = ctx;
     const { searchParams } = new URL(req.url);
     const { page, limit } = parsePagination(searchParams);
     const employeeId = searchParams.get("employeeId");
     const status = searchParams.get("status");
 
+    // Only the PIP's employee, their manager, or HR may read. No org-wide
+    // enumeration of who's on a PIP.
+    const canManagePip = ctx.permissions.includes("*") || ctx.permissions.includes("hrms.performance.pip");
+    const sf = await employeeScopeFilter(ctx, resolveScope(ctx, PERF_READ_MAP));
+    if (!canManagePip && !sf.allow) return forbidden("No permission to view PIPs");
+    const empIds = canManagePip ? undefined : sf.employeeIds;
+    if (employeeId && empIds && !empIds.includes(employeeId)) {
+      return forbidden("You don't have access to this employee's PIP");
+    }
+
     const where = {
       orgId, deletedAt: null,
-      ...(employeeId && { employeeId }),
+      ...(employeeId ? { employeeId } : empIds ? { employeeId: { in: empIds } } : {}),
       ...(status && { status: status as "PIPActive" | "PIPExtended" | "PIPCompletedSuccess" | "PIPFailed" | "PIPWithdrawn" }),
     };
 
@@ -33,13 +46,27 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
   } catch (error) { console.error("GET /performance/pip error:", error); return internalError(); }
 });
 
-export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
+export const POST = withAuth(async (req: NextRequest, ctx) => {
   try {
+    const { orgId, userId } = ctx;
     const body = await req.json();
     const parsed = createPIPSchema.safeParse(body);
     if (!parsed.success) return validationError("Validation failed", parsed.error.flatten().fieldErrors);
 
     const data = parsed.data;
+    const callerId = await getCallerEmployeeId(ctx);
+    if (callerId && data.employeeId === callerId) {
+      return forbidden("You can't place yourself on a PIP.");
+    }
+    const canManagePip = ctx.permissions.includes("*") || ctx.permissions.includes("hrms.performance.pip");
+    const allowed = canManagePip || (await isDirectManagerOf(ctx, data.employeeId));
+    if (!allowed) return forbidden("Only a manager or HR can place an employee on a PIP.");
+
+    const target = await prisma.employee.findFirst({
+      where: { id: data.employeeId, orgId, deletedAt: null }, select: { id: true },
+    });
+    if (!target) return validationError("Invalid employee");
+
     const pip = await prisma.pIP.create({
       data: {
         orgId, employeeId: data.employeeId, initiatedById: userId,
@@ -56,7 +83,6 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       payload: { employeeId: pip.employeeId, pipId: pip.id, startDate: pip.startDate, endDate: pip.endDate },
     });
 
-    // In-app notification to employee on PIP initiation.
     await prisma.hrmsNotification.create({
       data: {
         orgId,

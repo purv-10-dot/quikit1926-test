@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { PageHeader, PageContainer, StatusChip } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer, StatusChip } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { QuickCreateDrawer } from "@/components/QuickCreateDrawer";
 import { useProjects, useLocations } from "@/hooks/use-masters";
@@ -21,14 +21,35 @@ export default function AssetsPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { canAdd } = useMenuActions("/masters/assets");
 
-  const { data: result } = useQuery({
-    queryKey: ["masters-assets"],
-    queryFn: () => fetch("/api/masters/assets").then(r => r.json()),
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("createdAt");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, sortBy, sortOrder, pageSize]);
+
+  const { data: result, isLoading } = useQuery({
+    queryKey: ["masters-assets", { page, pageSize, search, sortBy, sortOrder }],
+    queryFn: () => {
+      const qs = new URLSearchParams({
+        page: String(page),
+        pageSize: String(pageSize),
+        sortBy,
+        sortOrder,
+      });
+      if (search) qs.set("search", search);
+      return fetch(`/api/masters/assets?${qs.toString()}`).then((r) => r.json());
+    },
+    placeholderData: (prev) => prev,
   });
   const { data: projectsData } = useProjects();
   const { data: locData } = useLocations();
 
   const data = result?.data ?? [];
+  const total = result?.total ?? 0;
   const projects = projectsData?.data ?? [];
   const projectOptions = projects.map((p) => ({ value: p.id, label: p.name }));
   const projectCityById = new Map(
@@ -42,7 +63,7 @@ export default function AssetsPage() {
     { key: "name", label: "Name", sortable: true, searchable: true },
     { key: "category", label: "Category", type: "select", sortable: true,
       options: ["Scaffolding", "Shuttering", "Safety Equipment", "Survey", "Electrical", "Others"] },
-    { key: "projectName", label: "Project", sortable: true, searchable: true },
+    { key: "projectName", label: "Project", sortable: false, searchable: true },
     { key: "condition", label: "Condition", type: "select", sortable: true,
       options: ["Good", "Needs Repair", "Condemned"],
       render: (row) => {
@@ -54,7 +75,7 @@ export default function AssetsPage() {
     { key: "purchaseDate", label: "Purchase Date", type: "date", sortable: true },
     { key: "purchaseValue", label: "Value (₹)", type: "number", sortable: true,
       render: (row) => row.purchaseValue ? `₹ ${Number(row.purchaseValue).toLocaleString("en-IN")}` : "—" },
-    { key: "currentLocation", label: "Location", sortable: true, searchable: true },
+    { key: "currentLocation", label: "Location", sortable: false, searchable: true },
     { key: "status", label: "Status", type: "select", sortable: true,
       options: ["In Use", "Under Maintenance", "Available", "Disposed"],
       render: (row) => <StatusChip status={row.status ?? ""} /> },
@@ -141,12 +162,26 @@ export default function AssetsPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader title="Assets / Tool Register" subtitle="Track assets, tools, and equipment across projects"
         breadcrumbs={[{ label: "Masters", href: "/masters" }, { label: "Assets" }]} />
-      <PageContainer>
+      <PageContainer fill>
         <DataTable id="master-assets" columns={columns} data={data as AssetRow[]}
+          loading={isLoading}
+          serverMode
+          serverTotal={total}
+          serverPage={page}
+          serverPageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          onSearchChange={setSearch}
+          onSortChange={(key, dir) => {
+            setSortBy(key);
+            setSortOrder(dir);
+          }}
           onAdd={canAdd ? () => setDrawerOpen(true) : undefined} addLabel="Register Asset" />
       </PageContainer>
+      </PageFrame>
       <QuickCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} config={config} />
     </>
   );

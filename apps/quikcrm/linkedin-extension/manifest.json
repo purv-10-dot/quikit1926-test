@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "LinkedIn to Email Marketing CRM ",
+  "version": "2.0.8",
+  "description": "Send LinkedIn prospects directly to your email marketing automation system.",
+  "permissions": ["scripting", "activeTab", "sidePanel", "tabs", "storage", "identity"],
+  "host_permissions": [
+    "https://www.linkedin.com/*",
+    "https://uatcrm.quikit.ai/*",
+    "http://localhost:3008/*",
+    "https://localhost:3008/*"
+  ],
+  "optional_host_permissions": [],
+  "action": {
+    "default_icon": {
+      "16": "assets/icon16.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "linkedIn.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "assets/icon16.png"
+  }
+}
+ 

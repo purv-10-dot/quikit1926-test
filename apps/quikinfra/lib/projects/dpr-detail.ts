@@ -5,14 +5,33 @@ export interface WorkItemRow {
   boqNo?: string | null;
   boqItemId?: string | null;
   description?: string | null;
+  /** BOQ-derived unit of measure for this activity. */
+  unit?: string | null;
+  /** BOQ scope quantity — the activity's total target. */
+  totalTarget?: number | string | null;
+  /** Cumulative-before-today, derived server-side. */
+  prevQty?: number | string | null;
+  /** Work order this activity is booked against; null = Self Work. */
+  woId?: string | null;
+  workOrderId?: string | null;
   todayQty?: number | string | null;
   cumulativeQty?: number | string | null;
+  /** Free-text location / chainage within the site this activity was done. */
+  location?: string | null;
   remarks?: string | null;
+  /** Signed view URLs for this activity's site photos (from `signDprImageKeys`). */
+  images?: string[];
+  /** Parallel S3 keys for each photo in `images`. */
+  imageKeys?: string[];
 }
 
 export interface MaterialRow {
   itemId?: string | null;
+  // Denormalized by the DPR detail API so the UI renders name + UOM without
+  // loading the whole item master.
+  itemName?: string | null;
   uomId?: string | null;
+  uomCode?: string | null;
   consumedQty?: number | string | null;
   remarks?: string | null;
 }

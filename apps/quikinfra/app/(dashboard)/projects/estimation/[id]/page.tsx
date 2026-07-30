@@ -1,41 +1,22 @@
 "use client";
 
 /**
- * Material Estimation — detail page with inline edit.
+ * Material Estimation — read-only detail page.
  *
- * Edit no longer opens a drawer modal; clicking Edit flips the page into
- * an inline edit mode where the Overview's editable fields (Phase,
- * Status) become dropdowns and the Material Composition rows become
- * editable inputs — same form shape the drawer used to collect, but
- * directly on the detail surface so the user never loses their place.
- *
- * Fields kept read-only in edit mode:
- *   - Project, BOQ No, BOQ Item, BOQ Quantity — changing these
- *     conceptually creates a new estimation. The drawer locks them too.
- *
- * Fields editable in edit mode:
- *   - Phase (dropdown), Status (dropdown)
- *   - Material composition: qty/unit, waste %, std rate — inputs
- *   - Add / Remove material rows
- *
- * Everything else (Delete, Submit for Approval, Approve/Reject) behaves
- * the same as before and is hidden while editing so the user can't
- * accidentally fire a workflow transition on unsaved changes.
+ * Edit routes to the full-page edit form at /projects/estimation/[id]/edit
+ * (the same WorkOrder-style form the list's Edit pencil opens), so the
+ * edit experience is identical from every entry point. The inline-edit
+ * branches below are dormant (isEditing never flips true) and kept only
+ * so the workflow / overview markup stays intact.
  */
 
-import { toErrorMessage } from "@/lib/api/errors";
 import { formatDateTimeIST } from "@/lib/format/datetime";
-import { useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
+import { useParams } from "next/navigation";
 import {
   Check,
   Pencil,
-  Plus,
   Send,
-  Trash2,
   X as XIcon,
-  Package,
   AlertTriangle,
 } from "lucide-react";
 import {
@@ -47,18 +28,13 @@ import {
 } from "@/components/PageShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { SelectInput } from "@/components/FormDrawer";
-import { GroupedMaterialSelect, type GroupedMaterialSelectItem } from "@/components/GroupedMaterialSelect";
 import {
-  useEstimation,
-  useUpdateEstimation,
-} from "@/hooks/use-projects";
-import { useItems, useItemGroups } from "@/hooks/use-masters";
-import { usePermissions } from "@/hooks/use-permissions";
-
-const MENU_KEY = "pm.estimation";
-
-import type { ApprovalHistoryEntry } from "@/lib/approvals/approval-info";
-import type { EstimationMaterial, EstimationDetail } from "@/lib/projects/estimation-detail";
+  PILL_TONE, statusPillTone, statusLabel, PHASES, STATUSES,
+  fmtQty, fmtInr,
+} from "./lib/shared";
+import { OverviewStat } from "./components/OverviewStat";
+import { MaterialCompositionCard } from "./components/MaterialCompositionCard";
+import { useEstimationDetail } from "./lib/useEstimationDetail";
 
 /**
  * Shared template for every element in the PageHeader actions row.
@@ -69,191 +45,48 @@ import type { EstimationMaterial, EstimationDetail } from "@/lib/projects/estima
 const HEADER_PILL =
   "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors whitespace-nowrap shrink-0";
 
-const PILL_TONE = {
-  gray:     "bg-gray-50 text-gray-700 border-gray-200",
-  blue:     "bg-orange-50 text-orange-700 border-orange-200",
-  orange:   "bg-orange-50 text-orange-700 border-orange-200",
-  emerald:  "bg-emerald-50 text-emerald-700 border-emerald-200",
-  rose:     "bg-rose-50 text-rose-700 border-rose-200",
-  amber:    "bg-amber-50 text-amber-700 border-amber-200",
-  disabled: "bg-gray-50 text-gray-400 border-gray-200",
-} as const;
-
-/** Pick the right tone for the status pill without hard-coding at the call site. */
-function statusPillTone(status: string | null | undefined): string {
-  const s = String(status ?? "draft").toLowerCase();
-  if (s === "approved" || s === "approved_stock_available" || s === "approved_indent_required") {
-    return PILL_TONE.emerald;
-  }
-  if (s === "rejected") return PILL_TONE.rose;
-  if (s === "pending_approval") return PILL_TONE.amber;
-  if (s === "inactive") return PILL_TONE.disabled;
-  return PILL_TONE.gray;
-}
-
-/** Human-readable label so "pending_approval" renders as "Pending Approval". */
-function statusLabel(status: string | null | undefined): string {
-  const s = String(status ?? "draft");
-  return s
-    .split("_")
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-    .join(" ");
-}
-
-// Same enums the drawer used to expose so form state stays interchangeable
-// with existing estimations saved from the drawer.
-const PHASES = [
-  "Foundation",
-  "Sub-structure",
-  "Superstructure",
-  "Finishing",
-  "MEP",
-  "External",
-];
-const STATUSES = ["Draft", "Active", "Approved", "Closed"];
-
-/** Form shape per material row during inline edit. */
-interface MaterialLine {
-  itemId: string;
-  itemName: string;
-  uomCode: string;
-  qtyPerUnit: string;
-  wasteFactor: string;
-  standardRate: string;
-}
-
-const newLine = (): MaterialLine => ({
-  itemId: "",
-  itemName: "",
-  uomCode: "",
-  qtyPerUnit: "",
-  wasteFactor: "0",
-  standardRate: "",
-});
-
-function fmtQty(v: unknown, unit?: string | null) {
-  if (v === null || v === undefined || v === "") return "—";
-  const n = Number(v);
-  if (!Number.isFinite(n)) return "—";
-  return `${n.toLocaleString("en-IN", { maximumFractionDigits: 4 })}${unit ? ` ${unit}` : ""}`;
-}
-function fmtInr(v: unknown) {
-  if (v === null || v === undefined || v === "") return "—";
-  const n = Number(v);
-  if (!Number.isFinite(n)) return "—";
-  return `₹ ${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
-}
-
-/** Compute row totals the same way the drawer did on save. */
-function rowTotals(row: MaterialLine, boqQuantity: number) {
-  const qtyPerUnit = parseFloat(row.qtyPerUnit) || 0;
-  const wastePercent = parseFloat(row.wasteFactor) || 0;
-  const rate = parseFloat(row.standardRate) || 0;
-  const requiredQty = qtyPerUnit * (boqQuantity || 0);
-  const totalQty = requiredQty * (1 + wastePercent / 100);
-  return { qtyPerUnit, wastePercent, rate, requiredQty, totalQty, estimatedCost: totalQty * rate };
-}
 
 export default function EstimationDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const router = useRouter();
-  const qc = useQueryClient();
-  const { data: estimation, isLoading } = useEstimation(id);
-  const { data: itemsData } = useItems();
-  const { data: itemGroupsData } = useItemGroups();
-  const updateMutation = useUpdateEstimation();
-
-  const { permissionMatrix, isSuper } = usePermissions();
-  const matrixRow = permissionMatrix?.[MENU_KEY];
-  const canEdit = isSuper || !matrixRow || matrixRow.edit !== false;
-  // Detail page intentionally does NOT expose Delete — destructive
-  // actions live on the list only. `canDelete` from the matrix is
-  // consulted there, not here.
-  const canSubmit = canEdit;
-  // Approve/Reject visibility is driven by the actual workflow step the
-  // instance is parked on (server-computed in the estimation GET), not
-  // by the caller's role. Falls back to false until the approval payload
-  // arrives so we don't flash buttons during initial load.
-  const canApprove =
-    isSuper || estimation?.approval?.canActOnCurrentStep === true;
-
-  const [workflowAction, setWorkflowAction] = useState<
-    "submit" | "approve" | "reject" | null
-  >(null);
-  const [rejectReason, setRejectReason] = useState("");
-  const [workflowPending, setWorkflowPending] = useState(false);
-  // Error message shown inline at the bottom of the workflow dialog when
-  // submit / approve / reject fails (e.g. "No active Material Estimation
-  // workflow is configured."). Mirrors the PR / PO / Indent flows so
-  // server-side workflow errors stay inside the modal instead of falling
-  // back to a native browser alert.
-  const [workflowError, setWorkflowError] = useState<string | null>(null);
-
-  // ── Inline edit state ──────────────────────────────────────────
-  const [isEditing, setIsEditing] = useState(false);
-  const [phase, setPhase] = useState("");
-  const [editStatus, setEditStatus] = useState("");
-  const [lines, setLines] = useState<MaterialLine[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-
-  const items = (itemsData?.data ?? []) as unknown as Array<
-    GroupedMaterialSelectItem & { standardRate?: number | string | null }
-  >;
-  const itemGroups = itemGroupsData?.data ?? [];
-
-  const status = String(estimation?.status ?? "draft").toLowerCase();
-  const isDraft = status === "draft";
-  const isPending = status === "pending_approval";
-  const isApproved = status === "approved";
-  const isRejected = status === "rejected";
-  const isInactive = status === "inactive";
-  const baseLocked = isApproved || isInactive;
-
-  // Seed the form whenever the estimation payload arrives or the user
-  // flips back into edit mode after a save.
-  const seedFromEstimation = () => {
-    if (!estimation) return;
-    setPhase(estimation.phase ?? "");
-    setEditStatus(estimation.status ?? "Draft");
-    const seeded: MaterialLine[] = (Array.isArray(estimation.materials) ? estimation.materials : []).map(
-      (m: EstimationMaterial) => ({
-        itemId: m.itemId ?? "",
-        itemName: m.itemName ?? "",
-        uomCode: m.uomCode ?? "",
-        qtyPerUnit: m.qtyPerUnit?.toString() ?? "",
-        wasteFactor: m.wastePercent?.toString() ?? "0",
-        standardRate: m.standardRate?.toString() ?? "",
-      }),
-    );
-    setLines(seeded.length ? seeded : [newLine()]);
-    setSaveError(null);
-  };
-
-  // Auto-seed when editing first becomes available (helps when a user
-  // refreshes mid-edit; the form re-reads from server).
-  useEffect(() => {
-    if (isEditing) seedFromEstimation();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isEditing, estimation?.id]);
-
-  const materials: EstimationMaterial[] = useMemo(
-    () => (Array.isArray(estimation?.materials) ? estimation.materials : []),
-    [estimation],
-  );
-
-  // Live totals during edit — previews what the user will save.
-  const editTotals = useMemo(() => {
-    const boqQty = Number(estimation?.boqQuantity) || 0;
-    let totalQty = 0;
-    let totalCost = 0;
-    for (const l of lines) {
-      const r = rowTotals(l, boqQty);
-      totalQty += r.totalQty;
-      totalCost += r.estimatedCost;
-    }
-    return { totalQty, totalCost };
-  }, [lines, estimation?.boqQuantity]);
+  const {
+    router,
+    estimation,
+    isLoading,
+    canEdit,
+    canSubmit,
+    canApprove,
+    workflowAction,
+    rejectReason,
+    setRejectReason,
+    workflowPending,
+    workflowError,
+    isEditing,
+    phase,
+    setPhase,
+    editStatus,
+    setEditStatus,
+    lines,
+    saving,
+    saveError,
+    itemGroups,
+    status,
+    isDraft,
+    isPending,
+    isApproved,
+    isRejected,
+    baseLocked,
+    materials,
+    editTotals,
+    openWorkflow,
+    closeWorkflow,
+    runWorkflowAction,
+    cancelEdit,
+    updateLine,
+    addLine,
+    removeLine,
+    saveEdit,
+    approvalEntries,
+  } = useEstimationDetail(id);
 
   if (isLoading) return <PageSkeleton />;
   if (!estimation) {
@@ -276,151 +109,6 @@ export default function EstimationDetailPage() {
       </>
     );
   }
-
-  const openWorkflow = (kind: "submit" | "approve" | "reject") => {
-    setRejectReason("");
-    setWorkflowError(null);
-    setWorkflowAction(kind);
-  };
-  const closeWorkflow = () => {
-    if (workflowPending) return;
-    setWorkflowAction(null);
-    setRejectReason("");
-    setWorkflowError(null);
-  };
-  const runWorkflowAction = async () => {
-    if (!workflowAction) return;
-    setWorkflowPending(true);
-    setWorkflowError(null);
-    try {
-      if (workflowAction === "submit") {
-        const res = await fetch(`/api/estimations/${id}/submit`, {
-          method: "POST",
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
-      } else {
-        const action = workflowAction === "approve" ? "approve" : "reject";
-        const res = await fetch(`/api/estimations/${id}/approve`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action,
-            comments:
-              workflowAction === "reject" ? rejectReason.trim() : undefined,
-          }),
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
-      }
-      qc.invalidateQueries({ queryKey: ["estimation", id] });
-      qc.invalidateQueries({ queryKey: ["estimations"] });
-      setWorkflowAction(null);
-      setRejectReason("");
-      setWorkflowError(null);
-    } catch (err: unknown) {
-      // Keep the modal open so the user can read the failure reason
-      // (e.g. "No active Material Estimation workflow is configured")
-      // without bouncing through a native browser alert.
-      setWorkflowError(toErrorMessage(err, "Action failed"));
-    } finally {
-      setWorkflowPending(false);
-    }
-  };
-
-// ── Inline edit handlers ───────────────────────────────────────
-  const beginEdit = () => {
-    seedFromEstimation();
-    setIsEditing(true);
-  };
-  const cancelEdit = () => {
-    setIsEditing(false);
-    setSaveError(null);
-  };
-  const updateLine = (
-    idx: number,
-    field: keyof MaterialLine,
-    value: string,
-  ) => {
-    setLines((prev) =>
-      prev.map((row, i) => {
-        if (i !== idx) return row;
-        const next = { ...row, [field]: value };
-        // Auto-fill name / UOM / rate when picking a material from master.
-        if (field === "itemId") {
-          if (value) {
-            const item = items.find((it) => it.id === value);
-            if (item) {
-              next.itemName = item.name ?? "";
-              next.uomCode = item.uomCode ?? "";
-              next.standardRate = item.standardRate?.toString() ?? "";
-            }
-          } else {
-            next.itemName = "";
-            next.uomCode = "";
-            next.standardRate = "";
-          }
-        }
-        return next;
-      }),
-    );
-  };
-  const addLine = () => setLines((prev) => [...prev, newLine()]);
-  const removeLine = (idx: number) =>
-    setLines((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== idx)));
-
-  const saveEdit = async () => {
-    setSaveError(null);
-    // Minimal validation — matches the drawer's rules.
-    const validLines = lines.filter((l) => l.itemId && l.qtyPerUnit);
-    if (validLines.length === 0) {
-      setSaveError("Add at least one material with qty/unit.");
-      return;
-    }
-    const boqQty = Number(estimation.boqQuantity) || 0;
-    const materialsPayload = validLines.map((l) => {
-      const r = rowTotals(l, boqQty);
-      return {
-        itemId: l.itemId,
-        itemName: l.itemName,
-        uomCode: l.uomCode,
-        qtyPerUnit: r.qtyPerUnit,
-        wastePercent: r.wastePercent,
-        requiredQty: r.requiredQty,
-        totalQty: r.totalQty,
-        standardRate: r.rate,
-        estimatedCost: r.estimatedCost,
-      };
-    });
-    setSaving(true);
-    try {
-      await updateMutation.mutateAsync({
-        id,
-        phase,
-        status: editStatus,
-        materials: materialsPayload,
-      });
-      qc.invalidateQueries({ queryKey: ["estimation", id] });
-      qc.invalidateQueries({ queryKey: ["estimations"] });
-      setIsEditing(false);
-    } catch (err: unknown) {
-      setSaveError(toErrorMessage(err, "Save failed"));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // ApprovalTimeline expects { step, action, actionBy, actionAt, comments } —
-  // map the API's history rows to that shape. Also format the timestamp
-  // via toLocaleString so the panel doesn't render the raw ISO string.
-  const approvalEntries =
-    estimation.approval?.history?.map((h: ApprovalHistoryEntry) => ({
-      step: h.stepOrder ?? 0,
-      action: h.action,
-      actionBy: h.actionByName ?? "User",
-      actionAt: h.actionAt ? formatDateTimeIST(h.actionAt) : "",
-      comments: h.comments ?? undefined,
-    })) ?? [];
 
   return (
     <>
@@ -478,7 +166,9 @@ export default function EstimationDetailPage() {
                 {canEdit && (
                   <button
                     type="button"
-                    onClick={() => !baseLocked && beginEdit()}
+                    onClick={() =>
+                      !baseLocked && router.push(`/projects/estimation/${id}/edit`)
+                    }
                     disabled={baseLocked}
                     className={`${HEADER_PILL} ${
                       baseLocked
@@ -573,13 +263,20 @@ export default function EstimationDetailPage() {
               {/* Left: stat grid */}
               <dl className="lg:col-span-8 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5 px-6 py-5 text-sm">
                 <OverviewStat label="Project">
-                  <span className="font-medium text-gray-900 truncate">
-                    {estimation.projectName ?? "—"}
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <span className="font-medium text-gray-900 truncate">
+                      {estimation.projectName ?? "—"}
+                    </span>
+                    {estimation.scopeType === "ACTIVITY" && (
+                      <span className="shrink-0 whitespace-nowrap rounded bg-accent-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-accent-700 border border-accent-200">
+                        Free-Scope
+                      </span>
+                    )}
                   </span>
                 </OverviewStat>
 
                 <OverviewStat label="BOQ No">
-                  <span className="font-mono text-xs font-semibold text-gray-900 px-1.5 py-0.5 rounded bg-sky-50 border border-sky-100">
+                  <span className="text-xs font-semibold text-gray-900 px-1.5 py-0.5 rounded bg-sky-50 border border-sky-100">
                     {estimation.boqNo ?? "—"}
                   </span>
                 </OverviewStat>
@@ -676,259 +373,17 @@ export default function EstimationDetailPage() {
           </div>
 
           {/* ── Material composition table ───────────────────────── */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm font-semibold text-gray-900">
-                  Material Composition
-                </h2>
-              </div>
-              <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500 bg-gray-50 border border-gray-200 px-2 py-0.5 rounded-full">
-                {isEditing ? lines.length : materials.length} line
-                {(isEditing ? lines.length : materials.length) === 1 ? "" : "s"}
-              </span>
-            </div>
-
-            {/* Warning banner when BOQ Qty is 0 — totals will all read
-                zero regardless of rates/waste until the user sets it. */}
-            {Number(estimation.boqQuantity) === 0 && (
-              <div className="mx-6 mt-4 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-[11px] text-amber-800 flex items-center gap-2">
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                BOQ Quantity is not set — every row&apos;s Total Qty and Amount
-                will compute to zero.
-              </div>
-            )}
-
-            {/* Read-only render */}
-            {!isEditing && (
-              <>
-                {materials.length === 0 ? (
-                  <div className="px-6 py-12 text-center">
-                    <Package className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                    <p className="text-sm text-gray-500">No material lines.</p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-sm">
-                      <thead className="bg-gray-50 text-[10px] uppercase text-gray-500 tracking-wider border-b border-gray-200">
-                        <tr>
-                          <th className="px-4 py-3 text-left font-bold w-10">
-                            #
-                          </th>
-                          <th className="px-4 py-3 text-left font-bold">
-                            Material
-                          </th>
-                          <th className="px-4 py-3 text-right font-bold">
-                            Qty / Unit
-                          </th>
-                          <th className="px-4 py-3 text-right font-bold">
-                            Waste %
-                          </th>
-                          <th className="px-4 py-3 text-right font-bold">
-                            Total Qty
-                          </th>
-                          <th className="px-4 py-3 text-right font-bold">
-                            Std Rate (₹)
-                          </th>
-                          <th className="px-6 py-3 text-right font-bold">
-                            Amount (₹)
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {materials.map((m: EstimationMaterial, idx: number) => (
-                          <tr key={m.itemId ?? idx} className="hover:bg-indigo-50/20 transition-colors">
-                            <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
-                              {String(idx + 1).padStart(2, "0")}
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium text-gray-900">
-                                  {m.itemName ?? "—"}
-                                </span>
-                                {m.uomCode && (
-                                  <span className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wider text-teal-700 bg-teal-50 border border-teal-100 px-1.5 py-0.5 rounded">
-                                    {m.uomCode}
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 text-right tabular-nums text-gray-700">
-                              {fmtQty(m.qtyPerUnit)}
-                            </td>
-                            <td className="px-4 py-3 text-right tabular-nums">
-                              {m.wastePercent ? (
-                                <span className="inline-flex items-center text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-100 px-1.5 py-0.5 rounded">
-                                  {m.wastePercent}%
-                                </span>
-                              ) : (
-                                <span className="text-gray-400">—</span>
-                              )}
-                            </td>
-                            <td className="px-4 py-3 text-right tabular-nums text-gray-700">
-                              {fmtQty(m.totalQty)}
-                            </td>
-                            <td className="px-4 py-3 text-right tabular-nums text-gray-700">
-                              {fmtInr(m.standardRate)}
-                            </td>
-                            <td className="px-6 py-3 text-right tabular-nums font-semibold text-gray-900">
-                              {fmtInr(m.estimatedCost)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot className="bg-gradient-to-r from-gray-50 to-orange-50/40 border-t-2 border-gray-200 text-sm font-bold">
-                        <tr>
-                          <td className="px-4 py-3 uppercase text-[10px] tracking-wider text-gray-500" colSpan={6}>
-                            Grand Total
-                          </td>
-                          <td className="px-6 py-3 text-right tabular-nums text-orange-700 text-base">
-                            {fmtInr(estimation.totalCost)}
-                          </td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* Edit render — editable rows + add/remove */}
-            {isEditing && (
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead className="bg-gray-50 text-xs uppercase text-gray-500">
-                    <tr>
-                      <th className="px-4 py-2.5 text-left font-medium">
-                        Material <span className="text-rose-500">*</span>
-                      </th>
-                      <th className="px-3 py-2.5 text-right font-medium w-28">
-                        Qty / Unit <span className="text-rose-500">*</span>
-                      </th>
-                      <th className="px-3 py-2.5 text-right font-medium w-24">
-                        Waste %
-                      </th>
-                      <th className="px-3 py-2.5 text-right font-medium w-28">
-                        Total Qty
-                      </th>
-                      <th className="px-3 py-2.5 text-right font-medium w-28">
-                        Std Rate (₹)
-                      </th>
-                      <th className="px-3 py-2.5 text-right font-medium w-32">
-                        Amount (₹)
-                      </th>
-                      <th className="px-2 py-2.5 w-10" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {lines.map((l, idx) => {
-                      const r = rowTotals(l, Number(estimation.boqQuantity) || 0);
-                      return (
-                        <tr key={idx}>
-                          <td className="px-4 py-2">
-                            <GroupedMaterialSelect
-                              value={l.itemId}
-                              onChange={(v) => updateLine(idx, "itemId", v)}
-                              items={items}
-                              groups={itemGroups.map((g) => ({
-                                id: g.id,
-                                name: g.name,
-                                status: g.status,
-                              }))}
-                              placeholder="Select material…"
-                              size="sm"
-                            />
-                            {l.uomCode && (
-                              <div className="text-[10px] text-gray-500 mt-1">
-                                {l.uomCode}
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-3 py-2">
-                            <input
-                              type="number"
-                              step="0.0001"
-                              min="0"
-                              value={l.qtyPerUnit}
-                              onChange={(e) =>
-                                updateLine(idx, "qtyPerUnit", e.target.value)
-                              }
-                              className="w-full text-right text-sm px-2.5 py-1.5 border border-gray-300 rounded-md tabular-nums focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                            />
-                          </td>
-                          <td className="px-3 py-2">
-                            <input
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              value={l.wasteFactor}
-                              onChange={(e) =>
-                                updateLine(idx, "wasteFactor", e.target.value)
-                              }
-                              className="w-full text-right text-sm px-2.5 py-1.5 border border-gray-300 rounded-md tabular-nums focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                            />
-                          </td>
-                          <td className="px-3 py-2 text-right tabular-nums text-gray-700">
-                            {fmtQty(r.totalQty)}
-                          </td>
-                          <td className="px-3 py-2">
-                            <input
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              value={l.standardRate}
-                              onChange={(e) =>
-                                updateLine(idx, "standardRate", e.target.value)
-                              }
-                              className="w-full text-right text-sm px-2.5 py-1.5 border border-gray-300 rounded-md tabular-nums focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                            />
-                          </td>
-                          <td className="px-3 py-2 text-right tabular-nums font-medium text-gray-900">
-                            {fmtInr(r.estimatedCost)}
-                          </td>
-                          <td className="px-2 py-2 text-center">
-                            <button
-                              type="button"
-                              onClick={() => removeLine(idx)}
-                              disabled={lines.length <= 1}
-                              title={
-                                lines.length <= 1
-                                  ? "At least one row is required"
-                                  : "Remove row"
-                              }
-                              className="p-1.5 rounded-md text-gray-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-30 disabled:cursor-not-allowed"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot className="bg-gray-50 text-sm font-semibold">
-                    <tr>
-                      <td className="px-4 py-3" colSpan={5}>
-                        Total
-                      </td>
-                      <td className="px-3 py-3 text-right tabular-nums">
-                        {fmtInr(editTotals.totalCost)}
-                      </td>
-                      <td />
-                    </tr>
-                  </tfoot>
-                </table>
-                <div className="px-4 py-3 border-t border-gray-100">
-                  <button
-                    type="button"
-                    onClick={addLine}
-                    className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Add Material
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+          <MaterialCompositionCard
+            isEditing={isEditing}
+            materials={materials}
+            lines={lines}
+            itemGroups={itemGroups}
+            editTotals={editTotals}
+            updateLine={updateLine}
+            addLine={addLine}
+            removeLine={removeLine}
+            estimation={estimation}
+          />
 
           {!isEditing && isRejected && estimation.rejectionReason && (
             <div className="bg-rose-50 border border-rose-200 rounded-xl px-5 py-4 text-sm text-rose-800">
@@ -1105,21 +560,3 @@ export default function EstimationDetailPage() {
  * circle on the left, label stacks above the value. Keeps the grid
  * scan-able without the reader having to parse every label.
  */
-function OverviewStat({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-start min-w-0">
-      <div className="min-w-0 flex-1">
-        <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
-          {label}
-        </div>
-        <div className="mt-0.5 text-sm text-gray-900 truncate">{children}</div>
-      </div>
-    </div>
-  );
-}

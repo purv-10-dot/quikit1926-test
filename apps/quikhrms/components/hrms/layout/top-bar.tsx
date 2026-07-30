@@ -35,8 +35,10 @@ interface Me {
  */
 export function TopBar() {
   const api = useApiClient();
+  // Shared canonical key so every /employees/me consumer (top-bar + dashboard
+  // widgets) hits one cached query instead of each firing its own request.
   const { data } = useQuery({
-    queryKey: ["me", "topbar"],
+    queryKey: ["employees", "me"],
     queryFn: () => api.get<Me>("/api/v1/hrms/employees/me"),
     staleTime: 5 * 60_000,
   });

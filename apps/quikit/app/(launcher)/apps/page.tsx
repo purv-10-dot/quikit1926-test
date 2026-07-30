@@ -33,6 +33,7 @@ import {
   Megaphone,
   LayoutGrid,
   ArrowUpRight,
+  Plus,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -41,6 +42,7 @@ import { UserMenu, globalSignOut } from "@quikit/ui";
 import { HIDDEN_APP_SLUGS } from "@quikit/shared";
 import { APP_DETAILS } from "../_data/app-details";
 import { SurpriseGiftPopup } from "../_components/surprise-gift-popup";
+import { CreateOrgModal, type CreatedOrg } from "../_components/create-org-modal";
 
 /* ── Brand tokens (dark, mirroring the redesigned login / app-library) ──
    INK is the primary (light-on-dark) foreground; PAPER is the page base;
@@ -65,15 +67,16 @@ const SANS = "'Gilroy', 'Helvetica Neue', Arial, system-ui, -apple-system, sans-
    iconUrl so the launcher always renders the current brand logos.
    This page renders on a dark surface (see PAPER), so per the brand rule we
    serve the LIGHT monogram (white badge) for every tile — the dark badge
-   blends into the near-black backdrop. `admin` has only its branded gold
-   badge (no theme pair), which reads fine on dark, so it keeps that icon. */
+   blends into the near-black backdrop. */
 const LAUNCHER_ICONS: Record<string, string> = {
-  admin: "/app-icons/admin.svg",
+  admin: "/app-icons/admin-light.svg",
+  quikasset: "/app-icons/quikasset-light.svg",
   quikchat: "/app-icons/quikchat-light.svg",
   quikcrm: "/app-icons/quikcrm-light.svg",
   quikfinance: "/app-icons/quikfinance-light.svg",
   quikhrms: "/app-icons/quikhrms-light.svg",
   quikinfra: "/app-icons/quikinfra-light.svg",
+  quiklms: "/app-icons/quiklms-light.svg",
   quikscale: "/app-icons/quikscale-light.svg",
   quiktrack: "/app-icons/quiktrack-light.svg",
   quiksocial: "/app-icons/quiksocial-light.svg",
@@ -214,6 +217,8 @@ export default function AppLauncherPage() {
   // closed) + the granted trial length, plus the slug whose claim is in flight.
   const [surpriseApp, setSurpriseApp] = useState<AppInfo | null>(null);
   const [claimingGift, setClaimingGift] = useState<string | null>(null);
+  // "Create Organization" modal (profile-menu action → create an additional org).
+  const [createOrgOpen, setCreateOrgOpen] = useState(false);
   // Gate the header entrance animation until after mount so SSR and the first
   // client render share the same (hidden) state — otherwise framer-motion
   // hydrates the header at its `animate` style and React warns that the
@@ -257,11 +262,21 @@ export default function AppLauncherPage() {
     const launcherUrl =
       process.env.NEXT_PUBLIC_QUIKIT_URL?.replace(/\/+$/, "") ??
       (typeof window !== "undefined" ? window.location.origin : "");
+    // After logout, land on the public marketing site instead of the launcher
+    // root — but only on the UAT launcher (uatapps.quikit.ai → uat.quikit.ai).
+    // Every other environment (incl. prod apps.quikit.ai) keeps landing on the
+    // launcher root. Decided at runtime from the browser host so no build-arg /
+    // Dockerfile wiring is needed. NOTE: the target origin must be in the
+    // launcher's /api/auth/signout-global allow-list or that hop rejects it.
+    const host =
+      typeof window !== "undefined" ? window.location.hostname : "";
+    const postLogoutRedirect =
+      host === "uatapps.quikit.ai" ? "https://uat.quikit.ai" : `${launcherUrl}/`;
     await globalSignOut({
       authUrl: process.env.NEXT_PUBLIC_AUTH_URL,
       quikitUrl: launcherUrl,
       localSignOut: () => signOut({ redirect: false }),
-      postLogoutRedirect: `${launcherUrl}/`,
+      postLogoutRedirect,
     });
   }
 
@@ -357,6 +372,44 @@ export default function AppLauncherPage() {
     setSelectedOrg(org);
     setOrgDropdownOpen(false);
     await selectOrgInSession(org.orgId, org.role);
+  }
+
+  // After the "Create Organization" modal creates a new org, drop the user
+  // straight into it: refresh the switcher list, move the active org onto the
+  // JWT (so app activation works), and let the selectedOrg effect reload the
+  // (empty) catalog. Net effect matches a fresh signup into the new workspace.
+  async function handleOrgCreated(created: CreatedOrg) {
+    const newOrg: OrgInfo = {
+      orgId: created.orgId,
+      name: "",
+      slug: created.slug,
+      role: created.role,
+      plan: "startup",
+      status: "active",
+    };
+    // Refresh memberships so the header switcher lists the new org; prefer the
+    // server's copy (it has the real name/plan) but fall back to newOrg.
+    try {
+      const r = await fetch("/api/org/memberships");
+      const j = await r.json();
+      if (j.success) {
+        const all: OrgInfo[] = j.data;
+        setOrgs(all);
+        const fromServer = all.find((o) => o.orgId === created.orgId);
+        if (fromServer) {
+          setSelectedOrg(fromServer);
+          await selectOrgInSession(fromServer.orgId, fromServer.role);
+          setCreateOrgOpen(false);
+          return;
+        }
+      }
+    } catch {
+      // best-effort — fall through to the optimistic newOrg below
+    }
+    setOrgs((prev) => [...prev, newOrg]);
+    setSelectedOrg(newOrg);
+    await selectOrgInSession(newOrg.orgId, newOrg.role);
+    setCreateOrgOpen(false);
   }
 
   async function handleLaunch(app: AppInfo, to: string = "/") {
@@ -701,7 +754,7 @@ export default function AppLauncherPage() {
             <div className="flex items-center gap-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src="/brand/quikit.svg"
+                src="/brand/quikit-light.svg"
                 alt="QuikIT"
                 width={36}
                 height={36}
@@ -724,11 +777,6 @@ export default function AppLauncherPage() {
                 >
                   QuikIT
                 </h1>
-                <p style={{ fontSize: 12, color: MUTED }}>
-                  {session?.user?.name
-                    ? `Welcome, ${session.user.name.split(" ")[0]}`
-                    : "Your platform"}
-                </p>
               </div>
             </div>
 
@@ -901,6 +949,13 @@ export default function AppLauncherPage() {
                 isImpersonating={isImpersonating}
                 onSignOut={handleSignOut}
                 onExitImpersonation={handleExitImpersonation}
+                items={[
+                  {
+                    label: "Create Organization",
+                    icon: Plus,
+                    onClick: () => setCreateOrgOpen(true),
+                  },
+                ]}
                 avatarClassName="bg-[#CDB18B]"
                 dark
               />
@@ -1159,6 +1214,16 @@ export default function AppLauncherPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Create Organization — profile-menu action for an authenticated user to
+          spin up an additional workspace without leaving the launcher. */}
+      <CreateOrgModal
+        open={createOrgOpen}
+        onClose={() => setCreateOrgOpen(false)}
+        fullName={userFullName}
+        email={userEmail}
+        onCreated={handleOrgCreated}
+      />
 
       {/* Per-app detail screen — opened by the eye / "Start free trial". Content
           is sourced per-app from APP_DETAILS[slug] (falls back to the DB

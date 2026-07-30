@@ -43,6 +43,8 @@ export interface CreatePRInput {
   isUrgent?: boolean;
   urgencyJustification?: string | null;
   workCategoryId?: string | null;
+  scopeType?: string | null;
+  scopeId?: string | null;
   deliveryLocationId?: string | null;
   estimatedTotal?: number | null;
   stockCheckSummary?: string | null;
@@ -73,6 +75,48 @@ export interface ListPRsOptions {
   /** Pagination — passed straight through to Prisma findMany. */
   take?: number;
   skip?: number;
+  /** Server-side sort (from `parseSort`). Defaults to newest-first. */
+  orderBy?: Array<Record<string, "asc" | "desc">>;
+}
+
+/** Shared where-builder so list/count/status-counts filter identically.
+ *  Search is pushed to the DB (prNumber / purpose columns) so it stays
+ *  correct under pagination — the old in-memory filter dropped matches
+ *  once take/skip were applied. */
+function buildPRsWhere(
+  opts: Pick<ListPRsOptions, "orgId" | "projectIds" | "status" | "projectId" | "search">,
+): Record<string, unknown> {
+  const where: Record<string, unknown> = { orgId: opts.orgId };
+  if (opts.projectIds && opts.projectIds.length > 0) where.projectId = { in: opts.projectIds };
+  if (opts.projectId) where.projectId = opts.projectId;
+  if (opts.status && opts.status !== "all") where.status = opts.status;
+  const q = (opts.search ?? "").trim();
+  if (q) {
+    where.OR = [
+      { prNumber: { contains: q, mode: "insensitive" } },
+      { purpose: { contains: q, mode: "insensitive" } },
+    ];
+  }
+  return where;
+}
+
+export async function countPRs(
+  opts: Pick<ListPRsOptions, "orgId" | "projectIds" | "status" | "projectId" | "search">,
+): Promise<number> {
+  return db.cnPurchaseRequisition.count({ where: buildPRsWhere(opts) });
+}
+
+export async function prStatusCounts(
+  opts: Pick<ListPRsOptions, "orgId" | "projectIds" | "projectId" | "search">,
+): Promise<Record<string, number>> {
+  const groups = await db.cnPurchaseRequisition.groupBy({
+    by: ["status"],
+    where: buildPRsWhere({ ...opts, status: undefined }),
+    _count: { _all: true },
+  });
+  const out: Record<string, number> = {};
+  for (const g of groups) out[String(g.status)] = g._count._all;
+  return out;
 }
 
 // ─── Schema-drift strip-and-retry ───────────────────────────────────
@@ -187,6 +231,8 @@ interface PrRow {
   projectId?: string | null;
   workCategoryId?: string | null;
   deliveryLocationId?: string | null;
+  scopeType?: string | null;
+  scopeId?: string | null;
   lines?: PrLineRow[] | null;
   requestDate?: Date | null;
   requiredDate?: Date | null;
@@ -342,6 +388,8 @@ function enrichPR(
     urgencyJustification: row.urgencyJustification ?? "",
     workCategoryId: row.workCategoryId ?? "",
     workCategoryName: workCategory?.name ?? "",
+    scopeType: row.scopeType ?? "",
+    scopeId: row.scopeId ?? "",
     deliveryLocationId: row.deliveryLocationId ?? "",
     deliveryLocationName: location?.name ?? "",
     stockCheckSummary: row.stockCheckSummary ?? "",
@@ -441,30 +489,15 @@ export async function withPrNumberRetry<T>(
 // ─── Queries ────────────────────────────────────────────────────────
 
 export async function listPRs(opts: ListPRsOptions): Promise<any[]> {
-  const { orgId, projectIds, status, projectId, search } = opts;
-  const where: Record<string, unknown> = { orgId };
-  if (projectIds && projectIds.length > 0) where.projectId = { in: projectIds };
-  if (projectId) where.projectId = projectId;
-  if (status && status !== "all") where.status = status;
-
   const rows = await db.cnPurchaseRequisition.findMany({
-    where,
+    where: buildPRsWhere(opts),
     include: { lines: true },
-    orderBy: { createdAt: "desc" },
+    orderBy: opts.orderBy ?? { createdAt: "desc" },
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
   });
-  const { itemById, uomById, projectById, workCategoryById, locationById } = await loadPrLineLookups(rows, orgId);
-  const enriched = rows.map((r) => enrichPR(r, itemById, uomById, projectById, workCategoryById, locationById));
-
-  if (!search) return enriched;
-  const q = search.toLowerCase();
-  return enriched.filter(
-    (pr) =>
-      (pr.prNumber ?? "").toLowerCase().includes(q) ||
-      (pr.projectName ?? "").toLowerCase().includes(q) ||
-      (pr.purpose ?? "").toLowerCase().includes(q),
-  );
+  const { itemById, uomById, projectById, workCategoryById, locationById } = await loadPrLineLookups(rows, opts.orgId);
+  return rows.map((r) => enrichPR(r, itemById, uomById, projectById, workCategoryById, locationById));
 }
 
 export async function findPRById(orgId: string, id: string): Promise<any | null> {
@@ -507,6 +540,8 @@ export async function createPR(
       isUrgent: input.isUrgent ?? false,
       urgencyJustification: input.urgencyJustification ?? null,
       workCategoryId: input.workCategoryId ?? null,
+      scopeType: input.scopeType ?? null,
+      scopeId: input.scopeId ?? null,
       deliveryLocationId: input.deliveryLocationId ?? null,
       estimatedTotal: input.estimatedTotal ?? null,
       stockCheckSummary: input.stockCheckSummary ?? null,

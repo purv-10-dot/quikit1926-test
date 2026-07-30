@@ -186,51 +186,136 @@ function mapRow(row: GoodReturnRow | null) {
 
 export type GoodReturn = NonNullable<ReturnType<typeof mapRow>>;
 
-export async function listGoodReturns(
+export interface ListGoodReturnsOptions {
+  status?: string | null;
+  projectId?: string | null;
+  search?: string | null;
+  allowedProjectIds?: string[] | null;
+  sortBy?: string | null;
+  sortOrder?: "asc" | "desc" | null;
+  take?: number | null;
+  skip?: number | null;
+}
+
+// Whitelist: sortBy key → a pre-built SQL identifier fragment. Only keys in
+// this map can reach ORDER BY, so no caller string is ever interpolated raw.
+const GR_SORT_COLUMNS: Record<string, Prisma.Sql> = {
+  returnNumber: Prisma.sql`"returnNumber"`,
+  returnDate: Prisma.sql`"returnDate"`,
+  status: Prisma.sql`status`,
+  vendorName: Prisma.sql`"vendorName"`,
+  createdAt: Prisma.sql`"createdAt"`,
+};
+
+function goodReturnOrderBy(
+  sortBy?: string | null,
+  sortOrder?: "asc" | "desc" | null,
+): Prisma.Sql {
+  const col = sortBy ? GR_SORT_COLUMNS[sortBy] : undefined;
+  if (!col) {
+    return Prisma.sql`ORDER BY "returnDate" DESC NULLS LAST, "createdAt" DESC`;
+  }
+  const dir = sortOrder === "asc" ? Prisma.sql`ASC` : Prisma.sql`DESC`;
+  return Prisma.sql`ORDER BY ${col} ${dir} NULLS LAST, "createdAt" DESC`;
+}
+
+// Shared WHERE fragment so list and count stay in sync. `includeStatus` is
+// false for the count-by-status query. Mirrors the previous in-memory filter:
+// null-project rows always pass scope; status match is case-insensitive
+// exact; search spans number/project/vendor/reason.
+function buildGoodReturnWhere(
   orgId: string,
-  opts: {
-    status?: string | null;
-    projectId?: string | null;
-    search?: string | null;
-    allowedProjectIds?: string[] | null;
-  } = {},
-): Promise<GoodReturn[]> {
+  opts: Omit<ListGoodReturnsOptions, "sortBy" | "sortOrder" | "take" | "skip">,
+  includeStatus: boolean,
+): Prisma.Sql {
+  const conds: Prisma.Sql[] = [Prisma.sql`"orgId" = ${orgId}`];
   const allowed = opts.allowedProjectIds ?? null;
-  if (allowed !== null && allowed.length === 0) return [];
-
-  const rows = await db.$queryRaw<GoodReturnRow[]>`
-    SELECT *
-    FROM app_quikinfra."Good_returns"
-    WHERE "orgId" = ${orgId}
-    ORDER BY "returnDate" DESC NULLS LAST, "createdAt" DESC
-  `;
-  let mapped = rows
-    .map(mapRow)
-    .filter((r): r is NonNullable<typeof r> => r !== null);
-
-  if (allowed !== null) {
-    const set = new Set(allowed);
-    mapped = mapped.filter(
-      (r) => !r.projectId || set.has(r.projectId),
+  if (allowed !== null && allowed.length > 0) {
+    conds.push(
+      Prisma.sql`("projectId" IS NULL OR "projectId" = ANY(${allowed}::text[]))`,
     );
   }
-  if (opts.status && opts.status !== "all") {
-    mapped = mapped.filter(
-      (r) => String(r.status ?? "").toLowerCase() === opts.status,
-    );
+  if (includeStatus && opts.status && opts.status !== "all") {
+    conds.push(Prisma.sql`LOWER(status) = LOWER(${opts.status})`);
   }
   if (opts.projectId) {
-    mapped = mapped.filter((r) => r.projectId === opts.projectId);
+    conds.push(Prisma.sql`"projectId" = ${opts.projectId}`);
   }
-  if (opts.search) {
-    const q = opts.search.toLowerCase();
-    mapped = mapped.filter((r) =>
-      [r.returnNumber, r.projectName, r.vendorName, r.reason].some(
-        (v) => typeof v === "string" && v.toLowerCase().includes(q),
-      ),
-    );
+  const search = opts.search?.trim();
+  if (search) {
+    const like = `%${search.toLowerCase()}%`;
+    conds.push(Prisma.sql`(
+      LOWER("returnNumber") LIKE ${like}
+      OR LOWER(COALESCE("projectName", '')) LIKE ${like}
+      OR LOWER(COALESCE("vendorName", '')) LIKE ${like}
+      OR LOWER(COALESCE(reason, '')) LIKE ${like}
+    )`);
   }
-  return mapped;
+  return Prisma.join(conds, " AND ");
+}
+
+export async function listGoodReturns(
+  orgId: string,
+  opts: ListGoodReturnsOptions = {},
+): Promise<{ data: GoodReturn[]; total: number }> {
+  const allowed = opts.allowedProjectIds ?? null;
+  if (allowed !== null && allowed.length === 0) return { data: [], total: 0 };
+
+  const where = buildGoodReturnWhere(orgId, opts, true);
+  const orderBy = goodReturnOrderBy(opts.sortBy, opts.sortOrder);
+  const limit =
+    opts.take != null
+      ? Prisma.sql`LIMIT ${opts.take} OFFSET ${opts.skip ?? 0}`
+      : Prisma.empty;
+
+  const [rows, countRows] = await Promise.all([
+    db.$queryRaw<GoodReturnRow[]>`
+      SELECT * FROM app_quikinfra."Good_returns"
+      WHERE ${where}
+      ${orderBy}
+      ${limit}
+    `,
+    db.$queryRaw<{ count: number }[]>`
+      SELECT COUNT(*)::int AS count FROM app_quikinfra."Good_returns"
+      WHERE ${where}
+    `,
+  ]);
+
+  const data = rows
+    .map(mapRow)
+    .filter((r): r is NonNullable<typeof r> => r !== null);
+  return { data, total: Number(countRows[0]?.count ?? 0) };
+}
+
+/**
+ * Per-status counts for the tab badges. Counts across every status within
+ * the caller's project scope so the "All" total and each status badge stay
+ * accurate while the list itself is paged.
+ */
+export async function goodReturnStatusCounts(
+  orgId: string,
+  opts: Pick<
+    ListGoodReturnsOptions,
+    "projectId" | "search" | "allowedProjectIds"
+  > = {},
+): Promise<{ total: number; byStatus: Record<string, number> }> {
+  const allowed = opts.allowedProjectIds ?? null;
+  if (allowed !== null && allowed.length === 0) return { total: 0, byStatus: {} };
+
+  const where = buildGoodReturnWhere(orgId, opts, false);
+  const rows = await db.$queryRaw<{ status: string | null; count: number }[]>`
+    SELECT LOWER(COALESCE(status, 'draft')) AS status, COUNT(*)::int AS count
+    FROM app_quikinfra."Good_returns"
+    WHERE ${where}
+    GROUP BY LOWER(COALESCE(status, 'draft'))
+  `;
+  const byStatus: Record<string, number> = {};
+  let total = 0;
+  for (const r of rows) {
+    byStatus[r.status ?? "draft"] = Number(r.count);
+    total += Number(r.count);
+  }
+  return { total, byStatus };
 }
 
 export async function findGoodReturnById(

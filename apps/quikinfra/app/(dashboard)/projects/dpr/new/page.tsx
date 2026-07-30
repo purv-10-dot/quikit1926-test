@@ -8,7 +8,7 @@
  * etc. are allowed as named exports from a `page.tsx`).
  */
 
-import { DPRForm } from "./DPRForm";
+import { DPRForm } from "../components/DPRForm";
 
 export default function NewDPRPage() {
   return <DPRForm />;

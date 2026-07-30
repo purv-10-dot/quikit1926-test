@@ -45,11 +45,11 @@ describe("buildGrnFields", () => {
     expect(byKey(fields, "invoiceValue")!.defaultValue).toBe("1000");
   });
 
-  it("marks challanNo, challanDate and the challan attachment as required", () => {
+  it("leaves challanNo, challanDate and the challan attachment optional", () => {
     const fields = build();
-    expect(byKey(fields, "challanNo")!.required).toBe(true);
-    expect(byKey(fields, "challanDate")!.required).toBe(true);
-    expect(byKey(fields, "challanAttachment")!.required).toBe(true);
+    expect(byKey(fields, "challanNo")!.required).toBeFalsy();
+    expect(byKey(fields, "challanDate")!.required).toBeFalsy();
+    expect(byKey(fields, "challanAttachment")!.required).toBeFalsy();
   });
 
   it("disables the vendor field (auto-filled from PO)", () => {

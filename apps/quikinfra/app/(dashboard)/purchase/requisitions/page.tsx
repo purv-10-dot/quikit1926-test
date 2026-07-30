@@ -5,19 +5,21 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, Send } from "lucide-react";
 import {
+  PageFrame,
   PageHeader, PageContainer, StatusChip, TabBar,
 } from "@/components/PageShell";
 import type { LineProcurement } from "@/lib/purchase/procurement-types";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DataTable, type ColDef } from "@/components/DataTable";
-import { usePurchaseRequisitions, useSubmitPR } from "@/hooks/use-purchase";
+import { useSubmitPR } from "@/hooks/use-purchase";
 import { usePermissions, useMenuActions } from "@/hooks/use-permissions";
 import dynamic from "next/dynamic";
 const PRCreateDrawer = dynamic(
   () => import("./PRCreateDrawer").then((m) => m.PRCreateDrawer),
   { ssr: false },
 );
-import { buildTabCounts, filterByTab, type TabSpec } from "@/lib/tab-counts";
+import { type TabSpec } from "@/lib/tab-counts";
+import { useServerTabList } from "@/hooks/use-server-tab-list";
 
 const STATUS_TABS: TabSpec[] = [
   { key: "all", label: "All" },
@@ -67,17 +69,32 @@ export default function PurchaseRequisitionsPage() {
   // Fetch the unfiltered list once and derive both the tab counts and
   // the visible slice client-side. Keeps the page to one query and
   // makes tab switches instant.
-  const { data: result, isLoading } = usePurchaseRequisitions({
-    status: "all",
-    search: "",
-  });
   const submitMutation = useSubmitPR();
   const { me } = usePermissions();
   const { canAdd } = useMenuActions("/purchase/requisitions");
 
-  const allRows = result?.data ?? [];
-  const tabs = useMemo(() => buildTabCounts(allRows, STATUS_TABS), [allRows]);
-  const data = useMemo(() => filterByTab(allRows, activeTab, STATUS_TABS), [allRows, activeTab]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sort, setSort] = useState<{ by?: string; order?: "asc" | "desc" }>({
+    by: "createdAt",
+    order: "desc",
+  });
+  const {
+    items: data,
+    total,
+    page,
+    pageSize,
+    setPage,
+    setPageSize,
+    tabs,
+    isLoading,
+  } = useServerTabList<PrRow>("purchase-requisitions", "/api/purchase/requisitions", {
+    activeTab,
+    tabs: STATUS_TABS,
+    search: searchQuery,
+    sortBy: sort.by,
+    sortOrder: sort.order,
+    initialPageSize: 25,
+  });
 
   const doSubmitPR = async () => {
     if (!submitTarget) return;
@@ -95,7 +112,7 @@ export default function PurchaseRequisitionsPage() {
     {
       key: "prNumber", label: "PR Number", sortable: true, searchable: true,
       render: (row) => (
-        <span className="text-orange-600 cursor-pointer hover:underline font-medium"
+        <span className="text-accent-600 cursor-pointer hover:underline font-medium"
               onClick={() => router.push(`/purchase/requisitions/${row.id}`)}>
           {row.prNumber}
         </span>
@@ -144,7 +161,7 @@ export default function PurchaseRequisitionsPage() {
                   router.push(`/purchase/orders/${po.id}`);
                 }}
                 title={`${po.poNumber} — Status: ${poStatusLabel(po.status)} · click to open`}
-                className="inline-flex items-center px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 text-[11px] font-medium whitespace-nowrap hover:bg-orange-100 transition-colors"
+                className="inline-flex items-center px-2 py-0.5 rounded-md bg-accent-50 text-accent-700 text-[11px] font-medium whitespace-nowrap hover:bg-accent-100 transition-colors"
               >
                 {po.poNumber}
               </button>
@@ -212,6 +229,7 @@ export default function PurchaseRequisitionsPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Purchase Requisitions"
         subtitle="Request materials needed for site operations"
@@ -220,7 +238,7 @@ export default function PurchaseRequisitionsPage() {
 
       <TabBar tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
 
-      <PageContainer>
+      <PageContainer fill>
         <DataTable
           id="purchase-requisitions"
           columns={columns}
@@ -230,8 +248,18 @@ export default function PurchaseRequisitionsPage() {
           historyEntityType="mr,purchase_requisitions"
           emptyTitle="No purchase requisitions yet"
           emptyHint="Raise a PR to request materials needed for site operations. Once submitted, it will flow through the approval workflow."
+          loading={isLoading}
+          serverMode
+          serverTotal={total}
+          serverPage={page}
+          serverPageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          onSearchChange={setSearchQuery}
+          onSortChange={(k, d) => setSort({ by: k, order: d })}
         />
       </PageContainer>
+      </PageFrame>
 
       <PRCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
 

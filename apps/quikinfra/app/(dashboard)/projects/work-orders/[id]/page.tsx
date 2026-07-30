@@ -42,11 +42,10 @@ import {
   useWorkOrder,
   useUpdateWorkOrder,
 } from "@/hooks/use-projects";
-import { useWorkCategories } from "@/hooks/use-masters";
+import { useWorkCategories, useLabourCategories } from "@/hooks/use-masters";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useWorkflowConfirm } from "@/hooks/use-workflow-confirm";
-import { isLabourWorkType, labourLineFromWoItem, sumLabourQty } from "@/lib/projects/labour-scope";
-import { LABOUR_TYPE_OPTIONS } from "@/lib/projects/labour-types";
+import { isLabourWorkType, labourLineAmount, labourLineFromWoItem } from "@/lib/projects/labour-scope";
 
 const MENU_KEY = "pm.work_orders";
 
@@ -137,7 +136,9 @@ export default function WorkOrderDetailPage() {
   const workflow = useWorkflowConfirm({
     submitUrl: `/api/projects/work-orders/${id}/submit`,
     approveUrl: `/api/projects/work-orders/${id}/approve`,
-    invalidateKeys: [["work-order", id], ["work-orders"]],
+    // "dashboard" too: approving is what flips a WO to `approved`, which is
+    // what the dashboard's Active Work Orders tile counts.
+    invalidateKeys: [["work-order", id], ["work-orders"], ["dashboard"]],
   });
 
   const boqItems: BoqScopeItem[] = useMemo(
@@ -145,6 +146,7 @@ export default function WorkOrderDetailPage() {
     [wo],
   );
   const isLabourOnly = isLabourWorkType(wo?.workType);
+  const isFreeScope = boqItems.some((it) => it.scopeType === "ACTIVITY");
   const { data: workCategoriesResult } = useWorkCategories();
   const workCategoryNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -153,11 +155,14 @@ export default function WorkOrderDetailPage() {
     }
     return map;
   }, [workCategoriesResult]);
-  const labourTypeLabel = useMemo(() => {
+  const { data: labourCategoriesResult } = useLabourCategories({ status: "active" });
+  const labourCategoryNameById = useMemo(() => {
     const map = new Map<string, string>();
-    for (const o of LABOUR_TYPE_OPTIONS) map.set(o.value, o.label);
-    return (v: string) => map.get(v) ?? v;
-  }, []);
+    for (const c of labourCategoriesResult?.data ?? []) {
+      map.set(c.id, c.code ? `${c.name} (${c.code})` : c.name);
+    }
+    return map;
+  }, [labourCategoriesResult]);
   const labourLines = useMemo(
     () => (isLabourOnly ? boqItems.map((it) => labourLineFromWoItem(it)) : []),
     [boqItems, isLabourOnly],
@@ -336,13 +341,20 @@ export default function WorkOrderDetailPage() {
                 {/* Left: stat grid */}
                 <dl className="lg:col-span-8 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5 px-6 py-5 text-sm">
                   <OverviewStat label="Project">
-                    <span className="font-medium text-gray-900 truncate">
-                      {wo.projectName ?? "—"}
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <span className="font-medium text-gray-900 truncate">
+                        {wo.projectName ?? "—"}
+                      </span>
+                      {isFreeScope && (
+                        <span className="shrink-0 whitespace-nowrap rounded bg-accent-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-accent-700 border border-accent-200">
+                          Free-Scope
+                        </span>
+                      )}
                     </span>
                   </OverviewStat>
 
                   <OverviewStat label="WO Number">
-                    <span className="font-mono text-xs font-semibold text-gray-900 px-1.5 py-0.5 rounded bg-sky-50 border border-sky-100">
+                    <span className="text-xs font-semibold text-gray-900 px-1.5 py-0.5 rounded bg-sky-50 border border-sky-100">
                       {wo.woNumber ?? "—"}
                     </span>
                   </OverviewStat>
@@ -461,7 +473,7 @@ export default function WorkOrderDetailPage() {
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-gray-900">
-                  {isLabourOnly ? "Work Order Details" : "BOQ Scope"}
+                  {isLabourOnly ? "Work Order Details" : isFreeScope ? "Activity Scope" : "BOQ Scope"}
                 </h2>
                 <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500 bg-gray-50 border border-gray-200 px-2 py-0.5 rounded-full">
                   {boqItems.length} item{boqItems.length === 1 ? "" : "s"}
@@ -482,14 +494,14 @@ export default function WorkOrderDetailPage() {
                         <th className="px-4 py-3 text-left font-bold">Activity Name</th>
                         <th className="px-4 py-3 text-left font-bold">Description</th>
                         <th className="px-4 py-3 text-left font-bold">Group</th>
-                        <th className="px-4 py-3 text-left font-bold">Labour Type &amp; Count</th>
+                        <th className="px-4 py-3 text-left font-bold">Labour Category &amp; Count</th>
                         <th className="px-4 py-3 text-right font-bold">Total</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {labourLines.map((line, idx) => (
                         <tr key={idx} className="hover:bg-indigo-50/20 transition-colors">
-                          <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
+                          <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">
                             {String(idx + 1).padStart(2, "0")}
                           </td>
                           <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
@@ -503,19 +515,12 @@ export default function WorkOrderDetailPage() {
                             {workCategoryNameById.get(line.workCategoryId) ?? "—"}
                           </td>
                           <td className="px-4 py-3 text-gray-700">
-                            {line.labourTypes.length
-                              ? line.labourTypes
-                                  .map(
-                                    (lt) =>
-                                      `${labourTypeLabel(lt.type)} (${
-                                        fmtQty(lt.count) || 0
-                                      })`,
-                                  )
-                                  .join(", ")
+                            {line.labourCategoryId
+                              ? `${labourCategoryNameById.get(line.labourCategoryId) ?? "—"} (${fmtQty(line.count) || 0})`
                               : "—"}
                           </td>
                           <td className="px-4 py-3 text-right tabular-nums text-gray-900">
-                            {sumLabourQty(line.labourTypes)}
+                            {fmtInr(labourLineAmount(line))}
                           </td>
                         </tr>
                       ))}
@@ -551,10 +556,10 @@ export default function WorkOrderDetailPage() {
                     <tbody className="divide-y divide-gray-100">
                       {boqItems.map((it: BoqScopeItem, idx: number) => (
                         <tr key={idx} className="hover:bg-indigo-50/20 transition-colors">
-                          <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
+                          <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">
                             {String(idx + 1).padStart(2, "0")}
                           </td>
-                          <td className="px-4 py-3 font-mono text-xs text-gray-700">
+                          <td className="px-4 py-3 text-xs text-gray-700">
                             {it.boqNo ?? it.itemCode ?? "—"}
                           </td>
                           <td className="px-4 py-3 text-gray-900">

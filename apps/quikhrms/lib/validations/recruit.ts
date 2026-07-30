@@ -177,12 +177,20 @@ export const createInterviewSchema = z.object({
   interviewerId: z.string().min(1),
   // Extra panel interviewers beyond the primary. All get the invite + calendar.
   additionalInterviewerIds: z.array(z.string().min(1)).optional().default([]),
+  // Optional JD override sent to interviewers (from the schedule dialog). When
+  // set, it's used verbatim in the interviewer email for ANY round.
+  jobDescription: z.string().optional(),
   scheduledAt: z.string().min(1).refine((v) => new Date(v).getTime() > Date.now() - 60_000, {
     message: "Scheduled date/time cannot be in the past",
   }),
   duration: z.number().int().default(60),
   location: z.string().optional(),
   meetingLink: z.string().optional(),
+  // Take-Home Task (only used when type === "TakeHome"). All optional — the
+  // interview row is created normally; these are persisted via raw SQL.
+  takeHomeInstructions: z.string().max(10000).optional(),
+  takeHomeAttachmentUrl: z.string().max(1000).optional(),
+  takeHomeDueDate: z.string().optional(),
 });
 
 export const updateInterviewSchema = z.object({

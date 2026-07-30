@@ -17,12 +17,21 @@ import type { ReconciliationDetail } from "@/lib/store/stock-reconciliation-deta
 const fetchApi = fetchJson;
 const mutateApi = mutateJson;
 
-export function useStockRegister(params?: { projectId?: string; locationId?: string; lowStockOnly?: boolean; search?: string }) {
+export function useStockRegister(params?: {
+  projectId?: string;
+  locationId?: string;
+  lowStockOnly?: boolean;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}) {
   const qs = new URLSearchParams();
   if (params?.projectId) qs.set("projectId", params.projectId);
   if (params?.locationId) qs.set("locationId", params.locationId);
   if (params?.lowStockOnly) qs.set("lowStockOnly", "true");
   if (params?.search) qs.set("search", params.search);
+  if (params?.page) qs.set("page", String(params.page));
+  if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
   const query = qs.toString();
 
   return useQuery({
@@ -32,6 +41,7 @@ export function useStockRegister(params?: { projectId?: string; locationId?: str
       total: number;
       summary: { totalItems?: number; totalValue?: number; onOrderValue?: number; lowStockCount?: number };
     }>(`/api/store/stock-register${query ? `?${query}` : ""}`),
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -89,16 +99,41 @@ export function useUpdateMaterialIssue() {
 
 // ─── Gate Pass ─────────────────────────────────────────────────────
 
-export function useGatePasses(params?: { status?: string; type?: string; projectId?: string }) {
+export function useGatePasses(params?: {
+  status?: string;
+  type?: string;
+  projectId?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+}) {
   const qs = new URLSearchParams();
   if (params?.status && params.status !== "all") qs.set("status", params.status);
   if (params?.type && params.type !== "all") qs.set("type", params.type);
   if (params?.projectId) qs.set("projectId", params.projectId);
+  if (params?.search) qs.set("search", params.search);
+  if (params?.page) qs.set("page", String(params.page));
+  if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+  if (params?.sortBy) qs.set("sortBy", params.sortBy);
+  if (params?.sortOrder) qs.set("sortOrder", params.sortOrder);
   const query = qs.toString();
 
   return useQuery({
     queryKey: ["gate-passes", query],
     queryFn: () => fetchApi<{ data: GatePass[]; total: number }>(`/api/store/gate-passes${query ? `?${query}` : ""}`),
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useGatePassCounts() {
+  return useQuery({
+    queryKey: ["gate-passes", "counts"],
+    queryFn: () =>
+      fetchApi<{ total: number; byStatus: Record<string, number> }>(
+        `/api/store/gate-passes?counts=1`,
+      ),
   });
 }
 
@@ -126,15 +161,39 @@ export function useGatePass(id: string | null | undefined) {
 
 // ─── Good Return ───────────────────────────────────────────────────
 
-export function useGoodReturns(params?: { status?: string; projectId?: string }) {
+export function useGoodReturns(params?: {
+  status?: string;
+  projectId?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+}) {
   const qs = new URLSearchParams();
   if (params?.status && params.status !== "all") qs.set("status", params.status);
   if (params?.projectId) qs.set("projectId", params.projectId);
+  if (params?.search) qs.set("search", params.search);
+  if (params?.page) qs.set("page", String(params.page));
+  if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+  if (params?.sortBy) qs.set("sortBy", params.sortBy);
+  if (params?.sortOrder) qs.set("sortOrder", params.sortOrder);
   const query = qs.toString();
 
   return useQuery({
     queryKey: ["good-returns", query],
     queryFn: () => fetchApi<{ data: GoodReturn[]; total: number }>(`/api/store/good-returns${query ? `?${query}` : ""}`),
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useGoodReturnCounts() {
+  return useQuery({
+    queryKey: ["good-returns", "counts"],
+    queryFn: () =>
+      fetchApi<{ total: number; byStatus: Record<string, number> }>(
+        `/api/store/good-returns?counts=1`,
+      ),
   });
 }
 
@@ -257,31 +316,36 @@ export function useApproveStockReconciliation() {
   });
 }
 
-export function useCreateStockReconciliation() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (data: unknown) => mutateApi("/api/store/reconciliations", "POST", data),
-    onSuccess: async () => {
-      await refreshListQueries(qc, "stock-reconciliations");
-      await refreshListQueries(qc, "stock-register");
-    },
-    meta: entityMeta("create", "Stock reconciliation"),
-  });
-}
 
 // ─── Diesel Log ────────────────────────────────────────────────────
 
-export function useDieselLogs(params?: { projectId?: string; machineryId?: string; fromDate?: string; toDate?: string }) {
+export function useDieselLogs(params?: {
+  projectId?: string;
+  machineryId?: string;
+  fromDate?: string;
+  toDate?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+}) {
   const qs = new URLSearchParams();
   if (params?.projectId) qs.set("projectId", params.projectId);
   if (params?.machineryId) qs.set("machineryId", params.machineryId);
   if (params?.fromDate) qs.set("fromDate", params.fromDate);
   if (params?.toDate) qs.set("toDate", params.toDate);
+  if (params?.search) qs.set("search", params.search);
+  if (params?.page) qs.set("page", String(params.page));
+  if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+  if (params?.sortBy) qs.set("sortBy", params.sortBy);
+  if (params?.sortOrder) qs.set("sortOrder", params.sortOrder);
   const query = qs.toString();
 
   return useQuery({
     queryKey: ["diesel-logs", query],
     queryFn: () => fetchApi<{ data: unknown[]; total: number }>(`/api/store/diesel-logs${query ? `?${query}` : ""}`),
+    placeholderData: (prev) => prev,
   });
 }
 

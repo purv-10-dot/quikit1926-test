@@ -13,6 +13,10 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     if (!parsed.success) {
       return validationError("Validation failed", parsed.error.flatten().fieldErrors);
     }
+    // Hard cap the batch size — a single import can't submit unbounded rows.
+    if (parsed.data.holidays.length > 500) {
+      return validationError("Too many holidays in one import (max 500).");
+    }
 
     // Skip holidays that already exist (same name + date) so re-importing a list
     // doesn't create duplicate rows (the single-add route already guards this).

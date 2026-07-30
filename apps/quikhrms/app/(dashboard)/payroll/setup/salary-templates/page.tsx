@@ -6,6 +6,7 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { FileStack, Users, Trash2, Star, Plus } from "lucide-react";
 import { useDialog } from "@/components/hrms/dialog";
 import { SkeletonTable } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface SalaryStructure {
   id: string;
@@ -39,6 +40,8 @@ export default function SalaryTemplatesListPage() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
         <div className="flex items-center justify-between px-4 py-4 border-b border-gray-100">
           <div className="flex items-center gap-2">

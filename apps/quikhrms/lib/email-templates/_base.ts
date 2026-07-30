@@ -152,11 +152,12 @@ export function btnRow(primary: { label: string; url: string }, secondary: { lab
 }
 
 /* ── Alerts ───────────────────────────────────────────────────────────── */
-export function alert(kind: "success" | "info" | "warning", html: string, title?: string): string {
+export function alert(kind: "success" | "info" | "warning" | "danger", html: string, title?: string): string {
   const map = {
     success: { bg: "#ecfdf3", bd: "#abefc6", fg: "#15803d", icon: "✅" },
     info:    { bg: "#eff6ff", bd: "#bfdbfe", fg: "#1d4ed8", icon: "ℹ️" },
     warning: { bg: "#fffbeb", bd: "#fde68a", fg: "#b45309", icon: "⚠️" },
+    danger:  { bg: "#fef2f2", bd: "#fecaca", fg: "#b91c1c", icon: "⚠️" },
   }[kind];
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${map.bg};border:1px solid ${map.bd};border-radius:10px;margin:0 0 18px;"><tr>
     <td style="padding:12px 14px;font-size:13px;color:${BRAND.ink};line-height:1.5;">

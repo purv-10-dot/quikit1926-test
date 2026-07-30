@@ -7,8 +7,8 @@ import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
  * createMasterRoutes — factory that produces {GET, POST} list handlers and a
  * matching [id] {GET, PATCH, DELETE} set for any simple "Cn*" master.
  *
- * Cuts ~60 files of boilerplate across 12 masters. Bespoke routes (FinancialYear,
- * Project with FK validation, Machinery, Assets) still write their own handlers.
+ * Cuts ~60 files of boilerplate across 12 masters. Bespoke routes
+ * (Project with FK validation, Machinery, Assets) still write their own handlers.
  *
  * Usage:
  *   // app/api/masters/departments/route.ts

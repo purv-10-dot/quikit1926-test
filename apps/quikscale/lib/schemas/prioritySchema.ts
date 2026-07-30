@@ -6,7 +6,12 @@ import { MAX_WEEKS_PER_QUARTER } from "@/lib/utils/fiscal";
 export const createPrioritySchema = z.object({
   name:          z.string().min(1, "Priority name is required"),
   description:   z.string().optional().nullable(),
-  owner:         z.string().min(1, "Owner is required"),
+  // Single owner (legacy / OPSP export flow) OR a multi-owner fan-out list.
+  // Exactly one row is created per owner in `ownerIds` (see POST /api/priority).
+  // `owner` stays for backward compatibility — callers may send either; the
+  // refine below guarantees at least one is present.
+  owner:         z.string().min(1).optional(),
+  ownerIds:      z.array(z.string().min(1)).optional(),
   teamId:        z.string().optional().nullable(),
   quarter:       z.enum(["Q1", "Q2", "Q3", "Q4"]),
   year:          z.number().int().min(2020).max(2099),
@@ -17,7 +22,10 @@ export const createPrioritySchema = z.object({
   // Set true only by the OPSP "Export → Create Priorities" flow. Display-only;
   // the Add/Edit Priority form never sends it (defaults false).
   importedFromOpsp: z.boolean().optional(),
-});
+}).refine(
+  (v) => (v.ownerIds && v.ownerIds.length > 0) || !!v.owner,
+  { message: "Owner is required", path: ["ownerIds"] },
+);
 
 // Update — fully partial so PATCH-style updates work.
 export const updatePrioritySchema = z.object({

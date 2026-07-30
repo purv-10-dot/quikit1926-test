@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   FileText,
@@ -11,7 +11,7 @@ import {
   ExternalLink,
   Download,
 } from "lucide-react";
-import { PageHeader, PageContainer, StatusChip } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer, StatusChip } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { QuickCreateDrawer } from "@/components/QuickCreateDrawer";
 import { useProjects } from "@/hooks/use-masters";
@@ -95,7 +95,7 @@ function DocumentPreviewModal({
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
           <div className="min-w-0 pr-4">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-orange-600">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-accent-600">
               Document Preview
             </div>
             <div className="text-sm font-semibold text-gray-900 truncate">{label}</div>
@@ -109,7 +109,7 @@ function DocumentPreviewModal({
                 href={url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-orange-700 bg-orange-50 rounded-lg hover:bg-orange-100"
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-accent-700 bg-accent-50 rounded-lg hover:bg-accent-100"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
                 Open
@@ -153,7 +153,7 @@ function DocumentPreviewModal({
                 href={url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-orange-600 rounded-lg hover:bg-orange-700"
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-accent-600 rounded-lg hover:bg-accent-700"
               >
                 <Download className="w-4 h-4" />
                 Download file
@@ -183,12 +183,33 @@ export default function DocumentsPage() {
     [projects],
   );
 
-  const { data: result } = useQuery({
-    queryKey: ["projects-documents"],
-    queryFn: () => fetch(`/api/projects/documents`).then((r) => r.json()),
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("createdAt");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, sortBy, sortOrder, pageSize]);
+
+  const { data: result, isLoading } = useQuery({
+    queryKey: ["projects-documents", { page, pageSize, search, sortBy, sortOrder }],
+    queryFn: () => {
+      const qs = new URLSearchParams({
+        page: String(page),
+        pageSize: String(pageSize),
+        sortBy,
+        sortOrder,
+      });
+      if (search) qs.set("search", search);
+      return fetch(`/api/projects/documents?${qs.toString()}`).then((r) => r.json());
+    },
+    placeholderData: (prev) => prev,
   });
 
   const data: DocumentRow[] = result?.data ?? [];
+  const total: number = result?.total ?? 0;
 
   const uploadConfig = useMemo(
     () => ({
@@ -297,7 +318,7 @@ export default function DocumentsPage() {
             onClick={() => hasFile && setPreviewRow(row)}
             className={`inline-flex items-center gap-2 min-w-0 max-w-full text-left ${
               hasFile
-                ? "text-orange-700 hover:text-orange-800 hover:underline cursor-pointer"
+                ? "text-accent-700 hover:text-accent-800 hover:underline cursor-pointer"
                 : "text-gray-700 cursor-default"
             }`}
             title={hasFile ? "Preview file" : display}
@@ -322,36 +343,50 @@ export default function DocumentsPage() {
         </span>
       ),
     },
-    { key: "projectName", label: "Project", sortable: true, searchable: true },
-    { key: "version", label: "Version" },
-    { key: "uploadedBy", label: "Uploaded By", sortable: true },
-    { key: "uploadDate", label: "Upload Date", type: "date", sortable: true },
+    { key: "projectName", label: "Project", sortable: false, searchable: true },
+    { key: "version", label: "Version", sortable: false },
+    { key: "uploadedBy", label: "Uploaded By", sortable: false },
+    { key: "uploadDate", label: "Upload Date", type: "date", sortable: false },
     {
       key: "status",
       label: "Status",
       type: "select",
       options: ["draft", "active", "approved"],
-      sortable: true,
+      sortable: false,
       render: (row) => <StatusChip status={row.status ?? ""} />,
     },
   ];
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Document Management"
         subtitle="Project drawings, contracts, NOCs, and regulatory documents"
         breadcrumbs={[{ label: "Projects", href: "/projects" }, { label: "Documents" }]}
       />
-      <PageContainer>
+      <PageContainer fill>
         <DataTable
           id="projects-documents"
           columns={columns}
           data={data}
+          loading={isLoading}
+          serverMode
+          serverTotal={total}
+          serverPage={page}
+          serverPageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          onSearchChange={setSearch}
+          onSortChange={(key, dir) => {
+            setSortBy(key);
+            setSortOrder(dir);
+          }}
           onAdd={canAdd ? () => setDrawerOpen(true) : undefined}
           addLabel="Upload Document"
         />
       </PageContainer>
+      </PageFrame>
       <QuickCreateDrawer
         key={drawerOpen ? `upload-${me?.userName ?? "pending"}` : "closed"}
         open={drawerOpen}

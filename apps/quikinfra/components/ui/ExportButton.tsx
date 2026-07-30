@@ -61,7 +61,7 @@ export function ExportButton<T>({ filename, rows, columns, disabled, label = "Ex
       onClick={handle}
       disabled={disabled || isEmpty}
       title={isEmpty ? "Nothing to export" : `Download ${rows.length} rows as CSV`}
-      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-700 bg-white border border-slate-300 hover:bg-orange-50 hover:border-orange-300 hover:text-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-700 bg-white border border-slate-300 hover:bg-accent-50 hover:border-accent-300 hover:text-accent-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
     >
       <Download className="w-3.5 h-3.5" />
       {label}

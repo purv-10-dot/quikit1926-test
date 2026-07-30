@@ -156,7 +156,7 @@ export const GET = auth.view<{ id: string }>(async ({ orgId }, req, { params }) 
       qtdAchieved: true, currentWeekValue: true, progressPercent: true,
       status: true, healthStatus: true, lastNotes: true, lastNotesAt: true,
       divisionType: true, weeklyTargets: true, weeklyOwnerTargets: true,
-      currency: true, targetScale: true, unit: true, scaledDisplay: true, reverseColor: true, frequency: true,
+      currency: true, targetScale: true, unit: true, scaledDisplay: true, reverseColor: true, frequency: true, kpiType: true,
       createdAt: true, updatedAt: true, createdBy: true, updatedBy: true,
       owner_user: { select: { id: true, firstName: true, lastName: true } },
       weeklyValues: { select: { weekNumber: true, value: true, notes: true }, orderBy: { weekNumber: "asc" } },
@@ -374,6 +374,7 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
       scaledDisplay: validated.scaledDisplay ?? undefined,
       reverseColor: validated.reverseColor ?? undefined,
       frequency: validated.frequency ?? undefined,
+      kpiType: validated.kpiType ?? undefined,
       updatedBy: userId,
       ...(recomputedProgress != null && { progressPercent: recomputedProgress }),
       ...(recomputedHealth !== undefined && { healthStatus: recomputedHealth }),
@@ -385,7 +386,7 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
       target: true, quarterlyGoal: true, qtdGoal: true, qtdAchieved: true,
       progressPercent: true, status: true, healthStatus: true,
       divisionType: true, weeklyTargets: true, weeklyOwnerTargets: true, lastNotes: true,
-      currency: true, targetScale: true, unit: true, scaledDisplay: true, reverseColor: true, frequency: true,
+      currency: true, targetScale: true, unit: true, scaledDisplay: true, reverseColor: true, frequency: true, kpiType: true,
       createdAt: true, updatedAt: true, createdBy: true,
       owner_user: { select: { id: true, firstName: true, lastName: true } },
     },
@@ -484,6 +485,24 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
       await syncChildTargetToParent(existingKPI.parentKPIId).catch((e) =>
         console.error("[kpi PUT] syncChildTargetToParent failed", e),
       );
+    }
+  }
+
+  // ── Cascade a Team KPI's quarter/year change to its child Individual KPIs ──
+  // Quarter/year are editable only with "Add Past Week Data" on. When a Team KPI
+  // moves quarters, its auto-created children must move too, otherwise they stay
+  // filed under the old quarter and vanish from the team's quarter view.
+  if (effectiveLevel === "team") {
+    const quarterChanged = validated.quarter !== undefined && validated.quarter !== existingKPI.quarter;
+    const yearChanged = validated.year !== undefined && validated.year !== existingKPI.year;
+    if (quarterChanged || yearChanged) {
+      await db.kPI.updateMany({
+        where: { parentKPIId: params.id, deletedAt: null },
+        data: {
+          ...(quarterChanged && { quarter: validated.quarter }),
+          ...(yearChanged && { year: validated.year }),
+        },
+      });
     }
   }
 

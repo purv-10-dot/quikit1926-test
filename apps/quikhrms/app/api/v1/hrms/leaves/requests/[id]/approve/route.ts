@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, notFound, validationError, forbidden, internalError } from "@/lib/api-response";
+import { successResponse, notFound, validationError, forbidden, conflict, internalError } from "@/lib/api-response";
 import { leaveApprovalActionSchema } from "@/lib/validations/leave";
 import { fireWorkflow } from "@/lib/workflows/executor";
 import { resolveAndSend } from "@/lib/email/resolve";
@@ -72,12 +72,14 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
     const year = new Date(request.startDate).getFullYear();
 
     const updated = await prisma.$transaction(async (tx) => {
-      // Record the actioner on the current level's row so the audit trail shows
-      // who actually approved (may differ from the apply-time representative).
-      await tx.leaveApproval.update({
-        where: { id: current.id },
+      // Atomic level claim: only transition this level if it's STILL Pending.
+      // Two parallel approves can't both win — the loser matches 0 rows and we
+      // abort, so `taken` is incremented exactly once.
+      const claimed = await tx.leaveApproval.updateMany({
+        where: { id: current.id, status: "Pending" },
         data: { status, comment, actionAt: new Date(), approverId: userId },
       });
+      if (claimed.count === 0) throw new Error("ALREADY_ACTIONED");
 
       if (allApproved) {
         await Promise.all([
@@ -224,6 +226,9 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
 
     return successResponse(updated);
   } catch (error) {
+    if (error instanceof Error && error.message === "ALREADY_ACTIONED") {
+      return conflict("This approval level was just actioned by someone else.");
+    }
     console.error("POST /leaves/requests/:id/approve error:", error);
     return internalError();
   }

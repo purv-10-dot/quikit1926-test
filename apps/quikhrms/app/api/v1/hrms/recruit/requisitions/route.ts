@@ -45,7 +45,7 @@ export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
     })();
     return successResponse(data, paginationMeta(page, limit, total));
   } catch (error) { console.error("GET /recruit/requisitions error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.read"] });
 
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
   try {

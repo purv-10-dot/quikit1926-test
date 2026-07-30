@@ -620,7 +620,16 @@ export const SignInComponent = ({
       }
       fireConfetti();
       setModalStatus("success");
-      const target = invitationLauncherUrl || callbackUrl || redirectPath;
+      // `redirectUrl` is the server's answer to "which app was this invitation
+      // actually for?" — set only when the invitation names exactly one app, in
+      // which case it points at the auth host's /api/post-login bridge so the
+      // invitee lands INSIDE that app with a session on its own host. It takes
+      // precedence over `invitationLauncherUrl`, which is the correct fallback
+      // only for multi-app (or app-less) invitations, where the launcher grid
+      // genuinely is the destination. Sending a QuikSkill invitee to the
+      // launcher was the "sets password → dumped on the QuikIT launcher" bug.
+      const target =
+        json.data?.redirectUrl || invitationLauncherUrl || callbackUrl || redirectPath;
       setTimeout(() => {
         if (hardNavigate) window.location.assign(target);
         else router.push(target);
@@ -923,7 +932,15 @@ export const SignInComponent = ({
         {/* ─── Right auth panel ─── */}
         <section className="auth-main">
           <header className="auth-main-top fade-in-up d1">
-            <a href="/" className="auth-logo" aria-label={brandName}>{brandName}</a>
+            <a href="/" className="auth-logo" aria-label={brandName}>
+              {/* Theme-aware QuikIT lockup: dark UI → light (white) logo, light UI → dark logo. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={theme === "dark" ? "/brand/quikit-wordmark-light.svg" : "/brand/quikit-wordmark-dark.svg"}
+                alt={brandName}
+                style={{ height: 24, width: "auto", display: "block" }}
+              />
+            </a>
             <button type="button" className="auth-theme"
               onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
               aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}>

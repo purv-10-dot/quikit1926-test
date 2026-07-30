@@ -230,6 +230,55 @@ describe("/api/org/users/[id] route family", () => {
     expect(arg.data.department).toBe("Ops");
   });
 
+  // ─── PATCH editable Employee ID (org-unique) ───
+  it("PATCH rejects editing to a DUPLICATE Employee ID with a clear 409 (no write)", async () => {
+    asAdmin();
+    mockDb.orgMember.findUnique.mockResolvedValue({ id: "m1" } as never);
+    mockDb.astEmployee.findFirst
+      .mockResolvedValueOnce({ id: "emp1", employeeId: "EMP-001" } as never) // the user's own employee
+      .mockResolvedValueOnce({ id: "emp9" } as never); // EMP-006 already used by someone else
+
+    const res = await patchUser(
+      makeReq("/api/org/users/target", { method: "PATCH", body: { employeeId: "EMP-006" } }),
+      P,
+    );
+    const json = await res.json();
+
+    expect(res.status).toBe(409);
+    expect(json.error).toContain("EMP-006"); // clear, id-specific message
+    expect(mockDb.astEmployee.update).not.toHaveBeenCalled(); // nothing written
+    // Clash lookup is org-scoped and excludes the user's OWN employee row.
+    const clashCall = mockDb.astEmployee.findFirst.mock.calls[1]?.[0] as {
+      where: { orgId: string; employeeId: string; NOT?: { id: string } };
+    };
+    expect(clashCall.where).toMatchObject({ orgId: "org1", employeeId: "EMP-006", NOT: { id: "emp1" } });
+  });
+
+  it("PATCH accepts editing to a genuinely UNIQUE Employee ID", async () => {
+    asAdmin();
+    mockDb.orgMember.findUnique.mockResolvedValue({ id: "m1" } as never);
+    mockDb.astEmployee.findFirst
+      .mockResolvedValueOnce({ id: "emp1", employeeId: "EMP-001" } as never) // own employee
+      .mockResolvedValueOnce(null as never); // no clash for EMP-777
+    mockDb.astEmployee.update.mockResolvedValue({} as never);
+    mockDb.user.findUnique.mockResolvedValue({
+      id: "target", firstName: "A", lastName: "B", email: "a@x.com", lastSignInAt: null,
+    } as never);
+
+    const res = await patchUser(
+      makeReq("/api/org/users/target", { method: "PATCH", body: { employeeId: "EMP-777" } }),
+      P,
+    );
+
+    expect(res.status).toBe(200);
+    const arg = mockDb.astEmployee.update.mock.calls[0]?.[0] as {
+      where: { id: string };
+      data: { employeeId: string };
+    };
+    expect(arg.where.id).toBe("emp1");
+    expect(arg.data.employeeId).toBe("EMP-777");
+  });
+
   // ─── DELETE = remove from QuikAsset (Phase 6a) ───
   it("DELETE 401s when unauthenticated", async () => {
     setSession(null);

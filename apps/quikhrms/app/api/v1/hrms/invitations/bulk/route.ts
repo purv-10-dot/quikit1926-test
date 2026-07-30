@@ -5,6 +5,7 @@ import { successResponse, validationError, internalError } from "@/lib/api-respo
 import { bulkInvitationSchema } from "@/lib/validations/invitation";
 import { createAuditLog } from "@/lib/utils/audit";
 import { provisionCentralInvite } from "@/lib/services/invitation";
+import { joinCode } from "@/lib/rbac/registry";
 
 /**
  * Cap concurrent central provisioning calls. Each row hits the central
@@ -53,7 +54,7 @@ async function mapWithConcurrency<T, R>(
  * invitation email carrying the accept link. A row that fails provisioning is
  * skipped with the central error — it never fails the rest of the batch.
  */
-export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
+export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissions }) => {
   try {
     const body = await req.json();
     const parsed = bulkInvitationSchema.safeParse(body);
@@ -65,11 +66,18 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     // ── Resolve roles for the tenant (name → id, case-insensitive) ──
     const tenantRoles = await prisma.hrmsAppRole.findMany({
       where: { orgId: orgId },
-      select: { id: true, name: true },
+      select: { id: true, name: true, permissions: { select: { resource: true, action: true } } },
     });
     const roleIdByName = new Map(tenantRoles.map((r) => [r.name.trim().toLowerCase(), r.id]));
     const validRoleIds = new Set(tenantRoles.map((r) => r.id));
     const validDefaults = defaultRoleIds.filter((id) => validRoleIds.has(id));
+
+    // Tier guard: the caller can't grant a role carrying permissions they don't
+    // hold. Pre-compute each role's codes; an offending row is skipped (never a
+    // whole-batch abort). super_admin ("*") may grant anything.
+    const isSuper = permissions.includes("*");
+    const held = new Set(permissions);
+    const rolePermCodes = new Map(tenantRoles.map((r) => [r.id, r.permissions.map((p) => joinCode(p.resource, p.action))]));
 
     // ── Pre-fetch existing employees + pending invites to dedupe in bulk ──
     const emails = [...new Set(rows.map((r) => r.email.trim().toLowerCase()))];
@@ -113,6 +121,17 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         .filter((id): id is string => !!id);
       const roleIds = namedIds.length > 0 ? namedIds : validDefaults;
       if (roleIds.length === 0) { skipped.push({ email, reason: "No valid roles" }); continue; }
+
+      // Tier guard — skip rows whose roles grant permissions the caller lacks.
+      if (!isSuper) {
+        const missing = [...new Set(
+          roleIds.flatMap((rid) => rolePermCodes.get(rid) ?? []).filter((c) => !held.has(c)),
+        )];
+        if (missing.length) {
+          skipped.push({ email, reason: `Roles grant permissions you don't hold: ${missing.slice(0, 5).join(", ")}` });
+          continue;
+        }
+      }
 
       candidates.push({ email, firstName: row.firstName, lastName: row.lastName, roleIds });
     }
