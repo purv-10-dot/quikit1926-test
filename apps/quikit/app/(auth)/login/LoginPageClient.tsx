@@ -9,8 +9,6 @@ const LogoComponent = () => (
   </div>
 );
 
-
-
 // Kept in sync with the central auth login (apps/auth/app/login/page.tsx) so any
 // `?reason=` the shared middleware can emit renders a banner here too.
 const REASON_MESSAGES: Record<string, string> = {
