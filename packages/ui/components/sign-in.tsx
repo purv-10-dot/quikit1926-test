@@ -87,6 +87,12 @@ interface SignInComponentProps {
    *  step pointing here (the central auth app passes its /register URL).
    *  Omitted by other apps → no Sign up link (unchanged). */
   signUpUrl?: string;
+  /** Destination for the ← button in the brand panel. Defaults to the current
+   *  origin's "/". The central auth app has no landing page of its own, so it
+   *  passes the marketing site's absolute URL — an absolute value always uses
+   *  a full browser navigation (cross-origin, so the router can't handle it).
+   *  Never `router.back()`: the user may have deep-linked straight to /login. */
+  backUrl?: string;
 }
 
 export const SignInComponent = ({
@@ -100,6 +106,7 @@ export const SignInComponent = ({
   invitationToken,
   invitationLauncherUrl,
   signUpUrl,
+  backUrl = "/",
 }: SignInComponentProps) => {
   const router = useRouter();
 
@@ -826,6 +833,15 @@ export const SignInComponent = ({
     setConfirmPassword("");
   };
 
+  /** ← button in the brand panel. Absolute `backUrl` values are cross-origin
+   *  (the marketing site), so they always need a real browser navigation. */
+  const goBackHome = () => {
+    const target = backUrl || "/";
+    const isAbsolute = /^https?:\/\//i.test(target);
+    if (isAbsolute || hardNavigate) window.location.assign(target);
+    else router.push(target);
+  };
+
   /* ─── Step progress (forgot-password flow only) ─── */
   const fpStepIndex =
     authStep === "forgot-email" ? 1 :
@@ -893,7 +909,7 @@ export const SignInComponent = ({
         <aside className="auth-side">
           <div className="auth-side-head fade-in-up d1">
             <button type="button" className="auth-back" aria-label="Back to home"
-              onClick={() => { if (hardNavigate) window.location.assign("/"); else router.push("/"); }}>
+              onClick={goBackHome}>
               <ArrowLeft size={18} />
             </button>
             <div className="auth-brand-content">

@@ -262,16 +262,29 @@ export default function AppLauncherPage() {
     const launcherUrl =
       process.env.NEXT_PUBLIC_QUIKIT_URL?.replace(/\/+$/, "") ??
       (typeof window !== "undefined" ? window.location.origin : "");
-    // After logout, land on the public marketing site instead of the launcher
-    // root — but only on the UAT launcher (uatapps.quikit.ai → uat.quikit.ai).
-    // Every other environment (incl. prod apps.quikit.ai) keeps landing on the
-    // launcher root. Decided at runtime from the browser host so no build-arg /
-    // Dockerfile wiring is needed. NOTE: the target origin must be in the
-    // launcher's /api/auth/signout-global allow-list or that hop rejects it.
+    // After logout, land on the public QuikIT marketing website rather than the
+    // launcher root. Resolution order:
+    //   1. NEXT_PUBLIC_WEBSITE_URL — explicit marketing origin (set per env).
+    //   2. uatapps.quikit.ai → uat.quikit.ai (pre-existing UAT special case).
+    //   3. localhost dev → the website dev server on :1001.
+    //   4. Anything else → launcher root (unchanged prod behaviour until
+    //      NEXT_PUBLIC_WEBSITE_URL is set on the project).
+    // Scoped to THIS launcher page only — each sub-app's own sign-out still
+    // lands the user on that app's landing page (see globalSignOut callers).
+    // NOTE: the target origin must be in the launcher's
+    // /api/auth/signout-global allow-list or that hop rejects it and falls back
+    // to the launcher root. localhost is auto-allowed outside production; for
+    // prod/UAT add the marketing origin to AUTH_ALLOWED_RETURN_ORIGINS.
     const host =
       typeof window !== "undefined" ? window.location.hostname : "";
+    const websiteUrl = process.env.NEXT_PUBLIC_WEBSITE_URL?.replace(/\/+$/, "");
     const postLogoutRedirect =
-      host === "uatapps.quikit.ai" ? "https://uat.quikit.ai" : `${launcherUrl}/`;
+      websiteUrl ||
+      (host === "uatapps.quikit.ai"
+        ? "https://uat.quikit.ai"
+        : host === "localhost"
+          ? "http://localhost:1001"
+          : `${launcherUrl}/`);
     await globalSignOut({
       authUrl: process.env.NEXT_PUBLIC_AUTH_URL,
       quikitUrl: launcherUrl,

@@ -34,6 +34,7 @@
         "NEXT_PUBLIC_AUTH_URL",
         "NEXT_PUBLIC_LAUNCHER_URL",
         "NEXT_PUBLIC_ADMIN_URL",
+        "NEXT_PUBLIC_WEBSITE_URL",
         "INTERNAL_SECRET",
         "APP_URL",
         "RESEND_API_KEY",
