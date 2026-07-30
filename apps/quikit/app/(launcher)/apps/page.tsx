@@ -280,7 +280,7 @@ export default function AppLauncherPage() {
     const websiteUrl = process.env.NEXT_PUBLIC_WEBSITE_URL?.replace(/\/+$/, "");
     const postLogoutRedirect =
       websiteUrl ||
-      (host === "apps.quikit.ai"
+      (host === "https://apps.quikit.ai"
         ? "https://quikit.ai"
         : host === "localhost"
           ? "http://localhost:1001"
