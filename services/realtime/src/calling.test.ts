@@ -6,7 +6,7 @@ vi.mock("@quikit/database", async () => await import("./testdb"));
 
 import { registerCallingHandlers, type CallingDeps } from "./calling";
 import type { RingingRedis } from "./ringing";
-import { userRoom } from "./rooms";
+import { channelRoom, userRoom } from "./rooms";
 import { addCall, db, FIXTURES, resetStore } from "./testdb";
 
 const { orgA, orgB, alice, bob, carol, general } = FIXTURES;
@@ -243,5 +243,49 @@ describe("§2.2 — socket-local participant cache", () => {
     await aliceSocket._handlers["call:offer"]!({ callId: "c11", sdp: "s2" }, vi.fn()); // verify #2
 
     expect(spy).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("on_call presence derivation (ephemeral, write-free)", () => {
+  const statusOf = (p: unknown) => (p as { status: string }).status;
+  const userOf = (p: unknown) => (p as { userId: string }).userId;
+
+  it("broadcasts on_call to each participant's channel rooms when a call is accepted", async () => {
+    seedCall("c-oncall", orgA, alice, [alice, bob]);
+    const m = createMockIO();
+    const bobSocket = createMockSocket(bob, orgA); // callee accepts
+    registerCallingHandlers(m.io, bobSocket, deps);
+
+    const ack = vi.fn();
+    await bobSocket._handlers["call:accepted"]!({ callId: "c-oncall" }, ack);
+    expect(ack).toHaveBeenCalledWith({ ok: true });
+
+    const presence = m.emitted.filter((e) => e.event === "presence");
+    // Every derived event is on_call, for both participants.
+    expect(presence.length).toBeGreaterThan(0);
+    expect(presence.every((e) => statusOf(e.payload) === "on_call")).toBe(true);
+    // alice is a member of `general` only → her on_call lands in that room.
+    expect(
+      presence.some((e) => userOf(e.payload) === alice && e.room === channelRoom(orgA, general)),
+    ).toBe(true);
+    // bob's on_call reaches his shared channel room too.
+    expect(
+      presence.some((e) => userOf(e.payload) === bob && e.room === channelRoom(orgA, general)),
+    ).toBe(true);
+  });
+
+  it("reverts to plain online for all participants when the call ends", async () => {
+    seedCall("c-end", orgA, alice, [alice, bob]);
+    const m = createMockIO();
+    const aliceSocket = createMockSocket(alice, orgA);
+    registerCallingHandlers(m.io, aliceSocket, deps);
+
+    await aliceSocket._handlers["call:end"]!({ callId: "c-end" }, vi.fn());
+
+    const presence = m.emitted.filter((e) => e.event === "presence");
+    expect(presence.length).toBeGreaterThan(0);
+    // Revert emits plain `online` (NOT a stored status) — the client re-applies
+    // precedence and resurfaces any durable set-status on its own.
+    expect(presence.every((e) => statusOf(e.payload) === "online")).toBe(true);
   });
 });
