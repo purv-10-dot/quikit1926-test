@@ -19248,7 +19248,8 @@ model QcUserNotificationSettings {
   userId              String
   defaultChannelLevel String    @default("all") // all | mentions | none
   dmsLevel            String    @default("all")
-  soundEnabled        Boolean   @default(true)
+  soundEnabled        Boolean   @default(true) // message-notification chime
+  callSoundsEnabled   Boolean   @default(true) // ringtone / ringback / call tones
   desktopEnabled      Boolean   @default(true) // master OS-popup switch
   emailEnabled        Boolean   @default(false)
   dndEnabled          Boolean   @default(false)
@@ -19300,6 +19301,30 @@ model QcUserUiPrefs {
   theme     String   @default("system") // system | light | dark
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@unique([orgId, userId])
+  @@schema("app_quikchat")
+}
+
+// Rich presence set-status (Teams-style). Stores ONLY the durable, user-set
+// status; the ephemeral `on_call` / `online` / `offline` states are derived by
+// the gateway (from socket + call lifecycle) and reconciled client-side — they
+// are NEVER written here (the gateway is write-free). String (not a Prisma enum)
+// to match every other Qc* table. Rides the pending `app_quikchat` migration;
+// local via `prisma db push`, prod-gated on that migration like the rest.
+model QcUserPresence {
+  id            String    @id @default(uuid())
+  orgId         String
+  userId        String
+  status        String    @default("available") // available | busy | dnd | brb | away | appear_offline
+  statusMessage String?
+  // Optional expiry for a timed status ("Busy for 30 min"). Absolute instant
+  // (computed client-side so end-of-day/week honour the user's timezone). Expiry
+  // is LAZY read-time: any read past this treats the status as `available`; there
+  // is no sweeper/background job (expiry needs no active event, only correct reads).
+  statusExpiresAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@unique([orgId, userId])
   @@schema("app_quikchat")
