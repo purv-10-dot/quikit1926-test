@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { Prisma } from "@quikit/database";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, internalError } from "@/lib/api-response";
@@ -73,22 +74,33 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
       prisma.onboardingInstance.findMany({
         where: { orgId, deletedAt: null, employeeId: { in: employeeIds } },
         select: {
+          id: true,
           employeeId: true,
-          tasks: { select: { status: true, stepType: true, config: true } },
+          tasks: { select: { id: true, status: true, stepType: true, config: true } },
         },
       }),
     ]);
 
-    // employeeId → { progress, tasks, bgv } derived from onboarding tasks.
+    // Per-task phase (raw-SQL column). This roster is the Pre-Onboarding list, so
+    // count only PRE-ONBOARDING-phase tasks. Null/absent phase = Onboarding.
+    const instanceIds = instances.map((i) => i.id);
+    const taskPhaseRows = instanceIds.length
+      ? await prisma.$queryRaw<Array<{ id: string; phase: string | null }>>`
+          SELECT id, phase FROM "app_quikhrms"."OnboardingTask" WHERE "instanceId" IN (${Prisma.join(instanceIds)})`
+      : [];
+    const phaseOf = new Map(taskPhaseRows.map((r) => [r.id, r.phase ?? "Onboarding"]));
+
+    // employeeId → { progress, tasks, bgv } derived from pre-onboarding tasks.
     const progressByEmp = new Map<string, { taskDone: number; taskTotal: number; progressPct: number; bgvStatus: BgvStatus }>();
     for (const inst of instances) {
-      const total = inst.tasks.length;
-      const done = inst.tasks.filter((t) => t.status === "TaskCompleted" || t.status === "TaskSkipped").length;
+      const t = inst.tasks.filter((x) => (phaseOf.get(x.id) ?? "Onboarding") === "PreOnboarding");
+      const total = t.length;
+      const done = t.filter((x) => x.status === "TaskCompleted" || x.status === "TaskSkipped").length;
       progressByEmp.set(inst.employeeId, {
         taskDone: done,
         taskTotal: total,
         progressPct: total > 0 ? Math.round((done / total) * 100) : 0,
-        bgvStatus: bgvStatusOf(inst.tasks),
+        bgvStatus: bgvStatusOf(t),
       });
     }
 

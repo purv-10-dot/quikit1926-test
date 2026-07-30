@@ -8,8 +8,10 @@ import { resolveDocumentAccessByKey } from "@/lib/rbac/document-access";
 //   uploads/<orgId>/<uuid>.<ext>                              (generic uploads)
 //   candidate-docs/<orgId>/<requestId>/<uuid>.<ext>           (candidate docs)
 //   tenants/<orgId>/leave-policies/<policyId>/<file>.<ext>    (leave policies)
+//   onboarding/<orgId>/<taskId>/<uuid>.<ext>                  (onboarding doc uploads)
+//   take-home/<orgId>/<interviewId>/<uuid>.<ext>              (recruit take-home)
 // Allow a known prefix, the org segment, any nested segments, then a filename.
-const KEY_PATTERN = /^(uploads|candidate-docs|tenants)\/[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*\/[a-zA-Z0-9][a-zA-Z0-9._-]*\.[a-zA-Z0-9]{2,8}$/;
+const KEY_PATTERN = /^(uploads|candidate-docs|tenants|onboarding|take-home)\/[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*\/[a-zA-Z0-9][a-zA-Z0-9._-]*\.[a-zA-Z0-9]{2,8}$/;
 
 /**
  * GET /api/v1/hrms/uploads/proxy?key=...
