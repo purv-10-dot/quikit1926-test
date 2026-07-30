@@ -42,6 +42,18 @@ describe("validateFile", () => {
   it("rejects a disallowed type", () => {
     expect(validateFile({ type: "application/x-evil", size: 1, name: "a" })).toMatch(/supported/);
   });
+  it("accepts csv and markdown", () => {
+    expect(validateFile({ type: "text/csv", size: 10, name: "data.csv" })).toBeNull();
+    expect(validateFile({ type: "text/markdown", size: 10, name: "notes.md" })).toBeNull();
+  });
+  it("accepts an empty-MIME code file by extension", () => {
+    expect(validateFile({ type: "", size: 10, name: "script.py" })).toBeNull();
+    expect(validateFile({ type: "application/octet-stream", size: 10, name: "app.ts" })).toBeNull();
+  });
+  it("rejects empty-MIME active-content / unknown extensions", () => {
+    expect(validateFile({ type: "", size: 10, name: "index.html" })).toMatch(/supported/);
+    expect(validateFile({ type: "", size: 10, name: "virus.exe" })).toMatch(/supported/);
+  });
   it("rejects an oversize file", () => {
     expect(validateFile({ type: "image/png", size: 26 * 1024 * 1024, name: "a.png" })).toMatch(
       /too large/,
@@ -91,5 +103,27 @@ describe("uploadFile", () => {
     const file = new File(["x"], "a.exe", { type: "application/x-evil" });
     await expect(uploadFile(file, "c1")).rejects.toThrow();
     expect(signUploadApi).not.toHaveBeenCalled();
+  });
+
+  it("normalizes an empty-MIME code file to octet-stream when signing", async () => {
+    signUploadApi.mockResolvedValue({
+      uploadUrl: "/api/uploads/local/tok",
+      method: "PUT",
+      headers: { "Content-Type": "application/octet-stream" },
+      objectPath: "quikchat/o/c/uuid-script.py",
+      maxBytes: 1024,
+      expiresAt: new Date().toISOString(),
+    });
+    const file = new File(["print(1)"], "script.py", { type: "" });
+    const meta = await uploadFile(file, "c1");
+
+    expect(signUploadApi).toHaveBeenCalledWith({
+      channelId: "c1",
+      filename: "script.py",
+      contentType: "application/octet-stream",
+      size: file.size,
+    });
+    expect(meta.mediaType).toBe("application/octet-stream");
+    expect(meta.originalName).toBe("script.py");
   });
 });

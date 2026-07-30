@@ -1,4 +1,5 @@
 export { Avatar, colorFromId, initials, type AvatarProps } from "./Avatar";
+export { PresenceIndicator, type PresenceIndicatorProps } from "./PresenceIndicator";
 export { Button, type ButtonProps } from "./Button";
 export { IconButton, type IconButtonProps } from "./IconButton";
 export { Input, SearchInput, type InputProps, type SearchInputProps } from "./Input";

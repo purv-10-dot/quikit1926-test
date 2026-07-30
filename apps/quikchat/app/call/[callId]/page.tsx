@@ -14,6 +14,8 @@ import {
   addIceCandidate,
   closePeerConnection,
 } from "@/lib/webrtc";
+import { createCallSoundController } from "@/lib/call-sound-controller";
+import { fetchNotificationSettings } from "@/lib/api";
 
 type DeviceKind = "audioinput" | "videoinput";
 
@@ -77,6 +79,24 @@ function CallPageInner() {
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const videoTransceiverRef = useRef<RTCRtpTransceiver | null>(null);
   const creatingOfferRef = useRef(false);
+  // Ringback / connected / ended audio. Owns its own enabled flag and stop
+  // handle; starts disabled (silent) until the settings fetch below says
+  // otherwise. Separate from `audioContextRef` above, which is the
+  // speaking-detection analyser and is closed by cleanup().
+  const soundsRef = useRef(createCallSoundController());
+
+  // This popup is its own document, so it reads the user's callSoundsEnabled
+  // itself (same-origin, cookies included). Fires on mount, in parallel with
+  // initMedia + the ICE-config fetch, so it has long resolved by the time the
+  // caller's ringback starts. If it hasn't (or fails), the controller stays
+  // disabled and the call is silent.
+  useEffect(() => {
+    const sounds = soundsRef.current;
+    void fetchNotificationSettings()
+      .then((s) => sounds.setEnabled(s.callSoundsEnabled))
+      .catch(() => undefined);
+    return () => sounds.stopAll();
+  }, []);
 
   // Keep localStream ref in sync
   useEffect(() => {
@@ -89,6 +109,12 @@ function CallPageInner() {
   }, [remoteIsMuted]);
 
   const cleanup = useCallback(() => {
+    // The single funnel every terminal path runs through (call:ended /
+    // :rejected / :cancelled / :timed_out / :unavailable, handleEndCall,
+    // handleRetry, unmount) — so silencing the ringback here covers all of
+    // them. The one path that does NOT come through cleanup is call:answer,
+    // where the call continues; that stops the ringback itself.
+    soundsRef.current.stopAll();
     if (pcRef.current && localStreamRef.current) {
       closePeerConnection(pcRef.current, localStreamRef.current);
       pcRef.current = null;
@@ -174,6 +200,10 @@ function CallPageInner() {
       // Handle remote stream + active speaker detection
       pc.ontrack = (event) => {
         if (!cancelledRef.current) {
+          // Remote media arrived — the call is really up. This is the CALLEE's
+          // connect cue (they never receive call:answer); the caller already
+          // got it there, and the controller's once-guard stops a double chime.
+          soundsRef.current.connected();
           const stream = event.streams[0] ?? null;
           setRemoteStream(stream);
           // Track remote mute state based on audio track enabled status
@@ -380,6 +410,9 @@ function CallPageInner() {
       socket.on("call:answer", async (data: unknown) => {
         const { sdp } = data as { sdp: string };
         if (!pcRef.current || cancelledRef.current) return;
+        // They picked up. The one stop path cleanup() can't cover — the call
+        // continues from here, so nothing else would silence the ringback.
+        soundsRef.current.connected();
         try {
           const answer = JSON.parse(sdp) as RTCSessionDescriptionInit;
           await handleAnswer(pcRef.current, answer);
@@ -412,6 +445,7 @@ function CallPageInner() {
       // Handle call ended by remote
       socket.on("call:ended", () => {
         if (!cancelledRef.current) {
+          soundsRef.current.ended();
           setMediaError("Call ended");
           toast.info({ title: "Call ended", body: "The other participant ended the call." });
           cleanup();
@@ -570,6 +604,12 @@ function CallPageInner() {
         });
 
         setupSocket(pc, socket);
+
+        // Caller-only ringing cue, from here until they answer (call:answer) or
+        // the call dies (cleanup). Gated on callSoundsEnabled ALONE — never on
+        // DND/snooze: the caller initiated, so they want to hear it ring. The
+        // group/SFU path returned early above, so LiveKit calls get no ringback.
+        if (role === "caller") soundsRef.current.startRingback();
       } catch (err) {
         console.error("Failed to initialize call:", err);
         setMediaError("Failed to initialize call. Please try again.");
@@ -605,6 +645,7 @@ function CallPageInner() {
     sfuRoomId,
     sfuToken,
     livekitUrl,
+    role,
     initMedia,
     createPC,
     setupSocket,
@@ -725,6 +766,12 @@ function CallPageInner() {
   }, [callId, remoteUserId]);
 
   const handleEndCall = useCallback(async () => {
+    // Note: this window closes a moment later, so the tone is usually cut off
+    // for whoever hangs up. Wired for symmetry and for the case where close()
+    // is blocked; the remote side hears theirs on call:ended. Deliberately NOT
+    // delaying window.close() to make it audible — that would change hang-up
+    // timing for an audio nicety.
+    soundsRef.current.ended();
     // Notify remote that call ended
     socketRef.current?.emit("call:end", { callId });
     // Persist the end status via API. Use keepalive so the PATCH survives the

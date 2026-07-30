@@ -18,6 +18,8 @@ import {
   Users,
 } from "@/components/ui";
 import { CalendarsSettings } from "@/components/settings/CalendarsSettings";
+import { DevicesSettings } from "@/components/settings/DevicesSettings";
+import { NotificationSettingsPanel } from "@/components/notifications/NotificationSettingsModal";
 import { ThemeToggle } from "@/components/settings/ThemeToggle";
 import { RolesTab } from "@/app/(dashboard)/settings/roles/components/RolesTab";
 import { useMyPermissions } from "@/lib/authz/useMyPermissions";
@@ -55,7 +57,6 @@ export interface SettingsModuleProps {
   currentUserId: string;
   displayName: string;
   avatarUrl?: string | null;
-  onOpenNotificationSettings?: () => void;
 }
 
 function ToggleRow({
@@ -80,12 +81,7 @@ function ToggleRow({
   );
 }
 
-export function SettingsModule({
-  currentUserId,
-  displayName,
-  avatarUrl,
-  onOpenNotificationSettings,
-}: SettingsModuleProps) {
+export function SettingsModule({ currentUserId, displayName, avatarUrl }: SettingsModuleProps) {
   const [cat, setCat] = useState<SettingsCat>("general");
   const [query, setQuery] = useState("");
 
@@ -282,21 +278,10 @@ export function SettingsModule({
                 <Bell size={16} aria-hidden /> Notifications
               </div>
               <div className="qc-set-section__body">
-                <div className="qc-set-row">
-                  <div className="qc-set-row__text">
-                    <div className="qc-set-row__title">Notification preferences</div>
-                    <div className="qc-set-row__desc">
-                      Choose what you get notified about and how.
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="qc-btn qc-btn--primary"
-                    onClick={() => onOpenNotificationSettings?.()}
-                  >
-                    Manage
-                  </button>
-                </div>
+                {/* The controls live here directly — no Manage button, no popup.
+                    Same component the bell/Activity gear opens in a dialog; it
+                    owns its own fetch + patch, so both surfaces stay in sync. */}
+                <NotificationSettingsPanel />
               </div>
             </section>
           ) : null}
@@ -361,15 +346,7 @@ export function SettingsModule({
               <div className="qc-set-section__head">
                 <Headphones size={16} aria-hidden /> Devices
               </div>
-              <div className="qc-set-section__body">
-                <div className="qc-set-row">
-                  <div className="qc-set-row__text">
-                    <div className="qc-set-row__title">Audio device</div>
-                    <div className="qc-set-row__desc">Microphone and speaker used for calls.</div>
-                  </div>
-                  <span className="qc-set-row__value">6 - USB Audio 2.0</span>
-                </div>
-              </div>
+              <DevicesSettings />
             </section>
           ) : null}
 

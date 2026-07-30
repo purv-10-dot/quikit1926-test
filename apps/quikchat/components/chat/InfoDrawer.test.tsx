@@ -6,6 +6,7 @@ import { InfoDrawer } from "./InfoDrawer";
 const channel: ChannelListItem = {
   channelId: "c1",
   name: "general",
+  description: null,
   avatarUrl: null,
   type: "group",
   visibility: "public",
@@ -87,6 +88,45 @@ describe("InfoDrawer", () => {
     expect(screen.getByText("member")).toBeInTheDocument();
     expect(screen.getAllByLabelText("online").length).toBe(1);
     expect(screen.getByTestId("pinned-item")).toHaveTextContent("pinned note");
+  });
+
+  // QC_010 — pin is per-user state, so it shows for any member (no admin gate) and
+  // the label tracks channel.isPriority.
+  it("offers Pin for an unpinned conversation and reports the toggle", () => {
+    const onTogglePin = vi.fn();
+    render(
+      <InfoDrawer
+        channel={channel}
+        members={members}
+        pinned={[]}
+        currentUserId="u-bob"
+        onTogglePin={onTogglePin}
+      />,
+    );
+    const btn = screen.getByTestId("toggle-pin");
+    expect(btn).toHaveTextContent("Pin");
+    fireEvent.click(btn);
+    expect(onTogglePin).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers Unpin for a pinned conversation", () => {
+    render(
+      <InfoDrawer
+        channel={{ ...channel, isPriority: true }}
+        members={members}
+        pinned={[]}
+        currentUserId="u-bob"
+        onTogglePin={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("toggle-pin")).toHaveTextContent("Unpin");
+  });
+
+  it("omits the pin row when no handler is supplied", () => {
+    render(
+      <InfoDrawer channel={channel} members={members} pinned={[]} currentUserId="u-bob" />,
+    );
+    expect(screen.queryByTestId("channel-pin-pref")).toBeNull();
   });
 
   it("hides management controls for non-admins", () => {

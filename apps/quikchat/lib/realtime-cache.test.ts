@@ -1,6 +1,7 @@
 import type { ChannelList, ChannelListItem, MessageDto } from "@/lib/shared";
 import { describe, expect, it } from "vitest";
 import {
+  applyChannelUpdated,
   applyDeliveredEvent,
   applyReadEvent,
   bumpChannelList,
@@ -8,6 +9,7 @@ import {
   mergeMessageEvent,
   patchMessageEvent,
   prependOlder,
+  removeChannelFromList,
   seedFromApiPage,
   shouldApplyDelivered,
   shouldApplyRead,
@@ -119,6 +121,7 @@ describe("patchMessageEvent", () => {
 
 const chan = (over: Partial<ChannelListItem> & { channelId: string }): ChannelListItem => ({
   name: over.channelId,
+  description: null,
   avatarUrl: null,
   type: "group",
   visibility: "public",
@@ -221,5 +224,53 @@ describe("applyDeliveredEvent (S14a)", () => {
   it("shouldApplyDelivered ignores the current user's own delivered", () => {
     expect(shouldApplyDelivered("me", "me")).toBe(false);
     expect(shouldApplyDelivered("bob", "me")).toBe(true);
+  });
+});
+
+describe("applyChannelUpdated (QC_008)", () => {
+  const state: ChannelList = {
+    priority: [chan({ channelId: "c1", name: "old", description: null, avatarUrl: null })],
+    recent: [chan({ channelId: "c2", name: "other" })],
+  };
+
+  it("merges only the provided fields into the matching channel", () => {
+    const next = applyChannelUpdated(state, {
+      channelId: "c1",
+      name: "new",
+      avatarUrl: "https://signed/av.png",
+    });
+    expect(next.priority[0]!.name).toBe("new");
+    expect(next.priority[0]!.avatarUrl).toBe("https://signed/av.png");
+    // Untouched fields + other channels unchanged.
+    expect(next.priority[0]!.description).toBeNull();
+    expect(next.recent[0]!.name).toBe("other");
+  });
+
+  it("can clear the description (null) without touching name/avatar", () => {
+    const seeded: ChannelList = {
+      priority: [chan({ channelId: "c1", name: "keep", description: "was here" })],
+      recent: [],
+    };
+    const next = applyChannelUpdated(seeded, { channelId: "c1", description: null });
+    expect(next.priority[0]!.description).toBeNull();
+    expect(next.priority[0]!.name).toBe("keep");
+  });
+});
+
+describe("removeChannelFromList (QC_008)", () => {
+  it("drops a deleted channel from both lists", () => {
+    const state: ChannelList = {
+      priority: [chan({ channelId: "c1" })],
+      recent: [chan({ channelId: "c2" }), chan({ channelId: "c3" })],
+    };
+    const next = removeChannelFromList(state, "c2");
+    expect(next.priority.map((c) => c.channelId)).toEqual(["c1"]);
+    expect(next.recent.map((c) => c.channelId)).toEqual(["c3"]);
+  });
+
+  it("is a no-op when the channel is absent", () => {
+    const state: ChannelList = { priority: [], recent: [chan({ channelId: "c1" })] };
+    const next = removeChannelFromList(state, "zzz");
+    expect(next.recent.map((c) => c.channelId)).toEqual(["c1"]);
   });
 });

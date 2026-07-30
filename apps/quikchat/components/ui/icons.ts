@@ -35,6 +35,8 @@ export {
   PhoneMissed,
   Voicemail,
   Headphones,
+  Play,
+  Pause,
   CornerUpRight,
   Reply,
   Forward,

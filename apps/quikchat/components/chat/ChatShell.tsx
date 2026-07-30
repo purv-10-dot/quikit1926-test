@@ -15,10 +15,14 @@ import {
   MessageSquare,
   Phone,
   Popover,
+  PresenceIndicator,
   Settings,
   Sun,
   ToastProvider,
+  useToast,
 } from "@/components/ui";
+import { fetchMyPresence, updateMyPresence } from "@/lib/api";
+import type { SetStatus } from "@/lib/presence-store";
 import { NotificationSettingsModal } from "@/components/notifications/NotificationSettingsModal";
 import {
   NotificationProvider,
@@ -45,6 +49,47 @@ export interface ChatShellProps {
   initialChannelId?: string;
 }
 
+/** User-settable statuses for the account-menu picker (durable set-status). */
+const STATUS_OPTIONS: { value: SetStatus; label: string }[] = [
+  { value: "available", label: "Available" },
+  { value: "busy", label: "Busy" },
+  { value: "dnd", label: "Do not disturb" },
+  { value: "brb", label: "Be right back" },
+  { value: "away", label: "Appear away" },
+  { value: "appear_offline", label: "Appear offline" },
+];
+
+/**
+ * Duration options for a timed status. The client computes the ABSOLUTE instant
+ * (so "Today"/"This week" honour the user's local timezone); the server just
+ * stores and compares it. `null` = "until I change it".
+ */
+const DURATIONS: { key: string; label: string; compute: () => string | null }[] = [
+  { key: "none", label: "Don't clear", compute: () => null },
+  { key: "30m", label: "30 min", compute: () => new Date(Date.now() + 30 * 60_000).toISOString() },
+  { key: "1h", label: "1 hour", compute: () => new Date(Date.now() + 60 * 60_000).toISOString() },
+  {
+    key: "today",
+    label: "Today",
+    compute: () => {
+      const d = new Date();
+      d.setHours(23, 59, 59, 999);
+      return d.toISOString();
+    },
+  },
+  {
+    key: "week",
+    label: "This week",
+    compute: () => {
+      const d = new Date();
+      // End of the current week = upcoming Sunday, local 23:59:59.999.
+      d.setDate(d.getDate() + ((7 - d.getDay()) % 7));
+      d.setHours(23, 59, 59, 999);
+      return d.toISOString();
+    },
+  },
+];
+
 export function ChatShell(props: ChatShellProps) {
   return (
     <ToastProvider>
@@ -67,8 +112,80 @@ function ShellInner({
 }: ChatShellProps) {
   const { openProfile } = useProfile();
   const notifications = useNotifications();
+  const toast = useToast();
   const [notifSettingsOpen, setNotifSettingsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  // The caller's own durable set-status (drives the rail avatar dot + picker).
+  // Ephemeral on_call/online/offline aren't tracked here — this is the status
+  // the user chose. Defaults to "available" until the GET resolves.
+  const [ownStatus, setOwnStatus] = useState<SetStatus>("available");
+  const [ownExpiresAt, setOwnExpiresAt] = useState<string | null>(null);
+  // Pending "clear after" selection applied to the NEXT status pick (and, when a
+  // timed status is already active, re-applied immediately).
+  const [durationKey, setDurationKey] = useState<string>("none");
+
+  useEffect(() => {
+    void fetchMyPresence()
+      .then((p) => {
+        setOwnStatus(p.status);
+        setOwnExpiresAt(p.statusExpiresAt);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  // Client-side revert timer (cosmetic — server read-expiry is the source of
+  // truth). When the deadline passes, snap our own display back to Available.
+  useEffect(() => {
+    if (!ownExpiresAt) return;
+    const ms = Date.parse(ownExpiresAt) - Date.now();
+    const revert = () => {
+      setOwnStatus("available");
+      setOwnExpiresAt(null);
+      setDurationKey("none");
+    };
+    if (ms <= 0) {
+      revert();
+      return;
+    }
+    const t = setTimeout(revert, ms);
+    return () => clearTimeout(t);
+  }, [ownExpiresAt]);
+
+  const commitPresence = (next: SetStatus, expiresAt: string | null, closeMenu: boolean) => {
+    setOwnStatus(next); // optimistic
+    setOwnExpiresAt(expiresAt);
+    if (closeMenu) setMenuOpen(false);
+    void updateMyPresence({ status: next, expiresAt })
+      .then((dto) => {
+        setOwnStatus(dto.status);
+        setOwnExpiresAt(dto.statusExpiresAt);
+      })
+      .catch(() => {
+        toast.error({ title: "Couldn't update your status" });
+      });
+  };
+
+  // Pick a status with the currently-selected duration; closes the menu.
+  const pickStatus = (next: SetStatus) => {
+    const expiresAt = DURATIONS.find((d) => d.key === durationKey)?.compute() ?? null;
+    commitPresence(next, next === "available" ? null : expiresAt, true);
+  };
+
+  // Choose a "clear after" duration; keeps the menu open. Re-times the current
+  // status when one is already set (so the chip is meaningful before/after).
+  const pickDuration = (key: string) => {
+    setDurationKey(key);
+    if (ownStatus !== "available") {
+      const expiresAt = DURATIONS.find((d) => d.key === key)?.compute() ?? null;
+      commitPresence(ownStatus, expiresAt, false);
+    }
+  };
+
+  // Reset to Available with no expiry (Teams "Reset status").
+  const resetStatus = () => {
+    setDurationKey("none");
+    commitPresence("available", null, true);
+  };
   const [view, setView] = useState<"chat" | "calendar" | "calls" | "notifications" | "settings">(
     "chat",
   );
@@ -166,11 +283,50 @@ function ShellInner({
             label="Account menu"
             trigger={
               <button type="button" className="qc-avatar-btn" aria-label="Account menu">
-                <Avatar name={displayName} id={currentUserId} avatarUrl={avatarUrl} size={30} />
+                <Avatar
+                  name={displayName}
+                  id={currentUserId}
+                  avatarUrl={avatarUrl}
+                  size={30}
+                  status={ownStatus}
+                />
               </button>
             }
           >
             <Menu label="Account">
+              <div className="qc-menu-label" role="presentation">
+                Status
+              </div>
+              {STATUS_OPTIONS.map((opt) => (
+                <MenuItem
+                  key={opt.value}
+                  icon={<PresenceIndicator status={opt.value} size={16} />}
+                  onSelect={() => pickStatus(opt.value)}
+                >
+                  {opt.label}
+                  {ownStatus === opt.value ? " ✓" : ""}
+                </MenuItem>
+              ))}
+              <div className="qc-menu-label" role="presentation">
+                Clear after
+              </div>
+              <div className="qc-status-durations" role="group" aria-label="Clear status after">
+                {DURATIONS.map((d) => (
+                  <button
+                    key={d.key}
+                    type="button"
+                    className="qc-status-chip"
+                    data-active={durationKey === d.key}
+                    onClick={() => pickDuration(d.key)}
+                  >
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+              {ownStatus !== "available" || ownExpiresAt ? (
+                <MenuItem onSelect={resetStatus}>Reset status</MenuItem>
+              ) : null}
+              <div className="qc-menu-sep" role="separator" />
               <MenuItem
                 onSelect={() => {
                   openProfile({
@@ -214,7 +370,6 @@ function ShellInner({
           currentUserId={currentUserId}
           displayName={displayName}
           avatarUrl={avatarUrl}
-          onOpenNotificationSettings={() => setNotifSettingsOpen(true)}
         />
       ) : (
         <ChatWorkspace

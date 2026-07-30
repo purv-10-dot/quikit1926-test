@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useToast } from "@/components/ui";
+import type { NotificationSettingsDto } from "@/lib/shared";
+import { fetchNotificationSettings } from "@/lib/api";
+import { startRingtone } from "@/lib/call-sounds";
+import { dndActiveNow, isActive } from "@/lib/notif-settings";
 import { IncomingCallToast } from "./IncomingCallToast";
 
 const CALL_CHANNEL = "quikchat-call-channel";
@@ -52,6 +56,23 @@ export function CallHandler({
   const [incoming, setIncoming] = useState<IncomingCall | null>(null);
   const callWindowRef = useRef<Window | null>(null);
   const broadcastRef = useRef<BroadcastChannel | null>(null);
+  // Notification settings, read once on mount and consulted when a call arrives
+  // (see the ringtone effect). A ref, not state — nothing here should re-render.
+  // Null until the fetch resolves, which means SILENT: better to miss a ring in
+  // the first moments after mount than to play something the user disabled.
+  const notifSettingsRef = useRef<NotificationSettingsDto | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void fetchNotificationSettings()
+      .then((s) => {
+        if (alive) notifSettingsRef.current = s;
+      })
+      .catch(() => undefined); // no settings → no ring; never blocks calling
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const openCallWindow = useCallback(
     (
@@ -235,6 +256,24 @@ export function CallHandler({
     },
     [socket],
   );
+
+  // Incoming ringtone. Keyed on whether a call is ringing at all, so the single
+  // cleanup covers EVERY way the toast goes away — accept, decline, cancelled,
+  // ended, rejected, timed_out, unavailable, and the cross-tab
+  // `call:accepted_elsewhere` — because all eight funnel through
+  // `setIncoming(null)`. Unmount runs the same cleanup.
+  //
+  // The gate silences the SOUND only: DND, snooze and callSoundsEnabled never
+  // suppress the IncomingCallToast below, which renders purely on `incoming`.
+  const ringing = incoming != null;
+  useEffect(() => {
+    if (!ringing) return;
+    const s = notifSettingsRef.current;
+    if (!s?.callSoundsEnabled) return;
+    if (isActive(s.snoozedUntil)) return; // global snooze
+    if (dndActiveNow(s.dndEnabled, s.dndStart, s.dndEnd)) return; // quiet hours
+    return startRingtone(); // the returned stop handle IS the effect cleanup
+  }, [ringing]);
 
   // Initiate outbound call when callTargetUserId is set
   useEffect(() => {
