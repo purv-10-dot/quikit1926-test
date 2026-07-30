@@ -55,7 +55,7 @@ describe("GET /api/dashboard — happy path", () => {
     db.cnPurchaseRequisition.count.mockResolvedValue(2); // pending PRs
     db.cnPurchaseOrder.count
       .mockResolvedValueOnce(1) // pending POs
-      .mockResolvedValueOnce(5); // openPOs (approved)
+      .mockResolvedValueOnce(5); // openPOs
     db.cnGoodsReceiptNote.count.mockResolvedValue(4);
 
     const res = await GET();
@@ -75,6 +75,35 @@ describe("GET /api/dashboard — happy path", () => {
     expect(db.cnProject.count.mock.calls[0][0].where.orgId).toBe(TEST_TENANT);
     // org scope on pending-PR count.
     expect(db.cnPurchaseRequisition.count.mock.calls[0][0].where.orgId).toBe(TEST_TENANT);
+  });
+
+  it("counts openPOs across every live PO status, not just 'approved'", async () => {
+    stubAllZero();
+    await GET();
+
+    // Second cnPurchaseOrder.count call is the openPOs tile (the first is the
+    // pending-approval roll-up). The submit / final-approve routes bump an
+    // approved PO to "sent" as soon as the vendor email goes out, and each GRN
+    // moves it to "partially_received" — an equality check on "approved" makes
+    // the tile read 0 for every real PO.
+    const where = db.cnPurchaseOrder.count.mock.calls[1][0].where;
+    expect(where.status).toEqual({
+      in: ["approved", "sent", "dispatched", "partially_received"],
+    });
+  });
+
+  it("counts activeWOs the same way the work-orders stats endpoint does", async () => {
+    stubAllZero();
+    await GET();
+
+    // Second cnWorkOrder.count call is the activeWOs tile (the first is the
+    // pending-approval roll-up). No WO route ever writes the literal status
+    // "active" — create defaults to "draft", submit sets "pending_approval",
+    // approve sets "approved" — so an equality check on "active" made the tile
+    // read 0 for every org. Must match the Active-WOs definition in
+    // app/api/projects/work-orders/route.ts.
+    const where = db.cnWorkOrder.count.mock.calls[1][0].where;
+    expect(where.status).toEqual({ in: ["approved", "in_progress"] });
   });
 
   it("rolls up low-stock items from item minStockLevel vs summed balances", async () => {

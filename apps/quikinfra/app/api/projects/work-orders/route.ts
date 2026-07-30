@@ -284,6 +284,8 @@ export async function POST(req: NextRequest) {
     boqItems?: Array<{
       boqNo?: string | null;
       boqItemId?: string | null;
+      scopeType?: string | null;
+      scopeId?: string | null;
       description?: string | null;
       quantity?: number | string | null;
       uomCode?: string | null;
@@ -376,7 +378,12 @@ export async function POST(req: NextRequest) {
         lines: {
           create: boqItems.map((it) => ({
             lineType: (it.lineType as string) ?? "boq",
-            boqItemId: String(it.boqNo ?? it.boqItemId ?? ""),
+            boqItemId:
+              it.scopeType === "ACTIVITY"
+                ? null
+                : String(it.boqNo ?? it.boqItemId ?? ""),
+            scopeType: it.scopeType ?? null,
+            scopeId: it.scopeId ?? null,
             description: String(it.description ?? ""),
             quantity: String(Number(it.quantity) || 0),
             uomId: String(it.uomCode ?? it.uomId ?? ""),

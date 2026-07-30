@@ -109,6 +109,7 @@ export async function POST(req: NextRequest) {
       purchaseLimit: body.purchaseLimit,
       projectManagerId: body.projectManagerId,
       status: body.status ?? "active",
+      executionMode: body.executionMode,
     });
     return NextResponse.json(record, { status: 201 });
   } catch (err: unknown) {

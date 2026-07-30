@@ -1,0 +1,699 @@
+<title>QuikCRM Core Data Model</title>
+<style>
+  :root {
+    --ground: #fbfcfd;
+    --surface: #ffffff;
+    --surface-2: #f4f6f9;
+    --border: #e2e7ee;
+    --border-strong: #cdd5e0;
+    --ink: #1c2430;
+    --ink-soft: #3c4756;
+    --muted: #5a6675;
+    --faint: #8b96a5;
+    --accent: #4f5bd5;
+    --accent-soft: #eceeffb0;
+    --accent-ink: #3742a8;
+    --req: #2f8f6a;
+    --req-soft: #e6f4ee;
+    --opt: #a8742a;
+    --opt-soft: #f6efe2;
+    --rel: #4f5bd5;
+    --rel-soft: #eceffb;
+    --warn: #b0562b;
+    --warn-soft: #f8ece4;
+    --shadow: 0 1px 2px rgba(20,30,45,.04), 0 6px 20px rgba(20,30,45,.05);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #0e1117;
+      --surface: #151a22;
+      --surface-2: #1a212b;
+      --border: #232c38;
+      --border-strong: #313d4d;
+      --ink: #e6ebf2;
+      --ink-soft: #c4cdd9;
+      --muted: #93a0b1;
+      --faint: #6b7787;
+      --accent: #7c88f0;
+      --accent-soft: #1c2240;
+      --accent-ink: #a9b2f7;
+      --req: #57c99b;
+      --req-soft: #16261f;
+      --opt: #d3a05e;
+      --opt-soft: #2a2113;
+      --rel: #7c88f0;
+      --rel-soft: #1a2036;
+      --warn: #e08a5c;
+      --warn-soft: #2a1a11;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"] {
+    --ground: #fbfcfd; --surface: #ffffff; --surface-2: #f4f6f9; --border: #e2e7ee;
+    --border-strong: #cdd5e0; --ink: #1c2430; --ink-soft: #3c4756; --muted: #5a6675;
+    --faint: #8b96a5; --accent: #4f5bd5; --accent-soft: #eceeffb0; --accent-ink: #3742a8;
+    --req: #2f8f6a; --req-soft: #e6f4ee; --opt: #a8742a; --opt-soft: #f6efe2;
+    --rel: #4f5bd5; --rel-soft: #eceffb; --warn: #b0562b; --warn-soft: #f8ece4;
+    --shadow: 0 1px 2px rgba(20,30,45,.04), 0 6px 20px rgba(20,30,45,.05);
+  }
+  :root[data-theme="dark"] {
+    --ground: #0e1117; --surface: #151a22; --surface-2: #1a212b; --border: #232c38;
+    --border-strong: #313d4d; --ink: #e6ebf2; --ink-soft: #c4cdd9; --muted: #93a0b1;
+    --faint: #6b7787; --accent: #7c88f0; --accent-soft: #1c2240; --accent-ink: #a9b2f7;
+    --req: #57c99b; --req-soft: #16261f; --opt: #d3a05e; --opt-soft: #2a2113;
+    --rel: #7c88f0; --rel-soft: #1a2036; --warn: #e08a5c; --warn-soft: #2a1a11;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 clamp(18px, 4vw, 40px);
+  }
+  @media (min-width: 1000px) {
+    .layout { grid-template-columns: 232px minmax(0, 1fr); gap: 48px; }
+  }
+
+  /* ---- Sidebar ---- */
+  .rail {
+    display: none;
+  }
+  @media (min-width: 1000px) {
+    .rail {
+      display: block;
+      position: sticky;
+      top: 0;
+      align-self: start;
+      height: 100vh;
+      overflow-y: auto;
+      padding: 40px 0 40px;
+    }
+  }
+  .rail-brand {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    margin-bottom: 4px;
+  }
+  .rail-sub { font-size: 11.5px; color: var(--faint); margin-bottom: 22px; letter-spacing: .02em; }
+  .rail nav { display: flex; flex-direction: column; gap: 1px; }
+  .rail nav a {
+    font-size: 13px;
+    color: var(--muted);
+    text-decoration: none;
+    padding: 5px 10px;
+    border-radius: 6px;
+    border-left: 2px solid transparent;
+    transition: background .12s, color .12s;
+  }
+  .rail nav a:hover { color: var(--ink); background: var(--surface-2); }
+  .rail nav a.sub { padding-left: 22px; font-size: 12.5px; color: var(--faint); }
+  .rail nav a.sub:hover { color: var(--ink-soft); }
+  .rail nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .rail-div { height: 1px; background: var(--border); margin: 14px 4px; }
+
+  /* ---- Main ---- */
+  main { padding: 40px 0 96px; min-width: 0; }
+
+  header.hero {
+    padding-bottom: 26px;
+    margin-bottom: 40px;
+    border-bottom: 1px solid var(--border);
+  }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11.5px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent-ink);
+    background: var(--accent-soft);
+    border: 1px solid var(--border);
+    padding: 4px 11px; border-radius: 999px;
+    margin-bottom: 18px;
+  }
+  .eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+  h1 {
+    font-size: clamp(29px, 4.6vw, 40px);
+    line-height: 1.1;
+    letter-spacing: -.02em;
+    margin: 0 0 14px;
+    text-wrap: balance;
+    font-weight: 720;
+  }
+  .lede { font-size: 16.5px; color: var(--muted); max-width: 64ch; margin: 0; }
+  .meta {
+    display: flex; flex-wrap: wrap; gap: 8px 10px; margin-top: 22px;
+  }
+  .meta code {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--ink-soft);
+    padding: 3px 8px; border-radius: 6px;
+  }
+  .meta code b { color: var(--accent-ink); font-weight: 600; }
+
+  section { margin-bottom: 56px; scroll-margin-top: 24px; }
+  .sec-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+  .sec-num {
+    font-family: var(--mono); font-size: 13px; font-weight: 600;
+    color: var(--accent); letter-spacing: 0;
+  }
+  h2 {
+    font-size: 22px; letter-spacing: -.01em; margin: 0; font-weight: 680;
+    text-wrap: balance;
+  }
+  h2 .model {
+    font-family: var(--mono); font-size: 17px; font-weight: 600;
+    color: var(--muted); margin-left: 8px;
+  }
+  .sec-note { color: var(--muted); font-size: 14.5px; margin: 4px 0 20px; max-width: 68ch; }
+
+  /* ---- Field tables ---- */
+  .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    background: var(--surface);
+  }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  thead th {
+    text-align: left;
+    font-size: 11px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase;
+    color: var(--faint);
+    background: var(--surface-2);
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  tbody td { padding: 10px 16px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: var(--surface-2); }
+  .fname { font-family: var(--mono); font-size: 13px; color: var(--ink); font-weight: 500; white-space: nowrap; }
+  .fname.pk::after {
+    content: "PK"; font-family: var(--sans); font-size: 9px; font-weight: 700; letter-spacing: .05em;
+    color: var(--accent-ink); background: var(--accent-soft); border: 1px solid var(--border);
+    padding: 1px 4px; border-radius: 4px; margin-left: 7px; vertical-align: 1px;
+  }
+  .fname.fk::after {
+    content: "FK"; font-family: var(--sans); font-size: 9px; font-weight: 700; letter-spacing: .05em;
+    color: var(--req); background: var(--req-soft); border: 1px solid var(--border);
+    padding: 1px 4px; border-radius: 4px; margin-left: 7px; vertical-align: 1px;
+  }
+  .notes { color: var(--muted); font-size: 13px; }
+  .notes code { font-family: var(--mono); font-size: 11.5px; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; color: var(--ink-soft); }
+
+  /* type token */
+  .ty {
+    font-family: var(--mono); font-size: 12px; white-space: nowrap;
+    padding: 2px 7px; border-radius: 5px; border: 1px solid var(--border);
+    background: var(--surface-2); color: var(--ink-soft);
+  }
+  .ty.rel { background: var(--rel-soft); color: var(--accent-ink); border-color: transparent; }
+  .ty.enum { background: var(--opt-soft); color: var(--opt); border-color: transparent; }
+
+  /* req/opt pill */
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11.5px; font-weight: 600; letter-spacing: .01em;
+    padding: 2px 9px 2px 7px; border-radius: 999px; white-space: nowrap;
+  }
+  .pill::before { content: ""; width: 5px; height: 5px; border-radius: 50%; }
+  .pill.req { background: var(--req-soft); color: var(--req); }
+  .pill.req::before { background: var(--req); }
+  .pill.opt { background: var(--opt-soft); color: var(--opt); }
+  .pill.opt::before { background: var(--opt); }
+  .pill.list { background: var(--rel-soft); color: var(--accent-ink); }
+  .pill.list::before { background: var(--rel); }
+  .pill.dash { color: var(--faint); }
+  .pill.dash::before { background: var(--faint); }
+
+  /* ---- Enum cards ---- */
+  .enum-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .enum-card {
+    border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
+    padding: 18px 20px; box-shadow: var(--shadow);
+  }
+  .enum-card h3 { margin: 0 0 4px; font-family: var(--mono); font-size: 15px; font-weight: 600; }
+  .enum-card p { margin: 0 0 14px; font-size: 12.5px; color: var(--muted); }
+  .enum-vals { display: flex; flex-wrap: wrap; gap: 7px; }
+  .enum-vals span {
+    font-family: var(--mono); font-size: 12px; padding: 3px 9px; border-radius: 6px;
+    background: var(--surface-2); border: 1px solid var(--border); color: var(--ink-soft);
+  }
+
+  /* ---- Relationship section ---- */
+  .rel-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); background: var(--surface); }
+  .rel-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  .rel-table th { text-align: left; font-size: 11px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; color: var(--faint); background: var(--surface-2); padding: 11px 16px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .rel-table td { padding: 11px 16px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .rel-table tr:last-child td { border-bottom: none; }
+  .rel-table code { font-family: var(--mono); font-size: 11.5px; background: var(--surface-2); padding: 1px 6px; border-radius: 4px; color: var(--accent-ink); white-space: nowrap; }
+  .card-badge {
+    display: inline-block; font-size: 11px; font-weight: 650; letter-spacing: .03em;
+    padding: 2px 8px; border-radius: 6px; white-space: nowrap;
+    background: var(--req-soft); color: var(--req);
+  }
+  .card-badge.self { background: var(--accent-soft); color: var(--accent-ink); }
+
+  .diagram {
+    margin: 22px 0;
+    border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
+    padding: 20px; overflow-x: auto; box-shadow: var(--shadow);
+    text-align: center;
+  }
+  .mermaid { display: inline-block; min-width: 100%; }
+
+  /* callout */
+  .callout {
+    display: flex; gap: 13px;
+    border: 1px solid var(--border); border-left: 3px solid var(--warn);
+    background: var(--warn-soft);
+    border-radius: 10px; padding: 15px 17px; margin: 20px 0;
+    font-size: 13.5px; color: var(--ink-soft);
+  }
+  .callout .ic { color: var(--warn); font-weight: 800; font-family: var(--mono); flex: none; }
+  .callout b { color: var(--ink); }
+  .callout code { font-family: var(--mono); font-size: 12px; background: var(--surface); border: 1px solid var(--border); padding: 1px 5px; border-radius: 4px; }
+
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 16px 0 6px;
+    font-size: 12.5px; color: var(--muted);
+  }
+  .legend .item { display: inline-flex; align-items: center; gap: 6px; }
+
+  /* conventions grid */
+  .conv-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+  .conv {
+    border: 1px solid var(--border); border-radius: 11px; background: var(--surface);
+    padding: 16px 18px; box-shadow: var(--shadow);
+  }
+  .conv h4 { margin: 0 0 6px; font-size: 13.5px; font-weight: 640; color: var(--ink); }
+  .conv p { margin: 0; font-size: 12.8px; color: var(--muted); line-height: 1.55; }
+  .conv code { font-family: var(--mono); font-size: 11.5px; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; color: var(--ink-soft); }
+
+  footer {
+    border-top: 1px solid var(--border); padding-top: 22px; margin-top: 8px;
+    font-size: 12.5px; color: var(--faint);
+  }
+  footer code { font-family: var(--mono); color: var(--muted); }
+
+  a.inline { color: var(--accent-ink); text-decoration: none; border-bottom: 1px solid var(--border-strong); }
+  a.inline:hover { border-bottom-color: var(--accent); }
+</style>
+
+<div class="layout">
+  <aside class="rail">
+    <div class="rail-brand">QuikCRM</div>
+    <div class="rail-sub">Core Data Model Reference</div>
+    <nav>
+      <a href="#overview">Overview</a>
+      <div class="rail-div"></div>
+      <a href="#lead">1 · Lead</a>
+      <a href="#account">2 · Account</a>
+      <a href="#contact">3 · Contact</a>
+      <a href="#opportunity">4 · Opportunity</a>
+      <div class="rail-div"></div>
+      <a href="#enums">5 · Enums</a>
+      <a href="#relationships">6 · Relationships</a>
+      <a href="#conventions">7 · Conventions</a>
+    </nav>
+  </aside>
+
+  <main>
+    <header class="hero" id="overview">
+      <span class="eyebrow"><span class="dot"></span>Schema Reference</span>
+      <h1>QuikCRM Core Data Model</h1>
+      <p class="lede">Field-level reference for the four core CRM entities — Lead, Account, Contact, and Opportunity — and the relationships that bind them. Generated from the live Prisma schema.</p>
+      <div class="meta">
+        <code>source · <b>packages/database/prisma/schema.prisma</b></code>
+        <code>db schema · <b>app_quikcrm</b></code>
+        <code>prisma prefix · <b>Crm*</b></code>
+      </div>
+    </header>
+
+    <div class="callout">
+      <span class="ic">i</span>
+      <span>In Prisma these models are prefixed <b>Crm</b> — <code>CrmLead</code>, <code>CrmAccount</code>, <code>CrmContact</code>, <code>CrmOpportunity</code>. A separate <code>Account</code> model exists in the schema but is the <b>NextAuth / OAuth</b> account (in the <code>auth</code> schema) and is unrelated to the CRM. Throughout this document, “Lead / Account / Contact / Opportunity” refer to the <code>Crm*</code> models.</span>
+    </div>
+
+    <div class="legend">
+      <span class="item"><span class="pill req">Required</span> no <code style="font-family:var(--mono)">?</code> in schema</span>
+      <span class="item"><span class="pill opt">Optional</span> nullable (<code style="font-family:var(--mono)">?</code>)</span>
+      <span class="item"><span class="pill list">List / relation</span> <code style="font-family:var(--mono)">[]</code></span>
+      <span class="item"><span class="ty rel" style="font-size:11px">Relation</span></span>
+      <span class="item"><span class="ty enum" style="font-size:11px">Enum</span></span>
+    </div>
+
+    <!-- ===== LEAD ===== -->
+    <section id="lead">
+      <div class="sec-head"><span class="sec-num">01</span><h2>Lead<span class="model">CrmLead</span></h2></div>
+      <p class="sec-note">The entry point of the funnel — a prospect record that can be enriched, followed up, scored, and converted. The widest of the four models, with rich follow-up, address, and dynamic-field capture.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Type</th><th>Req / Opt</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td class="fname pk">id</td><td><span class="ty">String</span></td><td><span class="pill req">Required</span></td><td class="notes"><code>@default(cuid())</code> · primary key</td></tr>
+            <tr><td class="fname">orgId</td><td><span class="ty">String</span></td><td><span class="pill req">Required</span></td><td class="notes">Tenant scope · indexed</td></tr>
+            <tr><td class="fname">name</td><td><span class="ty">String</span></td><td><span class="pill req">Required</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">email</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">phone</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">mobile</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">company</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">jobTitle</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">source</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">stage</td><td><span class="ty">String</span></td><td><span class="pill req">Required</span></td><td class="notes"><code>@default("New")</code> · indexed</td></tr>
+            <tr><td class="fname">status</td><td><span class="ty">String</span></td><td><span class="pill req">Required</span></td><td class="notes"><code>@default("Open")</code></td></tr>
+            <tr><td class="fname">substatus</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">score</td><td><span class="ty">Int</span></td><td><span class="pill req">Required</span></td><td class="notes"><code>@default(0)</code></td></tr>
+            <tr><td class="fname">ownerId</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes">indexed</td></tr>
+            <tr><td class="fname">ownerName</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname fk">accountId</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes">→ <code>CrmAccount.id</code></td></tr>
+            <tr><td class="fname">linkedContactId</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes">Soft link — column only, no relation</td></tr>
+            <tr><td class="fname">externalId</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes">Part of <code>lead_external_uk</code></td></tr>
+            <tr><td class="fname">sourceSystem</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes">Part of <code>lead_external_uk</code></td></tr>
+            <tr><td class="fname">country</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">industry</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">secondaryEmail</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">website</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">linkedinUrl</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">annualRevenueDisplay</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">leadQuality</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">isDisengaged</td><td><span class="ty">Boolean</span></td><td><span class="pill req">Required</span></td><td class="notes"><code>@default(false)</code></td></tr>
+            <tr><td class="fname">isStarred</td><td><span class="ty">Boolean</span></td><td><span class="pill req">Required</span></td><td class="notes"><code>@default(false)</code> · indexed</td></tr>
+            <tr><td class="fname">followupPriority</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">addressLine1</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">addressLine2</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">area</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">cityName</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">stateName</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">postalCode</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">lat</td><td><span class="ty">Float</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">long</td><td><span class="ty">Float</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">convertedAt</td><td><span class="ty">DateTime</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">dynamicFields</td><td><span class="ty">Json</span></td><td><span class="pill opt">Optional</span></td><td class="notes">Extensible custom fields</td></tr>
+            <tr><td class="fname">firstName</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">lastName</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">leadType</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">descriptionInformation</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">topic</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">technology</td><td><span class="ty">Json</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">requirementDetails</td><td><span class="ty">Json</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">budgetAmount</td><td><span class="ty">Decimal(18,2)</span></td><td><span class="pill opt">Optional</span></td><td class="notes">Money</td></tr>
+            <tr><td class="fname">budgetCurrency</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">purchaseTimeframe</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">sourceDetails</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">contactLinkedinUrl</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">nextFollowUpAt</td><td><span class="ty">DateTime</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">lastContactedAt</td><td><span class="ty">DateTime</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">followupNotes</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">internalRemarks</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">createdAt</td><td><span class="ty">DateTime</span></td><td><span class="pill req">Required</span></td><td class="notes"><code>@default(now())</code></td></tr>
+            <tr><td class="fname">updatedAt</td><td><span class="ty">DateTime</span></td><td><span class="pill req">Required</span></td><td class="notes"><code>@updatedAt</code></td></tr>
+            <tr><td class="fname">deletedAt</td><td><span class="ty">DateTime</span></td><td><span class="pill opt">Optional</span></td><td class="notes">Soft-delete · indexed</td></tr>
+            <tr><td class="fname">account</td><td><span class="ty rel">→ CrmAccount</span></td><td><span class="pill opt">Optional</span></td><td class="notes">via <code>accountId</code></td></tr>
+            <tr><td class="fname">contacts</td><td><span class="ty rel">CrmContact[]</span></td><td><span class="pill list">List</span></td><td class="notes">One-to-many</td></tr>
+            <tr><td class="fname">attachments</td><td><span class="ty rel">CrmLeadAttachment[]</span></td><td><span class="pill list">List</span></td><td class="notes">One-to-many</td></tr>
+            <tr><td class="fname">activities</td><td><span class="ty rel">CrmActivity[]</span></td><td><span class="pill list">List</span></td><td class="notes">One-to-many</td></tr>
+            <tr><td class="fname">tasks</td><td><span class="ty rel">CrmTask[]</span></td><td><span class="pill list">List</span></td><td class="notes">One-to-many</td></tr>
+            <tr><td class="fname">notes</td><td><span class="ty rel">CrmNote[]</span></td><td><span class="pill list">List</span></td><td class="notes">One-to-many</td></tr>
+            <tr><td class="fname">callLogs</td><td><span class="ty rel">CrmCallLog[]</span></td><td><span class="pill list">List</span></td><td class="notes">One-to-many</td></tr>
+            <tr><td class="fname">slaTracking</td><td><span class="ty rel">CrmSlaLeadTracking[]</span></td><td><span class="pill list">List</span></td><td class="notes">One-to-many</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout"><span class="ic">◆</span><span><b>Unique constraint:</b> <code>@@unique([orgId, sourceSystem, externalId])</code> (named <code>lead_external_uk</code>) prevents duplicate imports of the same external record per org.</span></div>
+    </section>
+
+    <!-- ===== ACCOUNT ===== -->
+    <section id="account">
+      <div class="sec-head"><span class="sec-num">02</span><h2>Account<span class="model">CrmAccount</span></h2></div>
+      <p class="sec-note">The company / organization record. Supports a self-referential parent → child hierarchy, contract &amp; renewal tracking, health and NPS scoring, and a default price list. Parent of Contacts, Leads, and Opportunities.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Type</th><th>Req / Opt</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td class="fname pk">id</td><td><span class="ty">String</span></td><td><span class="pill req">Required</span></td><td class="notes"><code>@default(cuid())</code> · primary key</td></tr>
+            <tr><td class="fname">orgId</td><td><span class="ty">String</span></td><td><span class="pill req">Required</span></td><td class="notes">Tenant scope · indexed</td></tr>
+            <tr><td class="fname">name</td><td><span class="ty">String</span></td><td><span class="pill req">Required</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">segment</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes">Free-text segment</td></tr>
+            <tr><td class="fname">ownerId</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">ownerName</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">industry</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">website</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">city</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">status</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"><code>@default("Active")</code></td></tr>
+            <tr><td class="fname">annualRevenueDisplay</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">annualRevenueAmount</td><td><span class="ty">Decimal(18,2)</span></td><td><span class="pill opt">Optional</span></td><td class="notes">Money</td></tr>
+            <tr><td class="fname">annualRevenueCurrency</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"><code>@default("INR")</code></td></tr>
+            <tr><td class="fname">segmentEnum</td><td><span class="ty enum">CrmAccountSegment</span></td><td><span class="pill opt">Optional</span></td><td class="notes">Typed counterpart to <code>segment</code></td></tr>
+            <tr><td class="fname">industryKey</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">countryCode</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">state</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">postalCode</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname fk">parentAccountId</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes">→ <code>CrmAccount.id</code> (self)</td></tr>
+            <tr><td class="fname">healthScore</td><td><span class="ty">Int</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">contractStart</td><td><span class="ty">DateTime</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">contractEnd</td><td><span class="ty">DateTime</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">renewalDate</td><td><span class="ty">DateTime</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">npsScore</td><td><span class="ty">Int</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">tags</td><td><span class="ty">String[]</span></td><td><span class="pill req">Required</span></td><td class="notes"><code>@default([])</code> · array</td></tr>
+            <tr><td class="fname fk">defaultPriceListId</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes">→ <code>CrmPriceList.id</code></td></tr>
+            <tr><td class="fname">deletedAt</td><td><span class="ty">DateTime</span></td><td><span class="pill opt">Optional</span></td><td class="notes">Soft-delete</td></tr>
+            <tr><td class="fname">createdByUserId</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">createdAt</td><td><span class="ty">DateTime</span></td><td><span class="pill req">Required</span></td><td class="notes"><code>@default(now())</code></td></tr>
+            <tr><td class="fname">updatedAt</td><td><span class="ty">DateTime</span></td><td><span class="pill req">Required</span></td><td class="notes"><code>@updatedAt</code></td></tr>
+            <tr><td class="fname">parent</td><td><span class="ty rel">→ CrmAccount</span></td><td><span class="pill opt">Optional</span></td><td class="notes"><code>CrmAccountHierarchy</code> · via <code>parentAccountId</code></td></tr>
+            <tr><td class="fname">children</td><td><span class="ty rel">CrmAccount[]</span></td><td><span class="pill list">List</span></td><td class="notes">Self-hierarchy children</td></tr>
+            <tr><td class="fname">defaultPriceList</td><td><span class="ty rel">→ CrmPriceList</span></td><td><span class="pill opt">Optional</span></td><td class="notes"><code>onDelete: SetNull</code></td></tr>
+            <tr><td class="fname">contacts</td><td><span class="ty rel">CrmContact[]</span></td><td><span class="pill list">List</span></td><td class="notes">One-to-many</td></tr>
+            <tr><td class="fname">leads</td><td><span class="ty rel">CrmLead[]</span></td><td><span class="pill list">List</span></td><td class="notes">One-to-many</td></tr>
+            <tr><td class="fname">opportunities</td><td><span class="ty rel">CrmOpportunity[]</span></td><td><span class="pill list">List</span></td><td class="notes">One-to-many</td></tr>
+            <tr><td class="fname">userAccess</td><td><span class="ty rel">CrmUserAccountAccess[]</span></td><td><span class="pill list">List</span></td><td class="notes">Access control</td></tr>
+            <tr><td class="fname">groupAccess</td><td><span class="ty rel">CrmSalesGroupAccount[]</span></td><td><span class="pill list">List</span></td><td class="notes">Access control</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ===== CONTACT ===== -->
+    <section id="contact">
+      <div class="sec-head"><span class="sec-num">03</span><h2>Contact<span class="model">CrmContact</span></h2></div>
+      <p class="sec-note">An individual person — attached to an Account, a Lead, or both. The leanest of the four models: identity, ownership, and the two parent links.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Type</th><th>Req / Opt</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td class="fname pk">id</td><td><span class="ty">String</span></td><td><span class="pill req">Required</span></td><td class="notes"><code>@default(cuid())</code> · primary key</td></tr>
+            <tr><td class="fname">orgId</td><td><span class="ty">String</span></td><td><span class="pill req">Required</span></td><td class="notes">Tenant scope · indexed</td></tr>
+            <tr><td class="fname">firstName</td><td><span class="ty">String</span></td><td><span class="pill req">Required</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">lastName</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">email</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes">indexed</td></tr>
+            <tr><td class="fname">phone</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes">indexed</td></tr>
+            <tr><td class="fname">title</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname fk">accountId</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes">→ <code>CrmAccount.id</code> · indexed</td></tr>
+            <tr><td class="fname fk">leadId</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes">→ <code>CrmLead.id</code></td></tr>
+            <tr><td class="fname">ownerId</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes">indexed</td></tr>
+            <tr><td class="fname">ownerName</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">city</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">contactStage</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">source</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">deletedAt</td><td><span class="ty">DateTime</span></td><td><span class="pill opt">Optional</span></td><td class="notes">Soft-delete · indexed</td></tr>
+            <tr><td class="fname">createdAt</td><td><span class="ty">DateTime</span></td><td><span class="pill req">Required</span></td><td class="notes"><code>@default(now())</code></td></tr>
+            <tr><td class="fname">updatedAt</td><td><span class="ty">DateTime</span></td><td><span class="pill req">Required</span></td><td class="notes"><code>@updatedAt</code></td></tr>
+            <tr><td class="fname">account</td><td><span class="ty rel">→ CrmAccount</span></td><td><span class="pill opt">Optional</span></td><td class="notes">via <code>accountId</code></td></tr>
+            <tr><td class="fname">lead</td><td><span class="ty rel">→ CrmLead</span></td><td><span class="pill opt">Optional</span></td><td class="notes">via <code>leadId</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ===== OPPORTUNITY ===== -->
+    <section id="opportunity">
+      <div class="sec-head"><span class="sec-num">04</span><h2>Opportunity<span class="model">CrmOpportunity</span></h2></div>
+      <p class="sec-note">A revenue deal in the pipeline — typed stage, probability, weighted amount, close tracking, and stage-transition history. Belongs to an Account; carries a soft link back to its originating Lead.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Type</th><th>Req / Opt</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td class="fname pk">id</td><td><span class="ty">String</span></td><td><span class="pill req">Required</span></td><td class="notes"><code>@default(cuid())</code> · primary key</td></tr>
+            <tr><td class="fname">orgId</td><td><span class="ty">String</span></td><td><span class="pill req">Required</span></td><td class="notes">Tenant scope · indexed</td></tr>
+            <tr><td class="fname">name</td><td><span class="ty">String</span></td><td><span class="pill req">Required</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">stage</td><td><span class="ty enum">CrmOpportunityStage</span></td><td><span class="pill req">Required</span></td><td class="notes"><code>@default(Prospecting)</code> · indexed</td></tr>
+            <tr><td class="fname">probability</td><td><span class="ty">Int</span></td><td><span class="pill req">Required</span></td><td class="notes"><code>@default(10)</code></td></tr>
+            <tr><td class="fname">amount</td><td><span class="ty">Decimal(18,2)</span></td><td><span class="pill opt">Optional</span></td><td class="notes">Money</td></tr>
+            <tr><td class="fname">currency</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"><code>@default("INR")</code></td></tr>
+            <tr><td class="fname">closeDate</td><td><span class="ty">DateTime</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname fk">accountId</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes">→ <code>CrmAccount.id</code> · indexed</td></tr>
+            <tr><td class="fname">leadId</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes">Soft link — column only, no relation</td></tr>
+            <tr><td class="fname">ownerId</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes">indexed</td></tr>
+            <tr><td class="fname">ownerName</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">weightedAmount</td><td><span class="ty">Decimal(18,2)</span></td><td><span class="pill opt">Optional</span></td><td class="notes">Money</td></tr>
+            <tr><td class="fname">closeReason</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">closeReasonCategory</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">competitorName</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">lastStageChangeAt</td><td><span class="ty">DateTime</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">lastActivityAt</td><td><span class="ty">DateTime</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname fk">priceListId</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes">→ <code>CrmPriceList.id</code></td></tr>
+            <tr><td class="fname">deletedAt</td><td><span class="ty">DateTime</span></td><td><span class="pill opt">Optional</span></td><td class="notes">Soft-delete · indexed</td></tr>
+            <tr><td class="fname">createdByUserId</td><td><span class="ty">String</span></td><td><span class="pill opt">Optional</span></td><td class="notes"></td></tr>
+            <tr><td class="fname">createdAt</td><td><span class="ty">DateTime</span></td><td><span class="pill req">Required</span></td><td class="notes"><code>@default(now())</code></td></tr>
+            <tr><td class="fname">updatedAt</td><td><span class="ty">DateTime</span></td><td><span class="pill req">Required</span></td><td class="notes"><code>@updatedAt</code></td></tr>
+            <tr><td class="fname">account</td><td><span class="ty rel">→ CrmAccount</span></td><td><span class="pill opt">Optional</span></td><td class="notes">via <code>accountId</code></td></tr>
+            <tr><td class="fname">priceList</td><td><span class="ty rel">→ CrmPriceList</span></td><td><span class="pill opt">Optional</span></td><td class="notes"><code>onDelete: SetNull</code></td></tr>
+            <tr><td class="fname">clientMeetings</td><td><span class="ty rel">CrmOpportunityClientMeeting[]</span></td><td><span class="pill list">List</span></td><td class="notes">One-to-many</td></tr>
+            <tr><td class="fname">products</td><td><span class="ty rel">CrmOpportunityProduct[]</span></td><td><span class="pill list">List</span></td><td class="notes">One-to-many</td></tr>
+            <tr><td class="fname">transitions</td><td><span class="ty rel">CrmOpportunityStageTransition[]</span></td><td><span class="pill list">List</span></td><td class="notes">Stage history</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ===== ENUMS ===== -->
+    <section id="enums">
+      <div class="sec-head"><span class="sec-num">05</span><h2>Enumerations</h2></div>
+      <p class="sec-note">Only two of the four core models use Prisma enums. Lead and Contact keep their <code>stage</code> / <code>status</code> / <code>contactStage</code> as free-text <code>String</code>.</p>
+      <div class="enum-grid">
+        <div class="enum-card">
+          <h3>CrmOpportunityStage</h3>
+          <p>Used by <code>CrmOpportunity.stage</code> and by the <code>fromStage</code> / <code>toStage</code> of stage transitions.</p>
+          <div class="enum-vals">
+            <span>Prospecting</span><span>Qualification</span><span>Proposal</span><span>Negotiation</span><span>ClosedWon</span><span>ClosedLost</span>
+          </div>
+        </div>
+        <div class="enum-card">
+          <h3>CrmAccountSegment</h3>
+          <p>Used by <code>CrmAccount.segmentEnum</code> — the typed counterpart to the free-text <code>segment</code>.</p>
+          <div class="enum-vals">
+            <span>Enterprise</span><span>MidMarket</span><span>SMB</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== RELATIONSHIPS ===== -->
+    <section id="relationships">
+      <div class="sec-head"><span class="sec-num">06</span><h2>Relationships</h2></div>
+      <p class="sec-note">Every inter-model relation holds its foreign key on the “many” (child) side; the parent exposes a list. None of the four core-to-core relations cascade on delete.</p>
+
+      <div class="diagram">
+        <pre class="mermaid">
+erDiagram
+    CrmAccount ||--o{ CrmContact : "has"
+    CrmAccount ||--o{ CrmLead : "has"
+    CrmAccount ||--o{ CrmOpportunity : "has"
+    CrmLead    ||--o{ CrmContact : "has"
+    CrmAccount ||--o{ CrmAccount : "parent of"
+    CrmLead    }o..o| CrmContact : "linkedContactId (soft)"
+    CrmOpportunity }o..o| CrmLead : "leadId (soft)"
+        </pre>
+      </div>
+
+      <div class="legend">
+        <span class="item"><span class="card-badge">One-to-Many</span> enforced FK, parent exposes list</span>
+        <span class="item"><span class="card-badge self">Self-hierarchy</span> Account → Account</span>
+        <span class="item"><b style="color:var(--warn)">┈┈</b> soft link — ID column, no relation</span>
+      </div>
+
+      <h3 style="font-size:15px;margin:26px 0 10px;font-weight:640;">Enforced relations</h3>
+      <div class="rel-table-wrap">
+        <table class="rel-table">
+          <thead><tr><th>Relationship</th><th>FK field (holder)</th><th>References</th><th>Cardinality</th><th>Prisma navigation</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><b>Account → Contact</b></td>
+              <td><code>CrmContact.accountId</code></td>
+              <td><code>CrmAccount.id</code></td>
+              <td><span class="card-badge">One-to-Many</span></td>
+              <td><code>account</code> ↔ <code>contacts</code></td>
+            </tr>
+            <tr>
+              <td><b>Account → Lead</b></td>
+              <td><code>CrmLead.accountId</code></td>
+              <td><code>CrmAccount.id</code></td>
+              <td><span class="card-badge">One-to-Many</span></td>
+              <td><code>account</code> ↔ <code>leads</code></td>
+            </tr>
+            <tr>
+              <td><b>Account → Opportunity</b></td>
+              <td><code>CrmOpportunity.accountId</code></td>
+              <td><code>CrmAccount.id</code></td>
+              <td><span class="card-badge">One-to-Many</span></td>
+              <td><code>account</code> ↔ <code>opportunities</code></td>
+            </tr>
+            <tr>
+              <td><b>Lead → Contact</b></td>
+              <td><code>CrmContact.leadId</code></td>
+              <td><code>CrmLead.id</code></td>
+              <td><span class="card-badge">One-to-Many</span></td>
+              <td><code>lead</code> ↔ <code>contacts</code></td>
+            </tr>
+            <tr>
+              <td><b>Account → Account</b> (hierarchy)</td>
+              <td><code>CrmAccount.parentAccountId</code></td>
+              <td><code>CrmAccount.id</code></td>
+              <td><span class="card-badge self">Self · One-to-Many</span></td>
+              <td><code>parent</code> ↔ <code>children</code> · <code>CrmAccountHierarchy</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 style="font-size:15px;margin:28px 0 10px;font-weight:640;">Soft links — column only, no enforced relation</h3>
+      <div class="rel-table-wrap">
+        <table class="rel-table">
+          <thead><tr><th>Intended link</th><th>Column</th><th>Points to</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td><b>Lead → Contact</b></td><td><code>CrmLead.linkedContactId</code></td><td><code>CrmContact.id</code> (by convention)</td><td class="notes">No <code>@relation</code> — application-managed, no referential integrity</td></tr>
+            <tr><td><b>Opportunity → Lead</b></td><td><code>CrmOpportunity.leadId</code></td><td><code>CrmLead.id</code> (by convention)</td><td class="notes">No <code>@relation</code> — application-managed, no referential integrity</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout">
+        <span class="ic">!</span>
+        <span><b>Not modeled.</b> Two mappings that are commonly expected do <b>not</b> exist as navigable relations:
+        <b>Lead → Opportunity</b> exists only through the soft <code>CrmOpportunity.leadId</code> column above, and
+        <b>Contact → Opportunity</b> has no direct relation or FK at all — a Contact reaches an Opportunity only indirectly, through their shared Account.</span>
+      </div>
+    </section>
+
+    <!-- ===== CONVENTIONS ===== -->
+    <section id="conventions">
+      <div class="sec-head"><span class="sec-num">07</span><h2>Cross-cutting conventions</h2></div>
+      <p class="sec-note">Patterns every one of the four models follows.</p>
+      <div class="conv-grid">
+        <div class="conv"><h4>Primary keys</h4><p>Every model uses <code>id String @id @default(cuid())</code>.</p></div>
+        <div class="conv"><h4>Tenant scoping</h4><p>Every model carries an indexed <code>orgId String</code>. Per repo standard, all queries must filter by <code>orgId</code>.</p></div>
+        <div class="conv"><h4>Soft deletes</h4><p>An indexed <code>deletedAt DateTime?</code> marks records deleted rather than removing rows.</p></div>
+        <div class="conv"><h4>Audit timestamps</h4><p><code>createdAt @default(now())</code> and <code>updatedAt @updatedAt</code> on all four models.</p></div>
+        <div class="conv"><h4>Ownership</h4><p>A denormalized <code>ownerId</code> / <code>ownerName</code> pair rides on all four models.</p></div>
+        <div class="conv"><h4>Money</h4><p>Amounts use <code>Decimal @db.Decimal(18, 2)</code> with a companion <code>*Currency</code> string (default <code>"INR"</code>).</p></div>
+      </div>
+    </section>
+
+    <footer>
+      Generated from <code>packages/database/prisma/schema.prisma</code> · PostgreSQL schema <code>app_quikcrm</code> · models <code>CrmLead</code>, <code>CrmAccount</code>, <code>CrmContact</code>, <code>CrmOpportunity</code>. The schema is the source of truth; regenerate this reference when models change.
+    </footer>
+  </main>
+</div>

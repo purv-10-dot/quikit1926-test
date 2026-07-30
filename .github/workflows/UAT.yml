@@ -168,6 +168,7 @@ jobs:
             NEXT_PUBLIC_QUIKSCALE_URL=https://uatscale.quikit.ai
             NEXT_PUBLIC_ADMIN_URL=https://uatorgadmin.quikit.ai
             NEXT_PUBLIC_LOGIN_URL=https://uatauthn.quikit.ai/login
+            NEXT_PUBLIC_WEBSITE_URL=https://uat.quikit.ai
             NEXT_PUBLIC_QUIKINFRA_URL=https://uatinfra.quikit.ai
             NEXT_PUBLIC_QUIKCRM_URL=https://uatcrm.quikit.ai
             NEXT_PUBLIC_QUIKHRMS_URL=https://uatpeople.quikit.ai

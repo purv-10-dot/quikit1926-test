@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { PageHeader, PageContainer, StatusChip } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer, StatusChip } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { QuickCreateDrawer } from "@/components/QuickCreateDrawer";
 import { useProjects, useLocations } from "@/hooks/use-masters";
@@ -162,9 +162,10 @@ export default function AssetsPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader title="Assets / Tool Register" subtitle="Track assets, tools, and equipment across projects"
         breadcrumbs={[{ label: "Masters", href: "/masters" }, { label: "Assets" }]} />
-      <PageContainer>
+      <PageContainer fill>
         <DataTable id="master-assets" columns={columns} data={data as AssetRow[]}
           loading={isLoading}
           serverMode
@@ -180,6 +181,7 @@ export default function AssetsPage() {
           }}
           onAdd={canAdd ? () => setDrawerOpen(true) : undefined} addLabel="Register Asset" />
       </PageContainer>
+      </PageFrame>
       <QuickCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} config={config} />
     </>
   );

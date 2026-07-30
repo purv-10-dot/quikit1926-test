@@ -1,26 +1,13 @@
 "use client";
 
 /**
- * Material Estimation — detail page with inline edit.
+ * Material Estimation — read-only detail page.
  *
- * Edit no longer opens a drawer modal; clicking Edit flips the page into
- * an inline edit mode where the Overview's editable fields (Phase,
- * Status) become dropdowns and the Material Composition rows become
- * editable inputs — same form shape the drawer used to collect, but
- * directly on the detail surface so the user never loses their place.
- *
- * Fields kept read-only in edit mode:
- *   - Project, BOQ No, BOQ Item, BOQ Quantity — changing these
- *     conceptually creates a new estimation. The drawer locks them too.
- *
- * Fields editable in edit mode:
- *   - Phase (dropdown), Status (dropdown)
- *   - Material composition: qty/unit, waste %, std rate — inputs
- *   - Add / Remove material rows
- *
- * Everything else (Delete, Submit for Approval, Approve/Reject) behaves
- * the same as before and is hidden while editing so the user can't
- * accidentally fire a workflow transition on unsaved changes.
+ * Edit routes to the full-page edit form at /projects/estimation/[id]/edit
+ * (the same WorkOrder-style form the list's Edit pencil opens), so the
+ * edit experience is identical from every entry point. The inline-edit
+ * branches below are dormant (isEditing never flips true) and kept only
+ * so the workflow / overview markup stays intact.
  */
 
 import { formatDateTimeIST } from "@/lib/format/datetime";
@@ -93,7 +80,6 @@ export default function EstimationDetailPage() {
     openWorkflow,
     closeWorkflow,
     runWorkflowAction,
-    beginEdit,
     cancelEdit,
     updateLine,
     addLine,
@@ -180,7 +166,9 @@ export default function EstimationDetailPage() {
                 {canEdit && (
                   <button
                     type="button"
-                    onClick={() => !baseLocked && beginEdit()}
+                    onClick={() =>
+                      !baseLocked && router.push(`/projects/estimation/${id}/edit`)
+                    }
                     disabled={baseLocked}
                     className={`${HEADER_PILL} ${
                       baseLocked
@@ -275,8 +263,15 @@ export default function EstimationDetailPage() {
               {/* Left: stat grid */}
               <dl className="lg:col-span-8 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5 px-6 py-5 text-sm">
                 <OverviewStat label="Project">
-                  <span className="font-medium text-gray-900 truncate">
-                    {estimation.projectName ?? "—"}
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <span className="font-medium text-gray-900 truncate">
+                      {estimation.projectName ?? "—"}
+                    </span>
+                    {estimation.scopeType === "ACTIVITY" && (
+                      <span className="shrink-0 whitespace-nowrap rounded bg-accent-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-accent-700 border border-accent-200">
+                        Free-Scope
+                      </span>
+                    )}
                   </span>
                 </OverviewStat>
 

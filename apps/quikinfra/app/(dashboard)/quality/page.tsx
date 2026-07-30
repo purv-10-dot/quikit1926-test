@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ClipboardCheck, Search, CheckCircle2, XCircle } from "lucide-react";
-import { PageHeader, PageContainer, KPICard } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer, KPICard } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { QuickCreateDrawer } from "@/components/QuickCreateDrawer";
 import { useProjects } from "@/hooks/use-masters";
@@ -160,11 +160,12 @@ export default function QualityPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Inspection/Checklist"
         subtitle="Single workflow for checklist + inspection tracking"
       />
-      <PageContainer>
+      <PageContainer fill>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <KPICard title="Total Checklists" value={checklists.length}
             icon={<ClipboardCheck className="w-5 h-5" />} color="blue" />
@@ -176,7 +177,7 @@ export default function QualityPage() {
             icon={<XCircle className="w-5 h-5" />} color="red" />
         </div>
 
-        <div className="mt-6">
+        <div className="mt-6 flex min-h-0 flex-1 flex-col">
           <DataTable
             id="inspection-checklist"
             columns={columns.map((c) => ({ ...c, sortable: false }))}
@@ -194,6 +195,7 @@ export default function QualityPage() {
           />
         </div>
       </PageContainer>
+      </PageFrame>
 
       <QuickCreateDrawer
         open={drawerOpen}

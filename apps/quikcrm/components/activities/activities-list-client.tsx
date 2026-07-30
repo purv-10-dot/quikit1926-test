@@ -2,9 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { FileText, Plus, Search, SlidersHorizontal } from "lucide-react";
+import { FileText, Plus, SlidersHorizontal, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+  ActivitySearchAutocomplete,
+  type ActivitySuggestion,
+} from "@/components/activities/activity-search-autocomplete";
 import { Select } from "@/components/ui/select";
 import { Pagination } from "@/components/shared/pagination";
 import { Table, TableScroll, THead, TBody, TR, TH, TD } from "@/components/ui/table";
@@ -222,6 +226,13 @@ export function ActivitiesListClient({ canCreate, canEdit, canDelete, canViewLea
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
+  // The active suggestion chosen from the search autocomplete. Rendered as a
+  // removable chip below the toolbar. An owner pick drives ownerId; a record
+  // pick drives linkedKind + linkedRecordId. Kept as its own piece of state so
+  // the chip can show a friendly "Owner: <name>" / "<Kind>: <name>" label and
+  // clearing it resets exactly the filters it applied.
+  const [picked, setPicked] = useState<ActivitySuggestion | null>(null);
+
   // Record options for the "Linked Record" dropdown, loaded per selected kind.
   const [recordOptions, setRecordOptions] = useState<SearchableOption[]>([]);
   const [recordsLoading, setRecordsLoading] = useState(false);
@@ -392,6 +403,53 @@ export function ActivitiesListClient({ canCreate, canEdit, canDelete, canViewLea
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debounced, filter, linkedKind, linkedRecordId, ownerId, dateFrom, dateTo]);
 
+  // Apply a suggestion picked from the search autocomplete. Owner picks set the
+  // owner filter; record picks set the linked-type + linked-record filters. In
+  // both cases we clear the free-text box (the chip now represents the intent)
+  // and register the chip. Reset-to-page-1 is handled by the existing effect
+  // that watches ownerId / linkedKind / linkedRecordId.
+  const applySuggestion = useCallback((s: ActivitySuggestion) => {
+    setPicked(s);
+    setSearch("");
+    if (s.kind === "owner") {
+      setOwnerId(s.id);
+      mergeOwnerOptions([{ id: s.id, label: s.name }]);
+    } else {
+      setLinkedKind(s.kind);
+      setLinkedRecordId(s.id);
+    }
+  }, [mergeOwnerOptions]);
+
+  // Remove the active chip and reset exactly the filters it set.
+  const clearPicked = useCallback(() => {
+    if (!picked) return;
+    if (picked.kind === "owner") {
+      setOwnerId("");
+    } else {
+      setLinkedKind("");
+      setLinkedRecordId("");
+    }
+    setPicked(null);
+  }, [picked]);
+
+  // Keep the chip honest: if the underlying quick filters no longer match what
+  // the chip applied (e.g. the user changed the Owner / Linked-to controls by
+  // hand), drop the stale chip.
+  useEffect(() => {
+    if (!picked) return;
+    const stillApplies =
+      picked.kind === "owner"
+        ? ownerId === picked.id
+        : linkedKind === picked.kind && linkedRecordId === picked.id;
+    if (!stillApplies) setPicked(null);
+  }, [picked, ownerId, linkedKind, linkedRecordId]);
+
+  const pickedLabel = picked
+    ? picked.kind === "owner"
+      ? `Owner: ${picked.name}`
+      : `${picked.kind}: ${picked.name}`
+    : "";
+
   const filterActive = filter.conditions.length > 0;
   const quickFilterActive =
     !!linkedKind ||
@@ -403,19 +461,11 @@ export function ActivitiesListClient({ canCreate, canEdit, canDelete, canViewLea
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[14rem] flex-1 sm:max-w-md">
-          <Search
-            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-crm-muted"
-            size={14}
-          />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search subject, outcome, notes…"
-            className="pl-8"
-            data-testid="activities-search"
-          />
-        </div>
+        <ActivitySearchAutocomplete
+          value={search}
+          onChange={setSearch}
+          onSelect={applySuggestion}
+        />
 
         <Button
           variant="secondary"
@@ -442,6 +492,20 @@ export function ActivitiesListClient({ canCreate, canEdit, canDelete, canViewLea
           <FileText size={14} />
           Drafts
         </Button>
+
+        {/* Live count of activities matching the current search/filter. Reads
+            the loaded total so it tracks every filter (search, chip, toolbar,
+            advanced) and updates on each load. */}
+        <span
+          className="inline-flex items-center gap-1 rounded-full bg-accent-50 px-2.5 py-1 text-xs font-medium text-accent-700"
+          data-testid="activities-count"
+          aria-live="polite"
+        >
+          {loading ? "…" : total.toLocaleString()}
+          <span className="text-accent-700/70">
+            {total === 1 ? "activity" : "activities"}
+          </span>
+        </span>
 
         <Button
           type="button"
@@ -534,6 +598,7 @@ export function ActivitiesListClient({ canCreate, canEdit, canDelete, canViewLea
               setOwnerId("");
               setDateFrom("");
               setDateTo("");
+              setPicked(null);
             }}
             className="mb-1 text-xs font-medium text-crm-muted hover:text-crm-text"
           >
@@ -541,6 +606,27 @@ export function ActivitiesListClient({ canCreate, canEdit, canDelete, canViewLea
           </button>
         )}
       </div>
+
+      {/* Active filter chip for the name picked from the search autocomplete. */}
+      {picked && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full bg-accent-100 py-1 pl-3 pr-1.5 text-xs font-medium text-accent-700"
+            data-testid="activities-active-chip"
+          >
+            {pickedLabel}
+            <button
+              type="button"
+              onClick={clearPicked}
+              aria-label={`Remove filter ${pickedLabel}`}
+              className="inline-flex h-4 w-4 items-center justify-center rounded-full text-accent-700 hover:bg-accent-200"
+              data-testid="activities-active-chip-remove"
+            >
+              <X size={12} />
+            </button>
+          </span>
+        </div>
+      )}
 
       <ActivityAppliedFilterSummary filter={filter} onClear={() => setFilter(EMPTY)} />
 

@@ -494,8 +494,12 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
   // actually hand out access, matching what the green checkboxes imply and
   // staying consistent with the Edit-User module flow (applyModuleRevokes).
   //
-  // Skipped for admin role — admins bypass via wildcards anyway.
-  if (touchingMatrix && !isAdminUserType && authUserId) {
+  // Runs for admin-role users too. Only the CENTRAL admin truly bypasses via
+  // the "*" wildcard (and its matrix is locked read-only in the UI). An
+  // app-level admin invited into the org ("sub-admin") gets concrete keys
+  // minus revokes, so the matrix MUST be able to save for them — otherwise
+  // ticking a page here silently did nothing and reverted on reload.
+  if (touchingMatrix && authUserId) {
     try {
       const desiredRevokes = matrixToRevokes(matrixIncoming ?? null);
       const revokedSet = new Set(

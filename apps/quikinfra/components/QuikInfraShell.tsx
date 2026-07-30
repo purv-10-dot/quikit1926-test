@@ -172,6 +172,7 @@ const CONSTRUCTION_NAV: NavItem[] = [
     featureKey: "projectMgmt",
     children: [
       { label: "BOQ",                  href: "/projects/boq",         iconComponent: FileSpreadsheet, requiredPermission: "boq.read", featureKey: "projectMgmt.boq" },
+      { label: "Activity Scope",       href: "/projects/activities",  iconComponent: ListTree,        requiredPermission: "boq.read" },
       { label: "WBS & Planning",       href: "/projects/wbs",         iconComponent: ListTree,        requiredPermission: "boq.read", featureKey: "projectMgmt.wbs" },
       { label: "Material Estimation",  href: "/projects/estimation",  iconComponent: Calculator,      requiredPermission: "boq.read", featureKey: "projectMgmt.estimation" },
       { label: "Work Orders",          href: "/projects/work-orders", iconComponent: Hammer,          requiredPermission: "wo.read",  featureKey: "projectMgmt.workOrders" },
@@ -297,6 +298,14 @@ const CONSTRUCTION_NAV: NavItem[] = [
  *     is the outer gate that hides entire sidebar groups
  *     (Organization/Masters/Purchase/Store/Project Mgmt/Quality/Finance)
  *     for users whose `modulesAssigned` doesn't include that key.
+ *   - A group whose module gate FAILS is not dropped outright: its children
+ *     are re-filtered on the permission matrix alone, and the group renders
+ *     if any single page inside it was explicitly granted. Per-page
+ *     permissions (Phase 4) can grant one page inside an otherwise
+ *     un-assigned module — notably Projects, which lives in the MASTERS
+ *     group while `construction.project` belongs to project_mgmt. Without
+ *     this, granting Projects had no visible effect: the tick saved, but the
+ *     whole Masters group stayed hidden.
  *   - Inside an allowed-module subtree, children are shown unconditionally:
  *     module assignment grants full page-level access to that module. The
  *     per-page Add/Edit/Delete controls still gate via the permission
@@ -311,9 +320,16 @@ function filterNav(
   can: (perm: string | string[]) => boolean,
   hasModule: (moduleKey: string) => boolean,
   canViewMenu: (url: string | undefined) => boolean,
+  isMenuGranted: (url: string | undefined) => boolean,
   isSuperAdmin: boolean,
   disabledModules: Set<string>,
   insideAllowedModule = false,
+  /**
+   * True when an ancestor's `moduleKey` gate failed. Descendants then survive
+   * ONLY on an explicit per-page matrix grant — `requiredPermission` is not
+   * consulted, because the admin ticking the page IS the grant.
+   */
+  moduleDenied = false,
 ): NavItem[] {
   const out: NavItem[] = [];
   for (const item of items) {
@@ -336,16 +352,36 @@ function filterNav(
     if (item.superAdminOnly && !isSuperAdmin) {
       continue;
     }
-    // Module-level gate comes first — if the user's modulesAssigned
-    // excludes this key, skip the whole subtree including children.
-    if (item.moduleKey && !hasModule(item.moduleKey)) {
+    // Module-level gate. A leaf in an un-assigned module is dropped; a GROUP
+    // is not, because a single page inside it may still be granted per-page
+    // (see the header note re: Projects). The group's children are re-filtered
+    // below with `moduleDenied`, so only explicitly-granted pages survive and
+    // the group disappears on its own if none do.
+    const moduleDeniedHere =
+      moduleDenied || !!(item.moduleKey && !hasModule(item.moduleKey));
+    if (moduleDeniedHere && !item.children) {
+      // Strict gate — an explicit matrix grant is the ONLY way in. Pages with
+      // no catalog row (e.g. /projects/activities) stay hidden.
+      if (!isMenuGranted(item.href)) continue;
+      out.push(item);
       continue;
     }
     if (item.children) {
       // Once we're under a moduleKey-gated parent that passed the check,
       // every descendant is considered allowed — skip `requiredPermission`.
-      const nextInside = insideAllowedModule || !!item.moduleKey;
-      const kids = filterNav(item.children, can, hasModule, canViewMenu, isSuperAdmin, disabledModules, nextInside);
+      const nextInside =
+        !moduleDeniedHere && (insideAllowedModule || !!item.moduleKey);
+      const kids = filterNav(
+        item.children,
+        can,
+        hasModule,
+        canViewMenu,
+        isMenuGranted,
+        isSuperAdmin,
+        disabledModules,
+        nextInside,
+        moduleDeniedHere,
+      );
       if (kids.length > 0) out.push({ ...item, children: kids });
       continue;
     }
@@ -478,10 +514,11 @@ function NavRailItem({
 function NavItemComponent({ item, pathname, onNavigate, depth = 0, searchActive = false }: {
   item: NavItem; pathname: string; onNavigate: (href: string) => void; depth?: number; searchActive?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(() => {
-    if (!item.children) return false;
-    return item.children.some(c => c.href && pathname.startsWith(c.href));
-  });
+  // A manual open/close is scoped to the route it was made on. Any navigation
+  // discards it and the group falls back to auto-opening whenever the current
+  // route lives inside it. Without the scoping a click could never collapse a
+  // group you were currently inside — the auto-open would always win.
+  const [override, setOverride] = useState<{ open: boolean; at: string } | null>(null);
 
   if (item.isSection) {
     return (
@@ -497,15 +534,16 @@ function NavItemComponent({ item, pathname, onNavigate, depth = 0, searchActive 
   const hasActiveChild = item.children?.some(c => c.href && (pathname === c.href || pathname.startsWith(c.href + "/")));
 
   if (item.children) {
-    const isOpen = expanded || hasActiveChild || searchActive;
+    const isOpen =
+      searchActive || (override?.at === pathname ? override.open : !!hasActiveChild);
     return (
       <div>
         <button
-          onClick={() => setExpanded(!expanded)}
+          onClick={() => setOverride({ open: !isOpen, at: pathname })}
           className={`group w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-sm font-medium transition-all duration-150 ${
             hasActiveChild
               ? "text-slate-800 bg-slate-100"
-              : expanded
+              : isOpen
                 ? "text-slate-700 bg-slate-50"
                 : "hover:bg-slate-50 hover:text-slate-700"
           }`}
@@ -516,7 +554,7 @@ function NavItemComponent({ item, pathname, onNavigate, depth = 0, searchActive 
               className={`w-4 h-4 shrink-0 transition-colors ${
                 hasActiveChild
                   ? "text-slate-600"
-                  : expanded
+                  : isOpen
                     ? "text-slate-500"
                     : "group-hover:text-slate-600"
               }`}
@@ -585,7 +623,7 @@ export function QuikInfraShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { data: session } = useSession();
-  const { can, hasModule, canViewMenu, isLoading: permsLoading, roleKey, userType } = usePermissions();
+  const { can, hasModule, canViewMenu, isMenuGranted, isLoading: permsLoading, roleKey, userType } = usePermissions();
   const disabledModules = useDisabledModules();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -638,8 +676,8 @@ export function QuikInfraShell({ children }: { children: ReactNode }) {
     () =>
       permsLoading
         ? []
-        : filterNav(CONSTRUCTION_NAV, can, hasModule, canViewMenu, isSuperAdmin, disabledModules),
-    [permsLoading, can, hasModule, canViewMenu, isSuperAdmin, disabledModules]
+        : filterNav(CONSTRUCTION_NAV, can, hasModule, canViewMenu, isMenuGranted, isSuperAdmin, disabledModules),
+    [permsLoading, can, hasModule, canViewMenu, isMenuGranted, isSuperAdmin, disabledModules]
   );
 
   const displayNav = useMemo(
