@@ -26,7 +26,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
       empIds.length
         ? prisma.employee.findMany({
             where: { orgId, id: { in: empIds }, deletedAt: null },
-            select: { id: true, firstName: true, lastName: true, employeeCode: true, jobTitle: true, profilePhoto: true },
+            select: { id: true, firstName: true, lastName: true, employeeCode: true, jobTitle: true, profilePhoto: true, department: { select: { name: true } } },
           })
         : [],
       roleIds.length
@@ -83,19 +83,26 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
       });
 
       if (data.items) {
-        const typeIds = data.items.map((i) => i.leaveTypeId);
-        const validTypes = await tx.leaveType.count({
-          where: { orgId, deletedAt: null, id: { in: typeIds } },
+        const uniqueItems = Array.from(new Map(data.items.map((i) => [i.leaveTypeId, i])).values());
+        // Keep only items whose leave type still exists (active). A leave type
+        // deleted after being added to the group leaves a dangling item; drop it
+        // (self-heal) instead of hard-blocking every future edit of this group.
+        const validRows = await tx.leaveType.findMany({
+          where: { orgId, deletedAt: null, id: { in: uniqueItems.map((i) => i.leaveTypeId) } },
+          select: { id: true },
         });
-        if (validTypes !== typeIds.length) throw new Error("INVALID_TYPES");
+        const validSet = new Set(validRows.map((r) => r.id));
+        const keptItems = uniqueItems.filter((i) => validSet.has(i.leaveTypeId));
+        if (keptItems.length === 0) throw new Error("INVALID_TYPES");
 
         await tx.leaveGroupItem.deleteMany({ where: { leaveGroupId: params.id } });
         await tx.leaveGroupItem.createMany({
-          data: data.items.map((i) => ({
+          data: keptItems.map((i) => ({
             orgId,
             leaveGroupId: params.id,
             leaveTypeId: i.leaveTypeId,
             overrideQuota: i.overrideQuota ?? null,
+            rules: i.rules ? JSON.parse(JSON.stringify(i.rules)) : undefined,
           })),
         });
       }
@@ -116,14 +123,49 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
   }
 }, { requiredPermissions: ["hrms.leave.manage"] });
 
-export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }, params) => {
+export const DELETE = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
   try {
     const existing = await prisma.leaveGroup.findFirst({ where: { id: params.id, orgId, deletedAt: null } });
     if (!existing) return notFound("Leave group not found");
 
+    const moveToGroupId = new URL(req.url).searchParams.get("moveToGroupId");
     const assigned = await prisma.leaveGroupAssignment.count({ where: { orgId, leaveGroupId: params.id } });
+
+    // A group with assignees can't be deleted outright — move them to another
+    // group first (or the caller passes the target explicitly).
     if (assigned > 0) {
-      return conflict(`Cannot delete — ${assigned} assignee${assigned === 1 ? "" : "s"} still linked. Remove assignments first.`);
+      if (!moveToGroupId) {
+        return conflict(`Cannot delete — ${assigned} assignee${assigned === 1 ? "" : "s"} still linked. Move them to another group first.`);
+      }
+      if (moveToGroupId === params.id) return validationError("Choose a different group to move assignees to");
+      const target = await prisma.leaveGroup.findFirst({ where: { id: moveToGroupId, orgId, deletedAt: null } });
+      if (!target) return notFound("Target leave group not found");
+
+      await prisma.$transaction(async (tx) => {
+        const rows = await tx.leaveGroupAssignment.findMany({ where: { orgId, leaveGroupId: params.id } });
+        const targetRows = await tx.leaveGroupAssignment.findMany({
+          where: { orgId, leaveGroupId: moveToGroupId },
+          select: { assigneeType: true, employeeId: true, roleId: true },
+        });
+        const key = (a: { assigneeType: string; employeeId: string | null; roleId: string | null }) => `${a.assigneeType}:${a.employeeId ?? ""}:${a.roleId ?? ""}`;
+        const seen = new Set(targetRows.map(key));
+        for (const r of rows) {
+          if (seen.has(key(r))) {
+            // Target already has this assignee — drop the duplicate source row.
+            await tx.leaveGroupAssignment.delete({ where: { id: r.id } });
+          } else {
+            await tx.leaveGroupAssignment.update({ where: { id: r.id }, data: { leaveGroupId: moveToGroupId } });
+            seen.add(key(r));
+          }
+        }
+        await tx.leaveGroup.update({ where: { id: params.id }, data: { deletedAt: new Date(), updatedBy: userId } });
+      });
+
+      await createAuditLog({
+        orgId, userId, action: "Delete", entityType: "LeaveGroup", entityId: params.id,
+        changes: { name: existing.name, movedTo: moveToGroupId, moved: assigned },
+      });
+      return successResponse({ deleted: true, moved: assigned });
     }
 
     await prisma.leaveGroup.update({

@@ -1,10 +1,11 @@
 "use client";
 
 import { Suspense, useState } from "react";
-import { clsx } from "clsx";
 import { Banknote, HandCoins } from "lucide-react";
 import LoansPage from "../loans/page";
 import GivingPage from "../giving/page";
+import { PageBackground } from "@/components/hrms/page-background";
+import { TabSwitcher } from "@/components/hrms/tab-switcher";
 
 type Tab = "loans" | "giving";
 
@@ -18,24 +19,17 @@ export default function LoansGivingHub() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <h1 className="text-page-title text-gray-900 mb-1">Advances</h1>
       <p className="text-xs text-gray-500 mb-4">Employee loans and giving — both auto-deduct in pay runs.</p>
 
-      <div className="flex gap-1 rounded-lg border border-gray-200 bg-gray-50 p-1 w-fit mb-4">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            className={clsx(
-              "inline-flex items-center gap-1.5 px-4 py-1.5 text-[13px] font-semibold rounded-md transition",
-              tab === t.id ? "bg-white text-[#166534] shadow-sm" : "text-gray-600 hover:text-gray-900",
-            )}
-          >
-            {t.icon} {t.label}
-          </button>
-        ))}
-      </div>
+      <TabSwitcher
+        className="mb-4"
+        value={tab}
+        onChange={(v) => setTab(v as Tab)}
+        tabs={TABS.map((t) => ({ value: t.id, label: t.label, icon: t.icon }))}
+      />
 
       <Suspense fallback={<div className="text-sm text-gray-400">Loading…</div>}>
         {tab === "loans"  && <LoansPage />}

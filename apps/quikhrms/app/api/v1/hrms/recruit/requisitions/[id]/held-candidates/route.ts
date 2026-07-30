@@ -46,4 +46,4 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
     console.error("GET /recruit/requisitions/:id/held-candidates error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.recruit.read"] });

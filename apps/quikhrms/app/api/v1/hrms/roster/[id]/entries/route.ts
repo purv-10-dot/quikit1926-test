@@ -19,7 +19,7 @@ export const POST = withAuth(async (req: NextRequest, ctx, params) => {
 
     const roster = await prisma.roster.findFirst({
       where: { id: params.id, orgId, deletedAt: null },
-      select: { id: true, status: true },
+      select: { id: true, status: true, periodStart: true, periodEnd: true },
     });
     if (!roster) return notFound("Roster not found");
     if (roster.status !== "Draft") return validationError("Only a draft roster can be edited");
@@ -29,6 +29,12 @@ export const POST = withAuth(async (req: NextRequest, ctx, params) => {
     if (!parsed.success) return validationError("Validation failed", parsed.error.flatten().fieldErrors);
     const { entries } = parsed.data;
 
+    // Every entry date must fall inside the roster's own period — otherwise we'd
+    // create orphan cells (invisible in the grid) that still drive attendance.
+    if (entries.some((e) => e.date < roster.periodStart || e.date > roster.periodEnd)) {
+      return validationError("One or more entries fall outside this roster's date range.");
+    }
+
     // Hierarchy guard: every target employee must be within reach.
     const hierarchy = await getHierarchyAccessibleEmployeeIds(ctx);
     if (!hierarchy.unlimited) {
@@ -36,6 +42,18 @@ export const POST = withAuth(async (req: NextRequest, ctx, params) => {
       if (entries.some((e) => !allowed.has(e.employeeId))) {
         return forbidden("Cannot edit roster for an employee above your role hierarchy");
       }
+    }
+
+    // Every target employee must belong to this org — checked for ALL callers
+    // (including admins, who bypass the hierarchy guard above). A foreign or
+    // invalid id would otherwise create orphan cells / FK-error in the transaction.
+    const empIds = [...new Set(entries.map((e) => e.employeeId))];
+    const foundEmps = await prisma.employee.findMany({
+      where: { orgId, deletedAt: null, id: { in: empIds } },
+      select: { id: true },
+    });
+    if (foundEmps.length !== empIds.length) {
+      return validationError("One or more employees are not in your organization.");
     }
 
     // Verify every referenced shift exists in this org — an invalid shiftId would

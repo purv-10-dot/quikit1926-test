@@ -23,22 +23,11 @@ export type Role = "owner" | "admin" | "project_manager" | "accountant" | "site_
 
 const PRIVILEGED: Role[] = ["owner", "admin"];
 const MANAGER_PLUS: Role[] = ["owner", "admin", "project_manager"];
-const FINANCE_PLUS: Role[] = ["owner", "admin", "accountant"];
-const OPERATIONS_PLUS: Role[] = ["owner", "admin", "project_manager", "site_supervisor"];
 
 export function canApprove(role: Role | null | undefined): boolean {
   return !!role && MANAGER_PLUS.includes(role as Role);
 }
-export function canFinalize(role: Role | null | undefined): boolean {
-  return !!role && FINANCE_PLUS.includes(role as Role);
-}
 export function canDelete(role: Role | null | undefined): boolean {
-  return !!role && PRIVILEGED.includes(role as Role);
-}
-export function canPost(role: Role | null | undefined): boolean {
-  return !!role && OPERATIONS_PLUS.includes(role as Role);
-}
-export function canManageSettings(role: Role | null | undefined): boolean {
   return !!role && PRIVILEGED.includes(role as Role);
 }
 
@@ -310,9 +299,6 @@ const ROLE_PERMISSIONS: Record<ConstructionRole, string[]> = {
   ],
 };
 
-export function getPermissionsForRole(role: ConstructionRole): string[] {
-  return ROLE_PERMISSIONS[role] ?? [];
-}
 
 export function hasPermission(
   userPermissions: string[],
@@ -321,9 +307,3 @@ export function hasPermission(
   return userPermissions.includes(required);
 }
 
-export function hasAnyPermission(
-  userPermissions: string[],
-  required: string[]
-): boolean {
-  return required.some((p) => userPermissions.includes(p));
-}

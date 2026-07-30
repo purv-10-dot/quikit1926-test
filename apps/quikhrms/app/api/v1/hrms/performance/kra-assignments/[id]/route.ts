@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, validationError, notFound, internalError } from "@/lib/api-response";
+import { successResponse, validationError, notFound, conflict, internalError } from "@/lib/api-response";
 import {
   updateKraAssignmentProgressSchema,
   updateKraAssignmentStatusSchema,
@@ -89,6 +89,10 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, { id }
     if ("status" in body) {
       const parsed = updateKraAssignmentStatusSchema.safeParse(body);
       if (!parsed.success) return validationError("Validation failed", parsed.error.flatten().fieldErrors);
+      // Cancelled is terminal — you can't transition out of it (only Active↔Completed reopen).
+      if (existing.status === "Cancelled" && parsed.data.status !== "Cancelled") {
+        return conflict("A cancelled KRA assignment can't be re-activated or completed.");
+      }
       const updated = await prisma.employeeKraAssignment.update({
         where: { id },
         data: { status: parsed.data.status },
@@ -98,6 +102,11 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, { id }
         entityType: "EmployeeKraAssignment", entityId: id, changes: parsed.data,
       });
       return successResponse(updated);
+    }
+
+    // Progress can't be edited on a cancelled assignment.
+    if (existing.status === "Cancelled") {
+      return conflict("This KRA assignment is cancelled — progress can no longer be edited.");
     }
 
     const parsed = updateKraAssignmentProgressSchema.safeParse(body);

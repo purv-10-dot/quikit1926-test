@@ -4,11 +4,11 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Modal } from "@/components/hrms/modal";
+import { PageBackground } from "@/components/hrms/page-background";
 import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { useDialog } from "@/components/hrms/dialog";
 import { Plus, ShieldCheck, Trash2, Pencil } from "lucide-react";
-import { ExpenseTabs } from "../_components/expense-tabs";
 import { PageHeader } from "@/components/hrms/ui/page-header";
 import { EmptyState } from "@/components/hrms/empty-state";
 import { clsx } from "clsx";
@@ -83,6 +83,8 @@ export default function ExpensePoliciesPage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <PageHeader
         icon={<ShieldCheck size={28} className="text-[#22c55e]" />}
         title="Expense policies"
@@ -93,7 +95,6 @@ export default function ExpensePoliciesPage() {
           </button>
         }
       />
-      <div className="mb-5"><ExpenseTabs /></div>
 
       {isLoading ? <SkeletonCards count={4} /> : policies.length === 0 ? (
         <div className="p-1"><EmptyState variant="bot" title="No Data Found" className="border border-gray-200 shadow-sm" /></div>

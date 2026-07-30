@@ -9,6 +9,8 @@ import { NumberInput } from "@/components/hrms/ui/number-input";
 import { Users, Plus, IndianRupee, Check, ShieldCheck, X as XIcon, Lock } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonTable } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 
 interface Row {
   employeeId: string;
@@ -29,6 +31,8 @@ export default function EmployeeSalariesPage() {
   const api = useApiClient();
   const qc = useQueryClient();
   const [assignTarget, setAssignTarget] = useState<Row | null>(null);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   const { data, isLoading } = useQuery({
     queryKey: ["payroll", "employee-salaries"],
@@ -37,9 +41,13 @@ export default function EmployeeSalariesPage() {
 
   const rows = data?.data ?? [];
   const assigned = rows.filter((r) => r.salary).length;
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const pageItems = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div className="w-full px-5 py-4 space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-start gap-3">
           <Users size={28} className="text-[#22c55e] mt-1.5" />
@@ -56,6 +64,7 @@ export default function EmployeeSalariesPage() {
         ) : rows.length === 0 ? (
           <div className="py-10 text-center text-sm text-gray-500">No employees found.</div>
         ) : (
+          <>
           <table className="w-full text-sm">
             <thead>
               <tr className="text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em] border-b border-gray-200">
@@ -69,7 +78,7 @@ export default function EmployeeSalariesPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r, i) => (
+              {pageItems.map((r, i) => (
                 <tr key={r.employeeId} className="row-stagger border-b border-gray-50 hover:bg-gray-50" style={{ ["--i" as never]: Math.min(i, 10) }}>
                   <td className="py-2.5 px-4">
                     <p className="text-[13px] font-medium text-gray-900">{r.name}</p>
@@ -96,6 +105,8 @@ export default function EmployeeSalariesPage() {
               ))}
             </tbody>
           </table>
+          <Pagination page={page} totalPages={totalPages} total={rows.length} limit={PAGE_SIZE} onPageChange={setPage} />
+          </>
         )}
       </div>
 

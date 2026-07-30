@@ -133,13 +133,3 @@ export function useDisabledModules(): Set<string> {
   return set;
 }
 
-/** Test helper — clear all caches. Not used in app code. */
-export function _resetDisabledModulesCache(): void {
-  _cached = null;
-  _inflight = null;
-  _revalidatedThisLoad = false;
-  _subscribers.clear();
-  if (typeof window !== "undefined") {
-    try { window.localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
-  }
-}

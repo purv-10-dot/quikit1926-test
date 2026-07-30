@@ -3,7 +3,7 @@
 import { toErrorMessage } from "@/lib/api/errors";
 import { useEffect, useState } from "react";
 import { FileText, Send, CheckCircle2, XCircle } from "lucide-react";
-import { PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { useRABs, useSubmitRAB, useApproveRAB } from "@/hooks/use-projects";
 import { useTermsConditions } from "@/hooks/use-masters";
@@ -168,13 +168,14 @@ export default function RABillsPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="RA Bills (Sub-Contractor)"
         subtitle="Running Account Bills against work orders, from approved DPR progress"
         breadcrumbs={[{ label: "Finance", href: "/finance" }, { label: "RA Bills" }]}
       />
       <TabBar tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />
-      <PageContainer>
+      <PageContainer fill>
         <DataTable
           id="finance-ra-bills"
           columns={columns}
@@ -195,6 +196,7 @@ export default function RABillsPage() {
           addLabel="Generate RA Bill"
         />
       </PageContainer>
+      </PageFrame>
 
       <GenerateRABillForm
         open={showForm}

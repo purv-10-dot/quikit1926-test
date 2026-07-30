@@ -10,7 +10,6 @@ import { buildInterviewInviteEmail } from "@/lib/email-templates/interview-invit
 import { buildOfferEmail } from "@/lib/email-templates/offer";
 import { triggerCandidateDocBundle } from "@/lib/services/candidate-doc-service";
 import { buildOfferDefaultEmail } from "@/lib/email-templates/offer-default";
-import { buildJoiningLetterEmail } from "@/lib/email-templates/joining-letter";
 import { generateOfferPdf } from "@/lib/services/offer-pdf";
 import { getStageConfig, stageNames } from "@/lib/services/pipeline-stages";
 import { whereEmployeeHasAnyRole } from "@/lib/rbac/queries";
@@ -219,62 +218,10 @@ async function fireStageMail(
     return { template, to: app.candidate.email };
   }
 
+  // Joining letter is no longer emailed from recruitment. It's a PDF template
+  // generated from the onboarding page (see /onboarding/[id]/joining-letter).
   if (template === "joining-letter") {
-    const offerApp = await prisma.jobApplication.findFirst({
-      where: { id: applicationId, orgId, deletedAt: null, offerStatus: { not: null } },
-      select: offerSelect,
-    });
-    const offer = offerApp ? offerFromApplication(offerApp) : null;
-    if (!offer) return { template, skipped: "No offer record. Create offer first." };
-
-    const [department, manager] = await Promise.all([
-      offer.departmentId
-        ? prisma.department.findFirst({ where: { id: offer.departmentId, orgId }, select: { name: true } })
-        : Promise.resolve(null),
-      offer.reportingToId
-        ? prisma.employee.findFirst({
-            where: { id: offer.reportingToId, orgId },
-            select: { firstName: true, lastName: true },
-          })
-        : Promise.resolve(null),
-    ]);
-
-    const joiningData = {
-      candidateName,
-      jobTitle,
-      designation: offer.designation ?? "",
-      offeredCTC: offer.offeredCTC ? Number(offer.offeredCTC) : null,
-      joiningDate: fmtDate(offer.joiningDate),
-      department: department?.name ?? null,
-      reportingTo: manager ? `${manager.firstName} ${manager.lastName}`.trim() : null,
-      workLocation: null,
-      companyName,
-      companyAddress: [company?.addressLine1, company?.addressLine2, company?.city, company?.state].filter(Boolean).join(", ") || null,
-      signatoryName: company?.signatoryName ?? null,
-      signatoryDesignation: company?.signatoryDesignation ?? null,
-      letterDate: fmtDate(new Date()),
-    };
-    await resolveAndSend(orgId, {
-      key: "recruit.joining-letter",
-      to: app.candidate.email,
-      vars: {
-        candidateName, jobTitle,
-        designation: joiningData.designation,
-        offeredCTC: offer.offeredCTC ? `₹${Number(offer.offeredCTC).toLocaleString("en-IN")}` : "",
-        joiningDate: joiningData.joiningDate,
-        department: joiningData.department ?? "",
-        reportingTo: joiningData.reportingTo ?? "",
-        workLocation: "",
-        companyAddress: joiningData.companyAddress ?? "",
-        signatoryName: joiningData.signatoryName ?? "",
-        signatoryDesignation: joiningData.signatoryDesignation ?? "",
-        letterDate: joiningData.letterDate,
-        employeeCode: "",
-        companyName,
-      },
-      fallback: () => buildJoiningLetterEmail(joiningData),
-    });
-    return { template, to: app.candidate.email };
+    return { template, skipped: "Joining letter is now a PDF — open it from the onboarding page." };
   }
 
   if (template === "welcome") {
@@ -314,7 +261,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
       })),
     });
   } catch (error) { console.error("GET /recruit/applications/:id error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.read"] });
 
 export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
   try {
@@ -340,6 +287,14 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
       });
       const names = stageNames(pipelineForStages?.stages);
       const fromIdx = names.indexOf(existing.currentStage);
+      const toIdx = names.indexOf(data.currentStage);
+      // Block forward stage SKIPS — advance one stage at a time so each round's
+      // feedback gate (below) is actually enforced. Backward moves are allowed.
+      if (fromIdx >= 0 && toIdx >= 0 && toIdx > fromIdx + 1) {
+        return conflict(
+          `Can't skip stages — move one stage at a time from "${existing.currentStage}" and clear each round's feedback.`,
+        );
+      }
       if (fromIdx >= 0) {
         const round = fromIdx + 1;
         const scorecardCount = await prisma.interview.count({
@@ -381,6 +336,9 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
       if (data.status === "AppRejected") {
         updateData.rejectionReason = data.rejectionReason;
         updateData.rejectionStage = existing.currentStage;
+        // Stamp a stable rejection time so the re-apply cooling window counts
+        // from the actual rejection (not from later edits to updatedAt).
+        if (existing.status !== "AppRejected") updateData.rejectedAt = new Date();
         // Reflect the rejection on the candidate so the Candidates list stops
         // showing them as "In Pipeline" and they can be filtered as Rejected.
         await prisma.candidate.update({
@@ -394,22 +352,37 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
         }).catch(() => null);
       }
       if (data.status === "AppHired") {
-        // Don't over-fill a requisition — surface a clear message instead of
-        // silently incrementing past the sanctioned headcount.
-        const req = await prisma.jobRequisition.findFirst({
-          where: { id: existing.requisitionId, orgId, deletedAt: null },
-          select: { positions: true, filledPositions: true },
-        });
-        if (req && req.filledPositions >= req.positions) {
+        // Atomic headcount claim: increment ONLY if a seat is still open, in a
+        // single conditional UPDATE. Prevents two simultaneous hires from both
+        // passing a separate "is it full?" check and overfilling the req.
+        const claimed = await prisma.$executeRaw`
+          UPDATE app_quikhrms."JobRequisition"
+          SET "filledPositions" = "filledPositions" + 1, "updatedBy" = ${userId}
+          WHERE id = ${existing.requisitionId} AND "orgId" = ${orgId}
+            AND "deletedAt" IS NULL AND "filledPositions" < "positions"`;
+        if (claimed === 0) {
           return conflict("All positions for this requisition are already filled.");
         }
-        await Promise.all([
-          prisma.candidate.update({ where: { id: existing.candidateId }, data: { status: "Hired" } }),
-          prisma.jobRequisition.update({
+        await prisma.candidate.update({ where: { id: existing.candidateId }, data: { status: "Hired" } }).catch(() => null);
+      }
+      // Un-hire → free the seat. A previously-hired candidate who is now
+      // rejected/declined/withdrawn rolls filledPositions back and reopens the
+      // requisition if it had been auto-closed by being fully filled.
+      if (existing.status === "AppHired" && ["AppRejected", "AppDeclined", "AppWithdrawn"].includes(data.status)) {
+        const reqRow = await prisma.jobRequisition.findFirst({
+          where: { id: existing.requisitionId, orgId, deletedAt: null },
+          select: { filledPositions: true, status: true },
+        });
+        if (reqRow) {
+          await prisma.jobRequisition.update({
             where: { id: existing.requisitionId },
-            data: { filledPositions: { increment: 1 } },
-          }),
-        ]);
+            data: {
+              filledPositions: Math.max((reqRow.filledPositions ?? 0) - 1, 0),
+              ...(reqRow.status === "ReqClosed" ? { status: "ReqOpen" } : {}),
+              updatedBy: userId,
+            },
+          });
+        }
       }
     }
 
@@ -578,4 +551,4 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
 
     return successResponse({ ...app, mailFired });
   } catch (error) { console.error("PATCH /recruit/applications/:id error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });

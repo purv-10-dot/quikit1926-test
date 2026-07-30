@@ -73,7 +73,7 @@ export function ShoutoutComposer() {
   const [mode, setMode] = useState<Mode>(null);
 
   const { data: meRes } = useQuery({
-    queryKey: ["me", "shoutout"],
+    queryKey: ["employees", "me"],
     queryFn: () => api.get<Me>("/api/v1/hrms/employees/me"),
     staleTime: 5 * 60_000,
   });

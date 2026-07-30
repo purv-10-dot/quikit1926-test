@@ -115,7 +115,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     const cumQty = parseFloat(String(l.cumulativeQty ?? "0")) || qty;
     const cumAmount = parseFloat(String(l.cumulativeAmount ?? "0")) || cumQty * rate;
     return {
-      itemCode: boqNoById.get(l.boqItemId) ?? String(l.boqItemId ?? ""),
+      itemCode: (l.boqItemId && boqNoById.get(l.boqItemId)) || String(l.boqItemId ?? ""),
       description: String(l.description ?? ""),
       uom: l.uomId ? uomById.get(l.uomId) ?? "" : "",
       quantity: qty,

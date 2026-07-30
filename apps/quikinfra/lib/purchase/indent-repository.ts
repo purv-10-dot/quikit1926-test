@@ -52,21 +52,6 @@ export interface CreateIndentInput {
   lines: IndentLineInput[];
 }
 
-export interface UpdateIndentInput {
-  indentNumber?: string;
-  prId?: string | null;
-  sourceMrNumber?: string | null;
-  projectId?: string;
-  requestedById?: string;
-  indentDate?: Date;
-  requiredDate?: Date | null;
-  isUrgent?: boolean;
-  directIndentReason?: string | null;
-  estimatedTotal?: string | number | null;
-  status?: string;
-  approvalId?: string | null;
-  updatedBy: string;
-}
 
 export interface ListIndentsOptions {
   orgId: string;
@@ -639,37 +624,6 @@ export async function createIndent(
   return enrichIndent(row, itemById, uomById, prInfoById, vendorById);
 }
 
-export async function updateIndent(
-  orgId: string,
-  id: string,
-  patch: UpdateIndentInput,
-): Promise<any | null> {
-  const existing = await db.cnPurchaseIndent.findFirst({
-    where: { id, orgId },
-    select: { id: true },
-  });
-  if (!existing) return null;
-
-  await withSchemaDriftRetry(
-    () => {
-      const data: Record<string, unknown> = { updatedBy: patch.updatedBy };
-      for (const [k, v] of Object.entries(patch)) {
-        if (v !== undefined && k !== "updatedBy") {
-          if (k === "estimatedTotal" && v !== null) data[k] = String(v);
-          else data[k] = v;
-        }
-      }
-      return data;
-    },
-    (payload) =>
-      db.cnPurchaseIndent.update({
-        where: { id },
-        data: payload,
-      }),
-  );
-
-  return findIndentById(orgId, id);
-}
 
 export async function softDeleteIndent(
   orgId: string,

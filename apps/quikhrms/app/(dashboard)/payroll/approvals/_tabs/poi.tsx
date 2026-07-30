@@ -9,6 +9,7 @@ import { NumberInput } from "@/components/hrms/ui/number-input";
 import { Check, ExternalLink } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonTable } from "@/components/hrms/skeleton";
+import { Pagination } from "@/components/hrms/pagination";
 
 interface Proof {
   id: string;
@@ -34,6 +35,8 @@ export function POITab() {
   const qc = useQueryClient();
   const [status, setStatus] = useState<(typeof STATUSES)[number]>("Submitted");
   const [target, setTarget] = useState<Proof | null>(null);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   const { data, isLoading } = useQuery({
     queryKey: ["payroll", "approvals", "poi", status],
@@ -41,6 +44,8 @@ export function POITab() {
   });
 
   const rows = data?.data ?? [];
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const pageItems = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const reviewMut = useMutation({
     mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) =>
@@ -54,7 +59,7 @@ export function POITab() {
         {STATUSES.map((s) => (
           <button
             key={s}
-            onClick={() => setStatus(s)}
+            onClick={() => { setStatus(s); setPage(1); }}
             className={clsx(
               "px-3 py-1 text-xs rounded-full border transition",
               status === s ? "bg-green-600 text-white border-[#22c55e]" : "bg-white text-gray-600 border-gray-300 hover:border-[#86efac]",
@@ -86,7 +91,7 @@ export function POITab() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r, i) => (
+              {pageItems.map((r, i) => (
                 <tr key={r.id} className="row-stagger border-b border-gray-50 hover:bg-gray-50" style={{ ["--i" as never]: Math.min(i, 10) }}>
                   <td className="py-3 px-3">
                     <p className="text-[13px] font-medium text-gray-900">{r.employee ? `${r.employee.firstName} ${r.employee.lastName}` : "Unknown"}</p>
@@ -119,6 +124,7 @@ export function POITab() {
               ))}
             </tbody>
           </table>
+          <Pagination page={page} totalPages={totalPages} total={rows.length} limit={PAGE_SIZE} onPageChange={setPage} />
         </div>
       )}
 

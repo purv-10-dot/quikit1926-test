@@ -8,6 +8,7 @@ import {
   LayoutGrid, Columns, ChevronDown, ChevronUp, ChevronsUpDown,
 } from 'lucide-react';
 import { formatDate } from '@/lib/format/datetime';
+import { Pager } from './Pager';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -43,10 +44,13 @@ interface DataTableProps<T = Record<string, unknown>> {
   defaultSortDir?: 'asc' | 'desc';
   auditEnabled?: boolean;
   /**
-   * When true, the table grows with its content instead of capping at 65vh
-   * with an internal scrollbar. Use this on pages that already have other
-   * content above the table so scrolling stays at the page level rather
-   * than producing a nested scrollbar inside the table.
+   * When true, the grid grows with its content and the page supplies the
+   * scrollbar, instead of the grid claiming the remaining height and
+   * scrolling internally. Use this only on pages that stack several grids
+   * (the equipment dashboards) — a page-level scrollbar is the single
+   * scrollbar there. Everywhere else, leave it off and wrap the page in
+   * <PageFrame> + <PageContainer fill> so the grid owns the scroll and the
+   * pager stays pinned to its footer.
    */
   fitToContent?: boolean;
   /**
@@ -100,9 +104,11 @@ interface DataTableProps<T = Record<string, unknown>> {
   onSearchChange?: (q: string) => void;
   /** Sort column/direction callback (serverMode). */
   onSortChange?: (key: string, dir: 'asc' | 'desc') => void;
+  /** Hide the toolbar Filter button/dropdown. Off by default. */
+  hideFilter?: boolean;
+  /** Hide the toolbar Columns button/dropdown. Off by default. */
+  hideColumns?: boolean;
 }
-
-const PAGE_SIZES = [25, 50, 100];
 
 // ─── Audit columns (auto-appended to every grid) ──────────────────────────────
 
@@ -223,7 +229,7 @@ const HISTORY_LABEL_FIELDS = [
   'woNumber', 'estimationNumber', 'dprNumber',
   'invoiceNumber', 'billNumber', 'paymentNumber', 'receiptNumber',
   'name', 'fullName', 'displayName',
-  'code', 'projectCode',
+  'code', 'projectCode', 'boqNo',
 ];
 
 function historyRowLabel(row: unknown): string {
@@ -974,6 +980,7 @@ export function DataTable<T extends Record<string, unknown>>({
   emptyTitle, emptyHint, loading = false,
   serverMode = false, serverTotal, serverPage, serverPageSize,
   onPageChange, onPageSizeChange, onSearchChange, onSortChange,
+  hideFilter = false, hideColumns = false,
 }: DataTableProps<T>) {
   // Merge audit cols
   const columns = useMemo(() => {
@@ -1199,9 +1206,13 @@ export function DataTable<T extends Record<string, unknown>>({
         />
       )}
 
-      <div className="space-y-4">
+      {/* Fill-height grid: the card below claims the remaining height and
+          owns the only vertical scrollbar, so the page itself never adds a
+          second one. `fitToContent` opts back into page-level scrolling for
+          tables embedded under other content. */}
+      <div className={fitToContent ? 'space-y-4' : 'flex min-h-0 flex-1 flex-col gap-4'}>
         {/* ── Toolbar ── */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="shrink-0 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="relative min-w-0 w-full max-w-md">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden />
             <input
@@ -1217,6 +1228,7 @@ export function DataTable<T extends Record<string, unknown>>({
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-2 sm:shrink-0">
+            {!hideFilter && (
             <div className="relative" ref={filterRef}>
               <button
                 type="button"
@@ -1254,6 +1266,7 @@ export function DataTable<T extends Record<string, unknown>>({
               />
             </ToolbarDropdownPortal>
           </div>
+            )}
 
           {/* Group by — temporarily hidden (logic retained below)
           <div className="relative" ref={groupRef}>
@@ -1278,6 +1291,7 @@ export function DataTable<T extends Record<string, unknown>>({
           </div>
           */}
 
+          {!hideColumns && (
           <div className="relative" ref={colRef}>
             <button
               type="button"
@@ -1295,6 +1309,7 @@ export function DataTable<T extends Record<string, unknown>>({
               <ColPanel<T> columns={columns} hidden={hiddenCols} frozen={frozenCols} onToggleHide={k => setHiddenCols(p => { const s = new Set(p); s.has(k) ? s.delete(k) : s.add(k); return s; })} onToggleFreeze={k => setFrozenCols(p => { const s = new Set(p); s.has(k) ? s.delete(k) : s.add(k); return s; })} onClose={() => setShowColPanel(false)} />
             </ToolbarDropdownPortal>
           </div>
+          )}
 
             {onAdd && (
               <button
@@ -1333,11 +1348,9 @@ export function DataTable<T extends Record<string, unknown>>({
           </div>
         )}
 
-        {/* ── Table ── */}
-        <div
-          className={`min-h-[200px] rounded-2xl ring-1 ring-slate-200 bg-white shadow-[0_4px_24px_-12px_rgba(15,23,42,0.12)] ${fitToContent ? 'overflow-x-auto' : 'overflow-auto'}`}
-          style={fitToContent ? undefined : { maxHeight: '65vh' }}
-        >
+        {/* ── Grid card: scrollable body + pinned pager footer ── */}
+        <div className={`flex flex-col overflow-hidden rounded-2xl ring-1 ring-slate-200 bg-white shadow-[0_4px_24px_-12px_rgba(15,23,42,0.12)] ${fitToContent ? 'min-h-[200px]' : 'min-h-0 flex-1'}`}>
+        <div className={fitToContent ? 'overflow-x-auto' : 'min-h-0 flex-1 overflow-auto'}>
           <table className="min-w-full text-sm border-separate border-spacing-0">
             <thead className="text-left sticky top-0 z-20">
               <tr>
@@ -1457,13 +1470,14 @@ export function DataTable<T extends Record<string, unknown>>({
           </table>
         </div>
 
-        {/* ── Pagination — client-side or server-driven (offset) ── */}
+        {/* ── Pagination — pinned to the card's bottom edge so it stays put
+            while the rows scroll. Client-side or server-driven (offset);
+            grouped mode has no pager. ── */}
         {!groupBy && (() => {
           const effPageSize = serverMode ? (serverPageSize ?? pageSize) : pageSize;
           const effTotal = serverMode ? (serverTotal ?? 0) : filtered.length;
           const effPage = serverMode ? (serverPage ?? 1) : curPage;
           const effTotalPages = Math.max(1, Math.ceil(effTotal / effPageSize));
-          const effStart = (effPage - 1) * effPageSize;
           const goPage = (p: number) => {
             const next = Math.min(Math.max(1, p), effTotalPages);
             if (serverMode) onPageChange?.(next);
@@ -1474,32 +1488,17 @@ export function DataTable<T extends Record<string, unknown>>({
             else { setPageSize(s); setPage(1); }
           };
           return (
-            <div className="flex items-center justify-between gap-3 flex-wrap text-sm px-1">
-              <div className="flex items-center gap-2 text-slate-500 text-xs">
-                <span className="font-medium">Rows per page:</span>
-                <select value={effPageSize} onChange={e => changeSize(Number(e.target.value))}
-                  className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400 hover:border-slate-300 transition-colors">
-                  {PAGE_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-                <span className="text-slate-400">·</span>
-                <span className="text-slate-500">
-                  Showing <strong className="text-slate-700">{effTotal === 0 ? 0 : effStart + 1}–{Math.min(effStart + effPageSize, effTotal)}</strong> of <strong className="text-slate-700">{effTotal}</strong>
-                </span>
-              </div>
-              <div className="flex items-center gap-1 bg-white rounded-xl ring-1 ring-slate-200 p-1 shadow-sm">
-                {([['«', 1], ['‹', effPage - 1]] as const).map(([l, target]) => (
-                  <button key={l} onClick={() => goPage(target)} disabled={effPage === 1} className="rounded-lg w-7 h-7 text-xs text-slate-500 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-accent-50 hover:text-accent-700 transition-colors flex items-center justify-center">{l}</button>
-                ))}
-                <span className="px-3 h-7 inline-flex items-center text-xs font-bold rounded-lg bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-sm">
-                  {effPage} <span className="opacity-60 mx-1">/</span> {effTotalPages}
-                </span>
-                {([['›', effPage + 1], ['»', effTotalPages]] as const).map(([l, target]) => (
-                  <button key={l} onClick={() => goPage(target)} disabled={effPage === effTotalPages} className="rounded-lg w-7 h-7 text-xs text-slate-500 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-accent-50 hover:text-accent-700 transition-colors flex items-center justify-center">{l}</button>
-                ))}
-              </div>
-            </div>
+            <Pager
+              variant="footer"
+              page={effPage}
+              pageSize={effPageSize}
+              total={effTotal}
+              onPageChange={goPage}
+              onPageSizeChange={changeSize}
+            />
           );
         })()}
+        </div>
       </div>
     </>
   );

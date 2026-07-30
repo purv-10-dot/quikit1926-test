@@ -41,7 +41,6 @@ export default function AuditLogPage() {
       {loading ? <div className="text-sm text-gray-500">Loading…</div> : logs.length === 0 ? (
         <EmptyState icon={FileClock} title="No audit events" message="Perform an approve/finalize action elsewhere to populate this log." />
       ) : (
-        <>
         <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs text-gray-600"><tr>
@@ -64,20 +63,20 @@ export default function AuditLogPage() {
               </tr>
             ))}</tbody>
           </table>
+          {total > 0 && (
+            <Pager
+              variant="footer"
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              onPageChange={setPage}
+              onPageSizeChange={(s) => {
+                setPageSize(s);
+                setPage(1);
+              }}
+            />
+          )}
         </div>
-        {total > 0 && (
-          <Pager
-            page={page}
-            pageSize={pageSize}
-            total={total}
-            onPageChange={setPage}
-            onPageSizeChange={(s) => {
-              setPageSize(s);
-              setPage(1);
-            }}
-          />
-        )}
-        </>
       )}
     </div>
   );

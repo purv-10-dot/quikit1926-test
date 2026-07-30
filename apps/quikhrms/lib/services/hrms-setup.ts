@@ -19,6 +19,7 @@ export type HrmsSetupItemKey =
   | "payroll"
   | "roles"
   | "leaveTypes"
+  | "leaveGroups"
   | "holidays"
   | "onboardingTemplate"
   | "coreApprovalChains";
@@ -86,6 +87,12 @@ const ITEM_META: Record<
     title: "Add leave types & policies",
     description: "Create the leave types your org offers.",
     href: "/leaves/policies",
+    blocking: false,
+  },
+  leaveGroups: {
+    title: "Assign employees to leave groups",
+    description: "Put every employee in a leave group — that's what gives them their leave entitlements.",
+    href: "/leaves/policies?tab=members",
     blocking: false,
   },
   holidays: {
@@ -162,6 +169,26 @@ export async function computeHrmsSetupProgress(
     activeChains.some((c) => String(c.module) === m && Array.isArray(c.levels) && c.levels.length > 0);
   const hasCompleteChain = activeChains.some((c) => Array.isArray(c.levels) && c.levels.length > 0);
 
+  // Leave groups: complete once EVERY active employee is covered by an active
+  // leave group — directly (by employee) or via a role assignment. Vacuously
+  // true when there are no active employees yet.
+  const [activeEmployees, groupAssignments] = await Promise.all([
+    prisma.employee.findMany({
+      where: { orgId, deletedAt: null, status: "Active" },
+      select: { id: true, appRoles: { select: { roleId: true }, take: 1 } },
+    }),
+    prisma.leaveGroupAssignment.findMany({
+      where: { orgId, leaveGroup: { deletedAt: null, isActive: true } },
+      select: { employeeId: true, roleId: true },
+    }),
+  ]);
+  const assignedEmp = new Set(groupAssignments.map((a) => a.employeeId).filter(Boolean) as string[]);
+  const assignedRole = new Set(groupAssignments.map((a) => a.roleId).filter(Boolean) as string[]);
+  const unassignedActive = activeEmployees.filter((e) => {
+    const rid = e.appRoles[0]?.roleId ?? null;
+    return !assignedEmp.has(e.id) && !(rid && assignedRole.has(rid));
+  });
+
   const states: Record<HrmsSetupItemKey, boolean> = {
     departments: departmentCount > 0,
     locations: locationCount > 0,
@@ -169,6 +196,7 @@ export async function computeHrmsSetupProgress(
     payroll: payrollProgress.setupCompleted,
     roles: roleCount > 0,
     leaveTypes: leaveTypeCount > 0,
+    leaveGroups: unassignedActive.length === 0,
     holidays: holidayCount > 0,
     onboardingTemplate: onboardingTemplateCount > 0,
     coreApprovalChains: chainHasLevels("Leave") && chainHasLevels("Expense") && chainHasLevels("Requisition"),

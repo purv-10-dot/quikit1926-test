@@ -21,7 +21,13 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }) => {
         where: { orgId, deletedAt: null },
         orderBy: { createdAt: "desc" },
         take: 10,
-        include: { _count: { select: { tasks: true } } },
+        // Narrow select — deliberately DROPS the free-text `notes` field.
+        select: {
+          id: true, orgId: true, employeeId: true, templateId: true,
+          startDate: true, status: true, completedAt: true, automated: true,
+          createdBy: true, updatedBy: true, createdAt: true, updatedAt: true, deletedAt: true,
+          _count: { select: { tasks: true } },
+        },
       }),
     ]);
 
@@ -33,4 +39,4 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }) => {
     console.error("GET /onboarding/dashboard error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.onboarding.read"] });

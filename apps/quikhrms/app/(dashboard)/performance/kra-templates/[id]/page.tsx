@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { ScorecardEditor, type ScorecardDraft } from "../_editor";
 import { SkeletonLine } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface ScorecardDetail {
   id: string;
@@ -78,5 +79,11 @@ export default function EditKraTemplatePage() {
     })),
   };
 
-  return <ScorecardEditor scorecardId={id} initialDraft={initialDraft} />;
+  return (
+    <>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
+      <ScorecardEditor scorecardId={id} initialDraft={initialDraft} />
+    </>
+  );
 }

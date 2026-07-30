@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const ctxOrResp = await requireMastersAction("create");
+  const ctxOrResp = await requireMastersAction("construction.project", "create");
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "master.project", "add")) {
@@ -109,6 +109,7 @@ export async function POST(req: NextRequest) {
       purchaseLimit: body.purchaseLimit,
       projectManagerId: body.projectManagerId,
       status: body.status ?? "active",
+      executionMode: body.executionMode,
     });
     return NextResponse.json(record, { status: 201 });
   } catch (err: unknown) {

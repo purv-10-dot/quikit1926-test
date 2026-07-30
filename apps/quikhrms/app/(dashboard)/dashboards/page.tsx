@@ -6,13 +6,14 @@ import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useDialog } from "@/components/hrms/dialog";
+import { PageBackground } from "@/components/hrms/page-background";
 import { useRouter } from "next/navigation";
 import {
   Plus, Search, BarChart3, MoreVertical, Copy, Trash2, X,
   Users, Star, BadgeCheck, DollarSign, UserPlus,
   LayoutDashboard, Sparkles, Wand2, ArrowRight, Hash,
 } from "lucide-react";
-import { clsx } from "clsx";
+import { TabSwitcher } from "@/components/hrms/tab-switcher";
 
 // Curated icon registry — keeps lucide tree-shakeable. Add to this map when a
 // template seed introduces a new iconName (see lib/services/dashboard-templates.ts).
@@ -79,6 +80,8 @@ export default function DashboardsLandingPage() {
 
   return (
     <div className="w-full">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       {/* Hero banner */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#0F1F3D] via-[#14532d] to-[#16a34a] mb-4">
         <svg className="absolute inset-0 w-full h-full opacity-40" viewBox="0 0 1200 200" preserveAspectRatio="none">
@@ -125,11 +128,16 @@ export default function DashboardsLandingPage() {
 
       {/* Tabs + Search */}
       <div className="flex flex-col-reverse md:flex-row md:items-center justify-between gap-3 mb-4">
-        <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-gray-100 self-start">
-          <TabPill active={tab === "all"} onClick={() => setTab("all")} label="All" count={items.length} />
-          <TabPill active={tab === "prebuilt"} onClick={() => setTab("prebuilt")} label="Pre-built" count={prebuiltCount} />
-          <TabPill active={tab === "custom"} onClick={() => setTab("custom")} label="Custom" count={customCount} />
-        </div>
+        <TabSwitcher
+          className="self-start"
+          value={tab}
+          onChange={(v) => setTab(v as TabKey)}
+          tabs={[
+            { value: "all", label: "All", count: items.length },
+            { value: "prebuilt", label: "Pre-built", count: prebuiltCount },
+            { value: "custom", label: "Custom", count: customCount },
+          ]}
+        />
         <div className="relative md:w-72">
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
@@ -182,29 +190,6 @@ function HeroStat({ label, value, icon }: { label: string; value: number; icon: 
       <span className="text-white text-sm font-bold tabular-nums">{value}</span>
       <span className="text-white/60 text-[11px] font-medium">{label}</span>
     </div>
-  );
-}
-
-function TabPill({ active, onClick, label, count }: { active: boolean; onClick: () => void; label: string; count: number }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={clsx(
-        "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-semibold transition",
-        active
-          ? "bg-white text-[#166534] shadow-sm ring-1 ring-gray-200"
-          : "text-gray-600 hover:text-[#166534] hover:bg-white/60",
-      )}
-    >
-      {label}
-      <span className={clsx(
-        "px-1.5 py-0.5 rounded-full text-[11px] font-semibold tabular-nums",
-        active ? "bg-green-600 text-white" : "bg-gray-200 text-gray-600",
-      )}>
-        {count}
-      </span>
-    </button>
   );
 }
 

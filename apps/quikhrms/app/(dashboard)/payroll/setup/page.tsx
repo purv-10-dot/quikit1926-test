@@ -7,6 +7,7 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { Check, ArrowRight, Banknote, FileText, Calendar, Shield, Coins, Users, History, Rocket, Construction, Lock, Clock, Pencil, Sparkles } from "lucide-react";
 import { clsx } from "clsx";
 import { Modal } from "@/components/hrms/modal";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface StepState {
   status: "NotStarted" | "InProgress" | "Completed";
@@ -80,6 +81,8 @@ export default function PayrollSetupPage() {
 
   return (
     <div className="space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#166534] via-[#15803d] to-[#166534] text-white p-4 shadow-lg">
         <div className="absolute -right-8 -top-8 w-40 h-40 rounded-full bg-white/10 blur-2xl" />
         <div className="absolute -right-16 -bottom-16 w-56 h-56 rounded-full bg-white/5 blur-3xl" />

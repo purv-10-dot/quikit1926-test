@@ -1,0 +1,157 @@
+/**
+ * Teacher-level service — ported from NestJS TeacherLevelService (Mongoose → Prisma).
+ * Tenant isolation enforced via explicit orgId args. The cron-driven monthly
+ * recalculation lives in the worker (Phase 4); these functions own the DB state.
+ *
+ * levelHistory (capped at last 12 in Mongo via $slice:-12) is the
+ * teacherLevelHistory child table here; the cap is enforced after each push.
+ */
+import type { LmsTeacherStatus as TeacherStatus } from '@prisma/client';
+import { db } from '@/lib/db';
+
+interface LevelConfig {
+  beginnerMaxScore: number;
+  intermediateMaxScore: number;
+  leadMinScore: number;
+  [k: string]: unknown;
+}
+
+async function getLevelConfig(orgId: string): Promise<LevelConfig> {
+  const defaults: LevelConfig = { beginnerMaxScore: 80, intermediateMaxScore: 200, leadMinScore: 200 };
+  try {
+    const tenant = await db.lmsTenant.findUnique({ where: { id: orgId } });
+    const cfg = (tenant as Record<string, any> | null)?.enhancementConfig?.teacherLevel;
+    if (cfg) return { ...defaults, ...cfg };
+  } catch {
+    /* use defaults */
+  }
+  return defaults;
+}
+
+export async function getTeacherLevel(orgId: string, teacherId: string) {
+  let level = await db.lmsTeacherLevel.findFirst({ where: { orgId, teacherId } });
+  if (!level) {
+    level = await db.lmsTeacherLevel.create({ data: { orgId, teacherId } });
+  }
+  return level;
+}
+
+export async function getAllTeacherLevels(orgId: string) {
+  const rows = await db.lmsTeacherLevel.findMany({
+    where: { orgId },
+    include: { levelHistory: { orderBy: { calculatedAt: 'asc' } } },
+    orderBy: { overallScore: 'desc' },
+  });
+  const teacherIds = rows.map((r) => r.teacherId);
+  const teachers = await db.lmsUser.findMany({
+    where: { id: { in: teacherIds } },
+    select: { id: true, firstName: true, lastName: true, email: true, classesCompleted: true, classesMissed: true, punctualityScore: true },
+  });
+  const tmap = new Map(teachers.map((t) => [t.id, t]));
+
+  return rows.map((r) => {
+    const t = tmap.get(r.teacherId);
+    return {
+      _id: r.id,
+      ...r,
+      levelHistory: r.levelHistory.map((h) => ({ _id: h.id, ...h })),
+      teacherId: t ? { _id: t.id, ...t } : r.teacherId,
+    };
+  });
+}
+
+export async function calculateTeacherLevel(orgId: string, teacherId: string) {
+  const teacher = await db.lmsUser.findUnique({ where: { id: teacherId } });
+
+  const totalClasses = await db.lmsScheduledClass.count({
+    where: { orgId, teacherId, status: 'completed' },
+  });
+
+  const totalScheduled = await db.lmsScheduledClass.count({
+    where: { orgId, teacherId, status: { in: ['completed', 'in_progress', 'cancelled'] } },
+  });
+  const attendanceScore = totalScheduled > 0 ? Math.round((totalClasses / totalScheduled) * 100) : 0;
+
+  // Homework grading rate — scoped to this tenant's submissions
+  let homeworkCompletionRate = 80;
+  try {
+    const teacherHomework = await db.lmsHomeworkSubmission.count({ where: { orgId, gradedBy: teacherId } });
+    const totalSubmissions = await db.lmsHomeworkSubmission.count({
+      where: { orgId, status: { in: ['submitted', 'graded'] } },
+    });
+    if (totalSubmissions > 0 && teacherHomework > 0) {
+      homeworkCompletionRate = Math.min(100, Math.round((teacherHomework / totalSubmissions) * 100));
+    }
+  } catch {
+    /* keep default */
+  }
+
+  const classesMissed = teacher?.classesMissed || 0;
+  const missedPenalty = classesMissed * 5;
+
+  const overallScore = Math.max(
+    0,
+    Math.round(totalClasses * 2 + attendanceScore * 0.3 + homeworkCompletionRate * 0.2 - missedPenalty),
+  );
+
+  const config = await getLevelConfig(orgId);
+
+  let currentLevel: TeacherStatus;
+  if (overallScore >= config.intermediateMaxScore) currentLevel = 'lead';
+  else if (overallScore >= config.beginnerMaxScore) currentLevel = 'intermediate';
+  else currentLevel = 'beginner';
+
+  const now = new Date();
+
+  const existing = await db.lmsTeacherLevel.findFirst({ where: { orgId, teacherId } });
+  const level = existing
+    ? await db.lmsTeacherLevel.update({
+        where: { id: existing.id },
+        data: { currentLevel, totalClassesTaught: totalClasses, attendanceScore, homeworkCompletionRate, classesMissed, overallScore, lastCalculatedAt: now },
+      })
+    : await db.lmsTeacherLevel.create({
+        data: { orgId, teacherId, currentLevel, totalClassesTaught: totalClasses, attendanceScore, homeworkCompletionRate, classesMissed, overallScore, lastCalculatedAt: now },
+      });
+
+  await db.lmsTeacherLevelHistory.create({
+    data: {
+      teacherLevelId: level.id,
+      month: now.getMonth() + 1,
+      year: now.getFullYear(),
+      level: currentLevel,
+      score: overallScore,
+      calculatedAt: now,
+    },
+  });
+
+  // Enforce $slice: -12 (keep most recent 12 entries)
+  const history = await db.lmsTeacherLevelHistory.findMany({
+    where: { teacherLevelId: level.id },
+    orderBy: { calculatedAt: 'asc' },
+    select: { id: true },
+  });
+  if (history.length > 12) {
+    const toDelete = history.slice(0, history.length - 12).map((h) => h.id);
+    await db.lmsTeacherLevelHistory.deleteMany({ where: { id: { in: toDelete } } });
+  }
+
+  const result = await db.lmsTeacherLevel.findUnique({
+    where: { id: level.id },
+    include: { levelHistory: { orderBy: { calculatedAt: 'asc' } } },
+  });
+  return { _id: result!.id, ...result, levelHistory: result!.levelHistory.map((h) => ({ _id: h.id, ...h })) };
+}
+
+export async function recalculateTenantLevels(orgId: string) {
+  const teachers = await db.lmsUser.findMany({
+    where: { orgId, role: 'TEACHER', isActive: true },
+    select: { id: true },
+  });
+  for (const teacher of teachers) {
+    try {
+      await calculateTeacherLevel(orgId, teacher.id);
+    } catch {
+      /* skip failed teacher, matching legacy resilience */
+    }
+  }
+}

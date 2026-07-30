@@ -19,6 +19,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { appBaseUrl } from "@/lib/utils/app-url";
 
 export type IndexOperation = "create" | "update" | "delete";
 
@@ -90,7 +91,7 @@ async function postIndexEvent(operation: IndexOperation, doc: IndexDoc): Promise
 
 // ── Employee (reference entity — the other entities follow this pattern) ──
 
-const deepLinkBase = () => process.env.NEXT_PUBLIC_QUIKHRMS_URL ?? process.env.APP_URL ?? "";
+const deepLinkBase = () => appBaseUrl();
 
 /**
  * Re-fetch the §13-safe Employee projection and emit a create/update index

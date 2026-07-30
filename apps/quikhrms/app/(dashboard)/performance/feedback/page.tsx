@@ -12,6 +12,8 @@ import { Select } from "@/components/hrms/ui/select";
 import { SkeletonCards } from "@/components/hrms/skeleton";
 import { useDialog } from "@/components/hrms/dialog";
 import { useToast } from "@/components/hrms/toast";
+import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 
 interface FeedbackItem {
   id: string;
@@ -70,6 +72,8 @@ export default function FeedbackPage() {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [toEmployeeFilter, setToEmployeeFilter] = useState("");
   const [fromEmployeeFilter, setFromEmployeeFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   const { data, isLoading } = useQuery({
     queryKey: ["feedback", typeFilter, categoryFilter, toEmployeeFilter, fromEmployeeFilter],
@@ -96,9 +100,13 @@ export default function FeedbackPage() {
   });
 
   const feedbacks = data?.data ?? [];
+  const totalPages = Math.max(1, Math.ceil(feedbacks.length / PAGE_SIZE));
+  const pageItems = feedbacks.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <h1 className="text-page-title text-gray-900">Continuous feedback</h1>
         <button onClick={() => { setForm({ toEmployeeId: "", type: "Praise", category: "Teamwork", message: "", isPublic: true }); setShowCreate(true); }}
@@ -110,7 +118,7 @@ export default function FeedbackPage() {
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <Select
           value={typeFilter}
-          onChange={setTypeFilter}
+          onChange={(v) => { setTypeFilter(v); setPage(1); }}
           className="w-40"
           options={[
             { value: "", label: "All types" },
@@ -122,7 +130,7 @@ export default function FeedbackPage() {
         />
         <Select
           value={categoryFilter}
-          onChange={setCategoryFilter}
+          onChange={(v) => { setCategoryFilter(v); setPage(1); }}
           className="w-44"
           options={[
             { value: "", label: "All categories" },
@@ -135,15 +143,15 @@ export default function FeedbackPage() {
           ]}
         />
         <div className="w-56">
-          <EmployeeSelect value={toEmployeeFilter} onChange={setToEmployeeFilter} placeholder="To employee" />
+          <EmployeeSelect value={toEmployeeFilter} onChange={(id) => { setToEmployeeFilter(id); setPage(1); }} placeholder="To employee" />
         </div>
         <div className="w-56">
-          <EmployeeSelect value={fromEmployeeFilter} onChange={setFromEmployeeFilter} placeholder="From employee" />
+          <EmployeeSelect value={fromEmployeeFilter} onChange={(id) => { setFromEmployeeFilter(id); setPage(1); }} placeholder="From employee" />
         </div>
         {(typeFilter || categoryFilter || toEmployeeFilter || fromEmployeeFilter) && (
           <button
             type="button"
-            onClick={() => { setTypeFilter(""); setCategoryFilter(""); setToEmployeeFilter(""); setFromEmployeeFilter(""); }}
+            onClick={() => { setTypeFilter(""); setCategoryFilter(""); setToEmployeeFilter(""); setFromEmployeeFilter(""); setPage(1); }}
             className="text-xs text-[#22c55e] hover:underline"
           >
             Clear
@@ -157,7 +165,7 @@ export default function FeedbackPage() {
         <div className="p-1"><EmptyState variant="bot" title="No Data Found" className="border border-gray-200 shadow-sm" /></div>
       ) : (
         <div className="space-y-3">
-          {feedbacks.map((fb, i) => (
+          {pageItems.map((fb, i) => (
             <div key={fb.id} className={clsx("row-stagger rounded-lg border p-4", typeColors[fb.type] ?? "bg-white border-gray-200")} style={{ ["--i" as never]: Math.min(i, 10) }}>
               <div className="flex items-start gap-3">
                 <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center mt-0.5">
@@ -195,6 +203,7 @@ export default function FeedbackPage() {
               </div>
             </div>
           ))}
+          <Pagination page={page} totalPages={totalPages} total={feedbacks.length} limit={PAGE_SIZE} onPageChange={setPage} className="border-t-0 px-0" />
         </div>
       )}
 

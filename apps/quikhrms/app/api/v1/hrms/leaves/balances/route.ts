@@ -4,6 +4,7 @@ import { withServiceAuth } from "@/lib/with-auth";
 import { successResponse, forbidden, internalError } from "@/lib/api-response";
 import { canAccessEmployee } from "@/lib/rbac/hierarchy";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
+import { resolveEmployeeLeaveGroup } from "@/lib/services/employee-leave-rules";
 
 /** GET /api/v1/hrms/leaves/balances?employeeId=...&year=... */
 export const GET = withServiceAuth(async (req: NextRequest, ctx) => {
@@ -34,7 +35,7 @@ export const GET = withServiceAuth(async (req: NextRequest, ctx) => {
       ...(employeeId && { employeeId }),
     };
 
-    const balances = await prisma.leaveBalance.findMany({
+    let balances = await prisma.leaveBalance.findMany({
       where,
       include: {
         leaveType: { select: { id: true, name: true, code: true, color: true, isPaid: true, maxBalance: true } },
@@ -43,14 +44,53 @@ export const GET = withServiceAuth(async (req: NextRequest, ctx) => {
       orderBy: { leaveType: { name: "asc" } },
     });
 
-    // LeaveType.maxBalance is source-of-truth for opening.
+    // Group-based visibility: an employee only sees the leave types of the ACTIVE
+    // Leave Group they're assigned to. No group → NO leave types at all.
+    // Per-type opening comes from that group's rules (group quota wins over
+    // LeaveType.maxBalance) — keeps the cards consistent with enforcement.
+    let ruleOpening: Map<string, number> | null = null;
+    if (employeeId) {
+      const emp = await prisma.employee.findFirst({
+        where: { orgId, id: employeeId },
+        select: { appRoles: { select: { roleId: true }, take: 1 } },
+      });
+      const roleId = emp?.appRoles[0]?.roleId ?? null;
+      const group = await resolveEmployeeLeaveGroup(orgId, employeeId, roleId);
+      // Not assigned to any leave group → no entitlements to show.
+      if (!group) return successResponse([]);
+      // Only surface the leave types the group offers.
+      balances = balances.filter((b) => group.leaveTypeIds.has(b.leaveTypeId));
+
+      const items = await prisma.leaveGroupItem.findMany({
+        where: { orgId, leaveGroupId: group.leaveGroupId },
+        select: { leaveTypeId: true, rules: true },
+      });
+      ruleOpening = new Map();
+      for (const it of items) {
+        const r = it.rules as { isUnlimited?: boolean; maxBalance?: number } | null;
+        // Unlimited types have no fixed quota — leave them to the default path.
+        if (r && typeof r === "object" && r.isUnlimited) continue;
+        // Every other group-item type is governed by the group: use its
+        // configured quota, or 0 when none has been set yet (never the stale
+        // accrued balance).
+        const q = r && typeof r === "object" && typeof r.maxBalance === "number" ? Number(r.maxBalance) : 0;
+        ruleOpening.set(it.leaveTypeId, q);
+      }
+    }
+
+    // Opening = group-rule entitlement when set, else LeaveType.maxBalance.
     const enriched = balances.map((b) => {
-      const opening = Number(b.leaveType.maxBalance);
+      const ruled = ruleOpening?.has(b.leaveTypeId) ?? false;
+      const opening = ruled ? ruleOpening!.get(b.leaveTypeId)! : Number(b.leaveType.maxBalance);
+      // For a group-ruled type the rule IS the full annual entitlement — the
+      // legacy accrued balance is ignored (else the rule stacks on top of it).
+      const accrued = ruled ? 0 : Number(b.accrued);
       return {
         ...b,
         opening,
+        accrued: String(accrued),
         available:
-          opening + Number(b.accrued) + Number(b.adjusted) +
+          opening + accrued + Number(b.adjusted) +
           Number(b.carriedForward) - Number(b.taken) - Number(b.encashed) - Number(b.lapsed),
       };
     });

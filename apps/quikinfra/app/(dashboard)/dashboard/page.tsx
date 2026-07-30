@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useQuery } from "@tanstack/react-query";
@@ -8,6 +9,7 @@ import {
   ShoppingCart, Warehouse, FolderKanban, CheckCircle2,
   AlertTriangle, Package, FileText, ClipboardList,
   ArrowRight, HardHat, Truck,
+  MapPin, CalendarDays, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import {
   KPICard, StatusChip,
@@ -19,6 +21,9 @@ import { usePermissions } from "@/hooks/use-permissions";
 type ProjectProgressRow = {
   id: string;
   name: string;
+  location?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
   physicalPct: number;
   budgetPct: number;
   band: "on_track" | "in_progress" | "early_stage";
@@ -36,53 +41,199 @@ function AccentTitle({ children }: { children: ReactNode }) {
   );
 }
 
+const BAND_THEME = {
+  on_track: {
+    pill: "bg-orange-50 text-orange-600 border-orange-100",
+    wash: "from-orange-50/80",
+    blob: "bg-orange-300/40",
+    dot: "bg-orange-500",
+    arrow: "text-orange-500",
+    label: "On Track",
+  },
+  in_progress: {
+    pill: "bg-blue-50 text-blue-600 border-blue-100",
+    wash: "from-blue-50/80",
+    blob: "bg-blue-300/40",
+    dot: "bg-blue-500",
+    arrow: "text-blue-500",
+    label: "In Progress",
+  },
+  early_stage: {
+    pill: "bg-slate-100 text-slate-600 border-slate-200",
+    wash: "from-slate-100/80",
+    blob: "bg-slate-300/40",
+    dot: "bg-slate-500",
+    arrow: "text-slate-500",
+    label: "Early Stage",
+  },
+} as const;
+
 function ProjectBandPill({ band }: { band: ProjectProgressRow["band"] }) {
-  const styles = {
-    on_track: "bg-orange-50 text-orange-600 border-orange-100",
-    in_progress: "bg-blue-50 text-blue-600 border-blue-100",
-    early_stage: "bg-green-50 text-green-600 border-green-100",
-  } as const;
-  const labels = {
-    on_track: "On Track",
-    in_progress: "In Progress",
-    early_stage: "Early Stage",
-  } as const;
+  const theme = BAND_THEME[band];
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${styles[band]}`}>
-      {labels[band]}
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${theme.pill}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${theme.dot}`} />
+      {theme.label}
     </span>
   );
 }
 
-function ProgressBarRow({
-  label,
-  pct,
-  barClass,
-}: {
-  label: string;
-  pct: number;
-  barClass: string;
-}) {
+function fmtMonthYear(iso?: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("en-IN", { month: "short", year: "numeric" });
+}
+
+function projectTimeline(proj: ProjectProgressRow): string {
+  const start = fmtMonthYear(proj.startDate);
+  const end = fmtMonthYear(proj.endDate);
+  if (start && end) return `${start} – ${end}`;
+  if (start) return `From ${start}`;
+  if (end) return `Due ${end}`;
+  return "Timeline not set";
+}
+
+function ProjectRowContent({ proj, canOpen }: { proj: ProjectProgressRow; canOpen: boolean }) {
+  const theme = BAND_THEME[proj.band];
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-slate-500 font-medium">{label}</span>
-        <span className="text-slate-700 font-semibold tabular-nums">{pct}%</span>
+    <div className="relative flex flex-col">
+      <div className="flex items-center gap-3">
+        <span
+          aria-hidden
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-accent-400 to-accent-600 text-sm font-bold uppercase text-white shadow-md shadow-accent-500/30 ring-1 ring-white/40"
+        >
+          {proj.name?.trim().charAt(0) || "P"}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-bold text-slate-900">{proj.name}</p>
+          <div className="mt-1">
+            <ProjectBandPill band={proj.band} />
+          </div>
+        </div>
+        {canOpen && (
+          <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-slate-200/70 transition-all group-hover:translate-x-0.5 group-hover:ring-accent-300 ${theme.arrow}`}>
+            <ArrowRight className="h-3.5 w-3.5" />
+          </span>
+        )}
       </div>
-      <div className="h-2.5 rounded-full bg-slate-200/90 overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all duration-500 ${barClass}`}
-          style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
-        />
+      <div className="mt-3 space-y-1.5 border-t border-slate-100 pt-3 text-xs text-slate-500">
+        <p className="flex items-center gap-1.5">
+          <MapPin className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+          <span className="truncate">{proj.location || "No location set"}</span>
+        </p>
+        <p className="flex items-center gap-1.5">
+          <CalendarDays className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+          {projectTimeline(proj)}
+        </p>
       </div>
     </div>
   );
 }
 
-function physicalBarClass(band: ProjectProgressRow["band"]) {
-  if (band === "on_track") return "bg-gradient-to-r from-[#FFAF55] to-[#ea580c]";
-  if (band === "in_progress") return "bg-blue-500";
-  return "bg-emerald-500";
+function ProjectCard({ proj, canOpen, onOpen }: { proj: ProjectProgressRow; canOpen: boolean; onOpen: () => void }) {
+  const cardClass =
+    "group relative w-full rounded-2xl border border-slate-200/70 bg-white p-4 text-left shadow-sm transition-all";
+  if (canOpen) {
+    return (
+      <button
+        type="button"
+        onClick={onOpen}
+        className={`${cardClass} hover:-translate-y-0.5 hover:border-accent-300/70 hover:shadow-md`}
+      >
+        <ProjectRowContent proj={proj} canOpen />
+      </button>
+    );
+  }
+  return (
+    <div
+      className={`${cardClass} cursor-default`}
+      title="View-only — ask an admin for Masters access to open this project"
+    >
+      <ProjectRowContent proj={proj} canOpen={false} />
+    </div>
+  );
+}
+
+const PROJECTS_PER_PAGE = 3;
+
+function ProjectCarousel({
+  projects,
+  canOpen,
+  onOpen,
+}: {
+  projects: ProjectProgressRow[];
+  canOpen: boolean;
+  onOpen: () => void;
+}) {
+  const [page, setPage] = useState(0);
+  const pageCount = Math.max(1, Math.ceil(projects.length / PROJECTS_PER_PAGE));
+  const current = Math.min(page, pageCount - 1);
+  const pages = Array.from({ length: pageCount }, (_, i) =>
+    projects.slice(i * PROJECTS_PER_PAGE, i * PROJECTS_PER_PAGE + PROJECTS_PER_PAGE),
+  );
+  const showControls = pageCount > 1;
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 sm:gap-3">
+        {showControls && (
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            disabled={current === 0}
+            aria-label="Previous projects"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition-colors hover:border-accent-300 hover:text-accent-600 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+        )}
+        <div className="min-w-0 flex-1 overflow-hidden">
+          <div
+            className="flex transition-transform duration-500 ease-out"
+            style={{ transform: `translateX(-${current * 100}%)` }}
+          >
+            {pages.map((group, gi) => (
+              <div
+                key={gi}
+                className="grid w-full shrink-0 grid-cols-1 gap-4 px-0.5 py-1 sm:grid-cols-2 lg:grid-cols-3"
+              >
+                {group.map((proj) => (
+                  <ProjectCard key={proj.id} proj={proj} canOpen={canOpen} onOpen={onOpen} />
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+        {showControls && (
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+            disabled={current === pageCount - 1}
+            aria-label="Next projects"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition-colors hover:border-accent-300 hover:text-accent-600 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+      {showControls && (
+        <div className="mt-4 flex items-center justify-center gap-2">
+          {pages.map((_, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => setPage(i)}
+              aria-label={`Go to page ${i + 1}`}
+              className={`h-2 rounded-full transition-all ${
+                i === current ? "w-6 bg-accent-500" : "w-2 bg-slate-300 hover:bg-slate-400"
+              }`}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // 20s hard cap on the dashboard fetch. On UAT the API can be slow (cold
@@ -401,63 +552,33 @@ export default function DashboardPage() {
   const projectSection =
     showProjects && projectProgress.length > 0 ? (
       <div>
-        <div className="mb-4">
-          <AccentTitle>Project Progress</AccentTitle>
-          <p className="mt-2 text-sm text-slate-500">Physical completion vs budget utilisation</p>
+        <div className="mb-4 flex items-end justify-between gap-3">
+          <div>
+            <AccentTitle>Project Progress</AccentTitle>
+            <p className="mt-2 text-sm text-slate-500">Active projects and their current stage</p>
+          </div>
+          {showMasters && (
+            <button
+              type="button"
+              onClick={() => router.push("/masters/projects")}
+              className="group flex shrink-0 items-center gap-1 text-sm font-semibold text-accent-600 hover:text-accent-700"
+            >
+              View all
+              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+            </button>
+          )}
         </div>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          {projectProgress.map((proj) => {
-            // Only route to /masters/projects when the user actually has
-            // the Masters module — that's where the page lives. Users
-            // who can see the dashboard tile via project_mgmt but lack
-            // Masters get a view-only card (no click, no hover affordance,
-            // default cursor) so they don't bounce off a permission gate.
-            const canOpen = showMasters;
-            const baseClass =
-              "rounded-2xl border border-[#ede8e3] bg-[#f9f8f7] p-5 text-left shadow-sm transition-all";
-            if (canOpen) {
-              return (
-                <button
-                  type="button"
-                  key={proj.id}
-                  onClick={() => router.push("/masters/projects")}
-                  className={`${baseClass} hover:border-slate-300/80 hover:shadow-md`}
-                >
-                  <div className="flex items-start justify-between gap-2 mb-4">
-                    <p className="text-sm font-bold text-slate-900 leading-snug line-clamp-2">{proj.name}</p>
-                    <ProjectBandPill band={proj.band} />
-                  </div>
-                  <div className="space-y-4">
-                    <ProgressBarRow label="Physical" pct={proj.physicalPct} barClass={physicalBarClass(proj.band)} />
-                    <ProgressBarRow label="Budget Used" pct={proj.budgetPct} barClass="bg-slate-500" />
-                  </div>
-                </button>
-              );
-            }
-            return (
-              <div
-                key={proj.id}
-                className={`${baseClass} cursor-default select-text`}
-                title="View-only — ask an admin for Masters access to open this project"
-              >
-                <div className="flex items-start justify-between gap-2 mb-4">
-                  <p className="text-sm font-bold text-slate-900 leading-snug line-clamp-2">{proj.name}</p>
-                  <ProjectBandPill band={proj.band} />
-                </div>
-                <div className="space-y-4">
-                  <ProgressBarRow label="Physical" pct={proj.physicalPct} barClass={physicalBarClass(proj.band)} />
-                  <ProgressBarRow label="Budget Used" pct={proj.budgetPct} barClass="bg-slate-500" />
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <ProjectCarousel
+          projects={projectProgress}
+          canOpen={showMasters}
+          onOpen={() => router.push("/masters/projects")}
+        />
       </div>
     ) : showProjects && projectProgress.length === 0 ? (
       <div>
         <div className="mb-4">
           <AccentTitle>Project Progress</AccentTitle>
-          <p className="mt-2 text-sm text-slate-500">Physical completion vs budget utilisation</p>
+          <p className="mt-2 text-sm text-slate-500">Active projects and their current stage</p>
         </div>
         <div className="rounded-2xl border border-[#ede8e3] bg-[#f9f8f7] p-8 shadow-sm">
           <EmptyState title="No active projects" description="Projects will appear here when available." icon={<FolderKanban className="w-8 h-8" />} />

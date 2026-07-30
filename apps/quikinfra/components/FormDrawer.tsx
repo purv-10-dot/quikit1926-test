@@ -812,12 +812,3 @@ export function DateInput({
   );
 }
 
-export function CurrencyDisplay({ value, label }: { value: number | string; label: string }) {
-  const num = typeof value === "string" ? parseFloat(value) || 0 : value;
-  return (
-    <div className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg border border-gray-200">
-      <span className="text-sm text-gray-600">{label}</span>
-      <span className="text-sm font-bold text-gray-900">₹ {num.toLocaleString("en-IN")}</span>
-    </div>
-  );
-}

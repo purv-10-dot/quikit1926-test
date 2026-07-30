@@ -7,12 +7,13 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Coins, Plus, ChevronDown, MoreHorizontal, Info, Power, Trash2, ArrowRight } from "lucide-react";
 import { Modal } from "@/components/hrms/modal";
-import { clsx } from "clsx";
 import { NewEarningForm } from "./_forms/new-earning";
 import { NewDeductionForm } from "./_forms/new-deduction";
 import { NewBenefitForm } from "./_forms/new-benefit";
 import type { SalaryComponent, CompType } from "./_forms/types";
 import { SkeletonTable, SkeletonLine } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
+import { TabSwitcher } from "@/components/hrms/tab-switcher";
 
 // Reimbursement is intentionally NOT a tab here — the new reimbursement
 // flow (top-level /hrms/claims-declarations) uses a fixed category list,
@@ -25,6 +26,8 @@ const TAB_LABEL: Record<CompType, string> = {
 export default function SalaryComponentsPage() {
   return (
     <Suspense fallback={<div className="p-4 space-y-2"><SkeletonLine w="40%" h={16} /><SkeletonLine w="70%" h={12} /><SkeletonLine w="60%" h={12} /></div>}>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <SalaryComponentsPageInner />
     </Suspense>
   );
@@ -92,20 +95,12 @@ function SalaryComponentsPageInner() {
       </div>
 
       {/* Tabs as pill nav */}
-      <div className="mb-4 flex flex-wrap gap-1 rounded-lg border border-gray-200 bg-gray-50 p-1 w-fit">
-        {TABS.map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={clsx(
-              "px-4 py-1.5 text-[13px] font-semibold rounded-md transition",
-              tab === t ? "bg-white text-[#166534] shadow-sm" : "text-gray-500 hover:text-gray-700",
-            )}
-          >
-            {TAB_LABEL[t]}
-          </button>
-        ))}
-      </div>
+      <TabSwitcher
+        className="mb-4"
+        value={tab}
+        onChange={(v) => setTab(v as CompType)}
+        tabs={TABS.map((t) => ({ value: t, label: TAB_LABEL[t] }))}
+      />
 
       {/* Card */}
       <section className="rounded-xl border border-gray-200 bg-white shadow-sm">

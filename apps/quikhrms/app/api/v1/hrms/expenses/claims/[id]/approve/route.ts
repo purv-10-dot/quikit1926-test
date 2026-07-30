@@ -12,6 +12,7 @@ import {
 import { getCallerEmployeeId } from "@/lib/rbac/scope";
 import { createAuditLog } from "@/lib/utils/audit";
 import { fireWorkflow } from "@/lib/workflows/executor";
+import { getActiveChainLevels, callerCanActionLevel, getCallerRoleIds } from "@/lib/services/approval-chain";
 
 export const POST = withAuth(async (req: NextRequest, ctx, params) => {
   try {
@@ -37,6 +38,13 @@ export const POST = withAuth(async (req: NextRequest, ctx, params) => {
     });
     if (!claim) return notFound("Claim not found");
 
+    // Segregation of duties: no one — including super-admin — can approve or
+    // reject their OWN claim (matches the leave route).
+    const callerEmpId = await getCallerEmployeeId(ctx);
+    if (callerEmpId && claim.employeeId === callerEmpId) {
+      return forbidden("You can't approve or reject your own expense claim.");
+    }
+
     if (!["Submitted", "ManagerApproved", "FinanceApproved"].includes(claim.status)) {
       return conflict(`Cannot approve claim in ${claim.status} state`);
     }
@@ -45,26 +53,63 @@ export const POST = withAuth(async (req: NextRequest, ctx, params) => {
     const currentLevel = approvalsSoFar + 1;
     // Prefer frozen snapshot value; fall back to live policy or 1.
     const snap = claim.policySnapshot as { approvalLevels?: number; approvalChain?: ExpenseChainLevel[] } | null;
-    const totalLevels = snap?.approvalLevels ?? claim.policy?.approvalLevels ?? 1;
 
     // ── Enforce the approval chain by role ──────────────────────────────
     // Use the frozen snapshot chain if present, else the live policy chain.
-    // No chain defined → fall back to "any approver" (legacy behaviour).
-    // super_admin (permissions "*") bypasses so it can never be locked out.
+    // No per-policy chain → try the central Approval Chain (Settings → Approval
+    // Chains → "Expense"). No chain anywhere → reporting-manager / dept-head
+    // fallback. super_admin (permissions "*") bypasses so it can never be locked out.
     const chain: ExpenseChainLevel[] =
       (snap?.approvalChain as ExpenseChainLevel[] | undefined) ??
       ((claim.policy?.approvalChain as ExpenseChainLevel[] | null) ?? []);
+    // Central chain is consulted ONLY when the policy defines no chain of its own,
+    // so existing per-policy setups are never overridden.
+    const centralLevels = chain.length === 0 ? await getActiveChainLevels(orgId, "Expense") : null;
+
+    const totalLevels =
+      centralLevels && centralLevels.length > 0
+        ? centralLevels.length
+        : (snap?.approvalLevels ?? claim.policy?.approvalLevels ?? 1);
+
     const isSuper = ctx.permissions.includes("*");
-    if (!isSuper && chain.length > 0 && (parsed.data.action === "ExpApproved" || parsed.data.action === "ExpRejected")) {
-      const levelCfg = chain.find((c) => c.level === currentLevel);
-      if (levelCfg) {
-        const callerEmployeeId = await getCallerEmployeeId(ctx);
-        const eligible = isEligibleExpenseApprover(levelCfg, ctx.roles, callerEmployeeId, {
-          reportingManagerId: claim.employee?.reportingManagerId ?? null,
-          departmentHeadId: claim.employee?.department?.headId ?? null,
-        });
+    const claimApprovers = {
+      reportingManagerId: claim.employee?.reportingManagerId ?? null,
+      departmentHeadId: claim.employee?.department?.headId ?? null,
+    };
+    // Approver-eligibility gate runs for EVERY action — including "Escalated",
+    // which must not be a way to bypass the chain. super_admin ("*") excepted.
+    if (!isSuper) {
+      if (chain.length > 0) {
+        const levelCfg = chain.find((c) => c.level === currentLevel);
+        // A configured chain with no rule for this level is a misconfiguration —
+        // fail closed rather than silently allowing anyone through.
+        if (!levelCfg) {
+          return forbidden("No approver configured for this level.");
+        }
+        const eligible = isEligibleExpenseApprover(levelCfg, ctx.roles, callerEmpId, claimApprovers);
         if (!eligible) {
           return forbidden(`Level ${currentLevel} must be actioned by ${EXPENSE_APPROVER_LABEL[levelCfg.approverType]}.`);
+        }
+      } else if (centralLevels && centralLevels.length > 0) {
+        // Central Approval Chain (ROLE / USER levels).
+        const levelCfg = centralLevels.find((c) => c.level === currentLevel);
+        if (!levelCfg) {
+          return forbidden("No approver configured for this level.");
+        }
+        const roleIds = callerEmpId ? await getCallerRoleIds(orgId, callerEmpId) : [];
+        const canAction = !!callerEmpId && callerCanActionLevel(levelCfg, { employeeId: callerEmpId, roleIds });
+        if (!canAction) {
+          return forbidden(`You are not the configured approver for level ${currentLevel} of the Expense approval chain.`);
+        }
+      } else {
+        // No approval chain configured → require a genuine approver relationship,
+        // never "any approver". Must be the employee's reporting manager or
+        // department head.
+        const eligible =
+          (!!callerEmpId && callerEmpId === claimApprovers.reportingManagerId) ||
+          (!!callerEmpId && callerEmpId === claimApprovers.departmentHeadId);
+        if (!eligible) {
+          return forbidden("Only the employee's reporting manager or department head can approve this claim.");
         }
       }
     }

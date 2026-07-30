@@ -17,6 +17,7 @@ import { Select } from "@/components/hrms/select";
 import { Select as UiSelect } from "@/components/hrms/ui/select";
 import { FormField, FormInput, FormTextarea, FormCheckbox } from "@/components/hrms/form";
 import { NumberInput } from "@/components/hrms/ui/number-input";
+import { PageBackground } from "@/components/hrms/page-background";
 import { todayInput } from "@/lib/utils/date-input";
 import { INDIA_STATE_OPTS as STATE_OPTS } from "@/lib/data/india-states";
 
@@ -206,6 +207,10 @@ export default function NewCandidatePage() {
         toast.warning("CTC (LPA) required", "Enter annual CTC in lakhs in Professional step.");
         return;
       }
+      if (!form.templateId) {
+        toast.warning("Onboarding template required", "Pick an onboarding template in the Professional step (or save as draft).");
+        return;
+      }
     }
 
     const profilePhoto = isValidUrl(form.profilePhoto) ? form.profilePhoto : undefined;
@@ -358,6 +363,8 @@ export default function NewCandidatePage() {
 
   return (
     <div className="bg-gray-50 -m-6 min-h-screen flex flex-col">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <header className="bg-white border-b border-gray-100 px-5 py-3 flex items-center justify-between sticky top-0 z-20">
         <div className="flex items-center gap-2">
           <div className="w-9 h-9 rounded-xl bg-[#166534]/5 text-[#166534] flex items-center justify-center">
@@ -660,9 +667,9 @@ export default function NewCandidatePage() {
                     <FormInput type="date" value={form.tentativeJoiningDate} min={todayInput()}
                       onChange={(e) => setForm({ ...form, tentativeJoiningDate: e.target.value, dateOfJoining: form.dateOfJoining || e.target.value })} />
                   </FormField>
-                  <FormField label="Onboarding Template">
+                  <FormField label="Onboarding Template" required>
                     <Select value={form.templateId} onChange={(v) => setForm({ ...form, templateId: v })}
-                      placeholder="Default (5 steps)" searchable clearable
+                      placeholder="Select a template" searchable clearable
                       options={(templates?.data ?? []).map((t) => ({
                         value: t.id, label: t.name,
                         description: `${Array.isArray(t.tasks) ? t.tasks.length : 0} tasks`,

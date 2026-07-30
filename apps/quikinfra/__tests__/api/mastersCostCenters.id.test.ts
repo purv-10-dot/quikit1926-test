@@ -54,7 +54,7 @@ describe("GET /api/masters/cost-centers/[id]", () => {
 });
 
 describe("PUT /api/masters/cost-centers/[id]", () => {
-  it("returns 403 when the user lacks construction.masters.edit", async () => {
+  it("returns 403 when the user lacks construction.master_cost_center.edit", async () => {
     setContext(makeUserCtx([]));
     expect((await PUT(req("PUT", { name: "X" }), params)).status).toBe(403);
   });
@@ -83,7 +83,7 @@ describe("PUT /api/masters/cost-centers/[id]", () => {
 });
 
 describe("DELETE /api/masters/cost-centers/[id]", () => {
-  it("returns 403 when the user lacks construction.masters.delete", async () => {
+  it("returns 403 when the user lacks construction.master_cost_center.delete", async () => {
     setContext(makeUserCtx([]));
     expect((await DELETE(req("DELETE"), params)).status).toBe(403);
   });

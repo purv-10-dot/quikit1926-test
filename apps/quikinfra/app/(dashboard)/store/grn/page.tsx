@@ -11,7 +11,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, Send, FileText } from "lucide-react";
-import { PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { usePurchaseOrders, useSubmitGRN } from "@/hooks/use-purchase";
 import { QuickCreateDrawer, type QuickCreateConfig } from "@/components/QuickCreateDrawer";
@@ -414,6 +414,7 @@ export default function GRNPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Goods Receipt Notes (GRN)"
         subtitle="Receive, inspect, and accept deliveries against purchase orders"
@@ -422,7 +423,7 @@ export default function GRNPage() {
 
       <TabBar tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
 
-      <PageContainer>
+      <PageContainer fill>
         <DataTable
           id="store-grn"
           columns={columns}
@@ -441,6 +442,7 @@ export default function GRNPage() {
           onSortChange={(k, d) => setSort({ by: k, order: d })}
         />
       </PageContainer>
+      </PageFrame>
       <QuickCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} config={config} />
 
       <ConfirmDialog

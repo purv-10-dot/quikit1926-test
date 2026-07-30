@@ -1,8 +1,9 @@
 "use client";
 
-import { Fragment } from "react";
-import { FileText, Plus, Layers, ImageIcon, Trash2 } from "lucide-react";
+import { Fragment, useState } from "react";
+import { FileText, Plus, Layers, ImageIcon, Trash2, X } from "lucide-react";
 import { SelectInput } from "@/components/FormDrawer";
+import { ActivityScopePicker, type ActivityLeafOption } from "@/components/ActivityScopePicker";
 import { groupWorkItemsByBoq } from "@/lib/projects/boq-work-groups";
 import { Section } from "../components/Section";
 import { PhotoGalleryModal } from "../components/PhotoGalleryModal";
@@ -23,6 +24,10 @@ export function WorkDone({
   onCloseBoqModal,
   alreadyAddedBoqIds,
   onAddFromBoq,
+  isFreeScope,
+  activityItems,
+  onAddFromActivity,
+  alreadyAddedScopeIds,
   galleryIdx,
   onCloseGallery,
   onRemoveImage,
@@ -40,10 +45,15 @@ export function WorkDone({
   onCloseBoqModal: () => void;
   alreadyAddedBoqIds: Set<string>;
   onAddFromBoq: (row: BoqPickerRow) => void;
+  isFreeScope?: boolean;
+  activityItems?: ActivityLeafOption[];
+  onAddFromActivity?: (a: ActivityLeafOption) => void;
+  alreadyAddedScopeIds?: Set<string>;
   galleryIdx: number | null;
   onCloseGallery: () => void;
   onRemoveImage: (idx: number, imgIdx: number) => void;
 }) {
+  const [pickActivity, setPickActivity] = useState<ActivityLeafOption | null>(null);
   return (
     <>
 
@@ -58,7 +68,7 @@ export function WorkDone({
           onClick={onOpenBoqModal}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-accent-700 bg-accent-50 hover:bg-accent-100 border border-accent-200 hover:border-accent-300 rounded-lg transition-colors"
         >
-          <Plus className="w-3.5 h-3.5" /> Add Activity from BOQ
+          <Plus className="w-3.5 h-3.5" /> {isFreeScope ? "Add Activity" : "Add Activity from BOQ"}
         </button>
       }
     >
@@ -73,10 +83,12 @@ export function WorkDone({
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-sm font-semibold text-slate-800">
-              Click to add activities from BOQ
+              {isFreeScope ? "Click to add activities" : "Click to add activities from BOQ"}
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Select items from the Bill of Quantities to report progress
+              {isFreeScope
+                ? "Select activity line items to report progress"
+                : "Select items from the Bill of Quantities to report progress"}
             </p>
           </div>
           <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-accent-50 text-accent-700 text-[11px] font-bold border border-accent-200">
@@ -371,16 +383,75 @@ export function WorkDone({
       )}
     </Section>
 
-      {/* BOQ picker modal — reused from the Work Order flow */}
-      <BOQActivityPickerModal
-        open={boqModalOpen}
-        onClose={onCloseBoqModal}
-        projectId={projectId}
-        alreadyAddedIds={alreadyAddedBoqIds}
-        onAdd={onAddFromBoq}
-        confirmLabel="Add to DPR"
-        duplicateMessage="This BOQ item is already in today's DPR — pick a different BOQ row."
-      />
+      {/* Scope picker: activity modal (FREE_SCOPE) or BOQ modal (reused from WO flow) */}
+      {isFreeScope ? (
+        boqModalOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+            onClick={onCloseBoqModal}
+          >
+            <div
+              className="w-full max-w-2xl rounded-xl bg-white shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                <h3 className="text-sm font-semibold text-gray-900">Add activity to DPR</h3>
+                <button type="button" onClick={onCloseBoqModal} className="text-gray-400 hover:text-gray-600">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-5 min-h-[340px]">
+                <ActivityScopePicker
+                  items={(activityItems ?? []).filter((a) => !alreadyAddedScopeIds?.has(a.id))}
+                  value={pickActivity?.id ?? null}
+                  onSelect={setPickActivity}
+                  placeholder="Select activity"
+                />
+                {pickActivity && (
+                  <div className="mt-3 rounded-lg border border-accent-200 bg-accent-50/60 px-3 py-2 text-xs text-gray-700">
+                    Selected: <span className="font-semibold">{pickActivity.activityCode}</span> · {pickActivity.description}
+                    {pickActivity.tenderQty != null && (
+                      <span className="text-gray-500"> — Tender {pickActivity.tenderQty}{pickActivity.uomCode ? ` ${pickActivity.uomCode}` : ""}</span>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="flex justify-end gap-2 px-5 py-3 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={onCloseBoqModal}
+                  className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!pickActivity}
+                  onClick={() => {
+                    if (!pickActivity) return;
+                    onAddFromActivity?.(pickActivity);
+                    setPickActivity(null);
+                    onCloseBoqModal();
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-accent-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Add to DPR
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      ) : (
+        <BOQActivityPickerModal
+          open={boqModalOpen}
+          onClose={onCloseBoqModal}
+          projectId={projectId}
+          alreadyAddedIds={alreadyAddedBoqIds}
+          onAdd={onAddFromBoq}
+          confirmLabel="Add to DPR"
+          duplicateMessage="This BOQ item is already in today's DPR — pick a different BOQ row."
+        />
+      )}
 
       {/* Photo gallery modal — opened from the Images cell when a row has
           one or more photos. Lets the user preview, click through to full

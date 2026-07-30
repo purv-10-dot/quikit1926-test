@@ -11,7 +11,7 @@ import {
   ExternalLink,
   Download,
 } from "lucide-react";
-import { PageHeader, PageContainer, StatusChip } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer, StatusChip } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { QuickCreateDrawer } from "@/components/QuickCreateDrawer";
 import { useProjects } from "@/hooks/use-masters";
@@ -359,12 +359,13 @@ export default function DocumentsPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Document Management"
         subtitle="Project drawings, contracts, NOCs, and regulatory documents"
         breadcrumbs={[{ label: "Projects", href: "/projects" }, { label: "Documents" }]}
       />
-      <PageContainer>
+      <PageContainer fill>
         <DataTable
           id="projects-documents"
           columns={columns}
@@ -385,6 +386,7 @@ export default function DocumentsPage() {
           addLabel="Upload Document"
         />
       </PageContainer>
+      </PageFrame>
       <QuickCreateDrawer
         key={drawerOpen ? `upload-${me?.userName ?? "pending"}` : "closed"}
         open={drawerOpen}

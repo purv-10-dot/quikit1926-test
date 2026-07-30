@@ -26,7 +26,11 @@ export type CsvCell = string | number | boolean | Date | null | undefined;
 
 /** Escape one cell to a CSV field per RFC 4180 (quote + double inner quotes). */
 export function escapeCsvValue(value: CsvCell): string {
-  const s = normalizeCell(value);
+  let s = normalizeCell(value);
+  // Defend against CSV formula injection: a cell starting with = + - @ (or a
+  // leading tab/CR) is interpreted as a formula by Excel/Sheets. Prefix a single
+  // quote so it's shown as literal text and can't execute.
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   // Always quote — simplest correct behaviour; handles commas, quotes, newlines.
   return `"${s.replace(/"/g, '""')}"`;
 }

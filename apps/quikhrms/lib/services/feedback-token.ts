@@ -1,6 +1,7 @@
 import crypto from "crypto";
+import { resolveTokenSecret } from "./token-secret";
 
-const SECRET = process.env.FEEDBACK_TOKEN_SECRET || process.env.NEXTAUTH_SECRET || "dev-feedback-secret-change-me";
+const SECRET = resolveTokenSecret("feedback-token", "dev-feedback-secret-change-me", process.env.FEEDBACK_TOKEN_SECRET, process.env.NEXTAUTH_SECRET);
 const EXPIRY_DAYS = 7;
 
 function b64u(buf: Buffer): string {
@@ -31,9 +32,13 @@ export function verifyFeedbackToken(token: string): FeedbackTokenPayload | null 
   const parts = token.split(".");
   if (parts.length !== 2) return null;
   const [body, sig] = parts;
-  const expected = b64u(crypto.createHmac("sha256", SECRET).update(body).digest());
-  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
   try {
+    const expected = b64u(crypto.createHmac("sha256", SECRET).update(body).digest());
+    const sigBuf = Buffer.from(sig);
+    const expBuf = Buffer.from(expected);
+    // Length guard BEFORE timingSafeEqual — it throws on unequal-length buffers,
+    // so a forged token with a wrong-length signature must not reach it.
+    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) return null;
     const payload = JSON.parse(b64uDecode(body).toString("utf8")) as FeedbackTokenPayload;
     if (!payload.interviewId || !payload.orgId || !payload.exp) return null;
     if (Date.now() > payload.exp) return null;

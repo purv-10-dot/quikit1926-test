@@ -137,11 +137,14 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       },
     });
 
-    // One approval row per resolved chain level (role left null — chain levels
-    // aren't the legacy DeptHead/HR roles).
+    // One approval row per resolved chain level. Stamp the legacy DeptHead/HR
+    // role the approvals UI keys off (HR Edit button, budget banner, per-role
+    // counters): the FINAL level is "HR" (publishes to the board), every earlier
+    // level is "DeptHead".
     await prisma.requisitionApproval.createMany({
-      data: chain.levels.map((l) => ({
+      data: chain.levels.map((l, idx) => ({
         orgId, requisitionId: requisition.id, approverId: l.approverId, level: l.level, status: "Pending" as const,
+        role: (idx === chain.levels.length - 1 ? "HR" : "DeptHead") as "HR" | "DeptHead",
       })),
     });
 
