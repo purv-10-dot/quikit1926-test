@@ -11,7 +11,6 @@ import ReactFlow, {
   type Connection,
   type Edge,
   type Node,
-  type NodeChange,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { flowNodeTypes } from "./flow-nodes";
@@ -79,7 +78,9 @@ export function FlowCanvas({
   const structureKey = useMemo(
     () =>
       JSON.stringify(
-        draft.statuses.map((s) => [s.statusId, s.isInitial, s.x, s.y]),
+        // Positions are auto-computed (classic row), so they don't affect the
+        // structural signature — only which statuses exist and the initial one.
+        draft.statuses.map((s) => [s.statusId, s.isInitial]),
       ) +
       "|" +
       JSON.stringify(
@@ -116,19 +117,11 @@ export function FlowCanvas({
     [edges, selectedTransitionId],
   );
 
-  const onNodesChange = useCallback(
-    (changes: NodeChange[]) => {
-      // Let React Flow apply position/dimension changes to its own store...
-      onNodesChangeInternal(changes);
-      // ...and persist a finished drag back to the draft.
-      for (const c of changes) {
-        if (c.type === "position" && c.dragging === false && c.position && c.id !== START_NODE_ID) {
-          onMoveNode(c.id, Math.round(c.position.x), Math.round(c.position.y));
-        }
-      }
-    },
-    [onNodesChangeInternal, onMoveNode],
-  );
+  // Classic layout is auto-arranged, so drags are visual-only (React Flow's own
+  // store) — we don't persist positions back to the draft. onMoveNode is kept in
+  // the props for callers but intentionally unused here.
+  void onMoveNode;
+  const onNodesChange = onNodesChangeInternal;
 
   const onConnect = useCallback(
     (conn: Connection) => {

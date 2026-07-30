@@ -17,6 +17,8 @@ import type { TransitionEdgeData } from "./flow-adapters";
  */
 export const TransitionEdge = memo(function TransitionEdge({
   id,
+  source,
+  target,
   sourceX,
   sourceY,
   targetX,
@@ -27,15 +29,35 @@ export const TransitionEdge = memo(function TransitionEdge({
   selected,
   markerEnd,
 }: EdgeProps<TransitionEdgeData>) {
-  const [path, labelX, labelY] = getSmoothStepPath({
-    sourceX,
-    sourceY,
-    targetX,
-    targetY,
-    sourcePosition,
-    targetPosition,
-    borderRadius: 8,
-  });
+  const isSelfLoop = source === target;
+
+  let path: string;
+  let labelX: number;
+  let labelY: number;
+
+  if (isSelfLoop) {
+    // GLOBAL "Any" transition: a small loop that rises above the node and comes
+    // back down onto it (a plain top→top smooth-step would collapse to nothing).
+    // labelOffset staggers multiple globals on the same node horizontally.
+    const cx = sourceX + (data?.labelOffset ?? 0);
+    const topY = sourceY - 60;
+    path = `M ${sourceX} ${sourceY} C ${sourceX - 26} ${topY}, ${cx + 26} ${topY}, ${cx} ${sourceY}`;
+    labelX = (sourceX + cx) / 2;
+    labelY = topY - 4;
+  } else {
+    const [p, lx, ly] = getSmoothStepPath({
+      sourceX,
+      sourceY,
+      targetX,
+      targetY,
+      sourcePosition,
+      targetPosition,
+      borderRadius: 8,
+    });
+    path = p;
+    labelX = lx;
+    labelY = ly + (data?.labelOffset ?? 0);
+  }
 
   return (
     <>

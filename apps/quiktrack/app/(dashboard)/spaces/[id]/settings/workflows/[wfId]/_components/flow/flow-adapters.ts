@@ -37,6 +37,8 @@ export interface TransitionEdgeData {
   type: "INITIAL" | "NORMAL" | "GLOBAL";
   ruleCount: number;
   showLabel: boolean;
+  /** Vertical pixel offset for the label so sibling edges don't overlap. */
+  labelOffset: number;
 }
 
 /** Parse an edge id back into { transitionId, source }. */
@@ -45,32 +47,54 @@ export function parseEdgeId(edgeId: string): { transitionId: string; source: str
   return { transitionId, source: source ?? ANY_SOURCE };
 }
 
+/** Row layout constants (Jira classic = a single left→right row). */
+const ROW_Y = 240;
+const COL_GAP = 280;
+const FIRST_X = 220;
+const CATEGORY_ORDER: Record<string, number> = { BACKLOG: 0, IN_PROGRESS: 1, DONE: 2 };
+
+/**
+ * Order statuses the way the classic Jira workflow reads: by category
+ * (To Do → In Progress → Done), preserving the draft order within a category.
+ */
+function orderedStatuses(draft: EditorDraft, statusMeta: Map<string, StatusMeta>) {
+  return draft.statuses
+    .map((s, i) => ({ s, i, cat: CATEGORY_ORDER[statusMeta.get(s.statusId)?.category ?? "BACKLOG"] ?? 0 }))
+    .sort((a, b) => (a.cat - b.cat) || (a.i - b.i));
+}
+
 export function draftToNodes(
   draft: EditorDraft,
   statusMeta: Map<string, StatusMeta>,
   errorStatusIds: Set<string>,
 ): Node<StatusNodeData | StartNodeData>[] {
   const nodes: Node<StatusNodeData | StartNodeData>[] = [];
+  const ordered = orderedStatuses(draft, statusMeta);
 
-  // START node — placed to the upper-left of the initial status.
-  const initial = draft.statuses.find((s) => s.isInitial) ?? draft.statuses[0];
-  const startX = (initial?.x ?? 120) - 40;
-  const startY = (initial?.y ?? 160) - 120;
+  // Column index per status for the horizontal row.
+  const colOf = new Map<string, number>();
+  ordered.forEach((o, col) => colOf.set(o.s.statusId, col));
+
+  // START node — left of the first status, on the row.
   nodes.push({
     id: START_NODE_ID,
     type: "startNode",
-    position: { x: startX, y: startY },
+    position: { x: FIRST_X - 130, y: ROW_Y },
     data: { label: "START" },
     draggable: true,
     selectable: false,
   });
 
-  for (const [i, s] of draft.statuses.entries()) {
+  for (const { s } of ordered) {
     const meta = statusMeta.get(s.statusId);
+    const col = colOf.get(s.statusId) ?? 0;
+    // Classic layout: statuses always sit on one left→right row (Jira ignores
+    // saved scatter positions in this view). Drag still pans a node within the
+    // session via React Flow's own store.
     nodes.push({
       id: s.statusId,
       type: "statusNode",
-      position: { x: s.x ?? 120 + i * 220, y: s.y ?? 160 },
+      position: { x: FIRST_X + col * COL_GAP, y: ROW_Y },
       data: {
         statusId: s.statusId,
         name: meta?.name ?? s.statusId,
@@ -89,21 +113,33 @@ export function draftToEdges(
   showLabels: boolean,
 ): Edge<TransitionEdgeData>[] {
   const edges: Edge<TransitionEdgeData>[] = [];
+  // Stagger labels of edges leaving the SAME source so they don't overlap: each
+  // successive edge from a source rides a bit higher above the row.
+  const perSource = new Map<string, number>();
+  const nextOffset = (source: string, base: number) => {
+    const n = perSource.get(source) ?? 0;
+    perSource.set(source, n + 1);
+    return base - n * 34; // stack upward, 34px apart
+  };
+
   for (const t of draft.transitions) {
     const ruleCount = t.rules.length;
     if (t.type === "INITIAL") {
-      edges.push(mkEdge(START_NODE_ID, t.toStatusId, t, "__start__", ruleCount, showLabels));
+      edges.push(mkEdge(START_NODE_ID, t.toStatusId, t, "__start__", ruleCount, showLabels, false, 0));
       continue;
     }
     if (t.type === "GLOBAL") {
-      // "Any status → target": render as an edge from the target back to itself
-      // labelled with the ⚡Any badge (matches Jira's global-transition chrome).
-      edges.push(mkEdge(t.toStatusId, t.toStatusId, t, ANY_SOURCE, ruleCount, showLabels, true));
+      // "Any status → target": a small self-loop above the target node. Multiple
+      // globals on the same node fan out horizontally so their loops don't overlap.
+      const key = `global:${t.toStatusId}`;
+      const n = perSource.get(key) ?? 0;
+      perSource.set(key, n + 1);
+      edges.push(mkEdge(t.toStatusId, t.toStatusId, t, ANY_SOURCE, ruleCount, showLabels, true, 60 + n * 70));
       continue;
     }
-    // NORMAL: one edge per source status.
+    // NORMAL: one edge per source status, each label staggered above the row.
     for (const src of t.fromStatusIds) {
-      edges.push(mkEdge(src, t.toStatusId, t, src, ruleCount, showLabels));
+      edges.push(mkEdge(src, t.toStatusId, t, src, ruleCount, showLabels, false, nextOffset(src, -30)));
     }
   }
   return edges;
@@ -117,16 +153,22 @@ function mkEdge(
   ruleCount: number,
   showLabel: boolean,
   isGlobal = false,
+  labelOffset = 0,
 ): Edge<TransitionEdgeData> {
   return {
     id: `${t.id}::${sourceKey}`,
     source,
     target,
+    // Route horizontally: leave from the right handle, enter at the left handle
+    // (self-loops use top handles for a tidy arc).
+    sourceHandle: isGlobal ? "top-s" : "right-s",
+    targetHandle: isGlobal ? "top-t" : "left-t",
     type: "transitionEdge",
     data: {
       transitionId: t.id,
       name: isGlobal ? "Any" : t.name,
       type: t.type,
+      labelOffset,
       ruleCount,
       showLabel,
     },

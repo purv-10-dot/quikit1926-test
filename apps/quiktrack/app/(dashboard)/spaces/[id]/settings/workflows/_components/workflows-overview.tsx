@@ -3,8 +3,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Pencil, Users } from "lucide-react";
+import { ChevronDown, Loader2, Pencil, Users } from "lucide-react";
 import { AssignTypesDialog } from "./assign-types-dialog";
+import { WorkTypeIcon } from "./work-type-icon";
 import { MigrationDialog, type MigrationItem } from "./migration-dialog";
 import { toOverviewRows, type WorkflowSchemeResponse } from "./types";
 
@@ -114,6 +115,12 @@ export function WorkflowsOverview({ projectId }: { projectId: string }) {
             >
               {publish.isPending ? "Publishing…" : "Publish"}
             </button>
+            <Link
+              href={`/spaces/${projectId}/settings/workflows/${anyDraftWorkflowId}`}
+              className="rounded px-3 py-1.5 text-xs font-medium text-accent-700 hover:underline"
+            >
+              View Original
+            </Link>
             <button
               type="button"
               onClick={() => discard.mutate(anyDraftWorkflowId)}
@@ -162,10 +169,28 @@ export function WorkflowsOverview({ projectId }: { projectId: string }) {
       {scheme ? (
         <>
           <div className="mb-3 flex items-center gap-2">
+            {/* Add Workflow ▾ / Switch Scheme mirror Jira's scheme toolbar. We're
+                single-workflow-per-scheme, so these are inert for now. */}
+            <button
+              type="button"
+              disabled
+              title="Adding more workflows to a scheme is coming soon"
+              className="inline-flex items-center gap-1 rounded border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-400"
+            >
+              Add Workflow <ChevronDown className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              disabled
+              title="Switching schemes is coming soon"
+              className="rounded border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-400"
+            >
+              Switch Scheme
+            </button>
             <button
               type="button"
               onClick={() => setAssignOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100"
+              className="ml-auto inline-flex items-center gap-1.5 rounded border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100"
             >
               <Users className="h-4 w-4" /> Assign issue types
             </button>
@@ -183,18 +208,52 @@ export function WorkflowsOverview({ projectId }: { projectId: string }) {
               <tbody>
                 {rows.map((row) => (
                   <tr key={row.workflow.id} className="border-b border-gray-100 last:border-0">
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-gray-900">{row.workflow.name}</div>
-                      <div className="text-xs text-gray-500">
+                    <td className="px-4 py-3 align-top">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-gray-900">{row.workflow.name}</span>
+                        <span className="text-xs text-gray-400">
+                          (View as{" "}
+                          <Link
+                            href={`/spaces/${projectId}/settings/workflows/${row.workflow.id}?view=text`}
+                            className="text-accent-700 hover:underline"
+                          >
+                            text
+                          </Link>{" "}
+                          /{" "}
+                          <Link
+                            href={`/spaces/${projectId}/settings/workflows/${row.workflow.id}`}
+                            className="text-accent-700 hover:underline"
+                          >
+                            diagram
+                          </Link>
+                          )
+                        </span>
+                      </div>
+                      <div className="mt-0.5 text-xs text-gray-500">
                         {row.workflow._count.workflowStatuses} statuses ·{" "}
                         {row.workflow._count.transitions} transitions
                         {!row.workflow.isActive && " · draft"}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-gray-700">
-                      {row.workTypes.join(", ")}
+                    <td className="px-4 py-3 align-top">
+                      {row.isDefault ? (
+                        // Default workflow: list every project issue type with its icon.
+                        <div className="space-y-1.5">
+                          {(data?.issueTypes ?? []).map((it) => (
+                            <div key={it.id} className="flex items-center gap-2 text-sm text-gray-700">
+                              <WorkTypeIcon name={it.name} />
+                              {it.name}
+                            </div>
+                          ))}
+                          {(data?.issueTypes ?? []).length === 0 && (
+                            <span className="text-sm text-gray-500">All other types</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-sm text-gray-700">{row.workTypes.join(", ")}</span>
+                      )}
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-4 py-3 text-right align-top">
                       <Link
                         href={`/spaces/${projectId}/settings/workflows/${row.workflow.id}`}
                         className="inline-flex items-center gap-1.5 text-accent-700 hover:underline"

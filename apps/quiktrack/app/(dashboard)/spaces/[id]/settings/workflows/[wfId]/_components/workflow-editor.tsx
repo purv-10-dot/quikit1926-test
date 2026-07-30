@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Columns, GitBranch, Zap, Bot } from "lucide-react";
+import { Loader2, Columns, GitBranch, Zap, Bot, MoreHorizontal } from "lucide-react";
 import { useWorkflowEditor } from "./use-workflow-editor";
 import { errorStatusIdSet } from "./diagram-canvas";
 import { TextView } from "./text-view";
@@ -65,6 +65,7 @@ export function WorkflowEditor({ projectId, wfId }: { projectId: string; wfId: s
       projectId={projectId}
       wfId={wfId}
       initialDraft={draftFromReadModel(rm.data!)}
+      isActive={rm.data!.workflow.isActive}
       pool={pool.data!}
       onClose={() => router.push(`/spaces/${projectId}/settings/workflows`)}
     />
@@ -80,12 +81,14 @@ function EditorBody({
   projectId,
   wfId,
   initialDraft,
+  isActive,
   pool,
   onClose,
 }: {
   projectId: string;
   wfId: string;
   initialDraft: ReturnType<typeof draftFromReadModel>;
+  isActive: boolean;
   pool: StatusMeta[];
   onClose: () => void;
 }) {
@@ -177,7 +180,10 @@ function EditorBody({
       <div className="flex items-center gap-3 border-b border-gray-200 px-4 py-2">
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold text-gray-900">{ed.draft.name}</div>
-          <div className="text-[11px] text-gray-400">Used in 1 space</div>
+          <div className="text-[11px] text-gray-400">
+            {isActive ? "Active workflow" : "Inactive workflow"}
+            {ed.draft.transitions.length > 0 && " · Used in 1 space"}
+          </div>
         </div>
 
         <div className="mx-auto flex items-center gap-1">
@@ -217,6 +223,14 @@ function EditorBody({
             className="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
           >
             Discard changes
+          </button>
+          <button
+            type="button"
+            disabled
+            className="rounded border border-gray-300 p-1.5 text-gray-400"
+            title="More (coming soon)"
+          >
+            <MoreHorizontal className="h-4 w-4" />
           </button>
         </div>
       </div>
@@ -341,6 +355,7 @@ function EditorBody({
             }}
           />
         )}
+        {tab === "diagram" && !selection && <EmptyStatePanel />}
       </div>
 
       {addStatusOpen && (
@@ -360,5 +375,38 @@ function EditorBody({
         />
       )}
     </div>
+  );
+}
+
+/** Jira's default right-hand panel shown when nothing is selected. */
+function EmptyStatePanel() {
+  return (
+    <aside className="flex h-full w-[340px] shrink-0 flex-col items-center justify-center border-l border-gray-200 bg-gray-50 px-8 text-center">
+      <svg width="120" height="90" viewBox="0 0 120 90" className="mb-6" aria-hidden>
+        <g stroke="#cbd5e1" strokeWidth="1.5">
+          <line x1="30" y1="20" x2="70" y2="16" />
+          <line x1="70" y1="16" x2="96" y2="34" />
+          <line x1="30" y1="20" x2="40" y2="55" />
+          <line x1="40" y1="55" x2="70" y2="16" />
+          <line x1="40" y1="55" x2="80" y2="66" />
+          <line x1="80" y1="66" x2="96" y2="34" />
+        </g>
+        <circle cx="30" cy="20" r="9" fill="#3b82f6" />
+        <circle cx="70" cy="16" r="6" fill="#1e293b" />
+        <circle cx="96" cy="34" r="11" fill="#3b82f6" />
+        <circle cx="40" cy="55" r="6" fill="#7c3aed" />
+        <circle cx="80" cy="66" r="8" fill="#7c3aed" />
+        <circle cx="62" cy="44" r="4" fill="#1e293b" />
+      </svg>
+      <h3 className="text-base font-semibold text-gray-900">Make work flow your way</h3>
+      <p className="mt-2 text-sm text-gray-500">
+        Workflows represent your team&apos;s process and control how people progress your project&apos;s work.
+      </p>
+      <p className="mt-3 text-sm text-gray-500">
+        Here, you can add statuses (drop zones on your board), create transitions between them, and
+        automate repetitive actions with rules.
+      </p>
+      <p className="mt-3 text-sm text-gray-500">Select a status or transition to reveal more details.</p>
+    </aside>
   );
 }
