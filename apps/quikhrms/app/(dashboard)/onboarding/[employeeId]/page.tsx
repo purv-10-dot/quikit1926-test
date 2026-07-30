@@ -78,6 +78,17 @@ function guessCategory(title: string): DocCategory {
 }
 
 // Mirrors the server's isSendableStep — a step automation can email out.
+/**
+ * A BGV step with NO configured checks can never complete via the Clear/Flag
+ * flow (which requires every check to be Clear). Treat it as a plain task so
+ * the Mark-complete / Skip buttons appear and it isn't stuck pending forever.
+ */
+function isEmptyBgv(stepType?: string | null, config?: Record<string, unknown> | null): boolean {
+  if (stepType !== "BGV") return false;
+  const checks = config?.bgvChecks;
+  return !(Array.isArray(checks) && checks.length > 0);
+}
+
 function sendableStep(stepType?: string | null, config?: Record<string, unknown> | null): boolean {
   const st = stepType ?? "CustomTask";
   const cfg = config ?? {};
@@ -143,7 +154,16 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
   const updateMut = useMutation({
     mutationFn: ({ taskId, status }: { taskId: string; status: TaskStatus }) =>
       api.put(`/api/v1/hrms/onboarding/tasks/${taskId}`, { status }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["onboarding", employeeId] }),
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: ["onboarding", employeeId] });
+      const label =
+        v.status === "TaskSkipped" ? "Task skipped"
+        : v.status === "TaskBlocked" ? "Task blocked"
+        : v.status === "TaskCompleted" ? "Task completed"
+        : "Task updated";
+      toast.success(label);
+    },
+    onError: (e: unknown) => toast.error("Couldn't update task", e instanceof Error ? e.message : undefined),
   });
 
   // "Send now" for Send Email / Notification steps — sends the email, then marks
@@ -440,8 +460,10 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
               <FileText size={13} /> Joining Letter
             </button>
             {/* Admin-only controls — employee self-view doesn't see Complete /
-                Force Complete / Cancel. They just upload tasks; HR closes the loop. */}
-            {(!isSelfView || isAdminViewer) && inst.status !== "OnboardCompleted" && inst.status !== "OnboardCancelled" && (
+                Force Complete / Cancel. They just upload tasks; HR closes the loop.
+                Automation ("Start onboarding") is hidden during Pre-Onboarding —
+                there the only action is "Move to Onboarding" first. */}
+            {!isPreOnboarding && (!isSelfView || isAdminViewer) && inst.status !== "OnboardCompleted" && inst.status !== "OnboardCancelled" && (
               <button
                 onClick={() => automationMut.mutate(!inst.automated)}
                 disabled={automationMut.isPending}
@@ -589,12 +611,14 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1">
-                  <h3 className={clsx("text-[13px] font-semibold", t.status === "TaskCompleted" ? "line-through text-gray-400" : "text-gray-900")}>{t.title}</h3>
+                  <h3 className={clsx("text-[13px] font-semibold", (t.status === "TaskCompleted" || t.status === "TaskSkipped") ? "line-through text-gray-400" : "text-gray-900")}>{t.title}</h3>
                   {t.isMandatory && <span className="text-red-500 text-xs">*</span>}
                   {t.stepType
                     ? <span className="px-2 py-0.5 bg-sky-50 text-sky-700 rounded-full text-[11px] font-medium">{STEP_TYPE_LABEL[t.stepType] ?? t.stepType}</span>
                     : <span className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded-full text-[11px] font-medium">{t.category}</span>}
                   <span className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded-full text-[11px] font-medium">{t.assigneeRole}</span>
+                  {t.status === "TaskSkipped" && <span className="px-2 py-0.5 bg-gray-200 text-gray-600 rounded-full text-[11px] font-semibold">Skipped</span>}
+                  {t.status === "TaskBlocked" && <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-[11px] font-semibold">Blocked</span>}
                   {inst.automated && sendableStep(t.stepType, t.config) && t.status !== "TaskCompleted" && t.status !== "TaskSkipped"
                     && !(t.config?.requestSentAt) && firstPendingSendableId !== t.id && (
                     <span className="px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full text-[11px] font-medium">Queued</span>
@@ -606,6 +630,13 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
                   const cfg = (t.config ?? {}) as Record<string, unknown>;
                   const checks = Array.isArray(cfg.bgvChecks) ? (cfg.bgvChecks as string[]) : [];
                   const st = (cfg.bgvStatus ?? {}) as Record<string, string>;
+                  if (checks.length === 0) {
+                    return (
+                      <div className="mt-1.5 text-[11px] text-gray-400 italic">
+                        No verification checks configured for this step.
+                      </div>
+                    );
+                  }
                   return (
                     <div className="mt-1.5 border border-gray-100 rounded-lg p-2 bg-gray-50/60 space-y-1.5">
                       {checks.map((c) => {
@@ -751,7 +782,7 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
                     </button>
                   </Tooltip>
                 )}
-                {!(t.category === "Documentation" || isBankTask(t.title)) && t.stepType !== "CompleteProfile" && t.stepType !== "ReadPolicy" && t.stepType !== "BGV" && (
+                {!(t.category === "Documentation" || isBankTask(t.title)) && t.stepType !== "CompleteProfile" && t.stepType !== "ReadPolicy" && (t.stepType !== "BGV" || isEmptyBgv(t.stepType, t.config)) && (
                   <Tooltip content="Mark complete">
                     <button aria-label="Mark complete" onClick={() => updateMut.mutate({ taskId: t.id, status: "TaskCompleted" })}
                       disabled={t.status === "TaskCompleted"}
@@ -762,7 +793,7 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
                 )}
                 {/* Complete Profile is mandatory and can ONLY be finished via its
                     form — no skip/block escape hatch. */}
-                {t.stepType !== "CompleteProfile" && t.stepType !== "BGV" && (
+                {t.stepType !== "CompleteProfile" && (t.stepType !== "BGV" || isEmptyBgv(t.stepType, t.config)) && (
                   <>
                     <Tooltip content="Skip task">
                       <button aria-label="Skip task" onClick={() => updateMut.mutate({ taskId: t.id, status: "TaskSkipped" })}

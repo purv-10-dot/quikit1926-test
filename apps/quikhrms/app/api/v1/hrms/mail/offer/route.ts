@@ -64,32 +64,66 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     const candidateName = `${candidate.firstName} ${candidate.lastName}`.trim();
     const candidateAddress = candidate.location ?? null;
 
-    // Generate PDF using tenant branding
-    const pdfBuffer = await generateOfferPdf({
-      candidateName,
-      candidateAddress,
-      jobTitle,
-      designation: offer.designation ?? "",
-      offeredCTC: Number(offer.offeredCTC),
-      joiningDate: fmtDate(offer.joiningDate),
-      joiningBonus: offer.joiningBonus ? Number(offer.joiningBonus) : null,
-      relocationBonus: offer.relocationBonus ? Number(offer.relocationBonus) : null,
-      equityGrant: offer.equityGrant,
-      expiresAt: offer.expiresAt ? fmtDate(offer.expiresAt) : null,
-      department: department?.name ?? null,
-      reportingTo: manager ? `${manager.firstName} ${manager.lastName}`.trim() : null,
-      companyName,
-      companyAddress: [company?.addressLine1, company?.addressLine2, company?.city, company?.state]
-        .filter(Boolean).join(", ") || null,
-      letterDate: fmtDate(new Date()),
-      letterheadKey: company?.letterheadKey ?? null,
-      sealKey: company?.sealKey ?? null,
-      signatureKey: company?.signatureKey ?? null,
-      signatoryName: company?.signatoryName ?? null,
-      signatoryDesignation: company?.signatoryDesignation ?? null,
-      footer: company?.offerLetterFooter ?? null,
-      bodyTemplate: company?.offerLetterBody ?? null,
-    });
+    // Supporting docs uploaded in the Send Offer wizard. Computed now so they
+    // can be downloaded IN PARALLEL with PDF generation (previously the docs
+    // were fetched one-by-one after the PDF was built). Multi-doc with a legacy
+    // single-doc fallback. Skipped entirely in preview mode.
+    type Attachment = { filename: string; content: Buffer; contentType: string };
+    const meta = (app.offeredComponents ?? null) as OfferMeta | null;
+    const supportingDocs = meta?.supportingDocs?.length
+      ? meta.supportingDocs
+      : meta?.supportingDoc?.key
+        ? [meta.supportingDoc]
+        : [];
+
+    // Generate the offer PDF and download supporting docs concurrently.
+    const [pdfBuffer, fetchedDocs] = await Promise.all([
+      generateOfferPdf({
+        candidateName,
+        candidateAddress,
+        jobTitle,
+        designation: offer.designation ?? "",
+        offeredCTC: Number(offer.offeredCTC),
+        joiningDate: fmtDate(offer.joiningDate),
+        joiningBonus: offer.joiningBonus ? Number(offer.joiningBonus) : null,
+        relocationBonus: offer.relocationBonus ? Number(offer.relocationBonus) : null,
+        equityGrant: offer.equityGrant,
+        expiresAt: offer.expiresAt ? fmtDate(offer.expiresAt) : null,
+        department: department?.name ?? null,
+        reportingTo: manager ? `${manager.firstName} ${manager.lastName}`.trim() : null,
+        companyName,
+        companyAddress: [company?.addressLine1, company?.addressLine2, company?.city, company?.state]
+          .filter(Boolean).join(", ") || null,
+        letterDate: fmtDate(new Date()),
+        letterheadKey: company?.letterheadKey ?? null,
+        sealKey: company?.sealKey ?? null,
+        signatureKey: company?.signatureKey ?? null,
+        signatoryName: company?.signatoryName ?? null,
+        signatoryDesignation: company?.signatoryDesignation ?? null,
+        footer: company?.offerLetterFooter ?? null,
+        bodyTemplate: company?.offerLetterBody ?? null,
+      }),
+      parsed.data.preview
+        ? Promise.resolve([] as Attachment[])
+        : Promise.all(
+            supportingDocs
+              .filter((d) => d?.key)
+              .map(async (doc): Promise<Attachment | null> => {
+                try {
+                  const obj = await getObject(doc.key!);
+                  return {
+                    filename: doc.name || doc.key!.split("/").pop() || "attachment",
+                    content: Buffer.from(obj.body),
+                    contentType: obj.contentType,
+                  };
+                } catch (e) {
+                  // Best-effort — one bad attachment must not block the offer email.
+                  console.error("[mail/offer] supporting doc attach failed:", doc.key, e);
+                  return null;
+                }
+              }),
+          ).then((rows) => rows.filter((r): r is Attachment => r !== null)),
+    ]);
 
     // Preview mode — hand back the PDF for on-screen review, no email/no status change.
     if (parsed.data.preview) {
@@ -121,33 +155,10 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
 
     const pdfName = `Offer-${candidate.firstName}-${candidate.lastName}.pdf`.replace(/\s+/g, "");
 
-    const attachments: { filename: string; content: Buffer; contentType: string }[] = [
+    const attachments: Attachment[] = [
       { filename: pdfName, content: pdfBuffer, contentType: "application/pdf" },
+      ...fetchedDocs,
     ];
-
-    // Attach the HR-uploaded supporting documents (from the Send Offer wizard).
-    // Supports multiple docs; falls back to the legacy single-doc field for
-    // offers created before the multi-doc change. Best-effort per file — a
-    // fetch failure on one attachment must not block the offer email.
-    const meta = (app.offeredComponents ?? null) as OfferMeta | null;
-    const supportingDocs = meta?.supportingDocs?.length
-      ? meta.supportingDocs
-      : meta?.supportingDoc?.key
-        ? [meta.supportingDoc]
-        : [];
-    for (const doc of supportingDocs) {
-      if (!doc?.key) continue;
-      try {
-        const obj = await getObject(doc.key);
-        attachments.push({
-          filename: doc.name || doc.key.split("/").pop() || "attachment",
-          content: Buffer.from(obj.body),
-          contentType: obj.contentType,
-        });
-      } catch (e) {
-        console.error("[mail/offer] supporting doc attach failed:", doc.key, e);
-      }
-    }
 
     const result = await resolveAndSend(orgId, {
       key: "recruit.offer-branded",

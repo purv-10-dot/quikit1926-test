@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { signOut } from "next-auth/react";
@@ -36,20 +36,31 @@ export function SetupGate() {
   const { permissions, isLoading: configLoading } = useDashboardConfig();
   const isAdmin = permissions.includes("*");
 
+  // Once setup is complete we STOP polling — no point re-hitting the API on
+  // every page/focus for the rest of the session.
+  const [done, setDone] = useState(false);
+  const active = isAdmin && !done;
+
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["hrms", "setup", "status"],
     queryFn: () => api.get<HrmsSetupProgress>("/api/v1/hrms/setup/status"),
-    enabled: isAdmin,
+    enabled: active,
     staleTime: 0,
     refetchOnMount: "always",
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: active,
   });
 
-  // Re-check whenever the admin moves between pages (e.g. after saving a
-  // department) so the checklist reflects the latest state on return.
+  // Latch "done" as soon as the API reports completion → the query disables and
+  // no further calls fire this session.
   useEffect(() => {
-    if (isAdmin) void refetch();
-  }, [pathname, isAdmin, refetch]);
+    if (data?.data?.setupCompleted) setDone(true);
+  }, [data]);
+
+  // While setup is still incomplete, re-check when the admin moves between pages
+  // (e.g. after saving a department) so the checklist reflects the latest state.
+  useEffect(() => {
+    if (active) void refetch();
+  }, [pathname, active, refetch]);
 
   // Transparent until we know the user is an admin with incomplete setup.
   if (!isAdmin || configLoading) return null;

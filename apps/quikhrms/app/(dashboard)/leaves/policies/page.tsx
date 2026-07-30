@@ -982,10 +982,14 @@ function LeaveGroupEditor({ group, onClose }: { group: LeaveGroup | null; onClos
                       <div className="text-xs font-semibold text-gray-900 truncate">{t.name}</div>
                       <div className="text-[10px] text-gray-500">
                         {t.code} · {(() => {
+                          // Group-driven only: show the group's own quota. If it
+                          // hasn't been configured (⚙) yet, show "Set quota" — do
+                          // NOT fall back to the base leave-type's days, since the
+                          // balance ignores the base once the type is in a group.
                           const r = item?.rules as { isUnlimited?: boolean; maxBalance?: number } | undefined;
                           if (r?.isUnlimited) return "Unlimited";
                           if (r && typeof r.maxBalance === "number") return `${r.maxBalance} days/yr`;
-                          return `${t.maxBalance} days/yr`;
+                          return "Set quota ⚙";
                         })()}
                       </div>
                     </div>

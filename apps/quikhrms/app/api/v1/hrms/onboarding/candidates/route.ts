@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
+import { Prisma } from "@quikit/database";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, validationError, conflict, internalError } from "@/lib/api-response";
@@ -131,10 +132,25 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     const search = searchParams.get("search");
     const status = searchParams.get("status");
 
+    // The Onboarding list = employees whose onboarding instance is in the
+    // "Onboarding" phase (Day-1+). `phase` is a raw-SQL column, so resolve the
+    // matching employeeIds first (mirrors the pre-onboarding roster, which uses
+    // phase='PreOnboarding'). Null/absent phase counts as Onboarding (default).
+    // Filtering by phase — NOT by employee.status — is what makes "Move to
+    // Onboarding" reliably surface a candidate here, even after their status
+    // has flipped to Active.
+    const phaseRows = await prisma.$queryRaw<Array<{ employeeId: string }>>`
+      SELECT "employeeId" FROM "app_quikhrms"."OnboardingInstance"
+      WHERE "orgId" = ${orgId} AND "deletedAt" IS NULL AND (phase = 'Onboarding' OR phase IS NULL)`;
+    const onboardingIds = phaseRows.map((r) => r.employeeId);
+    if (onboardingIds.length === 0) {
+      return successResponse([], paginationMeta(page, limit, 0));
+    }
+
     const where = {
       orgId,
       deletedAt: null,
-      status: "PreBoarding" as const,
+      id: { in: onboardingIds },
       ...(search && {
         OR: [
           { firstName: { contains: search, mode: "insensitive" as const } },
@@ -167,7 +183,7 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
         where: { orgId, employeeId: { in: employeeIds }, deletedAt: null },
         select: {
           id: true, employeeId: true, status: true, startDate: true,
-          tasks: { select: { status: true, stepType: true, config: true } },
+          tasks: { select: { id: true, status: true, stepType: true, config: true } },
         },
       }),
       prisma.employeeSalary.findMany({
@@ -179,10 +195,20 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     const instanceMap = new Map(instances.map((i) => [i.employeeId, i]));
     const salaryMap = new Map(salaries.map((s) => [s.employeeId, s]));
 
-    // Per-employee stage progress + BGV status, derived from onboarding tasks.
+    // Per-task phase (raw-SQL column). This list is the Onboarding roster, so we
+    // count only ONBOARDING-phase tasks — pre-onboarding tasks (and their BGV)
+    // must not inflate the Day-1 progress. Null/absent phase = Onboarding.
+    const instanceIds = instances.map((i) => i.id);
+    const taskPhaseRows = instanceIds.length
+      ? await prisma.$queryRaw<Array<{ id: string; phase: string | null }>>`
+          SELECT id, phase FROM "app_quikhrms"."OnboardingTask" WHERE "instanceId" IN (${Prisma.join(instanceIds)})`
+      : [];
+    const phaseOf = new Map(taskPhaseRows.map((r) => [r.id, r.phase ?? "Onboarding"]));
+
+    // Per-employee stage progress + BGV status, derived from ONBOARDING-phase tasks.
     const progressByEmp = new Map<string, { taskDone: number; taskTotal: number; progressPct: number; bgvStatus: BgvStatus }>();
     for (const inst of instances) {
-      const t = inst.tasks;
+      const t = inst.tasks.filter((x) => (phaseOf.get(x.id) ?? "Onboarding") === "Onboarding");
       const done = t.filter((x) => x.status === "TaskCompleted" || x.status === "TaskSkipped").length;
       progressByEmp.set(inst.employeeId, {
         taskDone: done,
@@ -406,6 +432,19 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
           },
         },
       });
+
+      // If the caller (e.g. the Pre-Onboarding "Add Candidate" wizard) marks this
+      // as a pre-onboarding hire, flip the instance into the PreOnboarding phase.
+      // `phase` is a raw-SQL column; default stays "Onboarding" for callers that
+      // don't pass it (e.g. the Onboarding "new candidate" page).
+      if (body?.phase === "PreOnboarding") {
+        await prisma.$executeRaw`
+          UPDATE "app_quikhrms"."OnboardingInstance" SET phase = 'PreOnboarding' WHERE id = ${instance.id}`;
+        // Tag every seeded task as a pre-onboarding task so the onboarding phase
+        // starts with a fresh checklist later. (phase is a raw-SQL column.)
+        await prisma.$executeRaw`
+          UPDATE "app_quikhrms"."OnboardingTask" SET phase = 'PreOnboarding' WHERE "instanceId" = ${instance.id}`;
+      }
 
       await createAuditLog({
         orgId, userId, action: "Create", entityType: "Employee", entityId: employee.id,
