@@ -34,6 +34,7 @@ export interface BoardIssue {
   epicId?: string | null;
   startDate?: string | null;
   dueDate?: string | null;
+  storyPoints?: number | null;
   subtaskCount?: number;
 }
 

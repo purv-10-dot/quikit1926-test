@@ -96,17 +96,21 @@ function SummaryCell({ idea, onOpen, onEditTitle, showKey = true, showType = tru
   }
   function cancel() { setEditing(false); setDraft(idea.title); }
   if (editing) {
-    // Inline edit like JPD: bordered input with floating ✓ / ✕ actions.
+    // Inline edit like JPD: bordered input with ✓ / ✕ actions placed AFTER the
+    // input (not overlaying it), so the end of a long title stays visible.
     return (
-      <div className="relative flex items-center" onClick={(e) => e.stopPropagation()}>
+      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
         <input
           autoFocus
           value={draft}
+          // Put the caret at the END of the title on focus (JPD/Jira behavior);
+          // autoFocus alone leaves it at the start.
+          onFocus={(e) => { const n = e.target.value.length; e.target.setSelectionRange(n, n); }}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") cancel(); }}
-          className="w-full rounded border border-blue-400 px-1.5 py-1 text-sm font-medium shadow-sm outline-none"
+          className="min-w-0 flex-1 rounded border border-blue-400 px-1.5 py-1 text-sm font-medium shadow-sm outline-none"
         />
-        <span className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-0.5 rounded border border-gray-200 bg-white shadow-sm">
+        <span className="flex shrink-0 items-center gap-0.5 rounded border border-gray-200 bg-white shadow-sm">
           <button type="button" aria-label="Save" onMouseDown={(e) => { e.preventDefault(); commit(); }} className="rounded-l p-1 text-gray-500 hover:bg-gray-100 hover:text-green-600">
             <Check className="h-4 w-4" />
           </button>

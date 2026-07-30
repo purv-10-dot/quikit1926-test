@@ -17,6 +17,7 @@ import { DescriptionAttachments } from "@/components/description-attachments";
 import { IssueViewSkeleton } from "@/components/skeleton";
 import { IssueDetailsPanel } from "./issue-details-panel";
 import { IssueHeaderSections } from "./issue-header-sections";
+import { IssueDevelopment } from "./issue-development";
 import type { IssuePageData, IssueType } from "./types";
 import type { MentionItem } from "@/components/editor/mention";
 
@@ -176,6 +177,7 @@ export function IssueFullView({
             window.location.href = `/spaces/${projectId}/work/${id}`;
           }}
         />
+        <IssueDevelopment issueId={issue.id} issueKey={issue.key} />
         {/* Separate "Attachments" section — mirrors the files embedded in the
             description as cards (same as shown inside Description), plus the
             migration-imported attachments below. */}
