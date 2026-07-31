@@ -46,7 +46,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       return validationError("Validation failed", parsed.error.flatten().fieldErrors);
     }
 
-    const { levels, autoApproveAfterDays, ...rest } = parsed.data;
+    const { levels, autoApproveAfterDays, module, ...rest } = parsed.data;
 
     // Every approver referenced in a level must belong to this org — block
     // cross-tenant / bogus approver (user or role) ids.
@@ -68,6 +68,9 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         data: {
           orgId,
           ...rest,
+          // Cast: client enum may lag the DB enum (WFH/Payroll added via raw SQL,
+          // no prisma generate). The value is validated by Zod above.
+          module: module as never,
           levels: JSON.parse(JSON.stringify(levels)),
           autoApproveAfterDays: autoApproveAfterDays ?? null,
           createdBy: userId,

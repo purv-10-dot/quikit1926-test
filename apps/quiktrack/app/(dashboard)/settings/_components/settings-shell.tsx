@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ArrowLeft, Database, Users, ListChecks } from "lucide-react";
+import { ArrowLeft, Database, Users, ListChecks, Github } from "lucide-react";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 
 const NAV: {
@@ -15,6 +15,7 @@ const NAV: {
   { key: "user-management", label: "Roles & Permissions", href: "/settings/user-management", icon: Users, adminOnly: true },
   { key: "work-items-fields", label: "Fields", href: "/settings/work-items/fields", icon: ListChecks, adminOnly: true },
   { key: "migration", label: "Migration", href: "/settings/migration", icon: Database, adminOnly: true },
+  { key: "integrations-github", label: "GitHub", href: "/settings/integrations/github", icon: Github, adminOnly: true },
   // "General Settings" lives in the header ⚙ popover (see settings-popover.tsx)
   // — keeping it out of this sidebar prevents duplication.
 ];

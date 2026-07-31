@@ -43,10 +43,22 @@ export const PUT = withAuth(async (req: NextRequest, { orgId, userId }, params) 
     });
 
     if (status === "TaskCompleted" || status === "TaskSkipped") {
-      const remaining = await prisma.onboardingTask.count({
-        where: { instanceId: task.instanceId, status: { notIn: ["TaskCompleted", "TaskSkipped"] } },
-      });
-      if (remaining === 0) {
+      // Scope completion to the instance's CURRENT phase — finishing every
+      // pre-onboarding step must NOT complete/activate the whole onboarding.
+      // (phase is a raw-SQL column.)
+      const phaseRows = await prisma.$queryRaw<Array<{ phase: string | null }>>`
+        SELECT phase FROM "app_quikhrms"."OnboardingInstance" WHERE id = ${task.instanceId} LIMIT 1`;
+      const instPhase = phaseRows[0]?.phase ?? "Onboarding";
+
+      const remainingRows = await prisma.$queryRaw<Array<{ n: bigint }>>`
+        SELECT COUNT(*)::bigint AS n FROM "app_quikhrms"."OnboardingTask"
+        WHERE "instanceId" = ${task.instanceId}
+          AND phase = ${instPhase}
+          AND status NOT IN ('TaskCompleted', 'TaskSkipped')`;
+      const remaining = Number(remainingRows[0]?.n ?? 0);
+
+      if (remaining === 0 && instPhase === "Onboarding") {
+        // Onboarding fully done → complete the instance + activate the employee.
         const instance = await prisma.onboardingInstance.update({
           where: { id: task.instanceId },
           data: { status: "OnboardCompleted", completedAt: new Date(), updatedBy: userId },
@@ -55,10 +67,12 @@ export const PUT = withAuth(async (req: NextRequest, { orgId, userId }, params) 
           where: { id: instance.employeeId },
           data: { status: "Active", inviteStatus: "Invited", updatedBy: userId },
         });
-      } else {
+      } else if (remaining > 0) {
         // Automation chain: completing/skipping a step sends the next one.
         await advanceAutomation(task.instanceId, orgId);
       }
+      // PreOnboarding fully done → no auto-complete/activate; HR clicks
+      // "Move to Onboarding" to advance the lifecycle.
     }
 
     await createAuditLog({ orgId, userId, action: "Update", entityType: "OnboardingTask", entityId: taskId, changes: parsed.data });

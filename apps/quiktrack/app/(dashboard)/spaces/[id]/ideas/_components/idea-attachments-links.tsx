@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Paperclip, Link2, X, FileText, Loader2, Search, Plus } from "lucide-react";
 import { uploadProjectImage } from "@/lib/upload-image";
+import { showToast } from "@/lib/ui/toast";
 import { TYPE_META, type IssueType } from "@/app/(dashboard)/spaces/[id]/list/_components/list-types";
 
 /** Work-type icon (Task/Bug/Story/Epic/Subtask), matching the Delivery search. */
@@ -68,7 +69,7 @@ export function IdeaAttachmentsLinks({ projectId, ideaId }: { projectId: string;
       if (file.type.startsWith("image/")) {
         url = await uploadProjectImage(projectId, file);
       } else {
-        if (file.size > 4 * 1024 * 1024) { alert("File is too large (max 4 MB)."); return; }
+        if (file.size > 4 * 1024 * 1024) { showToast("File is too large (max 4 MB).", "error"); return; }
         url = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => resolve(String(reader.result));
@@ -83,9 +84,9 @@ export function IdeaAttachmentsLinks({ projectId, ideaId }: { projectId: string;
       });
       const j = await res.json();
       if (res.ok && j.success) setAttachments((a) => [j.data, ...a]);
-      else alert(j?.error ?? "Couldn’t save attachment");
+      else showToast(j?.error ?? "Couldn’t save attachment", "error");
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Upload failed");
+      showToast(err instanceof Error ? err.message : "Upload failed", "error");
     } finally { setUploading(false); }
   }
 

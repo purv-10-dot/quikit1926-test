@@ -203,14 +203,17 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
           employeeId: emp.id,
           startDate,
           status: "NotStarted",
-          // New hires start in the PRE-ONBOARDING phase (pre-joining: BGV, docs,
-          // credentials, facilities). Set inside the transaction so a hire can
-          // never be saved without a phase and vanish from the list.
-          phase: "PreOnboarding",
           createdBy: userId,
           updatedBy: userId,
         },
       });
+      // New hires start in the PRE-ONBOARDING phase (pre-joining: BGV, docs,
+      // credentials, facilities). `phase` is a raw-SQL column (not in the
+      // generated Prisma Client), so it must be written via $executeRaw — never
+      // in the create() above. Set inside the same transaction so a hire can
+      // never be saved without a phase and vanish from the list.
+      await tx.$executeRaw`
+        UPDATE "app_quikhrms"."OnboardingInstance" SET phase = 'PreOnboarding' WHERE id = ${onboarding.id}`;
       void onboarding; void startDate;
 
       return emp;

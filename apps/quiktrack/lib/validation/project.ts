@@ -12,6 +12,9 @@ export const createProjectSchema = z.object({
     .regex(projectKeyRegex, "Project key must be UPPERCASE letters/digits, start with letter"),
   description: z.string().max(2000).optional(),
   projectType: z.enum(["software", "discovery", "service"]).optional(),
+  // Jira-style management style (label only today). Distinct from projectType,
+  // which is the template kind. Defaults to "team-managed" when omitted.
+  managementStyle: z.enum(["team-managed", "company-managed"]).optional(),
   // Which template the space is created from. Drives runtime behavior
   // (sprints vs Kanban-style Activity Board, renamable backlog). Defaults to
   // "scrum" when omitted. "discovery" provisions a Jira Product Discovery-style

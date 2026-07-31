@@ -6,6 +6,7 @@ import { createPayRunSchema } from "@/lib/validations/payroll";
 import { createAuditLog } from "@/lib/utils/audit";
 import { assertPayrollReady, findOverlappingRun, suggestPayDate } from "@/lib/services/payroll-run-state";
 import { buildPayrollEvent, emitPayrollEvent, PAYROLL_EVENTS } from "@/lib/events/payroll";
+import { resolveApprovalChainLevels } from "@/lib/services/approval-chain";
 
 export const GET = withAuth(async (_req: NextRequest, { orgId }) => {
   try {
@@ -102,6 +103,31 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         updatedBy: userId,
       },
     });
+    // Seed the approval chain from the central Approval Chain (Settings →
+    // Approval Chains → "Payroll") when one is configured. No chain → no rows
+    // seeded (admins can still set a per-run chain manually, or approve
+    // directly with hrms.settings.write — legacy behaviour, unchanged).
+    try {
+      const chain = await resolveApprovalChainLevels(orgId, "Payroll", null);
+      if (chain.ok) {
+        await prisma.payRunApproval.createMany({
+          data: chain.levels.map((lv) => ({
+            orgId,
+            payRunId: record.id,
+            level: lv.level,
+            approverId: lv.approverId,
+            approverRole: lv.kind,
+            status: "Pending" as const,
+            createdBy: userId,
+            updatedBy: userId,
+          })),
+        });
+      }
+    } catch (e) {
+      // Never block run creation on a chain-seeding problem — log and continue.
+      console.error("payroll approval-chain seed failed", e);
+    }
+
     await createAuditLog({
       orgId, userId, action: "Create", entityType: "PayRun", entityId: record.id, changes: parsed.data,
     });

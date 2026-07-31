@@ -22,7 +22,6 @@ export default async function DashboardPage() {
   const user = await ensureHelpdeskUser(tenantId, externalUserId, session);
   const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } });
 
-
   // All apps for this tenant.
   const apps = await prisma.app.findMany({
     where: { tenant_id: tenantId, is_active: true },
