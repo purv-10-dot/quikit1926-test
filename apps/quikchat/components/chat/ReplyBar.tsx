@@ -2,11 +2,12 @@
 
 import type { MessageDto, PublicUser } from "@/lib/shared";
 import { IconButton, Reply, X } from "@/components/ui";
+import { flattenMarkdown } from "@/lib/richtext";
 
 export function replyPreviewText(msg: MessageDto): string {
   if (msg.type === "Delete") return "This message was deleted";
   if (msg.type === "Media") return "📎 Attachment";
-  return msg.content || "";
+  return flattenMarkdown(msg.content || "");
 }
 
 export interface ReplyBarProps {

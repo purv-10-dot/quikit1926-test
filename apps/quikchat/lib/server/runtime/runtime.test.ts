@@ -318,3 +318,91 @@ describe("HttpRuntimeClient", () => {
     });
   });
 });
+
+// --- Connect vs. idle timeout (fake timers + an abort-aware controllable body) ---
+//
+// The existing `sseResponse` enqueues synchronously and isn't wired to the abort
+// signal, so it can't reproduce a real aborted body. This helper wires the
+// fetch's `opts.signal` to `controller.error(AbortError)` — exactly how a real
+// fetch errors a mid-stream body on abort — and hands the test manual
+// enqueue/close control so timers can be advanced between chunks.
+
+function controllableSse(): {
+  fetch: ReturnType<typeof vi.fn>;
+  enqueue: (s: string) => void;
+  close: () => void;
+} {
+  let ctrl!: ReadableStreamDefaultController<Uint8Array>;
+  const enc = new TextEncoder();
+  const fetchMock = vi.fn(async (_url: string, opts: RequestInit) => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        ctrl = c;
+        const signal = opts.signal;
+        signal?.addEventListener("abort", () =>
+          c.error(new DOMException("This operation was aborted", "AbortError")),
+        );
+      },
+    });
+    return { ok: true, status: 200, body: stream } as unknown as Response;
+  });
+  return {
+    fetch: fetchMock,
+    enqueue: (s: string) => ctrl.enqueue(enc.encode(s)),
+    close: () => ctrl.close(),
+  };
+}
+
+describe("HttpRuntimeClient timeouts (connect vs. idle)", () => {
+  beforeEach(() => {
+    process.env.AGENT_JWT_SECRET = "test-agent-secret";
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    delete process.env.AGENT_JWT_SECRET;
+  });
+
+  it("does NOT abort a slow-but-streaming response (total wall-clock > old 60s cap)", async () => {
+    const s = controllableSse();
+    vi.stubGlobal("fetch", s.fetch);
+    const { HttpRuntimeClient } = await import("./http");
+
+    const collected = collect(new HttpRuntimeClient("https://r").assist(input));
+    // Let fetch resolve + reach the first read (idle armed).
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Three deltas, 40s apart — each gap < 60s idle, total 120s (> the old 60s
+    // total cap that used to abort mid-stream).
+    for (let i = 0; i < 3; i++) {
+      s.enqueue(`data: {"type":"delta","text":"x${i}"}\n\n`);
+      await vi.advanceTimersByTimeAsync(40_000);
+    }
+    s.enqueue('data: {"type":"done","text":"done","agentRunId":"r"}\n\n');
+    await vi.advanceTimersByTimeAsync(0);
+    s.close();
+
+    const events = await collected;
+    expect(events.some((e) => e.type === "error")).toBe(false);
+    expect(events.filter((e) => e.type === "delta")).toHaveLength(3);
+    expect(events.at(-1)?.type).toBe("done");
+  });
+
+  it("still aborts a hung stream that opens but never sends a byte (idle guard)", async () => {
+    const s = controllableSse(); // headers OK, body opens, nothing ever enqueued
+    vi.stubGlobal("fetch", s.fetch);
+    const { HttpRuntimeClient } = await import("./http");
+
+    const collected = collect(new HttpRuntimeClient("https://r").assist(input));
+    await vi.advanceTimersByTimeAsync(0); // reach the first read (idle armed)
+    await vi.advanceTimersByTimeAsync(IDLE_TIMEOUT_MS_TEST); // no byte for the window → abort
+
+    const events = await collected;
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ type: "error", code: "stream" });
+  });
+});
+
+// Mirrors IDLE_TIMEOUT_MS in ./http (kept local so the test needn't export it).
+const IDLE_TIMEOUT_MS_TEST = 60_000;

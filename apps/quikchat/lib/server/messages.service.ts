@@ -17,6 +17,14 @@ import { getStorage } from "./storage";
 
 const MAX_CONTENT = 8000;
 
+/**
+ * How long after posting a message its sender may still edit it (QC_007).
+ * SOURCE OF TRUTH for the window — the client mirrors this value in
+ * `lib/message-actions.ts` (`EDIT_WINDOW_MS`) to hide the Edit action, since the
+ * `@/lib/shared` barrel isn't importable from client bundles. Change both.
+ */
+export const EDIT_WINDOW_MS = 15 * 60_000;
+
 /** How a message was authored — defaults to a human; agents stamp ai_agent. */
 export interface SendActor {
   actorType?: "human" | "ai_agent";
@@ -458,6 +466,11 @@ export async function editMessage(
   if (msg.senderId !== ctx.userId) throw new HttpError(403, "You can only edit your own messages");
   if (msg.type === "Delete" || msg.type === "SystemActivity") {
     throw new HttpError(403, "This message cannot be edited");
+  }
+  // QC_007: edits are only allowed inside a fixed window after posting. Delete has
+  // no such window — this gate is edit-only, by design.
+  if (Date.now() - msg.createdAt.getTime() > EDIT_WINDOW_MS) {
+    throw new HttpError(403, "Edit window has passed");
   }
   const trimmed = (content ?? "").trim();
   if (!trimmed) throw new HttpError(403, "Message cannot be empty");

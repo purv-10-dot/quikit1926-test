@@ -8,10 +8,12 @@ import Placeholder from "@tiptap/extension-placeholder";
 import type { MentionRefInput } from "@/lib/shared";
 import {
   Bold,
+  Check,
   Code,
   FileText,
   IconButton,
   Italic,
+  Mic,
   Paperclip,
   Popover,
   Send,
@@ -21,8 +23,14 @@ import {
   useToast,
   X,
 } from "@/components/ui";
+import { formatVoiceDuration } from "@/lib/format";
 import { computeMentions, findMentionQuery, type MentionMember } from "@/lib/mentions";
 import { serializeToMarkdown } from "@/lib/tiptap-markdown";
+import {
+  useVoiceRecorder,
+  voiceFileExtension,
+  type VoiceRecording,
+} from "@/lib/use-voice-recorder";
 
 // Full emoji picker (search + categories + skin tones), lazy-loaded so the heavy
 // emoji dataset only ships when the user actually opens the picker.
@@ -70,7 +78,14 @@ export function Composer({
   // Staged attachment (Teams/Slack-style attach→preview→send). Picking a file
   // stages it with a local preview; the upload + send happen on Send (caption =
   // the typed text). Single file, matching the prior scope.
-  const [pending, setPending] = useState<{ file: File; localUrl: string } | null>(null);
+  // A finished voice recording stages here TOO — same shape, plus `voice`, which
+  // both flags the chip's rendering and carries the recorder's measured duration
+  // through to `MediaMeta.durationSec` on send.
+  const [pending, setPending] = useState<{
+    file: File;
+    localUrl: string;
+    voice?: { durationSec: number };
+  } | null>(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [formatOpen, setFormatOpen] = useState(false);
   const [emojiData, setEmojiData] = useState<unknown>(null);
@@ -99,6 +114,64 @@ export function Composer({
   });
 
   const canAttach = !!channelId && !!onSendMedia && !disabled;
+
+  // Voice notes. `onAutoStop` is what keeps the 5-minute cap from silently
+  // discarding a recording — it stages the result exactly like a manual stop.
+  const voice = useVoiceRecorder({ onAutoStop: (rec) => stageRecording(rec) });
+  const recording = voice.state === "recording";
+  // Read by the editor's once-created handlePaste/handleDrop closures.
+  const recordingRef = useRef(false);
+  recordingRef.current = recording;
+
+  /**
+   * Turn a finished recording into a staged `pending` File. From here on it is an
+   * ordinary attachment: Send → `sendPending()` → `uploadFile` → `onSendMedia`.
+   * No parallel send path.
+   */
+  function stageRecording(rec: VoiceRecording) {
+    const ext = voiceFileExtension(rec.mimeType);
+    const file = new File([rec.blob], `voice-message-${Date.now()}.${ext}`, {
+      type: rec.mimeType,
+    });
+    // Same client gate a picked file passes — catches an exotic browser codec
+    // before we bother signing an upload that the server would reject.
+    const err = validateFile(file);
+    if (err) {
+      toast.error({ title: "Can't send that recording", body: err });
+      return;
+    }
+    setPending((prev) => {
+      if (prev) URL.revokeObjectURL(prev.localUrl);
+      return {
+        file,
+        localUrl: URL.createObjectURL(file),
+        voice: { durationSec: rec.durationSec },
+      };
+    });
+  }
+
+  async function startRecording() {
+    // Mutual exclusion: never record over a staged/uploading attachment.
+    if (!canAttach || uploading || pending) return;
+    await voice.start();
+  }
+
+  async function stopRecording() {
+    const rec = await voice.stop();
+    if (rec) stageRecording(rec);
+  }
+
+  // Surface a recorder failure (permission denied, no device, mic busy) once.
+  const reportedErrorRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (voice.state !== "error" || !voice.error) return;
+    if (reportedErrorRef.current === voice.error) return;
+    reportedErrorRef.current = voice.error;
+    toast.error({ title: "Can't record", body: voice.error });
+  }, [voice.state, voice.error, toast]);
+  useEffect(() => {
+    if (voice.state !== "error") reportedErrorRef.current = undefined;
+  }, [voice.state]);
 
   // Detect the active @query under the caret via ProseMirror positions. Hoisted
   // so the once-created editor callbacks can call it; closes over only stable
@@ -165,6 +238,10 @@ export function Composer({
         return false;
       },
       handlePaste: (view, event) => {
+        // Mutual exclusion: swallow a file/image paste while recording so it can
+        // never become a competing attachment. (No paste-to-upload path exists
+        // today — this is a forward-guard so wiring one later inherits the rule.)
+        if (recordingRef.current && event.clipboardData?.files?.length) return true;
         const text = event.clipboardData?.getData("text/plain");
         if (!text) return false; // no plain text (e.g. an image) → let default handle it
         // Force plain text: strip any rich clipboard HTML so pasted content can't
@@ -182,6 +259,12 @@ export function Composer({
             .scrollIntoView(),
         );
         return true;
+      },
+      handleDrop: (_view, event) => {
+        // Same forward-guard as handlePaste: a dropped file is inert while
+        // recording. Text drops fall through to ProseMirror's default.
+        const dropped = (event as DragEvent).dataTransfer?.files?.length;
+        return !!(recordingRef.current && dropped);
       },
     },
     onUpdate: ({ editor }) => {
@@ -209,6 +292,9 @@ export function Composer({
     const file = e.target.files?.[0];
     if (fileRef.current) fileRef.current.value = ""; // allow re-picking the same file
     if (!file || !channelId || !onSendMedia) return;
+    // Mutual exclusion (the other direction): the single funnel every file entry
+    // passes through, so nothing can stage a file mid-recording.
+    if (recording) return;
     const err = validateFile(file);
     if (err) {
       toast.error({ title: "Can't attach that", body: err });
@@ -231,11 +317,15 @@ export function Composer({
   /** Upload the staged file then post it as a Media message (caption = text). */
   async function sendPending() {
     if (!pending || !channelId || !onSendMedia || uploading) return;
-    const { file, localUrl } = pending;
+    const { file, localUrl, voice: staged } = pending;
     setUploading(true);
     setProgress(0);
     try {
-      const media = await uploadFile(file, channelId, setProgress);
+      // A voice note carries its measured duration onto MediaMeta → the message
+      // `data` (persisted, so it survives a reload). Plain files pass nothing.
+      const media = await uploadFile(file, channelId, setProgress, {
+        durationSec: staged?.durationSec,
+      });
       // Keep localUrl alive — handleSendMedia uses it for the optimistic preview
       // until the realtime echo reconciles with the server URL.
       onSendMedia(media, serializeToMarkdown(editor?.getJSON()).trim(), localUrl);
@@ -270,7 +360,8 @@ export function Composer({
   }
 
   function submit() {
-    if (disabled || uploading || !editor) return;
+    // `recording` blocks Enter-to-send too: stop or cancel the recording first.
+    if (disabled || uploading || recording || !editor) return;
     // A staged attachment sends as a Media message (with the typed caption).
     if (pending) {
       void sendPending();
@@ -346,17 +437,57 @@ export function Composer({
           />
         </div>
       ) : null}
+      {recording ? (
+        <div
+          className="qc-voice-bar"
+          data-testid="voice-recording-bar"
+          role="status"
+          aria-live="off"
+        >
+          <span className="qc-voice-bar__dot" aria-hidden />
+          <span className="qc-voice-bar__label">Recording</span>
+          <span className="qc-voice-bar__time" data-testid="voice-elapsed">
+            {formatVoiceDuration(voice.elapsedSec)}
+          </span>
+          <span className="qc-voice-bar__spacer" />
+          <IconButton label="Cancel recording" onClick={voice.cancel}>
+            <X size={14} />
+          </IconButton>
+          <IconButton label="Stop recording" onClick={() => void stopRecording()}>
+            <Check size={16} />
+          </IconButton>
+        </div>
+      ) : null}
       {pending ? (
         <div className="qc-attach-chip" data-testid="attach-preview">
-          {pending.file.type.startsWith("image/") ? (
-            <img className="qc-attach-chip__thumb" src={pending.localUrl} alt="" />
+          {/* A voice note gets a mic pill + its recorded length, never a file
+              thumbnail — the filename is machine-generated and meaningless here. */}
+          {pending.voice ? (
+            <>
+              <span className="qc-attach-chip__icon" aria-hidden>
+                <Mic size={16} />
+              </span>
+              <span className="qc-attach-chip__name qc-truncate">
+                Voice message · {formatVoiceDuration(pending.voice.durationSec)}
+              </span>
+            </>
           ) : (
-            <span className="qc-attach-chip__icon" aria-hidden>
-              <FileText size={16} />
-            </span>
+            <>
+              {pending.file.type.startsWith("image/") ? (
+                <img className="qc-attach-chip__thumb" src={pending.localUrl} alt="" />
+              ) : (
+                <span className="qc-attach-chip__icon" aria-hidden>
+                  <FileText size={16} />
+                </span>
+              )}
+              <span className="qc-attach-chip__name qc-truncate">{pending.file.name}</span>
+            </>
           )}
-          <span className="qc-attach-chip__name qc-truncate">{pending.file.name}</span>
-          <IconButton label="Remove attachment" onClick={removePending} disabled={uploading}>
+          <IconButton
+            label={pending.voice ? "Discard voice message" : "Remove attachment"}
+            onClick={removePending}
+            disabled={uploading}
+          >
             <X size={14} />
           </IconButton>
         </div>
@@ -409,11 +540,22 @@ export function Composer({
         />
         <IconButton
           label="Attach file"
-          disabled={!canAttach || uploading || !!pending}
+          disabled={!canAttach || uploading || !!pending || recording}
           onClick={() => fileRef.current?.click()}
         >
           <Paperclip size={18} />
         </IconButton>
+        {/* Hidden outright when MediaRecorder is unavailable (incl. SSR) rather
+            than shown as a control that can only fail. */}
+        {voice.supported ? (
+          <IconButton
+            label="Record voice message"
+            disabled={!canAttach || uploading || !!pending}
+            onClick={() => void startRecording()}
+          >
+            <Mic size={18} />
+          </IconButton>
+        ) : null}
         <EditorContent editor={editor} />
         <IconButton
           label={formatOpen ? "Hide formatting" : "Formatting"}
@@ -454,7 +596,7 @@ export function Composer({
         <IconButton
           label="Send"
           onClick={submit}
-          disabled={disabled || uploading || (!editor?.getText().trim() && !pending)}
+          disabled={disabled || uploading || recording || (!editor?.getText().trim() && !pending)}
         >
           <Send size={18} />
         </IconButton>

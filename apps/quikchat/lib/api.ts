@@ -1,4 +1,5 @@
 import type {
+  CallHistoryItem,
   ChannelList,
   ChannelListItem,
   ChannelMemberDto,
@@ -29,7 +30,9 @@ import type {
   PublicUser,
   ThemePref,
   UiPrefsDto,
+  UpdateChannelInput,
 } from "@/lib/shared";
+import type { SetStatus } from "@/lib/presence-store";
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { credentials: "include" });
@@ -98,6 +101,27 @@ export function patchUiPrefs(patch: { theme: ThemePref }): Promise<UiPrefsDto> {
   return send<UiPrefsDto>("/api/me/ui-prefs", "PATCH", patch);
 }
 
+// --- rich presence set-status ---
+
+export interface MyPresenceDto {
+  status: SetStatus;
+  statusMessage: string | null;
+  statusExpiresAt: string | null;
+}
+
+export function fetchMyPresence(): Promise<MyPresenceDto> {
+  return getJson<MyPresenceDto>("/api/me/presence");
+}
+
+export function updateMyPresence(patch: {
+  status: SetStatus;
+  statusMessage?: string | null;
+  /** Absolute ISO instant to auto-revert (client-computed); null = until changed. */
+  expiresAt?: string | null;
+}): Promise<MyPresenceDto> {
+  return send<MyPresenceDto>("/api/me/presence", "PUT", patch);
+}
+
 // --- message actions (S05) ---
 
 export function toggleReactionApi(messageId: string, emoji: string): Promise<MessageDto> {
@@ -128,6 +152,11 @@ export function setMessagePinApi(messageId: string, pinned: boolean): Promise<Me
 
 export function fetchPinned(channelId: string): Promise<MessageDto[]> {
   return getJson<MessageDto[]>(`/api/channels/${channelId}/messages/pinned`);
+}
+
+/** Terminal call history for the Calls → History pane (newest first). */
+export function fetchCallHistory(): Promise<CallHistoryItem[]> {
+  return getJson<CallHistoryItem[]>("/api/calls/history");
 }
 
 export function fetchMembers(channelId: string): Promise<ChannelMemberDto[]> {
@@ -242,6 +271,29 @@ export function addMember(channelId: string, userId: string): Promise<ChannelLis
 
 export function removeMember(channelId: string, userId: string): Promise<{ removed: true }> {
   return send<{ removed: true }>(`/api/channels/${channelId}/members/${userId}`, "DELETE");
+}
+
+/** Edit group details (name / description / avatar). Admin-gated server-side. */
+export function updateChannel(
+  channelId: string,
+  patch: UpdateChannelInput,
+): Promise<ChannelListItem> {
+  return send<ChannelListItem>(`/api/channels/${channelId}`, "PATCH", patch);
+}
+
+/** Delete the group for everyone (dedicated route — NOT the leave DELETE). */
+export function deleteChannel(channelId: string): Promise<{ deleted: true }> {
+  return send<{ deleted: true }>(`/api/channels/${channelId}/delete`, "POST");
+}
+
+/**
+ * Pin / unpin a conversation for the CALLING user (QC_010). Per-member state on
+ * `qcChannelMember.isPinned` — it moves the channel between the list's
+ * `priority` and `recent` buckets. Not fanned out (nobody else's list changes),
+ * so callers refetch `["channels"]` themselves.
+ */
+export function pinChannel(channelId: string, pinned: boolean): Promise<{ pinned: boolean }> {
+  return send<{ pinned: boolean }>(`/api/channels/${channelId}/pin`, "PATCH", { pinned });
 }
 
 export async function setMemberRole(

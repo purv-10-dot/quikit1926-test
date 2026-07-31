@@ -5,6 +5,8 @@ import {
   applyDeleteOptimistic,
   applyEditOptimistic,
   applyPinOptimistic,
+  canEditMessage,
+  EDIT_WINDOW_MS,
   toggleReactionOptimistic,
   updateInList,
 } from "./message-actions";
@@ -59,6 +61,33 @@ describe("optimistic edit/delete/pin", () => {
   });
   it("pin flips isPinned", () => {
     expect(applyPinOptimistic(mk({ id: "a" }), true).isPinned).toBe(true);
+  });
+});
+
+// QC_007 — client mirror of the server's editMessage gate. `now` is injected, so
+// these are anchored to mk()'s fixed createdAt rather than the wall clock.
+describe("canEditMessage", () => {
+  const msg = mk({ id: "a", senderId: "me" });
+  const posted = new Date(msg.createdAt).getTime();
+
+  it("allows the sender inside the window", () => {
+    expect(canEditMessage(msg, "me", posted)).toBe(true);
+    expect(canEditMessage(msg, "me", posted + EDIT_WINDOW_MS - 1)).toBe(true);
+  });
+  it("allows exactly at the boundary, rejects one ms past it", () => {
+    expect(canEditMessage(msg, "me", posted + EDIT_WINDOW_MS)).toBe(true);
+    expect(canEditMessage(msg, "me", posted + EDIT_WINDOW_MS + 1)).toBe(false);
+  });
+  it("rejects a non-sender regardless of age", () => {
+    expect(canEditMessage(msg, "bob", posted)).toBe(false);
+  });
+  it("rejects non-Text types inside the window", () => {
+    for (const type of ["Media", "Delete", "SystemActivity", "Meeting", "Call"] as const) {
+      expect(canEditMessage(mk({ id: "a", type }), "me", posted)).toBe(false);
+    }
+  });
+  it("mirrors the server window of 15 minutes", () => {
+    expect(EDIT_WINDOW_MS).toBe(15 * 60_000);
   });
 });
 
