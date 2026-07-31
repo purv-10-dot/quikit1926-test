@@ -91,7 +91,7 @@ describe("PUT /api/masters/gst/[id]", () => {
 });
 
 describe("DELETE /api/masters/gst/[id]", () => {
-  it("returns 403 when the user lacks construction.masters.delete", async () => {
+  it("returns 403 when the user lacks construction.org_gst.delete", async () => {
     setContext(makeUserCtx([]));
     expect((await DELETE(req("DELETE"), params)).status).toBe(403);
   });

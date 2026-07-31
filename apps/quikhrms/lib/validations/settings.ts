@@ -79,6 +79,7 @@ export const ApprovalModuleEnum = z.enum([
   "Leave", "Expense", "Asset", "Onboarding", "Offboarding", "Attendance", "Document",
   "Engagement", "Feedback",
   "Reimbursement", "ProofOfInvestment", "SalaryRevision", "OneTimeEarning", "Requisition",
+  "WFH", "Payroll",
 ]);
 
 /**

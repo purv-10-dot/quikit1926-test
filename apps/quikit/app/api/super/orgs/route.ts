@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
 import { createOrgSchema } from "@/lib/schemas/superAdminSchemas";
 import { logAudit } from "@/lib/auditLog";
-import { sendOnboardingInvitationEmail } from "@/lib/email";
+import { sendOnboardingInvitationEmail, sendWelcomeEmail } from "@/lib/email";
 import { provisionAppRolesForOrg } from "@/lib/provisionAppRoles";
 import { seedDefaultDisabledModuleFlags } from "@/lib/seedDefaultModuleFlags";
 import { parsePaginationParams, paginationToSkipTake, buildPaginationResponse } from "@quikit/shared/pagination";
@@ -333,6 +333,37 @@ export const POST = withSuperAdminAuth(async ({ userId }, request: NextRequest) 
       if (!sendResult.success) {
         emailWarning = "Organisation created, but the invitation email could not be sent after 3 attempts. Use Resend Invite to retry.";
       }
+    }
+
+    // ── Welcome / trial-started email ───────────────────────────────────────
+    // Trigger 1 of 2 for this email (the other is the self-serve onboarding
+    // screen in apps/auth): the super admin clicked Create and the org + its
+    // first Org Admin now exist. Same shared text-only template, same SMTP
+    // transport as the invite above.
+    //
+    // Wrapped: the org already exists at this point, so nothing in here may
+    // turn a successful creation into a 500.
+    try {
+      if (result.adminUser && admin) {
+        const welcomeResult = await sendWelcomeEmail({
+          to: result.adminUser.email,
+          firstName: result.adminUser.firstName,
+        });
+        logAudit({
+          action: welcomeResult.success ? "welcome_email_sent" : "welcome_email_failed",
+          entityType: "user",
+          entityId: result.adminUser.id,
+          actorId: userId,
+          orgId: result.org.id,
+          newValues: JSON.stringify({
+            to: result.adminUser.email,
+            attempts: welcomeResult.attempts,
+            error: welcomeResult.success ? undefined : String(welcomeResult.error ?? "unknown"),
+          }),
+        });
+      }
+    } catch (err: unknown) {
+      console.error("[super/orgs] welcome email step failed:", err);
     }
 
     return NextResponse.json(

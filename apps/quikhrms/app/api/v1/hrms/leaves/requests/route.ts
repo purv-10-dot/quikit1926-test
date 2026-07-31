@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth, withServiceAuth } from "@/lib/with-auth";
-import { successResponse, validationError, internalError, errorResponse } from "@/lib/api-response";
+import { successResponse, validationError, internalError, errorResponse, conflict } from "@/lib/api-response";
 import { ErrorCode } from "@/lib/types/api";
 import { createLeaveRequestSchema } from "@/lib/validations/leave";
 import { createAuditLog } from "@/lib/utils/audit";
@@ -12,7 +12,9 @@ import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { resolveApprovalChainLevels } from "@/lib/services/approval-chain";
 import { getHierarchyAccessibleEmployeeIds, intersectEmployeeIds } from "@/lib/rbac/hierarchy";
 import { forbidden } from "@/lib/api-response";
-import { resolveActivePolicyRules, evaluateLeavePolicy } from "@/lib/services/leave-policy-engine";
+import { resolveActivePolicyRules, evaluateLeavePolicy, evaluateLeaveTypeColumns } from "@/lib/services/leave-policy-engine";
+import { getEmployeeLeaveRules, resolveEmployeeLeaveGroup } from "@/lib/services/employee-leave-rules";
+import { attendanceDayStart } from "@/lib/attendance/day";
 import type { Prisma } from "@quikit/database";
 
 /** GET /api/v1/hrms/leaves/requests */
@@ -181,7 +183,26 @@ export const POST = withServiceAuth(async (req: NextRequest, ctx) => {
     if (end < start) {
       return validationError("End date must be on or after start date");
     }
-    const duration = data.duration ?? Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+    // Never trust data.duration. Compute the inclusive calendar span (on IST day
+    // keys), then derive/validate the real duration:
+    //  • dayBreakdown present → duration is derived from it (FullDay = 1.0, half = 0.5).
+    //  • otherwise → fall back to the span; a smaller value must be justified by a
+    //    dayBreakdown (half-day allowance), never accepted on trust.
+    // Reject (422) if duration exceeds the span, or falls short of it by more than
+    // the half-day allowance the breakdown justifies.
+    const span = Math.round((attendanceDayStart(end).getTime() - attendanceDayStart(start).getTime()) / 86400000) + 1;
+    const breakdown = data.dayBreakdown ?? [];
+    const allowance = breakdown.filter((d) => d.session !== "FullDay").length * 0.5;
+    const duration = breakdown.length
+      ? breakdown.reduce((s, d) => s + (d.session === "FullDay" ? 1 : 0.5), 0)
+      : (data.duration ?? span);
+    if (duration <= 0) return validationError("Leave duration must be positive.");
+    if (duration > span) {
+      return errorResponse(ErrorCode.VALIDATION_ERROR, `Duration (${duration}) exceeds the ${span}-day date range.`, 422);
+    }
+    if (span - duration > allowance + 1e-9) {
+      return errorResponse(ErrorCode.VALIDATION_ERROR, `Duration (${duration}) is less than the ${span}-day date range by more than the half-day allowance; provide a matching dayBreakdown.`, 422);
+    }
 
     const leaveType = await prisma.leaveType.findFirst({
       where: { id: data.leaveTypeId, orgId, deletedAt: null },
@@ -198,6 +219,7 @@ export const POST = withServiceAuth(async (req: NextRequest, ctx) => {
           select: {
             id: true, reportingManagerId: true, gender: true, employmentType: true,
             workerType: true, dateOfJoining: true, departmentId: true,
+            maritalStatus: true, confirmationDate: true,
             appRoles: { select: { roleId: true }, take: 1 },
           },
         })
@@ -205,6 +227,67 @@ export const POST = withServiceAuth(async (req: NextRequest, ctx) => {
     if (!employee) return validationError("Employee record not found");
     const employeeId = employee.id;
     const employeeRoleId = employee.appRoles[0]?.roleId ?? null;
+
+    // ── Per-group rules ──
+    // If the employee belongs to a Leave Group that configures this leave type,
+    // those rules OVERRIDE the LeaveType columns (entitlement, caps, gates).
+    // `eff` is the effective rule set used by every check below; when the
+    // employee is in no group (or the group has no rules for this type) it is
+    // just the LeaveType row, so behaviour is unchanged.
+    // Group-based entitlement: an employee can only apply for the leave types
+    // offered by their ACTIVE leave group. No group → they have no entitlements
+    // and can't apply at all.
+    const leaveGroup = await resolveEmployeeLeaveGroup(orgId, employeeId, employeeRoleId);
+    if (!leaveGroup) {
+      return validationError("You aren't assigned to a leave group yet — please contact HR.");
+    }
+    if (!leaveGroup.leaveTypeIds.has(leaveType.id)) {
+      return validationError(`${leaveType.name} isn't available in your leave group.`);
+    }
+
+    const groupRules = await getEmployeeLeaveRules(orgId, employeeId, employeeRoleId, leaveType.id);
+    const eff = { ...leaveType, ...(groupRules ?? {}) };
+
+    // Overlap guard: reject if these dates clash with an existing Pending/Approved
+    // leave (any type). Prevents double-booking the same days, taking two leave
+    // types on one day, and duplicate submissions. (Range intersects when the
+    // existing leave starts on/before our end AND ends on/after our start.)
+    const clash = await prisma.leaveRequest.findFirst({
+      where: {
+        orgId, employeeId, deletedAt: null,
+        status: { in: ["Pending", "Approved"] },
+        startDate: { lte: end },
+        endDate: { gte: start },
+      },
+      select: { startDate: true, endDate: true, leaveType: { select: { name: true } } },
+    });
+    if (clash) {
+      const fmt = (d: Date) => new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+      return conflict(
+        `You already have a ${clash.leaveType?.name ?? "leave"} request for ${fmt(clash.startDate)} – ${fmt(clash.endDate)} that overlaps these dates.`,
+      );
+    }
+
+    // Attendance clash — can't take leave on a day the employee already worked
+    // (has a check-in) or that has a pending/approved attendance regularization.
+    // One day can't be both worked and on leave.
+    const attClash = await prisma.attendanceRecord.findFirst({
+      where: {
+        orgId, employeeId, deletedAt: null,
+        date: { gte: attendanceDayStart(start), lte: attendanceDayStart(end) },
+        OR: [
+          { checkIn: { not: null } },
+          { regularizationStatus: { in: ["Pending", "Approved"] } },
+        ],
+      },
+      select: { date: true },
+    });
+    if (attClash) {
+      const fmt = (d: Date) => new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+      return conflict(
+        `You have attendance recorded on ${fmt(attClash.date)} within these dates. Cancel or adjust it before applying leave.`,
+      );
+    }
 
     // ── Frequency caps — max leave REQUESTS of this type per month / year ──
     // Counts the employee's existing Pending + Approved requests of this type
@@ -265,7 +348,7 @@ export const POST = withServiceAuth(async (req: NextRequest, ctx) => {
     // subtracts days already committed to other Pending/Approved requests of
     // this type this year (`taken` only increments on approval, so pending
     // requests don't reduce `available` — count them here to stop stacking).
-    if (!leaveType.isNegativeBalanceAllowed || leaveType.maxNegativeBalance != null) {
+    if (!eff.isUnlimited && (!eff.isNegativeBalanceAllowed || eff.maxNegativeBalance != null)) {
       const startYear = start.getFullYear();
       const yStart = new Date(startYear, 0, 1);
       const yEnd = new Date(startYear, 11, 31, 23, 59, 59, 999);
@@ -285,26 +368,87 @@ export const POST = withServiceAuth(async (req: NextRequest, ctx) => {
           _sum: { duration: true },
         }),
       ]);
-      const opening = Number(leaveType.maxBalance ?? 0);
+      // When the employee's group governs this type, the rule IS the full annual
+      // quota (0 when none set yet); the legacy accrued balance is ignored. Types
+      // outside any group fall back to the LeaveType default + accrual.
+      const isGroupRuled = !!groupRules && !groupRules.isUnlimited;
+      const opening = isGroupRuled ? Number(groupRules!.maxBalance ?? 0) : Number(eff.maxBalance ?? 0);
+      const accrued = isGroupRuled ? 0 : Number(balRow?.accrued ?? 0);
       const available = opening
-        + Number(balRow?.accrued ?? 0) + Number(balRow?.carriedForward ?? 0) + Number(balRow?.adjusted ?? 0)
+        + accrued + Number(balRow?.carriedForward ?? 0) + Number(balRow?.adjusted ?? 0)
         - Number(balRow?.taken ?? 0) - Number(balRow?.encashed ?? 0) - Number(balRow?.lapsed ?? 0);
       const pendingDays = Number(pendingAgg._sum.duration ?? 0);
       const effectiveAvailable = available - pendingDays;
       const remainingAfter = effectiveAvailable - duration;
       if (remainingAfter < 0) {
-        if (!leaveType.isNegativeBalanceAllowed) {
+        if (!eff.isNegativeBalanceAllowed) {
           return validationError(
             `Insufficient ${leaveType.name} balance. Available: ${effectiveAvailable} day(s)` +
             (pendingDays > 0 ? ` (after ${pendingDays} pending)` : "") +
             `, requested: ${duration}.`,
           );
         }
-        if (leaveType.maxNegativeBalance != null && Math.abs(remainingAfter) > Number(leaveType.maxNegativeBalance)) {
+        if (eff.maxNegativeBalance != null && Math.abs(Number(eff.maxNegativeBalance)) < Math.abs(remainingAfter)) {
           return validationError(
-            `Requesting ${duration} day(s) would exceed the allowed negative balance of ${Number(leaveType.maxNegativeBalance)} day(s) for ${leaveType.name}.`,
+            `Requesting ${duration} day(s) would exceed the allowed negative balance of ${Number(eff.maxNegativeBalance)} day(s) for ${leaveType.name}.`,
           );
         }
+      }
+    }
+
+    // ── LeaveType-column rules (marital, waiting-period anchor, per-month days,
+    // min gap) — enforced even when no AI policy document exists. ──
+    const columnEval = await evaluateLeaveTypeColumns({
+      ctx: {
+        orgId, employeeId, startDate: start, endDate: end, duration,
+        leaveTypeCode: leaveType.code, leaveTypeId: leaveType.id,
+        isPlanned: data.isPlanned,
+        hasAttachments: Array.isArray(data.attachments) && data.attachments.length > 0,
+      },
+      employee: {
+        gender: employee.gender, employmentType: employee.employmentType,
+        workerType: employee.workerType, dateOfJoining: employee.dateOfJoining,
+        departmentId: employee.departmentId, roleId: employeeRoleId,
+        maritalStatus: employee.maritalStatus, confirmationDate: employee.confirmationDate,
+      },
+      // When the employee is in a Leave Group, its rules override the per-month /
+      // min-gap / waiting-period columns.
+      overrides: groupRules
+        ? {
+            ...("applicableAfterDays" in groupRules ? { applicableAfterDays: groupRules.applicableAfterDays } : {}),
+            ...("applicableAfterRef" in groupRules ? { applicableAfterRef: groupRules.applicableAfterRef } : {}),
+            ...("maxDaysPerMonth" in groupRules ? { maxDaysPerMonth: groupRules.maxDaysPerMonth } : {}),
+            ...("minGapDays" in groupRules ? { minGapDays: groupRules.minGapDays } : {}),
+          }
+        : null,
+    });
+    if (!columnEval.ok) {
+      return validationError("Leave policy violation", { violations: columnEval.violations });
+    }
+
+    // ── Group-rule apply gates (from the leave-rules wizard) ──
+    // Enforced only when the employee is in a group with rules for this type.
+    if (groupRules) {
+      const midnight = (d: Date) => { const n = new Date(d); n.setHours(0, 0, 0, 0); return n; };
+      const today = midnight(new Date());
+      const startDay = midnight(start);
+      const noticeDays = Math.round((startDay.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+      if (eff.selfApplyAllowed === false) {
+        return validationError(`${leaveType.name} can't be self-applied — please ask HR to apply it for you.`);
+      }
+      if (data.isPlanned && eff.advanceNoticeDays != null && noticeDays < Number(eff.advanceNoticeDays)) {
+        return validationError(`${leaveType.name} needs at least ${Number(eff.advanceNoticeDays)} day(s) advance notice (you gave ${noticeDays}).`);
+      }
+      if (eff.maxConsecutiveDays != null && duration > Number(eff.maxConsecutiveDays)) {
+        return validationError(`${leaveType.name} allows at most ${Number(eff.maxConsecutiveDays)} consecutive day(s); you requested ${duration}.`);
+      }
+      if (eff.requiresComment && !(data.reason && data.reason.trim())) {
+        return validationError(`${leaveType.name} requires a reason/comment.`);
+      }
+      // Back-dated leave (start before today) allowed only up to this day of the current month.
+      if (eff.backdateCutoffDay != null && noticeDays < 0 && today.getDate() > Number(eff.backdateCutoffDay)) {
+        return validationError(`Back-dated ${leaveType.name} can only be applied up to day ${Number(eff.backdateCutoffDay)} of the month.`);
       }
     }
 

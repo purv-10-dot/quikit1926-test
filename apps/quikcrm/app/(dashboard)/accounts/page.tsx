@@ -12,6 +12,7 @@ import { AccountsExplorer } from "@/components/accounts/accounts-explorer";
 
 const ADMIN_ROLE = "Administrator";
 
+
 export default async function AccountsPage() {
   const user = await requireUser();
   const isAdmin = user.role === ADMIN_ROLE;

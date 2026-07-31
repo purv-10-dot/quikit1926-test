@@ -14,6 +14,7 @@ import {
   Palmtree,
   CalendarDays,
   ClipboardList,
+  Users,
 } from "lucide-react";
 import type {
   HrmsSetupItem,
@@ -27,6 +28,7 @@ const ITEM_ICON: Record<HrmsSetupItemKey, React.ReactNode> = {
   payroll: <Wallet size={18} />,
   roles: <ShieldCheck size={18} />,
   leaveTypes: <Palmtree size={18} />,
+  leaveGroups: <Users size={18} />,
   holidays: <CalendarDays size={18} />,
   onboardingTemplate: <ClipboardList size={18} />,
   coreApprovalChains: <Workflow size={18} />,

@@ -190,16 +190,17 @@ export default function WorkflowsPage() {
   }, [scope, projects]);
   const [drawerState, setDrawerState] = useState<DrawerState | null>(null);
 
-// Accordion state — `collapsedModules` holds the module keys (e.g.
-  // "purchase", "projects", "store") that the admin has clicked shut.
-  // Storing collapsed (rather than expanded) keys means new modules
-  // are expanded by default when added to MODULE_GROUPS — no migration
-  // needed. Persisted in localStorage so the admin's preferred view
-  // sticks across refreshes.
-  const [collapsedModules, setCollapsedModules] = useState<Set<string>>(() => {
+  // Accordion state — every module starts collapsed so the page opens
+  // as a scannable list of module headers with their coverage counts
+  // instead of ~21 expanded rows. `expandedModules` holds only the keys
+  // the admin has clicked open; storing expanded (rather than collapsed)
+  // keys keeps new MODULE_GROUPS entries closed by default too.
+  // Persisted in localStorage so the admin's preferred view sticks
+  // across refreshes.
+  const [expandedModules, setExpandedModules] = useState<Set<string>>(() => {
     if (typeof window === "undefined") return new Set();
     try {
-      const raw = window.localStorage.getItem("workflows.collapsedModules");
+      const raw = window.localStorage.getItem("workflows.expandedModules");
       if (!raw) return new Set();
       const parsed = JSON.parse(raw);
       return new Set(Array.isArray(parsed) ? parsed : []);
@@ -208,14 +209,14 @@ export default function WorkflowsPage() {
     }
   });
   const toggleModuleOpen = (key: string) => {
-    setCollapsedModules((prev) => {
+    setExpandedModules((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
       if (typeof window !== "undefined") {
         try {
           window.localStorage.setItem(
-            "workflows.collapsedModules",
+            "workflows.expandedModules",
             JSON.stringify(Array.from(next)),
           );
         } catch {
@@ -422,7 +423,7 @@ export default function WorkflowsPage() {
             const moduleConfigured = entityRows.filter((r) => r.workflow).length;
             const moduleTotal = entityRows.length;
 
-            const isCollapsed = collapsedModules.has(mod.key);
+            const isCollapsed = !expandedModules.has(mod.key);
 
             return (
               <section
@@ -695,6 +696,7 @@ function ProjectScopeDropdown({
         label: (p.siteName ?? p.name ?? p.code ?? p.id) as string,
         code: (p.code ?? "") as string,
         overrides: overrideCountByProject.get(p.id) ?? 0,
+        freeScope: (p as { executionMode?: string }).executionMode === "FREE_SCOPE",
       })),
     [projects, overrideCountByProject],
   );
@@ -830,12 +832,19 @@ function ProjectScopeDropdown({
                       <FolderKanban className="w-3.5 h-3.5" />
                     </span>
                     <span className="flex flex-col leading-tight min-w-0 flex-1">
-                      <span
-                        className={`text-sm font-semibold truncate ${
-                          isActive ? "text-accent-700" : "text-gray-900"
-                        }`}
-                      >
-                        {p.label}
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <span
+                          className={`text-sm font-semibold truncate ${
+                            isActive ? "text-accent-700" : "text-gray-900"
+                          }`}
+                        >
+                          {p.label}
+                        </span>
+                        {p.freeScope && (
+                          <span className="shrink-0 whitespace-nowrap rounded bg-accent-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-accent-700 border border-accent-200">
+                            Free-Scope
+                          </span>
+                        )}
                       </span>
                       <span className="text-[11px] text-gray-500 truncate">
                         {p.overrides > 0

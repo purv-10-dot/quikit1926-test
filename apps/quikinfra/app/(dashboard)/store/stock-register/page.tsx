@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { BarChart3, AlertTriangle, ShoppingCart } from "lucide-react";
 import {
+  PageFrame,
   PageHeader, PageContainer, KPICard,
 } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
@@ -103,13 +104,14 @@ export default function StockRegisterPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Stock Register"
         subtitle="Current stock levels — computed from append-only ledger"
         breadcrumbs={[{ label: "Store", href: "/store" }, { label: "Stock Register" }]}
       />
 
-      <PageContainer>
+      <PageContainer fill>
         {/* Summary KPIs — semantic colors aligned with construction-ERP palette:
             primary count → brand, money received → success, pending POs → warn,
             alerts → danger. */}
@@ -132,8 +134,11 @@ export default function StockRegisterPage() {
           onPageChange={setPage}
           onPageSizeChange={setPageSize}
           onSearchChange={setSearch}
+          hideFilter
+          hideColumns
         />
       </PageContainer>
+      </PageFrame>
     </>
   );
 }

@@ -1,22 +1,15 @@
 /**
- * Shared tab-bucketing helpers.
+ * Shared shapes for pages with status tabs (Purchase Requisitions, Indents,
+ * POs, GRN, Material Issues, Stock Transfer, Gate Pass, Good Return, Stock
+ * Reconciliation, RFQs, …).
  *
- * Pages with status tabs (Purchase Requisitions, Indents, POs, GRN,
- * Material Issues, Stock Transfer, Gate Pass, Good Return, Stock
- * Reconciliation, RFQs, …) all need two things:
- *   1. A count badge per tab (e.g. "Draft 3 · Pending Approval 5").
- *   2. The visible rows filtered to whichever tab is active.
+ * Tab counts and row filtering are both server-side now — routes expose a
+ * `?counts=1` GROUP BY mode and the active tab is pushed into the query — so
+ * these are declaration-only. `useServerTabList` consumes them.
  *
- * Doing this server-side per tab would mean N+1 queries (one for the
- * active tab plus one for every count badge). The pragmatic shape used
- * everywhere: fetch the unfiltered list once, derive both counts and
- * the visible slice from the same in-memory array via these helpers.
- *
- * `TabSpec.matches` is the escape hatch for tabs that don't map to a
- * single `status` value — e.g. "Stock Available" filters PRs by
- * `stockCheckSummary === "ALL_AVAILABLE"`, not by status. When
- * `matches` is omitted, the helper falls back to a case-insensitive
- * match on the row's `status` field against the tab's `key`.
+ * `TabSpec.matches` remains the escape hatch for tabs that don't map to a
+ * single `status` value (e.g. "Stock Available" keys off
+ * `stockCheckSummary === "ALL_AVAILABLE"`).
  */
 
 export interface TabSpec<T = unknown> {
@@ -31,44 +24,3 @@ export interface TabWithCount {
   count: number;
 }
 
-const ALL_KEY = "all";
-
-function defaultMatcher(tabKey: string) {
-  return (row: unknown) =>
-    String((row as { status?: unknown })?.status ?? "").toLowerCase() ===
-    tabKey.toLowerCase();
-}
-
-/**
- * Build the `tabs` array for `<TabBar>` with a populated `count` per
- * entry. The "all" tab gets the total row count; every other tab is
- * counted via its `matches` predicate (or the default status matcher).
- */
-export function buildTabCounts<T>(
-  rows: T[] | undefined,
-  tabs: TabSpec[],
-): TabWithCount[] {
-  const data = rows ?? [];
-  return tabs.map((t) => {
-    if (t.key === ALL_KEY) return { key: t.key, label: t.label, count: data.length };
-    const match = t.matches ?? defaultMatcher(t.key);
-    return { key: t.key, label: t.label, count: data.filter(match).length };
-  });
-}
-
-/**
- * Slice the unfiltered list down to the active tab's rows. Mirror of
- * `buildTabCounts` so the visible table and the count badge agree
- * row-for-row.
- */
-export function filterByTab<T>(
-  rows: T[] | undefined,
-  activeTab: string,
-  tabs: TabSpec[],
-): T[] {
-  const data = rows ?? [];
-  if (activeTab === ALL_KEY) return data;
-  const tab = tabs.find((t) => t.key === activeTab);
-  const match = tab?.matches ?? defaultMatcher(activeTab);
-  return data.filter(match);
-}

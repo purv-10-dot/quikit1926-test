@@ -72,7 +72,7 @@ async function countMaster(model: string, orgId: string): Promise<number> {
 }
 
 export async function GET() {
-  const ctxOrResp = await requireMastersAction("view");
+  const ctxOrResp = await requireMastersAction("construction.masters", "view");
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
 

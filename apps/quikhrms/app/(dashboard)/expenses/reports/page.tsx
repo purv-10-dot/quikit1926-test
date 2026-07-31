@@ -5,8 +5,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { BarChart3 } from "lucide-react";
 import { SkeletonCards } from "@/components/hrms/skeleton";
-import { ExpenseTabs } from "../_components/expense-tabs";
 import { PageHeader } from "@/components/hrms/ui/page-header";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface Report {
   totals: { claims: number; totalAmount: number; avgAmount: number };
@@ -32,6 +32,8 @@ export default function ExpenseReportsPage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <PageHeader
         icon={<BarChart3 size={28} className="text-[#22c55e]" />}
         title="Expense reports"
@@ -46,7 +48,6 @@ export default function ExpenseReportsPage() {
           </div>
         }
       />
-      <div className="mb-5"><ExpenseTabs /></div>
 
       {isLoading ? <SkeletonCards count={3} /> : !r ? null : (
         <>

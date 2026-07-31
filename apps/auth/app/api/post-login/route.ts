@@ -67,6 +67,7 @@ const DEFAULT_ALLOWED_ORIGINS = [
   "https://uatpeople.quikit.ai",
   "https://uatsupport.quikit.ai",
   "https://uatasset.quikit.ai",
+  "https://uatlms.quikit.ai",
 ];
 
 function allowedOrigins(): Set<string> {

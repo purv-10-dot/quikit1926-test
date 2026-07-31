@@ -70,7 +70,8 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
     saving,
     error, setError,
     galleryIdx, setGalleryIdx,
-    addWorkItemFromBoq, updateWorkItem, addWorkItemImages, removeWorkItemImage, removeWorkItem,
+    isFreeScope, activityItems, alreadyAddedScopeIds,
+    addWorkItemFromBoq, addWorkItemFromActivity, updateWorkItem, addWorkItemImages, removeWorkItemImage, removeWorkItem,
     addMaterial, updateMaterial, removeMaterial,
     addManpower, updateManpower, removeManpower,
     addStaff, updateStaff, removeStaff,
@@ -264,6 +265,10 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
               onCloseBoqModal={() => setBoqModalOpen(false)}
               alreadyAddedBoqIds={alreadyAddedBoqIds}
               onAddFromBoq={addWorkItemFromBoq}
+              isFreeScope={isFreeScope}
+              activityItems={activityItems}
+              onAddFromActivity={addWorkItemFromActivity}
+              alreadyAddedScopeIds={alreadyAddedScopeIds}
               galleryIdx={galleryIdx}
               onCloseGallery={() => setGalleryIdx(null)}
               onRemoveImage={removeWorkItemImage}

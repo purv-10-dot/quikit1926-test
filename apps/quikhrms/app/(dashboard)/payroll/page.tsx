@@ -5,9 +5,10 @@ import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Wallet, TrendingUp, Users, AlertCircle, Settings2, ArrowRight } from "lucide-react";
-import { clsx } from "clsx";
 import { useState } from "react";
 import { KPI, ChartCard, Donut, INR, INR_LAKH } from "./_tabs/_shared";
+import { PageBackground } from "@/components/hrms/page-background";
+import { TabSwitcher } from "@/components/hrms/tab-switcher";
 
 interface SummaryRes {
   lastSalaryProcessed: { amount: string | number; month: string; employeeCount: number } | null;
@@ -116,6 +117,8 @@ export default function PayrollAnalyticsPage() {
 
   return (
     <div className="w-full px-5 py-4 space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-start gap-3">
           <Wallet size={28} className="text-[#22c55e] mt-1.5" />
@@ -160,23 +163,11 @@ export default function PayrollAnalyticsPage() {
         </div>
       )}
 
-      <div className="border-b border-gray-200">
-        <div className="flex gap-4 overflow-x-auto">
-          {TABS.map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              data-active={tab === t}
-              className={clsx(
-                "tab-underline whitespace-nowrap py-3 px-1 text-[13px] font-semibold -mb-px",
-                tab === t ? "text-[#22c55e] font-semibold" : "text-gray-500 hover:text-gray-700",
-              )}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-      </div>
+      <TabSwitcher
+        value={tab}
+        onChange={(v) => setTab(v as (typeof TABS)[number])}
+        tabs={TABS.map((t) => ({ value: t, label: t }))}
+      />
 
       {tab === "Analytics" && (
         <>

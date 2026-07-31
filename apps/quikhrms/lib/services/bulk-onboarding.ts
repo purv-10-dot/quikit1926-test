@@ -83,7 +83,10 @@ export async function processBulkOnboardingCandidates(
         const startDate = row.dateOfJoining ? new Date(row.dateOfJoining) : new Date();
         const departmentId = row.departmentName ? deptByName.get(row.departmentName.trim().toLowerCase()) ?? null : null;
 
-        const employee = await prisma.employee.create({
+        // Atomic: employee + onboarding instance are created together so a
+        // failure creating the instance never leaves an orphaned employee.
+        await prisma.$transaction(async (tx) => {
+        const employee = await tx.employee.create({
           data: {
             orgId,
             employeeCode,
@@ -109,7 +112,7 @@ export async function processBulkOnboardingCandidates(
           },
         });
 
-        await prisma.onboardingInstance.create({
+        await tx.onboardingInstance.create({
           data: {
             orgId,
             employeeId: employee.id,
@@ -129,6 +132,7 @@ export async function processBulkOnboardingCandidates(
               })),
             },
           },
+        });
         });
       }
       result.success++;

@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient, ApiError } from "@/lib/hooks/use-api";
+import { PageBackground } from "@/components/hrms/page-background";
 import { RotateCcw, AlertTriangle, CheckCircle2, ShieldAlert } from "lucide-react";
 
 export default function PayrollResetPage() {
@@ -33,6 +34,8 @@ export default function PayrollResetPage() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="rounded-xl border border-red-200 bg-white shadow-sm overflow-hidden">
         <div className="px-4 py-4 border-b border-red-100 bg-gradient-to-r from-red-50 to-white flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-red-100 text-red-600 flex items-center justify-center">

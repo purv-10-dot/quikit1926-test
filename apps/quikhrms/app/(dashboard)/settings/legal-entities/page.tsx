@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
 import { Select } from "@/components/hrms/ui/select";
+import { PageBackground } from "@/components/hrms/page-background";
 import { Building2, Plus, X, Trash2, Save, Star } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -65,6 +66,8 @@ export default function LegalEntitiesPage() {
 
   return (
     <div className="space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Building2 className="text-[#22c55e]" />

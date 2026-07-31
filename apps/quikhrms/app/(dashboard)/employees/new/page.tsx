@@ -22,7 +22,23 @@ import { NumberInput } from "@/components/hrms/ui/number-input";
 import { SkeletonLine } from "@/components/hrms/skeleton";
 import { BankDetailsFields } from "@/components/hrms/bank-details-fields";
 import { SalaryBreakdown } from "@/components/hrms/salary-breakdown";
+import { PageBackground } from "@/components/hrms/page-background";
 import { INDIA_STATE_OPTS as STATE_OPTS } from "@/lib/data/india-states";
+import { INDIAN_CITIES } from "@/lib/data/indian-cities";
+
+// city (lowercased) → state, built once from the "City, State" dataset. Used to
+// auto-fill Country + State when a known Indian city is typed in the address.
+const CITY_STATE: Map<string, string> = (() => {
+  const m = new Map<string, string>();
+  for (const entry of INDIAN_CITIES) {
+    const i = entry.lastIndexOf(",");
+    if (i === -1) continue;
+    const city = entry.slice(0, i).trim().toLowerCase();
+    const state = entry.slice(i + 1).trim();
+    if (city && state && !m.has(city)) m.set(city, state);
+  }
+  return m;
+})();
 
 type EmploymentType = "FullTime" | "PartTime" | "Contract" | "Intern";
 type WorkLocation = "Office" | "Remote" | "Hybrid";
@@ -33,6 +49,10 @@ interface Department { id: string; name: string; }
 interface Designation { id: string; title: string; }
 interface Location { id: string; name: string; }
 interface Employee { id: string; firstName: string; lastName: string; }
+
+type NoticePeriodOption = { id: string; name: string; duration: number; unit: "Days" | "Weeks" | "Months" };
+/** Convert a configured notice period to whole days (same math as offboarding). */
+const periodToDays = (p: NoticePeriodOption) => p.unit === "Months" ? p.duration * 30 : p.unit === "Weeks" ? p.duration * 7 : p.duration;
 interface Role { id: string; code: string; name: string; }
 interface SalaryTemplate { id: string; name: string; code: string; }
 
@@ -40,18 +60,12 @@ const EMP_TYPES: EmploymentType[] = ["FullTime", "PartTime", "Contract", "Intern
 const WORK_LOCS: WorkLocation[] = ["Office", "Remote", "Hybrid"];
 
 const STEPS = [
-  { id: "personal",   num: 1,  title: "Personal Details", subtitle: "Basic information",       icon: <User size={16} /> },
-  { id: "contact",    num: 2,  title: "Contact",          subtitle: "Contact details",         icon: <Phone size={16} /> },
-  { id: "emergency",  num: 3,  title: "Emergency Contact", subtitle: "Next of kin / SOS",      icon: <ShieldAlert size={16} /> },
-  { id: "address",    num: 4,  title: "Address",          subtitle: "Present & permanent",     icon: <MapPin size={16} /> },
-  { id: "employment", num: 5,  title: "Employment",       subtitle: "Job & work details",      icon: <Briefcase size={16} /> },
-  { id: "education",  num: 6,  title: "Education",        subtitle: "Academic history",        icon: <GraduationCap size={16} /> },
-  { id: "experience", num: 7,  title: "Experience",       subtitle: "Past roles",              icon: <History size={16} /> },
-  { id: "family",     num: 8,  title: "Family Details",   subtitle: "Dependents & relatives",  icon: <Users size={16} /> },
-  { id: "certifications", num: 9, title: "Certifications", subtitle: "Courses & credentials",  icon: <Award size={16} /> },
-  { id: "identity",   num: 10, title: "Identity",         subtitle: "KYC information",         icon: <ShieldCheck size={16} /> },
-  { id: "bank",       num: 11, title: "Bank Details",     subtitle: "Salary credit account",   icon: <Banknote size={16} /> },
-  { id: "review",     num: 12, title: "Review",           subtitle: "Review & confirm",        icon: <ClipboardCheck size={16} /> },
+  { id: "personal",   num: 1, title: "Personal Details",   subtitle: "Basic info, contact & KYC",              icon: <User size={16} /> },
+  { id: "address",    num: 2, title: "Address",            subtitle: "Present & permanent",                    icon: <MapPin size={16} /> },
+  { id: "employment", num: 3, title: "Employment",         subtitle: "Job, work & salary account",             icon: <Briefcase size={16} /> },
+  { id: "career",     num: 4, title: "Career & Education", subtitle: "Education, experience & certifications", icon: <GraduationCap size={16} /> },
+  { id: "contacts",   num: 5, title: "Contacts & Family",  subtitle: "Emergency & dependents",                 icon: <Users size={16} /> },
+  { id: "review",     num: 6, title: "Review",             subtitle: "Review & confirm",                       icon: <ClipboardCheck size={16} /> },
 ] as const;
 
 interface EmergencyContact { name: string; relationship: string; phone: string; email: string; address: string; }
@@ -121,6 +135,8 @@ type StepId = typeof STEPS[number]["id"];
 export default function NewEmployeePage() {
   return (
     <Suspense fallback={<div className="p-4 space-y-2"><SkeletonLine w="40%" h={16} /><SkeletonLine w="70%" h={12} /><SkeletonLine w="60%" h={12} /></div>}>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <NewEmployeePageInner />
     </Suspense>
   );
@@ -151,6 +167,7 @@ function NewEmployeePageInner() {
     workLocation: "Office" as WorkLocation,
     dateOfJoining: "",
     noticePeriodDays: null as number | null,
+    noticePeriodId: "" as string,
     previousExperience: null as number | null,
     status: "Active" as EmployeeStatus,
     bankName: "",
@@ -172,7 +189,7 @@ function NewEmployeePageInner() {
 
   const [activeStep, setActiveStep] = useState<StepId>("personal");
   const scrollRef = useRef<HTMLDivElement>(null);
-  const sectionRefs = useRef<Record<StepId, HTMLElement | null>>({
+  const sectionRefs = useRef<Record<string, HTMLElement | null>>({
     personal: null, contact: null, emergency: null, address: null, employment: null,
     education: null, experience: null, family: null, certifications: null,
     identity: null, bank: null, review: null,
@@ -223,6 +240,8 @@ function NewEmployeePageInner() {
   const { data: desigs } = useDesignations();
   const { data: locs } = useLocations();
   const { data: managers } = useQuery({ queryKey: ["employees-mgrs"], queryFn: () => api.get<Employee[]>("/api/v1/hrms/employees?limit=100") });
+  const { data: noticePeriodsData } = useQuery({ queryKey: ["notice-periods", "all"], queryFn: () => api.get<NoticePeriodOption[]>("/api/v1/hrms/offboarding/notice-periods?limit=100") });
+  const noticePeriods = noticePeriodsData?.data ?? [];
   const { data: roles } = useRoles();
   const { data: salaryTemplates, isLoading: salaryTemplatesLoading } = useSalaryTemplates();
   const noSalaryTemplates = !salaryTemplatesLoading && (salaryTemplates?.data?.length ?? 0) === 0;
@@ -255,35 +274,49 @@ function NewEmployeePageInner() {
     }
     if (!form.workEmail.trim()) {
       toast.error("Work email required", "Enter work email in Contact step.");
-      scrollToStep("contact");
+      scrollToStep("personal");
       return;
     }
     const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailPattern.test(form.workEmail.trim())) {
       toast.error("Invalid work email", "Enter a valid work email address (e.g. name@company.com).");
-      scrollToStep("contact");
+      scrollToStep("personal");
       return;
     }
     if (form.personalEmail.trim() && !emailPattern.test(form.personalEmail.trim())) {
       toast.error("Invalid personal email", "Enter a valid personal email address.");
-      scrollToStep("contact");
+      scrollToStep("personal");
       return;
     }
     const phoneDigits = (v: string) => v.replace(/\D/g, "");
     if (!form.personalPhone.trim()) {
       toast.error("Personal phone required", "Enter a personal phone number in Contact step.");
-      scrollToStep("contact");
+      scrollToStep("personal");
       return;
     }
     if (phoneDigits(form.personalPhone).length !== 10) {
       toast.error("Invalid phone number", "Personal phone must be exactly 10 digits.");
-      scrollToStep("contact");
+      scrollToStep("personal");
       return;
     }
     if (form.workPhone.trim() && phoneDigits(form.workPhone).length !== 10) {
       toast.error("Invalid work phone", "Work phone must be exactly 10 digits.");
-      scrollToStep("contact");
+      scrollToStep("personal");
       return;
+    }
+    // Emergency-contact number: any filled row's Contact Number must be 10 digits.
+    for (const ec of form.emergencyContacts) {
+      const filled = ec.name.trim() || ec.relationship.trim() || ec.phone.trim() || ec.email.trim();
+      if (filled && phoneDigits(ec.phone).length !== 10) {
+        toast.error("Invalid contact number", "Emergency contact number must be exactly 10 digits.");
+        scrollToStep("personal");
+        return;
+      }
+      if (ec.email.trim() && !emailPattern.test(ec.email.trim())) {
+        toast.error("Invalid contact email", "Emergency contact email is invalid.");
+        scrollToStep("personal");
+        return;
+      }
     }
     if (!form.jobTitle.trim() || !form.designationId || !form.departmentId || !form.officeLocationId) {
       toast.error("Employment details required", "Job title, designation, department and office location are mandatory.");
@@ -297,6 +330,11 @@ function NewEmployeePageInner() {
     }
     if (!form.reportingManagerId) {
       toast.error("Reporting Manager required", "Pick a manager in Employment step.");
+      scrollToStep("employment");
+      return;
+    }
+    if (!form.noticePeriodId) {
+      toast.error("Notice Period required", "Select a notice period in Employment step.");
       scrollToStep("employment");
       return;
     }
@@ -328,33 +366,33 @@ function NewEmployeePageInner() {
     const validEducations = form.educations.filter((e) => e.institution?.trim() && e.degree?.trim());
     if (validEducations.length === 0) {
       toast.error("Education required", "Add at least one education entry with institution + degree.");
-      scrollToStep("education");
+      scrollToStep("career");
       return;
     }
     if (!form.panNumber.trim() || !form.aadhaarNumber.trim()) {
       toast.error("Identity required", "PAN and Aadhaar are mandatory in Identity step.");
-      scrollToStep("identity");
+      scrollToStep("personal");
       return;
     }
     if (!form.bankName.trim() || !form.bankAccountNumber.trim() || !form.bankIfsc.trim()) {
       toast.error("Bank details required", "Bank name, account number and IFSC are mandatory.");
-      scrollToStep("bank");
+      scrollToStep("employment");
       return;
     }
 
     // ── Format & logical checks (mirror the server-side schema) ──
     const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRe.test(form.workEmail.trim())) {
-      toast.error("Invalid work email", "Enter a valid work email in Contact step."); scrollToStep("contact"); return;
+      toast.error("Invalid work email", "Enter a valid work email in Contact step."); scrollToStep("personal"); return;
     }
     if (form.personalEmail.trim() && !emailRe.test(form.personalEmail.trim())) {
-      toast.error("Invalid personal email", "Check the personal email in Contact step."); scrollToStep("contact"); return;
+      toast.error("Invalid personal email", "Check the personal email in Contact step."); scrollToStep("personal"); return;
     }
     if (form.personalPhone.trim() && !PHONE_REGEX.test(form.personalPhone.trim())) {
-      toast.error("Invalid mobile number", "Personal phone must be a valid 10-digit mobile."); scrollToStep("contact"); return;
+      toast.error("Invalid mobile number", "Personal phone must be a valid 10-digit mobile."); scrollToStep("personal"); return;
     }
     if (form.workPhone.trim() && !PHONE_LOOSE_REGEX.test(form.workPhone.trim())) {
-      toast.error("Invalid work phone", "Enter a valid work phone number."); scrollToStep("contact"); return;
+      toast.error("Invalid work phone", "Enter a valid work phone number."); scrollToStep("personal"); return;
     }
     if (!PINCODE_REGEX.test(form.currentAddress.postalCode.trim())) {
       toast.error("Invalid PIN code", "Postal code must be a 6-digit PIN."); scrollToStep("address"); return;
@@ -374,16 +412,16 @@ function NewEmployeePageInner() {
       toast.error("Check dates", "Date of birth must be before the date of joining."); scrollToStep("personal"); return;
     }
     if (!PAN_REGEX.test(form.panNumber.trim().toUpperCase())) {
-      toast.error("Invalid PAN", "PAN format: 5 letters + 4 digits + 1 letter (e.g. ABCDE1234F)."); scrollToStep("identity"); return;
+      toast.error("Invalid PAN", "PAN format: 5 letters + 4 digits + 1 letter (e.g. ABCDE1234F)."); scrollToStep("personal"); return;
     }
     if (!AADHAAR_REGEX.test(form.aadhaarNumber.trim())) {
-      toast.error("Invalid Aadhaar", "Aadhaar must be 12 digits starting 2-9."); scrollToStep("identity"); return;
+      toast.error("Invalid Aadhaar", "Aadhaar must be 12 digits starting 2-9."); scrollToStep("personal"); return;
     }
     if (!BANK_ACCOUNT_REGEX.test(form.bankAccountNumber.trim())) {
-      toast.error("Invalid account number", "Account number must be 9–18 digits."); scrollToStep("bank"); return;
+      toast.error("Invalid account number", "Account number must be 9–18 digits."); scrollToStep("employment"); return;
     }
     if (!IFSC_REGEX.test(form.bankIfsc.trim().toUpperCase())) {
-      toast.error("Invalid IFSC", "IFSC format: 4 letters + 0 + 6 chars (e.g. HDFC0001234)."); scrollToStep("bank"); return;
+      toast.error("Invalid IFSC", "IFSC format: 4 letters + 0 + 6 chars (e.g. HDFC0001234)."); scrollToStep("employment"); return;
     }
 
     const body: Record<string, unknown> = {
@@ -415,6 +453,7 @@ function NewEmployeePageInner() {
       employmentType: form.employmentType,
       workLocation: form.workLocation,
       dateOfJoining: form.dateOfJoining,
+      noticePeriodId: form.noticePeriodId || undefined,
       noticePeriodDays: form.noticePeriodDays ?? undefined,
       previousExperience: form.previousExperience ?? undefined,
       status: form.status,
@@ -578,7 +617,7 @@ function NewEmployeePageInner() {
               subtitle="Basic information about the employee."
               sectionRef={(el) => { sectionRefs.current.personal = el; }}
             >
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-4">
                 <Field label="First Name" required>
                   <IconInput icon={<User size={14} />}>
                     <input required placeholder="Enter first name" value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} className={inputCls} />
@@ -687,13 +726,13 @@ function NewEmployeePageInner() {
             </Section>
 
             <Section
-              id="contact"
+              id="personal"
               icon={<Phone size={18} />}
               title="Contact"
               subtitle="Contact information for communication."
               sectionRef={(el) => { sectionRefs.current.contact = el; }}
             >
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-4">
                 <Field label="Work Email" required>
                   <IconInput icon={<Mail size={14} />}>
                     <input type="email" required placeholder="work.email@example.com" value={form.workEmail} onChange={(e) => setForm({ ...form, workEmail: e.target.value })} className={inputCls} />
@@ -706,7 +745,7 @@ function NewEmployeePageInner() {
                 </Field>
                 <Field label="Personal Phone" required>
                   <IconInput icon={<Phone size={14} />}>
-                    <input inputMode="tel" maxLength={15} placeholder="Enter personal phone number" value={form.personalPhone} onChange={(e) => setForm({ ...form, personalPhone: sanitizePhone(e.target.value) })} className={inputCls} />
+                    <input inputMode="numeric" maxLength={10} placeholder="10-digit mobile number" value={form.personalPhone} onChange={(e) => setForm({ ...form, personalPhone: e.target.value.replace(/\D/g, "").slice(0, 10) })} className={inputCls} />
                   </IconInput>
                 </Field>
                 <Field label="Work Phone">
@@ -718,7 +757,7 @@ function NewEmployeePageInner() {
             </Section>
 
             <Section
-              id="emergency"
+              id="contacts"
               icon={<ShieldAlert size={18} />}
               title="Emergency Contact"
               subtitle="Person to reach in case of emergency. At least one recommended."
@@ -736,7 +775,7 @@ function NewEmployeePageInner() {
                     <div className="text-xs font-semibold text-gray-500 uppercase mb-3">
                       {i === 0 ? "Primary contact" : `Contact ${i + 1}`}
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-4">
                       <Field label="Name" required>
                         <input placeholder="Full name" value={c.name} onChange={(e) => updateEmergencyContact(i, "name", e.target.value)} className={inputCls} />
                       </Field>
@@ -808,7 +847,7 @@ function NewEmployeePageInner() {
               subtitle="Job and employment related information."
               sectionRef={(el) => { sectionRefs.current.employment = el; }}
             >
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-4">
                 <Field label="Job Title" required>
                   <IconInput icon={<Briefcase size={14} />}>
                     <input placeholder="Enter job title" value={form.jobTitle} onChange={(e) => setForm({ ...form, jobTitle: e.target.value })} className={inputCls} />
@@ -916,8 +955,16 @@ function NewEmployeePageInner() {
                     options={WORK_LOCS.map((w) => ({ value: w, label: w }))}
                   />
                 </Field>
-                <Field label="Notice Period (days)">
-                  <NumberInput allowDecimal={false} value={form.noticePeriodDays} onChange={(v) => setForm({ ...form, noticePeriodDays: v })} className={inputCls} />
+                <Field label="Notice Period" required>
+                  <Select
+                    value={form.noticePeriodId}
+                    onChange={(v) => {
+                      const p = noticePeriods.find((n) => n.id === v);
+                      setForm({ ...form, noticePeriodId: v, noticePeriodDays: p ? periodToDays(p) : null });
+                    }}
+                    placeholder={noticePeriods.length ? "Select notice period" : "No notice periods — add in Offboarding"}
+                    options={noticePeriods.map((n) => ({ value: n.id, label: `${n.name} (${n.duration} ${n.unit})` }))}
+                  />
                 </Field>
                 <Field label="Previous Experience (months)">
                   <NumberInput allowDecimal={false} value={form.previousExperience} onChange={(v) => setForm({ ...form, previousExperience: v })} className={inputCls} />
@@ -936,7 +983,7 @@ function NewEmployeePageInner() {
             </Section>
 
             <Section
-              id="education"
+              id="career"
               icon={<GraduationCap size={18} />}
               title="Education *"
               subtitle="At least one entry with school + degree required."
@@ -984,7 +1031,7 @@ function NewEmployeePageInner() {
             </Section>
 
             <Section
-              id="experience"
+              id="career"
               icon={<History size={18} />}
               title="Career History (Topgrading)"
               subtitle="For each role capture accomplishments, compensation, reason for leaving and the boss appraisal."
@@ -1013,7 +1060,7 @@ function NewEmployeePageInner() {
             </Section>
 
             <Section
-              id="family"
+              id="contacts"
               icon={<Users size={18} />}
               title="Family Details"
               subtitle="Spouse, children, parents and dependents."
@@ -1066,7 +1113,7 @@ function NewEmployeePageInner() {
             </Section>
 
             <Section
-              id="certifications"
+              id="career"
               icon={<Award size={18} />}
               title="Certifications"
               subtitle="Professional courses, certificates and credentials."
@@ -1114,13 +1161,13 @@ function NewEmployeePageInner() {
             </Section>
 
             <Section
-              id="identity"
+              id="personal"
               icon={<ShieldCheck size={18} />}
               title="Identity *"
               subtitle="PAN and Aadhaar mandatory."
               sectionRef={(el) => { sectionRefs.current.identity = el; }}
             >
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-4">
                 <Field label="PAN Number" required>
                   <IconInput icon={<IdCard size={14} />}>
                     <input required placeholder="Enter PAN number" value={form.panNumber} onChange={(e) => setForm({ ...form, panNumber: e.target.value.toUpperCase() })} className={`${inputCls} font-mono text-sm`} maxLength={10} />
@@ -1149,7 +1196,7 @@ function NewEmployeePageInner() {
             </Section>
 
             <Section
-              id="bank"
+              id="employment"
               icon={<Banknote size={18} />}
               title="Bank Details *"
               subtitle="Bank name, account number and IFSC are mandatory."
@@ -1300,6 +1347,22 @@ function AddressBlock({
   onChange: (key: keyof Address, v: string) => void;
   required?: boolean;
 }) {
+  const api = useApiClient();
+  // Enter a 6-digit PIN → auto-fill City / State / Country from India Post.
+  const onPin = (raw: string) => {
+    const pin = raw.replace(/\D/g, "").slice(0, 6);
+    onChange("postalCode", pin);
+    if (pin.length !== 6) return;
+    api.get<{ city: string; state: string; country: string }>(`/api/v1/hrms/util/pincode?pin=${pin}`)
+      .then((res) => {
+        const d = res.data;
+        if (!d) return;
+        onChange("city", d.city);
+        onChange("state", d.state);
+        onChange("country", d.country === "India" ? "IN" : d.country || "IN");
+      })
+      .catch(() => { /* leave fields as-is on lookup failure */ });
+  };
   // When `required`, show labels with a red asterisk on the mandatory fields.
   const Lbl = ({ text, star }: { text: string; star?: boolean }) =>
     required ? (
@@ -1320,7 +1383,13 @@ function AddressBlock({
       </div>
       <div className="col-span-2">
         <Lbl text="City" star />
-        <FormInput placeholder="City" value={value.city} onChange={(e) => onChange("city", e.target.value)} />
+        <FormInput placeholder="City" value={value.city} onChange={(e) => {
+          const city = e.target.value;
+          onChange("city", city);
+          // Auto-fill Country + State when a known Indian city is entered.
+          const st = CITY_STATE.get(city.trim().toLowerCase());
+          if (st) { onChange("country", "IN"); onChange("state", st); }
+        }} />
       </div>
       <div className="col-span-2">
         <Lbl text="Country" star />
@@ -1332,7 +1401,7 @@ function AddressBlock({
       </div>
       <div className="col-span-2">
         <Lbl text="Postal Code" star />
-        <FormInput placeholder="Postal Code" value={value.postalCode} onChange={(e) => onChange("postalCode", e.target.value)} />
+        <FormInput placeholder="6-digit PIN — auto-fills city/state" inputMode="numeric" maxLength={6} value={value.postalCode} onChange={(e) => onPin(e.target.value)} />
       </div>
     </div>
   );
@@ -1375,7 +1444,7 @@ function ExperienceCard({ index, exp, canRemove, onChange, onRemove }: {
         {index === 0 ? "Most recent role" : `Role ${index + 1}`}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-4">
         <Field label="Company"><input value={exp.company} onChange={(e) => onChange("company", e.target.value)} placeholder="Company name" className={inputCls} /></Field>
         <Field label="Title / Position"><input value={exp.designation} onChange={(e) => onChange("designation", e.target.value)} placeholder="e.g. Senior Engineer" className={inputCls} /></Field>
 

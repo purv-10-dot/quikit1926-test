@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   Eye, Send, Check, X as XIcon, Truck, PackageCheck,
 } from "lucide-react";
-import { PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { WorkflowConfirmDialog } from "@/components/WorkflowConfirmDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -651,7 +651,15 @@ export default function StockTransferPage() {
   };
 
   const columns: ColDef<TransferRow>[] = [
-    { key: "transferNumber", label: "Transfer No", sortable: true, searchable: true },
+    {
+      key: "transferNumber", label: "Transfer No", sortable: true, searchable: true,
+      render: (row) => (
+        <span className="text-accent-600 cursor-pointer hover:underline font-medium"
+              onClick={() => router.push(`/store/transfer/${row.id}`)}>
+          {row.transferNumber}
+        </span>
+      ),
+    },
     { key: "fromLocationName", label: "From", sortable: true, searchable: true },
     { key: "toLocationName", label: "To", sortable: true, searchable: true },
     { key: "transferDate", label: "Date", type: "date", sortable: true },
@@ -769,13 +777,14 @@ export default function StockTransferPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Stock Transfer (Inter-Site)"
         subtitle="Transfer materials between projects, sites, and warehouses"
         breadcrumbs={[{ label: "Store", href: "/store" }, { label: "Stock Transfer" }]}
       />
       <TabBar tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
-      <PageContainer>
+      <PageContainer fill>
         <DataTable
           id="store-transfer"
           columns={columns}
@@ -794,6 +803,7 @@ export default function StockTransferPage() {
           onSortChange={(k, d) => setSort({ by: k, order: d })}
         />
       </PageContainer>
+      </PageFrame>
       <QuickCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} config={config} />
 
       <WorkflowConfirmDialog

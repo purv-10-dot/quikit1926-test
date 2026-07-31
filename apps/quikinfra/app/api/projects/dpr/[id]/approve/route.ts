@@ -72,6 +72,8 @@ export async function POST(
         select: {
           id: true,
           boqItemId: true,
+          scopeType: true,
+          scopeId: true,
           todayQty: true,
           woId: true,
         },
@@ -192,7 +194,7 @@ export async function POST(
   if (isFinalApprove) {
     const boqItemIds = (dpr.workItems ?? [])
       .map((l) => l.boqItemId)
-      .filter(Boolean);
+      .filter((v): v is string => Boolean(v));
     if (boqItemIds.length) {
       const boqRows = await db.cnBOQItemV2.findMany({
         where: {
@@ -234,13 +236,36 @@ export async function POST(
           });
 
           for (const line of dpr.workItems ?? []) {
-            const boqNo = boqNoById.get(line.boqItemId);
             const todayQty = parseFloat(String(line.todayQty ?? "0"));
-            if (!boqNo || todayQty <= 0) continue;
+            if (todayQty <= 0) continue;
 
             const workType: "sub_contractor" | "self" = line.woId
               ? "sub_contractor"
               : "self";
+
+            // FREE_SCOPE lines anchor on an activity item — post through the
+            // activity ledger (boqItemId stays null).
+            if (line.scopeType === "ACTIVITY" && line.scopeId) {
+              await boqService.applyActivityDPRProgressTxn(
+                tx,
+                ctx,
+                dpr.projectId,
+                line.scopeId,
+                todayQty,
+                workType,
+                {
+                  dprId: dpr.id,
+                  dprLineId: line.id,
+                  workOrderId: line.woId ?? undefined,
+                  overrideFlag: false,
+                },
+              );
+              appliedUpdates.push({ boqNo: line.scopeId, qty: todayQty, workType });
+              continue;
+            }
+
+            const boqNo = line.boqItemId ? boqNoById.get(line.boqItemId) : undefined;
+            if (!boqNo) continue;
 
             await boqService.applyDPRProgressTxn(
               tx,

@@ -167,6 +167,8 @@ export async function POST(req: NextRequest) {
           isUrgent,
           urgencyJustification: body.urgencyJustification ?? null,
           workCategoryId: body.workCategoryId || null,
+          scopeType: body.scopeType || null,
+          scopeId: body.scopeId || null,
           deliveryLocationId: body.deliveryLocationId || null,
           estimatedTotal: Math.round(estimatedTotal),
           stockCheckSummary,

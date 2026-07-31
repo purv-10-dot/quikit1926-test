@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonTable } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 import { todayInput } from "@/lib/utils/date-input";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 
@@ -225,6 +226,8 @@ export default function HolidayCalendarPage() {
 
   return (
     <div>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <Calendar className="text-[#22c55e]" />

@@ -28,7 +28,7 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
     console.error("PATCH candidate-document-type", e);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });
 
 export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }, params) => {
   try {
@@ -59,4 +59,4 @@ export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }, para
     console.error("DELETE candidate-document-type", e);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });

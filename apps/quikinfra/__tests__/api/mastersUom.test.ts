@@ -95,7 +95,7 @@ describe("POST /api/masters/uom — auth", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns 403 when the user lacks construction.masters.create", async () => {
+  it("returns 403 when the user lacks construction.org_uom.create", async () => {
     setContext(makeUserCtx([]));
     const res = await POST(buildPOST({ code: "KG", name: "Kilogram" }));
     expect(res.status).toBe(403);
@@ -103,7 +103,7 @@ describe("POST /api/masters/uom — auth", () => {
 
   it("returns 403 when the permission matrix denies add", async () => {
     setContext(
-      makeUserCtx(["construction.masters.create"], {
+      makeUserCtx(["construction.org_uom.create"], {
         permissionMatrix: { "org.uom": { add: false } },
       }),
     );

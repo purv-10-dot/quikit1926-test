@@ -7,6 +7,7 @@ import { Select } from "@/components/hrms/ui/select";
 import { History, Save, Calendar, CheckCircle2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { SkeletonLine } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 import { PriorPayrollUpload } from "./_components/prior-payroll-upload";
 import { PriorPayrollRecords } from "./_components/prior-payroll-records";
 
@@ -37,6 +38,8 @@ function currentFinancialYear(): string {
 export default function PriorPayrollPage() {
   return (
     <Suspense fallback={<div className="p-4 space-y-2"><SkeletonLine w="40%" h={16} /><SkeletonLine w="70%" h={12} /><SkeletonLine w="60%" h={12} /></div>}>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <PriorPayrollPageInner />
     </Suspense>
   );
@@ -115,7 +118,7 @@ function PriorPayrollPageInner() {
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
         <div className="flex items-center gap-2 px-4 py-4 border-b border-gray-100">
           <History size={18} className="text-[#22c55e]" />
-          <h1 className="text-base font-semibold text-gray-900">Mid-year Joiners</h1>
+          <h1 className="text-base font-semibold text-gray-900">Prior Payroll</h1>
         </div>
 
         {!paySchedulePresent ? (

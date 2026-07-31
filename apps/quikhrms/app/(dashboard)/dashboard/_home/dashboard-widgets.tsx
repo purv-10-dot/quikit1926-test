@@ -678,7 +678,7 @@ export function BirthdaysWidget({ bare = false }: { bare?: boolean }) {
           </div>
           <h3 className="text-[13px] font-semibold text-gray-900">Upcoming Birthdays</h3>
         </div>
-        <Link href="/holidays" className="text-xs font-medium text-green-600 hover:underline">
+        <Link href="/holidays?filter=birthday" className="text-xs font-medium text-green-600 hover:underline">
           View All
         </Link>
       </div>
@@ -715,7 +715,7 @@ export function AnniversariesWidget({ bare = false }: { bare?: boolean }) {
           </div>
           <h3 className="text-[13px] font-semibold text-gray-900">Upcoming Work Anniversaries</h3>
         </div>
-        <Link href="/holidays" className="text-xs font-medium text-green-600 hover:underline">
+        <Link href="/holidays?filter=anniversary" className="text-xs font-medium text-green-600 hover:underline">
           View All
         </Link>
       </div>

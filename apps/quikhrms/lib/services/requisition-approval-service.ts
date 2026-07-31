@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { resolveAndSend } from "@/lib/email/resolve";
 import { buildRequisitionApprovalEmail } from "@/lib/email-templates/requisition-approval";
 import { whereEmployeeHasAnyRole, sortByMaxRolePriorityDesc, appRolesNameSelect } from "@/lib/rbac/queries";
+import { appBaseUrl } from "@/lib/utils/app-url";
 
 export async function resolveDeptHeadApprover(orgId: string, departmentId: string | null, raiserId: string): Promise<{ id: string; firstName: string; lastName: string; workEmail: string | null } | null> {
   if (departmentId) {
@@ -88,7 +89,7 @@ export async function mailRequisitionApprovalRequest(params: MailRequestParams):
   const company = await prisma.companySettings.findUnique({
     where: { orgId: params.orgId }, select: { companyName: true },
   });
-  const base = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "";
+  const base = appBaseUrl();
   const openCount = await openHeadcountForDept(params.orgId, req.departmentId);
 
   const data = {

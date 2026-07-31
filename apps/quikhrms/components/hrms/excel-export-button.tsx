@@ -14,6 +14,7 @@ export function ExcelExportButton<T extends Record<string, unknown>>({
   sheetName,
   columns,
   rows,
+  getRows,
   disabled,
   className,
   label = "Export",
@@ -22,12 +23,16 @@ export function ExcelExportButton<T extends Record<string, unknown>>({
   sheetName?: string;
   columns: ExcelColumn[];
   rows: T[];
+  /** Optional async provider — fetches the FULL dataset (all pages) at click
+   *  time. When given, the export uses these rows instead of the `rows` prop. */
+  getRows?: () => Promise<T[]>;
   disabled?: boolean;
   className?: string;
   label?: string;
 }) {
   const [busy, setBusy] = useState(false);
-  const empty = rows.length === 0;
+  // With an async provider we can't know emptiness up front, so don't pre-disable.
+  const empty = !getRows && rows.length === 0;
 
   return (
     <button
@@ -36,12 +41,14 @@ export function ExcelExportButton<T extends Record<string, unknown>>({
       onClick={async () => {
         setBusy(true);
         try {
-          await exportToExcel({ filename, sheetName, columns, rows });
+          const data = getRows ? await getRows() : rows;
+          if (data.length === 0) return;
+          await exportToExcel({ filename, sheetName, columns, rows: data });
         } finally {
           setBusy(false);
         }
       }}
-      title={empty ? "Nothing to export" : `Export ${rows.length} row${rows.length > 1 ? "s" : ""} to Excel`}
+      title={empty ? "Nothing to export" : "Export to Excel"}
       className={clsx(
         className ??
           "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-green-300 text-green-700 text-xs font-medium hover:bg-green-50 transition disabled:opacity-50",

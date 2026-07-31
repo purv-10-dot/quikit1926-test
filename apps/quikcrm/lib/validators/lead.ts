@@ -42,12 +42,27 @@ export const LEAD_CREATE_DEFAULTS = {
 
 const createLeadObjectSchema = z.object({
   name: z.string().trim().min(1).max(200),
-  email: z.string().trim().email("Invalid email"),
+  // Contact Information fields are optional on create — a lead can be created
+  // with First Name, Last Name, Email, and Mobile left blank. Format checks
+  // still apply when a value is supplied.
+  email: z
+    .string()
+    .trim()
+    .optional()
+    .nullable()
+    .refine((v) => !v || z.string().email().safeParse(v).success, {
+      message: "Invalid email",
+    }),
   phone: z.string().trim().regex(e164Regex, "Phone must be in international format (+...)").optional().nullable(),
-  mobile: z.string().trim().regex(e164Regex, "Mobile must be in international format (+...)"),
+  mobile: z
+    .string()
+    .trim()
+    .regex(e164Regex, "Mobile must be in international format (+...)")
+    .optional()
+    .nullable(),
   company: z.string().trim().min(1, "Company name is required"),
-  firstName: z.string().trim().min(1).max(120),
-  lastName: z.string().trim().min(1).max(120),
+  firstName: z.string().trim().max(120).optional().nullable(),
+  lastName: z.string().trim().max(120).optional().nullable(),
   jobTitle: z.string().trim().optional().nullable(),
   leadType: z.enum(LEAD_TYPE_OPTIONS).optional().nullable(),
   source: z.string().trim().min(1),

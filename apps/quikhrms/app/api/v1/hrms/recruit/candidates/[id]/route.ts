@@ -26,7 +26,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
       applications: c.applications.map((a) => ({ ...a, offer: offerFromApplication(a) })),
     });
   } catch (error) { console.error("GET /recruit/candidates/:id error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.read"] });
 
 export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
   try {
@@ -58,7 +58,7 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
     });
     return successResponse(c);
   } catch (error) { console.error("PATCH /recruit/candidates/:id error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });
 
 export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }, params) => {
   try {
@@ -67,4 +67,4 @@ export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }, para
     await prisma.candidate.update({ where: { id: params.id }, data: { deletedAt: new Date(), updatedBy: userId } });
     return successResponse({ deleted: true });
   } catch (error) { console.error("DELETE /recruit/candidates/:id error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });

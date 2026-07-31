@@ -29,6 +29,9 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     console.error("GET /expenses/policies error:", error);
     return internalError();
   }
+}, {
+  requiredPermissions: ["hrms.expense.read", "hrms.expense.manage"],
+  anyPermission: true,
 });
 
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {

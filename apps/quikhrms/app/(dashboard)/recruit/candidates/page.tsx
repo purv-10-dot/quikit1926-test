@@ -2,6 +2,7 @@
 
 import { Dispatch, SetStateAction, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Modal } from "@/components/hrms/modal";
@@ -18,6 +19,7 @@ import { Select } from "@/components/hrms/select";
 import { FileUploadInput } from "@/components/hrms/file-upload-input";
 import { SkeletonTable, SkeletonLine } from "@/components/hrms/skeleton";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
+import { PageBackground } from "@/components/hrms/page-background";
 
 // CTC fields are captured in LPA (lakhs per annum) — cap to a realistic ceiling
 // so 5–6 digit nonsense values can't be entered.
@@ -100,6 +102,7 @@ const statusColors: Record<string, string> = {
 
 export default function CandidatesPage() {
   const api = useApiClient();
+  const router = useRouter();
   const qc = useQueryClient();
   const toast = useToast();
   const [search, setSearch] = useState("");
@@ -110,7 +113,7 @@ export default function CandidatesPage() {
   const [sourceFilter, setSourceFilter] = useState("");
   const [expFilter, setExpFilter] = useState(""); // "min-max" (e.g. "2-5", "10-")
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 20;
+  const PAGE_SIZE = 10;
   const [showCreate, setShowCreate] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [blacklistTarget, setBlacklistTarget] = useState<CandidateItem | null>(null);
@@ -468,6 +471,8 @@ export default function CandidatesPage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <h1 className="text-page-title text-gray-900">Candidates</h1>
         <div className="flex items-center gap-2">
@@ -584,7 +589,7 @@ export default function CandidatesPage() {
                 const blUntil = c.blacklistedUntil ? new Date(c.blacklistedUntil) : null;
                 const blExpired = blUntil ? blUntil.getTime() < Date.now() : false;
                 return (
-                <tr key={c.id} className={clsx("row-stagger border-b border-gray-100 hover:bg-gray-50",
+                <tr key={c.id} onClick={() => router.push(`/recruit/candidates/${c.id}`)} className={clsx("row-stagger border-b border-gray-100 hover:bg-gray-50 cursor-pointer",
                   c.isBlacklisted && !blExpired && "bg-red-50/40",
                   c.isArchived && "opacity-70")} style={{ ["--i" as never]: Math.min(i, 10) }}>
                   <td className="px-4 py-3">
@@ -645,7 +650,7 @@ export default function CandidatesPage() {
                   <td className="px-4 py-3">
                     <StatusCell status={c.status} stage={c.applications[0]?.currentStage ?? null} />
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     <div className="flex justify-end">
                       <div className="inline-flex items-center rounded-xl ring-1 ring-gray-200 bg-white divide-x divide-gray-100 overflow-hidden">
                         <ActionBtn icon={<Clock size={15} />} label="Timeline" color="text-green-600" onClick={() => setTimelineTarget(c)} title="View timeline" />

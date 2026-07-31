@@ -6,10 +6,13 @@ import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { ChevronLeft, Plus, Calendar } from "lucide-react";
 import { Select } from "@/components/hrms/ui/select";
-import { FilterBar, FilterDivider, FilterField, FilterPills, FilterSearch } from "@/components/hrms/ui/filter-bar";
+import { FilterBar, FilterField, FilterSearch } from "@/components/hrms/ui/filter-bar";
+import { TabSwitcher } from "@/components/hrms/tab-switcher";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import { TaskRow, type TaskRowData } from "./_components/task-row";
 import { NewTaskModal } from "./_components/new-task-modal";
+import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 
 const TASK_STATUS_LABELS: Record<TaskRowData["status"], string> = {
   Open: "Open",
@@ -23,6 +26,8 @@ export default function TasksHubPage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <Link href="/dashboard" className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-[#22c55e] mb-4">
         <ChevronLeft size={14} /> Back
       </Link>
@@ -54,6 +59,8 @@ function TasksList({ scope }: { scope: "mine" }) {
     return "Open,InProgress,Completed";
   });
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   const params = useMemo(() => {
     const p = new URLSearchParams({ scope });
@@ -81,6 +88,8 @@ function TasksList({ scope }: { scope: "mine" }) {
     staleTime: 60_000,
   });
   const tasks = (data?.data ?? []).filter((t) => !search || t.title.toLowerCase().includes(search.toLowerCase()));
+  const totalPages = Math.max(1, Math.ceil(tasks.length / PAGE_SIZE));
+  const pageItems = tasks.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   // Export the currently filtered task list, matching the visible columns.
   const excelColumns = [
@@ -104,21 +113,20 @@ function TasksList({ scope }: { scope: "mine" }) {
 
   return (
     <div className="space-y-3">
+      <TabSwitcher
+        value={statusFilter}
+        onChange={(v) => { setStatusFilter(v); setPage(1); }}
+        tabs={[
+          { value: "Open,InProgress", label: "Incomplete" },
+          { value: "Completed", label: "Completed" },
+          { value: "Open,InProgress,Completed", label: "All" },
+        ]}
+      />
       <FilterBar>
-        <FilterPills
-          value={statusFilter}
-          onChange={setStatusFilter}
-          options={[
-            { value: "Open,InProgress", label: "Incomplete" },
-            { value: "Completed", label: "Completed" },
-            { value: "Open,InProgress,Completed", label: "All" },
-          ]}
-        />
-        <FilterDivider />
         <FilterField icon={<Calendar size={13} className="text-gray-400" />}>
           <Select
             value={datePreset}
-            onChange={(v) => setDatePreset(v as typeof datePreset)}
+            onChange={(v) => { setDatePreset(v as typeof datePreset); setPage(1); }}
             options={[
               { value: "anytime", label: "Anytime" },
               { value: "overdue", label: "Overdue" },
@@ -128,7 +136,7 @@ function TasksList({ scope }: { scope: "mine" }) {
             ]}
           />
         </FilterField>
-        <FilterSearch value={search} onChange={setSearch} placeholder="Search todos..." />
+        <FilterSearch value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="Search todos..." />
       </FilterBar>
 
       <div className="surface-card overflow-hidden">
@@ -153,11 +161,14 @@ function TasksList({ scope }: { scope: "mine" }) {
               </tr>
             </thead>
             <tbody>
-              {tasks.map((t, i) => (
+              {pageItems.map((t, i) => (
                 <TaskRow key={t.id} task={t} onClick={() => {}} index={i} />
               ))}
             </tbody>
           </table>
+        )}
+        {!isLoading && tasks.length > 0 && (
+          <Pagination page={page} totalPages={totalPages} total={tasks.length} limit={PAGE_SIZE} onPageChange={setPage} />
         )}
       </div>
     </div>

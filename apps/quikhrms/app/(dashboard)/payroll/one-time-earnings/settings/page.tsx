@@ -7,6 +7,7 @@ import { useToast } from "@/components/hrms/toast";
 import { Settings, Save, RotateCcw } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonLine } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 
 type Kind =
   | "Bonus" | "Arrears" | "Incentive" | "Commission"
@@ -93,6 +94,8 @@ export default function OneTimeDefaultsPage() {
 
   return (
     <div className="space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
           <Settings className="text-[#22c55e]" />

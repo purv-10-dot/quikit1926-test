@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/with-auth";
 import { getObject } from "@/lib/storage";
+import { resolveDocumentAccessByKey } from "@/lib/rbac/document-access";
 
 // Stored object keys, all shaped `<prefix>/<orgId>/…/<file>.<ext>` so the
 // tenant segment is always index [1] (see the various upload routes):
 //   uploads/<orgId>/<uuid>.<ext>                              (generic uploads)
 //   candidate-docs/<orgId>/<requestId>/<uuid>.<ext>           (candidate docs)
 //   tenants/<orgId>/leave-policies/<policyId>/<file>.<ext>    (leave policies)
+//   onboarding/<orgId>/<taskId>/<uuid>.<ext>                  (onboarding doc uploads)
+//   take-home/<orgId>/<interviewId>/<uuid>.<ext>              (recruit take-home)
 // Allow a known prefix, the org segment, any nested segments, then a filename.
-const KEY_PATTERN = /^(uploads|candidate-docs|tenants)\/[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*\/[a-zA-Z0-9][a-zA-Z0-9._-]*\.[a-zA-Z0-9]{2,8}$/;
+const KEY_PATTERN = /^(uploads|candidate-docs|tenants|onboarding|take-home)\/[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*\/[a-zA-Z0-9][a-zA-Z0-9._-]*\.[a-zA-Z0-9]{2,8}$/;
 
 /**
  * GET /api/v1/hrms/uploads/proxy?key=...
@@ -30,6 +33,23 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
   // Tenant isolation: `uploads/<orgId>/...` — only your own tenant's objects.
   if (key.split("/")[1] !== ctx.orgId) {
     return NextResponse.json({ success: false, error: { code: "FORBIDDEN", message: "Not allowed" } }, { status: 403 });
+  }
+
+  // Document-level authorization: if this key backs a Document row, the caller
+  // must actually have access to that document (owner / read-scope / live
+  // share) — not merely belong to the tenant. Keys owned by other modules
+  // (candidate docs, offer letters, leave policies…) have no Document row, so
+  // the tenant check above stays the gate for them.
+  const isDownload = !!searchParams.get("dl");
+  const access = await resolveDocumentAccessByKey(ctx, key);
+  if (access.doc) {
+    if (!access.allow) {
+      return NextResponse.json({ success: false, error: { code: "FORBIDDEN", message: "You don't have access to this document." } }, { status: 403 });
+    }
+    // A View-only share must not be downloadable.
+    if (isDownload && access.accessLevel !== "Download") {
+      return NextResponse.json({ success: false, error: { code: "FORBIDDEN", message: "This document is shared as view-only." } }, { status: 403 });
+    }
   }
 
   try {

@@ -23,6 +23,7 @@ interface ProjectRow {
   projectValue?: string;
   startDate?: string;
   status: string;
+  executionMode?: string;
 }
 
 const columns: MasterColumnDef<ProjectRow>[] = [
@@ -31,9 +32,14 @@ const columns: MasterColumnDef<ProjectRow>[] = [
     key: "name",
     label: "Project Name",
     render: (row) => (
-      <div>
+      <div className="flex items-center gap-1.5">
         <span className="font-medium text-gray-900">{row.name}</span>
-        {row.city && <span className="text-xs text-gray-500 ml-1">({row.city})</span>}
+        {row.city && <span className="text-xs text-gray-500">({row.city})</span>}
+        {row.executionMode === "FREE_SCOPE" && (
+          <span className="shrink-0 whitespace-nowrap rounded bg-accent-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-accent-700 border border-accent-200">
+            Free-Scope
+          </span>
+        )}
       </div>
     ),
   },

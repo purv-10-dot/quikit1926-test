@@ -1,11 +1,11 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, validationError, notFound, internalError } from "@/lib/api-response";
+import { successResponse, validationError, notFound, forbidden, internalError } from "@/lib/api-response";
 import { updateDelegationSchema } from "@/lib/validations/gap-fill";
 import { createAuditLog } from "@/lib/utils/audit";
 
-export const PUT = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
+export const PUT = withAuth(async (req: NextRequest, { orgId, userId, permissions }, params) => {
   try {
     const body = await req.json();
     const parsed = updateDelegationSchema.safeParse(body);
@@ -13,6 +13,16 @@ export const PUT = withAuth(async (req: NextRequest, { orgId, userId }, params) 
 
     const existing = await prisma.delegation.findFirst({ where: { id: params.id, orgId, deletedAt: null } });
     if (!existing) return notFound("Delegation not found");
+
+    // Only the delegation's own delegator (or a super-admin) may modify it.
+    if (existing.delegatorId !== userId && !permissions.includes("*")) return forbidden();
+
+    // If the end date is being changed to a real value, it must be strictly
+    // after the delegation's start date. (Clearing it to null is allowed.)
+    if (parsed.data.toDate) {
+      const to = new Date(parsed.data.toDate);
+      if (to <= existing.fromDate) return validationError("toDate must be after fromDate");
+    }
 
     const updated = await prisma.delegation.update({
       where: { id: params.id },
@@ -32,10 +42,13 @@ export const PUT = withAuth(async (req: NextRequest, { orgId, userId }, params) 
   }
 });
 
-export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }, params) => {
+export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId, permissions }, params) => {
   try {
     const existing = await prisma.delegation.findFirst({ where: { id: params.id, orgId, deletedAt: null } });
     if (!existing) return notFound("Delegation not found");
+
+    // Only the delegation's own delegator (or a super-admin) may delete it.
+    if (existing.delegatorId !== userId && !permissions.includes("*")) return forbidden();
 
     await prisma.delegation.update({
       where: { id: params.id },

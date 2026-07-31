@@ -4,6 +4,7 @@ import { withServiceAuth } from "@/lib/with-auth";
 import { successResponse, notFound, internalError, forbidden } from "@/lib/api-response";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { resolveScope, employeeScopeFilter } from "@/lib/rbac/scope";
+import { appBaseUrl } from "@/lib/utils/app-url";
 
 /**
  * GET /api/v1/hrms/employees/:id/summary — compact, §13-SAFE employee summary
@@ -62,7 +63,7 @@ export const GET = withServiceAuth(async (_req: NextRequest, ctx, params) => {
 
     if (!e) return notFound("Employee not found");
 
-    const base = process.env.NEXT_PUBLIC_QUIKHRMS_URL ?? process.env.APP_URL ?? "";
+    const base = appBaseUrl();
     const summary = {
       id: e.id,
       employeeCode: e.employeeCode,

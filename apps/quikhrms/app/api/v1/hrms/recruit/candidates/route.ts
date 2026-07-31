@@ -119,7 +119,7 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
 
     return successResponse(candidates, paginationMeta(page, limit, total));
   } catch (error) { console.error("GET /recruit/candidates error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.read"] });
 
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
   try {
@@ -159,4 +159,4 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
 
     return successResponse(candidate, undefined, 201);
   } catch (error) { console.error("POST /recruit/candidates error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });

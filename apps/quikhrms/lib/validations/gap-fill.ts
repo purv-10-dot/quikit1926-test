@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { zPhoneLooseOptional } from "./identifiers";
+import { zPhoneLooseOptional, zPanOptional, zAadhaarOptional, zIfscOptional, zBankAccountOptional } from "./identifiers";
 
 // ─── Time Logs ──────────────────────────────────────────
 
@@ -101,8 +101,8 @@ export const bulkEmployeeRowSchema = z.object({
   workLocation: z.string().optional(),
   officeLocation: z.string().optional(),
   jobTitle: z.string().optional(),
-  panNumber: z.string().optional(),
-  aadhaarNumber: z.string().optional(),
+  panNumber: zPanOptional,
+  aadhaarNumber: zAadhaarOptional,
   gender: z.string().optional(),
   maritalStatus: z.string().optional(),
   bloodGroup: z.string().optional(),
@@ -131,8 +131,8 @@ export const bulkEmployeeRowSchema = z.object({
   emergencyContactEmail: z.string().optional(),
   // Bank
   bankName: z.string().optional(),
-  bankAccountNumber: z.string().optional(),
-  bankIfsc: z.string().optional(),
+  bankAccountNumber: zBankAccountOptional,
+  bankIfsc: zIfscOptional,
   bankAccountHolder: z.string().optional(),
   // Reporting manager (lookup by code)
   reportingManagerCode: z.string().optional(),
@@ -216,8 +216,12 @@ export const MAX_BULK_UPLOAD_ROWS = 50;
 
 export const bulkImportEmployeesSchema = z.object({
   fileName: z.string().min(1),
+  // Rows are accepted loosely here (only count is enforced) so ONE malformed
+  // value can't 400 the whole upload. Each row is validated against
+  // bulkEmployeeRowSchema per-row inside the import job, where a bad value
+  // becomes that row's entry in the DataImport errors array.
   rows: z
-    .array(bulkEmployeeRowSchema)
+    .array(z.record(z.string(), z.unknown()))
     .min(1, "No rows found")
     .max(MAX_BULK_UPLOAD_ROWS, `You can upload at most ${MAX_BULK_UPLOAD_ROWS} employees at a time`),
   dryRun: z.boolean().default(false),

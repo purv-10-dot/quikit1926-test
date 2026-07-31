@@ -309,7 +309,7 @@ export function LeadFormView(props: LeadFormViewProps) {
           </Field>
         </LeadFormRow>
 
-        {/* Row 5: No. of Employees | (empty) */}
+        {/* Row 5: No. of Employees | Link Account */}
         <LeadFormRow>
           <Field label="No. of Employees">
             <Input
@@ -318,52 +318,6 @@ export function LeadFormView(props: LeadFormViewProps) {
               value={p.numberOfEmployees}
               onChange={(e) => p.setNumberOfEmployees(e.target.value)}
               placeholder="Enter number of employees"
-            />
-          </Field>
-          <div aria-hidden />
-        </LeadFormRow>
-    </LeadFormSection>
-  );
-
-  const section2 = (
-    <LeadFormSection title="Company Information">
-        <LeadFormRow>
-          <Field label="Company Name *" error={p.errors.company}>
-            <Input value={p.company} onChange={(e) => p.setCompany(e.target.value)} required />
-          </Field>
-          <Field label="Industry">
-            <Select value={p.industry} onChange={(e) => p.setIndustry(e.target.value)}>
-              <option value="">— Select industry —</option>
-              {p.industryOptions.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        </LeadFormRow>
-        <LeadFormRow>
-          <Field label="Annual Revenue">
-            <Input
-              value={p.annualRevenueDisplay}
-              onChange={(e) => p.setAnnualRevenueDisplay(e.target.value)}
-              placeholder="e.g. ₹5 Cr, $2M"
-            />
-          </Field>
-          <Field label="Website" error={p.errors.website}>
-            <Input
-              value={p.website}
-              onChange={(e) => p.setWebsite(e.target.value)}
-              placeholder="https://company.com"
-            />
-          </Field>
-        </LeadFormRow>
-        <LeadFormRow>
-          <Field label="LinkedIn Profile" error={p.errors.linkedinUrl}>
-            <Input
-              value={p.linkedinUrl}
-              onChange={(e) => p.setLinkedinUrl(e.target.value)}
-              placeholder="https://linkedin.com/company/…"
             />
           </Field>
           <Field label="Link Account">
@@ -409,6 +363,52 @@ export function LeadFormView(props: LeadFormViewProps) {
             </div>
           </Field>
         </LeadFormRow>
+    </LeadFormSection>
+  );
+
+  const section2 = (
+    <LeadFormSection title="Company Information">
+        <LeadFormRow>
+          <Field label="Company Name *" error={p.errors.company}>
+            <Input value={p.company} onChange={(e) => p.setCompany(e.target.value)} required />
+          </Field>
+          <Field label="Industry">
+            <Select value={p.industry} onChange={(e) => p.setIndustry(e.target.value)}>
+              <option value="">— Select industry —</option>
+              {p.industryOptions.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </LeadFormRow>
+        <LeadFormRow>
+          <Field label="Annual Revenue">
+            <Input
+              value={p.annualRevenueDisplay}
+              onChange={(e) => p.setAnnualRevenueDisplay(e.target.value)}
+              placeholder="e.g. ₹5 Cr, $2M"
+            />
+          </Field>
+          <Field label="Website" error={p.errors.website}>
+            <Input
+              value={p.website}
+              onChange={(e) => p.setWebsite(e.target.value)}
+              placeholder="https://company.com"
+            />
+          </Field>
+        </LeadFormRow>
+        <LeadFormRow>
+          <Field label="LinkedIn Profile" error={p.errors.linkedinUrl}>
+            <Input
+              value={p.linkedinUrl}
+              onChange={(e) => p.setLinkedinUrl(e.target.value)}
+              placeholder="https://linkedin.com/company/…"
+            />
+          </Field>
+          <div aria-hidden />
+        </LeadFormRow>
         <LeadAddressSection
           open={p.addressOpen}
           onOpenChange={p.setAddressOpen}
@@ -422,16 +422,16 @@ export function LeadFormView(props: LeadFormViewProps) {
   const section3 = (
     <LeadFormSection title="Contact Information">
         <LeadFormRow>
-          <Field label="First Name *" error={p.errors.firstName}>
-            <Input value={p.firstName} onChange={(e) => p.setFirstName(e.target.value)} required />
+          <Field label="First Name" error={p.errors.firstName}>
+            <Input value={p.firstName} onChange={(e) => p.setFirstName(e.target.value)} />
           </Field>
-          <Field label="Last Name *" error={p.errors.lastName}>
-            <Input value={p.lastName} onChange={(e) => p.setLastName(e.target.value)} required />
+          <Field label="Last Name" error={p.errors.lastName}>
+            <Input value={p.lastName} onChange={(e) => p.setLastName(e.target.value)} />
           </Field>
         </LeadFormRow>
         <LeadFormRow>
-          <Field label="Email *" error={p.errors.email}>
-            <Input type="email" value={p.email} onChange={(e) => p.setEmail(e.target.value)} required />
+          <Field label="Email" error={p.errors.email}>
+            <Input type="email" value={p.email} onChange={(e) => p.setEmail(e.target.value)} />
           </Field>
           <Field label="Secondary Email" error={p.errors.secondaryEmail}>
             <Input type="email" value={p.secondaryEmail} onChange={(e) => p.setSecondaryEmail(e.target.value)} />
@@ -441,8 +441,8 @@ export function LeadFormView(props: LeadFormViewProps) {
           <Field label="Phone" error={p.errors.phone}>
             <PhoneField value={p.phone} onChange={p.setPhone} invalid={!!p.errors.phone} ariaLabel="Phone" />
           </Field>
-          <Field label="Mobile *" error={p.errors.mobile}>
-            <PhoneField value={p.mobile} onChange={p.setMobile} required invalid={!!p.errors.mobile} ariaLabel="Mobile" />
+          <Field label="Mobile" error={p.errors.mobile}>
+            <PhoneField value={p.mobile} onChange={p.setMobile} invalid={!!p.errors.mobile} ariaLabel="Mobile" />
           </Field>
         </LeadFormRow>
         <LeadFormRow>

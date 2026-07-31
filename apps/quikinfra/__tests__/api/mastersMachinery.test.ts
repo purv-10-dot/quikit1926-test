@@ -87,7 +87,7 @@ describe("POST /api/masters/machinery — auth", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns 403 when the user lacks construction.masters.create", async () => {
+  it("returns 403 when the user lacks construction.master_machinery.create", async () => {
     setContext(makeUserCtx([]));
     const res = await POST(buildPOST({ name: "Excavator", type: "excavator" }));
     expect(res.status).toBe(403);
@@ -95,7 +95,7 @@ describe("POST /api/masters/machinery — auth", () => {
 
   it("returns 403 when the permission matrix denies add", async () => {
     setContext(
-      makeUserCtx(["construction.masters.create"], {
+      makeUserCtx(["construction.master_machinery.create"], {
         permissionMatrix: { "master.machinery": { add: false } },
       }),
     );
