@@ -1135,6 +1135,13 @@ model Client {
   /// Planned daily huddle window (HH:mm 24h).
   dailyStartTime  String?
   dailyEndTime    String?
+  /// Meeting recurrence (drives the Teams calendar series via QuikFlow).
+  /// weeklyDay: weekday name for the weekly meeting (e.g. "wednesday").
+  /// dailyDays: weekday names for the daily huddle (empty ⇒ Mon–Fri).
+  /// meetingUntil: recurrence end date (null ⇒ open-ended).
+  weeklyDay       String?
+  dailyDays       String[]              @default([])
+  meetingUntil    DateTime?
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
   createdBy       String
@@ -2022,6 +2029,16 @@ model ClientMeetingTranscript {
   actionItems      Json?
   matchStatus      MeetingTranscriptMatch @default(MATCHED)
   source           String                 @default("fathom")
+  /// AI-generated meeting report (sections + extracted KPI/Priority/WWW
+  /// candidates with per-item confidence). Null until a user saves one from the
+  /// Export Transcript modal. Structured JSON validated by the report Zod schema.
+  report           Json?
+  /// Overall report confidence (0..1) surfaced as a badge in the viewer.
+  reportConfidence Float?
+  reportGeneratedAt DateTime?
+  reportGeneratedBy String?
+  reportUpdatedAt  DateTime?
+  reportUpdatedBy  String?
   createdAt        DateTime               @default(now())
   updatedAt        DateTime               @updatedAt
   createdBy        String
@@ -19375,6 +19392,30 @@ model WfConnection {
   updatedAt    DateTime   @updatedAt
 
   @@unique([orgId, provider, label])
+  @@index([orgId, provider])
+  @@schema("app_quikflow")
+}
+
+/// Maps a source-app record (e.g. a Client Master row) + kind (daily/weekly) to
+/// the external calendar event a workflow created for it. Gives the calendar
+/// action idempotency — a re-run or edit UPDATES the existing event instead of
+/// creating a duplicate — and lets a calendar view map events back to records.
+model WfCalendarLink {
+  id              String     @id @default(cuid())
+  orgId           String
+  provider        WfProvider
+  connectionId    String
+  refType         String // source record type, e.g. "clientMaster"
+  refId           String // source record id, e.g. the Client id
+  kind            String     @default("") // "daily" | "weekly" | "" (single)
+  externalEventId String
+  webLink         String?
+  joinUrl         String?
+  createdBy       String
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@unique([orgId, refType, refId, kind])
   @@index([orgId, provider])
   @@schema("app_quikflow")
 }

@@ -8,6 +8,8 @@
  * Download as .docx (server route) or .txt (client-side).
  */
 import { useCallback, useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
+import { MeetingReportPanel } from "./MeetingReportPanel";
 
 interface ClientOpt { id: string; name: string }
 
@@ -84,6 +86,15 @@ export function ExportTranscriptModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [viewerTab, setViewerTab] = useState<"transcript" | "report">("transcript");
+
+  const { data: sessionData } = useSession();
+  const currentUserId = (sessionData?.user as { id?: string } | undefined)?.id ?? "";
+
+  // A different transcript resets the viewer to the transcript tab.
+  useEffect(() => {
+    setViewerTab("transcript");
+  }, [selected?.id]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -309,36 +320,55 @@ export function ExportTranscriptModal({
                   </div>
                 </div>
 
-                {attendeeText(selected.attendees) ? (
-                  <p className="mb-3 text-xs text-gray-600">
-                    <span className="font-medium">Attendees:</span> {attendeeText(selected.attendees)}
-                  </p>
-                ) : null}
+                {/* Transcript ⇄ Report view toggle */}
+                <div className="mb-4 inline-flex overflow-hidden rounded-lg border border-gray-200 text-xs">
+                  {(["transcript", "report"] as const).map((v) => (
+                    <button
+                      key={v}
+                      onClick={() => setViewerTab(v)}
+                      className={`px-3 py-1.5 font-medium capitalize ${viewerTab === v ? "bg-accent-500 text-white" : "text-gray-600 hover:bg-gray-50"}`}
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
 
-                {selected.summary ? (
-                  <section className="mb-4">
-                    <h4 className="mb-1 text-sm font-semibold text-gray-800">Summary</h4>
-                    <p className="whitespace-pre-wrap text-sm text-gray-700">{selected.summary}</p>
-                  </section>
-                ) : null}
+                {viewerTab === "report" ? (
+                  <MeetingReportPanel transcriptId={selected.id} currentUserId={currentUserId} />
+                ) : (
+                  <>
+                    {attendeeText(selected.attendees) ? (
+                      <p className="mb-3 text-xs text-gray-600">
+                        <span className="font-medium">Attendees:</span> {attendeeText(selected.attendees)}
+                      </p>
+                    ) : null}
 
-                {Array.isArray(selected.actionItems) && selected.actionItems.length ? (
-                  <section className="mb-4">
-                    <h4 className="mb-1 text-sm font-semibold text-gray-800">Action items</h4>
-                    <ul className="list-disc pl-5 text-sm text-gray-700">
-                      {selected.actionItems.map((a, i) => (
-                        <li key={i}>{a.text}</li>
-                      ))}
-                    </ul>
-                  </section>
-                ) : null}
+                    {selected.summary ? (
+                      <section className="mb-4">
+                        <h4 className="mb-1 text-sm font-semibold text-gray-800">Summary</h4>
+                        <p className="whitespace-pre-wrap text-sm text-gray-700">{selected.summary}</p>
+                      </section>
+                    ) : null}
 
-                <section>
-                  <h4 className="mb-1 text-sm font-semibold text-gray-800">Transcript</h4>
-                  <pre className="max-h-[40vh] overflow-y-auto whitespace-pre-wrap rounded-lg bg-gray-50 p-3 font-sans text-sm text-gray-700">
-                    {selected.rawText || "No transcript text saved."}
-                  </pre>
-                </section>
+                    {Array.isArray(selected.actionItems) && selected.actionItems.length ? (
+                      <section className="mb-4">
+                        <h4 className="mb-1 text-sm font-semibold text-gray-800">Action items</h4>
+                        <ul className="list-disc pl-5 text-sm text-gray-700">
+                          {selected.actionItems.map((a, i) => (
+                            <li key={i}>{a.text}</li>
+                          ))}
+                        </ul>
+                      </section>
+                    ) : null}
+
+                    <section>
+                      <h4 className="mb-1 text-sm font-semibold text-gray-800">Transcript</h4>
+                      <pre className="max-h-[40vh] overflow-y-auto whitespace-pre-wrap rounded-lg bg-gray-50 p-3 font-sans text-sm text-gray-700">
+                        {selected.rawText || "No transcript text saved."}
+                      </pre>
+                    </section>
+                  </>
+                )}
               </>
             )}
           </div>

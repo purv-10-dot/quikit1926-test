@@ -137,6 +137,9 @@ export const PERMISSION_TREE: PermissionModule[] = [
       { resource: "ClientMember", label: "Client Members", actions: ACTIONS },
       { resource: "DailyHuddle", label: "Daily Huddle", actions: ACTIONS },
       { resource: "WeeklyMeeting", label: "Weekly Meeting", actions: ACTIONS },
+      // AI meeting report: `view` = generate/view a report from a transcript;
+      // `update` = the "Edit Report" gate (edit fields and Save).
+      { resource: "ClientMeetings.Report", label: "Meeting Report", actions: ["view", "update"] },
     ],
   },
   {

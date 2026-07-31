@@ -5,7 +5,7 @@ import { updateClientSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { toErrorMessage } from "@/lib/api/errors";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { audit, requestContext, classifyUpdateAction, diffFields, CLIENT_AUDIT_FIELDS } from "@/lib/audit";
-import { emitClientUpdated } from "@/lib/services/workflowEvents";
+import { emitClientUpdated, emitClientDeleted } from "@/lib/services/workflowEvents";
 
 // RBAC v2: same per-action gate as the list endpoint. View/update/delete are
 // gated by the corresponding ClientMaster permission grants on the caller's
@@ -101,6 +101,9 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, request
           weeklyEndTime:   d.weeklyEndTime,
           dailyStartTime:  d.dailyStartTime,
           dailyEndTime:    d.dailyEndTime,
+          weeklyDay:       d.weeklyDay === undefined ? undefined : (d.weeklyDay ?? null),
+          dailyDays:       d.dailyDays === undefined ? undefined : (d.dailyDays ?? []),
+          meetingUntil:    d.meetingUntil === undefined ? undefined : (d.meetingUntil ? new Date(d.meetingUntil) : null),
           updatedBy: userId,
         },
       });
@@ -172,9 +175,42 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, request
       ...requestContext(request),
     });
 
-    // Fire a QuikFlow event only when something actually changed.
+    // Fire a QuikFlow event only when something actually changed. Load the final
+    // meeting windows + team-member emails so a calendar workflow updates the
+    // existing Teams events (idempotent via WfCalendarLink).
     if (auditChanges.length) {
-      emitClientUpdated({ orgId, clientId: params.id, name: newSnapshot.name });
+      const finalClient = await db.client.findUnique({
+        where: { id: params.id },
+        select: {
+          dailyStartTime: true,
+          dailyEndTime: true,
+          weeklyStartTime: true,
+          weeklyEndTime: true,
+          weeklyDay: true,
+          dailyDays: true,
+          meetingUntil: true,
+          startDate: true,
+          teamMembers: { select: { member: { select: { email: true } } } },
+        },
+      });
+      const emails = (finalClient?.teamMembers ?? [])
+        .map((tm) => tm.member?.email)
+        .filter(Boolean)
+        .join(", ");
+      emitClientUpdated({
+        orgId,
+        clientId: params.id,
+        name: newSnapshot.name,
+        dailyStartTime: finalClient?.dailyStartTime ?? null,
+        dailyEndTime: finalClient?.dailyEndTime ?? null,
+        weeklyStartTime: finalClient?.weeklyStartTime ?? null,
+        weeklyEndTime: finalClient?.weeklyEndTime ?? null,
+        teamMemberEmails: emails,
+        weeklyDay: finalClient?.weeklyDay ?? "",
+        dailyDays: finalClient?.dailyDays ?? [],
+        meetingUntil: finalClient?.meetingUntil ? finalClient.meetingUntil.toISOString().slice(0, 10) : "",
+        startDate: finalClient?.startDate ? finalClient.startDate.toISOString().slice(0, 10) : "",
+      });
     }
 
     return NextResponse.json({ success: true });
@@ -213,6 +249,10 @@ export const DELETE = auth.delete<{ id: string }>(async ({ orgId, userId }, requ
       snapshot: { name: existing.name, isActive: existing.isActive, description: existing.description },
       ...requestContext(request),
     });
+
+    // Let a QuikFlow workflow tear down the Teams events it created for this client.
+    emitClientDeleted({ orgId, clientId: params.id, name: existing.name });
+
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to delete client") }, { status: 500 });

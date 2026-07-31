@@ -83,6 +83,95 @@ const TEMPLATES = [
     triggerLabel: "Task overdue",
     actionLabel: "Slack the owner",
   },
+  {
+    // Real, prefilled starting point: seeds the trigger + two calendar actions so
+    // "Use template" opens a ready-to-activate Client Master → Teams workflow.
+    name: "Client Master → Teams meetings",
+    app: "quikscale",
+    category: "Meeting Rhythm",
+    description:
+      "When a client is added, create recurring Daily Huddle (Mon–Fri) & Weekly Meeting Teams online meetings on the connected calendar.",
+    triggerLabel: "A client is created",
+    actionLabel: "Create 2 Teams meetings",
+    graphNodes: [
+      {
+        id: "trigger",
+        kind: "trigger",
+        label: "A client is created",
+        config: { app: "quikscale", module: "clientMaster", event: "clientMaster.created" },
+      },
+      {
+        id: "step_1",
+        kind: "action",
+        label: "Daily Huddle (Teams)",
+        config: {
+          actionId: "calendar.event.create",
+          params: {
+            subject: "Daily Huddle — {{trigger.name}}",
+            kind: "daily",
+            start_time: "{{trigger.dailyStartTime}}",
+            end_time: "{{trigger.dailyEndTime}}",
+            attendees: "{{trigger.teamMemberEmails}}",
+            date: "{{trigger.startDate}}",
+            recurrence: "weekdays",
+            recurrence_days: "{{trigger.dailyDays}}",
+            recurrence_until: "{{trigger.meetingUntil}}",
+            online_meeting: "true",
+          },
+        },
+      },
+      {
+        id: "step_2",
+        kind: "action",
+        label: "Weekly Meeting (Teams)",
+        config: {
+          actionId: "calendar.event.create",
+          params: {
+            subject: "Weekly Meeting — {{trigger.name}}",
+            kind: "weekly",
+            start_time: "{{trigger.weeklyStartTime}}",
+            end_time: "{{trigger.weeklyEndTime}}",
+            attendees: "{{trigger.teamMemberEmails}}",
+            date: "{{trigger.startDate}}",
+            recurrence: "weekly",
+            recurrence_days: "{{trigger.weeklyDay}}",
+            recurrence_until: "{{trigger.meetingUntil}}",
+            online_meeting: "true",
+          },
+        },
+      },
+    ],
+    graphEdges: [
+      { from: "trigger", to: "step_1" },
+      { from: "step_1", to: "step_2" },
+    ],
+  },
+  {
+    // Cleanup counterpart: tears down the meetings the create template made.
+    name: "Client removed → remove Teams meetings",
+    app: "quikscale",
+    category: "Meeting Rhythm",
+    description:
+      "When a client is deleted, remove the Daily Huddle & Weekly Meeting Teams events created for it.",
+    triggerLabel: "A client is deleted",
+    actionLabel: "Delete Teams meetings",
+    graphNodes: [
+      {
+        id: "trigger",
+        kind: "trigger",
+        label: "A client is deleted",
+        config: { app: "quikscale", module: "clientMaster", event: "clientMaster.deleted" },
+      },
+      {
+        id: "step_1",
+        kind: "action",
+        label: "Delete Teams meetings",
+        // No params → deletes every event (all kinds) linked to the deleted client.
+        config: { actionId: "calendar.event.delete", params: {} },
+      },
+    ],
+    graphEdges: [{ from: "trigger", to: "step_1" }],
+  },
 ];
 
 async function main() {

@@ -20,8 +20,11 @@ import {
   AddButton, EmptyState,
   Segmented, FilterPicker, UserMultiPicker, Pagination, type ExportSelection, type PickerUser,
 } from "@quikit/ui";
-import { Users, History, Clock, Search, Filter, Trash2, RotateCcw } from "lucide-react";
+import { Users, History, Clock, Search, Filter, Trash2, RotateCcw, CalendarDays } from "lucide-react";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
+import { ClientCalendarModal } from "./ClientCalendarModal";
+import { ClientMeetingPreview } from "./ClientMeetingPreview";
+import { useClientMeetingAutomation } from "@/lib/hooks/useClientMeetingAutomation";
 import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
@@ -84,6 +87,7 @@ interface ClientRow {
   isActive: boolean;
   weeklyStartTime: string | null; weeklyEndTime: string | null;
   dailyStartTime: string | null;  dailyEndTime: string | null;
+  weeklyDay: string | null; dailyDays: string[]; meetingUntil: string | null; startDate: string | null;
   teamMembers: Array<{ id: string; name: string; email: string }>;
   createdAt: string; updatedAt: string;
   createdBy: string; createdByName: string; createdByInitials: string;
@@ -97,8 +101,22 @@ const emptyForm = {
   name: "", description: "", isActive: true as boolean,
   weeklyStartTime: "", weeklyEndTime: "",
   dailyStartTime: "",  dailyEndTime: "",
+  // Teams-calendar recurrence (shown only when a calendar workflow is active).
+  weeklyDay: "" as string, dailyDays: [] as string[],
+  startDate: "" as string, meetingUntil: "" as string,
   teamMemberIds: [] as string[],
 };
+
+// Weekday chips for the recurrence editor (keys match the calendar tokens).
+const DAY_CHIPS: { key: string; label: string }[] = [
+  { key: "monday", label: "M" },
+  { key: "tuesday", label: "T" },
+  { key: "wednesday", label: "W" },
+  { key: "thursday", label: "T" },
+  { key: "friday", label: "F" },
+  { key: "saturday", label: "S" },
+  { key: "sunday", label: "S" },
+];
 
 function fmtDateShort(iso: string) {
   const d = new Date(iso);
@@ -145,6 +163,11 @@ export default function ClientsPage() {
 
   // Filter popover — Client name + Status.
   const [showFilter, setShowFilter] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
+  // Is an ACTIVE QuikFlow "Client Master → calendar" automation configured? When
+  // true, the Add/Edit form surfaces the Teams-meeting scheduling model; when
+  // false the form behaves exactly as today (degrades safely — never blocks).
+  const { calendarAutomation } = useClientMeetingAutomation();
   const filterRef = useRef<HTMLDivElement>(null);
   const [filterClientId, setFilterClientId] = useState("");
   const [filterStatus, setFilterStatus] = useState<"" | "active" | "inactive">("");
@@ -511,6 +534,10 @@ export default function ClientsPage() {
         weeklyEndTime:   row.weeklyEndTime ?? "",
         dailyStartTime:  row.dailyStartTime ?? "",
         dailyEndTime:    row.dailyEndTime ?? "",
+        weeklyDay:       row.weeklyDay ?? "",
+        dailyDays:       row.dailyDays ?? [],
+        startDate:       row.startDate ? row.startDate.slice(0, 10) : "",
+        meetingUntil:    row.meetingUntil ?? "",
         teamMemberIds:   row.teamMembers.map(m => m.id),
       },
     });
@@ -540,6 +567,10 @@ export default function ClientsPage() {
         weeklyEndTime:   f.weeklyEndTime,
         dailyStartTime:  f.dailyStartTime,
         dailyEndTime:    f.dailyEndTime,
+        weeklyDay:       f.weeklyDay || null,
+        dailyDays:       f.dailyDays,
+        startDate:       f.startDate || null,
+        meetingUntil:    f.meetingUntil || null,
         teamMemberIds:   f.teamMemberIds,
       };
       const url = editing.id ? `/api/client-meetings/clients/${editing.id}` : "/api/client-meetings/clients";
@@ -669,6 +700,15 @@ export default function ClientsPage() {
               {quarter} · Week {currentWeek}
             </span>
           )}
+          <button
+            type="button"
+            onClick={() => setShowCalendar(true)}
+            title="Open Teams calendar"
+            aria-label="Open Teams calendar"
+            className="inline-flex items-center justify-center rounded-md p-1.5 text-gray-500 hover:bg-accent-50 hover:text-accent-600 transition-colors"
+          >
+            <CalendarDays className="h-4 w-4" />
+          </button>
         </div>
 
         <div className="flex items-center gap-2">
@@ -983,6 +1023,89 @@ export default function ClientsPage() {
               placeholder="Add any relevant description…"
               className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 resize-none" />
           </div>
+
+          {/* Teams-meeting scheduling model — shown ONLY when a QuikFlow calendar
+              automation is active. When absent, the form is unchanged (today's
+              behavior). The recurrence editor (below) feeds the Teams series; the
+              preview shows what will be scheduled (events are created async by
+              the workflow on save). */}
+          {calendarAutomation && (
+            <>
+              <div className="rounded-lg border border-gray-200 p-3 space-y-3">
+                <p className="text-xs font-semibold text-gray-700">Meeting recurrence</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Meeting Start Date</label>
+                    <input type="date" value={editing.form.startDate}
+                      onChange={e => setEditing({ ...editing, form: { ...editing.form, startDate: e.target.value } })}
+                      className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Meetings Until <span className="text-gray-400 font-normal">(optional)</span></label>
+                    <input type="date" value={editing.form.meetingUntil}
+                      onChange={e => setEditing({ ...editing, form: { ...editing.form, meetingUntil: e.target.value } })}
+                      className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Weekly Meeting Day</label>
+                  <div className="flex gap-1">
+                    {DAY_CHIPS.map(d => {
+                      const on = editing.form.weeklyDay === d.key;
+                      return (
+                        <button key={`wk-${d.key}`} type="button"
+                          onClick={() => setEditing({ ...editing, form: { ...editing.form, weeklyDay: on ? "" : d.key } })}
+                          className={`h-8 w-8 rounded-full text-xs font-medium transition-colors ${on ? "bg-accent-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+                          {d.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Daily Huddle Days <span className="text-gray-400 font-normal">(default Mon–Fri)</span>
+                  </label>
+                  <div className="flex gap-1">
+                    {DAY_CHIPS.map(d => {
+                      const on = editing.form.dailyDays.includes(d.key);
+                      return (
+                        <button key={`dh-${d.key}`} type="button"
+                          onClick={() => setEditing({
+                            ...editing,
+                            form: {
+                              ...editing.form,
+                              dailyDays: on
+                                ? editing.form.dailyDays.filter(x => x !== d.key)
+                                : [...editing.form.dailyDays, d.key],
+                            },
+                          })}
+                          className={`h-8 w-8 rounded-full text-xs font-medium transition-colors ${on ? "bg-accent-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+                          {d.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <ClientMeetingPreview
+                clientName={editing.form.name}
+                dailyStart={editing.form.dailyStartTime}
+                dailyEnd={editing.form.dailyEndTime}
+                weeklyStart={editing.form.weeklyStartTime}
+                weeklyEnd={editing.form.weeklyEndTime}
+                weeklyDay={editing.form.weeklyDay}
+                dailyDays={editing.form.dailyDays}
+                until={editing.form.meetingUntil}
+                attendeeNames={editing.form.teamMemberIds.map((id) => {
+                  const opt = memberOptions.find((o) => o.id === id);
+                  const optName = opt ? [opt.firstName, opt.lastName].filter(Boolean).join(" ").trim() || opt.email : "";
+                  return optName || memberNameById.get(id) || id;
+                })}
+              />
+            </>
+          )}
           </fieldset>
         </RightPanel>
         );
@@ -992,6 +1115,9 @@ export default function ClientsPage() {
       {logOpen && (
         <ClientChangeHistoryPanel client={logOpen} nameById={memberNameById} onClose={() => setLogOpen(null)} />
       )}
+
+      {/* Microsoft Teams calendar (events created by QuikFlow workflows). */}
+      {showCalendar && <ClientCalendarModal onClose={() => setShowCalendar(false)} />}
     </div>
   );
 }

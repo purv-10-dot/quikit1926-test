@@ -1,7 +1,7 @@
 import type { ActionContext, StepResult } from "./types";
 import { moduleForEvent } from "@/lib/catalog";
-import { sendMailForOrg } from "@/lib/connectors";
-import type { MailProviderId } from "@/lib/connectors";
+import { createCalendarEventForOrg, deleteCalendarEventsForOrg, sendMailForOrg } from "@/lib/connectors";
+import type { CalendarRecurrence, MailProviderId } from "@/lib/connectors";
 
 /**
  * Action executor registry.
@@ -327,6 +327,172 @@ function mailSend(providerHint: MailProviderId | null): ActionExecutor {
   };
 }
 
+const WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday"];
+
+/** Today as "YYYY-MM-DD" (the anchor date when the author gives only HH:mm). */
+function todayYmd(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/** Compose a local "YYYY-MM-DDTHH:mm:00" from a date + an "HH:mm" time, or null. */
+function composeDateTime(dateStr: string | null, timeStr: string | null): string | null {
+  if (!timeStr || !/^\d{1,2}:\d{2}$/.test(timeStr)) return null;
+  const date = dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? dateStr : todayYmd();
+  const [h, m] = timeStr.split(":");
+  return `${date}T${h.padStart(2, "0")}:${m}:00`;
+}
+
+/** Parse a weekday list (array or comma string) to lowercase names, or undefined. */
+function parseDaysList(v: unknown): string[] | undefined {
+  const arr = Array.isArray(v)
+    ? (v as unknown[]).map((d) => String(d).toLowerCase().trim())
+    : typeof v === "string"
+      ? v.split(",").map((d) => d.trim().toLowerCase())
+      : [];
+  const days = arr.filter(Boolean);
+  return days.length ? days : undefined;
+}
+
+/**
+ * The base recurrence from the `recurrence` param — a preset string
+ * ("weekdays" = Mon–Fri, "weekly", "daily", "none") or a full object
+ * ({pattern, daysOfWeek, startDate, endDate, occurrences}). Null for one-off.
+ */
+function baseRecurrence(v: unknown, anchorDate: string): CalendarRecurrence | null {
+  const preset = typeof v === "string" ? v.trim().toLowerCase() : "";
+  if (typeof v === "string") {
+    if (preset === "none" || preset === "") return null;
+    if (preset === "weekdays") return { pattern: "weekly", interval: 1, daysOfWeek: WEEKDAYS, startDate: anchorDate };
+    if (preset === "weekly") return { pattern: "weekly", interval: 1, startDate: anchorDate };
+    if (preset === "daily") return { pattern: "daily", interval: 1, startDate: anchorDate };
+  }
+
+  const o = parseObjectParam(v);
+  if (Object.keys(o).length === 0) return null;
+  const pattern = firstString(o.pattern);
+  if (pattern !== "daily" && pattern !== "weekly") return null;
+  return {
+    pattern,
+    interval: numOrNull(o.interval) ?? undefined,
+    daysOfWeek: parseDaysList(o.daysOfWeek),
+    startDate: firstString(o.startDate, o.start_date) ?? anchorDate,
+    endDate: firstString(o.endDate, o.end_date) ?? null,
+    occurrences: numOrNull(o.occurrences),
+  };
+}
+
+/**
+ * Resolve the recurrence for the calendar action, layering the flat token params
+ * `recurrence_days` (weekday list) and `recurrence_until` (end date) on top of the
+ * base `recurrence` preset/object. Flat params exist because the no-code builder
+ * feeds tokens ({{trigger.weeklyDay}}, {{trigger.meetingUntil}}) as plain strings.
+ * Returns null (one-off) only when there is neither a base nor any flat days.
+ */
+function resolveRecurrence(p: Record<string, unknown>, anchorDate: string): CalendarRecurrence | null {
+  const flatDays = parseDaysList(p.recurrence_days);
+  const flatUntil = firstString(p.recurrence_until, p.recurrence_end);
+  const base = baseRecurrence(p.recurrence, anchorDate);
+
+  // No base pattern and no explicit days ⇒ a one-off event.
+  if (!base && !flatDays) return null;
+
+  return {
+    pattern: base?.pattern ?? "weekly",
+    interval: base?.interval,
+    daysOfWeek: flatDays ?? base?.daysOfWeek,
+    startDate: base?.startDate ?? anchorDate,
+    endDate: flatUntil ?? base?.endDate ?? null,
+    occurrences: base?.occurrences ?? null,
+  };
+}
+
+/**
+ * REAL: create (or idempotently update) a calendar event on the org's connected
+ * Microsoft calendar, attaching a Teams online meeting by default. Accepts start
+ * / end as full local date-times, or as `start_time` / `end_time` ("HH:mm") with
+ * an optional `date` (defaults to today) — the latter fits Client Master's HH:mm
+ * fields straight from {{trigger.dailyStartTime}} etc. A stable `ref_id` (+ `kind`)
+ * makes re-runs/edits update the same event instead of duplicating. Skips cleanly
+ * when times are missing or no calendar is connected.
+ */
+const calendarCreate: ActionExecutor = async (ctx) => {
+  const p = ctx.params ?? {};
+  const subject = firstString(p.subject, p.title) ?? "(no title)";
+  const dateStr = firstString(p.date, p.start_date) ?? null;
+  const start = firstString(p.start) ?? composeDateTime(dateStr, firstString(p.start_time, p.startTime));
+  const end = firstString(p.end) ?? composeDateTime(dateStr, firstString(p.end_time, p.endTime));
+  if (!start || !end) return skipStep("Calendar event needs a start and end (full date-time, or start_time/end_time)");
+
+  const attendeesRaw = firstString(p.attendees, p.to);
+  const attendees = attendeesRaw
+    ? attendeesRaw.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
+  const onlineRaw = p.online_meeting ?? p.onlineMeeting;
+
+  // Idempotency link: pin to the source record so re-runs update, not duplicate.
+  const refId = firstString(p.ref_id, ctx.event.data.recordId);
+  const refType =
+    firstString(p.ref_type) ?? moduleForEvent(ctx.event.event)?.key ?? ctx.event.app;
+  const link = refId ? { refType, refId, kind: firstString(p.kind) ?? "" } : undefined;
+
+  try {
+    const result = await createCalendarEventForOrg(
+      ctx.orgId,
+      {
+        subject,
+        body: firstString(p.body, p.message, p.description) ?? undefined,
+        html: boolParam(p.html),
+        start,
+        end,
+        timeZone: firstString(p.timezone, p.time_zone, p.timeZone) ?? process.env.QUIKFLOW_DEFAULT_TIMEZONE ?? "UTC",
+        attendees,
+        location: firstString(p.location) ?? undefined,
+        // Attach a Teams meeting by default; opt out with online_meeting=false.
+        onlineMeeting: onlineRaw === undefined ? true : boolParam(onlineRaw),
+        recurrence: resolveRecurrence(p, dateStr ?? start.slice(0, 10)),
+      },
+      { connectionId: firstString(p.from_connection) ?? undefined, link, createdBy: actorFor(ctx) },
+    );
+    if (!result) return skipStep("No connected Microsoft Teams calendar for this org");
+    return {
+      status: "ok",
+      output: {
+        created: !result.updated,
+        updated: result.updated,
+        eventId: result.id,
+        webLink: result.webLink,
+        joinUrl: result.joinUrl,
+        organizer: result.organizer,
+      },
+    };
+  } catch (e) {
+    return { status: "failed", error: e instanceof Error ? e.message : "Calendar event create failed" };
+  }
+};
+
+/**
+ * REAL: delete the calendar event(s) a workflow created for the triggering
+ * record (all kinds, or a specific `kind`). Pairs with calendar.event.create —
+ * fire it on clientMaster.deleted to clean up the Teams meetings. Idempotent.
+ */
+const calendarDelete: ActionExecutor = async (ctx) => {
+  const p = ctx.params ?? {};
+  const refId = firstString(p.ref_id, ctx.event.data.recordId);
+  if (!refId) return skipStep("No record id to delete calendar events for");
+  const refType = firstString(p.ref_type) ?? moduleForEvent(ctx.event.event)?.key ?? ctx.event.app;
+  const kind = firstString(p.kind);
+  try {
+    const { deleted } = await deleteCalendarEventsForOrg(ctx.orgId, {
+      refType,
+      refId,
+      ...(kind ? { kind } : {}),
+    });
+    return { status: "ok", output: { deleted } };
+  } catch (e) {
+    return { status: "failed", error: e instanceof Error ? e.message : "Calendar event delete failed" };
+  }
+};
+
 /** Coerce a param to a number, or null when blank/non-numeric. */
 function numOrNull(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null;
@@ -578,6 +744,9 @@ const REGISTRY: Record<string, ActionExecutor> = {
   "email.send": mailSend(null),
   "gmail.send": mailSend("gmail"),
   "outlook.send": mailSend("outlook"),
+  // Microsoft Teams calendar event / online meeting on a connected MS account.
+  "calendar.event.create": calendarCreate,
+  "calendar.event.delete": calendarDelete,
   // KPI record mutations (Phase 1) — reuse QuikScale's own write/recalc logic.
   "kpi.value.enter": enterKpiValue,
   "kpi.create": createKpi,

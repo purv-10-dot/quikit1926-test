@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
-import { getMailProvider, isMailProvider, redirectUriFor, signState } from "@/lib/connectors";
+import { getOAuthProvider, isOAuthProvider, redirectUriFor, signState } from "@/lib/connectors";
 
 export const runtime = "nodejs";
 
@@ -16,10 +16,10 @@ type Params = { provider: string };
 export const GET = withOrgAuth<Params>(
   async ({ orgId, userId }, _req, { params }) => {
     const providerId = params.provider;
-    if (!isMailProvider(providerId)) {
+    if (!isOAuthProvider(providerId)) {
       return NextResponse.json({ success: false, error: "Unknown provider" }, { status: 400 });
     }
-    const provider = getMailProvider(providerId)!;
+    const provider = getOAuthProvider(providerId)!;
     const base = process.env.QUIKFLOW_URL ?? "http://localhost:3011";
     try {
       const state = signState({ orgId, userId, provider: providerId });

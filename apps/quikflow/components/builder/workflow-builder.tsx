@@ -10,7 +10,7 @@ import { Connector } from "@/components/builder/connector";
 import { StepPicker } from "@/components/builder/step-picker";
 import { ConfigPanel } from "@/components/builder/config-panel";
 import type { Step, RuleGroupValue, ScheduleValue } from "@/lib/builder/types";
-import { serializeWorkflow, maxStepSeq, DEFAULT_SCHEDULE, DEFAULT_OFFSET_DAYS, type BuilderState } from "@/lib/builder/serialize";
+import { serializeWorkflow, deserializeWorkflow, maxStepSeq, DEFAULT_SCHEDULE, DEFAULT_OFFSET_DAYS, type BuilderState } from "@/lib/builder/serialize";
 import { deriveStepLabel, displayStepLabel } from "@/lib/builder/labels";
 import { cn } from "@/lib/utils";
 
@@ -67,6 +67,35 @@ export function WorkflowBuilder({
 
   const seqRef = useRef(maxStepSeq(initial?.steps ?? []));
   const nextId = () => `step_${(seqRef.current += 1)}`;
+
+  // Prefill from a gallery template (?template=id) on the create flow: fetch the
+  // template's graph, deserialize it into builder state (same shape as edit).
+  useEffect(() => {
+    if (mode !== "create" || !fromTemplate) return;
+    let cancelled = false;
+    apiGet<{ name: string; trigger: unknown; graphNodes: unknown }>(`/api/templates/${fromTemplate}`)
+      .then((tpl) => {
+        if (cancelled) return;
+        const s = deserializeWorkflow({ name: tpl.name, trigger: tpl.trigger, graphNodes: tpl.graphNodes });
+        setName(s.name);
+        setApp(s.app);
+        setModule(s.module);
+        setEvent(s.event);
+        setTriggerFilter(s.triggerFilter);
+        setSchedule(s.schedule);
+        setOffsetDays(s.offsetDays);
+        setSteps(s.steps);
+        setScope(s.scope);
+        seqRef.current = maxStepSeq(s.steps);
+        setSelected("trigger");
+      })
+      .catch(() => {
+        /* Template unavailable → leave a blank builder rather than erroring. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, fromTemplate]);
 
   const catalogApp = findApp(app);
   const selectedEvent = findEvent(app, event);

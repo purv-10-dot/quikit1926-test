@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import {
-  getMailProvider,
-  isMailProvider,
+  getOAuthProvider,
+  isOAuthProvider,
   redirectUriFor,
   saveMailConnection,
   verifyState,
@@ -70,7 +70,7 @@ export const GET = withOrgAuth<Params>(
     const base = process.env.QUIKFLOW_URL ?? new URL(req.url).origin;
     const fail = (error: string) => popupResult(base, { status: "error", provider: providerId, error });
 
-    if (!isMailProvider(providerId)) return fail("Unknown provider");
+    if (!isOAuthProvider(providerId)) return fail("Unknown provider");
 
     const url = new URL(req.url);
     const oauthError = url.searchParams.get("error");
@@ -85,7 +85,7 @@ export const GET = withOrgAuth<Params>(
       if (state.orgId !== orgId || state.provider !== providerId) {
         return fail("OAuth state mismatch");
       }
-      const provider = getMailProvider(providerId)!;
+      const provider = getOAuthProvider(providerId)!;
       const tokens = await provider.exchangeCode(code, redirectUriFor(providerId));
       const saved = await saveMailConnection(orgId, userId, providerId, tokens);
       return popupResult(base, { status: "connected", provider: providerId, label: saved.label });

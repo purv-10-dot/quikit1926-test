@@ -29,6 +29,10 @@ export const ACTION_CATALOG: CatalogAction[] = [
   { id: "notify.teams.send", label: "Post to Microsoft Teams", category: "Notify", doesWhat: "Send to MS Teams", requiredInputs: ["channel_id", "text"], optionalInputs: ["card"], permission: "integration:teams", output: "{ message_id }" },
   { id: "notify.whatsapp.send", label: "Send a WhatsApp message", category: "Notify", doesWhat: "Send WhatsApp msg", requiredInputs: ["user_id", "template_name", "params[]"], optionalInputs: [], permission: "integration:whatsapp", output: "{ message_id }" },
 
+  // ── Calendar & meetings ────────────────────────────────────────────────
+  { id: "calendar.event.create", label: "Create a Teams calendar meeting", category: "Calendar", doesWhat: "Create (or idempotently update) a calendar event, optionally a Teams online meeting, on a connected Microsoft account. Give times as full date-times (start/end) or as start_time/end_time (HH:mm) + date. A stable ref_id makes re-runs update the same event.", requiredInputs: ["subject"], optionalInputs: ["start", "end", "start_time", "end_time", "date", "attendees", "body", "location", "timezone", "online_meeting", "recurrence", "recurrence_days", "recurrence_until", "kind", "ref_id", "from_connection"], permission: "integration:teams", output: "{ event_id, web_link, join_url, updated }", real: true },
+  { id: "calendar.event.delete", label: "Delete Teams calendar meeting(s)", category: "Calendar", doesWhat: "Delete the calendar event(s) a workflow created for a record — all kinds, or a specific kind. Idempotent; safe if already removed.", requiredInputs: [], optionalInputs: ["kind", "ref_id", "ref_type"], permission: "integration:teams", output: "{ deleted }", real: true },
+
   // ── KPI ────────────────────────────────────────────────────────────────
   { id: "kpi.create", label: "Create a KPI", category: "KPI", doesWhat: "Create a KPI", requiredInputs: ["name", "owner_id", "target", "cadence", "unit", "type"], optionalInputs: ["linked_to_opsp", "is_ai_suggested", "source_type", "source_id"], permission: "kpi.write", output: "Kpi", real: true },
   { id: "kpi.update", label: "Update KPI fields", category: "KPI", doesWhat: "Update KPI fields", requiredInputs: ["kpi_id", "fields{}"], optionalInputs: ["note"], permission: "kpi.write", output: "Kpi", real: true },
@@ -85,7 +89,7 @@ export const ACTION_CATALOG: CatalogAction[] = [
 ];
 
 /** Category display order for the builder's grouped action picker. */
-export const ACTION_CATEGORY_ORDER = ["Notify", "KPI", "Priority", "WWW", "OPSP", "People", "Data", "Admin", "Flow"];
+export const ACTION_CATEGORY_ORDER = ["Notify", "Calendar", "KPI", "Priority", "WWW", "OPSP", "People", "Data", "Admin", "Flow"];
 
 /** Actions grouped by category, in ACTION_CATEGORY_ORDER. */
 export function actionsByCategory(): { category: string; actions: CatalogAction[] }[] {

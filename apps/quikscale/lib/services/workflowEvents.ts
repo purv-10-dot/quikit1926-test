@@ -510,6 +510,43 @@ export interface ClientMasterInput {
   orgId: string;
   clientId: string;
   name: string;
+  /** Planned meeting windows (HH:mm) — carried so a calendar workflow can build
+   *  events without a second DB read (the engine also record-loads these). */
+  dailyStartTime?: string | null;
+  dailyEndTime?: string | null;
+  weeklyStartTime?: string | null;
+  weeklyEndTime?: string | null;
+  /** Team-member email addresses, comma-joined — the calendar attendees. This is
+   *  a relation on Client, so it is NOT record-loadable; it MUST ride the payload
+   *  to resolve as {{trigger.teamMemberEmails}}. */
+  teamMemberEmails?: string;
+  /** Recurrence tokens for the Teams calendar series — carried PRE-FORMATTED
+   *  (weekday names / comma list / YYYY-MM-DD). Payload-only (see the module
+   *  catalog note) so the formatted strings win over any record-loaded value. */
+  weeklyDay?: string | null;
+  dailyDays?: string[];
+  meetingUntil?: string | null;
+  startDate?: string | null;
+}
+
+/** Build the shared clientMaster event `data` (times + attendees + recurrence). */
+function clientMasterData(input: ClientMasterInput): Record<string, unknown> {
+  return {
+    recordId: input.clientId,
+    clientId: input.clientId,
+    name: input.name,
+    clientName: input.name,
+    dailyStartTime: input.dailyStartTime ?? null,
+    dailyEndTime: input.dailyEndTime ?? null,
+    weeklyStartTime: input.weeklyStartTime ?? null,
+    weeklyEndTime: input.weeklyEndTime ?? null,
+    teamMemberEmails: input.teamMemberEmails ?? "",
+    // Recurrence (pre-formatted for the calendar action's flat token params).
+    weeklyDay: input.weeklyDay ?? "",
+    dailyDays: (input.dailyDays ?? []).join(","),
+    meetingUntil: input.meetingUntil ?? "",
+    startDate: input.startDate ?? "",
+  };
 }
 
 /** Emit `clientMaster.created` when a client is added to Client Master. */
@@ -520,7 +557,7 @@ export function emitClientCreated(input: ClientMasterInput): void {
     orgId: input.orgId,
     dedupeKey: `clientMaster.created:${input.clientId}`,
     occurredAt: new Date().toISOString(),
-    data: { recordId: input.clientId, clientId: input.clientId, name: input.name, clientName: input.name },
+    data: clientMasterData(input),
   });
 }
 
@@ -532,6 +569,19 @@ export function emitClientUpdated(input: ClientMasterInput): void {
     orgId: input.orgId,
     // Timestamped so each edit is a distinct run (not collapsed by dedup).
     dedupeKey: `clientMaster.updated:${input.clientId}:${Date.now()}`,
+    occurredAt: new Date().toISOString(),
+    data: clientMasterData(input),
+  });
+}
+
+/** Emit `clientMaster.deleted` when a client is removed — lets a workflow tear
+ *  down the calendar events it created (calendar.event.delete). */
+export function emitClientDeleted(input: { orgId: string; clientId: string; name: string }): void {
+  postEvent({
+    app: "quikscale",
+    event: "clientMaster.deleted",
+    orgId: input.orgId,
+    dedupeKey: `clientMaster.deleted:${input.clientId}`,
     occurredAt: new Date().toISOString(),
     data: { recordId: input.clientId, clientId: input.clientId, name: input.name, clientName: input.name },
   });

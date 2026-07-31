@@ -8,16 +8,40 @@ import { db } from "@/lib/db";
 import { decryptSecret, encryptSecret } from "./crypto";
 import { GMAIL } from "./gmail";
 import { OUTLOOK } from "./microsoft";
-import type { MailMessage, MailProvider, MailProviderId, TokenSet } from "./types";
+import { TEAMS } from "./teams";
+import type {
+  CalendarEventInput,
+  CalendarEventResult,
+  CalendarEventView,
+  CalendarProvider,
+  CalendarProviderId,
+  MailMessage,
+  MailProvider,
+  MailProviderId,
+  OAuthProvider,
+  OAuthProviderId,
+  TokenSet,
+} from "./types";
 
 export * from "./types";
 export { encryptSecret, decryptSecret } from "./crypto";
 export { signState, verifyState } from "./state";
 
 const PROVIDERS: Record<string, MailProvider> = { gmail: GMAIL, outlook: OUTLOOK };
+const CALENDAR_PROVIDERS: Record<string, CalendarProvider> = { teams: TEAMS };
+
+/**
+ * Every OAuth-connectable provider (mail + calendar). The authorize/callback
+ * routes and token refresh only need the OAuth half, so they resolve through
+ * this superset registry.
+ */
+const OAUTH_PROVIDERS: Record<string, OAuthProvider> = { ...PROVIDERS, ...CALENDAR_PROVIDERS };
 
 /** All mail-provider ids (the WfProvider values QuikFlow polls / sends through). */
 export const MAIL_PROVIDER_IDS: MailProviderId[] = ["gmail", "outlook"];
+
+/** All calendar-provider ids (Microsoft Teams calendar today). */
+export const CALENDAR_PROVIDER_IDS: CalendarProviderId[] = ["teams"];
 
 export function getMailProvider(id: string): MailProvider | undefined {
   return PROVIDERS[id];
@@ -25,6 +49,23 @@ export function getMailProvider(id: string): MailProvider | undefined {
 
 export function isMailProvider(id: string): id is MailProviderId {
   return id in PROVIDERS;
+}
+
+export function getCalendarProvider(id: string): CalendarProvider | undefined {
+  return CALENDAR_PROVIDERS[id];
+}
+
+export function isCalendarProvider(id: string): id is CalendarProviderId {
+  return id in CALENDAR_PROVIDERS;
+}
+
+/** Resolve any OAuth-connectable provider (mail or calendar). */
+export function getOAuthProvider(id: string): OAuthProvider | undefined {
+  return OAUTH_PROVIDERS[id];
+}
+
+export function isOAuthProvider(id: string): id is OAuthProviderId {
+  return id in OAUTH_PROVIDERS;
 }
 
 /** The OAuth redirect URI for a provider (must match the console registration). */
@@ -48,7 +89,7 @@ interface StoredConnection {
 export async function saveMailConnection(
   orgId: string,
   userId: string,
-  provider: MailProviderId,
+  provider: OAuthProviderId,
   tokens: TokenSet,
 ): Promise<{ id: string; label: string }> {
   const encAccess = encryptSecret(tokens.accessToken);
@@ -146,8 +187,8 @@ const EXPIRY_SKEW_MS = 60_000;
  * but no refresh token is stored (user must reconnect).
  */
 export async function getFreshAccessToken(conn: StoredConnection): Promise<string> {
-  const provider = getMailProvider(conn.provider);
-  if (!provider) throw new Error(`Unknown mail provider "${conn.provider}".`);
+  const provider = getOAuthProvider(conn.provider);
+  if (!provider) throw new Error(`Unknown OAuth provider "${conn.provider}".`);
 
   const notExpired = conn.expiresAt && conn.expiresAt.getTime() - EXPIRY_SKEW_MS > Date.now();
   if (conn.accessToken && notExpired) return decryptSecret(conn.accessToken);
@@ -241,4 +282,165 @@ export async function sendMailForOrg(
   const accessToken = await getFreshAccessToken(conn);
   const sent = await provider.sendMessage(accessToken, conn.label, { ...msg, to, cc: cc || undefined });
   return { id: sent.id, from: conn.label, provider: conn.provider };
+}
+
+/**
+ * Resolve the org's connected calendar. A specific connectionId wins; otherwise
+ * the oldest connected calendar provider (Microsoft Teams today). Returns null
+ * (not throws) when the org has none, so actions can skip cleanly.
+ */
+async function findCalendarConnection(
+  orgId: string,
+  connectionId?: string,
+): Promise<{ conn: StoredConnection; provider: CalendarProvider } | null> {
+  const conn = await db.wfConnection.findFirst({
+    where: {
+      orgId,
+      status: "connected",
+      ...(connectionId ? { id: connectionId } : { provider: { in: CALENDAR_PROVIDER_IDS } }),
+    },
+    orderBy: { createdAt: "asc" },
+    select: CONNECTION_SELECT,
+  });
+  if (!conn) return null;
+  const provider = getCalendarProvider(conn.provider);
+  if (!provider) return null;
+  return { conn, provider };
+}
+
+/** Identifies the source-app record a calendar event represents, for idempotency. */
+export interface CalendarLinkKey {
+  /** Source record type, e.g. "clientMaster". */
+  refType: string;
+  /** Source record id, e.g. the Client id. */
+  refId: string;
+  /** "daily" | "weekly" | "" (a single event per record). */
+  kind?: string;
+}
+
+/**
+ * Create (or idempotently update) a calendar event on an org's connected
+ * Microsoft calendar. Attendee owner/user ids are resolved to emails. When a
+ * `link` key is supplied, a stored WfCalendarLink for (org, refType, refId,
+ * kind) makes a re-run/edit PATCH the existing event instead of creating a
+ * duplicate. Returns null when the org has no connected calendar (skip cleanly).
+ */
+export async function createCalendarEventForOrg(
+  orgId: string,
+  event: CalendarEventInput,
+  opts?: { connectionId?: string; link?: CalendarLinkKey; createdBy?: string },
+): Promise<(CalendarEventResult & { organizer: string; updated: boolean }) | null> {
+  const found = await findCalendarConnection(orgId, opts?.connectionId);
+  if (!found) return null;
+
+  // Resolve any QuikScale user ids among the attendees to real addresses.
+  const attendees = event.attendees?.length
+    ? (await resolveRecipients(orgId, event.attendees.join(",")))
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : [];
+
+  const accessToken = await getFreshAccessToken(found.conn);
+  const payload = { ...event, attendees };
+  const link = opts?.link;
+
+  if (link) {
+    const kind = link.kind ?? "";
+    const existing = await db.wfCalendarLink.findUnique({
+      where: { orgId_refType_refId_kind: { orgId, refType: link.refType, refId: link.refId, kind } },
+      select: { id: true, externalEventId: true },
+    });
+    if (existing) {
+      const updated = await found.provider.updateEvent(accessToken, existing.externalEventId, payload);
+      await db.wfCalendarLink.update({
+        where: { id: existing.id },
+        data: {
+          connectionId: found.conn.id,
+          provider: found.conn.provider as never,
+          webLink: updated.webLink ?? null,
+          joinUrl: updated.joinUrl ?? null,
+        },
+      });
+      return { ...updated, organizer: found.conn.label, updated: true };
+    }
+    const created = await found.provider.createEvent(accessToken, payload);
+    await db.wfCalendarLink.create({
+      data: {
+        orgId,
+        provider: found.conn.provider as never,
+        connectionId: found.conn.id,
+        refType: link.refType,
+        refId: link.refId,
+        kind,
+        externalEventId: created.id,
+        webLink: created.webLink ?? null,
+        joinUrl: created.joinUrl ?? null,
+        createdBy: opts?.createdBy ?? "system",
+      },
+    });
+    return { ...created, organizer: found.conn.label, updated: false };
+  }
+
+  const created = await found.provider.createEvent(accessToken, payload);
+  return { ...created, organizer: found.conn.label, updated: false };
+}
+
+/**
+ * Read events overlapping [startIso, endIso) from an org's connected calendar.
+ * Returns null when the org has no connected calendar.
+ */
+export async function listCalendarForOrg(
+  orgId: string,
+  startIso: string,
+  endIso: string,
+  opts?: { connectionId?: string },
+): Promise<{ organizer: string; events: CalendarEventView[] } | null> {
+  const found = await findCalendarConnection(orgId, opts?.connectionId);
+  if (!found) return null;
+  const accessToken = await getFreshAccessToken(found.conn);
+  const events = await found.provider.listCalendarView(accessToken, startIso, endIso);
+  return { organizer: found.conn.label, events };
+}
+
+/**
+ * Delete the calendar event(s) a workflow created for a source record — all
+ * kinds, or just one `kind`. Deletes on the calendar via the stored connection
+ * then drops the WfCalendarLink. Best-effort per event (an already-gone event
+ * still drops its link), and idempotent (no links → deleted: 0).
+ */
+export async function deleteCalendarEventsForOrg(
+  orgId: string,
+  ref: CalendarLinkKey,
+): Promise<{ deleted: number }> {
+  const links = await db.wfCalendarLink.findMany({
+    where: {
+      orgId,
+      refType: ref.refType,
+      refId: ref.refId,
+      ...(ref.kind ? { kind: ref.kind } : {}),
+    },
+    select: { id: true, connectionId: true, externalEventId: true },
+  });
+
+  let deleted = 0;
+  for (const link of links) {
+    const conn = await db.wfConnection.findFirst({
+      where: { id: link.connectionId, orgId },
+      select: CONNECTION_SELECT,
+    });
+    const provider = conn ? getCalendarProvider(conn.provider) : undefined;
+    if (conn && provider) {
+      try {
+        const accessToken = await getFreshAccessToken(conn);
+        await provider.deleteEvent(accessToken, link.externalEventId);
+      } catch {
+        // Event may already be gone / token expired — drop the link regardless
+        // so we don't leak a dangling mapping.
+      }
+    }
+    await db.wfCalendarLink.delete({ where: { id: link.id } });
+    deleted++;
+  }
+  return { deleted };
 }

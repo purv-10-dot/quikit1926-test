@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import { Mail, Plug, Trash2, CheckCircle2, AlertCircle, Send, Video, KeyRound, X } from "lucide-react";
+import { Mail, Plug, Trash2, CheckCircle2, AlertCircle, Send, Video, KeyRound, X, CalendarDays } from "lucide-react";
 import { apiGet, apiSend } from "@/lib/client/fetcher";
 import { StatusPill } from "@/components/ui/status-pill";
 import { LoadingState, ErrorState } from "@/components/ui/page-states";
@@ -13,6 +13,11 @@ import type { ConnectionDTO } from "@/types";
 const MAIL_PROVIDERS: { id: string; name: string; blurb: string; accent: string }[] = [
   { id: "gmail", name: "Gmail", blurb: "Send email from & trigger on a connected Google account.", accent: "text-red-500" },
   { id: "outlook", name: "Outlook", blurb: "Send email from & trigger on a connected Microsoft account.", accent: "text-blue-500" },
+];
+
+/** Calendar providers offered as one-click OAuth connects (Teams = Outlook/Exchange calendar). */
+const CALENDAR_PROVIDERS: { id: string; name: string; blurb: string; accent: string }[] = [
+  { id: "teams", name: "Microsoft Teams", blurb: "Create Teams meetings & sync events onto a connected Microsoft calendar.", accent: "text-indigo-500" },
 ];
 
 const FATHOM_PROVIDER = "fathom";
@@ -111,8 +116,12 @@ function IntegrationsInner() {
 
   const byProvider = (provider: string) => (data ?? []).filter((c) => c.provider === provider);
   const mailProviderIds = new Set(MAIL_PROVIDERS.map((p) => p.id));
+  const calendarProviderIds = new Set(CALENDAR_PROVIDERS.map((p) => p.id));
   const otherConnections = (data ?? []).filter(
-    (c) => !mailProviderIds.has(c.provider) && c.provider !== FATHOM_PROVIDER,
+    (c) =>
+      !mailProviderIds.has(c.provider) &&
+      !calendarProviderIds.has(c.provider) &&
+      c.provider !== FATHOM_PROVIDER,
   );
   const fathomAccounts = byProvider(FATHOM_PROVIDER);
 
@@ -197,6 +206,64 @@ function IntegrationsInner() {
                               <Trash2 className="h-4 w-4" />
                             </button>
                           </div>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+
+                  <button
+                    type="button"
+                    onClick={() => openConnect(p.id)}
+                    className="mt-4 inline-flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white hover:bg-accent-700"
+                  >
+                    <Plug className="h-4 w-4" />
+                    {accounts.length > 0 ? "Connect another account" : `Connect ${p.name}`}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ── Calendar & meetings (Microsoft Teams) ────────────────────── */}
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
+            Calendar &amp; meetings
+          </h2>
+          <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2">
+            {CALENDAR_PROVIDERS.map((p) => {
+              const accounts = byProvider(p.id);
+              return (
+                <div
+                  key={p.id}
+                  className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-5"
+                >
+                  <div className="flex items-center gap-3">
+                    <CalendarDays className={`h-6 w-6 ${p.accent}`} />
+                    <div>
+                      <p className="font-semibold">{p.name}</p>
+                      <p className="text-xs text-gray-500">{p.blurb}</p>
+                    </div>
+                  </div>
+
+                  {accounts.length > 0 ? (
+                    <ul className="mt-4 space-y-2">
+                      {accounts.map((c) => (
+                        <li
+                          key={c.id}
+                          className="flex items-center justify-between rounded-lg bg-[var(--color-bg-secondary)] px-3 py-2"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">{c.label}</p>
+                            <StatusPill status={c.status} />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => disconnect.mutate(c.id)}
+                            disabled={disconnect.isPending}
+                            title="Disconnect"
+                            className="ml-3 shrink-0 rounded-md p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         </li>
                       ))}
                     </ul>

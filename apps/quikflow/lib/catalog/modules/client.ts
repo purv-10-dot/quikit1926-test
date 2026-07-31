@@ -15,10 +15,25 @@ export const CLIENT_MASTER_MODULE: ModuleDef = {
   fields: [
     { key: "name", label: "Client name", type: "text", usableIn: ["trigger", "condition"], column: "name" },
     { key: "isActive", label: "Is active", type: "boolean", usableIn: ["condition"], column: "isActive" },
-    { key: "dailyStartTime", label: "Daily start (HH:mm)", type: "text", usableIn: ["condition"], column: "dailyStartTime" },
-    { key: "dailyEndTime", label: "Daily end (HH:mm)", type: "text", usableIn: ["condition"], column: "dailyEndTime" },
-    { key: "weeklyStartTime", label: "Weekly start (HH:mm)", type: "text", usableIn: ["condition"], column: "weeklyStartTime" },
-    { key: "weeklyEndTime", label: "Weekly end (HH:mm)", type: "text", usableIn: ["condition"], column: "weeklyEndTime" },
+    // Planned meeting windows — exposed as {{trigger.*}} tokens so a workflow can
+    // feed them straight into calendar.event.create (Daily Huddle / Weekly Meeting).
+    { key: "dailyStartTime", label: "Daily start (HH:mm)", type: "text", usableIn: ["trigger", "condition"], column: "dailyStartTime" },
+    { key: "dailyEndTime", label: "Daily end (HH:mm)", type: "text", usableIn: ["trigger", "condition"], column: "dailyEndTime" },
+    { key: "weeklyStartTime", label: "Weekly start (HH:mm)", type: "text", usableIn: ["trigger", "condition"], column: "weeklyStartTime" },
+    { key: "weeklyEndTime", label: "Weekly end (HH:mm)", type: "text", usableIn: ["trigger", "condition"], column: "weeklyEndTime" },
+    // Team-member emails ride the event payload (a relation, not a column) so
+    // they are NOT record-projected — hence no `column`. Exposed as a trigger
+    // token to feed calendar.event.create's attendees. See workflowEvents.ts.
+    { key: "teamMemberEmails", label: "Team member emails", type: "text", usableIn: ["trigger", "condition"] },
+    // Recurrence tokens for the calendar action — carried PRE-FORMATTED in the
+    // event payload (weekday names / comma list / YYYY-MM-DD), so they are
+    // payload-only (no column) to keep formatting control (a column would
+    // record-load a Date/array and overwrite the payload string). See
+    // workflowEvents.ts (clientMasterData).
+    { key: "weeklyDay", label: "Weekly meeting day", type: "text", usableIn: ["trigger", "condition"] },
+    { key: "dailyDays", label: "Daily huddle days", type: "text", usableIn: ["trigger", "condition"] },
+    { key: "meetingUntil", label: "Meetings until (YYYY-MM-DD)", type: "text", usableIn: ["trigger", "condition"] },
+    { key: "startDate", label: "Meeting start date (YYYY-MM-DD)", type: "text", usableIn: ["trigger", "condition"] },
     ...auditFields({ createdBy: true, updatedBy: true }),
   ],
   events: [
@@ -26,6 +41,7 @@ export const CLIENT_MASTER_MODULE: ModuleDef = {
     { id: "clientMaster.updated", label: "A client is updated", firesWhen: "A client's details change", payloadFields: ["name"], live: true },
     { id: "clientMaster.times.changed", label: "A client's meeting times change", firesWhen: "Daily/Weekly planned window edited", payloadFields: ["dailyStartTime", "weeklyStartTime"] },
     { id: "clientMaster.deactivated", label: "A client is deactivated", firesWhen: "isActive becomes false", payloadFields: ["name"] },
+    { id: "clientMaster.deleted", label: "A client is deleted", firesWhen: "A client is removed from Client Master", payloadFields: ["name"], live: true },
   ],
-  actionIds: ["notify.inapp.send", "notify.email.send", "webhook.post"],
+  actionIds: ["notify.inapp.send", "notify.email.send", "calendar.event.create", "calendar.event.delete", "webhook.post"],
 };
