@@ -262,16 +262,38 @@ export default function AppLauncherPage() {
     const launcherUrl =
       process.env.NEXT_PUBLIC_QUIKIT_URL?.replace(/\/+$/, "") ??
       (typeof window !== "undefined" ? window.location.origin : "");
-    // After logout, land on the public marketing site instead of the launcher
-    // root — but only on the UAT launcher (uatapps.quikit.ai → uat.quikit.ai).
-    // Every other environment (incl. prod apps.quikit.ai) keeps landing on the
-    // launcher root. Decided at runtime from the browser host so no build-arg /
-    // Dockerfile wiring is needed. NOTE: the target origin must be in the
-    // launcher's /api/auth/signout-global allow-list or that hop rejects it.
+    // After logout, land on the public QuikIT marketing website rather than the
+    // launcher root. Resolution order:
+    //   1. NEXT_PUBLIC_WEBSITE_URL — explicit marketing origin (set per env).
+    //   2. uatapps.quikit.ai → uat.quikit.ai (pre-existing UAT special case).
+    //   3. localhost dev → the website dev server on :1001.
+    //   4. Anything else → launcher root (unchanged prod behaviour until
+    //      NEXT_PUBLIC_WEBSITE_URL is set on the project).
+    // Scoped to THIS launcher page only — each sub-app's own sign-out still
+    // lands the user on that app's landing page (see globalSignOut callers).
+    // NOTE: the target origin must be in the launcher's
+    // /api/auth/signout-global allow-list or that hop rejects it and falls back
+    // to the launcher root. localhost is auto-allowed outside production; for
+    // prod/UAT add the marketing origin to AUTH_ALLOWED_RETURN_ORIGINS.
     const host =
       typeof window !== "undefined" ? window.location.hostname : "";
+    const websiteUrl =
+      process.env.NEXT_PUBLIC_WEBSITE_URL?.replace(/\/+$/, "");
+
     const postLogoutRedirect =
-      host === "uatapps.quikit.ai" ? "https://uat.quikit.ai" : `${launcherUrl}/`;
+      websiteUrl ||
+      (typeof window !== "undefined" &&
+        window.location.hostname === "localhost"
+        ? "http://localhost:1001"
+        : launcherUrl);
+    // const websiteUrl = process.env.NEXT_PUBLIC_WEBSITE_URL?.replace(/\/+$/, "");
+    // const postLogoutRedirect =
+    //   websiteUrl ||
+    //   (host === "apps.quikit.ai"
+    //     ? "https://quikit.ai"
+    //     : host === "localhost"
+    //       ? "http://localhost:1001"
+    //       : `${launcherUrl}/`);
     await globalSignOut({
       authUrl: process.env.NEXT_PUBLIC_AUTH_URL,
       quikitUrl: launcherUrl,
@@ -307,7 +329,7 @@ export default function AppLauncherPage() {
           }
         }
       })
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setLoadingOrgs(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -427,7 +449,7 @@ export default function AppLauncherPage() {
       );
       window.alert(
         `Launch URL for "${app.name}" is not configured. ` +
-          `Set ${app.slug.toUpperCase()}_URL in the launcher's environment.`,
+        `Set ${app.slug.toUpperCase()}_URL in the launcher's environment.`,
       );
       return;
     }
@@ -548,9 +570,9 @@ export default function AppLauncherPage() {
   const tileV = reduce
     ? { hidden: { opacity: 0 }, show: { opacity: 1 } }
     : {
-        hidden: { opacity: 0, y: 18 },
-        show: { opacity: 1, y: 0, transition: { duration: 0.5, ease } },
-      };
+      hidden: { opacity: 0, y: 18 },
+      show: { opacity: 1, y: 0, transition: { duration: 0.5, ease } },
+    };
 
   function initialOf(name: string) {
     return (name?.[0] ?? "Q").toUpperCase();
@@ -849,9 +871,8 @@ export default function AppLauncherPage() {
                                     ? undefined
                                     : `Membership ${org.status} — not yet accessible`
                                 }
-                                className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${
-                                  isActive && !selected ? "hover:bg-white/[0.05]" : ""
-                                }`}
+                                className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${isActive && !selected ? "hover:bg-white/[0.05]" : ""
+                                  }`}
                                 style={{
                                   opacity: isActive ? 1 : 0.5,
                                   cursor: isActive ? "pointer" : "not-allowed",

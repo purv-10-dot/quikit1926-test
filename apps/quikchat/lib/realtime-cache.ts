@@ -127,6 +127,36 @@ export function markChannelRead(state: ChannelList, channelId: string): ChannelL
   return { priority: clear(state.priority), recent: clear(state.recent) };
 }
 
+/**
+ * Merge a `channel_updated` event (rename / description / avatar) into the
+ * matching channel in place, so the sidebar + header + drawer update live
+ * without a refetch. Only the fields present in the payload are changed.
+ */
+export function applyChannelUpdated(
+  state: ChannelList,
+  payload: { channelId: string; name?: string; description?: string | null; avatarUrl?: string },
+): ChannelList {
+  const update = (items: ChannelList["priority"]) =>
+    items.map((c) =>
+      c.channelId === payload.channelId
+        ? {
+            ...c,
+            ...(payload.name !== undefined ? { name: payload.name } : {}),
+            ...(payload.description !== undefined ? { description: payload.description } : {}),
+            ...(payload.avatarUrl !== undefined ? { avatarUrl: payload.avatarUrl } : {}),
+          }
+        : c,
+    );
+  return { priority: update(state.priority), recent: update(state.recent) };
+}
+
+/** Remove a deleted channel from both lists (live `channel_deleted`). */
+export function removeChannelFromList(state: ChannelList, channelId: string): ChannelList {
+  const drop = (items: ChannelList["priority"]) =>
+    items.filter((c) => c.channelId !== channelId);
+  return { priority: drop(state.priority), recent: drop(state.recent) };
+}
+
 /** A `read`/`delivered` event updates receipts only when it's NOT the current user's own. */
 export function shouldApplyRead(eventUserId: string, meId: string | undefined): boolean {
   return eventUserId !== meId;

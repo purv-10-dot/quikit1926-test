@@ -43,6 +43,7 @@ import { redirect } from 'next/navigation';
  * whole fix.
  */
 
+
 export default function RetiredCoursePlayerPage({ params }: { params: { courseId: string } }) {
   redirect(`/learner/course/${params.courseId}`);
 }

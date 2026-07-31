@@ -52,3 +52,34 @@ export function dndValid(enabled: boolean, start: string | null, end: string | n
   const ok = (s: string | null): boolean => !!s && /^\d{2}:\d{2}$/.test(s);
   return ok(start) && ok(end);
 }
+
+/**
+ * Is the user inside their DND window right now (local time)? Used client-side
+ * to suppress the incoming-call ringtone — the visual toast is never gated.
+ *
+ * ⚠️ KEEP IN SYNC WITH `isInDndWindow` in `lib/server/notifications.service.ts`.
+ * That is the authoritative copy (it gates notification delivery); this is a
+ * deliberate client-safe duplicate, because the server module imports Prisma and
+ * cannot be pulled into the browser bundle. Same rules: [start, end), overnight
+ * wrap supported, start === end ⇒ never. If you change the semantics in one
+ * place, change both — the tests in notif-settings.test.ts mirror the server's.
+ */
+export function dndActiveNow(
+  enabled: boolean,
+  start: string | null,
+  end: string | null,
+  now: Date = new Date(),
+): boolean {
+  if (!enabled || !start || !end) return false;
+  const parse = (s: string) => {
+    const [h, m] = s.split(":").map((x) => parseInt(x, 10));
+    return (h || 0) * 60 + (m || 0);
+  };
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const startM = parse(start);
+  const endM = parse(end);
+  if (startM === endM) return false;
+  if (startM < endM) return nowMinutes >= startM && nowMinutes < endM;
+  // Overnight window (e.g. 22:00 → 07:00).
+  return nowMinutes >= startM || nowMinutes < endM;
+}

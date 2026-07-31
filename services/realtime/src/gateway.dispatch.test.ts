@@ -85,6 +85,35 @@ describe("dispatchFanout routing", () => {
     expect(emits).toEqual([]);
   });
 
+  it("relays channel_updated to the channel room (QC_008)", () => {
+    const { io, emits } = fakeIo();
+    const payload = { channelId: CH, name: "Renamed", avatarUrl: "https://signed/av.png" };
+    dispatchFanout(io, { orgId: ORG, channelId: CH, event: "channel_updated", payload });
+    expect(emits).toEqual([{ room: channelRoom(ORG, CH), event: "channel_updated", payload }]);
+  });
+
+  it("relays channel_deleted to the channel room (QC_008)", () => {
+    const { io, emits } = fakeIo();
+    const payload = { channelId: CH, memberIds: ["u-a", "u-b"] };
+    dispatchFanout(io, { orgId: ORG, channelId: CH, event: "channel_deleted", payload });
+    expect(emits).toEqual([{ room: channelRoom(ORG, CH), event: "channel_deleted", payload }]);
+  });
+
+  it("drops channel_updated / channel_deleted with no channelId in the payload", () => {
+    for (const event of ["channel_updated", "channel_deleted"] as const) {
+      const { io, emits } = fakeIo();
+      dispatchFanout(io, { orgId: ORG, channelId: CH, event, payload: {} });
+      expect(emits).toEqual([]);
+    }
+  });
+
+  it("scopes channel_deleted by evt.orgId — never the payload (tenant isolation)", () => {
+    const { io, emits } = fakeIo();
+    const payload = { channelId: CH, orgId: "org-evil", memberIds: ["u-a"] };
+    dispatchFanout(io, { orgId: ORG, channelId: CH, event: "channel_deleted", payload });
+    expect(emits[0]!.room).toBe(channelRoom(ORG, CH));
+  });
+
   it("always scopes the room by evt.orgId — never the payload (tenant isolation)", () => {
     const { io, emits } = fakeIo();
     // A hostile payload naming another org must not change the target room.

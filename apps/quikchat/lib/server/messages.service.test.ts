@@ -162,6 +162,42 @@ describe("edit + delete", () => {
     expect(edited.editedAt).not.toBeNull();
   });
 
+  // QC_007 — edits are only allowed inside EDIT_WINDOW_MS of posting.
+  it("rejects an edit once the edit window has passed", async () => {
+    const msg = await messages.send(ctxAlice(), groupId, { content: "old news" });
+    await prisma.qcMessage.update({
+      where: { id: msg.id },
+      data: { createdAt: new Date(Date.now() - messages.EDIT_WINDOW_MS - 60_000) },
+    });
+    await expect(messages.editMessage(ctxAlice(), msg.id, "too late")).rejects.toMatchObject({
+      status: 403,
+    });
+    const row = await prisma.qcMessage.findUniqueOrThrow({ where: { id: msg.id } });
+    expect(row.content).toBe("old news");
+    expect(row.editedAt).toBeNull();
+  });
+
+  it("allows an edit just inside the edit window", async () => {
+    const msg = await messages.send(ctxAlice(), groupId, { content: "still fresh" });
+    await prisma.qcMessage.update({
+      where: { id: msg.id },
+      data: { createdAt: new Date(Date.now() - (messages.EDIT_WINDOW_MS - 60_000)) },
+    });
+    const edited = await messages.editMessage(ctxAlice(), msg.id, "updated in time");
+    expect(edited.content).toBe("updated in time");
+  });
+
+  // The window is edit-only — a stale message is still deletable.
+  it("does not apply the edit window to delete", async () => {
+    const msg = await messages.send(ctxAlice(), groupId, { content: "delete me later" });
+    await prisma.qcMessage.update({
+      where: { id: msg.id },
+      data: { createdAt: new Date(Date.now() - messages.EDIT_WINDOW_MS - 60_000) },
+    });
+    const del = await messages.deleteForEveryone(ctxAlice(), msg.id);
+    expect(del.type).toBe("Delete");
+  });
+
   it("deleteForEveryone tombstones the message", async () => {
     const msg = await messages.send(ctxAlice(), groupId, { content: "delete me" });
     const del = await messages.deleteForEveryone(ctxAlice(), msg.id);

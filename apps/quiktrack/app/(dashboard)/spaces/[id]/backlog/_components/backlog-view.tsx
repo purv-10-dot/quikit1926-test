@@ -33,6 +33,7 @@ import {
   ChevronDown,
   ChevronRight,
   MoreHorizontal,
+  ExternalLink,
   Plus,
   CalendarDays,
   User as UserIcon,
@@ -1211,6 +1212,22 @@ function IssueRow({
   const [deleting, setDeleting] = useState(false);
   const [childCount, setChildCount] = useState<number | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  // Inline story-point editing (Jira-style: click the badge to type a value).
+  const [estimateEditing, setEstimateEditing] = useState(false);
+  const [estimateDraft, setEstimateDraft] = useState("");
+
+  function commitEstimate() {
+    setEstimateEditing(false);
+    const raw = estimateDraft.trim();
+    // Empty → clear the estimate (send null); otherwise a clamped integer.
+    if (raw === "") {
+      if (issue.storyPoints != null) void patch({ storyPoints: null });
+      return;
+    }
+    const n = Math.round(Number(raw));
+    if (!Number.isFinite(n) || n < 0 || n > 1000 || n === issue.storyPoints) return;
+    void patch({ storyPoints: n });
+  }
 
   async function openConfirm() {
     setMenuOpen(false);
@@ -1231,14 +1248,7 @@ function IssueRow({
     }
   }
 
-  useEffect(() => {
-    if (!menuOpen) return;
-    function onClick(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
-    }
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [menuOpen]);
+  // Outside-click / Escape close for this row menu is owned by PopoverPanel.
 
   async function confirmDelete() {
     if (deleting) return;
@@ -1487,6 +1497,45 @@ function IssueRow({
         </>
       )}
 
+      {/* Story-point estimate badge (Jira-style). Click to edit inline; empty
+          input clears it. Subtasks/epics aren't estimated in points, so the
+          badge is hidden for them. */}
+      {fields.estimate && issue.type !== "EPIC" && issue.type !== "SUBTASK" && (
+        estimateEditing ? (
+          <input
+            autoFocus
+            type="number"
+            min={0}
+            max={1000}
+            value={estimateDraft}
+            onChange={(e) => setEstimateDraft(e.target.value)}
+            onBlur={commitEstimate}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitEstimate();
+              if (e.key === "Escape") setEstimateEditing(false);
+            }}
+            className="h-5 w-12 shrink-0 rounded border border-blue-500 px-1 text-center text-[11px] tabular-nums focus:outline-none focus:ring-1 focus:ring-blue-500"
+            aria-label="Story points"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              setEstimateDraft(issue.storyPoints == null ? "" : String(issue.storyPoints));
+              setEstimateEditing(true);
+            }}
+            title={issue.storyPoints == null ? "Add story points" : `${issue.storyPoints} story point${issue.storyPoints === 1 ? "" : "s"}`}
+            className={`inline-flex h-5 min-w-[24px] shrink-0 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold tabular-nums ${
+              issue.storyPoints == null
+                ? "bg-gray-100 text-gray-400 opacity-40 group-hover:opacity-100"
+                : "bg-blue-100 text-blue-700 hover:bg-blue-200"
+            }`}
+          >
+            {issue.storyPoints == null ? "–" : issue.storyPoints}
+          </button>
+        )
+      )}
+
       {/* Status pill (clickable popover) */}
       {fields.status && (
       <>
@@ -1677,32 +1726,50 @@ function IssueRow({
           onClick={() => setMenuOpen((v) => !v)}
           className={`p-1 rounded text-gray-500 ${menuOpen ? "bg-gray-200" : "hover:bg-gray-200"}`}
           aria-label="More"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
         >
           <MoreHorizontal className="h-3.5 w-3.5" />
         </button>
-        {menuOpen && (
-          <div className="absolute right-0 top-full mt-1 w-40 bg-white border border-gray-200 rounded-md shadow-lg z-30 py-1">
+        {/* Portaled via PopoverPanel so the menu never clips against the row/
+            table overflow, and gets consistent positioning + outside-click. */}
+        <PopoverPanel
+          anchorRef={menuRef}
+          open={menuOpen}
+          onClose={() => setMenuOpen(false)}
+          align="right"
+          width={176}
+          estimatedHeight={canDelete ? 84 : 44}
+        >
+          <div role="menu" className="py-1">
             <button
               type="button"
+              role="menuitem"
               onClick={() => {
                 setMenuOpen(false);
                 onOpen(issue.id);
               }}
-              className="block w-full text-left px-3 py-1.5 text-sm text-gray-800 hover:bg-gray-50"
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
             >
+              <ExternalLink className="h-4 w-4 shrink-0 text-gray-400" />
               Open
             </button>
             {canDelete && (
-              <button
-                type="button"
-                onClick={openConfirm}
-                className="block w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
-              >
-                Delete
-              </button>
+              <>
+                <div className="my-1 border-t border-gray-100" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={openConfirm}
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+                >
+                  <Trash2 className="h-4 w-4 shrink-0" />
+                  Delete
+                </button>
+              </>
             )}
           </div>
-        )}
+        </PopoverPanel>
       </div>
 
       {confirmOpen && (
@@ -3764,9 +3831,6 @@ export function BacklogView({ projectId }: { projectId: string }) {
       {/* Footer summary */}
       <div className="mt-3 flex items-center justify-end text-xs text-gray-500">
         {totalVisible} of {totalAll} work items visible
-        <span className="mx-2 text-gray-300">|</span>
-        Estimate: <span className="ml-1 font-semibold text-gray-700">0</span> of{" "}
-        <span className="ml-1 font-semibold text-gray-700">0</span>
       </div>
         </div>{/* /right column */}
       </div>{/* /epic-panel + content flex */}

@@ -54,6 +54,10 @@ export default function LoginPage() {
       initialError={initialError}
       initialStep={initialStep}
       signUpUrl="/register"
+      // ← button goes to the QuikIT marketing landing page, not this app's
+      // own "/" (the auth app has no landing page — "/" just bounces to
+      // /login). Absolute + cross-origin, so the component hard-navigates.
+      backUrl={requireProdEnv("NEXT_PUBLIC_WEBSITE_URL", "http://localhost:1001").replace(/\/+$/, "")}
       hardNavigate
     />
   );

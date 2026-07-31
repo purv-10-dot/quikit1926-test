@@ -56,6 +56,7 @@ const PROJECT_SHELL_VIEW: Array<{ resource: string; action: string }> = [
   { resource: "ProjectBacklog", action: "view" },
   { resource: "ProjectList", action: "view" },
   { resource: "ProjectTaskTable", action: "view" },
+  { resource: "ProjectReports", action: "view" },
   { resource: "Doc", action: "view" },
   { resource: "Timesheet", action: "view" },
   // Discovery: `IdeaView:view` gates the "Ideas" tab + the view list. Ideas

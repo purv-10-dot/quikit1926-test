@@ -35,10 +35,16 @@ const mk = (over: Partial<MessageDto> & { id: string }): MessageDto => ({
   isPinned: false,
   reactions: [],
   mentions: [],
-  createdAt: new Date("2026-05-08T12:00:00Z").toISOString(),
+  // Fresh by default: the Edit action is gated on the QC_007 edit window, so a
+  // hardcoded past date would hide Edit in every test. Nothing here asserts the
+  // rendered timestamp. Tests that want a stale message pass `createdAt` explicitly.
+  createdAt: new Date().toISOString(),
   editedAt: null,
   ...over,
 });
+
+/** ISO timestamp `minutes` in the past — for edit-window cases. */
+const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
 
 function renderRow(message: MessageDto, actions = makeActions(), currentUserId = "me") {
   return render(
@@ -54,6 +60,18 @@ describe("toolbar visibility rules", () => {
   it("hides Edit for other users' messages", () => {
     renderRow(mk({ id: "a", senderId: "u-alice" }));
     expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Reply" })).toBeInTheDocument();
+  });
+  // QC_007 — the server rejects edits past EDIT_WINDOW_MS (15 min), so the action
+  // must disappear rather than offer an edit that would 403.
+  it("shows Edit for an own message still inside the edit window", () => {
+    renderRow(mk({ id: "a", senderId: "me", createdAt: minutesAgo(14) }));
+    expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
+  });
+  it("hides Edit once the edit window has passed", () => {
+    renderRow(mk({ id: "a", senderId: "me", createdAt: minutesAgo(16) }));
+    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+    // The rest of the toolbar stays — the window gates Edit and nothing else.
     expect(screen.getByRole("button", { name: "Reply" })).toBeInTheDocument();
   });
   it("renders no toolbar on Delete tombstones", () => {
@@ -118,6 +136,60 @@ describe("media attachments (Bug 3)", () => {
     expect(dl).toHaveAttribute("download");
     // The filename itself is not a navigating link (only the explicit control is).
     expect(screen.getByText("bundle.zip").closest("a")).toBeNull();
+  });
+
+  // Session 2: the audio branch renders the custom VoiceNotePlayer instead of a
+  // native <audio controls>. Asserted through the player's public surface (its
+  // testid + controls), not the hidden <audio> element's internals.
+  it("an audio attachment renders the custom voice-note player", () => {
+    renderRow(
+      mediaMsg({
+        mediaUrl: "/voice.webm",
+        mediaType: "audio/webm",
+        originalName: "voice-message-1.webm",
+        objectPath: "quikchat/o/c/uuid-voice-message-1.webm",
+        durationSec: 7,
+      }),
+    );
+
+    expect(screen.getByTestId("voice-note-player")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Play voice message" })).toBeInTheDocument();
+    expect(screen.getByRole("slider", { name: "Seek voice message" })).toBeInTheDocument();
+    // The sender's recorded duration drives the readout.
+    expect(screen.getByTestId("voice-note-time")).toHaveTextContent("0:00 / 0:07");
+  });
+
+  it("seeds the waveform from objectPath so a forward keeps the original's bars", () => {
+    const shared = {
+      mediaUrl: "/voice.webm",
+      mediaType: "audio/webm",
+      originalName: "voice-message-1.webm",
+      objectPath: "quikchat/o/c/uuid-voice-message-1.webm",
+      durationSec: 7,
+    };
+    const heights = () =>
+      Array.from(
+        screen.getByTestId("voice-note-wave").querySelectorAll(".qc-voice-note__bar"),
+      ).map((b) => (b as HTMLElement).style.height);
+
+    const first = renderRow(mediaMsg(shared));
+    const original = heights();
+    first.unmount();
+
+    // A forward is a different message id with the SAME media object.
+    renderRow(
+      mk({
+        id: "forwarded",
+        type: "Media",
+        content: "",
+        data: {
+          ...shared,
+          forwardedFrom: { channelId: "c0", senderId: "u-alice", senderName: "Alice" },
+        },
+      }),
+    );
+
+    expect(heights()).toEqual(original);
   });
 });
 

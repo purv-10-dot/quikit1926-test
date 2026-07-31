@@ -6,6 +6,7 @@ import { ForwardModal } from "./ForwardModal";
 const chan = (id: string, name: string): ChannelListItem => ({
   channelId: id,
   name,
+  description: null,
   avatarUrl: null,
   type: "group",
   visibility: "public",
