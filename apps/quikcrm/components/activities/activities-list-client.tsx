@@ -24,8 +24,14 @@ import {
 } from "@/components/activities/log-activity/searchable-select";
 import { DraftActivitiesModal } from "@/components/activities/draft-activities-modal";
 import { ActivityDetailModal } from "@/components/activities/activity-detail-modal";
+import { ActivityTypeSummary } from "@/components/activities/activity-type-summary";
+import {
+  KIND_BADGE,
+  KIND_BADGE_FALLBACK,
+} from "@/components/activities/kind-badge-tokens";
 import { ACTIVITY_QUICK_SEARCH_FIELD } from "@/lib/services/activities/filter-engine";
 import type { ActivityRow } from "@/lib/services/activities/to-list-row";
+import type { ActivityTypeSummaryRow } from "@/lib/services/activities/type-summary";
 import type { ConditionRow, FilterPayload } from "@/types/lead-filter";
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
@@ -88,18 +94,8 @@ function withDateRangeFilter(
   };
 }
 
-// Soft per-type badge tokens for the "Linked To" kind label. Follows the
-// design-system badge pattern (bg-*-50 / text-*-700 / ring-*-200) used by
-// sourceBadgeClass and the activity-timeline type colours — subtle, accessible,
-// low-saturation. Hardcoded (not accent-*) because they encode record type, not
-// brand — see CLAUDE.md. Unknown kinds fall back to the neutral slate badge.
-const KIND_BADGE: Record<string, string> = {
-  Lead: "bg-blue-50 text-blue-700 ring-blue-200",
-  Account: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-  Contact: "bg-violet-50 text-violet-700 ring-violet-200",
-  Opportunity: "bg-amber-50 text-amber-800 ring-amber-200",
-};
-const KIND_BADGE_FALLBACK = "bg-slate-50 text-slate-600 ring-slate-200";
+// Per-kind badge tokens now live in ./kind-badge-tokens so the "Linked To"
+// summary row above the table renders the same colours as these cells.
 
 // Renders the "Subject / Outcome" cell. Manually logged activities frequently
 // have no subject or outcome — only user-entered notes. In that case we promote
@@ -214,6 +210,11 @@ export function ActivitiesListClient({ canCreate, canEdit, canDelete, canViewLea
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Activity-type breakdown for the whole filtered set (not just this page).
+  // Fetched separately from the list so pagination never affects the counts.
+  const [summaryGroups, setSummaryGroups] = useState<ActivityTypeSummaryRow[]>([]);
+  const [summaryLoading, setSummaryLoading] = useState(false);
 
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showDrafts, setShowDrafts] = useState(false);
@@ -390,6 +391,41 @@ export function ActivitiesListClient({ canCreate, canEdit, canDelete, canViewLea
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Activity-type summary. Deliberately NOT keyed on page/pageSize — the counts
+  // describe the entire filtered set, so paging must not refetch or change
+  // them. An abort + cancellation guard keeps fast filter changes from landing
+  // out of order (a slow early response overwriting a newer one).
+  useEffect(() => {
+    const controller = new AbortController();
+    let cancelled = false;
+    setSummaryLoading(true);
+    (async () => {
+      try {
+        const res = await fetch("/api/activities/summary", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ filter: effectiveFilter }),
+          signal: controller.signal,
+        });
+        if (!res.ok) throw new Error("summary failed");
+        const body = (await res.json()) as {
+          data?: { groups?: ActivityTypeSummaryRow[] };
+        };
+        if (!cancelled) setSummaryGroups(body.data?.groups ?? []);
+      } catch {
+        // Non-critical decoration — on failure hide the row rather than
+        // surfacing an error banner over a working table.
+        if (!cancelled) setSummaryGroups([]);
+      } finally {
+        if (!cancelled) setSummaryLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [effectiveFilter]);
 
   // Reset to page 1 on search/filter change — but skip the very first render
   // so a deep-link like `/activities?page=3` isn't immediately reset.
@@ -629,6 +665,8 @@ export function ActivitiesListClient({ canCreate, canEdit, canDelete, canViewLea
       )}
 
       <ActivityAppliedFilterSummary filter={filter} onClear={() => setFilter(EMPTY)} />
+
+      <ActivityTypeSummary groups={summaryGroups} loading={summaryLoading} />
 
       <div className="crm-card overflow-hidden">
         <TableScroll minWidth={900} bleed={false}>
