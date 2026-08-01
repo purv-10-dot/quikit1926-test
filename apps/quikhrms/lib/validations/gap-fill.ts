@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { zPhoneLooseOptional, zPanOptional, zAadhaarOptional, zIfscOptional, zBankAccountOptional } from "./identifiers";
+import { zPhoneLooseOptional } from "./identifiers";
 
 // ─── Time Logs ──────────────────────────────────────────
 
@@ -81,10 +81,15 @@ export const bulkEmployeeRowSchema = z.object({
   firstName: z.string().min(1),
   middleName: z.string().optional(),
   lastName: z.string().min(1),
-  workEmail: z.string().email("Invalid work email").optional().nullable(),
-  personalEmail: z.string().email("Invalid personal email").optional().nullable(),
-  workPhone: zPhoneLooseOptional.nullable(),
-  personalPhone: zPhoneLooseOptional.nullable(),
+  // Format checks removed for bulk import — a bad value gets saved as-is
+  // rather than failing the row; HR cleans it up later via Edit Employee.
+  // (Add Employee's manual form still validates these strictly — only this
+  // schema was relaxed.) Presence checks (e.g. "must have SOME email") still
+  // run separately in gap-fill.ts.
+  workEmail: z.string().optional().nullable(),
+  personalEmail: z.string().optional().nullable(),
+  workPhone: z.string().optional().nullable(),
+  personalPhone: z.string().optional().nullable(),
   departmentCode: z.string().optional(),
   departmentName: z.string().optional(),
   designation: z.string().optional(),
@@ -101,8 +106,8 @@ export const bulkEmployeeRowSchema = z.object({
   workLocation: z.string().optional(),
   officeLocation: z.string().optional(),
   jobTitle: z.string().optional(),
-  panNumber: zPanOptional,
-  aadhaarNumber: zAadhaarOptional,
+  panNumber: z.string().optional(),
+  aadhaarNumber: z.string().optional(),
   gender: z.string().optional(),
   maritalStatus: z.string().optional(),
   bloodGroup: z.string().optional(),
@@ -127,12 +132,12 @@ export const bulkEmployeeRowSchema = z.object({
   // Emergency contact (single primary)
   emergencyContactName: z.string().optional(),
   emergencyContactRelation: z.string().optional(),
-  emergencyContactPhone: zPhoneLooseOptional,
+  emergencyContactPhone: z.string().optional(),
   emergencyContactEmail: z.string().optional(),
   // Bank
   bankName: z.string().optional(),
-  bankAccountNumber: zBankAccountOptional,
-  bankIfsc: zIfscOptional,
+  bankAccountNumber: z.string().optional(),
+  bankIfsc: z.string().optional(),
   bankAccountHolder: z.string().optional(),
   // Reporting manager (lookup by code)
   reportingManagerCode: z.string().optional(),

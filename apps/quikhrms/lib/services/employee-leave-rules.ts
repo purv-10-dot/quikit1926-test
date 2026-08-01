@@ -16,6 +16,8 @@ import { prisma } from "@/lib/prisma";
 export interface GroupLeaveRules {
   isUnlimited?: boolean;
   maxBalance?: number;
+  accrualType?: "Monthly" | "Quarterly" | "Yearly" | "Upfront";
+  noAccrualJoinAfterDay?: number | null;
   isNegativeBalanceAllowed?: boolean;
   maxNegativeBalance?: number | null;
   maxDaysPerMonth?: number | null;

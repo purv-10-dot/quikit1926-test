@@ -142,15 +142,20 @@ export function AttendanceWidget() {
   );
 }
 
+const QUICK_ACTIONS = [
+  { label: "Mark attendance", icon: <Clock size={18} />, href: "/attendance", bg: "bg-amber-50", color: "text-amber-600" },
+  { label: "Apply leave", icon: <Palmtree size={18} />, href: "/leaves", bg: "bg-green-50", color: "text-green-600" },
+  { label: "Apply WFH", icon: <Home size={18} />, href: "/wfh/my-requests", bg: "bg-violet-50", color: "text-violet-600" },
+  { label: "View payslip", icon: <FileIcon size={18} />, href: "/payroll/my-payslips", bg: "bg-sky-50", color: "text-sky-600" },
+  { label: "Expense claim", icon: <Receipt size={18} />, href: "/expenses", bg: "bg-teal-50", color: "text-teal-600" },
+  { label: "Company directory", icon: <UsersIcon size={18} />, href: "/org-chart", bg: "bg-indigo-50", color: "text-indigo-600" },
+];
+
 export function EssentialsWidget() {
-  const items = [
-    { label: "Mark attendance", icon: <Clock size={18} />, href: "/attendance", bg: "bg-amber-50", color: "text-amber-600" },
-    { label: "Apply leave", icon: <Palmtree size={18} />, href: "/leaves", bg: "bg-green-50", color: "text-green-600" },
-    { label: "Apply WFH", icon: <Home size={18} />, href: "/wfh/my-requests", bg: "bg-violet-50", color: "text-violet-600" },
-    { label: "View payslip", icon: <FileIcon size={18} />, href: "/payroll/my-payslips", bg: "bg-sky-50", color: "text-sky-600" },
-    { label: "Expense claim", icon: <Receipt size={18} />, href: "/expenses", bg: "bg-teal-50", color: "text-teal-600" },
-    { label: "Company directory", icon: <UsersIcon size={18} />, href: "/org-chart", bg: "bg-indigo-50", color: "text-indigo-600" },
-  ];
+  // All six shortcuts always show, same as before — a role without access to
+  // one just lands on the "Access restricted" page (RouteGuard) on click,
+  // instead of the tile silently vanishing.
+  const items = QUICK_ACTIONS;
 
   return (
     <div className="surface-card p-4">

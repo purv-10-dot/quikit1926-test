@@ -76,24 +76,35 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId, permissio
       : { stepType: "CompleteProfile", title: "Complete Profile", config: undefined as Record<string, unknown> | undefined };
     const hasSysStep = instance.tasks.some((t) => t.stepType === sysStep.stepType && (phaseOf.get(t.id) ?? "Onboarding") === phase);
     if (!hasSysStep && !isClosed) {
-      const createdSys = await prisma.onboardingTask.create({
-        data: {
-          orgId,
-          instanceId: instance.id,
-          title: sysStep.title,
-          stepType: sysStep.stepType,
-          category: "TaskOther",
-          assigneeRole: "HRRole",
-          isMandatory: true,
-          status: "TaskPending",
-          sortOrder: -1, // always first
-          config: sysStep.config as object | undefined,
-        },
-      });
-      // New tasks default to phase='Onboarding'; tag the pre-onboarding BGV step.
-      if (phase === "PreOnboarding") {
-        await prisma.$executeRaw`
-          UPDATE "app_quikhrms"."OnboardingTask" SET phase = 'PreOnboarding' WHERE id = ${createdSys.id}`;
+      // Two concurrent GETs (e.g. a double-fetch on page load) can both pass
+      // the `!hasSysStep` check above before either commits its INSERT —
+      // without protection that creates two BGV/CompleteProfile rows. A
+      // partial unique index (one sortOrder=-1 row per instance+phase, see
+      // the DB migration note) backs this: the race loser's create() throws
+      // P2002, which we swallow here and just re-fetch — the winner's row is
+      // picked up by the query below either way.
+      try {
+        const createdSys = await prisma.onboardingTask.create({
+          data: {
+            orgId,
+            instanceId: instance.id,
+            title: sysStep.title,
+            stepType: sysStep.stepType,
+            category: "TaskOther",
+            assigneeRole: "HRRole",
+            isMandatory: true,
+            status: "TaskPending",
+            sortOrder: -1, // always first
+            config: sysStep.config as object | undefined,
+          },
+        });
+        // New tasks default to phase='Onboarding'; tag the pre-onboarding BGV step.
+        if (phase === "PreOnboarding") {
+          await prisma.$executeRaw`
+            UPDATE "app_quikhrms"."OnboardingTask" SET phase = 'PreOnboarding' WHERE id = ${createdSys.id}`;
+        }
+      } catch (e) {
+        if (!(e && typeof e === "object" && (e as { code?: string }).code === "P2002")) throw e;
       }
       instance = await prisma.onboardingInstance.findFirst({
         where: { id: instance.id },

@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/hrms/layout/sidebar";
 import { TopBar } from "@/components/hrms/layout/top-bar";
 import { DelegationBanner } from "@/components/hrms/layout/delegation-banner";
 import { AuthGuard } from "@/components/hrms/layout/auth-guard";
+import { RouteGuard } from "@/components/hrms/layout/route-guard";
 import { SessionGuard } from "@/components/session-guard";
 import { SetupGate } from "@/components/hrms/setup/setup-gate";
 
@@ -43,7 +44,9 @@ export default async function HRMSLayout({ children }: { children: React.ReactNo
             </div>
             <div className="px-4 py-4 lg:px-6 lg:py-5">
               <DelegationBanner />
-              {children}
+              {/* Permission gate — a hidden sidebar link must also be an
+                  unreachable URL (Quick actions, pasted links, history). */}
+              <RouteGuard>{children}</RouteGuard>
             </div>
           </main>
         </div>

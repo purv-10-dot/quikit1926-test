@@ -7,6 +7,7 @@ import { CrudTable, type Column } from "@/components/hrms/crud-table";
 import { Modal } from "@/components/hrms/modal";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { PageBackground } from "@/components/hrms/page-background";
+import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 
 interface GradeItem {
   id: string;
@@ -20,6 +21,8 @@ interface GradeItem {
 export default function GradesPage() {
   const api = useApiClient();
   const qc = useQueryClient();
+  const { hasPermission } = useDashboardConfig();
+  const canManage = hasPermission("hrms.org.write");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 10;
@@ -79,7 +82,8 @@ export default function GradesPage() {
       <CrudTable title="Grades / Bands" data={pageItems} columns={columns} isLoading={isLoading}
         onAdd={openAdd} onEdit={openEdit} onDelete={(id) => deleteMut.mutate(id)}
         search={search} onSearchChange={(v) => { setSearch(v); setPage(1); }} searchPlaceholder="Search grades..."
-        pagination={{ page, totalPages, total: filtered.length, limit: PAGE_SIZE, onPageChange: setPage }} />
+        pagination={{ page, totalPages, total: filtered.length, limit: PAGE_SIZE, onPageChange: setPage }}
+        canManage={canManage} />
 
       <Modal open={modal.open} onClose={() => setModal({ open: false, item: null })} title={modal.item ? "Edit Grade" : "Add Grade"}>
         <form onSubmit={handleSubmit} className="space-y-4">
