@@ -7,6 +7,7 @@ import { CrudTable, type Column } from "@/components/hrms/crud-table";
 import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/ui/select";
 import { PageBackground } from "@/components/hrms/page-background";
+import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 
 interface TeamItem {
   id: string;
@@ -20,6 +21,8 @@ interface TeamItem {
 export default function TeamsPage() {
   const api = useApiClient();
   const qc = useQueryClient();
+  const { hasPermission } = useDashboardConfig();
+  const canManage = hasPermission("hrms.org.write");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 10;
@@ -73,7 +76,8 @@ export default function TeamsPage() {
       <CrudTable title="Teams" data={(data?.data ?? []).slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)} columns={columns} isLoading={isLoading}
         onAdd={openAdd} onEdit={openEdit} onDelete={(id) => deleteMut.mutate(id)}
         search={search} onSearchChange={(v) => { setSearch(v); setPage(1); }} searchPlaceholder="Search teams..."
-        pagination={{ page, totalPages: Math.max(1, Math.ceil((data?.data ?? []).length / PAGE_SIZE)), total: (data?.data ?? []).length, limit: PAGE_SIZE, onPageChange: setPage }} />
+        pagination={{ page, totalPages: Math.max(1, Math.ceil((data?.data ?? []).length / PAGE_SIZE)), total: (data?.data ?? []).length, limit: PAGE_SIZE, onPageChange: setPage }}
+        canManage={canManage} />
 
       <Modal open={modal.open} onClose={() => setModal({ open: false, item: null })} title={modal.item ? "Edit Team" : "Add Team"}>
         <form onSubmit={handleSubmit} className="space-y-4">

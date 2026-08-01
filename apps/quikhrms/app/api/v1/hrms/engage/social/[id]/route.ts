@@ -89,7 +89,7 @@ export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId, permis
     if (!existing) return notFound("Post not found");
 
     const isAuthor = existing.employeeId === userId;
-    const isAdmin = permissions.includes("*") || permissions.includes("hrms.engage.manage");
+    const isAdmin = permissions.includes("*") || permissions.includes("hrms.engage.approve");
     if (!isAuthor && !isAdmin) return forbidden("Only the author can delete this post");
 
     await prisma.socialPost.update({ where: { id: params.id }, data: { deletedAt: new Date(), updatedBy: userId } });

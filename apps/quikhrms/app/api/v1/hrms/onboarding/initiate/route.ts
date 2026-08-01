@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, validationError, notFound, conflict, internalError } from "@/lib/api-response";
 import { initiateOnboardingSchema } from "@/lib/validations/boarding";
-import { addDays } from "@/lib/services/boarding";
+import { addDays, normalizeStepConfig } from "@/lib/services/boarding";
 import { createAuditLog } from "@/lib/utils/audit";
 import { fireWorkflow } from "@/lib/workflows/executor";
 
@@ -97,7 +97,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
             // Persist the workflow step type + its config so per-type actions
             // (upload, approval, …) work on the live task.
             stepType: t.stepType ?? null,
-            config: (t.config ?? undefined) as object | undefined,
+            config: normalizeStepConfig(t.stepType, t.config) as object | undefined,
           })),
         },
       },

@@ -12546,6 +12546,9 @@ model Interview {
   // above. Read/written via raw SQL (regen-free).
   takeHomeInstructions   String?
   takeHomeAttachmentUrl  String?
+  // Optional reference link HR pastes instead of (or alongside) an uploaded
+  // spec file — e.g. a Google Doc / GitHub repo for the assignment.
+  takeHomeAttachmentLink String?
   takeHomeDueDate        DateTime? @db.Date
   submissionToken        String?   @unique
   submissionTokenExpiresAt DateTime?
@@ -13479,6 +13482,13 @@ model OnboardingTask {
   @@index([orgId, instanceId])
   @@index([orgId, assigneeId])
   @@index([orgId, status])
+  // At most one auto-injected system step (BGV / CompleteProfile, always
+  // sortOrder=-1) per instance+phase — prevents the GET route's lazy-create
+  // from double-inserting under concurrent requests. Partial index (filtered
+  // on sortOrder=-1), can't be expressed as a Prisma @@unique — applied via
+  // raw SQL:
+  //   CREATE UNIQUE INDEX IF NOT EXISTS "OnboardingTask_instanceId_phase_autostep_key"
+  //     ON "app_quikhrms"."OnboardingTask" ("instanceId", phase) WHERE "sortOrder" = -1;
   @@schema("app_quikhrms")
 }
 

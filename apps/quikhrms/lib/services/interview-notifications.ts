@@ -39,3 +39,8 @@ export function notifyInterviewCancelled(orgId: string, c: Omit<Ctx, "whenLabel"
   return notify(orgId, c.interviewerId, c.interviewId, "Interview cancelled",
     `Interview with ${c.candidateName} for ${c.jobTitle} has been cancelled.`, "Error");
 }
+
+export function notifyTakeHomeSubmitted(orgId: string, c: Omit<Ctx, "whenLabel">) {
+  return notify(orgId, c.interviewerId, c.interviewId, "Take-home task submitted",
+    `${c.candidateName} submitted their take-home task for ${c.jobTitle}. Review it and add your feedback.`, "Action");
+}
