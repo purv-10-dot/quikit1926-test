@@ -5,8 +5,9 @@ import { useSession } from "next-auth/react";
 import { ROLE_LABELS } from "@quikit/shared";
 import {
   User, Building2, Settings, Mail, Pencil, Check, Loader2,
-  LayoutDashboard, BarChart3, ListChecks, Users,
+  LayoutDashboard, BarChart3, ListChecks, Users, LifeBuoy,
 } from "lucide-react";
+import { SupportStatusTab } from "@/components/settings/support-status-tab";
 import { applyAccentColor } from "@quikit/ui/theme-applier";
 import { DropdownPicker } from "@quikit/ui";
 import { invalidateFeatureFlagsCache } from "@/lib/hooks/useFeatureFlags";
@@ -61,6 +62,9 @@ const TABS = [
   { key: "profile", label: "Profile Details", icon: User },
   { key: "company", label: "Company Setting", icon: Building2 },
   { key: "configurations", label: "Configurations", icon: Settings },
+  // Sibling of Configurations, not nested inside it: Configurations is
+  // admin-only, while support status is per-user by definition.
+  { key: "support", label: "Support Status", icon: LifeBuoy },
 ] as const;
 
 type TabKey = typeof TABS[number]["key"];
@@ -151,6 +155,7 @@ export default function SettingsPage() {
         {activeTab === "profile" && <ProfileTab />}
         {activeTab === "company" && <CompanyTab />}
         {activeTab === "configurations" && isAdmin && <ConfigurationsTab />}
+        {activeTab === "support" && <SupportStatusTab />}
       </div>
     </div>
   );

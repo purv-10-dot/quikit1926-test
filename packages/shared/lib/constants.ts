@@ -220,6 +220,81 @@ export const SUBSCRIPTION_STATUS = {
 export type SubscriptionStatus =
   (typeof SUBSCRIPTION_STATUS)[keyof typeof SUBSCRIPTION_STATUS];
 
+/* ─── Platform support tickets ───────────────────────────────────────────────
+   Shared by QuikScale (raises tickets), QuikIT super-admin (triages them) and
+   the Zod schemas on both sides. `public.SupportTicket` stores these as plain
+   String columns — matching Notification.type / AuditLog.action /
+   BroadcastAnnouncement.severity — so adding a value here is a code change,
+   not a Postgres enum migration. */
+
+export const SUPPORT_REQUEST_TYPES = [
+  "bug",
+  "feature",
+  "enhancement",
+  "general",
+] as const;
+export type SupportRequestType = (typeof SUPPORT_REQUEST_TYPES)[number];
+
+export const SUPPORT_REQUEST_TYPE_LABELS: Record<SupportRequestType, string> = {
+  bug: "Bug",
+  feature: "Feature Request",
+  enhancement: "Enhancement",
+  general: "General Support",
+};
+
+export const SUPPORT_TICKET_STATUSES = [
+  "open",
+  "in_progress",
+  "resolved",
+  "closed",
+  "reopened",
+] as const;
+export type SupportTicketStatus = (typeof SUPPORT_TICKET_STATUSES)[number];
+
+export const SUPPORT_TICKET_STATUS_LABELS: Record<SupportTicketStatus, string> = {
+  open: "Open",
+  in_progress: "In Progress",
+  resolved: "Resolved",
+  closed: "Closed",
+  reopened: "Reopened",
+};
+
+export const SUPPORT_TICKET_PRIORITIES = ["low", "medium", "high", "urgent"] as const;
+export type SupportTicketPriority = (typeof SUPPORT_TICKET_PRIORITIES)[number];
+
+export const SUPPORT_TICKET_PRIORITY_LABELS: Record<SupportTicketPriority, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  urgent: "Urgent",
+};
+
+/**
+ * Legal status transitions, enforced server-side in the super-admin PATCH
+ * handler. The client `<select>` is a convenience, never the gate.
+ * A ticket can always be set to its current status (a response-only edit).
+ */
+export const SUPPORT_STATUS_TRANSITIONS: Record<SupportTicketStatus, SupportTicketStatus[]> = {
+  open: ["in_progress", "resolved", "closed"],
+  in_progress: ["resolved", "closed", "open"],
+  resolved: ["closed", "reopened", "in_progress"],
+  closed: ["reopened"],
+  reopened: ["in_progress", "resolved", "closed"],
+};
+
+export function canTransitionSupportStatus(
+  from: SupportTicketStatus,
+  to: SupportTicketStatus,
+): boolean {
+  if (from === to) return true;
+  return SUPPORT_STATUS_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
+/** Human-facing ticket id — `TKT-000042`. */
+export function formatSupportTicketNo(ticketNo: number): string {
+  return `TKT-${String(ticketNo).padStart(6, "0")}`;
+}
+
 export const PATHS = {
   HOME: "/",
   LOGIN: "/login",
