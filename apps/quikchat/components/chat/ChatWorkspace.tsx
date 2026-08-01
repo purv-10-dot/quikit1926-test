@@ -28,6 +28,7 @@ import {
   type RealtimeClient,
 } from "@/lib/realtime-client";
 import {
+  applyChannelUpdated,
   applyDeliveredEvent,
   applyReadEvent,
   bumpChannelList,
@@ -35,6 +36,7 @@ import {
   markChannelRead,
   mergeMessageEvent,
   patchMessageEvent,
+  removeChannelFromList,
   seedFromApiPage,
   shouldApplyDelivered,
   shouldApplyRead,
@@ -42,10 +44,15 @@ import {
 import {
   applyPresence,
   applySnapshot,
+  applyStatus,
   emptyPresence,
+  nextExpiry,
+  statusOf,
+  type EffectiveStatus,
   type PresenceEvent,
   type PresenceSnapshot,
   type PresenceState,
+  type PresenceStatusEvent,
 } from "@/lib/presence-store";
 import { applyTyping, emptyTyping, pruneTyping, type TypingState } from "@/lib/typing-store";
 import { streamAssist } from "@/lib/assist-client";
@@ -214,14 +221,28 @@ export function ChatWorkspace({
       qc.setQueryData<MessageDto[]>(["messages", dto.channelId], (old) =>
         mergeMessageEvent(old ?? [], dto, currentUserId),
       );
-      qc.setQueryData<ChannelList>(["channels"], (old) =>
-        old
-          ? bumpChannelList(old, dto.channelId, lastMessageOf(dto), {
-              active: dto.channelId === activeIdRef.current,
-              fromSelf: dto.senderId === currentUserId,
-            })
-          : old,
-      );
+      const list = qc.getQueryData<ChannelList>(["channels"]);
+      const known =
+        !!list && [...list.priority, ...list.recent].some((c) => c.channelId === dto.channelId);
+      if (list && !known) {
+        // First message for a channel we don't have in our list yet — e.g. a
+        // group someone just created us into. The gateway socket-joined us to the
+        // room (so the message arrived), but there's no list row for
+        // bumpChannelList to surface, so the channel would stay invisible until a
+        // refresh. Refetch the list so it appears live. (No client-facing
+        // `channel_created` event exists — the gateway consumes it server-side via
+        // socketsJoin — so the first inbound message is the signal.)
+        void qc.invalidateQueries({ queryKey: ["channels"] });
+      } else {
+        qc.setQueryData<ChannelList>(["channels"], (old) =>
+          old
+            ? bumpChannelList(old, dto.channelId, lastMessageOf(dto), {
+                active: dto.channelId === activeIdRef.current,
+                fromSelf: dto.senderId === currentUserId,
+              })
+            : old,
+        );
+      }
       // Our client received someone else's message → mark it delivered.
       if (dto.senderId && dto.senderId !== currentUserId) advanceDelivered(dto.channelId);
     },
@@ -260,6 +281,30 @@ export function ChatWorkspace({
     [qc, currentUserId],
   );
 
+  // Live group edit: merge name/description/avatar in place (QC_008). Also
+  // refresh the open drawer's detail so its fields reflect the change.
+  const onChannelUpdated = useCallback(
+    (p: { channelId: string; name?: string; description?: string | null; avatarUrl?: string }) => {
+      qc.setQueryData<ChannelList>(["channels"], (old) =>
+        old ? applyChannelUpdated(old, p) : old,
+      );
+      void qc.invalidateQueries({ queryKey: ["channel-detail", p.channelId] });
+    },
+    [qc],
+  );
+
+  // Live group delete-for-everyone: remove it from the list; if it's the active
+  // channel, clear the view (QC_008).
+  const onChannelDeleted = useCallback(
+    (p: { channelId: string }) => {
+      qc.setQueryData<ChannelList>(["channels"], (old) =>
+        old ? removeChannelFromList(old, p.channelId) : old,
+      );
+      if (p.channelId === activeIdRef.current) setActiveId(null);
+    },
+    [qc],
+  );
+
   // Latest event handlers + notifications, read through a ref by the socket's
   // stable wrappers. This keeps the socket effect's deps at `[realtimeUrl]` so
   // the socket is created ONCE per session: previously `notifications` (a
@@ -267,8 +312,24 @@ export function ChatWorkspace({
   // new notification, unread-count tick, or read-mark) was in the deps, so the
   // effect re-ran and tore down + recreated the socket constantly, dropping the
   // very `read`/`delivered` events the ticks depend on.
-  const handlersRef = useRef({ onMessage, onPatch, onRead, onDelivered, notifications });
-  handlersRef.current = { onMessage, onPatch, onRead, onDelivered, notifications };
+  const handlersRef = useRef({
+    onMessage,
+    onPatch,
+    onRead,
+    onDelivered,
+    onChannelUpdated,
+    onChannelDeleted,
+    notifications,
+  });
+  handlersRef.current = {
+    onMessage,
+    onPatch,
+    onRead,
+    onDelivered,
+    onChannelUpdated,
+    onChannelDeleted,
+    notifications,
+  };
 
   useEffect(() => {
     const client = createRealtimeClient({
@@ -288,7 +349,18 @@ export function ChatWorkspace({
         d as { channelId: string; userId: string; deliveredAt: string },
       ),
     );
+    client.on("channel_updated", (d) =>
+      handlersRef.current.onChannelUpdated(
+        d as { channelId: string; name?: string; description?: string | null; avatarUrl?: string },
+      ),
+    );
+    client.on("channel_deleted", (d) =>
+      handlersRef.current.onChannelDeleted(d as { channelId: string }),
+    );
     client.on("presence", (d) => setPresence((s) => applyPresence(s, d as PresenceEvent)));
+    client.on("presence_status", (d) =>
+      setPresence((s) => applyStatus(s, d as PresenceStatusEvent)),
+    );
     client.on("presence_snapshot", (d) =>
       setPresence((s) => applySnapshot(s, d as PresenceSnapshot)),
     );
@@ -316,6 +388,24 @@ export function ChatWorkspace({
   const emitTyping = useCallback((channelId: string) => {
     clientRef.current?.typing(channelId);
   }, []);
+
+  // Effective presence status accessor — the store reconciles the ephemeral
+  // (online/offline/on_call) and durable (set-status) streams via precedence.
+  const statusOfUser = useCallback(
+    (userId: string): EffectiveStatus => statusOf(presence, userId),
+    [presence],
+  );
+
+  // Timed-status re-resolve (cosmetic; server read-expiry is authoritative). When
+  // the nearest set-status expiry passes, nudge presence to a new ref so statusOf
+  // recomputes and the now-expired status falls through to online — no interaction
+  // needed. Self-heals on any reconnect/refetch regardless.
+  useEffect(() => {
+    const next = nextExpiry(presence);
+    if (next == null) return;
+    const t = setTimeout(() => setPresence((s) => ({ ...s })), Math.max(0, next - Date.now()) + 250);
+    return () => clearTimeout(t);
+  }, [presence]);
 
   const pickChannel = useCallback(
     (id: string) => {
@@ -517,9 +607,10 @@ export function ChatWorkspace({
   );
 
   // AI assistant: open the SSE relay, accumulate deltas into a transient
-  // streaming bubble. On `done` the posted ai_agent message arrives via realtime
-  // and merges into the list (de-dupe by clientMessageId); we just clear the
-  // bubble. On error we toast and clear. Stop simply aborts the client stream.
+  // streaming bubble. On `done` we reconcile the answer into the message list
+  // ourselves and clear the bubble in the same commit; the posted ai_agent
+  // message arriving later via realtime de-dupes in place by clientMessageId.
+  // On error we surface the error card and clear. Stop aborts the client stream.
   const handleAssist = useCallback(
     (
       prompt: string,
@@ -534,21 +625,67 @@ export function ChatWorkspace({
       setAssist({ channelId, text: "" });
       setAssistError((e) => (e && e.channelId === channelId ? null : e));
       const clearIfCurrent = () => setAssist((s) => (s && s.channelId === channelId ? null : s));
+      // A superseded turn (aborted at the top of this callback) can still have a
+      // callback in flight. It carries the SAME channelId as the turn that
+      // replaced it, so clearIfCurrent/setAssistError would happily clobber the
+      // live turn's loader. Gate every handler on this turn's own signal.
+      const live = () => !controller.signal.aborted;
       void streamAssist(
         channelId,
         { prompt, document, knowledgeBase },
         {
-          onDelta: (t) =>
-            setAssist((s) => (s && s.channelId === channelId ? { ...s, text: s.text + t } : s)),
+          onDelta: (t) => {
+            if (!live()) return;
+            setAssist((s) => (s && s.channelId === channelId ? { ...s, text: s.text + t } : s));
+          },
           onDone: (payload) => {
+            if (!live()) return;
             // Ephemeral citations for THIS turn only, keyed by the bot message's
             // clientMessageId so the chip renders on the merged realtime message.
             if (payload.sources?.length) {
               setLiveSources((m) => ({ ...m, [payload.clientMessageId]: payload.sources! }));
             }
+            // Hand the streamed answer to the message list BEFORE dropping the
+            // bubble. The persisted ai_agent message reaches us over the realtime
+            // socket — a second, unordered transport — so clearing on `done`
+            // alone leaves a gap (no loader, no answer) until the echo lands, and
+            // leaves nothing at all if the socket is down. Same reconcile the
+            // human send path does ("even if the realtime echo never arrives").
+            // Both state writes sit in this one handler, so React batches them
+            // into a single commit: bubble → message with no frame in between.
+            qc.setQueryData<MessageDto[]>(["messages", channelId], (old) => {
+              const list = old ?? [];
+              // Echo won the race → the server row is already here and is
+              // authoritative (real id, server timestamp). Don't clobber it.
+              if (list.some((m) => m.clientMessageId === payload.clientMessageId)) return list;
+              // Otherwise insert ours; mergeMessageEvent keys on clientMessageId,
+              // so the echo replaces this row in place whenever it arrives.
+              return mergeMessageEvent(
+                list,
+                {
+                  id: makeTempId(),
+                  channelId,
+                  senderId: ASSISTANT_BOT_USER_ID,
+                  actorType: "ai_agent",
+                  type: "Text",
+                  content: payload.text,
+                  data: null,
+                  parentMessageId: null,
+                  parentPreview: null,
+                  isPinned: false,
+                  reactions: [],
+                  mentions: [],
+                  clientMessageId: payload.clientMessageId,
+                  createdAt: new Date().toISOString(),
+                  editedAt: null,
+                },
+                currentUserId,
+              );
+            });
             clearIfCurrent();
           },
           onError: (message) => {
+            if (!live()) return;
             clearIfCurrent();
             setAssistError({ channelId, prompt, message });
           },
@@ -556,7 +693,7 @@ export function ChatWorkspace({
         controller.signal,
       );
     },
-    [activeChannel],
+    [activeChannel, currentUserId, qc],
   );
 
   const stopAssist = useCallback(() => {
@@ -734,6 +871,7 @@ export function ChatWorkspace({
           activeChannelId={activeId}
           currentUserId={currentUserId}
           onlineUserIds={presence.online}
+          statusOf={statusOfUser}
           chromeless
           onPick={pickChannel}
           onNewChat={() => setNewChatOpen(true)}
@@ -749,6 +887,7 @@ export function ChatWorkspace({
             loadingMessages={messagesQuery.isLoading}
             channels={channelsQuery.data}
             online={presence.online}
+            statusOf={statusOfUser}
             typing={typing}
             onSend={activeChannel.type === "ai" ? handleAiChatSend : handleSend}
             onTyping={emitTyping}

@@ -142,7 +142,7 @@ export function RoleMembersModal({
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search people…"
-              className="w-full text-xs border border-gray-300 rounded-md pl-8 pr-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
+              className="w-full text-xs border border-gray-300 rounded-md pl-8 pr-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-[var(--qc-accent)]"
             />
           </div>
         </div>
@@ -164,7 +164,7 @@ export function RoleMembersModal({
                   type="checkbox"
                   checked={selected.has(u.id)}
                   onChange={() => toggle(u)}
-                  className="h-4 w-4 rounded border-gray-300 accent-blue-600"
+                  className="h-4 w-4 rounded border-gray-300 accent-[var(--qc-accent)]"
                 />
                 <span className="text-sm text-gray-800">{u.displayName}</span>
               </label>
@@ -185,7 +185,7 @@ export function RoleMembersModal({
             <button
               onClick={save}
               disabled={saving}
-              className="px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50"
+              className="px-3 py-1.5 text-xs font-semibold text-[var(--qc-accent-fg)] bg-[var(--qc-accent)] hover:bg-[var(--qc-accent-strong)] rounded-lg disabled:opacity-50"
             >
               {saving ? "Saving…" : "Save"}
             </button>

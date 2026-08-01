@@ -178,7 +178,7 @@ jobs:
             NEXT_PUBLIC_QUIKASSET_URL=https://uatasset.quikit.ai
             NEXT_PUBLIC_QUIKCHAT_URL=https://uatchat.quikit.ai
             NEXT_PUBLIC_QUIKLMS_URL=https://uatlms.quikit.ai
-            NEXT_PUBLIC_REALTIME_WS_URL=ws://uatsockets.quikit.ai
+            NEXT_PUBLIC_REALTIME_WS_URL=wss://uatsockets.quikit.ai
             NEXT_PUBLIC_QUIKTRACK_URL=https://uattrack.quikit.ai
   update-gitops:
     name: Update GitOps Repository

@@ -42,6 +42,7 @@ import { DeleteTaskModal } from "@/components/delete-task-modal";
 import { LinkedWorkItems } from "@/components/linked-work-items";
 import { IssueActivity } from "@/components/issue-activity";
 import { IssueAttachments } from "@/components/issue-attachments";
+import { IssueDevelopment } from "@/components/issue-full-view/issue-development";
 import { DescriptionAttachments } from "@/components/description-attachments";
 import { RichTextView } from "@/components/rich-text-view";
 import { AlertCircle } from "lucide-react";
@@ -1717,6 +1718,14 @@ export function EditIssueModal({
                 {issue.createdAt && <div>Created {fmtDateLabel(issue.createdAt)}</div>}
                 {issue.updatedAt && <div>Updated {fmtDateLabel(issue.updatedAt)}</div>}
               </div>
+
+              {/* Development — placed BELOW the Details section (Jira layout):
+                  branches/commits/PRs + action links, linked via the issue key. */}
+              {issue?.id && issue.key && (
+                <div className="mt-6">
+                  <IssueDevelopment issueId={issue.id} issueKey={issue.key} />
+                </div>
+              )}
 
               {/* Activity — Comments / History / Work log tabs. Mounted at
                   the bottom of the right rail per the reference designs. */}

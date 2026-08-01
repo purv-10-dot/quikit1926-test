@@ -45,6 +45,19 @@ export interface MentionMember {
   displayName: string;
 }
 
+/**
+ * The members a user may @mention: everyone in the channel EXCEPT themselves
+ * (QC_015 — you cannot mention yourself). Applied at the source so both the
+ * autocomplete suggestions and `computeMentions` exclude self. `@everyone` is a
+ * literal (not a member) and is unaffected.
+ */
+export function mentionableMembers<T extends { id: string }>(
+  members: T[],
+  currentUserId: string | undefined,
+): T[] {
+  return currentUserId ? members.filter((m) => m.id !== currentUserId) : members;
+}
+
 /** Active `@query` token under the caret, if any (drives the autocomplete pop). */
 export function findMentionQuery(
   text: string,

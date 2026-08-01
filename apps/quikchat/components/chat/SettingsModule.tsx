@@ -12,12 +12,17 @@ import {
   Phone,
   Search,
   Settings,
+  Shield,
   Sun,
   Switch,
   Users,
 } from "@/components/ui";
 import { CalendarsSettings } from "@/components/settings/CalendarsSettings";
+import { DevicesSettings } from "@/components/settings/DevicesSettings";
+import { NotificationSettingsPanel } from "@/components/notifications/NotificationSettingsModal";
 import { ThemeToggle } from "@/components/settings/ThemeToggle";
+import { RolesTab } from "@/app/(dashboard)/settings/roles/components/RolesTab";
+import { useMyPermissions } from "@/lib/authz/useMyPermissions";
 import { STORAGE_KEY, THEMES } from "./ColorThemePicker";
 
 type SettingsCat =
@@ -27,7 +32,8 @@ type SettingsCat =
   | "account"
   | "devices"
   | "calls"
-  | "privacy";
+  | "privacy"
+  | "roles";
 
 const CATEGORIES: { key: SettingsCat; label: string; icon: ReactNode }[] = [
   { key: "general", label: "General", icon: <Settings size={17} /> },
@@ -39,11 +45,18 @@ const CATEGORIES: { key: SettingsCat; label: string; icon: ReactNode }[] = [
   { key: "calls", label: "Calls", icon: <Phone size={17} /> },
 ];
 
+// Admin-only section. Appended to the nav only when the caller is a QuikChat
+// admin (client-side discoverability; the route + APIs stay requireAdmin-gated).
+const ROLES_CAT: { key: SettingsCat; label: string; icon: ReactNode } = {
+  key: "roles",
+  label: "Roles & Permissions",
+  icon: <Shield size={17} />,
+};
+
 export interface SettingsModuleProps {
   currentUserId: string;
   displayName: string;
   avatarUrl?: string | null;
-  onOpenNotificationSettings?: () => void;
 }
 
 function ToggleRow({
@@ -68,14 +81,19 @@ function ToggleRow({
   );
 }
 
-export function SettingsModule({
-  currentUserId,
-  displayName,
-  avatarUrl,
-  onOpenNotificationSettings,
-}: SettingsModuleProps) {
+export function SettingsModule({ currentUserId, displayName, avatarUrl }: SettingsModuleProps) {
   const [cat, setCat] = useState<SettingsCat>("general");
   const [query, setQuery] = useState("");
+
+  // Admins get the extra "Roles & Permissions" section. Same signal
+  // `requireAdmin` reads server-side (loadMyPermissions) — client-hide and
+  // server-gate agree. `isAdmin` is false until the fetch resolves, so the item
+  // never flashes for non-admins.
+  const { isAdmin } = useMyPermissions();
+  const visibleCategories = useMemo(
+    () => (isAdmin ? [...CATEGORIES, ROLES_CAT] : CATEGORIES),
+    [isAdmin],
+  );
 
   // Local (non-persistent) demo state for the General toggles + window options.
   const [autoStart, setAutoStart] = useState(false);
@@ -103,10 +121,12 @@ export function SettingsModule({
 
   const cats = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return q ? CATEGORIES.filter((c) => c.label.toLowerCase().includes(q)) : CATEGORIES;
-  }, [query]);
+    return q
+      ? visibleCategories.filter((c) => c.label.toLowerCase().includes(q))
+      : visibleCategories;
+  }, [query, visibleCategories]);
 
-  const activeLabel = CATEGORIES.find((c) => c.key === cat)?.label ?? "Settings";
+  const activeLabel = visibleCategories.find((c) => c.key === cat)?.label ?? "Settings";
 
   const colorThemeSection = (
     <section className="qc-set-section">
@@ -195,6 +215,14 @@ export function SettingsModule({
         <header className="qc-set-head">
           <h1 className="qc-set-htitle">{activeLabel}</h1>
         </header>
+        {cat === "roles" ? (
+          // Full-bleed: RolesTab brings its own two-pane chrome. `.qc-set-embed`
+          // clamps its `h-screen` root to the content area (see theme.css) so it
+          // doesn't overflow the panel — reused verbatim, no restyle.
+          <div className="qc-set-embed">
+            <RolesTab />
+          </div>
+        ) : (
         <div className="qc-set-scroll">
           {cat === "general" ? (
             <>
@@ -250,21 +278,10 @@ export function SettingsModule({
                 <Bell size={16} aria-hidden /> Notifications
               </div>
               <div className="qc-set-section__body">
-                <div className="qc-set-row">
-                  <div className="qc-set-row__text">
-                    <div className="qc-set-row__title">Notification preferences</div>
-                    <div className="qc-set-row__desc">
-                      Choose what you get notified about and how.
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="qc-btn qc-btn--primary"
-                    onClick={() => onOpenNotificationSettings?.()}
-                  >
-                    Manage
-                  </button>
-                </div>
+                {/* The controls live here directly — no Manage button, no popup.
+                    Same component the bell/Activity gear opens in a dialog; it
+                    owns its own fetch + patch, so both surfaces stay in sync. */}
+                <NotificationSettingsPanel />
               </div>
             </section>
           ) : null}
@@ -329,15 +346,7 @@ export function SettingsModule({
               <div className="qc-set-section__head">
                 <Headphones size={16} aria-hidden /> Devices
               </div>
-              <div className="qc-set-section__body">
-                <div className="qc-set-row">
-                  <div className="qc-set-row__text">
-                    <div className="qc-set-row__title">Audio device</div>
-                    <div className="qc-set-row__desc">Microphone and speaker used for calls.</div>
-                  </div>
-                  <span className="qc-set-row__value">6 - USB Audio 2.0</span>
-                </div>
-              </div>
+              <DevicesSettings />
             </section>
           ) : null}
 
@@ -358,6 +367,7 @@ export function SettingsModule({
             </section>
           ) : null}
         </div>
+        )}
       </section>
     </div>
   );

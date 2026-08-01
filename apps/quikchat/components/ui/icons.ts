@@ -35,6 +35,8 @@ export {
   PhoneMissed,
   Voicemail,
   Headphones,
+  Play,
+  Pause,
   CornerUpRight,
   Reply,
   Forward,
@@ -75,5 +77,6 @@ export {
   BadgeCheck,
   Type,
   Palette,
+  Shield,
   type LucideIcon,
 } from "lucide-react";

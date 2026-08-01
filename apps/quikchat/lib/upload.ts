@@ -4,7 +4,7 @@
  * response, so local and GCS are identical here.
  */
 import { signUploadApi } from "./api";
-import { ALLOWED_UPLOAD_TYPES, UPLOAD_MAX_BYTES, type MediaMeta } from "@/lib/server/storage/types";
+import { isAllowedUpload, UPLOAD_MAX_BYTES, type MediaMeta } from "@/lib/server/storage/types";
 
 export { UPLOAD_MAX_BYTES };
 
@@ -19,7 +19,7 @@ export function mediaKind(contentType: string | undefined): MediaKind {
 
 /** Client-side guard mirroring the server allowlist/size for instant feedback. */
 export function validateFile(file: { type: string; size: number; name: string }): string | null {
-  if (!ALLOWED_UPLOAD_TYPES.includes(file.type)) return "That file type isn't supported.";
+  if (!isAllowedUpload(file.type, file.name)) return "That file type isn't supported.";
   if (file.size > UPLOAD_MAX_BYTES) {
     return `File is too large (max ${Math.floor(UPLOAD_MAX_BYTES / 1024 / 1024)} MB).`;
   }
@@ -51,6 +51,12 @@ export function putWithProgress(
   });
 }
 
+/** Extra `MediaMeta` fields the caller knows but the file itself can't carry. */
+export interface UploadFileExtras {
+  /** Voice notes: the recorder's measured length (see `MediaMeta.durationSec`). */
+  durationSec?: number;
+}
+
 /**
  * Full client upload: validate → sign → PUT. Returns the `MediaMeta` to store on
  * the `Media` message. Throws on validation/sign/PUT failure (caller toasts).
@@ -59,20 +65,28 @@ export async function uploadFile(
   file: File,
   channelId: string,
   onProgress?: (fraction: number) => void,
+  extras?: UploadFileExtras,
 ): Promise<MediaMeta> {
   const err = validateFile(file);
   if (err) throw new Error(err);
+  // Browsers report an empty MIME for many source/code files. Normalize to a
+  // concrete generic type so the sign route's contentType guard AND the PUT
+  // Content-Type match both hold; it's served as an attachment (download chip).
+  const contentType = file.type || "application/octet-stream";
   const target = await signUploadApi({
     channelId,
     filename: file.name,
-    contentType: file.type,
+    contentType,
     size: file.size,
   });
   await putWithProgress(target.uploadUrl, target.headers, file, onProgress);
   return {
     objectPath: target.objectPath,
-    mediaType: file.type,
+    mediaType: contentType,
     originalName: file.name,
     size: file.size,
+    // Only voice notes pass a duration; omit the key entirely otherwise so a
+    // plain attachment's `data` JSON is unchanged.
+    ...(extras?.durationSec ? { durationSec: extras.durationSec } : {}),
   };
 }

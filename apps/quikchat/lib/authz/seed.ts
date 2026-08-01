@@ -20,6 +20,7 @@
  * Safe to call on every authenticated request: a 5-minute per-process/per-org
  * cache short-circuits repeat work.
  */
+import { mirrorAppRoleToCentral } from "@quikit/auth/assign-app-roles";
 import { db } from "@/lib/db";
 import { allPermissionPairs, type Action } from "./permissionsRegistry";
 import { getQuikChatAppId } from "./permissions";
@@ -358,6 +359,13 @@ export async function ensureUserRole(userId: string, orgId: string): Promise<voi
     await db.qcUserAppRole.create({
       data: { userId, orgId, roleId: role.id },
     });
+
+    // Highest-volume mirror seam: this bind runs on a user's first entry and is
+    // the most common way a QuikChat role is assigned. Keep central
+    // UserAppAccess.role in step with the role just bound so the Admin Portal is
+    // correct for the bulk of users (not just admin-UI role edits). Best-effort —
+    // a no-op when the user has no access row; the outer catch swallows the rest.
+    await mirrorAppRoleToCentral(db, { orgId, userId, appId, roleName });
   } catch {
     // Best-effort: a concurrent bind hits the unique constraint; anything else
     // retries next request. Never block a request on the seed-before-check.

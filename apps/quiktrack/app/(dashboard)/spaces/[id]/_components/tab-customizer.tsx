@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Check } from "lucide-react";
-import { PROJECT_TABS, enabledTabPaths } from "@/lib/projectTabs";
+import { enabledTabPaths, selectableTabs } from "@/lib/projectTabs";
 import { TAB_ICONS } from "./tab-icons";
 
 /**
@@ -13,15 +13,21 @@ import { TAB_ICONS } from "./tab-icons";
  */
 export function TabCustomizer({
   projectId,
+  templateKey,
   tabConfig,
   onSaved,
   onClose,
 }: {
   projectId: string;
+  templateKey?: string | null;
   tabConfig: string[] | null;
   onSaved: () => void;
   onClose: () => void;
 }) {
+  // Only offer tabs valid for this project's template — e.g. the discovery-only
+  // "Ideas" tab is hidden entirely on software/functional spaces (not shown as a
+  // disabled row).
+  const tabs = useMemo(() => selectableTabs(templateKey), [templateKey]);
   const [enabled, setEnabled] = useState<Set<string>>(
     () => new Set(enabledTabPaths(tabConfig)),
   );
@@ -46,7 +52,7 @@ export function TabCustomizer({
     setSaving(true);
     setError(null);
     // Persist in canonical tab order, not click order.
-    const ordered = PROJECT_TABS.filter((t) => enabled.has(t.path)).map((t) => t.path);
+    const ordered = tabs.filter((t) => enabled.has(t.path)).map((t) => t.path);
     try {
       const res = await fetch(`/api/projects/${projectId}`, {
         method: "PATCH",
@@ -72,7 +78,7 @@ export function TabCustomizer({
         <span className="text-xs font-semibold text-gray-900">Customize tabs</span>
         <button
           type="button"
-          onClick={() => setEnabled(new Set(PROJECT_TABS.map((t) => t.path)))}
+          onClick={() => setEnabled(new Set(tabs.map((t) => t.path)))}
           className="text-[11px] text-blue-600 hover:underline"
         >
           Show all
@@ -82,7 +88,7 @@ export function TabCustomizer({
         Choose which tabs appear in this project. Roles still control access.
       </p>
       <div className="max-h-72 overflow-y-auto py-1">
-        {PROJECT_TABS.map((t) => {
+        {tabs.map((t) => {
           const Icon = TAB_ICONS[t.path];
           const on = enabled.has(t.path);
           const lockLast = on && count <= 1;

@@ -19,6 +19,14 @@ export type FanoutEventType =
   | "message_update"
   | "reaction"
   | "channel_created"
+  // Group details changed (rename / description / avatar) — APP-PUBLISHED on
+  // PATCH /api/channels/[id]. Relayed to the channel room so members update the
+  // channel in place. Payload: { channelId, name?, description?, avatarUrl? }
+  | "channel_updated"
+  // Group deleted-for-everyone — APP-PUBLISHED on the admin delete route.
+  // Relayed to the channel room so members remove it live. Payload:
+  //   { channelId, memberIds?: string[] }
+  | "channel_deleted"
   | "system"
   | "read"
   // Per-member delivery watermark (S14a) — channel-room relayed like `read`.
@@ -27,6 +35,12 @@ export type FanoutEventType =
   | "notification"
   // Ephemeral, gateway-relayed (not app-published): emitted straight to rooms.
   | "presence"
+  // Durable set-status change (available|busy|dnd|brb|away|appear_offline).
+  // APP-PUBLISHED on write to /api/me/presence. Fans out like `channel_created`:
+  // the payload carries the author's channel ids and the gateway relays to each
+  // `channel:{orgId}:{id}` room. Payload:
+  //   { userId, status, statusMessage?, statusExpiresAt?: string, channelIds: string[] }
+  | "presence_status"
   | "typing";
 
 export interface FanoutEvent {
