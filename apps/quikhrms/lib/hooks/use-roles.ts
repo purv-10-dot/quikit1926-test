@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 
-export const ALL_ROLES = [
+const ALL_ROLES = [
   "admin",
   "employee",
 ] as const;
@@ -26,19 +26,19 @@ function readImpersonation(): Role[] | null {
   return valid.length ? valid : null;
 }
 
-export function primaryRole(roles: Role[]): Role {
+function primaryRole(roles: Role[]): Role {
   for (const r of PRIORITY) if (roles.includes(r)) return r;
   return "employee";
 }
 
-export function writeRoles(roles: Role[]) {
+function writeRoles(roles: Role[]) {
   if (typeof window === "undefined") return;
   localStorage.setItem(IMPERSONATE_KEY, roles.join(","));
   localStorage.setItem(STORAGE_KEY, roles.join(","));
   window.dispatchEvent(new Event("hrms:roles-changed"));
 }
 
-export function clearImpersonation() {
+function clearImpersonation() {
   if (typeof window === "undefined") return;
   localStorage.removeItem(IMPERSONATE_KEY);
   localStorage.removeItem(STORAGE_KEY);

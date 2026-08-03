@@ -17,7 +17,7 @@ import { hasAnyRole, type Role } from "@/lib/hooks/use-roles";
  */
 
 /** The visibility-relevant fields shared by every nav node. */
-export interface NavNodeMeta {
+interface NavNodeMeta {
   roles?: string[];
   perms?: string[];
   hideForSuperAdmin?: boolean;
@@ -43,7 +43,7 @@ function hasAnyPermission(permissions: string[], codes: string[] | undefined): b
 }
 
 /** Role/permission gate for a single node (mirrors the sidebar's `nodeVisible`). */
-export function nodeVisible(n: NavNodeMeta, ctx: NavAccessCtx): boolean {
+function nodeVisible(n: NavNodeMeta, ctx: NavAccessCtx): boolean {
   if (n.hideForSuperAdmin && ctx.isSuper) return false;
   if (ctx.isSuper) return true;
   if (n.perms && n.perms.length > 0) return hasAnyPermission(ctx.permissions, n.perms);
@@ -51,7 +51,7 @@ export function nodeVisible(n: NavNodeMeta, ctx: NavAccessCtx): boolean {
 }
 
 /** Navigation allow-list gate (mirrors the sidebar's `navAllowed`). */
-export function navAllowed(key: string | undefined, ctx: NavAccessCtx): boolean {
+function navAllowed(key: string | undefined, ctx: NavAccessCtx): boolean {
   const navSet = new Set(ctx.navKeys);
   const configured = !ctx.isSuper && navSet.size > 0;
   if (!configured || !key) return true;
@@ -62,7 +62,7 @@ export function navAllowed(key: string | undefined, ctx: NavAccessCtx): boolean 
 }
 
 /** Both gates together — what the sidebar uses to render a node. */
-export function isNodeVisible(n: NavNodeMeta, ctx: NavAccessCtx): boolean {
+function isNodeVisible(n: NavNodeMeta, ctx: NavAccessCtx): boolean {
   return nodeVisible(n, ctx) && navAllowed(n.navKey, ctx);
 }
 

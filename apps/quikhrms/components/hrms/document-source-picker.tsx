@@ -5,7 +5,7 @@ import { Upload, Link2, Cloud } from "lucide-react";
 import { clsx } from "clsx";
 import { FileUploadInput } from "@/components/hrms/file-upload-input";
 
-export interface SourceMeta {
+interface SourceMeta {
   fileUrl: string;
   fileType: string;
   fileSize: number;

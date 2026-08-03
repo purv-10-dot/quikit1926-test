@@ -44,23 +44,9 @@ function getBucketRef(): Bucket {
   return getClient().bucket(getBucket());
 }
 
-export function getBucket(): string {
+function getBucket(): string {
   if (!bucket) throw new Error("GCS_BUCKET is not set");
   return bucket;
-}
-
-const ALLOWED_IMAGE_TYPES = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/gif",
-  "image/webp",
-  "image/svg+xml",
-]);
-
-export const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8 MB
-
-export function isAllowedImageType(mime: string): boolean {
-  return ALLOWED_IMAGE_TYPES.has(mime);
 }
 
 /**
@@ -93,29 +79,6 @@ export async function getObject(key: string): Promise<{
     contentType: meta.contentType ?? "application/octet-stream",
     length: meta.size !== undefined ? Number(meta.size) : body.length,
   };
-}
-
-/**
- * 15-minute signed (V4) GET URL — long enough for a page render + caching.
- * When `downloadFileName` is set, the URL forces the browser to download
- * (GCS returns `Content-Disposition: attachment; filename="..."`).
- */
-export async function getPresignedGetUrl(
-  key: string,
-  expiresIn = 900,
-  downloadFileName?: string,
-): Promise<string> {
-  const [url] = await getBucketRef()
-    .file(key)
-    .getSignedUrl({
-      version: "v4",
-      action: "read",
-      expires: Date.now() + expiresIn * 1000,
-      ...(downloadFileName
-        ? { responseDisposition: `attachment; filename="${downloadFileName.replace(/"/g, "")}"` }
-        : {}),
-    });
-  return url;
 }
 
 /**

@@ -190,7 +190,7 @@ export const updatePIPSchema = z.object({
 
 const weight = z.number().min(0).max(100);
 
-export const kpiEntrySchema = z.object({
+const kpiEntrySchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().optional().nullable(),
   measurementMethod: z.string().max(500).optional().nullable(),
@@ -200,7 +200,7 @@ export const kpiEntrySchema = z.object({
   sortOrder: z.number().int().min(0).default(0),
 });
 
-export const kraEntrySchema = z.object({
+const kraEntrySchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().optional().nullable(),
   weight,
@@ -254,7 +254,7 @@ export const assignKraSchema = z.object({
 
 // Update progress for one or more KPIs on an assignment.
 // Keyed by KPI id (the KpiTemplateEntry.id frozen into the snapshot).
-export const kpiProgressEntrySchema = z.object({
+const kpiProgressEntrySchema = z.object({
   currentValue: z.string().max(200).optional().nullable(),
   score: z.number().min(0).max(5).optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
@@ -265,7 +265,3 @@ export const updateKraAssignmentProgressSchema = z.object({
 export const updateKraAssignmentStatusSchema = z.object({
   status: z.enum(["Active", "Completed", "Cancelled"]),
 });
-
-export type CreateKraScorecardInput = z.infer<typeof createKraScorecardSchema>;
-export type KraEntryInput = z.infer<typeof kraEntrySchema>;
-export type KpiEntryInput = z.infer<typeof kpiEntrySchema>;

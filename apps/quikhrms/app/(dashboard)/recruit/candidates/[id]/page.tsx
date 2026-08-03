@@ -259,7 +259,7 @@ function OverviewTab({ candidate: c, loading }: { candidate: Candidate | undefin
                 <h3 className="text-[13px] font-semibold">Screening — {a.requisition?.title ?? "—"}</h3>
               </div>
               {entries.length > 0 && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-2.5 mb-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-2.5 mb-3">
                   {entries.map(([k, v]) => (
                     <div key={k}>
                       <p className="text-[11px] text-gray-400">{SCREENING_LABELS[k] ?? k}</p>

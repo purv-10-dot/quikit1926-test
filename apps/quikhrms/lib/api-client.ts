@@ -77,7 +77,7 @@ export interface RequestOptions extends Omit<RequestInit, "body"> {
   timeoutMs?: number;
 }
 
-export class RequestTimeoutError extends Error {
+class RequestTimeoutError extends Error {
   constructor(public readonly timeoutMs: number) {
     super(`Request timed out after ${timeoutMs}ms`);
     this.name = "RequestTimeoutError";
@@ -172,7 +172,3 @@ export function abortAllInflight(): void {
   inflight.clear();
 }
 
-/** For tests / debugging. */
-export function inflightStats() {
-  return { activeRequests: active, queued: queue.length, dedupCacheSize: inflight.size };
-}

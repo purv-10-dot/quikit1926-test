@@ -97,11 +97,6 @@ export const offerSelect = {
 
 export type OfferFields = Prisma.JobApplicationGetPayload<{ select: typeof offerSelect }>;
 
-/** True when the application carries an offer. */
-export function hasOffer(app: Pick<OfferFields, "offerStatus">): boolean {
-  return app.offerStatus != null;
-}
-
 /**
  * Build the legacy OfferDetail-shaped object from a JobApplication's offer*
  * columns. Returns null when no offer exists. The offer `id` is the

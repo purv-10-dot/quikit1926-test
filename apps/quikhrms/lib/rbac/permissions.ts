@@ -58,6 +58,7 @@ export const PERMISSIONS: PermissionDef[] = [
   { code: "hrms.recruit.write", category: "Recruit", name: "Manage Recruitment", description: "Create/update requisitions, candidates" },
   { code: "hrms.recruit.offer", category: "Recruit", name: "Manage Offers", description: "Send/withdraw offers" },
   { code: "hrms.recruit.interview", category: "Recruit", name: "Manage Interviews", description: "Schedule and score interviews" },
+  { code: "hrms.recruit.approve", category: "Recruit", name: "Approve Requisitions", description: "Approve/reject raised requisitions" },
 
   // ── Performance ──
   { code: "hrms.performance.read", category: "Performance", name: "View Performance", description: "View goals, appraisals (all)" },
@@ -116,7 +117,7 @@ export const PERMISSIONS: PermissionDef[] = [
 ];
 
 export const PERMISSION_CODES = PERMISSIONS.map((p) => p.code);
-export type PermissionCode = (typeof PERMISSION_CODES)[number];
+type PermissionCode = (typeof PERMISSION_CODES)[number];
 
 // ── Default role → permission assignments ──
 

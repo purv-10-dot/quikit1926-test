@@ -18,11 +18,11 @@ export const ACTIONS = ["view", "create", "update", "delete"] as const;
 export type Action = (typeof ACTIONS)[number];
 
 /** Single cell in the matrix. `code` = wire code or null when not applicable. */
-export interface PermCell {
+interface PermCell {
   code: string | null;
 }
 
-export interface PermLeaf {
+interface PermLeaf {
   resource: string;        // unique key (matches stored RolePermission.resource)
   label: string;
   /** Maps each of view/create/update/delete to a permission code or null. */
@@ -110,6 +110,7 @@ export const PERMISSION_TREE: PermModule[] = [
       { resource: "Recruit", label: "Requisitions / Candidates", actions: { view: c("hrms.recruit.read"), create: c("hrms.recruit.write"), update: c("hrms.recruit.write"), delete: NO } },
       { resource: "Recruit.Interview", label: "Interviews", actions: { view: NO, create: c("hrms.recruit.interview"), update: c("hrms.recruit.interview"), delete: NO } },
       { resource: "Recruit.Offer", label: "Offers", actions: { view: NO, create: c("hrms.recruit.offer"), update: c("hrms.recruit.offer"), delete: NO } },
+      { resource: "Recruit.Approve", label: "Approve Requisitions", actions: { view: NO, create: NO, update: c("hrms.recruit.approve"), delete: NO } },
     ],
   },
   {
@@ -178,22 +179,8 @@ export const PERMISSION_TREE: PermModule[] = [
   },
 ];
 
-/** Flat list of every (resource, action, code) cell. */
-export function walkCells() {
-  const out: { module: string; leafLabel: string; resource: string; action: Action; code: string }[] = [];
-  for (const m of PERMISSION_TREE) {
-    for (const leaf of m.leaves) {
-      for (const a of ACTIONS) {
-        const cell = leaf.actions[a];
-        if (cell.code) out.push({ module: m.label, leafLabel: leaf.label, resource: leaf.resource, action: a, code: cell.code });
-      }
-    }
-  }
-  return out;
-}
-
 /** Sidebar navigation keys grouped by module — for Navigation tab. */
-export interface NavItem {
+interface NavItem {
   key: string;
   label: string;
 }
