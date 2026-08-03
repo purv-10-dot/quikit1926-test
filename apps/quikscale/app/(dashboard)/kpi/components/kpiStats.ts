@@ -284,7 +284,8 @@ export function computeKpiOverviewStats(
   let atRisk = 0;
   let behind = 0;
   let overAchieved = 0;
-  let pctSum = 0;
+  let achievedSum = 0;
+  let goalSum = 0;
   let entered = 0;
 
   for (const kpi of kpis) {
@@ -301,7 +302,7 @@ export function computeKpiOverviewStats(
     else if (bg === "bg-red-600") behind += 1;
   }
 
-  const avg = entered > 0 ? Math.round(pctSum / entered) : 0;
+  const avg = goalSum > 0 ? Math.round((achievedSum / goalSum) * 100) : 0;
   return { avg, onTrack, atRisk, behind, overAchieved };
 }
 

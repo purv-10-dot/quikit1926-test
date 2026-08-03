@@ -1476,13 +1476,17 @@ export default function DashboardPage() {
       const team = teams.find((t) => t.id === teamTabTeamId);
       if (team) parts.push(`Team: ${team.name}`);
     }
-    if (teamTabOwnerId) {
-      const owner = ownerOptions.find((u) => u.id === teamTabOwnerId);
-      const ownerName = owner ? `${owner.firstName} ${owner.lastName}` : selectedOwnerOption?.label;
-      if (ownerName) parts.push(`Owner: ${ownerName}`);
+    if (teamTabOwnerIds.length > 0) {
+      const ownerNames = teamTabOwnerIds.map((id) => {
+        const owner = ownerOptions.find((u) => u.id === id);
+        if (owner) return `${owner.firstName} ${owner.lastName}`;
+        return selectedOwnerOptions.find((o) => o.value === id)?.label;
+      });
+      const resolved = ownerNames.filter((n): n is string => Boolean(n));
+      if (resolved.length) parts.push(`Owner: ${resolved.join(", ")}`);
     }
     return parts.join(" · ");
-  }, [teamTabTeamId, teamTabOwnerId, teams, ownerOptions, selectedOwnerOption]);
+  }, [teamTabTeamId, teamTabOwnerIds, teams, ownerOptions, selectedOwnerOptions]);
 
   // Sort handlers — the tables call these with the backend sort key + dir.
   // Toggling the same column to the same direction again is a no-op for the
