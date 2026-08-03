@@ -15,6 +15,7 @@ import {
   deleteMessageApi,
   editMessageApi,
   fetchChannelDetail,
+  fetchChannelLastSeen,
   ingestDocument,
   fetchMembers,
   fetchPinned,
@@ -209,6 +210,23 @@ export function ConversationView({
     queryFn: () => fetchMembers(channelId),
     enabled: infoOpen,
   });
+
+  // DM last-seen (header sub-line). Fetched ONLY for a real DM whose peer is
+  // currently offline: an online peer reads "Active now" regardless, and groups /
+  // AI chats have no single peer. The query re-enables on its own when presence
+  // flips the peer offline. Privacy is resolved server-side — this is just a
+  // string or null.
+  const dmPeerId =
+    channel.type === "dm"
+      ? channel.members.find((m) => m.id !== currentUserId)?.id
+      : undefined;
+  const dmPeerOnline = dmPeerId ? !!online?.has(dmPeerId) : false;
+  const lastSeenQuery = useQuery({
+    queryKey: ["last-seen", channelId],
+    queryFn: () => fetchChannelLastSeen(channelId),
+    enabled: !!dmPeerId && !dmPeerOnline,
+    staleTime: 60_000,
+  });
   const detailQuery = useQuery({
     queryKey: ["channel-detail", channelId],
     queryFn: () => fetchChannelDetail(channelId),
@@ -310,6 +328,7 @@ export function ConversationView({
           online={online}
           statusOf={statusOf}
           currentUserId={currentUserId}
+          lastSeen={lastSeenQuery.data?.lastSeen ?? null}
           onToggleInfo={() => setInfoOpen((v) => !v)}
           onSchedule={isAiChat ? undefined : () => setScheduleSeed(channel.members.map((m) => m.id))}
           onCall={isAiChat ? undefined : onCall}

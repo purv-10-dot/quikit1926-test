@@ -22729,6 +22729,10 @@ model QcUserPresence {
   // is LAZY read-time: any read past this treats the status as `available`; there
   // is no sweeper/background job (expiry needs no active event, only correct reads).
   statusExpiresAt DateTime?
+  // Last-seen visibility, WhatsApp-style MUTUAL: a viewer sees this user's last
+  // seen only when BOTH sides have it true (see presence.service.ts
+  // #getEffectiveLastSeen). Default on; `appear_offline` overrides it outright.
+  shareLastSeen Boolean   @default(true)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
