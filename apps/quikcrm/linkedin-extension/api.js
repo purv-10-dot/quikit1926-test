@@ -6,10 +6,10 @@
 // const API_BASE_URL = 'http://localhost:3008';
 
 // UAT
-const API_BASE_URL = 'https://uatcrm.quikit.ai';
+// const API_BASE_URL = 'https://uatcrm.quikit.ai';
 
 // Production
-// const API_BASE_URL = 'https://crm.quikit.ai';
+const API_BASE_URL = 'https://crm.quikit.ai';
 
 // Storage keys
 const STORAGE_KEY_TOKEN = 'authToken';

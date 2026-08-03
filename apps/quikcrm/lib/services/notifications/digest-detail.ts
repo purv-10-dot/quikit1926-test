@@ -26,6 +26,23 @@
  *              the opportunity's account name.
  *   Tasks    : CrmTask status=Completed, completedAt in window. Related record
  *              via the shared resolveRelatedLabels resolver.
+ *   Everything else : ALL remaining CrmActivity rows in the window, grouped by
+ *              their `type` label into one dynamic section each (otherSections).
+ *
+ * ─── Dynamic activity types (no hardcoded list) ───────────────────────────────
+ * The four sections above stay specialized because they join extra tables for
+ * columns that only they have (call duration, email reply derivation, meeting
+ * outcome). EVERY OTHER activity type is discovered from the data itself: we
+ * query all activities in the window that are not one of those, then group by
+ * `CrmActivity.type`.
+ *
+ * `type` holds the Activity Type LABEL — the log form posts `selectedType.label`
+ * — which is the same string the Activities page displays. So a type an admin
+ * creates in Settings → Activity Types ("Bidding", "Client Interviews", …)
+ * appears in the digest with NO code change. Section ORDER follows the org's
+ * CrmActivityType.sortOrder so the email matches the settings screen; a type
+ * present in the data but missing from the config still renders (sorted last)
+ * rather than being silently dropped.
  *
  * Per-section rows are capped (MAX_ROWS_PER_SECTION) with an honest overflow
  * count so a heavy day cannot produce an unbounded email.
@@ -69,6 +86,31 @@ export interface TaskDetail {
   status: string;
 }
 
+/**
+ * One row of a DYNAMIC (non-specialized) activity-type section. Every activity
+ * type that isn't one of the four rich sections above renders through this
+ * shape, using only columns that exist on CrmActivity itself — so a brand-new
+ * custom type works with no code change.
+ */
+export interface GenericActivityDetail {
+  time: Date | null;
+  relatedRecord: string;
+  subject: string;
+  outcome: string;
+  notes: string;
+}
+
+/**
+ * A dynamically-discovered activity-type section for one user. `typeLabel` is
+ * the raw CrmActivity.type value, which is exactly the Activity Type label the
+ * Activities page shows (the log form stores `selectedType.label`).
+ */
+export interface GenericActivitySection {
+  typeLabel: string;
+  rows: GenericActivityDetail[];
+  total: number;
+}
+
 export interface UserActivityDetail {
   userId: string;
   userName: string;
@@ -80,6 +122,18 @@ export interface UserActivityDetail {
   meetingsTotal: number;
   tasks: TaskDetail[];
   tasksTotal: number;
+  /**
+   * Every OTHER activity type this user logged in the window, one section per
+   * type, ordered by the org's configured Activity Type sortOrder. Empty when
+   * the user logged nothing outside the four specialized sections.
+   *
+   * Always set by assembleUserActivityDetail. The email renderer still reads
+   * this and `otherTotal` defensively, so a hand-built object that omits them
+   * degrades to "no dynamic sections" instead of throwing.
+   */
+  otherSections: GenericActivitySection[];
+  /** Sum of `total` across otherSections — counted in Total Activities. */
+  otherTotal: number;
 }
 
 type Range = { from: Date; to: Date };
@@ -132,6 +186,112 @@ async function resolveScopedReps(
 function ownerFilter(userIds: string[] | null): Record<string, unknown> {
   // Administrator (null) → no ownerId restriction (org-wide).
   return userIds === null ? {} : { ownerId: { in: userIds } };
+}
+
+/**
+ * CrmActivity.type values already rendered by a SPECIALIZED section, which the
+ * dynamic pass must therefore skip to avoid double-counting.
+ *
+ * Matching is case-insensitive because writers are inconsistent: the log form
+ * stores the type LABEL ("Call", "Meeting"), the email sync stores lowercase
+ * "email", and the opportunity client-meeting route stores
+ * "OpportunityClientMeeting".
+ *
+ * NOTE: "Task" is deliberately NOT here. Task activities are a different record
+ * (CrmTask, counted by completedAt), so a CrmActivity of type "Task" is not the
+ * same row as a completed task and must still surface somewhere.
+ */
+const SPECIALIZED_TYPES = new Set(["call", "email", "meeting", "opportunityclientmeeting"]);
+
+/**
+ * The concrete `type` strings the specialized writers actually store, used as a
+ * coarse `NOT in` filter in SQL. Prisma's `in` is case-sensitive, so this lists
+ * the real casings; `isSpecializedType` then re-checks case-insensitively in JS
+ * to catch any casing this list misses.
+ */
+const SPECIALIZED_TYPES_QUERY = [
+  "Call",
+  "call",
+  "Email",
+  "email",
+  "Meeting",
+  "meeting",
+  "OpportunityClientMeeting",
+] as const;
+
+function isSpecializedType(type: string): boolean {
+  return SPECIALIZED_TYPES.has(type.trim().toLowerCase());
+}
+
+/**
+ * Order the dynamic sections the way Settings → Activity Types is ordered, so
+ * the digest stays visually in sync with the settings screen. Types the org has
+ * configured come first (by sortOrder, then label); any type present in the data
+ * but absent from the config (legacy rows, renamed types, imports) sorts last
+ * alphabetically rather than being dropped.
+ *
+ * Also returns `activeLabels` — every ACTIVE non-specialized type label in
+ * configured order. The Team Member Summary renders a row for each of these even
+ * when the user logged none, so leadership sees the full activity menu (a 0 is
+ * information: "nobody did any demos today"). See padWithConfiguredTypes.
+ */
+async function activityTypeOrder(orgId: string): Promise<{
+  rankOf: (label: string) => number;
+  activeLabels: string[];
+}> {
+  const types = await prisma.crmActivityType.findMany({
+    where: { orgId, isActive: true },
+    select: { label: true, sortOrder: true },
+    orderBy: [{ sortOrder: "asc" }, { label: "asc" }],
+  });
+  const rankByLabel = new Map<string, number>();
+  // Ordering is a presentation nicety: if the type config can't be read, fall
+  // back to alphabetical rather than losing the sections entirely.
+  (types ?? []).forEach((t, i) => {
+    const k = t.label.trim().toLowerCase();
+    if (!rankByLabel.has(k)) rankByLabel.set(k, i);
+  });
+  // The four specialized sections are always rendered on their own, so a
+  // configured "Call"/"Email"/"Meeting" type must not also become a zero-count
+  // dynamic row (it would read as a duplicate).
+  const seen = new Set<string>();
+  const activeLabels: string[] = [];
+  for (const t of types ?? []) {
+    const label = t.label.trim();
+    if (!label || isSpecializedType(label)) continue;
+    const k = label.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    activeLabels.push(label);
+  }
+  return {
+    rankOf: (label: string) => rankByLabel.get(label.trim().toLowerCase()) ?? Number.MAX_SAFE_INTEGER,
+    activeLabels,
+  };
+}
+
+/**
+ * Ensure every ACTIVE configured activity type has a section on the user, adding
+ * `{ total: 0, rows: [] }` placeholders for the ones they didn't log.
+ *
+ * This is what lets the Team Member Summary list the full type menu. The DETAIL
+ * band filters these back out (see digest-email renderUserBlock) so no empty
+ * "Demo (0) / No Demo" section is rendered — the two bands intentionally show
+ * different slices of the SAME list, so their labels can never disagree.
+ *
+ * Zero-count placeholders carry no rows, so they add nothing to otherTotal.
+ */
+function padWithConfiguredTypes(
+  sections: GenericActivitySection[],
+  activeLabels: string[],
+): GenericActivitySection[] {
+  const present = new Set(sections.map((s) => s.typeLabel.trim().toLowerCase()));
+  const padded = [...sections];
+  for (const label of activeLabels) {
+    if (present.has(label.trim().toLowerCase())) continue;
+    padded.push({ typeLabel: label, rows: [], total: 0 });
+  }
+  return padded;
 }
 
 function durationLabel(durationSec: number | null | undefined): string {
@@ -304,6 +464,37 @@ export async function assembleUserActivityDetail(
       .map((t) => ({ relatedKind: t.relatedKind as string, relatedObjectId: t.relatedObjectId as string })),
   );
 
+  // ── Every OTHER activity type (dynamic — no hardcoded list) ──────────────────
+  // One query for all activities in the window that are NOT handled by a
+  // specialized section above. We do not enumerate type names: whatever types
+  // exist in the data appear here, so a custom type created in Settings →
+  // Activity Types shows up with zero code changes.
+  const otherActivities = await prisma.crmActivity.findMany({
+    where: {
+      ...windowWhere,
+      ...owner,
+      NOT: { type: { in: [...SPECIALIZED_TYPES_QUERY] } },
+    },
+    select: {
+      ownerId: true,
+      type: true,
+      occurredAt: true,
+      subject: true,
+      outcome: true,
+      detailNotes: true,
+      relatedKind: true,
+      relatedObjectId: true,
+      relatedOrphanedAt: true,
+    },
+    orderBy: { occurredAt: "asc" },
+  });
+  // The DB `NOT in` above is a coarse filter (exact strings). Apply the
+  // case-insensitive guard in JS so e.g. "EMAIL" or "call" can never slip
+  // through into a duplicate generic section.
+  const genericActivities = (otherActivities ?? []).filter((a) => !isSpecializedType(a.type));
+  const genericLabels = await resolveRelatedLabels(orgId, genericActivities);
+  const { rankOf: rankOfType, activeLabels } = await activityTypeOrder(orgId);
+
   // ── Fold everything into per-user buckets ────────────────────────────────────
   const byUser = new Map<string, UserActivityDetail>();
   const ensure = (uid: string | null | undefined): UserActivityDetail | null => {
@@ -321,6 +512,8 @@ export async function assembleUserActivityDetail(
         meetingsTotal: 0,
         tasks: [],
         tasksTotal: 0,
+        otherSections: [],
+        otherTotal: 0,
       };
       byUser.set(uid, u);
     }
@@ -400,10 +593,58 @@ export async function assembleUserActivityDetail(
     });
   }
 
+  // Dynamic sections: bucket per (user → type label). The section list is built
+  // from the DATA, so any activity type — default or custom — lands here.
+  const sectionsByUser = new Map<string, Map<string, GenericActivitySection>>();
+  for (const a of genericActivities) {
+    const u = ensure(a.ownerId);
+    if (!u) continue;
+    const label = a.type.trim() || "Other";
+    let perType = sectionsByUser.get(u.userId);
+    if (!perType) {
+      perType = new Map<string, GenericActivitySection>();
+      sectionsByUser.set(u.userId, perType);
+    }
+    // Group case-insensitively so "Bidding" and "bidding" are one section, and
+    // display the first casing we encountered.
+    const key = label.toLowerCase();
+    let section = perType.get(key);
+    if (!section) {
+      section = { typeLabel: label, rows: [], total: 0 };
+      perType.set(key, section);
+    }
+    section.total += 1;
+    u.otherTotal += 1;
+    if (section.rows.length >= MAX_ROWS_PER_SECTION) continue;
+    section.rows.push({
+      time: a.occurredAt,
+      relatedRecord: genericLabels.get(rowKey(a)) ?? "—",
+      subject: a.subject || "—",
+      outcome: a.outcome || "—",
+      notes: a.detailNotes || "—",
+    });
+  }
+
+  // Attach each user's sections in Settings → Activity Types order.
+  //
+  // Iterate EVERY user (not just those in sectionsByUser): a rep who logged only
+  // calls still needs the zero-count placeholders so their Team Member Summary
+  // lists the full active-type menu.
+  for (const u of byUser.values()) {
+    const perType = sectionsByUser.get(u.userId);
+    const logged = perType ? [...perType.values()] : [];
+    u.otherSections = padWithConfiguredTypes(logged, activeLabels).sort((a, b) => {
+      const ra = rankOfType(a.typeLabel);
+      const rb = rankOfType(b.typeLabel);
+      if (ra !== rb) return ra - rb;
+      return a.typeLabel.localeCompare(b.typeLabel);
+    });
+  }
+
   // Sort users by total activity (busiest first), then by name for stability.
   return [...byUser.values()].sort((a, b) => {
-    const ta = a.callsTotal + a.emailsTotal + a.meetingsTotal + a.tasksTotal;
-    const tb = b.callsTotal + b.emailsTotal + b.meetingsTotal + b.tasksTotal;
+    const ta = a.callsTotal + a.emailsTotal + a.meetingsTotal + a.tasksTotal + a.otherTotal;
+    const tb = b.callsTotal + b.emailsTotal + b.meetingsTotal + b.tasksTotal + b.otherTotal;
     if (tb !== ta) return tb - ta;
     return a.userName.localeCompare(b.userName);
   });
