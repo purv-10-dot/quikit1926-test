@@ -109,6 +109,20 @@ describe("mergeMessageEvent", () => {
     expect(out).toHaveLength(1);
     expect(out[0]!.id).toBe("real-1");
   });
+
+  it("dedupes stale optimistic and server rows that share the same logical message", () => {
+    const list = [
+      msg({ id: "temp-1", senderId: "me", content: "draft", clientMessageId: "c1" }),
+      msg({ id: "real-1", senderId: "me", content: "final", clientMessageId: "c1" }),
+    ];
+    const out = mergeMessageEvent(
+      list,
+      msg({ id: "real-1", senderId: "me", content: "final", clientMessageId: "c1" }),
+      "me",
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0]!.id).toBe("real-1");
+  });
 });
 
 describe("patchMessageEvent", () => {
