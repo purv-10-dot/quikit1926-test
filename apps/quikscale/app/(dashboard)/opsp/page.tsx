@@ -36,6 +36,7 @@ import { EditNoteCard } from "./components/EditNoteCard";
 import { OPSPHistoryDrawer } from "./components/OPSPHistoryDrawer";
 import { SyncConfirmationModal } from "./components/SyncConfirmationModal";
 import { PostFinalizeChangesBanner } from "./components/PostFinalizeChangesBanner";
+import { FinalizeStatusBanner } from "./components/FinalizeStatusBanner";
 import { describeSetChange, describeArrChange, getFieldValue, applyFieldPath, isRowDeletionField, type PendingEdit } from "./lib/editLog";
 import { isYearSelectable, isQuarterSelectable, firstSelectableQuarter } from "./lib/periodGating";
 import { useOpspAck } from "@/lib/hooks/useOpspAck";
@@ -1019,37 +1020,25 @@ export default function OPSPPage() {
          - Finalized but the user can edit (`isFinalized && !isLocked`): amber
            "you have permission to edit". */}
       {reviewLockBanner && (
-        <div className="mx-6 mt-6 flex items-center gap-3 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl">
-          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
-            <Check className="h-4 w-4 text-blue-600" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-blue-800">OPSP Review submitted — editing locked</p>
-            <p className="text-xs text-blue-600">This OPSP&apos;s review has been finalized, so the OPSP can no longer be edited.</p>
-          </div>
-        </div>
+        <FinalizeStatusBanner
+          tone="blue"
+          title="OPSP Review submitted — editing locked"
+          subtitle="This OPSP's review has been finalized, so the OPSP can no longer be edited."
+        />
       )}
       {isAdmin && isFinalized && isLocked && !reviewLockBanner && (
-        <div className="mx-6 mt-6 flex items-center gap-3 px-4 py-3 bg-green-50 border border-green-200 rounded-xl">
-          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
-            <Check className="h-4 w-4 text-green-600" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-green-800">OPSP Finalized</p>
-            <p className="text-xs text-green-600">This OPSP has been finalized and is now read-only. All data is locked.</p>
-          </div>
-        </div>
+        <FinalizeStatusBanner
+          tone="green"
+          title="OPSP Finalized"
+          subtitle="This OPSP has been finalized and is now read-only. All data is locked."
+        />
       )}
       {isFinalized && !isLocked && (
-        <div className="mx-6 mt-6 flex items-center gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl">
-          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center">
-            <Check className="h-4 w-4 text-amber-600" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-amber-800">OPSP Finalized — Editing enabled</p>
-            <p className="text-xs text-amber-600">You have permission to edit this finalized OPSP. Changes will be autosaved.</p>
-          </div>
-        </div>
+        <FinalizeStatusBanner
+          tone="amber"
+          title="OPSP Finalized — Editing enabled"
+          subtitle="You have permission to edit this finalized OPSP. Changes will be autosaved."
+        />
       )}
 
       {/* ── "Edited after finalize" notice ──

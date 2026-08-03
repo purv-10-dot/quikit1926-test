@@ -579,18 +579,39 @@ function KPICard({ kpi, currentWeek, weekCount = 13, numberFormat = "standard" }
   // colors (text-blue-700 etc.) instead of the text-on-color text-white
   // tones — so the percentage label is visible on the white card.
   //
-  // The card shows OVERALL quarterly progress: QTD Achieved / Quarterly Goal
-  // (e.g. 33.2K / 150K = 22%) — the SAME basis as the Individual-KPI table's
-  // Progress column and the Stats modal's "Overall Progress" headline. (It used
-  // to divide by the to-date QTD goal — 33.2K / 125.2K = 27% — which made the
-  // card disagree with the table and the Stats headline.) Standalone KPIs are
-  // unchanged: resolveProgressOverall re-derives their per-week average against
-  // the constant quarterly target, exactly as before.
+  // The card's headline figure (achieved / goal text + the "Overall" bar) is
+  // QTD Achieved / Quarterly Goal (e.g. 33.2K / 150K = 22%) — the SAME basis
+  // as the Individual-KPI table's Progress column and the Stats modal's
+  // "Overall Progress" headline. Standalone KPIs are unchanged:
+  // resolveProgressOverall re-derives their per-week average against the
+  // constant quarterly target, exactly as before.
   const { achieved, goal } = resolveProgressOverall(kpi, currentWeek, weekCount);
   const pct = goal > 0 ? (achieved / goal) * 100 : 0;
   const hasAnyWeeklyValue = (kpi.weeklyValues ?? []).some((wv) => wv.value != null);
   const badge = kpi.qtdAchieved != null
     ? getProgressBadgeColors(achieved, goal, hasAnyWeeklyValue, kpi.reverseColor ?? false)
+    : { bar: "bg-gray-300", text: "text-gray-500", label: "—" };
+
+  // Second bar — pace vs to-date. `resolveProgressQtd` gives the to-date goal
+  // (Σ targets through last week, NOT the full quarterly goal) and the
+  // to-date achieved value. This is the SAME pair `computeKpiOverviewStats`
+  // uses to bucket cards into onTrack/atRisk/behind for the AvgKPICard pill
+  // above — surfacing it here lets the card's own color agree with that
+  // pill instead of only showing the Overall (quarterly) ratio.
+  const qtd = resolveProgressQtd(kpi, currentWeek, weekCount);
+  const qtdGoal = qtd.goal;
+  // Bar 1: QTD Goal / Quarterly Goal — how much of the full quarterly target
+  // is "due" by now. Color-coded with the same red/yellow/green/blue scale as
+  // Bar 2 (treated as always "updated" since it's a derived pacing number,
+  // not a user-entered value, and never reverse-scored — pacing is a
+  // time-based fact, not a KPI performance direction).
+  const qtdGoalVsQuarterlyPct = goal > 0 ? (qtdGoal / goal) * 100 : 0;
+  const paceBadge = getProgressBadgeColors(qtdGoal, goal, true, false);
+  // Bar 2: QTD Achieved / QTD Goal — actual performance against where the
+  // KPI should be *right now*, not against the full quarter.
+  const qtdAchievedVsQtdGoalPct = qtdGoal > 0 ? (qtd.achieved / qtdGoal) * 100 : 0;
+  const qtdBadge = kpi.qtdAchieved != null
+    ? getProgressBadgeColors(qtd.achieved, qtdGoal, hasAnyWeeklyValue, kpi.reverseColor ?? false)
     : { bar: "bg-gray-300", text: "text-gray-500", label: "—" };
   // Currency KPIs with a scale render their value in that unit (₹4 Cr / $9 M);
   // non-currency stays plain compact, toggle-driven. Display-only.
@@ -605,25 +626,39 @@ function KPICard({ kpi, currentWeek, weekCount = 13, numberFormat = "standard" }
     });
   const [historyOpen, setHistoryOpen] = useState(false);
   return (
-    <div className="group relative bg-white border border-gray-200 rounded-xl px-4 py-3 hover:shadow-sm transition-shadow">
-      <div className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100">
+    <div className="group relative bg-white border border-gray-200 rounded-xl px-5 py-4 hover:shadow-md transition-shadow">
+      <div className="absolute right-2.5 top-2.5 opacity-0 transition-opacity group-hover:opacity-100">
         <HistoryButton entityId={kpi.id} onClick={() => setHistoryOpen(true)} />
       </div>
-      <p className="text-[11px] text-gray-500 font-medium truncate mb-1.5 pr-6" title={kpi.name}>{kpi.name}</p>
+      <p className="text-xs text-gray-500 font-medium truncate mb-2 pr-6" title={kpi.name}>{kpi.name}</p>
       <div
-        className="flex items-baseline gap-1 mb-2"
+        className="flex items-baseline gap-1.5 mb-3"
         title="QTD Achieved / Quarterly Goal"
       >
-        <span className="text-base font-bold text-gray-800">{fmtKpiVal(kpi, achieved)}</span>
+        <span className="text-lg font-bold text-gray-800">{fmtKpiVal(kpi, achieved)}</span>
         <span className="text-xs text-gray-400">/ {fmtKpiVal(kpi, goal)}</span>
+        <span className={`text-[11px] font-semibold ${badge.text}`}>({pct.toFixed(0)}%)</span>
       </div>
-      <div className="flex items-center gap-2">
-        <span className={`text-xs font-semibold ${badge.text}`}>{pct.toFixed(0)}%</span>
-        <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+      {/* Bar 1 — QTD Goal / Quarterly Goal: how much of the full quarterly
+          target is due by now. Color-coded the same way as Bar 2. */}
+      <div className="flex items-center gap-2 mb-1.5" title="QTD Goal / Quarterly Goal">
+        <span className="text-[10px] font-medium text-gray-400 w-9 flex-shrink-0">Pace</span>
+        <span className={`text-xs font-semibold ${paceBadge.text}`}>{qtdGoalVsQuarterlyPct.toFixed(0)}%</span>
+        <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+          <div className={`h-2 rounded-full ${paceBadge.bar}`} style={{ width: `${Math.min(qtdGoalVsQuarterlyPct, 100)}%` }} />
+        </div>
+      </div>
+      {/* Bar 2 — QTD Achieved / QTD Goal: actual performance vs. where the
+          KPI should be right now. Color-coded, same basis as the
+          on-track/at-risk/behind buckets in the AvgKPICard pill above. */}
+      <div className="flex items-center gap-2" title="QTD Achieved / QTD Goal">
+        <span className="text-[10px] font-medium text-gray-400 w-9 flex-shrink-0">QTD</span>
+        <span className={`text-xs font-semibold ${qtdBadge.text}`}>{qtdAchievedVsQtdGoalPct.toFixed(0)}%</span>
+        <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
           {/* Bar width still clamps at 100% (container width). The color
               band already signals over-achievement; the text shows the
               true percentage. */}
-          <div className={`h-1.5 rounded-full ${badge.bar}`} style={{ width: `${Math.min(pct, 100)}%` }} />
+          <div className={`h-2 rounded-full ${qtdBadge.bar}`} style={{ width: `${Math.min(qtdAchievedVsQtdGoalPct, 100)}%` }} />
         </div>
       </div>
       {historyOpen && <ChangeHistoryPanel kpi={kpi} onClose={() => setHistoryOpen(false)} />}
@@ -1430,6 +1465,25 @@ export default function DashboardPage() {
       .filter((o): o is NonNullable<typeof o> => Boolean(o));
   }, [teamTabOwnerIds, teamMembersForScope, kpiRows, priRows, wwwRows]);
 
+  // Active filter label — surfaces the selected Team + Owner *names* (not just
+  // a "N filters" count) so users can tell at a glance which scope they're
+  // looking at. Owner name resolution mirrors `selectedOwnerOption` above:
+  // prefer the loaded `ownerOptions` page, else fall back to whatever name we
+  // could resolve from currently-loaded rows.
+  const activeFilterLabel = useMemo(() => {
+    const parts: string[] = [];
+    if (teamTabTeamId) {
+      const team = teams.find((t) => t.id === teamTabTeamId);
+      if (team) parts.push(`Team: ${team.name}`);
+    }
+    if (teamTabOwnerId) {
+      const owner = ownerOptions.find((u) => u.id === teamTabOwnerId);
+      const ownerName = owner ? `${owner.firstName} ${owner.lastName}` : selectedOwnerOption?.label;
+      if (ownerName) parts.push(`Owner: ${ownerName}`);
+    }
+    return parts.join(" · ");
+  }, [teamTabTeamId, teamTabOwnerId, teams, ownerOptions, selectedOwnerOption]);
+
   // Sort handlers — the tables call these with the backend sort key + dir.
   // Toggling the same column to the same direction again is a no-op for the
   // user; clearing (col "") resets to the endpoint's default order.
@@ -1572,10 +1626,14 @@ export default function DashboardPage() {
                 onClick={() => setShowFilter(o => !o)}
                 className={`flex items-center gap-1 px-2.5 py-1.5 text-xs border rounded-md hover:bg-gray-50 transition-colors ${showFilter || teamFilterCount > 0 ? "border-accent-300 bg-accent-50 text-accent-600" : "border-gray-200 text-gray-600"}`}
               >
-                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
                 </svg>
-                {teamFilterCount > 0 ? `${teamFilterCount} filter${teamFilterCount > 1 ? "s" : ""}` : "Filter"}
+                {teamFilterCount > 0 ? (
+                  <span className="max-w-[220px] truncate" title={activeFilterLabel}>{activeFilterLabel}</span>
+                ) : (
+                  "Filter"
+                )}
               </button>
 
               {showFilter && (
@@ -1703,15 +1761,16 @@ export default function DashboardPage() {
                 is clipped so a long card set never produces a horizontal
                 scrollbar; pr-1 keeps the vertical scrollbar off the cards. */}
             <div
-              className="grid gap-3 pt-3 overflow-y-auto overflow-x-hidden pr-1"
-              style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", maxHeight: 420 }}
+              className="grid gap-4 pt-3 overflow-y-auto overflow-x-hidden pr-1"
+              style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", maxHeight: 480 }}
             >
               {kpisLoading
                 ? [1, 2, 3, 4].map(i => (
-                    <div key={i} className="bg-white border border-gray-200 rounded-xl px-4 py-3 animate-pulse">
+                    <div key={i} className="bg-white border border-gray-200 rounded-xl px-5 py-4 animate-pulse">
                       <div className="h-2 bg-gray-100 rounded w-3/4 mb-3" />
-                      <div className="h-4 bg-gray-100 rounded w-1/2 mb-2" />
-                      <div className="h-1.5 bg-gray-100 rounded w-full" />
+                      <div className="h-5 bg-gray-100 rounded w-1/2 mb-3" />
+                      <div className="h-2 bg-gray-100 rounded w-full mb-2" />
+                      <div className="h-2 bg-gray-100 rounded w-full" />
                     </div>
                   ))
                 : (
