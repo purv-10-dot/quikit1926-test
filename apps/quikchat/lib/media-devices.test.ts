@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cameraConstraint,
   DEVICE_STORAGE_KEY,
+  deviceErrorMessage,
   enumerateDevices,
   getSelectedDevices,
   isDeviceUnavailableError,
@@ -141,7 +142,7 @@ describe("requestDeviceLabels", () => {
     const track = { stop: vi.fn() };
     getUserMedia.mockResolvedValue({ getTracks: () => [track] });
 
-    await expect(requestDeviceLabels("mic")).resolves.toBe(true);
+    await expect(requestDeviceLabels("mic")).resolves.toEqual({ ok: true });
     expect(getUserMedia).toHaveBeenCalledWith({ audio: true });
     // We only wanted the permission — never hold the device open.
     expect(track.stop).toHaveBeenCalledTimes(1);
@@ -155,9 +156,57 @@ describe("requestDeviceLabels", () => {
     expect(track.stop).toHaveBeenCalledTimes(1);
   });
 
-  it("returns false when the user denies", async () => {
-    getUserMedia.mockRejectedValue(new Error("denied"));
-    await expect(requestDeviceLabels("mic")).resolves.toBe(false);
+  it("reports WHY it failed instead of a bare false", async () => {
+    const denied = new Error("Permission denied");
+    denied.name = "NotAllowedError";
+    getUserMedia.mockRejectedValue(denied);
+
+    // The old boolean made denied/missing/busy indistinguishable from success.
+    await expect(requestDeviceLabels("mic")).resolves.toEqual({
+      ok: false,
+      error: "Microphone access was blocked. Allow it in your browser settings to choose a microphone.",
+    });
+  });
+
+  it("reports camera wording for a camera failure", async () => {
+    const denied = new Error("Permission denied");
+    denied.name = "NotAllowedError";
+    getUserMedia.mockRejectedValue(denied);
+
+    await expect(requestDeviceLabels("camera")).resolves.toEqual({
+      ok: false,
+      error: "Camera access was blocked. Allow it in your browser settings to choose a camera.",
+    });
+  });
+
+  it("reports a reason on a browser with no mediaDevices", async () => {
+    removeMediaDevices();
+    const result = await requestDeviceLabels("mic");
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.error).toMatch(/can't access audio or video devices/);
+  });
+});
+
+describe("deviceErrorMessage", () => {
+  const mk = (name: string, message = "boom") => Object.assign(new Error(message), { name });
+
+  it.each([
+    ["NotAllowedError", "mic", "Microphone access was blocked"],
+    ["SecurityError", "mic", "Microphone access was blocked"],
+    ["NotFoundError", "mic", "No microphone found."],
+    ["DevicesNotFoundError", "mic", "No microphone found."],
+    ["NotReadableError", "mic", "already in use by another app"],
+    ["TrackStartError", "mic", "already in use by another app"],
+    ["NotAllowedError", "camera", "Camera access was blocked"],
+    ["NotFoundError", "camera", "No camera found."],
+    ["NotReadableError", "camera", "already in use by another app"],
+  ] as const)("maps %s for %s", (name, kind, expected) => {
+    expect(deviceErrorMessage(kind, mk(name))).toContain(expected);
+  });
+
+  it("falls back to the error message, then to a generic line", () => {
+    expect(deviceErrorMessage("mic", mk("WeirdError", "something odd"))).toBe("something odd");
+    expect(deviceErrorMessage("camera", "not an error")).toBe("Couldn't get camera access.");
   });
 });
 
