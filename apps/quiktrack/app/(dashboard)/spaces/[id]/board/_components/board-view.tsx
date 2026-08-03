@@ -70,6 +70,11 @@ export function BoardView({ projectId }: { projectId: string }) {
   const [allSprints, setAllSprints] = useState<{ id: string; name: string; status: string }[]>([]);
   const [bootLoading, setBootLoading] = useState(true);
   const [openIssueId, setOpenIssueId] = useState<string | null>(null);
+  // Board-columns config (Board settings → map statuses to columns). When
+  // configured, the board renders these named columns instead of one-per-status.
+  const [boardColumns, setBoardColumns] = useState<
+    { id: string; name: string; statusIds: string[] }[] | null
+  >(null);
   const [epicsById, setEpicsById] = useState<Record<string, EpicLite>>({});
   // Shared with the backlog + work-item views via the same query key, so the
   // avatar stack is cached across navigation and the dev StrictMode double-fetch
@@ -139,14 +144,21 @@ export function BoardView({ projectId }: { projectId: string }) {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [statusesRes, sprintsRes, epicsRes, projectRes] = await Promise.all([
+      const [statusesRes, sprintsRes, epicsRes, projectRes, boardColsRes] = await Promise.all([
         fetch(`/api/projects/${projectId}/statuses`).then((r) => r.json()),
         fetch(`/api/sprints?projectId=${projectId}`).then((r) => r.json()),
         fetch(`/api/issues?projectId=${projectId}&type=EPIC&limit=200`).then((r) => r.json()),
         fetch(`/api/projects/${projectId}`).then((r) => r.json()),
+        fetch(`/api/projects/${projectId}/board-columns`).then((r) => r.json()).catch(() => null),
       ]);
       if (!alive) return;
       if (statusesRes?.success) setStatuses(statusesRes.data || []);
+      // Only adopt column-mode when the project has actually configured columns.
+      if (boardColsRes?.success && boardColsRes.data?.configured) {
+        setBoardColumns(boardColsRes.data.columns as { id: string; name: string; statusIds: string[] }[]);
+      } else {
+        setBoardColumns(null);
+      }
       const functional = projectRes?.success && projectRes.data?.templateKey === "functional";
       setIsFunctional(functional);
       const sprintList: Array<{ id: string; name: string; status: string }> =
@@ -346,7 +358,47 @@ export function BoardView({ projectId }: { projectId: string }) {
         {/* Functional spaces (Kanban) always show populated columns fed by
             every task (sprintId={null} → no sprint filter). Scrum spaces only
             populate columns once a sprint is ACTIVE. */}
+        {/* ── Board-columns mode (Board settings configured) ──────────────── */}
         {!bootLoading &&
+          boardColumns &&
+          (isFunctional || activeSprintId) &&
+          boardColumns.map((col) => {
+            const primary = statusesById[col.statusIds[0]];
+            if (!primary) return null; // column whose statuses were all deleted
+            return (
+              <BoardColumn
+                key={`${col.id}-${refreshKey}`}
+                status={primary}
+                columnStatusIds={col.statusIds}
+                displayName={col.name}
+                allStatuses={visibleStatuses}
+                projectId={projectId}
+                sprintId={isFunctional ? null : activeSprintId}
+                epicsById={epicsById}
+                statusesById={statusesById}
+                filters={filters}
+                members={members}
+                availableSprints={allSprints.filter((sp) => sp.status !== "COMPLETED")}
+                onOpen={setOpenIssueId}
+                onColumnRenamed={() => {}}
+                onColumnDeleted={() => {}}
+                dragHandlers={{
+                  onDragOver: onColDragOver,
+                  // A card dropped on a multi-status column lands on its primary status.
+                  onDrop: onColDrop(col.statusIds[0]),
+                  onDragStart: () => {},
+                }}
+              />
+            );
+          })}
+        {!bootLoading && boardColumns && !isFunctional && !activeSprintId &&
+          boardColumns.map((col, idx) => (
+            <EmptyColumn key={col.id} name={col.name} showCta={idx === 0} projectId={projectId} />
+          ))}
+
+        {/* ── Classic mode (one column per status) ─────────────────────────── */}
+        {!bootLoading &&
+          !boardColumns &&
           (isFunctional || activeSprintId) &&
           visibleStatuses.map((s) => (
             <BoardColumn
@@ -380,6 +432,7 @@ export function BoardView({ projectId }: { projectId: string }) {
             board structure stays visible (matches Jira's behaviour). Functional
             spaces never hit this branch. */}
         {!bootLoading &&
+          !boardColumns &&
           !isFunctional &&
           !activeSprintId &&
           visibleStatuses.map((s, idx) => (
@@ -391,7 +444,8 @@ export function BoardView({ projectId }: { projectId: string }) {
             />
           ))}
 
-        {!bootLoading && (
+        {/* AddColumnTile only in classic mode — columns are managed in Board settings. */}
+        {!bootLoading && !boardColumns && (
           <AddColumnTile
             projectId={projectId}
             defaultCategory="BACKLOG"

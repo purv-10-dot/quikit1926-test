@@ -48,6 +48,12 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const filterType = url.searchParams.get("type");
   const excludeType = url.searchParams.get("excludeType");
   const filterStatusId = url.searchParams.get("statusId");
+  // Board columns can map several statuses to one column: `statusIds` is a
+  // comma-separated IN-list. Takes precedence over the single `statusId`.
+  const filterStatusIds = (url.searchParams.get("statusIds") ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
   const filterStatusCategoryRaw = url.searchParams.get("statusCategory");
   const filterStatusCategory =
     filterStatusCategoryRaw === "BACKLOG" ||
@@ -138,7 +144,11 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     projectId,
     isDeleted: false,
     ...typeWhere,
-    ...(filterStatusId ? { statusId: filterStatusId } : {}),
+    ...(filterStatusIds.length > 0
+      ? { statusId: { in: filterStatusIds } }
+      : filterStatusId
+        ? { statusId: filterStatusId }
+        : {}),
     ...(filterStatusCategory ? { status: { category: filterStatusCategory } } : {}),
     // sprintId supports three shapes:
     //   "null"           → unscoped issues (backlog)

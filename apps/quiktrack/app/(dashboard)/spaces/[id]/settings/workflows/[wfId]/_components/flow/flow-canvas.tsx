@@ -44,6 +44,9 @@ export function FlowCanvas({
   onSelectStatus,
   onSelectTransition,
   onClearSelection,
+  onDeleteStatus,
+  onDeleteTransition,
+  onRerouteTransition,
 }: {
   draft: EditorDraft;
   statusMeta: Map<string, StatusMeta>;
@@ -56,6 +59,9 @@ export function FlowCanvas({
   onSelectStatus: (statusId: string) => void;
   onSelectTransition: (transitionId: string) => void;
   onClearSelection: () => void;
+  onDeleteStatus: (statusId: string) => void;
+  onDeleteTransition: (transitionId: string) => void;
+  onRerouteTransition: (transitionId: string, oldSource: string, newSource: string, newTarget: string) => void;
 }) {
   const buildEdges = useCallback(
     () =>
@@ -149,6 +155,41 @@ export function FlowCanvas({
     [onSelectTransition],
   );
 
+  // Delete key on a selected status node → remove the status (+ its transitions).
+  const handleNodesDelete = useCallback(
+    (deleted: Node[]) => {
+      for (const n of deleted) {
+        if (n.id !== START_NODE_ID) onDeleteStatus(n.id);
+      }
+    },
+    [onDeleteStatus],
+  );
+
+  // Delete key on a selected transition edge → remove the whole transition.
+  const handleEdgesDelete = useCallback(
+    (deleted: Edge[]) => {
+      const ids = new Set<string>();
+      for (const e of deleted) {
+        const tid = (e.data as { transitionId?: string } | undefined)?.transitionId;
+        if (tid) ids.add(tid);
+      }
+      ids.forEach((tid) => onDeleteTransition(tid));
+    },
+    [onDeleteTransition],
+  );
+
+  // Drag an edge endpoint to reroute the transition (change its from/to status).
+  const handleEdgeUpdate = useCallback(
+    (oldEdge: Edge, conn: Connection) => {
+      const tid = (oldEdge.data as { transitionId?: string } | undefined)?.transitionId;
+      if (!tid || !conn.source || !conn.target) return;
+      if (conn.source === START_NODE_ID || conn.source === conn.target) return;
+      const oldSource = oldEdge.source;
+      onRerouteTransition(tid, oldSource, conn.source, conn.target);
+    },
+    [onRerouteTransition],
+  );
+
   return (
     <ReactFlow
       nodes={styledNodes}
@@ -160,6 +201,10 @@ export function FlowCanvas({
       onNodeClick={handleNodeClick}
       onEdgeClick={handleEdgeClick}
       onPaneClick={onClearSelection}
+      onNodesDelete={handleNodesDelete}
+      onEdgesDelete={handleEdgesDelete}
+      onEdgeUpdate={handleEdgeUpdate}
+      deleteKeyCode={["Delete", "Backspace"]}
       fitView
       fitViewOptions={{ padding: 0.3 }}
       minZoom={0.2}

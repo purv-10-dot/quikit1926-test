@@ -6149,6 +6149,7 @@ model QtProject {
   ideaViews        QtIdeaView[]
   workflows        QtWorkflow[]
   workflowScheme   QtWorkflowScheme?
+  boardColumns     QtBoardColumn[]
 
   @@unique([orgId, projectKey])
   @@index([orgId, status])
@@ -6522,9 +6523,40 @@ model QtIssueStatus {
   workflowStatuses    QtWorkflowStatus[]
   transitionTargets   QtWorkflowTransition[]     @relation("TransitionToStatus")
   transitionSources   QtWorkflowTransitionFrom[]
+  boardColumnStatuses QtBoardColumnStatus[]
 
   @@unique([projectId, name])
   @@index([projectId, orderIndex])
+  @@schema("app_quiktrack")
+}
+
+// Board Settings — Jira-style "map statuses to columns". A board column is a
+// named container that can hold one or more statuses; a status not mapped to any
+// column is hidden from the board (the "Unmapped" bucket). Opt-in: a project
+// with no QtBoardColumn rows falls back to one-column-per-status.
+model QtBoardColumn {
+  id         String                @id @default(cuid())
+  projectId  String
+  name       String
+  orderIndex Int                   @default(0)
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
+  project    QtProject             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  statuses   QtBoardColumnStatus[]
+
+  @@index([projectId, orderIndex])
+  @@schema("app_quiktrack")
+}
+
+model QtBoardColumnStatus {
+  // A status belongs to at most one column, so statusId IS the primary key.
+  statusId   String        @id
+  columnId   String
+  orderIndex Int           @default(0)
+  column     QtBoardColumn @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  status     QtIssueStatus @relation(fields: [statusId], references: [id], onDelete: Cascade)
+
+  @@index([columnId, orderIndex])
   @@schema("app_quiktrack")
 }
 

@@ -113,14 +113,10 @@ export function draftToEdges(
   showLabels: boolean,
 ): Edge<TransitionEdgeData>[] {
   const edges: Edge<TransitionEdgeData>[] = [];
-  // Stagger labels of edges leaving the SAME source so they don't overlap: each
-  // successive edge from a source rides a bit higher above the row.
-  const perSource = new Map<string, number>();
-  const nextOffset = (source: string, base: number) => {
-    const n = perSource.get(source) ?? 0;
-    perSource.set(source, n + 1);
-    return base - n * 34; // stack upward, 34px apart
-  };
+  // GLOBAL self-loops on the same node fan out horizontally; NORMAL labels sit
+  // on their edge midpoint (no vertical offset — that detaches the label from
+  // its line). perBand only counts globals-per-node for the horizontal fan.
+  const perBand = new Map<string, number>();
 
   for (const t of draft.transitions) {
     const ruleCount = t.rules.length;
@@ -132,14 +128,14 @@ export function draftToEdges(
       // "Any status → target": a small self-loop above the target node. Multiple
       // globals on the same node fan out horizontally so their loops don't overlap.
       const key = `global:${t.toStatusId}`;
-      const n = perSource.get(key) ?? 0;
-      perSource.set(key, n + 1);
+      const n = perBand.get(key) ?? 0;
+      perBand.set(key, n + 1);
       edges.push(mkEdge(t.toStatusId, t.toStatusId, t, ANY_SOURCE, ruleCount, showLabels, true, 60 + n * 70));
       continue;
     }
-    // NORMAL: one edge per source status, each label staggered above the row.
+    // NORMAL: one edge per source status; label sits on the edge midpoint.
     for (const src of t.fromStatusIds) {
-      edges.push(mkEdge(src, t.toStatusId, t, src, ruleCount, showLabels, false, nextOffset(src, -30)));
+      edges.push(mkEdge(src, t.toStatusId, t, src, ruleCount, showLabels, false, 0));
     }
   }
   return edges;

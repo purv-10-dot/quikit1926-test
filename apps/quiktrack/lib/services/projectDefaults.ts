@@ -5,21 +5,15 @@ import {
   SPACE_ADMIN_ROLE_NAME,
 } from "@/lib/api/permissionsRegistry";
 
+// Jira classic default statuses. Categories drive board grouping + Done/open-work
+// logic: Open=BACKLOG (to-do), In Progress/Resolved/Reopened=IN_PROGRESS,
+// Closed=DONE. (Refine via Board settings once that's the source of truth.)
 export const DEFAULT_STATUSES = [
-  { name: "To Do", color: "#94a3b8", category: "BACKLOG", orderIndex: 0 },
-  {
-    name: "In Progress",
-    color: "#2563eb",
-    category: "IN_PROGRESS",
-    orderIndex: 1,
-  },
-  {
-    name: "In Review",
-    color: "#9333ea",
-    category: "IN_PROGRESS",
-    orderIndex: 2,
-  },
-  { name: "Done", color: "#16a34a", category: "DONE", orderIndex: 3 },
+  { name: "Open", color: "#94a3b8", category: "BACKLOG", orderIndex: 0 },
+  { name: "In Progress", color: "#2563eb", category: "IN_PROGRESS", orderIndex: 1 },
+  { name: "Resolved", color: "#16a34a", category: "IN_PROGRESS", orderIndex: 2 },
+  { name: "Reopened", color: "#9333ea", category: "IN_PROGRESS", orderIndex: 3 },
+  { name: "Closed", color: "#16a34a", category: "DONE", orderIndex: 4 },
 ];
 
 export const DEFAULT_ISSUE_TYPES = [
@@ -38,24 +32,28 @@ export const DEFAULT_RESOLUTIONS = [
 ];
 
 /**
- * Transitions of the seeded "classic default workflow", expressed by STATUS
- * NAME (resolved to the project's just-created QtIssueStatus ids). The chain
- * mirrors the DEFAULT_STATUSES order; a GLOBAL "Done" lets any status jump to
- * Done, and "Reopen" returns Done → To Do. INITIAL runs on issue creation.
+ * Transitions of the seeded "classic default workflow" (Jira classic), expressed
+ * by STATUS NAME (resolved to the project's just-created QtIssueStatus ids).
+ *
+ * Every status has an incoming NORMAL transition so the graph is fully reachable
+ * from the initial status (the publish gate rejects unreachable statuses):
+ *   Create → Open → In Progress → Resolved → Closed → Reopened → (back to) In Progress.
+ * INITIAL runs on issue creation.
  */
 const CLASSIC_WORKFLOW_NAME = "classic default workflow";
+const CLASSIC_INITIAL_STATUS = "Open";
 const CLASSIC_TRANSITIONS: Array<{
   name: string;
   type: "INITIAL" | "NORMAL" | "GLOBAL";
   from: string[];
   to: string;
 }> = [
-  { name: "Create", type: "INITIAL", from: [], to: "To Do" },
-  { name: "Start Progress", type: "NORMAL", from: ["To Do"], to: "In Progress" },
-  { name: "Ready for Review", type: "NORMAL", from: ["In Progress"], to: "In Review" },
-  { name: "Back to In Progress", type: "NORMAL", from: ["In Review"], to: "In Progress" },
-  { name: "Done", type: "GLOBAL", from: [], to: "Done" },
-  { name: "Reopen", type: "NORMAL", from: ["Done"], to: "To Do" },
+  { name: "Create", type: "INITIAL", from: [], to: "Open" },
+  { name: "Start Progress", type: "NORMAL", from: ["Open"], to: "In Progress" },
+  { name: "Resolve Issue", type: "NORMAL", from: ["In Progress"], to: "Resolved" },
+  { name: "Close Issue", type: "NORMAL", from: ["Resolved"], to: "Closed" },
+  { name: "Reopen", type: "NORMAL", from: ["Closed"], to: "Reopened" },
+  { name: "Back to In Progress", type: "NORMAL", from: ["Reopened"], to: "In Progress" },
 ];
 
 /**
@@ -101,12 +99,12 @@ export async function seedProjectWorkflow(
     select: { id: true },
   });
 
-  // Nodes: every project status participates; "To Do" is the initial node.
+  // Nodes: every project status participates; the classic initial node is Open.
   await tx.qtWorkflowStatus.createMany({
     data: statuses.map((s) => ({
       workflowId: workflow.id,
       statusId: s.id,
-      isInitial: s.name === "To Do",
+      isInitial: s.name === CLASSIC_INITIAL_STATUS,
     })),
     skipDuplicates: true,
   });

@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Columns, GitBranch, Zap, Bot, MoreHorizontal } from "lucide-react";
+import { Loader2, Columns, GitBranch, Zap, Bot, MoreHorizontal, HelpCircle } from "lucide-react";
+import { DiagramHelpDialog } from "./diagram-help-dialog";
 import { useWorkflowEditor } from "./use-workflow-editor";
 import { errorStatusIdSet } from "./diagram-canvas";
 import { TextView } from "./text-view";
@@ -96,6 +97,7 @@ function EditorBody({
   const ed = useWorkflowEditor(wfId, initialDraft);
   const [tab, setTab] = useState<"diagram" | "text">("diagram");
   const [showLabels, setShowLabels] = useState(true);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [addStatusOpen, setAddStatusOpen] = useState(false);
   const [addTransitionOpen, setAddTransitionOpen] = useState(false);
   const [selection, setSelection] = useState<Selection>(null);
@@ -104,6 +106,7 @@ function EditorBody({
     queryKey: ["quiktrack", "resolutions", projectId],
     queryFn: () => fetchResolutions(projectId),
   });
+
 
   const statusMeta = useMemo(() => new Map(pool.map((s) => [s.id, s])), [pool]);
   const errorStatusIds = errorStatusIdSet(ed.publishErrors);
@@ -254,17 +257,30 @@ function EditorBody({
           </button>
         </div>
         {tab === "diagram" && (
-          <label className="ml-auto flex items-center gap-1.5 text-sm text-gray-600">
-            <input
-              type="checkbox"
-              checked={showLabels}
-              onChange={(e) => setShowLabels(e.target.checked)}
-              className="rounded border-gray-300 text-accent-600"
-            />
-            Show transition labels
-          </label>
+          <div className="ml-auto flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setHelpOpen(true)}
+              className="rounded-full border border-gray-300 p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+              title="How to use the workflow diagram"
+              aria-label="Help"
+            >
+              <HelpCircle className="h-4 w-4" />
+            </button>
+            <label className="flex items-center gap-1.5 text-sm text-gray-600">
+              <input
+                type="checkbox"
+                checked={showLabels}
+                onChange={(e) => setShowLabels(e.target.checked)}
+                className="rounded border-gray-300 text-accent-600"
+              />
+              Show transition labels
+            </label>
+          </div>
         )}
       </div>
+
+      {helpOpen && <DiagramHelpDialog onClose={() => setHelpOpen(false)} />}
 
       {/* Banners */}
       {ed.publish.isSuccess && (
@@ -315,6 +331,24 @@ function EditorBody({
               onSelectStatus={(statusId) => setSelection({ kind: "status", statusId })}
               onSelectTransition={(transitionId) => setSelection({ kind: "transition", transitionId })}
               onClearSelection={() => setSelection(null)}
+              onDeleteStatus={(statusId) => {
+                ed.removeStatus(statusId);
+                setSelection(null);
+              }}
+              onDeleteTransition={(transitionId) => {
+                ed.removeTransition(transitionId);
+                setSelection(null);
+              }}
+              onRerouteTransition={(transitionId, oldSource, newSource, newTarget) => {
+                const t = ed.draft.transitions.find((x) => x.id === transitionId);
+                if (!t) return;
+                // Swap the dragged source for the new one; retarget if changed.
+                const fromStatusIds = t.fromStatusIds.map((s) => (s === oldSource ? newSource : s));
+                ed.updateTransition(transitionId, {
+                  fromStatusIds: Array.from(new Set(fromStatusIds)),
+                  toStatusId: newTarget,
+                });
+              }}
             />
           ) : (
             <TextView

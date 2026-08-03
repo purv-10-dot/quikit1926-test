@@ -55,8 +55,10 @@ export const TransitionEdge = memo(function TransitionEdge({
       borderRadius: 8,
     });
     path = p;
+    // Keep the label ON its edge (its true midpoint) so the connecting line is
+    // always visible through/under it. We don't offset it off the line.
     labelX = lx;
-    labelY = ly + (data?.labelOffset ?? 0);
+    labelY = ly;
   }
 
   return (
