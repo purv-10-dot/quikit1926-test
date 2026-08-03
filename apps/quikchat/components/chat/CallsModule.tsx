@@ -13,10 +13,11 @@ import {
   Search,
   Send,
   Spinner,
+  useToast,
   Users,
   Video,
 } from "@/components/ui";
-import { fetchCallHistory } from "@/lib/api";
+import { createChannel, fetchCallHistory, sendMessage } from "@/lib/api";
 import {
   dateDividerLabel,
   formatCallDuration,
@@ -35,6 +36,10 @@ interface CallLog {
   name: string;
   avatarUrl?: string;
   direction: Direction;
+  /** Channel the call belonged to, when it had one — a quick-reply target. */
+  channelId?: string | null;
+  /** Other party on a 1:1 call; lets a quick reply find-or-create the DM. */
+  otherUserId?: string | null;
   /** Relative day label shown on the right. */
   day: string;
   /** Clock time of the call. */
@@ -62,6 +67,10 @@ export function CallsModule() {
   const [filter, setFilter] = useState<CallFilter>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [quickMsg, setQuickMsg] = useState("");
+  // In-flight guard: blocks a second submit (button OR Enter) while a send is
+  // outstanding, which an empty/whitespace check alone would not.
+  const [sending, setSending] = useState(false);
+  const toast = useToast();
 
   const historyQuery = useQuery({ queryKey: ["calls-history"], queryFn: fetchCallHistory });
 
@@ -74,6 +83,8 @@ export function CallsModule() {
         name: c.name,
         avatarUrl: c.avatarUrl ?? undefined,
         direction: c.direction,
+        channelId: c.channelId ?? null,
+        otherUserId: c.otherUserId ?? null,
         day: dateDividerLabel(c.startedAt),
         time: formatMessageTime(c.startedAt),
         duration: formatCallDuration(c.durationSeconds),
@@ -91,6 +102,39 @@ export function CallsModule() {
     () => calls.find((c) => c.id === selectedId) ?? null,
     [calls, selectedId],
   );
+
+  // A quick reply needs somewhere to send. A group call placed outside a channel
+  // has neither target, so the control is disabled rather than failing on click.
+  const canQuickSend = !!(selected?.channelId || selected?.otherUserId);
+
+  /**
+   * Inline quick reply. Reuses the normal send path (`sendMessage`, and
+   * `createChannel({type:"dm"})` which is find-or-create) rather than a one-off
+   * fetch. Deliberately does NOT navigate: this is a reply from the history pane,
+   * so the user stays here.
+   */
+  async function sendQuickMessage() {
+    const content = quickMsg.trim();
+    if (!content || sending || !selected || !canQuickSend) return;
+    setSending(true);
+    try {
+      // Prefer the call's own channel; otherwise open (or reopen) the DM.
+      const channelId =
+        selected.channelId ??
+        (await createChannel({ type: "dm", memberIds: [selected.otherUserId!] })).channelId;
+      await sendMessage(channelId, { content });
+      setQuickMsg("");
+      toast.success({ title: "Message sent", body: `Sent to ${selected.name}.` });
+    } catch (err) {
+      // Keep the draft — the text is the user's, and a retry shouldn't retype it.
+      toast.error({
+        title: "Couldn't send message",
+        body: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setSending(false);
+    }
+  }
 
   return (
     <div className="qc-card qc-calls">
@@ -197,13 +241,27 @@ export function CallsModule() {
                 <div className="qc-calls-det__quick">
                   <input
                     className="qc-input"
-                    placeholder="Send a quick message"
+                    placeholder={
+                      canQuickSend ? "Send a quick message" : "No conversation for this call"
+                    }
                     aria-label="Send a quick message"
                     value={quickMsg}
+                    disabled={!canQuickSend || sending}
                     onChange={(e) => setQuickMsg(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter" || e.shiftKey) return;
+                      e.preventDefault();
+                      void sendQuickMessage();
+                    }}
                   />
-                  <button type="button" className="qc-iconbtn qc-calls-det__send" aria-label="Send">
-                    <Send size={15} />
+                  <button
+                    type="button"
+                    className="qc-iconbtn qc-calls-det__send"
+                    aria-label="Send"
+                    disabled={!canQuickSend || sending || !quickMsg.trim()}
+                    onClick={() => void sendQuickMessage()}
+                  >
+                    {sending ? <Spinner label="Sending" /> : <Send size={15} />}
                   </button>
                 </div>
               </div>
