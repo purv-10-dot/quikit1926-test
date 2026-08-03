@@ -292,6 +292,9 @@ export default function GRNDetailPage() {
                         <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase w-24">
                           Quality
                         </th>
+                        <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase w-28">
+                          Condition
+                        </th>
                         <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase">
                           Batch
                         </th>
@@ -329,6 +332,9 @@ export default function GRNDetailPage() {
                             ) : (
                               "—"
                             )}
+                          </td>
+                          <td className="px-3 py-2.5 text-xs text-gray-600">
+                            {line.condition ?? "—"}
                           </td>
                           <td className="px-3 py-2.5 text-xs text-gray-500">
                             {line.batchNo ?? "—"}

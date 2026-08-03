@@ -17,6 +17,7 @@ import {
   type PermissionLeaf,
   type PermissionModule,
   type PermissionSubmodule,
+  isValidPermissionPair,
 } from "@/lib/rbac/permissionsRegistry";
 
 interface Props {
@@ -52,8 +53,16 @@ export function RolePermissionMatrix({ roleId, roleName, isSystem, initialGrants
     setGrants((prev) => {
       const next = new Set(prev);
       const k = key(resource, action);
-      if (next.has(k)) next.delete(k);
-      else next.add(k);
+      if (next.has(k)) {
+        next.delete(k);
+      } else {
+        next.add(k);
+        // A role must be able to see a resource before it can create,
+        // edit, delete, or otherwise act on it.
+        if (action !== "view" && isValidPermissionPair(resource, "view")) {
+          next.add(key(resource, "view"));
+        }
+      }
       return next;
     });
   };

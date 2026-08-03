@@ -1,6 +1,6 @@
 import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextRequest, NextResponse } from "next/server";
-import { parsePagination, parseSort } from "@/lib/http/pagination";
+import { parsePagination, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { db } from "@/lib/db";
 import { err as envelopeErr } from "@/lib/http/envelope";
@@ -75,6 +75,7 @@ export async function GET(req: NextRequest) {
     searchParams,
     ["documentName", "category", "createdAt"],
     { field: "createdAt", order: "desc" },
+    NEWEST_FIRST_TIEBREAK,
   );
   const [rows, total] = await Promise.all([
     db.cnProjectDocument.findMany({

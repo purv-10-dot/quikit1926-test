@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
-import { parsePagination, parseSort } from "@/lib/http/pagination";
+import { parsePagination, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 
 /**
  * Diesel / Fuel Log Book — list + create.
@@ -117,7 +117,7 @@ export async function GET(req: NextRequest) {
   const sort = parseSort(req, ["logDate", "quantityIssued", "createdAt"], {
     field: "logDate",
     order: "desc",
-  });
+  }, NEWEST_FIRST_TIEBREAK);
   const [rows, total] = await Promise.all([
     db.cnDieselLog.findMany({
       where,

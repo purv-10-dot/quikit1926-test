@@ -4449,6 +4449,9 @@ model CnRfq {
   /// create time so later edits to the template don't retroactively
   /// change what was sent to the vendor.
   termsTemplateId    String?
+  /// Snapshot of the T&C body at RFQ create time, editable per RFQ.
+  /// Edits here never write back to the template master.
+  termsAndConditions String?
   status             String    @default("draft")
   approvalId         String?
   createdAt          DateTime  @default(now())
@@ -4498,6 +4501,11 @@ model CnRfqVendor {
   // list for this specific vendor. Stored as a JSON string for
   // Postgres + SQLite portability via Prisma's String type.
   assignedItemIds Json      @default("[]")
+  /// Per-vendor T&C override. Null/empty = use the RFQ's default
+  /// `termsAndConditions`. Never written back to the T&C master.
+  termsAndConditions String?
+  /// Template the override was seeded from, kept for audit only.
+  termsTemplateId    String?
   sentAt          DateTime?
   respondedAt     DateTime?
 

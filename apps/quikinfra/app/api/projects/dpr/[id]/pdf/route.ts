@@ -52,8 +52,19 @@ export async function GET(
   const contractorIds = Array.from(
     new Set(row.labourEntries.map((l) => l.contractorId).filter(Boolean)),
   ) as string[];
+  // FREE_SCOPE work items anchor on an activity (scopeId) instead of a BOQ
+  // item — boqItemId is null for these, so target qty must come from
+  // CnActivityItem.scopeQty, not the BOQ lookup.
+  const activityIds = Array.from(
+    new Set(
+      row.workItems
+        .filter((w) => w.scopeType === "ACTIVITY")
+        .map((w) => w.scopeId)
+        .filter((v): v is string => typeof v === "string" && v.length > 0),
+    ),
+  );
 
-  const [boqRows, itemRows, uomRows, contractorRows, locationRow] =
+  const [boqRows, itemRows, uomRows, contractorRows, locationRow, activityRows] =
     await Promise.all([
       boqIds.length
         ? db.cnBOQItemV2.findMany({
@@ -85,7 +96,35 @@ export async function GET(
             select: { name: true },
           })
         : Promise.resolve(null),
+      activityIds.length
+        ? db.cnActivityItem.findMany({
+            where: { id: { in: activityIds }, orgId: auth.orgId },
+            select: {
+              id: true,
+              activityCode: true,
+              uomId: true,
+              tenderQty: true,
+              scopeQty: true,
+            },
+          })
+        : Promise.resolve([]),
     ]);
+
+  // Activity rows carry their own uomId, which is not on the work item —
+  // resolve the codes the first uom query didn't already cover.
+  const extraUomIds = Array.from(
+    new Set(
+      activityRows
+        .map((a) => a.uomId)
+        .filter((v): v is string => typeof v === "string" && v.length > 0 && !uomIds.includes(v)),
+    ),
+  );
+  const extraUomRows = extraUomIds.length
+    ? await db.cnUOM.findMany({
+        where: { id: { in: extraUomIds } },
+        select: { id: true, code: true },
+      })
+    : [];
 
   const boqNoById = new Map(boqRows.map((b) => [b.id, b.boqNo]));
   const boqUnitById = new Map(boqRows.map((b) => [b.id, b.unit ?? ""]));
@@ -95,7 +134,22 @@ export async function GET(
   const itemNameById = new Map(
     itemRows.map((i) => [i.id, i.code ? `${i.code} — ${i.name}` : i.name]),
   );
-  const uomById = new Map(uomRows.map((u) => [u.id, u.code]));
+  const uomById = new Map(
+    [...uomRows, ...extraUomRows].map((u) => [u.id, u.code]),
+  );
+  const activityCodeById = new Map(activityRows.map((a) => [a.id, a.activityCode ?? ""]));
+  const activityUnitById = new Map(
+    activityRows.map((a) => [a.id, (a.uomId ? uomById.get(a.uomId) : "") ?? ""]),
+  );
+  // A revised scope qty supersedes the tender baseline — same precedence the
+  // DPR read path applies, so the PDF and the edit form agree on the
+  // denominator behind % Completed.
+  const activityScopeById = new Map(
+    activityRows.map((a) => {
+      const revised = Number(a.scopeQty?.toString?.() ?? 0) || 0;
+      return [a.id, revised > 0 ? revised : Number(a.tenderQty?.toString?.() ?? 0) || 0];
+    }),
+  );
   const contractorNameById = new Map(contractorRows.map((c) => [c.id, c.name]));
 
   const num = (v: unknown) => Number(v?.toString?.() ?? v ?? 0) || 0;
@@ -125,12 +179,20 @@ export async function GET(
     workItems: row.workItems.map((w) => {
       const prev = num(w.cumulativeQty) - num(w.todayQty);
       const total = num(w.cumulativeQty);
-      const boqUnit = w.boqItemId ? boqUnitById.get(w.boqItemId) : "";
-      const target = w.boqItemId ? boqScopeById.get(w.boqItemId) ?? 0 : 0;
+      const isActivity = w.scopeType === "ACTIVITY";
+      const scopeUnit = isActivity
+        ? (w.scopeId ? activityUnitById.get(w.scopeId) : "")
+        : (w.boqItemId ? boqUnitById.get(w.boqItemId) : "");
+      const target = isActivity
+        ? (w.scopeId ? activityScopeById.get(w.scopeId) ?? 0 : 0)
+        : (w.boqItemId ? boqScopeById.get(w.boqItemId) ?? 0 : 0);
       return {
-        boqNo: (w.boqItemId ? boqNoById.get(w.boqItemId) : "") || "—",
+        boqNo:
+          (isActivity
+            ? (w.scopeId ? activityCodeById.get(w.scopeId) : "")
+            : (w.boqItemId ? boqNoById.get(w.boqItemId) : "")) || "—",
         description: w.description ?? "",
-        unit: boqUnit || uomById.get(w.uomId ?? "") || "",
+        unit: scopeUnit || uomById.get(w.uomId ?? "") || "",
         prevQty: prev < 0 ? 0 : prev,
         todayQty: num(w.todayQty),
         totalTillDate: total,

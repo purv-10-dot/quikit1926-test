@@ -8,11 +8,14 @@ import {
   LayoutGrid, Columns, ChevronDown, ChevronUp, ChevronsUpDown,
 } from 'lucide-react';
 import { formatDate } from '@/lib/format/datetime';
+import { useUserNames } from '@/hooks/use-users';
 import { Pager } from './Pager';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type ColType = 'text' | 'number' | 'date' | 'select' | 'boolean';
+// 'user' holds a user id in the row data but displays/sorts/filters on the
+// resolved account name — see the resolver wired into `columns` below.
+export type ColType = 'text' | 'number' | 'date' | 'select' | 'boolean' | 'user';
 
 export interface ColDef<T = Record<string, unknown>> {
   key: string;
@@ -115,8 +118,8 @@ interface DataTableProps<T = Record<string, unknown>> {
 export const AUDIT_COLS: ColDef<Record<string, unknown>>[] = [
   { key: 'createdAt', label: 'Created At', type: 'date', width: '115px', hideable: true, freezable: false },
   { key: 'updatedAt', label: 'Updated At', type: 'date', width: '115px', hideable: true, freezable: false },
-  { key: 'createdBy', label: 'Created By', type: 'text', width: '130px', hideable: true, freezable: false },
-  { key: 'updatedBy', label: 'Updated By', type: 'text', width: '130px', hideable: true, freezable: false },
+  { key: 'createdBy', label: 'Created By', type: 'user', width: '160px', hideable: true, freezable: false },
+  { key: 'updatedBy', label: 'Updated By', type: 'user', width: '160px', hideable: true, freezable: false },
 ];
 
 // ─── Operators ────────────────────────────────────────────────────────────────
@@ -982,13 +985,39 @@ export function DataTable<T extends Record<string, unknown>>({
   onPageChange, onPageSizeChange, onSearchChange, onSortChange,
   hideFilter = false, hideColumns = false,
 }: DataTableProps<T>) {
+  // Account lookup for `type: 'user'` columns (Created By / Updated By and any
+  // module column that stores a user id). React Query dedupes this across every
+  // grid on the page, so it costs one request per session.
+  const { data: usersData } = useUserNames();
+  const userNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const u of usersData?.data ?? []) map.set(u.id, u.name);
+    return map;
+  }, [usersData]);
+
   // Merge audit cols
   const columns = useMemo(() => {
-    if (!auditEnabled) return rawColumns;
     const auditKeys = new Set(AUDIT_COLS.map(c => c.key));
-    const userCols = rawColumns.filter(c => !auditKeys.has(c.key));
-    return [...userCols, ...AUDIT_COLS] as ColDef<T>[];
-  }, [rawColumns, auditEnabled]);
+    const merged = auditEnabled
+      ? ([...rawColumns.filter(c => !auditKeys.has(c.key)), ...AUDIT_COLS] as ColDef<T>[])
+      : rawColumns;
+    // Resolve user ids → names once, centrally. `getValue` is what search /
+    // filter / sort read, so wiring it here keeps every code path on the name
+    // instead of the raw cuid the row actually carries.
+    return merged.map(col => {
+      if (col.type !== 'user' || col.render || col.getValue) return col;
+      const resolve = (row: T) => {
+        const uid = (row as Record<string, unknown>)[col.key];
+        if (typeof uid !== 'string' || !uid) return '';
+        return userNameById.get(uid) ?? uid;
+      };
+      return {
+        ...col,
+        getValue: (row: T) => resolve(row),
+        render: (row: T) => resolve(row) || '—',
+      };
+    });
+  }, [rawColumns, auditEnabled, userNameById]);
 
   // State
   const [globalQ, setGlobalQ] = useState('');

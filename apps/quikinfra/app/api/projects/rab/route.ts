@@ -8,7 +8,7 @@ import { err as envelopeErr } from "@/lib/http/envelope";
 import { generateDocNumber } from "@/lib/db/doc-number";
 import { BOQError, boqService } from "@/lib/boq";
 import { computeRABill } from "@/lib/rab/compute";
-import { parsePagination, parseSort } from "@/lib/http/pagination";
+import { parsePagination, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 
 const round2 = (n: number): number => Number(n.toFixed(2));
 const round4 = (n: number): number => Number(n.toFixed(4));
@@ -79,6 +79,7 @@ export async function GET(req: NextRequest) {
       "createdAt",
     ],
     { field: "createdAt", order: "desc" },
+    NEWEST_FIRST_TIEBREAK,
   );
   const [rows, total] = await Promise.all([
     db.cnRunningAccountBill.findMany({

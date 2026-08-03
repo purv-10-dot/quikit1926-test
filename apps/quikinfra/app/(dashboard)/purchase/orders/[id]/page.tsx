@@ -179,6 +179,24 @@ export default function PODetailPage() {
               taxAmount={taxAmount}
               vendorName={vendorName}
             />
+
+            {/* Terms & Conditions — the snapshot saved on this PO, which
+                is exactly what the vendor PDF carries. Independent of the
+                master template: later master edits don't change it. */}
+            {(po.termsAndConditions ?? "").trim() && (
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
+                <div className="px-5 py-4 border-b border-gray-100">
+                  <h3 className="text-sm font-semibold text-gray-900">
+                    Terms &amp; Conditions
+                  </h3>
+                </div>
+                <div className="px-5 py-4">
+                  <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed text-gray-700 max-h-80 overflow-y-auto">
+                    {po.termsAndConditions}
+                  </pre>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Sidebar */}

@@ -8,7 +8,7 @@ import {
   countDepartments,
   createDepartment,
 } from "@/lib/masters/departments-repository";
-import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 
 export async function GET(req: NextRequest) {
   const ctxOrResp = await requireMastersAction("construction.org_department", "view");
@@ -34,6 +34,7 @@ export async function GET(req: NextRequest) {
     searchParams,
     ["code", "name", "status", "createdAt"],
     { field: "createdAt", order: "desc" },
+    NEWEST_FIRST_TIEBREAK,
   );
   const result = await paginateDb(
     parsePagination(req),

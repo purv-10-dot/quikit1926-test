@@ -18,7 +18,7 @@ import {
   countContractors,
   createContractor,
 } from "@/lib/masters/contractors-repository";
-import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 
 /**
  * GET  /api/masters/contractors — list tenant contractors (seeded on first call).
@@ -49,6 +49,7 @@ export async function GET(req: NextRequest) {
     searchParams,
     ["code", "name", "gstin", "contactPerson", "phone", "specialization", "status", "createdAt"],
     { field: "createdAt", order: "desc" },
+    NEWEST_FIRST_TIEBREAK,
   );
   const result = await paginateDb(
     parsePagination(req),

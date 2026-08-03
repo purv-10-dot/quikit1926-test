@@ -353,7 +353,6 @@ export default function PRDetailPage() {
                 <InfoField label="Request Date" value={pr.requestDate} />
                 <InfoField label="Required Date" value={pr.requiredDate ?? "—"} />
                 <InfoField label="Purpose" value={pr.purpose ?? "—"} />
-                <InfoField label="Urgent" value={pr.isUrgent ? "Yes" : "No"} />
                 <InfoField label="Status" value={<PRStatusChip pr={pr} />} />
                 <InfoField
                   label="Estimated Total"

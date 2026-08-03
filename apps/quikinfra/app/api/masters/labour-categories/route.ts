@@ -8,7 +8,7 @@ import {
   countLabourCategories,
   createLabourCategory,
 } from "@/lib/masters/labour-categories-repository";
-import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 
 export async function GET(req: NextRequest) {
   const ctxOrResp = await requireMastersAction("construction.master_labour", "view");
@@ -29,6 +29,7 @@ export async function GET(req: NextRequest) {
     searchParams,
     ["code", "name", "skillLevel", "trade", "status", "createdAt"],
     { field: "code", order: "asc" },
+    NEWEST_FIRST_TIEBREAK,
   );
   const result = await paginateDb(
     parsePagination(req),

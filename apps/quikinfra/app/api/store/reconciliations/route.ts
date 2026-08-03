@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { generateDocNumber } from "@/lib/db/doc-number";
-import { parsePagination, parseSort } from "@/lib/http/pagination";
+import { parsePagination, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 
 /**
  * Stock Reconciliation — list + create.
@@ -67,6 +67,7 @@ export async function GET(req: NextRequest) {
     searchParams,
     ["reconciliationNumber", "reconciliationDate", "status", "createdAt"],
     { field: "reconciliationDate", order: "desc" },
+    NEWEST_FIRST_TIEBREAK,
   );
   const p = parsePagination(req);
   const rows = await db.cnStockReconciliation.findMany({

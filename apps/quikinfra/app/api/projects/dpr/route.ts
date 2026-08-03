@@ -6,7 +6,7 @@ import { Prisma } from "@quikit/database";
 import { BOQError } from "@/lib/boq";
 import { tenantCreate, hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
-import { parsePagination, parseSort } from "@/lib/http/pagination";
+import { parsePagination, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 import { parseStoredWeatherDetail } from "@/lib/weather/dpr-weather";
 import { canActOnCurrentStep } from "@/lib/approvals/workflow-rbac";
 import { resolveMaterialMeta } from "@/lib/projects/dpr-material-meta";
@@ -357,6 +357,7 @@ export async function GET(req: NextRequest) {
     searchParams,
     ["dprNumber", "reportDate", "status", "createdAt"],
     { field: "reportDate", order: "desc" },
+    NEWEST_FIRST_TIEBREAK,
   );
   const p = parsePagination(req);
   const rows = await db.cnDailyProgressReport.findMany({

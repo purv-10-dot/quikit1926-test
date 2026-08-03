@@ -199,6 +199,65 @@ function bridgedResourceActions(): ReadonlyArray<{ resource: string; action: str
   );
 }
 
+/** `${resource}:${v2Action}` for every pair the matrix can express. */
+let _managedPairSet: Set<string> | null = null;
+/** Resources with at least one manageable pair. */
+let _managedResources: Set<string> | null = null;
+
+function managedPairSet(): Set<string> {
+  if (!_managedPairSet) {
+    _managedPairSet = new Set(
+      bridgedResourceActions().map((p) => `${p.resource}:${p.action}`),
+    );
+  }
+  return _managedPairSet;
+}
+
+function managedResources(): Set<string> {
+  if (!_managedResources) {
+    _managedResources = new Set(
+      bridgedResourceActions().map((p) => p.resource),
+    );
+  }
+  return _managedResources;
+}
+
+/**
+ * Can this menu row's column actually be granted or revoked?
+ *
+ * Two things have to line up: the PAGE must support the column (a read-only
+ * page has no add/edit/delete) and the page's RESOURCE must really carry the
+ * v2 action behind that column (`construction.quality_safety` has no
+ * `delete`; `construction.stock` is view-only). When either is missing there
+ * is no permission to hand out — the cell is inert.
+ *
+ * The Permissions UI uses this to render such cells as unsupported ("—")
+ * instead of a checkbox that silently reverts on the next reload.
+ */
+export function isMatrixCellManaged(menuKey: string, action: MatrixAction): boolean {
+  const resource = MENU_TO_RESOURCE[menuKey];
+  if (!resource) return false;
+  if (MENU_SUPPORTS[menuKey]?.[action] === false) return false;
+  return managedPairSet().has(`${resource}:${MATRIX_TO_V2_ACTION[action]}`);
+}
+
+/**
+ * True when the row's resource carries NO matrix-manageable pair at all —
+ * e.g. Approvals → `construction.workflows`, which only has the settings-tier
+ * `manage` action. Those rows fall back to the legacy assume-allow display so
+ * the page doesn't silently vanish from the sidebar; ticking them is inert
+ * either way.
+ */
+export function isMatrixRowManaged(menuKey: string): boolean {
+  const resource = MENU_TO_RESOURCE[menuKey];
+  if (!resource) return false;
+  return managedResources().has(resource);
+}
+
+function isRowUnmanaged(menuKey: string): boolean {
+  return !isMatrixRowManaged(menuKey);
+}
+
 /**
  * Walk a matrix JSON and produce the list of (resource, action) pairs
  * that should be REVOKED (i.e. cells with `false`). Cells with `true`
@@ -250,9 +309,19 @@ export function matrixToRevokes(matrix: PermissionMatrix | null | undefined): Re
  * shape the Permissions UI expects. Walks every menu in MENU_CATALOG and
  * sets the matching cells to `false` when a revoke exists.
  *
- * Cells NOT in the revoke set are written as `true` so the UI shows the
- * "ticked" state for them. This matches the legacy behavior where the
- * matrix was assumed-allow if absent.
+ * A MANAGEABLE cell not in the revoke set is written as `true` — the legacy
+ * assume-allow semantic. A cell the matrix cannot express is written as
+ * `false`, NOT `true`: `matrixToRevokes` can never emit a revoke for it, so
+ * assume-allow made it permanently ticked. That is what produced the "I
+ * granted 2-3 pages, saved, and the rest came back selected" report — after
+ * saving a two-page selection, Stock Register, Diesel Log, Gantt View, the
+ * Quality & Safety rows, Fleet Dashboard, Hire & Rent, Fixed Assets and
+ * Reports all reported themselves as granted on their phantom
+ * add/edit/delete columns (see `isMatrixCellManaged`).
+ *
+ * Rows whose resource has no manageable pair at all (Approvals →
+ * construction.workflows, `manage` only) keep the legacy assume-allow so the
+ * page doesn't disappear from the sidebar; see `isRowUnmanaged`.
  */
 export function revokesToMatrix(
   revokes: ReadonlyArray<{ resource: string; action: string }>,
@@ -262,11 +331,19 @@ export function revokesToMatrix(
   for (const item of MENU_CATALOG) {
     const resource = MENU_TO_RESOURCE[item.key];
     if (!resource) continue; // menus not bridged into v2 (e.g. quality.home)
+    const unmanagedRow = isRowUnmanaged(item.key);
     const row: Partial<Record<MatrixAction, boolean>> = {};
     for (const matrixAction of ["add", "edit", "delete", "view"] as MatrixAction[]) {
+      if (unmanagedRow) {
+        row[matrixAction] = MENU_SUPPORTS[item.key]?.[matrixAction] !== false;
+        continue;
+      }
+      if (!isMatrixCellManaged(item.key, matrixAction)) {
+        row[matrixAction] = false;
+        continue;
+      }
       const v2 = MATRIX_TO_V2_ACTION[matrixAction];
-      const revoked = revokeSet.has(`${resource}:${v2}`);
-      row[matrixAction] = !revoked;
+      row[matrixAction] = !revokeSet.has(`${resource}:${v2}`);
     }
     matrix[item.key] = row;
   }

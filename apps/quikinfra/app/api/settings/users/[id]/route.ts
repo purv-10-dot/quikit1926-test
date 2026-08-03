@@ -8,12 +8,7 @@ import {
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { getQuikInfraAppId } from "@/lib/rbac/userCan";
 import { mirrorAppRoleToCentral } from "@quikit/auth/assign-app-roles";
-import {
-  MENU_CATALOG,
-  MODULE_KEY_TO_MENU_MODULE,
-  mergeModulesWithMatrix,
-  type PermissionMatrix,
-} from "@/lib/rbac/menu-catalog";
+import { type PermissionMatrix } from "@/lib/rbac/menu-catalog";
 import {
   applyModuleRevokes,
   modulesFromRevokes,
@@ -174,19 +169,7 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
 
   // Keep modulesAssigned in lock-step with permissionMatrix. The matrix is
   // the granular source of truth; modulesAssigned is a coarse cache the
-  // sidebar uses for nav visibility. Whenever either one is being written:
-  //
-  //   - matrix only → derive modules from the matrix, load the user's
-  //     current matrix if the payload didn't include one, so we never
-  //     drop modules on a partial PATCH.
-  //   - modules + matrix → union the explicit modules with whatever the
-  //     matrix grants (admin ticking a row also auto-assigns that module).
-  //   - modules only → union with the CURRENTLY-saved matrix so we don't
-  //     silently drop modules the matrix still grants.
-  //
-  // Without this sync, the Edit User drawer shows stale module checkboxes
-  // relative to what the permissions page just saved, and the sidebar
-  // hides nav groups the user has effective rights on.
+  // sidebar uses for nav visibility.
   let modulesAssigned: string[] | undefined = body.modulesAssigned;
   const matrixIncoming: PermissionMatrix | undefined =
     body.permissionMatrix && typeof body.permissionMatrix === "object"
@@ -194,55 +177,25 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
       : undefined;
   const touchingMatrix = matrixIncoming !== undefined;
   const touchingModules = Array.isArray(modulesAssigned);
-  let permissionMatrixToSave: PermissionMatrix | undefined = matrixIncoming;
   if (touchingMatrix || touchingModules) {
-    // Resolve an effective matrix: the incoming patch if present, otherwise
-    // the one already persisted. Same for modules. This keeps partial
-    // PATCHes from clobbering the non-touched side.
+    // Load the current record only when we need the non-touched side.
     const current = touchingMatrix && touchingModules
       ? null
       : await findUserByIdCentral(ctx.orgId, id);
-    const effectiveMatrix = matrixIncoming ??
-      (current?.permissionMatrix as PermissionMatrix | null | undefined) ??
-      null;
-    const explicitModules = touchingModules
-      ? (modulesAssigned as string[])
-      : (current?.modulesAssigned ?? []);
-    modulesAssigned = mergeModulesWithMatrix(explicitModules, effectiveMatrix);
 
-    // Auto-grant the pages of any assigned module that currently has zero
-    // rights in the matrix. Covers both the "module just ticked on Edit
-    // User" case and the historical case where the module was assigned
-    // earlier but its pages were never granted (matrix saved before the
-    // module was added). Modules with even one row already granted are
-    // left alone so admin tweaks are preserved. Removing a module never
-    // revokes — admins use the Permissions page for that.
-    if (touchingModules && !touchingMatrix && current) {
-      const base = (current.permissionMatrix as PermissionMatrix | null) ?? {};
-      const requestedModules = body.modulesAssigned as string[];
-      const merged: PermissionMatrix = { ...base };
-      let changed = false;
-      for (const moduleKey of requestedModules) {
-        const menuModule = MODULE_KEY_TO_MENU_MODULE[moduleKey];
-        if (!menuModule) continue;
-        const rows = MENU_CATALOG.filter((item) => item.module === menuModule);
-        const hasAnyGrant = rows.some((item) => {
-          const r = base[item.key];
-          return r && (r.add || r.edit || r.delete || r.view);
-        });
-        if (hasAnyGrant) continue;
-        for (const item of rows) {
-          merged[item.key] = {
-            add: item.supports.add,
-            edit: item.supports.edit,
-            delete: item.supports.delete,
-            view: item.supports.view,
-          };
-          changed = true;
-        }
-      }
-      if (changed) permissionMatrixToSave = merged;
-    }
+    // modulesAssigned: the admin's explicit tick list is authoritative.
+    // Do NOT union with matrix-derived modules — that would re-add every
+    // module whose role grants still carry an un-revoked view action,
+    // making an admin's untick a no-op and auto-selecting sub-modules the
+    // admin never chose.
+    modulesAssigned = touchingModules
+      ? (body.modulesAssigned as string[])
+      : (current?.modulesAssigned ?? []);
+
+    // Page-level grants for a newly ticked module are written by
+    // applyModuleRevokes below (against CnUserPermissionExtra, the real
+    // store). Nothing to merge into the legacy matrix column here — it is
+    // no longer persisted; the matrix is a view over the revoke rows.
   }
 
   // Step E: writes flow to central tables (auth.User + User_profiles +
@@ -441,12 +394,28 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
       );
     }
     try {
+      // Which modules did the user already have? Modules present before AND
+      // after this save are reconciled non-destructively so an Edit-User save
+      // that doesn't touch the module list can't wipe the per-page rights set
+      // on the Permissions screen (that wipe is what made every remaining
+      // sub-module of an assigned module come back selected).
+      let previouslyTicked: string[] | null = null;
+      try {
+        const existingRevokes = (await dbCentral.cnUserPermissionExtra.findMany({
+          where: { userId: authUserId, orgId: ctx.orgId, revoke: true },
+          select: { resource: true, action: true },
+        })) as Array<{ resource: string; action: string }>;
+        previouslyTicked = modulesFromRevokes(existingRevokes);
+      } catch {
+        // Couldn't read the current state — fall back to a full reconcile.
+      }
       await applyModuleRevokes(
         dbCentral as never,
         authUserId,
         ctx.orgId,
         tickedModules,
         ctx.userId,
+        previouslyTicked,
       );
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "unknown error";
