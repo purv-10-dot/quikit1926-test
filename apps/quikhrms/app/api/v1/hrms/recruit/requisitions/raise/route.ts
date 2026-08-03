@@ -169,4 +169,4 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     console.error("POST /requisitions/raise", e);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });

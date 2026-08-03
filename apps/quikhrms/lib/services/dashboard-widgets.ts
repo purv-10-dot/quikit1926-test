@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 // API allow-list, and any UI catalog all derive from this — add a new widget
 // here once and it's valid everywhere. (Previously the union and the
 // widget-data route's allow-list were maintained separately and drifted.)
-export const WIDGET_TYPES = [
+const WIDGET_TYPES = [
   "headcount-trend",
   "turnover-rate",
   "attrition-rate",

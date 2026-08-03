@@ -59,7 +59,3 @@ export const confirmEmploymentSchema = z.object({
   nextReviewDate: z.string().nullable().optional(),
   sendEmail: z.boolean().default(true),
 });
-
-export type CreateProvisionItemInput = z.infer<typeof createProvisionItemSchema>;
-export type CreateEmployeeProvisionInput = z.infer<typeof createEmployeeProvisionSchema>;
-export type ConfirmEmploymentInput = z.infer<typeof confirmEmploymentSchema>;

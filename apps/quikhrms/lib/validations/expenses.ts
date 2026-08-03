@@ -1,17 +1,12 @@
 import { z } from "zod";
 
-export const ExpenseCategoryEnum = z.enum([
+const ExpenseCategoryEnum = z.enum([
   "Travel", "Medical", "Food", "Internet", "Phone", "Office", "Training", "Relocation", "Other",
-]);
-
-export const ExpenseClaimStatusEnum = z.enum([
-  "Draft", "Submitted", "ManagerApproved", "FinanceApproved", "Approved",
-  "PartiallyApproved", "Rejected", "Paid", "Cancelled",
 ]);
 
 // ─── Policies ───────────────────────────────────────────
 
-export const approvalChainLevelSchema = z.object({
+const approvalChainLevelSchema = z.object({
   level: z.number().int().min(1),
   approverType: z.enum(["ReportingManager", "DepartmentHead", "HR", "Finance", "Custom"]),
   approverId: z.string().optional(),
@@ -81,6 +76,3 @@ export const approveClaimSchema = z.object({
   // ExpenseClaim). `approvedAmount` was removed so callers can't believe a
   // partial amount took effect — the full claim amount is what's approved.
 });
-
-export type CreateExpensePolicyInput = z.infer<typeof createExpensePolicySchema>;
-export type CreateExpenseClaimInput = z.infer<typeof createExpenseClaimSchema>;

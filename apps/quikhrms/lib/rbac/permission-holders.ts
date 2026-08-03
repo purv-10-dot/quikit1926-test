@@ -64,3 +64,34 @@ export async function findEmployeesWithPermission(orgId: string, permissionCode:
   });
   return employees.map((e) => e.id);
 }
+
+/**
+ * Every active employee in the tenant holding the literal "admin" system
+ * role — used for org-wide destructive-action alerts (e.g. payroll reset
+ * OTP) where the target is the role itself, not a permission grant.
+ */
+export async function findAdminEmployees(orgId: string): Promise<{ id: string; firstName: string; lastName: string; workEmail: string }[]> {
+  const now = new Date();
+
+  const roles = await prisma.hrmsAppRole.findMany({
+    where: { orgId, isSystem: true, name: "admin" },
+    select: { id: true },
+  });
+  if (roles.length === 0) return [];
+
+  const userRoles = await prisma.hrmsUserAppRole.findMany({
+    where: {
+      orgId,
+      roleId: { in: roles.map((r) => r.id) },
+      OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+    },
+    select: { userId: true },
+  });
+  const userIds = Array.from(new Set(userRoles.map((r) => r.userId)));
+  if (userIds.length === 0) return [];
+
+  return prisma.employee.findMany({
+    where: { orgId, deletedAt: null, id: { in: userIds } },
+    select: { id: true, firstName: true, lastName: true, workEmail: true },
+  });
+}

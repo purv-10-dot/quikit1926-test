@@ -7,7 +7,7 @@
  */
 
 /** Format a Date as a local `yyyy-mm-dd` string. */
-export function toDateInput(d: Date): string {
+function toDateInput(d: Date): string {
   const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
   return local.toISOString().slice(0, 10);
 }

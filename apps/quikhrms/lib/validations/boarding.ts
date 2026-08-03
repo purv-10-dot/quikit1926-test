@@ -1,18 +1,18 @@
 import { z } from "zod";
 
-export const AssigneeRoleEnum = z.enum([
+const AssigneeRoleEnum = z.enum([
   "ReportingManagerRole", "HRRole", "ITRole", "FinanceRole", "AdminRole", "EmployeeRole", "CustomRole",
 ]);
 
-export const OnboardingTaskCategoryEnum = z.enum([
+const OnboardingTaskCategoryEnum = z.enum([
   "Documentation", "ItSetup", "Training", "Compliance", "Introduction", "TaskOther",
 ]);
 
-export const OnboardingTaskStatusEnum = z.enum([
+const OnboardingTaskStatusEnum = z.enum([
   "TaskPending", "TaskInProgress", "TaskCompleted", "TaskSkipped", "TaskBlocked",
 ]);
 
-export const OffboardingTaskCategoryEnum = z.enum([
+const OffboardingTaskCategoryEnum = z.enum([
   "AssetReturn", "AccessRevoke", "KnowledgeTransfer", "Clearance",
 ]);
 
@@ -39,7 +39,7 @@ export const bulkOnboardingRowSchema = z.object({
 });
 export type BulkOnboardingRow = z.infer<typeof bulkOnboardingRowSchema>;
 
-export const MAX_BULK_ONBOARDING_ROWS = 50;
+const MAX_BULK_ONBOARDING_ROWS = 50;
 
 export const bulkImportOnboardingSchema = z.object({
   fileName: z.string().min(1),
@@ -51,7 +51,7 @@ export const bulkImportOnboardingSchema = z.object({
 
 // ─── Onboarding Templates ───────────────────────────────
 
-export const onboardingTaskTemplateSchema = z.object({
+const onboardingTaskTemplateSchema = z.object({
   // Stable per-step identity, generated client-side and carried across edits —
   // lets "Re-apply template" match a step back to an in-progress candidate
   // task instead of only by title. Optional so legacy templates saved before
@@ -112,11 +112,11 @@ export const updateOnboardingTaskSchema = z.object({
 
 // ─── Offboarding ────────────────────────────────────────
 
-export const OffboardingReasonEnum = z.enum(["Resignation", "Termination", "Retirement", "ContractEnd"]);
+const OffboardingReasonEnum = z.enum(["Resignation", "Termination", "Retirement", "ContractEnd"]);
 
 // ─── Notice Period master ───────────────────────────────
 
-export const NoticePeriodUnitEnum = z.enum(["Days", "Weeks", "Months"]);
+const NoticePeriodUnitEnum = z.enum(["Days", "Weeks", "Months"]);
 
 export const createNoticePeriodSchema = z.object({
   name: z.string().min(1, "Name required"),
@@ -127,10 +127,7 @@ export const createNoticePeriodSchema = z.object({
 
 export const updateNoticePeriodSchema = createNoticePeriodSchema.partial();
 
-export type CreateNoticePeriodInput = z.infer<typeof createNoticePeriodSchema>;
-export type UpdateNoticePeriodInput = z.infer<typeof updateNoticePeriodSchema>;
-
-export const offboardingTaskTemplateSchema = z.object({
+const offboardingTaskTemplateSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
   assigneeId: z.string().optional().nullable(),
@@ -166,8 +163,6 @@ export const updateOffboardingTemplateSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
-export type CreateOffboardingTemplateInput = z.infer<typeof createOffboardingTemplateSchema>;
-
 export const initiateOffboardingSchema = z.object({
   employeeId: z.string().min(1),
   resignationDate: z.string().min(1),
@@ -181,15 +176,3 @@ export const initiateOffboardingSchema = z.object({
 });
 
 export const updateOffboardingTaskSchema = updateOnboardingTaskSchema;
-
-export const submitExitInterviewSchema = z.object({
-  notes: z.string().min(1),
-  rating: z.number().int().min(1).max(5).optional(),
-  reasonForLeaving: z.string().optional(),
-  wouldRejoin: z.boolean().optional(),
-  feedback: z.record(z.string(), z.unknown()).optional(),
-});
-
-export type CreateOnboardingTemplateInput = z.infer<typeof createOnboardingTemplateSchema>;
-export type InitiateOnboardingInput = z.infer<typeof initiateOnboardingSchema>;
-export type InitiateOffboardingInput = z.infer<typeof initiateOffboardingSchema>;

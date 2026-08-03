@@ -2539,7 +2539,7 @@ function FeedbackHistoryModal({ app, onClose }: { app: ApplicationItem; onClose:
   const res = data?.data;
 
   return (
-    <Modal open={true} onClose={onClose} title="Feedback History" size="lg">
+    <Modal open={true} onClose={onClose} title="Feedback History" maxWidthClass="max-w-4xl">
       <div className="space-y-4">
         <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-xs">
           <div className="font-semibold text-slate-900">{app.candidate.firstName} {app.candidate.lastName}</div>
@@ -2607,7 +2607,7 @@ function FeedbackHistoryModal({ app, onClose }: { app: ApplicationItem; onClose:
             <p className="text-xs text-slate-500 mt-1">Submit stage feedback to see it here.</p>
           </div>
         ) : (
-          <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
+          <div className="space-y-3">
             {res.history.map((h) => {
               const rec = REC_META[h.recommendation];
               return (
