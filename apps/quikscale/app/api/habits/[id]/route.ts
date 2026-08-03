@@ -5,6 +5,7 @@ import { isOrgAdmin, forbidden } from "@/lib/api/permissions";
 import { aggregateResponses, updateCampaignSchema } from "@/lib/schemas/habitSchema";
 import { validationError } from "@/lib/api/validationError";
 import { annotateRounds } from "@/lib/utils/habitRounds";
+import { notifyHabitCampaign } from "@/lib/services/habitNotifications";
 
 /**
  * GET /api/habits/[id]
@@ -95,7 +96,10 @@ export const PUT = withOrgAuth<{ id: string }>(
 
     const existing = await db.habitAssessment.findFirst({
       where: { id: params.id, orgId },
-      select: { id: true, isLegacy: true, status: true },
+      select: {
+        id: true, isLegacy: true, status: true,
+        quarter: true, year: true, deadline: true, participantUserIds: true,
+      },
     });
     if (!existing) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
@@ -120,6 +124,28 @@ export const PUT = withOrgAuth<{ id: string }>(
         ...(input.notes !== undefined && { notes: input.notes }),
       },
     });
+
+    // Only the DEADLINE is worth interrupting people for — a notes-only edit
+    // shouldn't mail everyone. Compared at millisecond precision against the
+    // stored value so a no-op save stays silent.
+    const deadlineChanged =
+      input.deadline !== undefined &&
+      (existing.deadline?.getTime() ?? null) !==
+        (input.deadline ? new Date(input.deadline).getTime() : null);
+    if (deadlineChanged) {
+      await notifyHabitCampaign({
+        orgId,
+        campaignId: updated.id,
+        event: "deadline_changed",
+        actorUserId: userId,
+        quarter: existing.quarter,
+        year: existing.year,
+        deadline: updated.deadline,
+        participantUserIds: existing.participantUserIds ?? [],
+      }).catch((err) => {
+        console.error("[PUT /api/habits/[id]] notifyHabitCampaign failed:", err);
+      });
+    }
 
     return NextResponse.json({ success: true, data: updated });
   },

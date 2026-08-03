@@ -107,3 +107,170 @@ describe("FilterPicker", () => {
     });
   });
 });
+
+// ── Opt-in: multi-select mode (`multiple`) ──
+// Single-select behaviour must be untouched — the suites above are the guard.
+describe("FilterPicker — multiple mode", () => {
+  function openMulti(label = /all users/i) {
+    fireEvent.click(screen.getByRole("button", { name: label }));
+  }
+
+  it("shows allLabel on the trigger when nothing is selected", () => {
+    render(
+      <FilterPicker multiple values={[]} onChangeMultiple={() => {}} options={OPTIONS} allLabel="All Users" />,
+    );
+    expect(screen.getByRole("button", { name: /all users/i })).toBeInTheDocument();
+  });
+
+  it("shows a count on the trigger once values are selected", () => {
+    render(
+      <FilterPicker multiple values={["u1", "u2"]} onChangeMultiple={() => {}} options={OPTIONS} allLabel="All Users" />,
+    );
+    expect(screen.getByText("2 selected")).toBeInTheDocument();
+  });
+
+  it("renders a chip per selected value so the selection is readable", () => {
+    render(
+      <FilterPicker multiple values={["u1", "u2"]} onChangeMultiple={() => {}} options={OPTIONS} allLabel="All Users" />,
+    );
+    // Chips render without opening the dropdown.
+    expect(screen.getByText("Alice Smith")).toBeInTheDocument();
+    expect(screen.getByText("Bob Jones")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /remove alice smith/i })).toBeInTheDocument();
+  });
+
+  it("labels chips from selectedOptions when the value is outside the loaded page", () => {
+    render(
+      <FilterPicker
+        multiple
+        values={["u9"]}
+        onChangeMultiple={() => {}}
+        options={OPTIONS}
+        selectedOptions={[{ value: "u9", label: "Zoe Far" }]}
+        allLabel="All Users"
+      />,
+    );
+    expect(screen.getByText("Zoe Far")).toBeInTheDocument();
+  });
+
+  it("adds a value when an unselected option is clicked", () => {
+    const onChangeMultiple = vi.fn();
+    render(
+      <FilterPicker multiple values={["u1"]} onChangeMultiple={onChangeMultiple} options={OPTIONS} allLabel="All Users" />,
+    );
+    openMulti(/1 selected/i);
+    fireEvent.click(screen.getByText("Bob Jones"));
+    expect(onChangeMultiple).toHaveBeenCalledWith(["u1", "u2"]);
+  });
+
+  it("removes a value when a selected option is clicked again", () => {
+    const onChangeMultiple = vi.fn();
+    render(
+      <FilterPicker multiple values={["u1", "u2"]} onChangeMultiple={onChangeMultiple} options={OPTIONS} allLabel="All Users" />,
+    );
+    openMulti(/2 selected/i);
+    // The dropdown row, not the chip.
+    const rows = screen.getAllByText("Alice Smith");
+    fireEvent.click(rows[rows.length - 1]);
+    expect(onChangeMultiple).toHaveBeenCalledWith(["u2"]);
+  });
+
+  it("keeps the dropdown open after toggling, so several can be picked", () => {
+    render(
+      <FilterPicker multiple values={[]} onChangeMultiple={() => {}} options={OPTIONS} allLabel="All Users" />,
+    );
+    openMulti();
+    fireEvent.click(screen.getByText("Bob Jones"));
+    // Search box is only rendered while the dropdown is open.
+    expect(screen.getByPlaceholderText(/search/i)).toBeInTheDocument();
+  });
+
+  it("clears the whole selection via the All row", () => {
+    const onChangeMultiple = vi.fn();
+    render(
+      <FilterPicker multiple values={["u1", "u2"]} onChangeMultiple={onChangeMultiple} options={OPTIONS} allLabel="All Users" />,
+    );
+    openMulti(/2 selected/i);
+    fireEvent.click(screen.getByText("All Users"));
+    expect(onChangeMultiple).toHaveBeenCalledWith([]);
+  });
+
+  it("removes just that value from a chip's × button", () => {
+    const onChangeMultiple = vi.fn();
+    render(
+      <FilterPicker multiple values={["u1", "u2"]} onChangeMultiple={onChangeMultiple} options={OPTIONS} allLabel="All Users" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /remove alice smith/i }));
+    expect(onChangeMultiple).toHaveBeenCalledWith(["u2"]);
+  });
+});
+
+// ── `allMeansEvery`: the "All" row selects everything instead of clearing ──
+// Used by the WWW status filter, where the value is an explicit set and `[]`
+// means "match nothing".
+describe("FilterPicker — allMeansEvery", () => {
+  it("selects every option from the All row instead of clearing", () => {
+    const onChangeMultiple = vi.fn();
+    render(
+      <FilterPicker multiple allMeansEvery values={["u1"]} onChangeMultiple={onChangeMultiple}
+        options={OPTIONS} allLabel="All Users" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /1 selected/i }));
+    fireEvent.click(screen.getByText("All Users"));
+    expect(onChangeMultiple).toHaveBeenCalledWith(["u1", "u2"]);
+  });
+
+  it("shows allLabel on the trigger when everything is selected", () => {
+    render(
+      <FilterPicker multiple allMeansEvery values={["u1", "u2"]} onChangeMultiple={() => {}}
+        options={OPTIONS} allLabel="All Users" />,
+    );
+    expect(screen.getByRole("button", { name: /all users/i })).toBeInTheDocument();
+    expect(screen.queryByText("2 selected")).not.toBeInTheDocument();
+  });
+
+  it("hides the chip row when everything is selected (nothing is excluded)", () => {
+    render(
+      <FilterPicker multiple allMeansEvery values={["u1", "u2"]} onChangeMultiple={() => {}}
+        options={OPTIONS} allLabel="All Users" />,
+    );
+    expect(screen.queryByRole("button", { name: /remove alice smith/i })).not.toBeInTheDocument();
+  });
+
+  it("still shows chips + count for a partial selection", () => {
+    render(
+      <FilterPicker multiple allMeansEvery values={["u1"]} onChangeMultiple={() => {}}
+        options={OPTIONS} allLabel="All Users" />,
+    );
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /remove alice smith/i })).toBeInTheDocument();
+  });
+
+  it("leaves the default (clear-on-All) behaviour untouched without the flag", () => {
+    const onChangeMultiple = vi.fn();
+    render(
+      <FilterPicker multiple values={["u1", "u2"]} onChangeMultiple={onChangeMultiple}
+        options={OPTIONS} allLabel="All Users" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /2 selected/i }));
+    fireEvent.click(screen.getByText("All Users"));
+    expect(onChangeMultiple).toHaveBeenCalledWith([]);
+  });
+});
+
+describe("FilterPicker — chip overflow", () => {
+  it("caps the chip row height and scrolls once many are selected", () => {
+    const many = Array.from({ length: 8 }, (_, i) => ({ value: `u${i}`, label: `User ${i}` }));
+    const { container } = render(
+      <FilterPicker multiple values={many.map(o => o.value)} onChangeMultiple={() => {}}
+        options={many} allLabel="All Users" />,
+    );
+    // The chip row is the scrollable container holding the remove buttons.
+    const chipRow = container.querySelector('[class*="flex-wrap"]') as HTMLElement;
+    expect(chipRow).toBeTruthy();
+    expect(chipRow.className).toMatch(/overflow-y-auto/);
+    expect(chipRow.className).toMatch(/max-h-/);
+    // All 8 stay in the DOM — they're reachable by scrolling, not truncated.
+    expect(screen.getAllByRole("button", { name: /^remove user/i })).toHaveLength(8);
+  });
+});
