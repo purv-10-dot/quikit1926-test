@@ -3020,6 +3020,40 @@ body {
   flex: 1 1 auto;
 }
 
+/* Voice typing: the privacy note inside the listening bar. Allowed to shrink
+   away on a narrow composer rather than pushing the Stop button off the row. */
+.qc-speech-note {
+  min-width: 0;
+  flex: 0 1 auto;
+  font-size: 11px;
+  color: var(--qc-text-3, var(--qc-text-2));
+}
+
+/* Two-state dictation locale pill ("EN" / "हि"). Sits in the composer's button
+   row, so it matches an IconButton's height and hit area without being one. */
+.qc-speech-lang {
+  flex: none;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 6px;
+  border: 0.5px solid var(--qc-border-strong);
+  border-radius: var(--qc-r-pill);
+  background: transparent;
+  color: var(--qc-text-2);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+.qc-speech-lang:hover:not(:disabled) {
+  background: var(--qc-surface-2);
+  color: var(--qc-text);
+}
+.qc-speech-lang:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* Received voice note: label above the (untouched) native <audio controls>. */
 .qc-voice-note {
   display: flex;
