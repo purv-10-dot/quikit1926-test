@@ -121,7 +121,12 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
 
     // Yearly quota enforcement (effective group = explicit > department mapping)
     const effective = await resolveEffectiveWfhQuotaGroup(orgId, employeeId);
-    if (effective.group) {
+    // No WFH group (direct or via department) → no quota/rules to enforce, so
+    // block outright rather than letting the request through unrestricted.
+    if (!effective.group) {
+      return validationError("You're not assigned to a WFH group yet. Ask HR to add you to one before requesting WFH.");
+    }
+    {
       const yearStart = new Date(start.getFullYear(), 0, 1);
       const yearEnd = new Date(start.getFullYear() + 1, 0, 1);
       const usedRows = await prisma.wfhRequest.findMany({

@@ -25,7 +25,10 @@ const expensePolicyBase = z.object({
   maxPerMonth: z.number().min(0).optional().nullable(),
   maxPerYear: z.number().min(0).optional().nullable(),
   requiresReceipt: z.boolean().default(true),
-  receiptThreshold: z.number().min(0).default(500),
+  // Nullable like the Max per*/month/year caps above — the create/edit form
+  // sends `null` for a blank field, which used to fail validation outright
+  // (z.number().default() only backfills on `undefined`, not `null`).
+  receiptThreshold: z.number().min(0).nullable().optional().transform((v) => v ?? 500),
   requiresPreApproval: z.boolean().default(false),
   approvalLevels: z.number().int().min(1).default(1),
   approvalChain: z.array(approvalChainLevelSchema).optional(),

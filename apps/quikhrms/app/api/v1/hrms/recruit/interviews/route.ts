@@ -232,6 +232,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         UPDATE "app_quikhrms"."Interview"
         SET "takeHomeInstructions" = ${data.takeHomeInstructions ?? null},
             "takeHomeAttachmentUrl" = ${data.takeHomeAttachmentUrl ?? null},
+            "takeHomeAttachmentLink" = ${data.takeHomeAttachmentLink ?? null},
             "takeHomeDueDate" = ${data.takeHomeDueDate ?? null}::date,
             "submissionToken" = ${token},
             "submissionTokenExpiresAt" = ${expiresAt}
@@ -287,11 +288,12 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
           dueDate: dueStr,
           submitUrl,
           hasAttachment: !!data.takeHomeAttachmentUrl,
+          attachmentLink: data.takeHomeAttachmentLink ?? null,
         };
         void resolveAndSend(orgId, {
           key: "recruit.take-home-task",
           to: candidate.email,
-          vars: { ...thData, roundName: thData.roundName ?? "", dueDate: thData.dueDate ?? "", hasAttachment: thData.hasAttachment },
+          vars: { ...thData, roundName: thData.roundName ?? "", dueDate: thData.dueDate ?? "", hasAttachment: thData.hasAttachment, attachmentLink: thData.attachmentLink ?? "" },
           fallback: () => buildTakeHomeTaskEmail(thData),
         }).catch((e) => console.error("[interview] take-home mail failed:", e));
         mailStatus.candidate = { sent: true, to: candidate.email };

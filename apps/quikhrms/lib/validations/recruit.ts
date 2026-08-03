@@ -190,6 +190,7 @@ export const createInterviewSchema = z.object({
   // interview row is created normally; these are persisted via raw SQL.
   takeHomeInstructions: z.string().max(10000).optional(),
   takeHomeAttachmentUrl: z.string().max(1000).optional(),
+  takeHomeAttachmentLink: z.string().max(1000).optional(),
   takeHomeDueDate: z.string().optional(),
 });
 

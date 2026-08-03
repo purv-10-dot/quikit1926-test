@@ -6,11 +6,12 @@ import { ensureUserRole, collapseToLatestRole } from "@/lib/authz/seed";
 
 export const dynamic = "force-dynamic";
 
-
 /**
  * The QuikChat workspace, served at `/dashboard` (standard app-flow route).
  * `/` is the public marketing landing; authenticated users are redirected here.
  */
+
+
 export default async function DashboardPage({
   searchParams,
 }: {

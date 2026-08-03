@@ -30,9 +30,6 @@ export const PERMISSIONS: PermissionDef[] = [
   { code: "hrms.leave.approve", category: "Leave", name: "Approve Leave", description: "Approve/reject leave requests" },
   { code: "hrms.leave.manage", category: "Leave", name: "Manage Leave Policies", description: "Configure leave types, balances" },
   { code: "hrms.leave.dashboard.read", category: "Leave", name: "View Leave Dashboard", description: "View the leave analytics dashboard" },
-  { code: "hrms.leave_policy.read", category: "Leave", name: "View Leave Policy Docs", description: "List/view uploaded leave-policy documents" },
-  { code: "hrms.leave_policy.write", category: "Leave", name: "Manage Leave Policy Docs", description: "Upload, extract, edit leave-policy documents and their parsed rules" },
-  { code: "hrms.leave_policy.approve", category: "Leave", name: "Approve Leave Policy", description: "Sign off on parsed rules and activate a leave policy" },
 
   // ── Attendance ──
   { code: "hrms.attendance.read", category: "Attendance", name: "View Attendance", description: "View all attendance records" },

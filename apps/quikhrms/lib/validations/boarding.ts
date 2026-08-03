@@ -52,6 +52,11 @@ export const bulkImportOnboardingSchema = z.object({
 // ─── Onboarding Templates ───────────────────────────────
 
 export const onboardingTaskTemplateSchema = z.object({
+  // Stable per-step identity, generated client-side and carried across edits —
+  // lets "Re-apply template" match a step back to an in-progress candidate
+  // task instead of only by title. Optional so legacy templates saved before
+  // this field existed still validate; the builder backfills one on load.
+  id: z.string().optional(),
   title: z.string().min(1),
   description: z.string().optional().nullable(),
   assigneeRole: AssigneeRoleEnum.default("HRRole"),
