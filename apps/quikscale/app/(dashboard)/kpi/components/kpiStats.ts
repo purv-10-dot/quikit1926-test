@@ -224,7 +224,7 @@ export function kpiOverallPercent(
 }
 
 export interface KpiOverviewStats {
-  /** Rounded mean of each ENTERED KPI's `kpiProgressPercent`. */
+  /** Rounded `(Σ QTD Achieved / Σ QTD Goal) × 100` over each ENTERED KPI. */
   avg: number;
   /** Card colored Blue (≥120%) or Green (≥100%). */
   onTrack: number;
@@ -254,9 +254,13 @@ export interface KpiOverviewStats {
  * and empty KPIs are excluded (so the three counts need not sum to the card
  * total).
  *
- * `avg` is the rounded mean of the per-card percentage over ENTERED KPIs only
- * (the gray 0/X cards are excluded so the average reflects tracked KPIs and
- * stays coherent with the buckets).
+ * `avg` is `(Σ QTD Achieved / Σ QTD Goal) × 100` — a single aggregate ratio
+ * across every ENTERED KPI's raw achieved/goal numbers, NOT a mean of each
+ * card's individual percentage. This intentionally weights larger-goal KPIs
+ * more heavily (a KPI with a 1M goal moves the pill far more than one with a
+ * 10 goal) — see the three examples in docs/kpi-avg-calc-examples.md for the
+ * reasoning and worked numbers. The gray 0/X cards are still excluded so the
+ * average reflects only tracked KPIs, same as before.
  */
 export function computeKpiOverviewStats(
   kpis: KPIRow[],
@@ -266,7 +270,8 @@ export function computeKpiOverviewStats(
   let onTrack = 0;
   let atRisk = 0;
   let behind = 0;
-  let pctSum = 0;
+  let achievedSum = 0;
+  let goalSum = 0;
   let entered = 0;
 
   for (const kpi of kpis) {
@@ -274,14 +279,15 @@ export function computeKpiOverviewStats(
     const hasAnyWeeklyValue = (kpi.weeklyValues ?? []).some((wv) => wv.value != null);
     if (!hasAnyWeeklyValue) continue; // neutral/gray card — excluded
     entered += 1;
-    pctSum += goal > 0 ? (achieved / goal) * 100 : 0;
+    achievedSum += achieved;
+    goalSum += goal;
     const { bg } = getColorByPercentage(achieved, goal, hasAnyWeeklyValue, kpi.reverseColor ?? false);
     if (bg === "bg-blue-600" || bg === "bg-green-600") onTrack += 1;
     else if (bg === "bg-yellow-500") atRisk += 1;
     else if (bg === "bg-red-600") behind += 1;
   }
 
-  const avg = entered > 0 ? Math.round(pctSum / entered) : 0;
+  const avg = entered > 0 && goalSum > 0 ? Math.round((achievedSum / goalSum) * 100) : 0;
   return { avg, onTrack, atRisk, behind };
 }
 
