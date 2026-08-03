@@ -8703,9 +8703,38 @@ model CrmActivityType {
   updatedAt DateTime @updatedAt
 
   fieldDefinitions CrmActivityFieldDefinition[]
+  userTargets      CrmActivityTypeTarget[]
 
   @@unique([orgId, code])
   @@index([orgId])
+  @@schema("app_quikcrm")
+}
+
+/// Per-salesperson DAILY target for ONE activity type.
+///
+/// Separate table (not a JSON sub-key) so targets are indexed, queryable and
+/// referentially tied to the activity type they belong to: deleting a type
+/// cascades its targets away. The org-wide OVERALL daily target continues to
+/// live on CrmOrgWorkspaceSettings.settings.activityTargets and is untouched by
+/// this model — the two coexist.
+///
+/// `dailyTarget` is a non-negative integer; 0 means "tracked but nothing
+/// expected today". A missing row means no target for that (user, type) pair.
+model CrmActivityTypeTarget {
+  id             String   @id @default(cuid())
+  orgId          String
+  userId         String
+  activityTypeId String
+  dailyTarget    Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  activityType CrmActivityType @relation(fields: [activityTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId, activityTypeId])
+  @@index([orgId])
+  @@index([orgId, userId])
+  @@index([activityTypeId])
   @@schema("app_quikcrm")
 }
 

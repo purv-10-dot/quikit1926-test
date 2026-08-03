@@ -456,15 +456,9 @@ function enableSaveLinkedInData() {
       if (searchEmailToggle) {
         searchEmailEnabled = !!searchEmailToggle.checked;
       }
-      if (!email) {
-        if (searchEmailEnabled) {
-          // Allow save, but warn user and trigger discovery after
-          showToast('Email will be searched and filled automatically.', 'info');
-        } else {
-          // Block save and show warning
-          showToast('Email address is required. If you don\'t have the email, turn on the toggle to search and save.', 'error');
-          return;
-        }
+      if (!email && searchEmailEnabled) {
+        // Email is optional; if the toggle is on, discovery runs after save
+        showToast('Email will be searched and filled automatically.', 'info');
       }
       
       if (!headline) {
