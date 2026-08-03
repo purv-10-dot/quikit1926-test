@@ -15,7 +15,7 @@
  * `{{companyName}}` is available in every event and is appended automatically.
  */
 
-export interface EmailVar {
+interface EmailVar {
   name: string;
   description: string;
   example: string;
@@ -170,6 +170,16 @@ const EVENTS: EmailEvent[] = [
       v("totalDeductions", "Total deductions", "₹18,000"),
       v("netPay", "Net pay", "₹1,02,000"),
       v("payslipUrl", "Link to payslip", "https://…"),
+    ],
+  },
+
+  {
+    key: "payroll.reset-otp", label: "Payroll Reset — OTP Verification", group: "Payroll",
+    variables: [
+      v("recipientName", "Recipient's name", "Anita Rao"),
+      v("otpCode", "One-time verification code", "4821"),
+      v("expiresInMinutes", "Code validity window in minutes", "10"),
+      v("requestedByName", "Name of the admin who initiated the reset", "Rohit Sharma"),
     ],
   },
 

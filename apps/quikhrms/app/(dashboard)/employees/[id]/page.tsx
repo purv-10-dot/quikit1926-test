@@ -143,6 +143,26 @@ function EmployeeProfilePageInner() {
     hasPermission("hrms.employee.read") ||
     hasPermission("hrms.employee.read_team") ||
     hasPermission("hrms.org.read");
+
+  // Tab visibility mirrors what each tab's data actually requires — a viewer
+  // without the underlying permission shouldn't see a tab that would just
+  // 403 (or, worse, silently render nothing). `_self` grants only count when
+  // viewing your own profile; `all`/`team` grants count regardless.
+  const canSeeTab: Record<Tab, boolean> = {
+    overview: true, // whole page already 403s via the employee-detail fetch if disallowed
+    documents: hasPermission("hrms.document.read") || hasPermission("hrms.document.read_team") || (isSelf && hasPermission("hrms.document.read_self")),
+    leave: hasPermission("hrms.leave.read") || hasPermission("hrms.leave.read_team") || (isSelf && hasPermission("hrms.leave.read_self")),
+    attendance: hasPermission("hrms.attendance.read") || hasPermission("hrms.attendance.read_team") || (isSelf && hasPermission("hrms.attendance.read_self")),
+    // Matches sidebar.tsx's Payroll group: no dedicated payroll permission
+    // exists, hrms.settings.* gates admin payroll, read_self opens My Payslips.
+    payroll: hasPermission("hrms.settings.read") || hasPermission("hrms.settings.write") || (isSelf && hasPermission("hrms.employee.read_self")),
+    performance: hasPermission("hrms.performance.read") || hasPermission("hrms.performance.read_team") || (isSelf && hasPermission("hrms.performance.read_self")),
+    // The history API requires read/read_team specifically (no read_self path),
+    // so isSelf doesn't bypass this one — matches backend exactly.
+    timeline: hasPermission("hrms.employee.read") || hasPermission("hrms.employee.read_team"),
+    history: hasPermission("hrms.employee.read") || hasPermission("hrms.employee.read_team"),
+  };
+  const visibleTabs = TABS.filter((t) => canSeeTab[t]);
   const backNav = returnTo
     ? { href: returnTo, label: "Back" }
     : canViewDirectory
@@ -376,7 +396,7 @@ function EmployeeProfilePageInner() {
         className="mb-4"
         value={tab}
         onChange={(v) => setTab(v as Tab)}
-        tabs={TABS.map((t) => ({ value: t, label: TAB_LABEL[t] }))}
+        tabs={visibleTabs.map((t) => ({ value: t, label: TAB_LABEL[t] }))}
       />
 
       {/* Content */}

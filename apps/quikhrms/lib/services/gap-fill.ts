@@ -2,38 +2,6 @@ import { randomBytes } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { APP_ID } from "@/lib/rbac/registry";
 
-// ─── Time/Timesheet helpers ─────────────────────────────
-
-export function hoursBetween(start: Date, end: Date | null): number {
-  if (!end) return 0;
-  return Math.round(((end.getTime() - start.getTime()) / (1000 * 60 * 60)) * 100) / 100;
-}
-
-export function weekBoundary(date: Date): { start: Date; end: Date } {
-  const d = new Date(date);
-  const day = d.getDay();
-  const start = new Date(d);
-  start.setDate(d.getDate() - day);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(start);
-  end.setDate(start.getDate() + 6);
-  end.setHours(23, 59, 59, 999);
-  return { start, end };
-}
-
-// ─── Delegation check ───────────────────────────────────
-
-export async function getActiveDelegations(orgId: string, delegatorId: string, module: string) {
-  const now = new Date();
-  return prisma.delegation.findMany({
-    where: {
-      orgId, delegatorId, deletedAt: null, isActive: true,
-      fromDate: { lte: now },
-      OR: [{ toDate: null }, { toDate: { gte: now } }],
-    },
-  }).then((rows) => rows.filter((r) => (r.modules as string[]).includes(module)));
-}
-
 // ─── Bulk import processor ──────────────────────────────
 
 type BulkEmpRow = {
@@ -863,30 +831,6 @@ export async function processBulkEmployees(
   }
 
   return { success, failed: errors.length, errors, warnings, createdEmployees };
-}
-
-// ─── AI stub ────────────────────────────────────────────
-
-export function mockAIReply(scope: string, message: string): { reply: string; tokens: number } {
-  const lowered = message.toLowerCase();
-  if (scope === "HRChat") {
-    if (lowered.includes("leave")) return { reply: "You have 12 casual leaves remaining this year. Want to apply?", tokens: 28 };
-    if (lowered.includes("holiday")) return { reply: "Upcoming: Independence Day (Aug 15), Diwali (Nov 12). See calendar for full list.", tokens: 30 };
-    return { reply: "I can help with leave, policies, attendance, and more. What do you need?", tokens: 22 };
-  }
-  if (scope === "ResumeScreening") {
-    return { reply: "Candidate scored 78/100. Strong React + TypeScript match. Gap: no payment-gateway experience.", tokens: 40 };
-  }
-  if (scope === "PerformanceInsight") {
-    return { reply: "Employee trending upward. Goal completion 92%. Skill gap: presentation skills. Recommend PIP: No.", tokens: 36 };
-  }
-  if (scope === "AnomalyDetection") {
-    return { reply: "Detected 3 late check-ins this week. Expense claim of ₹45,000 exceeds policy (₹20,000 cap).", tokens: 32 };
-  }
-  if (scope === "SmartSuggestion") {
-    return { reply: "Suggest: Hire 2 senior engineers to meet Q3 OKRs. Benchmark salary: ₹28-35 LPA.", tokens: 30 };
-  }
-  return { reply: "AI insight generated.", tokens: 10 };
 }
 
 // ─── Portal token ───────────────────────────────────────

@@ -18,16 +18,6 @@ interface CachedPolicy {
   effectiveTo: string | null;
 }
 
-/**
- * No-op — active leave policies are read directly from Postgres per evaluation
- * (no Redis cache; leave evaluation is low-traffic and the query is orgId-scoped).
- * Kept as a stable hook for the policy-write routes (create/update/approve/extract)
- * so they need no changes.
- */
-export async function invalidateLeavePolicyCache(_orgId: string): Promise<void> {
-  // nothing cached to invalidate
-}
-
 export interface LeaveContext {
   orgId: string;
   employeeId: string;
@@ -51,7 +41,7 @@ export interface EmployeeMeta {
   confirmationDate?: Date | null;
 }
 
-export interface Violation {
+interface Violation {
   code: string;
   message: string;
   severity: "block" | "warn";
@@ -520,7 +510,7 @@ export async function evaluateLeaveTypeColumns(params: {
   return { ok: blocking.length === 0, violations: vios };
 }
 
-export function parseRules(json: unknown): LeavePolicyRules | null {
+function parseRules(json: unknown): LeavePolicyRules | null {
   if (!json) return null;
   const parsed = leavePolicyRulesSchema.safeParse(json);
   if (!parsed.success) return null;

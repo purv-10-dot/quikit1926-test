@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { attendanceDayStart } from "@/lib/attendance/day";
 
 /** How far back a day may be regularized (in calendar days). */
-export const MAX_REGULARIZE_BACKDATE_DAYS = 30;
+const MAX_REGULARIZE_BACKDATE_DAYS = 30;
 
 /**
  * Extra guards for regularizing a past attendance day:

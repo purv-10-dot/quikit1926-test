@@ -1489,6 +1489,7 @@ function ProvisionsPanel({ employeeId }: { employeeId: string }) {
 // saves them to the employee, then marks the onboarding step complete.
 
 const GENDERS = ["Male", "Female", "Transgender", "NonBinary", "PreferNotToSay"];
+const EC_RELATIONS = ["Spouse", "Parent", "Sibling", "Child", "Friend", "Relative", "Other"];
 const PINPUT = "w-full border border-slate-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500";
 
 const PROFILE_FIELD_LABEL: Record<string, string> = {
@@ -1665,7 +1666,8 @@ function ProfileModal({ employeeId, task, onClose, onSaved }: { employeeId: stri
               <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-2">Emergency Contact</div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <input value={form.ecName} onChange={(e) => set("ecName", e.target.value)} placeholder="Name" className={PINPUT} />
-                <input value={form.ecRelationship} onChange={(e) => set("ecRelationship", e.target.value)} placeholder="Relationship" className={PINPUT} />
+                <Select size="sm" value={form.ecRelationship} onChange={(v) => set("ecRelationship", v)} placeholder="Relationship"
+                  options={EC_RELATIONS.map((r) => ({ value: r, label: r }))} />
                 <input value={form.ecPhone} onChange={(e) => set("ecPhone", e.target.value)} placeholder="Phone" className={PINPUT} />
               </div>
             </div>

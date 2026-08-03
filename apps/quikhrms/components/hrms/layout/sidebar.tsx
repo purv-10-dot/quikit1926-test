@@ -52,7 +52,7 @@ export interface NavChild {
   children?: NavLeaf[];
 }
 
-export type Section = "core" | "hr" | "finance" | "growth" | "assets" | "settings";
+type Section = "core" | "hr" | "finance" | "growth" | "assets" | "settings";
 
 export interface NavItem {
   label: string;
@@ -101,8 +101,8 @@ export const navigation: NavItem[] = [
       { label: "Onboarding", href: "/onboarding", perms: ["hrms.onboarding.read", "hrms.onboarding.write"], navKey: "people.onboarding" },
       { label: "Offboarding", href: "/offboarding", perms: ["hrms.offboarding.read", "hrms.offboarding.write"], navKey: "people.offboarding" },
       { label: "Resignation Approvals", href: "/offboarding/resignation-approvals", perms: ["hrms.offboarding.approve"], navKey: "people.resignation-approvals" },
-      { label: "New Requisition", href: "/recruit/raise", roles: ["admin"], navKey: "people.requisition" },
-      { label: "Approve Requisitions", href: "/recruit/approvals", roles: ["admin"], navKey: "people.requisition-approvals" },
+      { label: "New Requisition", href: "/recruit/raise", perms: ["hrms.recruit.write"], navKey: "people.requisition" },
+      { label: "Approve Requisitions", href: "/recruit/approvals", perms: ["hrms.recruit.approve"], navKey: "people.requisition-approvals" },
     ],
   },
   {
@@ -273,7 +273,7 @@ export const navigation: NavItem[] = [
   },
 ];
 
-export function childHasActive(child: NavChild, pathname: string): boolean {
+function childHasActive(child: NavChild, pathname: string): boolean {
   if (child.href && pathname === child.href) return true;
   return child.children?.some((c) => pathname === c.href) ?? false;
 }
@@ -284,7 +284,7 @@ export function childHasActive(child: NavChild, pathname: string): boolean {
  * `/expenses?tab=approvals`) highlight correctly. A query-less child is the
  * default for its path — active unless a sibling's tab matches the current one.
  */
-export function leafActive(href: string, pathname: string, currentTab: string, siblings: NavChild[]): boolean {
+function leafActive(href: string, pathname: string, currentTab: string, siblings: NavChild[]): boolean {
   const [hPath, hQuery] = href.split("?");
   if (pathname !== hPath) return false;
   const hTab = new URLSearchParams(hQuery ?? "").get("tab");

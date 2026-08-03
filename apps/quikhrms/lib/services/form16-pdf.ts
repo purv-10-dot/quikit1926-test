@@ -12,7 +12,7 @@ export function fyBounds(fy: string): { start: Date; end: Date } {
   const startYear = Number(startYearStr);
   return { start: new Date(`${startYear}-04-01`), end: new Date(`${startYear + 1}-03-31`) };
 }
-export function assessmentYear(fy: string): string {
+function assessmentYear(fy: string): string {
   const [startYearStr] = fy.split("-");
   const startYear = Number(startYearStr);
   return `${startYear + 1}-${String((startYear + 2) % 100).padStart(2, "0")}`;

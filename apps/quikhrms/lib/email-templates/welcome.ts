@@ -9,7 +9,7 @@ import {
   BRAND,
 } from "./_base";
 
-export interface CredentialSet {
+interface CredentialSet {
   label: string;
   items: Array<{ key: string; value: string }>;
   loginUrl?: string | null;

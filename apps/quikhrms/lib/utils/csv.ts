@@ -22,10 +22,10 @@ export interface CsvColumn<T> {
   value: (row: T) => CsvCell;
 }
 
-export type CsvCell = string | number | boolean | Date | null | undefined;
+type CsvCell = string | number | boolean | Date | null | undefined;
 
 /** Escape one cell to a CSV field per RFC 4180 (quote + double inner quotes). */
-export function escapeCsvValue(value: CsvCell): string {
+function escapeCsvValue(value: CsvCell): string {
   let s = normalizeCell(value);
   // Defend against CSV formula injection: a cell starting with = + - @ (or a
   // leading tab/CR) is interpreted as a formula by Excel/Sheets. Prefix a single
@@ -36,7 +36,7 @@ export function escapeCsvValue(value: CsvCell): string {
 }
 
 /** Coerce any supported cell type to its display string. */
-export function normalizeCell(value: CsvCell): string {
+function normalizeCell(value: CsvCell): string {
   if (value === null || value === undefined) return "";
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (value instanceof Date) return isNaN(value.getTime()) ? "" : toLocalDate(value);
@@ -44,7 +44,7 @@ export function normalizeCell(value: CsvCell): string {
 }
 
 /** Local `yyyy-mm-dd` (avoids the UTC day-shift that toISOString would cause). */
-export function toLocalDate(d: Date): string {
+function toLocalDate(d: Date): string {
   const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
   return local.toISOString().slice(0, 10);
 }
@@ -92,7 +92,7 @@ export function formatAddress(
 }
 
 /** Build the full CSV text (with BOM) from column defs + rows. */
-export function buildCsv<T>(columns: CsvColumn<T>[], rows: T[]): string {
+function buildCsv<T>(columns: CsvColumn<T>[], rows: T[]): string {
   const headerLine = columns.map((c) => escapeCsvValue(c.header)).join(",");
   const dataLines = rows.map((row) =>
     columns.map((c) => escapeCsvValue(c.value(row))).join(","),
@@ -101,14 +101,8 @@ export function buildCsv<T>(columns: CsvColumn<T>[], rows: T[]): string {
   return "﻿" + [headerLine, ...dataLines].join("\r\n");
 }
 
-/** Build CSV from raw header + string-row arrays (for simple ad-hoc exports). */
-export function buildCsvRows(headers: string[], rows: CsvCell[][]): string {
-  const lines = [headers, ...rows].map((r) => r.map(escapeCsvValue).join(","));
-  return "﻿" + lines.join("\r\n");
-}
-
 /** Trigger a browser download of `content` as `filename`. Client-side only. */
-export function downloadTextFile(filename: string, content: string, mime = "text/csv;charset=utf-8"): void {
+function downloadTextFile(filename: string, content: string, mime = "text/csv;charset=utf-8"): void {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -119,7 +113,7 @@ export function downloadTextFile(filename: string, content: string, mime = "text
 }
 
 /** Suffix a base name with today's date: `candidates` → `candidates-2026-07-03.csv`. */
-export function datedFilename(base: string, ext = "csv"): string {
+function datedFilename(base: string, ext = "csv"): string {
   return `${base}-${toLocalDate(new Date())}.${ext}`;
 }
 

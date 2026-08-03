@@ -1,11 +1,11 @@
 import { z } from "zod";
 
-export const DocumentCategoryEnum = z.enum([
+const DocumentCategoryEnum = z.enum([
   "OfferLetter", "Policy", "IdProof", "Certificate", "Contract",
   "AppointmentLetter", "ExperienceLetter", "RelievingLetter", "NDA", "Other",
 ]);
 
-export const DocumentStatusEnum = z.enum(["Draft", "Active", "Archived", "Expired"]);
+const DocumentStatusEnum = z.enum(["Draft", "Active", "Archived", "Expired"]);
 
 // ─── Documents ──────────────────────────────────────────
 
@@ -69,5 +69,3 @@ export const shareDocumentSchema = z.object({
   (d) => !d.expiresAt || new Date(d.expiresAt).getTime() > Date.now(),
   { message: "Link expiry must be in the future", path: ["expiresAt"] },
 );
-
-export type CreateDocumentInput = z.infer<typeof createDocumentSchema>;

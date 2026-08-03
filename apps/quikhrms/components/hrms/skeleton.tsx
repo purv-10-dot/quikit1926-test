@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
 import { clsx } from "clsx";
 
 interface SkeletonProps {
@@ -38,7 +37,7 @@ export function SkeletonLine({ w = "80%", h = 12 }: { w?: string | number; h?: n
 }
 
 /** Row of metric cards (dashboard header) */
-export function SkeletonStats({ count = 4 }: { count?: number }) {
+function SkeletonStats({ count = 4 }: { count?: number }) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
       {Array.from({ length: count }).map((_, i) => (
@@ -162,65 +161,6 @@ export function SkeletonPage({ variant = "table" }: { variant?: "table" | "cards
         </div>
       )}
     </div>
-  );
-}
-
-/**
- * SkeletonSwap — crossfade between a skeleton and real content.
- *
- * Usage:
- *   <SkeletonSwap loading={q.isLoading} skeleton={<MyListSkeleton />}>
- *     <MyList items={q.data} />
- *   </SkeletonSwap>
- *
- * When `loading` flips to false, the skeleton fades out (180 ms) while the
- * content fades in (220 ms) on top. The skeleton is removed from the DOM
- * after the fade completes.
- */
-const SKELETON_FADE_MS = 180;
-
-export function SkeletonSwap({
-  loading,
-  skeleton,
-  children,
-  className,
-}: {
-  loading: boolean;
-  skeleton: React.ReactNode;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  const [showSkeleton, setShowSkeleton] = useState(loading);
-  const [fadingOut, setFadingOut] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (loading) {
-      if (timer.current) { clearTimeout(timer.current); timer.current = null; }
-      setShowSkeleton(true);
-      setFadingOut(false);
-    } else if (showSkeleton) {
-      setFadingOut(true);
-      timer.current = setTimeout(() => {
-        setShowSkeleton(false);
-        setFadingOut(false);
-      }, SKELETON_FADE_MS);
-    }
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
-    };
-  }, [loading, showSkeleton]);
-
-  if (showSkeleton) {
-    return (
-      <div className={clsx("relative", className)}>
-        <div className={fadingOut ? "fade-out-content" : undefined}>{skeleton}</div>
-      </div>
-    );
-  }
-
-  return (
-    <div className={clsx("fade-in-content", className)}>{children}</div>
   );
 }
 
