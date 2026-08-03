@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { RefreshCw, Settings2, Target } from "lucide-react";
+import { RefreshCw, Settings2, Target, HelpCircle } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/card";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
+import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/hooks/use-toast";
 
 const TRACKER_API = "/api/dashboard/activity-target-tracker";
@@ -64,10 +65,85 @@ function StatusBadge({ status }: { status: Status }) {
   );
 }
 
+/**
+ * Plain-language explanation of the tracker math. Kept in sync with
+ * `computeAttainment` (activity-target-status.ts) and the three counted
+ * sources in activity-target-count.ts — if either changes, update this copy.
+ */
+function CompletionHelp() {
+  return (
+    <div className="space-y-3 text-sm text-crm-muted">
+      <p>
+        Completion % shows how much of a salesperson&apos;s daily target they have finished
+        so far today.
+      </p>
+      <p>
+        Formula used:
+        <span className="ml-1 font-medium text-crm-text">
+          (Today&apos;s Activities ÷ Daily Target) × 100
+        </span>
+      </p>
+      <ul className="list-disc space-y-1 pl-5">
+        <li>
+          <span className="font-medium text-crm-text">Daily Target:</span> the number of
+          activities assigned to that salesperson for one day, set on the Activity Targets
+          settings page.
+        </li>
+        <li>
+          <span className="font-medium text-crm-text">Today&apos;s Activities:</span> everything
+          they completed today — logged activities, call logs, and tasks marked
+          &ldquo;Completed&rdquo; — added together.
+        </li>
+        <li>
+          <span className="font-medium text-crm-text">Remaining:</span> target minus activities
+          done. It never goes below zero.
+        </li>
+      </ul>
+      <ul className="list-disc space-y-1 pl-5">
+        <li>
+          Beating the target is allowed — the percentage can go above 100%. Doing 15 activities
+          against a target of 10 shows <span className="font-medium text-crm-text">150%</span>.
+        </li>
+        <li>
+          The result is rounded to a whole number, so 7 of 9 activities shows{" "}
+          <span className="font-medium text-crm-text">78%</span>.
+        </li>
+        <li>
+          If the daily target is 0, we cannot divide by zero, so Completion % is shown as{" "}
+          <span className="font-medium text-crm-text">100%</span> with an
+          &ldquo;On Target&rdquo; status. This keeps someone with no meaningful target from
+          being flagged as behind.
+        </li>
+        <li>
+          Salespeople with <span className="font-medium text-crm-text">no target assigned</span>{" "}
+          do not appear on this page at all, and are left out of the totals at the top.
+        </li>
+      </ul>
+      <p>
+        <span className="font-medium text-crm-text">Status</span> comes from the same
+        percentage: <span className="font-medium text-crm-text">On Target</span> at 100% or
+        more, <span className="font-medium text-crm-text">At Risk</span> from 80% to 99%, and{" "}
+        <span className="font-medium text-crm-text">Below Target</span> under 80%.
+      </p>
+      <p>
+        The <span className="font-medium text-crm-text">Completion %</span> tile at the top of
+        the page uses the same formula for the whole team: everyone&apos;s activities added up,
+        divided by everyone&apos;s targets added up. It is not an average of the individual
+        percentages, so one very high performer does not pull the team number up as much as
+        you might expect.
+      </p>
+      <p>
+        Today and this week follow your own time zone, and the week starts on Monday.
+      </p>
+    </div>
+  );
+}
+
 export function ActivityTrackerClient() {
   const toast = useToast();
   const [data, setData] = useState<TrackerDto | null>(null);
   const [loading, setLoading] = useState(true);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -121,6 +197,16 @@ export function ActivityTrackerClient() {
           <h1 className="flex items-center gap-2 text-xl font-semibold text-crm-text sm:text-2xl">
             <Target size={22} className="text-crm-blue" />
             Activity Target Tracker
+            <button
+              type="button"
+              onClick={() => setHelpOpen(true)}
+              className="inline-flex h-8 items-center gap-1 rounded-full border border-crm-border px-2 text-xs font-medium text-crm-muted transition hover:bg-crm-panel hover:text-crm-text"
+              aria-label="How is Completion % calculated?"
+              title="How is Completion % calculated?"
+            >
+              <HelpCircle size={18} />
+              How is this calculated?
+            </button>
           </h1>
           <p className="mt-1 text-sm text-crm-muted">
             Assigned salespeople only. Daily and weekly activity attainment, largest shortfall first.
@@ -177,7 +263,20 @@ export function ActivityTrackerClient() {
                   <TH>Daily Target</TH>
                   <TH>Today&apos;s Activities</TH>
                   <TH>Remaining</TH>
-                  <TH>Completion %</TH>
+                  <TH>
+                    <span className="inline-flex items-center gap-1">
+                      Completion %
+                      <button
+                        type="button"
+                        onClick={() => setHelpOpen(true)}
+                        className="inline-flex text-crm-muted transition hover:text-crm-text"
+                        aria-label="How is Completion % calculated?"
+                        title="How is Completion % calculated?"
+                      >
+                        <HelpCircle size={14} />
+                      </button>
+                    </span>
+                  </TH>
                   <TH>Weekly Target</TH>
                   <TH>Weekly Activities</TH>
                   <TH>Status</TH>
@@ -237,6 +336,14 @@ export function ActivityTrackerClient() {
           </div>
         </CardBody>
       </Card>
+
+      <Modal
+        open={helpOpen}
+        onClose={() => setHelpOpen(false)}
+        title="How is Completion % Calculated?"
+      >
+        <CompletionHelp />
+      </Modal>
     </div>
   );
 }

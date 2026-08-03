@@ -8,7 +8,6 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { requireApiUser, isResponse, errorResponse } from "@/lib/auth/require";
-import { assertModule } from "@/lib/auth/permissions";
 import {
   callerConnectionId,
   getMailboxEmail,
@@ -21,9 +20,11 @@ export const dynamic = "force-dynamic";
 
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
+    // Personal mailbox: authentication is the only gate. getMailboxEmail below
+    // filters on the caller's own connection id, so another user's email id
+    // resolves to 404 rather than leaking.
     const user = await requireApiUser();
     if (isResponse(user)) return user;
-    await assertModule(user, "mailbox", "view");
 
     const { id } = await ctx.params;
     const connectionId = await callerConnectionId(user.orgId, user.userId);
