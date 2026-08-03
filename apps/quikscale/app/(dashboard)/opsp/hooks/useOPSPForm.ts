@@ -569,12 +569,12 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
   }, [form.targetRows, requestCategorySync, warnDuplicateCategories, replaceGoalCategories, appendGoalCategories]);
 
   // Goals (1 YR) → Actions (QTR): grow Actions so every Goal has a matching
-  // row (auto-filling its category from the Goal) but NEVER shrink — the user
-  // can add independent Action rows via "Add New" (up to MAX_ACTION_ROWS), and
-  // removing/clearing a Goal must not delete those extra rows. The bound
-  // (overlapping) rows still re-propagate their category from the matching
-  // Goal, resetting projected + m-cells so stale values don't strand against
-  // an out-of-date category. See reconcileActionsWithGoals for the full rules.
+  // (blank) row but NEVER shrink — the user can add independent Action rows
+  // via "Add New" (up to MAX_ACTION_ROWS), and removing/clearing a Goal must
+  // not delete those extra rows. A Goal with NO existing Action row at its
+  // index is never auto-filled down — it stays goals-only permanently; the
+  // bound (overlapping) rows only auto-propagate a CLEAR (synced-clear), never
+  // a first-fill. See reconcileActionsWithGoals for the full rules.
   useEffect(() => {
     const curCats = form.goalRows.map(r => r.category);
     if (skipNextGoalsCascade.current) {

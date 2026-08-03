@@ -28,7 +28,7 @@ export const ALL_STATIC_COLS = [
 ];
 
 export const COL_LABELS: Record<string, string> = {
-  progress: "Progress", owner: "Owner", kpiName: "KPI Name",
+  progress: "Progress (Quarterly Goal)", owner: "Owner", kpiName: "KPI Name",
   team: "Team", teamHead: "Team Head", kpiOwner: "KPI Owner",
   measurementUnit: "Measurement Unit", kpiType: "KPI Type", divisionType: "Division Type", targetValue: "Target Value",
   quarterlyGoal: "Quarterly Goal", qtdGoal: "QTD Goal", qtdAchieved: "QTD Achieved", weeklyGoal: "Weekly Goal",
