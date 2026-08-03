@@ -892,6 +892,11 @@ model WWWItem {
   category         String?
   originalDueDate  DateTime?
   revisedDates     String[]
+  /// "To Be Decided" due date. When true, `when` holds a placeholder (the
+  /// creation date) and the UI renders "To be decided" instead of the date.
+  /// `when` deliberately stays NOT NULL so every existing reader, sort and
+  /// index keeps working unchanged.
+  dueDateTBD       Boolean          @default(false)
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
   createdBy        String
@@ -1661,6 +1666,13 @@ model HabitAssessment {
   closedAt           DateTime?
   deadline           DateTime?
   isLegacy           Boolean                   @default(false)
+  /// Optional team scope chosen at creation. Display/filtering only — the
+  /// authoritative participant list is `participantUserIds`.
+  teamId             String?
+  /// Users asked to fill this assessment. EMPTY = every active org member,
+  /// which is the pre-existing behaviour every campaign created before this
+  /// column relies on — so old rows keep working untouched.
+  participantUserIds String[]                  @default([])
   org                Org                       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   responses          HabitAssessmentResponse[]
 

@@ -711,7 +711,7 @@ export default function ClientsPage() {
                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Status</p>
                   <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as "" | "active" | "inactive")}
                     className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
-                    <option value="">All statuses</option>
+                    <option value="">All status</option>
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>
                   </select>

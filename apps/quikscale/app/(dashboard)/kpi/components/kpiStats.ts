@@ -226,26 +226,39 @@ export function kpiOverallPercent(
 export interface KpiOverviewStats {
   /** Rounded mean of each ENTERED KPI's `kpiProgressPercent`. */
   avg: number;
-  /** Card colored Blue (≥120%) or Green (≥100%). */
+  /** Card colored Green — target achieved (100–119% forward). */
   onTrack: number;
   /** Card colored Yellow (80–99%). */
   atRisk: number;
   /** Card colored Red (<80%, value entered). */
   behind: number;
+  /**
+   * Card colored Blue — target exceeded significantly (≥120% forward, ≤80%
+   * reverse). Split out of `onTrack` so the pill reports it as its own status;
+   * `reverseColor` KPIs are bucketed by the SAME color helper, so a
+   * lower-is-better KPI comfortably under target lands here too.
+   */
+  overAchieved: number;
 }
 
 /**
  * Aggregate stats for the dashboard "avg KPI" pill (AvgKPICard).
  *
- * The on-track / at-risk / behind buckets are derived from the EXACT card color
- * each KPI shows — we run the canonical `getColorByPercentage` (the same helper
- * `KPICard`/`getProgressBadgeColors` use) on each card's `resolveProgressQtd`
- * pair, then bucket by color so the pill always matches what's on screen:
+ * The over-achieved / on-track / at-risk / behind buckets are derived from the
+ * EXACT card color each KPI shows — we run the canonical `getColorByPercentage`
+ * (the same helper `KPICard`/`getProgressBadgeColors` use) on each card's
+ * `resolveProgressQtd` pair, then bucket by color so the pill always matches
+ * what's on screen:
  *
- *   Blue (≥120%) | Green (≥100%) → onTrack
+ *   Blue (≥120%)                 → overAchieved
+ *   Green (≥100%)                → onTrack
  *   Yellow (80–99%)              → atRisk
  *   Red (<80%, entered)          → behind
- *   Neutral (no value entered)   → excluded from all three counts
+ *   Neutral (no value entered)   → excluded from all four counts
+ *
+ * Blue used to be folded into `onTrack`, which hid over-achievement behind the
+ * same green count. It is now its own bucket, so `onTrack` means strictly
+ * "achieved but not exceeded". The four counts remain mutually exclusive.
  *
  * Previously this used arbitrary 80/50 thresholds on the raw percentage, so the
  * counts disagreed with the cards (a 54% card is RED/below-target but was
@@ -266,6 +279,7 @@ export function computeKpiOverviewStats(
   let onTrack = 0;
   let atRisk = 0;
   let behind = 0;
+  let overAchieved = 0;
   let pctSum = 0;
   let entered = 0;
 
@@ -276,13 +290,14 @@ export function computeKpiOverviewStats(
     entered += 1;
     pctSum += goal > 0 ? (achieved / goal) * 100 : 0;
     const { bg } = getColorByPercentage(achieved, goal, hasAnyWeeklyValue, kpi.reverseColor ?? false);
-    if (bg === "bg-blue-600" || bg === "bg-green-600") onTrack += 1;
+    if (bg === "bg-blue-600") overAchieved += 1;
+    else if (bg === "bg-green-600") onTrack += 1;
     else if (bg === "bg-yellow-500") atRisk += 1;
     else if (bg === "bg-red-600") behind += 1;
   }
 
   const avg = entered > 0 ? Math.round(pctSum / entered) : 0;
-  return { avg, onTrack, atRisk, behind };
+  return { avg, onTrack, atRisk, behind, overAchieved };
 }
 
 /**
