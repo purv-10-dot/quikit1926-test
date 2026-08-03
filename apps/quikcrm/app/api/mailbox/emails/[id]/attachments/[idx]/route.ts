@@ -8,7 +8,6 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { requireApiUser, isResponse, errorResponse } from "@/lib/auth/require";
-import { assertModule } from "@/lib/auth/permissions";
 import { prisma } from "@/lib/db/prisma";
 import { getConnection, withFreshToken } from "@/lib/services/email/mailbox";
 import { getProvider } from "@/lib/services/email/providers";
@@ -27,9 +26,10 @@ export async function GET(
   ctx: { params: Promise<{ id: string; idx: string }> },
 ) {
   try {
+    // Personal mailbox: authentication is the only gate. The email lookup below
+    // is pinned to the caller's own connection id.
     const user = await requireApiUser();
     if (isResponse(user)) return user;
-    await assertModule(user, "mailbox", "view");
 
     const { id, idx } = await ctx.params;
     const conn = await getConnection(user.orgId, user.userId);

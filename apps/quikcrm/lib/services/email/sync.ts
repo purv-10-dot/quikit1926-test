@@ -15,10 +15,12 @@
  * (indexed Lead/Contact lookup + Account/Opportunity roll-up), createNotification(),
  * withFreshToken() (token refresh in one place).
  *
- * Scope: only messages whose counterparty matches an existing CRM record are
- * stored. Unmatched mail is skipped — never persisted (req 8). Historical
- * backfill imports mail sent/received directly in Outlook/Gmail (req 2/3),
- * regardless of whether it ever touched the CRM.
+ * Scope: messages whose counterparty matches an existing CRM record are stored
+ * against that record. Unmatched OUTBOUND mail (sent by the user from Outlook/
+ * Gmail to a non-CRM address) is still persisted as a STANDALONE activity so
+ * every email the user sends appears in Activities. Unmatched INBOUND mail is
+ * skipped — mirror-only. Historical backfill imports mail sent/received directly
+ * in Outlook/Gmail (req 2/3), regardless of whether it ever touched the CRM.
  */
 
 import { prisma } from "@/lib/db/prisma";
@@ -28,6 +30,7 @@ import { withFreshToken } from "./mailbox";
 import { persistMessage } from "./persist";
 import { upsertMailboxEmail, linkMailboxEmailToCrm } from "./mailbox-store";
 import { matchRecordByAnyAddress } from "./record-emails";
+import { STANDALONE_KIND, STANDALONE_RELATED_ID } from "@/lib/services/activities/target-existence";
 import { createNotification } from "@/lib/notifications/service";
 import type { CrmMailboxConnection } from "@quikit/database";
 import type { NormalizedMessage } from "./providers/types";
@@ -48,6 +51,7 @@ export interface MailboxSyncResult {
   fetched: number;
   mirrored: number; // NEW mailbox-mirror rows stored (P3: every email)
   matched: number; // CRM-record matches
+  standalone: number; // unmatched OUTBOUND — persisted as standalone activities
   created: number; // NEW CRM-matched activities/messages
   skipped: number; // fetched but not CRM-matched (still mirrored)
   backfillDone?: boolean;
@@ -81,11 +85,19 @@ async function ingestBatch(
 
     const allAddrs = [msg.fromAddress, ...msg.toAddresses, ...msg.ccAddresses];
     const match = await matchRecordByAnyAddress(conn.orgId, allAddrs, conn.emailAddress);
-    if (!match) {
+    if (match) {
+      result.matched++;
+    } else if (msg.direction === "outbound") {
+      // Mail the user SENT from Outlook/Gmail to an address with no CRM record.
+      // It still becomes a standalone timeline activity (relatedKind "None") so
+      // outbound work is never invisible in Activities — parity with sending
+      // from QuikCRM with Link-to-Record = None. Unmatched INBOUND stays
+      // mirror-only: it is unsolicited mail, not user activity.
+      result.standalone++;
+    } else {
       result.skipped++;
       continue;
     }
-    result.matched++;
 
     const persisted = await persistMessage({
       orgId: conn.orgId,
@@ -105,8 +117,9 @@ async function ingestBatch(
       bodyHtml: msg.bodyHtml,
       bodyText: msg.bodyText,
       timestamp: msg.timestamp,
-      relatedKind: match.kind,
-      relatedObjectId: match.id,
+      relatedKind: match?.kind ?? STANDALONE_KIND,
+      relatedObjectId: match?.id ?? STANDALONE_RELATED_ID,
+      opportunityId: match?.opportunityId ?? undefined,
       attachments: msg.attachments.map((a) => ({
         providerAttachmentId: a.providerAttachmentId,
         filename: a.filename,
@@ -115,12 +128,15 @@ async function ingestBatch(
       })),
     });
 
-    // Cross-link the mirror row to its CRM-matched counterpart.
-    await linkMailboxEmailToCrm(mirror.id, persisted.messageId, match.kind, match.id);
+    // Cross-link the mirror row to its CRM-matched counterpart. Standalone
+    // messages have no record to point at, so matchedKind/matchedObjectId stay null.
+    if (match) {
+      await linkMailboxEmailToCrm(mirror.id, persisted.messageId, match.kind, match.id);
+    }
 
     if (persisted.created) {
       result.created++;
-      if (notify && msg.direction === "inbound") {
+      if (notify && match && msg.direction === "inbound") {
         await notifyReply(conn, msg.fromAddress, msg.subject, match).catch(() => {});
       }
     }
@@ -136,6 +152,7 @@ export async function syncMailbox(conn: CrmMailboxConnection): Promise<MailboxSy
     fetched: 0,
     mirrored: 0,
     matched: 0,
+    standalone: 0,
     created: 0,
     skipped: 0,
   };

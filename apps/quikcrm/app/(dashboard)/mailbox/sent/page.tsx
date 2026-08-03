@@ -1,11 +1,10 @@
 import { requireUser } from "@/lib/auth/require";
-import { assertModule } from "@/lib/auth/permissions";
 import { MailboxList } from "@/components/mailbox/mailbox-list";
 
 export const dynamic = "force-dynamic";
 
+/** Personal-mailbox read — gated on requireUser only. See mailbox/inbox/page.tsx. */
 export default async function MailboxSentPage() {
-  const user = await requireUser();
-  await assertModule(user, "mailbox", "view");
+  await requireUser();
   return <MailboxList folder="sent" />;
 }

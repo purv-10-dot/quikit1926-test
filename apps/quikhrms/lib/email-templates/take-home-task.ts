@@ -9,6 +9,8 @@ export interface TakeHomeTaskData {
   dueDate?: string | null;
   submitUrl: string;
   hasAttachment?: boolean;
+  /** Optional reference link HR pasted (e.g. a doc/repo for the assignment). */
+  attachmentLink?: string | null;
 }
 
 /**
@@ -43,6 +45,9 @@ export function buildTakeHomeTaskEmail(data: TakeHomeTaskData): { subject: strin
       : "") +
     (data.hasAttachment
       ? alert("info", "A specification file is attached to your task — you'll be able to download it on the submission page.")
+      : "") +
+    (data.attachmentLink
+      ? alert("info", `Reference link: <a href="${esc(data.attachmentLink)}" style="color:#1d4ed8;">${esc(data.attachmentLink)}</a>`)
       : "") +
     btnPrimary("Start / Submit Task", esc(data.submitUrl), "blue") +
     para(`<span style="font-size:12px;color:#6b7280;">You can upload a file and/or paste a link on the submission page.${data.dueDate ? ` Please submit by <strong>${esc(data.dueDate)}</strong>.` : ""}</span>`);

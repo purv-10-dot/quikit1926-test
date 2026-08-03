@@ -7,6 +7,7 @@ import { CrudTable, type Column } from "@/components/hrms/crud-table";
 import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/ui/select";
 import { PageBackground } from "@/components/hrms/page-background";
+import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 
 interface Dept {
   id: string;
@@ -22,6 +23,10 @@ interface Dept {
 export default function DepartmentsPage() {
   const api = useApiClient();
   const qc = useQueryClient();
+  const { hasPermission } = useDashboardConfig();
+  // Backend requires hrms.org.write to create/update/delete — hide those
+  // actions for a view-only user instead of letting them click through to a 403.
+  const canManage = hasPermission("hrms.org.write");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 10;
@@ -106,6 +111,7 @@ export default function DepartmentsPage() {
         onSearchChange={(v) => { setSearch(v); setPage(1); }}
         searchPlaceholder="Search departments..."
         pagination={{ page, totalPages: Math.max(1, Math.ceil((data?.data ?? []).length / PAGE_SIZE)), total: (data?.data ?? []).length, limit: PAGE_SIZE, onPageChange: setPage }}
+        canManage={canManage}
       />
 
       <Modal

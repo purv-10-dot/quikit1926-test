@@ -13,7 +13,6 @@ interface GroupMemberRow {
   department: string;
   designation: string;
   workEmail: string;
-  experienceMonths: number;
   wfhGroupName: string;
 }
 
@@ -68,15 +67,14 @@ export function WfhEmployeesInGroupTab() {
               <th className="px-4 py-3">Department</th>
               <th className="px-4 py-3">Designation</th>
               <th className="px-4 py-3">Official Email</th>
-              <th className="px-4 py-3 whitespace-nowrap">Experience (Months)</th>
               <th className="px-4 py-3">WFH Group</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {isLoading ? (
-              <tr><td colSpan={8} className="px-4 py-10 text-center text-xs text-gray-400">Loading…</td></tr>
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-xs text-gray-400">Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={8} className="px-4 py-10 text-center text-xs text-gray-400">No employees found.</td></tr>
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-xs text-gray-400">No employees found.</td></tr>
             ) : (
               rows.map((r, i) => (
                 <tr key={r.id} className="hover:bg-gray-50">
@@ -86,7 +84,6 @@ export function WfhEmployeesInGroupTab() {
                   <td className="px-4 py-3 text-xs text-gray-600">{r.department || "—"}</td>
                   <td className="px-4 py-3 text-xs text-gray-600">{r.designation || "—"}</td>
                   <td className="px-4 py-3 text-xs text-gray-600">{r.workEmail || "—"}</td>
-                  <td className="px-4 py-3 text-xs text-gray-600 tabular-nums">{r.experienceMonths}</td>
                   <td className="px-4 py-3 text-xs text-gray-700">
                     {r.wfhGroupName ? (
                       <span className="inline-flex items-center px-2 py-0.5 rounded bg-green-50 text-green-700 text-[11px] font-medium">{r.wfhGroupName}</span>

@@ -89,7 +89,10 @@ export const navigation: NavItem[] = [
     label: "People",
     icon: <Users size={18} />,
     section: "hr",
-    perms: ["hrms.employee.read", "hrms.employee.read_team"],
+    // `hrms.org.read` included so a plain employee can still reach the company
+    // Directory (its own leaf perms allow it) — the group used to hide the only
+    // child they qualify for, leaving the dashboard shortcut as the sole way in.
+    perms: ["hrms.employee.read", "hrms.employee.read_team", "hrms.org.read"],
     children: [
       { label: "Directory", href: "/org-chart", perms: ["hrms.employee.read", "hrms.employee.read_team", "hrms.org.read"], navKey: "people.directory" },
       { label: "Employee Log", href: "/employees/history", perms: ["hrms.employee.read"], navKey: "people.history" },
@@ -167,7 +170,10 @@ export const navigation: NavItem[] = [
     label: "Payroll",
     icon: <Banknote size={18} />,
     section: "finance",
-    perms: ["hrms.settings.read", "hrms.settings.write"],
+    // `hrms.employee.read_self` included so every employee can reach their own
+    // payslips ("My Payslips" carries no perms of its own). All the admin
+    // leaves below stay gated on hrms.settings.* — this only opens self-service.
+    perms: ["hrms.settings.read", "hrms.settings.write", "hrms.employee.read_self"],
     children: [
       { label: "Analytics", href: "/payroll", perms: ["hrms.settings.read", "hrms.settings.write"], navKey: "payroll.analytics" },
       { label: "Pay Runs", href: "/payroll/runs", perms: ["hrms.settings.write"], navKey: "payroll.runs" },

@@ -7,6 +7,10 @@ import { putObject, getObject, extractKeyFromUrl } from "@/lib/storage";
 import { contentMatchesClaim } from "@/lib/utils/file-signature";
 import { rateLimitOrResponse, clientIp } from "@/lib/rate-limit";
 import { stageNames } from "@/lib/services/pipeline-stages";
+import { resolveAndSend } from "@/lib/email/resolve";
+import { buildTakeHomeSubmittedEmail } from "@/lib/email-templates/take-home-submitted";
+import { notifyTakeHomeSubmitted } from "@/lib/services/interview-notifications";
+import { appBaseUrl } from "@/lib/utils/app-url";
 
 // PUBLIC (token-gated, no login) — the candidate's take-home task page + submit.
 // The Interview take-home/submission columns exist in the DB but the generated
@@ -27,10 +31,12 @@ interface Row {
   id: string;
   orgId: string;
   applicationId: string;
+  interviewerId: string;
   round: number;
   type: string;
   takeHomeInstructions: string | null;
   takeHomeAttachmentUrl: string | null;
+  takeHomeAttachmentLink: string | null;
   takeHomeDueDate: Date | null;
   submissionToken: string | null;
   submissionUrl: string | null;
@@ -43,8 +49,8 @@ async function load(token: string): Promise<{ iv: Row; orgId: string } | null> {
   const payload = verifyTakeHomeToken(token);
   if (!payload) return null;
   const rows = await prisma.$queryRaw<Row[]>`
-    SELECT id, "orgId", "applicationId", round, type::text AS type,
-           "takeHomeInstructions", "takeHomeAttachmentUrl", "takeHomeDueDate",
+    SELECT id, "orgId", "applicationId", "interviewerId", round, type::text AS type,
+           "takeHomeInstructions", "takeHomeAttachmentUrl", "takeHomeAttachmentLink", "takeHomeDueDate",
            "submissionToken", "submissionUrl", "submissionFileName",
            "submissionNote", "submittedAt"
     FROM "app_quikhrms"."Interview"
@@ -120,6 +126,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
     roundName: await roundName(orgId, iv.applicationId, iv.round),
     instructions: iv.takeHomeInstructions ?? "",
     hasAttachment: !!iv.takeHomeAttachmentUrl,
+    attachmentLink: iv.takeHomeAttachmentLink,
     dueDate: iv.takeHomeDueDate ? new Date(iv.takeHomeDueDate).toISOString().slice(0, 10) : null,
     submission: iv.submittedAt
       ? {
@@ -192,6 +199,51 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
         "submissionNote" = ${note || null},
         "submittedAt" = now()
     WHERE id = ${iv.id} AND "orgId" = ${orgId}`;
+
+  // Notify the interviewer (email + in-app) — best-effort, never blocks the
+  // candidate's submit response.
+  void (async () => {
+    try {
+      const [interviewer, app, company] = await Promise.all([
+        prisma.employee.findFirst({
+          where: { id: iv.interviewerId, orgId, deletedAt: null },
+          select: { id: true, firstName: true, lastName: true, workEmail: true },
+        }),
+        prisma.jobApplication.findFirst({
+          where: { id: iv.applicationId, orgId },
+          select: { candidate: { select: { firstName: true, lastName: true } }, requisition: { select: { title: true } } },
+        }),
+        prisma.companySettings.findUnique({ where: { orgId }, select: { companyName: true } }),
+      ]);
+      if (!interviewer) return;
+      const candidateName = app?.candidate ? `${app.candidate.firstName} ${app.candidate.lastName}`.trim() : "The candidate";
+      const jobTitle = app?.requisition?.title ?? "the role";
+      const companyName = company?.companyName ?? "Our Company";
+      const base = appBaseUrl();
+      const reviewUrl = base ? `${base}/recruit/interviews/${iv.id}` : "";
+
+      if (interviewer.workEmail) {
+        const emailData = {
+          interviewerName: `${interviewer.firstName} ${interviewer.lastName}`.trim(),
+          candidateName, jobTitle, companyName,
+          roundName: await roundName(orgId, iv.applicationId, iv.round),
+          submittedAt: new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" }),
+          hasFile: !!submissionFileName,
+          hasLink: !submissionFileName,
+          reviewUrl,
+        };
+        await resolveAndSend(orgId, {
+          key: "recruit.take-home-submitted",
+          to: interviewer.workEmail,
+          vars: { ...emailData, roundName: emailData.roundName ?? "" },
+          fallback: () => buildTakeHomeSubmittedEmail(emailData),
+        });
+      }
+      await notifyTakeHomeSubmitted(orgId, { interviewId: iv.id, interviewerId: interviewer.id, candidateName, jobTitle });
+    } catch (e) {
+      console.error("[take-home] submit notify failed:", e);
+    }
+  })();
 
   return ok({ submitted: true });
 }
