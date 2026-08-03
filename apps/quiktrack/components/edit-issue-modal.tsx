@@ -45,6 +45,7 @@ import { IssueAttachments } from "@/components/issue-attachments";
 import { IssueDevelopment } from "@/components/issue-full-view/issue-development";
 import { DescriptionAttachments } from "@/components/description-attachments";
 import { RichTextView } from "@/components/rich-text-view";
+import { WorkflowStatusControl } from "@/components/workflow-status-control";
 import { AlertCircle } from "lucide-react";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import { formatHoursAsClock } from "@/lib/utils/timesheetPeriod";
@@ -1067,42 +1068,23 @@ export function EditIssueModal({
                   <MoreHorizontal className="h-3.5 w-3.5" />
                 </button> */}
 
-                <div className="relative" ref={statusRef}>
-                  <button
-                    type="button"
-                    onClick={() => setStatusOpen((v) => !v)}
-                    className={`inline-flex items-center gap-1 h-7 px-2.5 text-[11px] font-semibold uppercase tracking-wide rounded ${statusPillCls(currentStatus?.category)}`}
-                  >
-                    {currentStatus?.name ?? "—"}
-                    <ChevronDown className="h-3 w-3" />
-                  </button>
-                  {statusOpen && (
-                    <div className="absolute left-0 top-full mt-1 min-w-[200px] bg-white border border-gray-200 rounded shadow-lg z-50 py-1">
-                      {statuses.map((s) => (
-                        <button
-                          key={s.id}
-                          type="button"
-                          onClick={() => {
-                            setStatusId(s.id);
-                            setStatusOpen(false);
-                            void patch({ statusId: s.id });
-                          }}
-                          className={`flex items-center gap-2 w-full px-3 py-1.5 text-left ${
-                            s.id === statusId ? "bg-blue-50" : "hover:bg-gray-50"
-                          }`}
-                        >
-                          <span
-                            className={`inline-flex h-5 px-2 items-center text-[10px] font-semibold uppercase tracking-wide rounded ${statusPillCls(
-                              s.category,
-                            )}`}
-                          >
-                            {s.name}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                {currentIssueId && (
+                  <WorkflowStatusControl
+                    issueId={currentIssueId}
+                    projectId={projectId}
+                    currentStatusId={statusId}
+                    currentStatusName={currentStatus?.name ?? "—"}
+                    currentStatusCategory={currentStatus?.category}
+                    statuses={statuses.map((s) => ({ id: s.id, name: s.name, category: s.category }))}
+                    onChange={(id) => {
+                      setStatusId(id);
+                      void patch({ statusId: id });
+                    }}
+                    onViewWorkflow={() =>
+                      window.open(`/spaces/${projectId}/settings/workflows`, "_blank")
+                    }
+                  />
+                )}
 
                 {/* <button className="inline-flex items-center justify-center h-7 w-7 rounded text-amber-500 hover:bg-amber-50" aria-label="Automation">
                   <ZapIcon className="h-3.5 w-3.5" />

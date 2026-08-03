@@ -271,6 +271,8 @@ export function TimelineRow(props: RowProps) {
               className="shrink-0 h-10 flex items-center px-2 border-l border-gray-100"
             >
               <StatusEditor
+                issueId={issue.id}
+                projectId={projectId}
                 value={localStatusId}
                 statuses={Array.from(statusesById.values())}
                 onSelect={(id) => void patchField({ statusId: id })}

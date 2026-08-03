@@ -155,29 +155,6 @@ export function FlowCanvas({
     [onSelectTransition],
   );
 
-  // Delete key on a selected status node → remove the status (+ its transitions).
-  const handleNodesDelete = useCallback(
-    (deleted: Node[]) => {
-      for (const n of deleted) {
-        if (n.id !== START_NODE_ID) onDeleteStatus(n.id);
-      }
-    },
-    [onDeleteStatus],
-  );
-
-  // Delete key on a selected transition edge → remove the whole transition.
-  const handleEdgesDelete = useCallback(
-    (deleted: Edge[]) => {
-      const ids = new Set<string>();
-      for (const e of deleted) {
-        const tid = (e.data as { transitionId?: string } | undefined)?.transitionId;
-        if (tid) ids.add(tid);
-      }
-      ids.forEach((tid) => onDeleteTransition(tid));
-    },
-    [onDeleteTransition],
-  );
-
   // Drag an edge endpoint to reroute the transition (change its from/to status).
   const handleEdgeUpdate = useCallback(
     (oldEdge: Edge, conn: Connection) => {
@@ -190,6 +167,26 @@ export function FlowCanvas({
     [onRerouteTransition],
   );
 
+  // Delete/Backspace on the CURRENT selection (our own selection model — not
+  // React Flow's, whose selected flag we override each render). Capture phase so
+  // the pane can't swallow the key. Ignored while typing in a field.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      if (selectedTransitionId) {
+        e.preventDefault();
+        onDeleteTransition(selectedTransitionId);
+      } else if (selectedStatusId && selectedStatusId !== START_NODE_ID) {
+        e.preventDefault();
+        onDeleteStatus(selectedStatusId);
+      }
+    };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, [selectedStatusId, selectedTransitionId, onDeleteStatus, onDeleteTransition]);
+
   return (
     <ReactFlow
       nodes={styledNodes}
@@ -201,10 +198,8 @@ export function FlowCanvas({
       onNodeClick={handleNodeClick}
       onEdgeClick={handleEdgeClick}
       onPaneClick={onClearSelection}
-      onNodesDelete={handleNodesDelete}
-      onEdgesDelete={handleEdgesDelete}
       onEdgeUpdate={handleEdgeUpdate}
-      deleteKeyCode={["Delete", "Backspace"]}
+      deleteKeyCode={null}
       fitView
       fitViewOptions={{ padding: 0.3 }}
       minZoom={0.2}
