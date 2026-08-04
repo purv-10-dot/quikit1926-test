@@ -18,7 +18,10 @@
     "./dateFormat": "./lib/dateFormat.ts",
     "./sso-domain-server": "./lib/sso-domain-server.ts",
     "./login-url": "./lib/login-url.ts",
-    "./temp-password": "./lib/temp-password.ts"
+    "./temp-password": "./lib/temp-password.ts",
+    "./supportSchema": "./lib/supportSchema.ts",
+    "./supportContent": "./lib/supportContent.ts",
+    "./supportTickets": "./lib/supportTickets.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -26,6 +29,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@quikit/database": "*",
     "@quikit/redis": "*",
     "resend": "^2.1.0",
     "zod": "^3.22.4"

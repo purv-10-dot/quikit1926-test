@@ -11,6 +11,7 @@ import { requireSession } from "@/lib/require-session";
 import { getVCRole } from "@/lib/rbac";
 import { homePathForPortal, portalForRole } from "@/lib/roles";
 import { SessionGuard } from "@/components/session-guard";
+import { SupportLauncher } from "@quikit/ui/support";
 
 const NAV = [
   // Investor's "summary" page = capital roll-up. Routed under /summary
@@ -69,6 +70,9 @@ export default async function InvestorLayout({
       </header>
       <main className="flex-1">{children}</main>
     </div>
+    {/* Floating support launcher — a sibling of the portal shell so it stays
+        pinned to the viewport on every route in this portal. */}
+    <SupportLauncher appSlug="quikvc" />
     </SessionGuard>
   );
 }

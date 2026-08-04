@@ -7,7 +7,7 @@ import {
   User, Building2, Settings, Mail, Pencil, Check, Loader2,
   LayoutDashboard, BarChart3, ListChecks, Users, LifeBuoy,
 } from "lucide-react";
-import { SupportStatusTab } from "@/components/settings/support-status-tab";
+import { SupportStatusTab } from "@quikit/ui/support";
 import { applyAccentColor } from "@quikit/ui/theme-applier";
 import { DropdownPicker } from "@quikit/ui";
 import { invalidateFeatureFlagsCache } from "@/lib/hooks/useFeatureFlags";

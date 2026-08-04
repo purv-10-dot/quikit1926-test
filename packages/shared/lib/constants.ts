@@ -259,6 +259,12 @@ export const SUPPORT_TICKET_STATUS_LABELS: Record<SupportTicketStatus, string> =
   reopened: "Reopened",
 };
 
+/** Field limits, mirrored by the Zod schema AND the form's maxLength attrs.
+    Kept here rather than in `supportSchema.ts` so the client form can read them
+    without pulling zod into every app's browser bundle. */
+export const SUPPORT_SUBJECT_MAX = 160;
+export const SUPPORT_DESCRIPTION_MAX = 5000;
+
 export const SUPPORT_TICKET_PRIORITIES = ["low", "medium", "high", "urgent"] as const;
 export type SupportTicketPriority = (typeof SUPPORT_TICKET_PRIORITIES)[number];
 

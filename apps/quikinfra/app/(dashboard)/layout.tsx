@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth";
 import { requireAppAccess } from "@quikit/auth/app-access";
 import { authOptions } from "@/lib/auth";
+import { SupportLauncher } from "@quikit/ui/support";
 import { QuikInfraShell } from "@/components/QuikInfraShell";
 import { SessionGuard } from "@/components/session-guard";
 
@@ -42,6 +43,9 @@ export default async function DashboardLayout({
       <QuikInfraShell>
         {children}
       </QuikInfraShell>
+      {/* Floating support launcher — a sibling of the shell so it stays pinned
+          to the viewport rather than to one of the shell's scroll containers. */}
+      <SupportLauncher appSlug="quikinfra" />
     </SessionGuard>
   );
 }
