@@ -198,13 +198,14 @@ function InlineCreator(props: {
 
 function InlineCreatorInner({
   projectId,
-  defaultStatusId,
   sprintId,
   members,
   currentUserId,
   onCreated,
 }: {
   projectId: string;
+  /** Accepted for API compatibility but no longer used — the server picks the
+   *  correct initial status (workflow INITIAL, else first-by-order). */
   defaultStatusId?: string;
   sprintId: string | null;
   members: Member[];
@@ -264,7 +265,10 @@ function InlineCreatorInner({
           projectId,
           title: t,
           type,
-          statusId: defaultStatusId,
+          // Don't force a status here — let the server pick the correct initial
+          // status: the workflow's INITIAL (e.g. classic "Open") when a workflow
+          // governs the project, else the first status by order. Forcing the
+          // client's "To Do" here overrode that (item wrongly landed on To Do).
           sprintId: sprintId ?? undefined,
           assigneeId: assigneeId ?? undefined,
           dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
@@ -2026,6 +2030,10 @@ function SectionBody({
         sprintId: sprintId ?? "null",
         excludeType: "EPIC,SUBTASK",
         limit: String(ISSUE_PAGE),
+        // Like Jira: the backlog only shows items whose status is mapped to a
+        // board column. Unmapped-status items are hidden here (but visible in
+        // List/Task Table). No-op when the project has no configured columns.
+        boardMappedOnly: "1",
       });
       if (filters.search) params.set("search", filters.search);
       if (filters.statusId) params.set("statusId", filters.statusId);
@@ -2406,6 +2414,8 @@ export function BacklogView({ projectId }: { projectId: string }) {
       sprintId: sprintId ?? "null",
       excludeType: "EPIC,SUBTASK",
       idsOnly: "1",
+      // Match what the backlog actually shows (board-mapped statuses only).
+      boardMappedOnly: "1",
     });
     if (sectionFilters.search) params.set("search", sectionFilters.search);
     if (sectionFilters.statusId) params.set("statusId", sectionFilters.statusId);

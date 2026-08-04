@@ -612,6 +612,37 @@ export async function getDefaultStatusId(
 }
 
 /**
+ * The status a NEW issue should start on. When a published (active) workflow
+ * governs the project, that's the workflow's INITIAL transition target (e.g. the
+ * classic "Create → Open"). Otherwise (no workflow) it falls back to the first
+ * status by order — today's ungated behaviour.
+ */
+export async function getInitialStatusId(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+): Promise<string | null> {
+  const wf = await tx.qtWorkflow.findFirst({
+    where: { projectId, isActive: true, isDeleted: false, initialTransitionId: { not: null } },
+    select: { initialTransitionId: true },
+  });
+  if (wf?.initialTransitionId) {
+    const t = await tx.qtWorkflowTransition.findUnique({
+      where: { id: wf.initialTransitionId },
+      select: { toStatusId: true },
+    });
+    if (t?.toStatusId) {
+      // Only use it if the status is still live (not deleted).
+      const s = await tx.qtIssueStatus.findFirst({
+        where: { id: t.toStatusId, projectId, isDeleted: false },
+        select: { id: true },
+      });
+      if (s) return s.id;
+    }
+  }
+  return getDefaultStatusId(tx, projectId);
+}
+
+/**
  * Next work-item key ("PROJ-N") for a project. We derive N from the MAX existing
  * key suffix — NOT `count()+1`, which collides once any issue has been deleted or
  * a key was skipped (count < max ⇒ regenerates an existing key ⇒ unique-key

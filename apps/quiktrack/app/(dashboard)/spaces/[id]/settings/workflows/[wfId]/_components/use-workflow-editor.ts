@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type {
   EditorDraft,
   EditorRule,
@@ -23,14 +23,15 @@ function newId(): string {
  * Editor state + persistence for one workflow. Holds the working draft, exposes
  * pure mutators, saves the draft to the scheme (PUT), and publishes (POST).
  */
-export function useWorkflowEditor(wfId: string, initial: EditorDraft) {
+export function useWorkflowEditor(wfId: string, initial: EditorDraft, hasPendingDraft = true) {
+  const qc = useQueryClient();
   const [draft, setDraft] = useState<EditorDraft>(initial);
   const [publishErrors, setPublishErrors] = useState<PublishError[]>([]);
   const [migration, setMigration] = useState<MigrationItem[] | null>(null);
-  // True once the current draft has been published (no unpublished changes).
-  // Reset to false on the next edit. Drives the header: published → "Close",
-  // otherwise → "Update workflow" / "Discard changes".
-  const [published, setPublished] = useState(false);
+  // True when there are NO unpublished changes → header shows a single "Close".
+  // Seeded from the server: a workflow with no pending draft loads as published.
+  // Set true on publish success, reset to false on the next edit.
+  const [published, setPublished] = useState(!hasPendingDraft);
 
   const save = useMutation({
     mutationFn: async (next: EditorDraft) => {
@@ -64,6 +65,9 @@ export function useWorkflowEditor(wfId: string, initial: EditorDraft) {
       setPublishErrors([]);
       setMigration(null);
       setPublished(true);
+      // Refresh the server read-model so a later remount sees the published
+      // state (no pending draft) and keeps showing "Close".
+      void qc.invalidateQueries({ queryKey: ["quiktrack", "workflow", wfId] });
       return j.data;
     },
   });

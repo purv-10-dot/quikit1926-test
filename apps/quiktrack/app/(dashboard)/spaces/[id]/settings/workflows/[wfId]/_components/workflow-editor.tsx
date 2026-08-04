@@ -69,6 +69,7 @@ export function WorkflowEditor({ projectId, wfId }: { projectId: string; wfId: s
       wfId={wfId}
       initialDraft={draftFromReadModel(rm.data!)}
       isActive={rm.data!.workflow.isActive}
+      hasPendingDraft={rm.data!.draft !== null}
       pool={pool.data!}
       onClose={() => router.push(`/spaces/${projectId}/settings/workflows`)}
     />
@@ -85,6 +86,7 @@ function EditorBody({
   wfId,
   initialDraft,
   isActive,
+  hasPendingDraft,
   pool,
   onClose,
 }: {
@@ -92,11 +94,12 @@ function EditorBody({
   wfId: string;
   initialDraft: ReturnType<typeof draftFromReadModel>;
   isActive: boolean;
+  hasPendingDraft: boolean;
   pool: StatusMeta[];
   onClose: () => void;
 }) {
   const qc = useQueryClient();
-  const ed = useWorkflowEditor(wfId, initialDraft);
+  const ed = useWorkflowEditor(wfId, initialDraft, hasPendingDraft);
   const [tab, setTab] = useState<"diagram" | "text">("diagram");
   const [showLabels, setShowLabels] = useState(true);
   const [helpOpen, setHelpOpen] = useState(false);
