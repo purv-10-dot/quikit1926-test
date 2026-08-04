@@ -107,19 +107,31 @@ export interface MyPresenceDto {
   status: SetStatus;
   statusMessage: string | null;
   statusExpiresAt: string | null;
+  /** Mutual last-seen visibility (Privacy settings). Default on. */
+  shareLastSeen: boolean;
 }
 
 export function fetchMyPresence(): Promise<MyPresenceDto> {
   return getJson<MyPresenceDto>("/api/me/presence");
 }
 
+/** At least one of `status` / `shareLastSeen` must be present (400 otherwise). */
 export function updateMyPresence(patch: {
-  status: SetStatus;
+  status?: SetStatus;
   statusMessage?: string | null;
   /** Absolute ISO instant to auto-revert (client-computed); null = until changed. */
   expiresAt?: string | null;
+  shareLastSeen?: boolean;
 }): Promise<MyPresenceDto> {
   return send<MyPresenceDto>("/api/me/presence", "PUT", patch);
+}
+
+/**
+ * The DM peer's last-seen instant, or null when it must not be shown (mutual
+ * opt-out / appear_offline / never recorded — indistinguishable by design).
+ */
+export function fetchChannelLastSeen(channelId: string): Promise<{ lastSeen: string | null }> {
+  return getJson<{ lastSeen: string | null }>(`/api/channels/${channelId}/last-seen`);
 }
 
 // --- message actions (S05) ---

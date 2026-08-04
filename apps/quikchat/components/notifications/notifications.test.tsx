@@ -256,6 +256,32 @@ describe("inbound realtime + toast/OS routing", () => {
     expect(screen.queryByText("should be OS only")).not.toBeInTheDocument();
   });
 
+  // Regression: the desktop bridge builds `quikchat://open/<channelId>` from
+  // `channelId`, so it must be passed separately from `tag` — `tag` falls back to
+  // the message id, and sending that as a channel id deep-links nowhere.
+  it("forwards channelId to the OS notification separately from tag", async () => {
+    web.focused = false;
+    web.permission = "granted";
+    renderBell();
+    await waitFor(() => expect(inbound).not.toBeNull());
+
+    await act(async () => {
+      inbound!(dto({ id: "9", channelId: "c1", desktop: true }) as NotificationRealtimePayload);
+    });
+    expect(web.fire).toHaveBeenLastCalledWith(
+      expect.objectContaining({ channelId: "c1", tag: "c1" }),
+    );
+
+    // No channel (e.g. a system row): `tag` degrades to the id, `channelId` stays
+    // null rather than inheriting that id.
+    await act(async () => {
+      inbound!(dto({ id: "10", channelId: null, desktop: true }) as NotificationRealtimePayload);
+    });
+    expect(web.fire).toHaveBeenLastCalledWith(
+      expect.objectContaining({ channelId: null, tag: "10" }),
+    );
+  });
+
   it("desktop:false never fires an OS notification even when unfocused", async () => {
     web.focused = false;
     renderBell();
