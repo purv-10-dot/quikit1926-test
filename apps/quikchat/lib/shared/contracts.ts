@@ -458,4 +458,17 @@ export interface CallHistoryItem {
   durationSeconds: number | null;
   /** Terminal status, so the UI can distinguish declined from ended. */
   status: "ended" | "missed" | "rejected" | "timed_out";
+  /**
+   * Channel the call belonged to, when it had one. Null for a direct call placed
+   * outside a channel (QcCall.channelId is nullable), so presence must not be
+   * assumed. A send target for the history pane's quick-reply.
+   */
+  channelId?: string | null;
+  /**
+   * The other participant's user id on a 1:1 call; null for a group call. Lets a
+   * quick reply find-or-create the DM even when the call carried no channel.
+   * Named to match `otherUserId` in calling.service.ts, which is where the value
+   * is resolved — one term for the concept, not two.
+   */
+  otherUserId?: string | null;
 }

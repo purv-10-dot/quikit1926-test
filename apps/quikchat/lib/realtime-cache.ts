@@ -50,21 +50,47 @@ export function mergeMessageEvent(
   incoming: MessageDto,
   meId: string | undefined,
 ): MessageDto[] {
-  if (list.some((m) => m.id === incoming.id)) {
-    return list.map((m) => (m.id === incoming.id ? incoming : m));
+  const next = [...list];
+
+  const replaceAt = (idx: number) => {
+    if (idx < 0) return false;
+    next[idx] = incoming;
+    return true;
+  };
+
+  const removeDuplicatesForLogicalMessage = (matchIdx: number) => {
+    const logicalId = incoming.clientMessageId ?? incoming.id;
+    if (!logicalId) return;
+    for (let i = next.length - 1; i >= 0; i -= 1) {
+      const msg = next[i];
+      if (!msg) continue;
+      const sameLogicalId =
+        (msg.clientMessageId && incoming.clientMessageId && msg.clientMessageId === incoming.clientMessageId) ||
+        (msg.id === incoming.id && incoming.id && msg.id === incoming.id);
+      if (sameLogicalId && i !== matchIdx) next.splice(i, 1);
+    }
+  };
+
+  const existingIdIndex = next.findIndex((m) => m.id === incoming.id);
+  if (existingIdIndex >= 0) {
+    replaceAt(existingIdIndex);
+    if (incoming.clientMessageId) removeDuplicatesForLogicalMessage(existingIdIndex);
+    return next.filter(Boolean);
   }
+
   // Exact reconcile by clientMessageId (idempotency id) when present.
   if (incoming.clientMessageId) {
-    const idx = list.findIndex((m) => m.clientMessageId === incoming.clientMessageId);
+    const idx = next.findIndex((m) => m.clientMessageId === incoming.clientMessageId);
     if (idx >= 0) {
-      const next = [...list];
-      next[idx] = incoming;
-      return next;
+      replaceAt(idx);
+      removeDuplicatesForLogicalMessage(idx);
+      return next.filter(Boolean);
     }
   }
+
   // Fallback: match our own optimistic temp row by content heuristic.
   if (meId && incoming.senderId === meId) {
-    const idx = list.findIndex(
+    const idx = next.findIndex(
       (m) =>
         isTempId(m.id) &&
         m.senderId === meId &&
@@ -72,12 +98,12 @@ export function mergeMessageEvent(
         m.content === incoming.content,
     );
     if (idx >= 0) {
-      const next = [...list];
-      next[idx] = incoming;
-      return next;
+      replaceAt(idx);
+      return next.filter(Boolean);
     }
   }
-  return [...list, incoming];
+
+  return [...next, incoming];
 }
 
 /** Patch a known message in place (edit / delete / pin / reaction). No-op if absent. */

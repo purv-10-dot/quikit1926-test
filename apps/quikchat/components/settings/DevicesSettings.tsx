@@ -65,6 +65,16 @@ function DeviceRow({
 export function DevicesSettings() {
   const devices = useMediaDevices();
   const [selected, setSelected] = useState(() => getSelectedDevices());
+  // Why the last unlock attempt failed, per kind. A denied/missing/busy device
+  // used to look exactly like success — nothing visibly happened.
+  const [labelError, setLabelError] = useState<{ mic?: string; camera?: string }>({});
+
+  async function unlockLabels(kind: "mic" | "camera") {
+    // Clear first so a retry never shows the previous attempt's reason.
+    setLabelError((prev) => ({ ...prev, [kind]: undefined }));
+    const result = await devices.requestLabels(kind);
+    if (!result.ok) setLabelError((prev) => ({ ...prev, [kind]: result.error }));
+  }
 
   // Re-read after mount so SSR renders the neutral "Default" state and hydration
   // matches (localStorage is unavailable on the server).
@@ -100,9 +110,17 @@ export function DevicesSettings() {
       {devices.supported && !devices.labelsAvailable ? (
         <div className="qc-set-note" data-testid="devices-permission-prompt">
           <span>Allow microphone access to see and choose your devices by name.</span>
-          <Button variant="primary" onClick={() => void devices.requestLabels("mic")}>
+          <Button variant="primary" onClick={() => void unlockLabels("mic")}>
             Allow access
           </Button>
+        </div>
+      ) : null}
+      {/* Gated on the error alone, NOT on the banner above: the banner's own
+          visibility depends on labelsAvailable, and a failure reason must not
+          disappear along with its container mid-interaction. */}
+      {labelError.mic ? (
+        <div className="qc-set-note" data-testid="mic-permission-error" role="alert">
+          <span>{labelError.mic}</span>
         </div>
       ) : null}
 
@@ -139,9 +157,14 @@ export function DevicesSettings() {
       {camerasHidden ? (
         <div className="qc-set-note" data-testid="camera-permission-prompt">
           <span>Allow camera access to choose a camera.</span>
-          <Button variant="primary" onClick={() => void devices.requestLabels("camera")}>
+          <Button variant="primary" onClick={() => void unlockLabels("camera")}>
             Allow camera access
           </Button>
+        </div>
+      ) : null}
+      {labelError.camera ? (
+        <div className="qc-set-note" data-testid="camera-permission-error" role="alert">
+          <span>{labelError.camera}</span>
         </div>
       ) : null}
     </div>
