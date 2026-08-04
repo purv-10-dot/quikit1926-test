@@ -66,11 +66,22 @@ describe("POST /api/projects/:id/workflow-scheme/enable", () => {
     asAdmin();
     mockDb.qtWorkflowScheme.findUnique.mockResolvedValue(null);
     // seedProjectWorkflow runs inside $transaction — stub it to a no-op runner.
+    // seedProjectWorkflow now attaches the classic template as a DRAFT: it
+    // creates the classic statuses, builds an inactive workflow over them, and
+    // writes a draft scheme. The tx stub must cover all those calls.
+    const classicRows = [
+      { id: "s_open", name: "Open" },
+      { id: "s_inprog", name: "In Progress" },
+      { id: "s_resolved", name: "Resolved" },
+      { id: "s_reopened", name: "Reopened" },
+      { id: "s_closed", name: "Closed" },
+    ];
+    let findManyCall = 0;
     mockDb.$transaction.mockImplementation(async (cb: unknown) => {
       const tx = {
         qtResolution: { createMany: () => Promise.resolve({}) },
-        // seedProjectWorkflow calls seedBoardColumns first — no existing columns
-        // → it creates the 4 defaults + maps same-name/classic statuses.
+        // seedBoardColumns runs first — no existing columns → creates the 4
+        // defaults + maps same-name/classic statuses.
         qtBoardColumn: {
           findFirst: () => Promise.resolve(null),
           create: () => Promise.resolve({ id: "colX" }),
@@ -80,7 +91,15 @@ describe("POST /api/projects/:id/workflow-scheme/enable", () => {
           findUnique: () => Promise.resolve(null),
           create: () => Promise.resolve({ id: "sch1" }),
         },
-        qtIssueStatus: { findMany: () => Promise.resolve([]) },
+        qtIssueStatus: {
+          // 1st findMany (seedBoardColumns statuses), 2nd (existing for order),
+          // 3rd (classic by name). Return classic rows for the name lookups.
+          findMany: () => {
+            findManyCall += 1;
+            return Promise.resolve(findManyCall >= 3 ? classicRows : []);
+          },
+          createMany: () => Promise.resolve({}),
+        },
         qtWorkflow: { create: () => Promise.resolve({ id: "wf1" }), update: () => Promise.resolve({}) },
         qtWorkflowStatus: { createMany: () => Promise.resolve({}) },
         qtWorkflowTransition: { create: () => Promise.resolve({ id: "t1" }) },

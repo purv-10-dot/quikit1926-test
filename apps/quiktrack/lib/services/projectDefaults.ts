@@ -62,23 +62,42 @@ export const DEFAULT_RESOLUTIONS = [
  *
  * Every status has an incoming NORMAL transition so the graph is fully reachable
  * from the initial status (the publish gate rejects unreachable statuses):
- *   Create → To Do → In Progress → In Review → Done → (reopen) → In Progress.
- * INITIAL runs on issue creation. Defined over the DEFAULT_STATUSES names so a
- * space's default statuses and its default workflow line up.
+ *   Create → Open → In Progress → Resolved → Closed → Reopened → (back to) In Progress.
+ * INITIAL runs on issue creation.
+ *
+ * The classic template's statuses are the PREDEFINED classic set
+ * (Open/In Progress/Resolved/Reopened/Closed) — a workflow TEMPLATE has fixed
+ * statuses. Attaching it to a project whose statuses differ (e.g. the default
+ * To Do/In Progress/In Review/Done) creates a DRAFT + these classic statuses on
+ * the project; publishing then maps the project's current statuses onto these
+ * and migrates the items (Jira "Publish Workflows"). See CLASSIC_WORKFLOW_STATUSES.
  */
 const CLASSIC_WORKFLOW_NAME = "classic default workflow";
-const CLASSIC_INITIAL_STATUS = "To Do";
+const CLASSIC_INITIAL_STATUS = "Open";
 const CLASSIC_TRANSITIONS: Array<{
   name: string;
   type: "INITIAL" | "NORMAL" | "GLOBAL";
   from: string[];
   to: string;
 }> = [
-  { name: "Create", type: "INITIAL", from: [], to: "To Do" },
-  { name: "Start Progress", type: "NORMAL", from: ["To Do"], to: "In Progress" },
-  { name: "Ready for Review", type: "NORMAL", from: ["In Progress"], to: "In Review" },
-  { name: "Done", type: "NORMAL", from: ["In Review"], to: "Done" },
-  { name: "Reopen", type: "NORMAL", from: ["Done"], to: "In Progress" },
+  { name: "Create", type: "INITIAL", from: [], to: "Open" },
+  { name: "Start Progress", type: "NORMAL", from: ["Open"], to: "In Progress" },
+  { name: "Resolve Issue", type: "NORMAL", from: ["In Progress"], to: "Resolved" },
+  { name: "Close Issue", type: "NORMAL", from: ["Resolved"], to: "Closed" },
+  { name: "Reopen", type: "NORMAL", from: ["Closed"], to: "Reopened" },
+  { name: "Back to In Progress", type: "NORMAL", from: ["Reopened"], to: "In Progress" },
+];
+
+// The classic template's predefined statuses. When the classic workflow is
+// attached to a project (as a draft), any of these NOT already on the project
+// are created so the publish/migration mapping can target them. Categories/
+// colours mirror Jira's classic scheme.
+export const CLASSIC_WORKFLOW_STATUSES = [
+  { name: "Open", color: "#94a3b8", category: "BACKLOG" },
+  { name: "In Progress", color: "#2563eb", category: "IN_PROGRESS" },
+  { name: "Resolved", color: "#16a34a", category: "IN_PROGRESS" },
+  { name: "Reopened", color: "#9333ea", category: "IN_PROGRESS" },
+  { name: "Closed", color: "#16a34a", category: "DONE" },
 ];
 
 /**
@@ -194,37 +213,72 @@ export async function seedProjectWorkflow(
   });
   if (existingScheme) return;
 
-  // Map status NAME → id for this project's seeded statuses.
-  const statuses = await tx.qtIssueStatus.findMany({
-    where: { projectId },
+  // The classic template has PREDEFINED statuses (Open/In Progress/Resolved/
+  // Reopened/Closed). Attaching it creates any of those the project lacks, so
+  // the publish/migration step can map the project's current statuses onto them.
+  // (In Progress usually already exists → skipDuplicates keeps it.)
+  const existing = await tx.qtIssueStatus.findMany({
+    where: { projectId, isDeleted: false },
+    select: { name: true, orderIndex: true },
+  });
+  const existingNames = new Set(existing.map((s) => s.name));
+  let nextOrder = existing.reduce((m, s) => Math.max(m, s.orderIndex), -1) + 1;
+  const toCreate = CLASSIC_WORKFLOW_STATUSES.filter((s) => !existingNames.has(s.name)).map(
+    (s) => ({ ...s, projectId, orderIndex: nextOrder++ }),
+  );
+  if (toCreate.length > 0) {
+    await tx.qtIssueStatus.createMany({ data: toCreate, skipDuplicates: true });
+  }
+
+  // Map classic status NAME → id (now that they all exist on the project).
+  const classicStatuses = await tx.qtIssueStatus.findMany({
+    where: { projectId, isDeleted: false, name: { in: CLASSIC_WORKFLOW_STATUSES.map((s) => s.name) } },
     select: { id: true, name: true },
   });
-  const statusIdByName = new Map(statuses.map((s) => [s.name, s.id]));
+  const statusIdByName = new Map(classicStatuses.map((s) => [s.name, s.id]));
 
+  // The workflow is attached as an UNPUBLISHED DRAFT (isActive:false). The user
+  // clicks Publish to run the Jira "Publish Workflows" migration — which maps
+  // the project's current statuses onto these classic ones and migrates items.
   const workflow = await tx.qtWorkflow.create({
     data: {
       orgId,
       projectId,
       name: CLASSIC_WORKFLOW_NAME,
-      description: "Default lifecycle seeded on space creation.",
-      isActive: true,
+      description: "Classic default workflow.",
+      isActive: false,
       createdBy,
     },
     select: { id: true },
   });
 
-  // Nodes: every project status participates; the classic initial node is Open.
-  await tx.qtWorkflowStatus.createMany({
-    data: statuses.map((s) => ({
-      workflowId: workflow.id,
+  // Build the workflow's nodes/edges over the CLASSIC statuses only.
+  const draftStatuses: Array<{ statusId: string; isInitial: boolean; x: number | null; y: number | null }> = [];
+  for (const s of classicStatuses) {
+    draftStatuses.push({
       statusId: s.id,
       isInitial: s.name === CLASSIC_INITIAL_STATUS,
+      x: null,
+      y: null,
+    });
+  }
+  await tx.qtWorkflowStatus.createMany({
+    data: draftStatuses.map((s) => ({
+      workflowId: workflow.id,
+      statusId: s.statusId,
+      isInitial: s.isInitial,
     })),
     skipDuplicates: true,
   });
 
-  // Edges + their source-status joins. Skip any transition whose endpoints
-  // aren't present (defensive — statuses are seeded just above).
+  const draftTransitions: Array<{
+    id: string;
+    name: string;
+    type: "INITIAL" | "NORMAL" | "GLOBAL";
+    toStatusId: string;
+    fromStatusIds: string[];
+    rules: never[];
+  }> = [];
   let initialTransitionId: string | null = null;
   for (const [i, t] of CLASSIC_TRANSITIONS.entries()) {
     const toId = statusIdByName.get(t.to);
@@ -244,14 +298,19 @@ export async function seedProjectWorkflow(
     });
     if (fromIds.length > 0) {
       await tx.qtWorkflowTransitionFrom.createMany({
-        data: fromIds.map((statusId) => ({
-          transitionId: transition.id,
-          statusId,
-        })),
+        data: fromIds.map((statusId) => ({ transitionId: transition.id, statusId })),
         skipDuplicates: true,
       });
     }
     if (t.type === "INITIAL") initialTransitionId = transition.id;
+    draftTransitions.push({
+      id: transition.id,
+      name: t.name,
+      type: t.type,
+      toStatusId: toId,
+      fromStatusIds: fromIds,
+      rules: [],
+    });
   }
 
   if (initialTransitionId) {
@@ -261,9 +320,23 @@ export async function seedProjectWorkflow(
     });
   }
 
-  // Scheme + default item (issueTypeId NULL → applies to every type).
+  // Scheme + default item (issueTypeId NULL → applies to every type) + a DRAFT
+  // mirroring the workflow so the overview shows "Publish this draft now?".
+  const draftJson = {
+    workflowId: workflow.id,
+    name: CLASSIC_WORKFLOW_NAME,
+    description: "Classic default workflow.",
+    statuses: draftStatuses,
+    transitions: draftTransitions,
+  };
   const scheme = await tx.qtWorkflowScheme.create({
-    data: { orgId, projectId, name: "Default Workflow Scheme" },
+    data: {
+      orgId,
+      projectId,
+      name: "Default Workflow Scheme",
+      hasDraft: true,
+      draftJson: draftJson as unknown as Prisma.InputJsonValue,
+    },
     select: { id: true },
   });
   await tx.qtWorkflowSchemeItem.create({

@@ -90,7 +90,7 @@ export function FlowCanvas({
       ) +
       "|" +
       JSON.stringify(
-        draft.transitions.map((t) => [t.id, t.type, t.toStatusId, t.fromStatusIds, t.rules.length]),
+        draft.transitions.map((t) => [t.id, t.type, t.toStatusId, t.fromStatusIds, t.rules?.length ?? 0]),
       ) +
       "|labels:" + String(showLabels) +
       "|err:" + Array.from(errorStatusIds).sort().join(",") +

@@ -119,7 +119,9 @@ export function draftToEdges(
   const perBand = new Map<string, number>();
 
   for (const t of draft.transitions) {
-    const ruleCount = t.rules.length;
+    // `rules` is optional on a draft transition (a freshly-seeded workflow has
+    // none) — treat a missing array as zero rules.
+    const ruleCount = t.rules?.length ?? 0;
     if (t.type === "INITIAL") {
       edges.push(mkEdge(START_NODE_ID, t.toStatusId, t, "__start__", ruleCount, showLabels, false, 0));
       continue;

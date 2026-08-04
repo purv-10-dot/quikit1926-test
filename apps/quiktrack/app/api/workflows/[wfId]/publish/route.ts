@@ -220,6 +220,47 @@ export const POST = withOrgAuth<{ wfId: string }>(
         }
       }
 
+      // Re-point board columns from each dropped status to its mapped new status,
+      // reusing the SAME statusMapping. The board's COLUMN NAMES are unchanged;
+      // the column that showed the old status now shows the mapped new status, so
+      // migrated items keep appearing under the same-named column. QtBoardColumnStatus.
+      // statusId is the PK, so remap = delete old row + create new (same column/order).
+      for (const oldStatusId of Object.keys(statusMapping)) {
+        const newStatusId = statusMapping[oldStatusId];
+        if (!newStatusId || !draftStatusIds.has(newStatusId)) continue;
+        const oldMapping = await tx.qtBoardColumnStatus.findUnique({
+          where: { statusId: oldStatusId },
+          select: { columnId: true, orderIndex: true },
+        });
+        if (!oldMapping) continue; // old status wasn't mapped to a column
+        await tx.qtBoardColumnStatus.delete({ where: { statusId: oldStatusId } });
+        // Skip if the new status is already mapped somewhere (avoid PK collision).
+        const alreadyMapped = await tx.qtBoardColumnStatus.findUnique({
+          where: { statusId: newStatusId },
+          select: { statusId: true },
+        });
+        if (!alreadyMapped) {
+          await tx.qtBoardColumnStatus.create({
+            data: {
+              statusId: newStatusId,
+              columnId: oldMapping.columnId,
+              orderIndex: oldMapping.orderIndex,
+            },
+          });
+        }
+      }
+
+      // Retire the dropped statuses — items have been migrated off them and the
+      // new workflow doesn't include them, so soft-delete to hide them from the
+      // dropdown / status list everywhere (history keeps the ids).
+      const droppedStatusIds = droppedInUse.map((a) => a.statusId);
+      if (droppedStatusIds.length > 0) {
+        await tx.qtIssueStatus.updateMany({
+          where: { id: { in: droppedStatusIds }, projectId },
+          data: { isDeleted: true },
+        });
+      }
+
       await tx.qtWorkflowStatus.deleteMany({ where: { workflowId: wf.id } });
       // Deleting transitions cascades their from-joins and rules.
       await tx.qtWorkflowTransition.deleteMany({ where: { workflowId: wf.id } });

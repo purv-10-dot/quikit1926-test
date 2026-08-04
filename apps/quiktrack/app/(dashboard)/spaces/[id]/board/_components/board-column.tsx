@@ -74,7 +74,8 @@ export function BoardColumn({
   dragHandlers?: {
     onDragStart: (e: React.DragEvent) => void;
     onDragOver: (e: React.DragEvent) => void;
-    onDrop: (e: React.DragEvent) => void;
+    // Optional: an unmapped board column (no primary status) has no drop target.
+    onDrop?: (e: React.DragEvent) => void;
   };
 }) {
   const [state, setState] = useState<ColumnState>(empty);
@@ -166,7 +167,7 @@ export function BoardColumn({
     setState(empty);
     void loadMore(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, sprintId, status.id, columnKey, filters?.search, filters?.assigneeId, filters?.type, filters?.priority, filters?.customFilters]);
+  }, [projectId, sprintId, status?.id, columnKey, filters?.search, filters?.assigneeId, filters?.type, filters?.priority, filters?.customFilters]);
 
   useEffect(() => {
     const el = sentinelRef.current;

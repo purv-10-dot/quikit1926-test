@@ -160,12 +160,21 @@ describe("POST /api/workflows/:wfId/publish", () => {
             return Promise.resolve({});
           },
         },
+        // Board-column remap: old status s_todo wasn't column-mapped → findUnique
+        // returns null so the remap skips it cleanly.
+        qtBoardColumnStatus: {
+          findUnique: () => Promise.resolve(null),
+          delete: () => Promise.resolve({}),
+          create: () => Promise.resolve({}),
+        },
         qtWorkflowStatus: { deleteMany: () => Promise.resolve({}), createMany: () => Promise.resolve({}) },
         qtWorkflowTransition: { deleteMany: () => Promise.resolve({}), create: () => Promise.resolve({ id: "new_t" }) },
         qtWorkflowTransitionFrom: { createMany: () => Promise.resolve({}) },
         qtWorkflowRule: { createMany: () => Promise.resolve({}) },
         qtWorkflow: { update: () => Promise.resolve({}) },
         qtWorkflowScheme: { update: () => Promise.resolve({}) },
+        // Retire dropped statuses (soft-delete).
+        qtIssueStatus: { updateMany: () => Promise.resolve({ count: 1 }) },
       };
       return (cb as (t: unknown) => Promise<unknown>)(tx);
     });
