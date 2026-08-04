@@ -305,6 +305,50 @@ export function ChatWorkspace({
     [qc],
   );
 
+  // Opens (or focuses) the call popup for an SFU/group call. The token is
+  // fetched by the call page itself from POST /api/calls/:id/token — this URL
+  // only ever carries non-secret routing hints (CALL-3 hardening).
+  const openGroupCallWindow = useCallback(
+    (callId: string, name: string, type: "audio" | "video") => {
+      const params = new URLSearchParams({
+        callId,
+        name,
+        myUserId: currentUserId,
+        type,
+        group: "1",
+      });
+      window.open(
+        `/call/${callId}?${params.toString()}`,
+        "quikchat-group-call",
+        "width=1000,height=700,popup=yes,menubar=no,toolbar=no,location=no,status=no",
+      );
+    },
+    [currentUserId],
+  );
+
+  // A channel member other than us started a group call (CALL-3 §3). We
+  // already open our own window when WE start one, so skip that case. This is
+  // a live-only nudge for members with the app open; a member who's offline or
+  // catches up later still finds the call via the rejoin banner (fetchActiveCall
+  // on mount) since they're already a QcCallParticipant from call creation.
+  const onGroupCallStarted = useCallback(
+    (p: { callId: string; channelId: string; initiatorId: string; type: "audio" | "video" }) => {
+      if (p.initiatorId === currentUserId) return;
+      const list = qc.getQueryData<ChannelList>(["channels"]);
+      const channel = list && [...list.priority, ...list.recent].find(
+        (c) => c.channelId === p.channelId,
+      );
+      const name = channel?.name ?? "a channel";
+      toast.info({
+        title: `Group call started in #${name}`,
+        body: "Click to join",
+        durationMs: 20_000,
+        onClick: () => openGroupCallWindow(p.callId, channel?.name ?? "Group call", p.type),
+      });
+    },
+    [qc, currentUserId, toast, openGroupCallWindow],
+  );
+
   // Latest event handlers + notifications, read through a ref by the socket's
   // stable wrappers. This keeps the socket effect's deps at `[realtimeUrl]` so
   // the socket is created ONCE per session: previously `notifications` (a
@@ -319,6 +363,7 @@ export function ChatWorkspace({
     onDelivered,
     onChannelUpdated,
     onChannelDeleted,
+    onGroupCallStarted,
     notifications,
   });
   handlersRef.current = {
@@ -328,6 +373,7 @@ export function ChatWorkspace({
     onDelivered,
     onChannelUpdated,
     onChannelDeleted,
+    onGroupCallStarted,
     notifications,
   };
 
@@ -356,6 +402,11 @@ export function ChatWorkspace({
     );
     client.on("channel_deleted", (d) =>
       handlersRef.current.onChannelDeleted(d as { channelId: string }),
+    );
+    client.on("call_group_started", (d) =>
+      handlersRef.current.onGroupCallStarted(
+        d as { callId: string; channelId: string; initiatorId: string; type: "audio" | "video" },
+      ),
     );
     client.on("presence", (d) => setPresence((s) => applyPresence(s, d as PresenceEvent)));
     client.on("presence_status", (d) =>
@@ -760,7 +811,9 @@ export function ChatWorkspace({
         setCallTargetUserId(otherMember.id);
       }
     } else {
-      // Group channel: create call + SFU room, generate tokens for all members
+      // Group channel: create the call. Each participant (including us) mints
+      // its own LiveKit token from inside the call window — the token never
+      // travels through this response or the popup's URL (CALL-3 hardening).
       try {
         const res = await fetch("/api/calls/group", {
           method: "POST",
@@ -776,27 +829,8 @@ export function ChatWorkspace({
           };
           throw new Error(err.error ?? "Failed to start group call");
         }
-        const data = (await res.json()) as {
-          call: { id: string };
-          sfu: { roomId: string; tokens: Record<string, string>; livekitUrl?: string } | null;
-        };
-        // Open the call UI for the current user
-        const myToken = data.sfu?.tokens[currentUserId] ?? "";
-        const params = new URLSearchParams({
-          callId: data.call.id,
-          name: activeChannel.name ?? "Group call",
-          userId: currentUserId,
-          type: "audio",
-          sfuRoomId: data.sfu?.roomId ?? "",
-          sfuToken: myToken,
-          livekitUrl: data.sfu?.livekitUrl ?? "",
-        });
-        const url = `/call/${data.call.id}?${params.toString()}`;
-        window.open(
-          url,
-          "quikchat-group-call",
-          "width=1000,height=700,popup=yes,menubar=no,toolbar=no,location=no,status=no",
-        );
+        const data = (await res.json()) as { call: { id: string } };
+        openGroupCallWindow(data.call.id, activeChannel.name ?? "Group call", "audio");
         toast.success({ title: `Starting group call in #${activeChannel.name ?? "channel"}` });
       } catch (e) {
         toast.error({
@@ -805,7 +839,7 @@ export function ChatWorkspace({
         });
       }
     }
-  }, [activeChannel, currentUserId, toast]);
+  }, [activeChannel, currentUserId, openGroupCallWindow, toast]);
 
   const handleStartMeetingCall = useCallback(
     async (meetingId: string, channelId: string) => {
@@ -821,26 +855,8 @@ export function ChatWorkspace({
           };
           throw new Error(err.error ?? "Failed to start group call");
         }
-        const data = (await res.json()) as {
-          call: { id: string };
-          sfu: { roomId: string; tokens: Record<string, string>; livekitUrl?: string } | null;
-        };
-        const myToken = data.sfu?.tokens[currentUserId] ?? "";
-        const params = new URLSearchParams({
-          callId: data.call.id,
-          name: "Group call",
-          userId: currentUserId,
-          type: "video",
-          sfuRoomId: data.sfu?.roomId ?? "",
-          sfuToken: myToken,
-          livekitUrl: data.sfu?.livekitUrl ?? "",
-        });
-        const url = `/call/${data.call.id}?${params.toString()}`;
-        window.open(
-          url,
-          "quikchat-group-call",
-          "width=1000,height=700,popup=yes,menubar=no,toolbar=no,location=no,status=no",
-        );
+        const data = (await res.json()) as { call: { id: string } };
+        openGroupCallWindow(data.call.id, "Group call", "video");
         toast.success({ title: "Starting group call..." });
       } catch (e) {
         toast.error({
@@ -849,7 +865,7 @@ export function ChatWorkspace({
         });
       }
     },
-    [currentUserId, toast],
+    [openGroupCallWindow, toast],
   );
 
   useEffect(() => {
@@ -956,10 +972,21 @@ export function ChatWorkspace({
         {rejoinCall ? (
           <RejoinBanner
             activeCall={rejoinCall}
-            onRejoin={(_callId) => {
-              setCallTargetUserId(null);
+            onRejoin={() => {
               setRejoinCall(null);
-              toast.success({ title: "Reconnecting to call..." });
+              // A 1:1 mesh call (participantCount === 2) has no clean rejoin path
+              // yet — we'd need the other participant's id/name, which this
+              // summary doesn't carry. Group/SFU calls rejoin cleanly: the call
+              // page mints its own token from the callId alone.
+              if (rejoinCall.participantCount !== 2) {
+                openGroupCallWindow(rejoinCall.callId, rejoinCall.channelName, rejoinCall.type);
+                toast.success({ title: "Reconnecting to call..." });
+              } else {
+                toast.info({
+                  title: "Open the channel to rejoin",
+                  body: "1:1 call rejoin isn't available from here yet.",
+                });
+              }
             }}
             onDismiss={() => setRejoinCall(null)}
           />

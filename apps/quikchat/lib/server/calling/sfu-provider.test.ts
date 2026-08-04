@@ -12,18 +12,32 @@ describe("SFU provider seam", () => {
       expect(selectSFUMode({})).toEqual({ mode: "stub" });
     });
 
-    it("returns live when SFU_MODE=live and LIVEKIT_URL set", () => {
-      expect(selectSFUMode({ SFU_MODE: "live", LIVEKIT_URL: "wss://livekit.example.com" })).toEqual(
-        {
-          mode: "live",
-        },
-      );
+    it("returns live when SFU_MODE=live and all LiveKit vars are set", () => {
+      expect(
+        selectSFUMode({
+          SFU_MODE: "live",
+          LIVEKIT_URL: "wss://livekit.example.com",
+          LIVEKIT_API_KEY: "key",
+          LIVEKIT_API_SECRET: "secret",
+        }),
+      ).toEqual({ mode: "live" });
     });
 
     it("falls back to stub with warning when SFU_MODE=live but LIVEKIT_URL missing", () => {
-      const result = selectSFUMode({ SFU_MODE: "live" });
+      const result = selectSFUMode({
+        SFU_MODE: "live",
+        LIVEKIT_API_KEY: "key",
+        LIVEKIT_API_SECRET: "secret",
+      });
       expect(result.mode).toBe("stub");
       expect(result.warning).toContain("LIVEKIT_URL");
+    });
+
+    it("falls back to stub with warning when SFU_MODE=live but key/secret missing", () => {
+      const result = selectSFUMode({ SFU_MODE: "live", LIVEKIT_URL: "wss://livekit.example.com" });
+      expect(result.mode).toBe("stub");
+      expect(result.warning).toContain("LIVEKIT_API_KEY");
+      expect(result.warning).toContain("LIVEKIT_API_SECRET");
     });
   });
 

@@ -83,7 +83,10 @@ export function CallHandler({
       role?: string,
       userName?: string,
     ) => {
-      const params = new URLSearchParams({ callId, name, userId, type });
+      // `userId` is the OTHER party's id (the call page's `remoteUserId`);
+      // `myUserId` is our own — the call page needs both to tell local vs
+      // remote LiveKit participants apart.
+      const params = new URLSearchParams({ callId, name, userId, type, myUserId: currentUserId });
       if (role) params.set("role", role);
       if (userName) params.set("userName", userName);
       const url = `/call/${callId}?${params.toString()}`;
@@ -97,7 +100,7 @@ export function CallHandler({
         "width=800,height=600,popup=yes,menubar=no,toolbar=no,location=no,status=no",
       );
     },
-    [],
+    [currentUserId],
   );
 
   // Cross-tab coordination: dismiss incoming call if another tab accepted it
