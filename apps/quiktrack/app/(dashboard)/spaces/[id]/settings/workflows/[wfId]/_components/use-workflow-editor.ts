@@ -68,6 +68,10 @@ export function useWorkflowEditor(wfId: string, initial: EditorDraft, hasPending
       // Refresh the server read-model so a later remount sees the published
       // state (no pending draft) and keeps showing "Close".
       void qc.invalidateQueries({ queryKey: ["quiktrack", "workflow", wfId] });
+      // Also refresh the Workflows OVERVIEW scheme query (prefix match, any
+      // project) so its "unpublished changes" banner + DRAFT badge clear once
+      // this workflow is published from the editor.
+      void qc.invalidateQueries({ queryKey: ["quiktrack", "workflow-scheme"] });
       return j.data;
     },
   });

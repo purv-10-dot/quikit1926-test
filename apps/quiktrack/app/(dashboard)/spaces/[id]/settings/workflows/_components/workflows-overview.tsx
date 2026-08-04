@@ -32,6 +32,11 @@ export function WorkflowsOverview({ projectId }: { projectId: string }) {
   const { data, isLoading, error } = useQuery({
     queryKey: QKEY(projectId),
     queryFn: () => fetchScheme(projectId),
+    // The workflow can be published elsewhere (the editor page), which clears
+    // the draft. Always refetch on mount so returning here never shows a stale
+    // "unpublished changes" banner for an already-published workflow.
+    refetchOnMount: "always",
+    staleTime: 0,
   });
 
   const scheme = data?.scheme ?? null;
