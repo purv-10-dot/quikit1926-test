@@ -285,6 +285,14 @@ export async function seedDemoDataForOrg(orgId: string, adminUserId: string): Pr
     }
 
     // --- OPSP ------------------------------------------------------------------
+    // Fills every section of the Create OPSP form (not just a few headline
+    // fields) so the page reads as a real, filled-in plan rather than mostly
+    // placeholder text. Shapes below mirror FormData / TargetRow / GoalRow /
+    // etc. in app/(dashboard)/opsp/types.ts exactly — the DB's JSON columns
+    // are consumed as-is by the client, no server-side reshaping.
+    const opspCategories = ["Demo Revenue", "Demo Operations", "Demo Customer"];
+    const critCard = (title: string, bullets: string[]) => ({ title, bullets });
+
     await tx.oPSPData.create({
       data: {
         orgId,
@@ -292,10 +300,80 @@ export async function seedDemoDataForOrg(orgId: string, adminUserId: string): Pr
         year,
         quarter,
         status: "draft",
+        employees: ["Weekly all-hands with live scorecard", "Quarterly 360 reviews", "Referral bonus program"],
+        customers: ["NPS survey every quarter", "Dedicated success manager for top accounts", "Public roadmap"],
+        shareholders: ["Monthly investor update email", "Board deck published within 5 days of quarter close", "Cap table reviewed annually"],
         coreValues: "Customer obsession, ownership, integrity",
         purpose: "Help growing businesses run a disciplined weekly performance rhythm.",
+        actions: [
+          "Publish core values on the intranet homepage",
+          "Recognize a values-driven win in every all-hands",
+          "Tie BHAG progress to the quarterly scorecard",
+          "Review purpose statement at every offsite",
+          "Onboard new hires with a purpose/values session",
+        ],
+        profitPerX: "₹8L profit per employee",
         bhag: "₹100 Cr ARR by 2030",
-        rocks: [{ text: "Ship v2 of the customer portal", owner: "Demo Admin" }],
+        targetRows: [0, 1, 2, 3, 4].map((i) => ({
+          category: opspCategories[i % opspCategories.length],
+          projected: String(100 + i * 50),
+          y1: String(20 + i * 10), y2: String(35 + i * 12), y3: String(55 + i * 14), y4: String(80 + i * 16), y5: String(100 + i * 18),
+        })),
+        sandbox: "Explore expansion into the SMB segment via a self-serve tier.",
+        keyThrusts: [
+          { desc: "Launch self-serve onboarding", owner: "Demo Admin" },
+          { desc: "Expand into 2 new verticals", owner: "Demo Admin" },
+          { desc: "Build partner referral channel", owner: "Demo Admin" },
+          { desc: "Stand up 24/7 support", owner: "Demo Admin" },
+          { desc: "Ship mobile app v1", owner: "Demo Admin" },
+        ],
+        brandPromiseKPIs: "Response time < 2h, CSAT > 90%, Uptime > 99.9%",
+        brandPromise: "Disciplined weekly rhythm that turns strategy into shipped work — every week, no exceptions.",
+        goalRows: [0, 1, 2, 3, 4, 5].map((i) => ({
+          category: opspCategories[i % opspCategories.length],
+          projected: String(20 + i * 5),
+          q1: String(2 + i), q2: String(5 + i), q3: String(9 + i), q4: String(14 + i),
+        })),
+        keyInitiatives: [
+          { desc: "Close 5 enterprise deals", owner: "Demo Admin" },
+          { desc: "Ship v2 of the customer portal", owner: "Demo Admin" },
+          { desc: "Hire 2 senior engineers", owner: "Demo Admin" },
+          { desc: "Launch partner program", owner: "Demo Admin" },
+          { desc: "Reduce churn to under 3%", owner: "Demo Admin" },
+        ],
+        criticalNumGoals: critCard("Qualified Pipeline (₹Cr)", ["4", "3", "2", "1"]),
+        balancingCritNumGoals: critCard("Team Utilization (%)", ["85", "80", "75", "70"]),
+        processItems: ["Weekly pipeline review", "Bi-weekly sprint demo", "Monthly ops retro"],
+        weaknesses: ["No dedicated QA function yet", "Support coverage is US-hours only", "Onboarding docs are outdated"],
+        makeBuy: ["Build core product in-house", "Buy payments via Stripe", "Buy analytics via a SaaS tool"],
+        sell: ["Direct sales for enterprise", "Self-serve for SMB", "Partner-led for mid-market"],
+        recordKeeping: ["Cloud accounting platform", "Automated invoicing", "Quarterly external audit"],
+        actionsQtr: [0, 1, 2, 3, 4, 5].map((i) => ({
+          category: opspCategories[i % opspCategories.length],
+          projected: String(10 + i * 3),
+          m1: String(2 + i), m2: String(5 + i), m3: String(9 + i),
+        })),
+        rocks: [
+          { desc: "Ship v2 of the customer portal", owner: "Demo Admin" },
+          { desc: "Close 5 enterprise deals", owner: "Demo Admin" },
+          { desc: "Hire 2 senior engineers", owner: "Demo Admin" },
+          { desc: "Launch partner referral program", owner: "Demo Admin" },
+          { desc: "Reduce weekly bug backlog by 40%", owner: "Demo Admin" },
+        ],
+        criticalNumProcess: critCard("Cycle Time (days)", ["3", "5", "7", "10"]),
+        balancingCritNumProcess: critCard("Defect Rate (%)", ["1", "2", "4", "6"]),
+        theme: "Momentum — every week compounds.",
+        scoreboardDesign: "Shared TV dashboard in the office + Slack digest every Friday.",
+        celebration: "Team lunch + shoutout in all-hands when a Rock is completed.",
+        reward: "Spot bonus for the quarter's top-contributing Rock owner.",
+        trends: [
+          "Customers increasingly asking for SSO",
+          "Support tickets trending down 15% QoQ",
+          "Sales cycle shortening as brand awareness grows",
+          "Competitor pricing pressure in the SMB segment",
+          "Hiring market loosening for senior engineers",
+          "Rising demand for usage-based pricing",
+        ],
         createdBy: adminUserId,
         isDemoData: true,
       },
@@ -306,7 +384,22 @@ export async function seedDemoDataForOrg(orgId: string, adminUserId: string): Pr
         userId: adminUserId,
         year,
         quarter,
-        quarterlyPriorities: [{ text: "Close 5 enterprise deals" }],
+        kpiAccountability: [
+          { kpi: "Monthly Revenue", goal: "₹15L" },
+          { kpi: "Customer NPS", goal: "80" },
+          { kpi: "Tickets Resolved", goal: "50" },
+          { kpi: "Bug Fixes Shipped", goal: "25" },
+          { kpi: "Sales Calls Made", goal: "60" },
+        ],
+        quarterlyPriorities: [
+          { priority: "Close 5 enterprise deals", dueDate: "" },
+          { priority: "Ship v2 of the customer portal", dueDate: "" },
+          { priority: "Hire 2 senior engineers", dueDate: "" },
+          { priority: "Launch partner referral program", dueDate: "" },
+          { priority: "Reduce weekly bug backlog by 40%", dueDate: "" },
+        ],
+        criticalNumAcct: critCard("Weekly Active Users", ["1200", "1000", "800", "600"]),
+        balancingCritNumAcct: critCard("Support Response Time (hrs)", ["1", "2", "4", "8"]),
         createdBy: adminUserId,
         isDemoData: true,
       },
