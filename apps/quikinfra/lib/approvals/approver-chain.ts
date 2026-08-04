@@ -17,7 +17,7 @@
  * been removed.
  */
 
-import { db as dbCentral } from "@quikit/database";
+import { db } from "@/lib/db";
 
 export interface ApproverUser {
   id: string;
@@ -70,7 +70,7 @@ async function findUsersByRoleName(
   opts: { projectId?: string } = {},
 ): Promise<ApproverUser[]> {
   // Get every UserAppRole row for this (orgId, roleName).
-  const userAppRoles = (await dbCentral.cnUserAppRole.findMany({
+  const userAppRoles = (await db.cnUserAppRole.findMany({
     where: {
       orgId,
       role: { name: roleName },
@@ -103,7 +103,7 @@ async function findUsersByRoleName(
   // Site-admin lookup is project-scoped: only those with project access
   // to the requester's project qualify.
   if (opts.projectId && candidateIds.length > 0) {
-    const access = (await dbCentral.cnUserProjectAccess.findMany({
+    const access = (await db.cnUserProjectAccess.findMany({
       where: {
         orgId,
         userId: { in: candidateIds },
@@ -118,7 +118,7 @@ async function findUsersByRoleName(
   // Filter to only ACTIVE OrgMembers — inactive accounts can't approve.
   const memberships = candidateIds.length === 0
     ? []
-    : (await dbCentral.orgMember.findMany({
+    : (await db.orgMember.findMany({
         where: {
           orgId,
           userId: { in: candidateIds },
@@ -131,7 +131,7 @@ async function findUsersByRoleName(
   // Hydrate profile data (department, mobile) from User_profiles.
   const profiles = candidateIds.length === 0
     ? []
-    : (await dbCentral.cnUserProfile.findMany({
+    : (await db.cnUserProfile.findMany({
         where: { orgId, userId: { in: candidateIds } },
         select: {
           userId: true,

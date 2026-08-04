@@ -34,10 +34,14 @@ const SOFT_BG = rgb(0.96, 0.96, 0.96);
 export interface WorkOrderPdfLine {
   itemCode: string;
   description: string;
-  uom: string;
+  /** Days on a labour line; measured quantity on a BOQ line. */
   quantity: number;
   rate: number;
   amount: number;
+  /** Labour lines only — resolved CnLabourCategory name. */
+  labourCategory?: string | null;
+  /** Labour lines only — workers on the line. */
+  labourCount?: number | null;
 }
 
 export interface WorkOrderPdfInput {
@@ -258,20 +262,73 @@ function drawSubject(ctx: Ctx, subject: string) {
   ctx.y = topY - h - 10;
 }
 
-const COLS = [
-  { key: "sno", label: "S.NO.", width: 32, align: "center" as const },
-  { key: "code", label: "ITEM CODE", width: 75, align: "left" as const },
-  { key: "desc", label: "DESCRIPTION", width: 175, align: "left" as const },
-  { key: "uom", label: "UOM", width: 42, align: "center" as const },
-  { key: "qty", label: "QTY", width: 55, align: "right" as const },
-  { key: "rate", label: "RATE", width: 55, align: "right" as const },
-  { key: "amt", label: "AMOUNT", width: 80, align: "right" as const },
+interface PdfCol {
+  key: "sno" | "code" | "desc" | "category" | "count" | "qty" | "rate" | "amt";
+  label: string;
+  width: number;
+  align: "left" | "center" | "right";
+  /** Long free text — wraps and grows the row height. */
+  wraps?: boolean;
+}
+
+// Total width must stay at 514 (CONTENT_W) in both layouts so the table lines
+// up with the info blocks above it.
+const BOQ_COLS: PdfCol[] = [
+  { key: "sno", label: "S.NO.", width: 32, align: "center" },
+  { key: "code", label: "ITEM CODE", width: 87, align: "left", wraps: true },
+  { key: "desc", label: "DESCRIPTION", width: 205, align: "left", wraps: true },
+  { key: "qty", label: "QTY", width: 55, align: "right" },
+  { key: "rate", label: "RATE", width: 55, align: "right" },
+  { key: "amt", label: "AMOUNT", width: 80, align: "right" },
 ];
 
-function colX(start: number, idx: number): number {
+// Labour layout drops ITEM CODE (labour lines carry no BOQ item) and spends the
+// space on the category + worker count. QTY is relabelled DAYS because that is
+// what `quantity` holds on a labour line — with COUNT alongside it, the reader
+// can verify COUNT × DAYS × RATE = AMOUNT. Without the count column the total
+// looks like an arithmetic error on the face of the document.
+const LABOUR_COLS: PdfCol[] = [
+  { key: "sno", label: "S.NO.", width: 32, align: "center" },
+  { key: "desc", label: "DESCRIPTION", width: 152, align: "left", wraps: true },
+  { key: "category", label: "LABOUR CATEGORY", width: 105, align: "left", wraps: true },
+  { key: "count", label: "COUNT", width: 45, align: "right" },
+  { key: "qty", label: "DAYS", width: 45, align: "right" },
+  { key: "rate", label: "RATE", width: 55, align: "right" },
+  { key: "amt", label: "AMOUNT", width: 80, align: "right" },
+];
+
+/**
+ * "Labour Only" work orders bill workers × days × rate instead of measured
+ * quantity × rate, so they need the labour layout. Matched case-insensitively —
+ * the field is free-ish text and has arrived as "Labour Only" / "labour only".
+ */
+export function isLabourWorkType(workType?: string | null): boolean {
+  return String(workType ?? "").toLowerCase().includes("labour");
+}
+
+function colsFor(workType?: string | null): PdfCol[] {
+  return isLabourWorkType(workType) ? LABOUR_COLS : BOQ_COLS;
+}
+
+function colX(cols: PdfCol[], start: number, idx: number): number {
   let x = start;
-  for (let i = 0; i < idx; i++) x += COLS[i].width;
+  for (let i = 0; i < idx; i++) x += cols[i].width;
   return x;
+}
+
+/** Display text per column for one line. */
+function cellText(col: PdfCol, line: WorkOrderPdfLine, index: number): string {
+  switch (col.key) {
+    case "sno": return String(index);
+    case "code": return line.itemCode || "—";
+    case "desc": return line.description || "—";
+    // Null/blank category must read as "—", never "undefined".
+    case "category": return line.labourCategory?.trim() || "—";
+    case "count": return line.labourCount != null ? fmtQty(line.labourCount) : "—";
+    case "qty": return fmtQty(line.quantity);
+    case "rate": return fmtINR(line.rate);
+    case "amt": return fmtINR(line.amount);
+  }
 }
 
 function alignedX(
@@ -284,18 +341,20 @@ function alignedX(
   return cx + (cw - w) / 2;
 }
 
-function drawTableHeader(ctx: Ctx, startX: number) {
+function drawTableHeader(ctx: Ctx, startX: number, cols: PdfCol[]) {
   const { page, bold } = ctx;
   const h = 18;
   const topY = ctx.y;
-  const totalW = COLS.reduce((s, c) => s + c.width, 0);
+  const totalW = cols.reduce((s, c) => s + c.width, 0);
   page.drawRectangle({
     x: startX, y: topY - h, width: totalW, height: h, color: BRAND_ORANGE,
   });
-  COLS.forEach((c, i) => {
-    const x = colX(startX, i);
-    const tx = alignedX(c.label, x, c.width, bold, 9, c.align);
-    drawText(page, c.label, tx, topY - h + 5, bold, 9, rgb(1, 1, 1));
+  cols.forEach((c, i) => {
+    const x = colX(cols, startX, i);
+    // Headers are drawn at 8pt: "LABOUR CATEGORY" does not fit its column at 9.
+    const size = c.label.length > 10 ? 8 : 9;
+    const tx = alignedX(c.label, x, c.width, bold, size, c.align);
+    drawText(page, c.label, tx, topY - h + 5, bold, size, rgb(1, 1, 1));
     if (i > 0) {
       page.drawLine({
         start: { x, y: topY }, end: { x, y: topY - h },
@@ -306,53 +365,55 @@ function drawTableHeader(ctx: Ctx, startX: number) {
   ctx.y = topY - h;
 }
 
+/** Row height this line needs, so the caller can page-break before drawing. */
+function rowHeight(ctx: Ctx, cols: PdfCol[], index: number, line: WorkOrderPdfLine): number {
+  const maxLines = cols.reduce((m, c) => {
+    if (!c.wraps) return m;
+    return Math.max(m, wrap(cellText(c, line, index), ctx.font, 9, c.width - 10).length);
+  }, 1);
+  return Math.max(18, maxLines * 11 + 6);
+}
+
 function drawTableRow(
-  ctx: Ctx, startX: number, index: number, line: WorkOrderPdfLine,
+  ctx: Ctx, startX: number, index: number, line: WorkOrderPdfLine, cols: PdfCol[],
 ) {
   const { page, font } = ctx;
-  const totalW = COLS.reduce((s, c) => s + c.width, 0);
-  const descLines = wrap(line.description || "—", font, 9, COLS[2].width - 10);
-  const codeLines = wrap(line.itemCode || "—", font, 9, COLS[1].width - 10);
-  const maxLines = Math.max(descLines.length, codeLines.length);
-  const h = Math.max(18, maxLines * 11 + 6);
+  const totalW = cols.reduce((s, c) => s + c.width, 0);
+  const h = rowHeight(ctx, cols, index, line);
   const topY = ctx.y;
 
   page.drawRectangle({
     x: startX, y: topY - h, width: totalW, height: h,
     borderColor: GRID, borderWidth: 0.4,
   });
-  for (let i = 1; i < COLS.length; i++) {
-    const x = colX(startX, i);
+  for (let i = 1; i < cols.length; i++) {
+    const x = colX(cols, startX, i);
     page.drawLine({
       start: { x, y: topY }, end: { x, y: topY - h },
       thickness: 0.3, color: GRID,
     });
   }
-  const baseY = topY - 12;
-  const sno = String(index);
-  drawText(page, sno, alignedX(sno, colX(startX, 0), COLS[0].width, font, 9, "center"), baseY, font, 9);
-  for (let i = 0; i < codeLines.length; i++) {
-    drawText(page, codeLines[i], colX(startX, 1) + 5, topY - 12 - i * 11, font, 9);
-  }
-  for (let i = 0; i < descLines.length; i++) {
-    drawText(page, descLines[i], colX(startX, 2) + 5, topY - 12 - i * 11, font, 9);
-  }
-  const uomT = (line.uom || "—").toUpperCase();
-  drawText(page, uomT, alignedX(uomT, colX(startX, 3), COLS[3].width, font, 9, "center"), baseY, font, 9);
-  const qtyT = fmtQty(line.quantity);
-  drawText(page, qtyT, alignedX(qtyT, colX(startX, 4), COLS[4].width, font, 9, "right"), baseY, font, 9);
-  const rateT = fmtINR(line.rate);
-  drawText(page, rateT, alignedX(rateT, colX(startX, 5), COLS[5].width, font, 9, "right"), baseY, font, 9);
-  const amtT = fmtINR(line.amount);
-  drawText(page, amtT, alignedX(amtT, colX(startX, 6), COLS[6].width, font, 9, "right"), baseY, font, 9);
+
+  cols.forEach((c, i) => {
+    const x = colX(cols, startX, i);
+    const text = cellText(c, line, index);
+    if (c.wraps) {
+      const lines = wrap(text, font, 9, c.width - 10);
+      for (let li = 0; li < lines.length; li++) {
+        drawText(page, lines[li], x + 5, topY - 12 - li * 11, font, 9);
+      }
+      return;
+    }
+    drawText(page, text, alignedX(text, x, c.width, font, 9, c.align), topY - 12, font, 9);
+  });
   ctx.y = topY - h;
 }
 
-function drawGrandTotal(ctx: Ctx, startX: number, total: number) {
+function drawGrandTotal(ctx: Ctx, startX: number, total: number, cols: PdfCol[]) {
   const { page, bold } = ctx;
-  const totalW = COLS.reduce((s, c) => s + c.width, 0);
-  const labelW = COLS.slice(0, 6).reduce((s, c) => s + c.width, 0);
-  const valueW = COLS[6].width;
+  const totalW = cols.reduce((s, c) => s + c.width, 0);
+  const labelW = cols.slice(0, -1).reduce((s, c) => s + c.width, 0);
+  const valueW = cols[cols.length - 1].width;
   const labelX = startX;
   const valueX = startX + labelW;
   const rowH = 20;
@@ -462,15 +523,21 @@ export async function generateWorkOrderPdf(
   drawSubject(ctx, input.wo.title || "");
 
   const tableStartX = PAGE_MARGIN;
-  drawTableHeader(ctx, tableStartX);
+  const cols = colsFor(input.wo.workType);
+  drawTableHeader(ctx, tableStartX, cols);
   for (let i = 0; i < input.items.length; i++) {
-    await ensureSpace(ctx, 40, template);
-    if (ctx.y === ctx.height - 260) drawTableHeader(ctx, tableStartX);
-    drawTableRow(ctx, tableStartX, i + 1, input.items[i]);
+    // Reserve this row's real height — a wrapped category/description can be
+    // several lines tall, and a fixed 40pt guess let tall rows overrun the
+    // footer instead of breaking cleanly.
+    const needed = rowHeight(ctx, cols, i + 1, input.items[i]);
+    const yBefore = ctx.y;
+    await ensureSpace(ctx, needed, template);
+    if (ctx.y !== yBefore) drawTableHeader(ctx, tableStartX, cols);
+    drawTableRow(ctx, tableStartX, i + 1, input.items[i], cols);
   }
 
   await ensureSpace(ctx, 60, template);
-  drawGrandTotal(ctx, tableStartX, input.grandTotal);
+  drawGrandTotal(ctx, tableStartX, input.grandTotal, cols);
 
   await ensureSpace(ctx, 100, template);
   drawTerms(ctx, input.termsBody);

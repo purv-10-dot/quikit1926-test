@@ -206,7 +206,7 @@ export async function POST(req: NextRequest) {
 
       const woLines = await db.cnWorkOrderLine.findMany({
         where: { woId },
-        select: { id: true, boqItemId: true, uomId: true },
+        select: { id: true, boqItemId: true, uomCode: true },
       });
       // FREE_SCOPE WO lines have a null boqItemId and cannot be matched to a
       // BOQ leaf, so they never enter the lookup.
@@ -255,7 +255,7 @@ export async function POST(req: NextRequest) {
           description: String(
             l.description ?? leaf.display_name ?? leaf.description ?? "",
           ),
-          uomId: String(l.uomId ?? woLine?.uomId ?? leaf.unit ?? ""),
+          uomId: String(l.uomId ?? woLine?.uomCode ?? leaf.unit ?? ""),
           totalQty,
           previousQty,
           currentQty,

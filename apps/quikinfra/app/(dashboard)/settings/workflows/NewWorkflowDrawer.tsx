@@ -1,9 +1,10 @@
 "use client";
 
 /**
- * New Workflow Drawer — mirrors EditWorkflowDrawer but for creation.
- * Kept structurally identical so the New and Edit forms look the same:
- * per-step role select + role-filtered user picker.
+ * Workflow Drawer — handles both creation and editing. Passing `prefill`
+ * (plus `moduleMode`) seeds the form from an existing workflow and switches
+ * the title to "Edit …" and the submit label to "Save Changes", so New and
+ * Edit share one form: per-step role select + role-filtered user picker.
  */
 
 import { toErrorMessage } from "@/lib/api/errors";

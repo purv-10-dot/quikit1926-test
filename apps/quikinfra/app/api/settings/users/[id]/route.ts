@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db as dbCentral } from "@quikit/database";
+import { db } from "@/lib/db";
 import {
   findUserByIdCentral,
   updateUserCentral,
@@ -63,18 +63,18 @@ export const GET = auth.manage<{ id: string }>(async (authCtx, _req, { params })
   let derivedMatrix: Record<string, Partial<Record<string, boolean>>> | null =
     row.permissionMatrix ?? null;
   try {
-    const authUser = await dbCentral.user.findUnique({
+    const authUser = await db.user.findUnique({
       where: { email: row.email },
       select: { id: true, lastSignInAt: true },
     });
     if (authUser) {
-      const revokes = (await dbCentral.cnUserPermissionExtra.findMany({
+      const revokes = (await db.cnUserPermissionExtra.findMany({
         where: { userId: authUser.id, orgId: authCtx.orgId, revoke: true },
         select: { resource: true, action: true },
       })) as Array<{ resource: string; action: string }>;
       derivedModules = modulesFromRevokes(revokes);
       derivedProjects = await loadProjectAccess(
-        dbCentral as never,
+        db as never,
         authUser.id,
         authCtx.orgId,
       );
@@ -83,7 +83,7 @@ export const GET = auth.manage<{ id: string }>(async (authCtx, _req, { params })
         ? (authUser.lastSignInAt as Date).toISOString()
         : derivedLastLoginAt;
 
-      const orgMember = await dbCentral.orgMember.findUnique({
+      const orgMember = await db.orgMember.findUnique({
         where: {
           orgId_userId: { orgId: authCtx.orgId, userId: authUser.id },
         },
@@ -125,7 +125,7 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalisedEmail)) {
       return NextResponse.json({ error: "Invalid email address" }, { status: 400 });
     }
-    const clash = await dbCentral.user.findUnique({
+    const clash = await db.user.findUnique({
       where: { email: normalisedEmail },
       select: { id: true },
     });
@@ -149,7 +149,7 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
       lower === "super_admin" || lower === "company_admin" ? "admin" : lower;
     const appId = await getQuikInfraAppId();
     const role = appId
-      ? await dbCentral.cnAppRole.findFirst({
+      ? await db.cnAppRole.findFirst({
           where: { orgId: ctx.orgId, appId, name: normalised },
           select: { id: true, name: true },
         })
@@ -264,7 +264,7 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
     Array.isArray(body.projectsAssigned)
   ) {
     try {
-      const authUser = await dbCentral.user.findUnique({
+      const authUser = await db.user.findUnique({
         where: { email: updated.email },
         select: { id: true },
       });
@@ -285,10 +285,10 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
     try {
       const appId = await getQuikInfraAppId();
       if (appId) {
-        await dbCentral.cnUserAppRole.deleteMany({
+        await db.cnUserAppRole.deleteMany({
           where: { userId: authUserId, orgId: ctx.orgId, role: { appId } },
         });
-        await dbCentral.cnUserAppRole.create({
+        await db.cnUserAppRole.create({
           data: {
             userId: authUserId,
             orgId: ctx.orgId,
@@ -298,7 +298,7 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
         });
         // Keep the central UserAppAccess.role mirror (what the Admin Portal
         // shows) in sync with the role just assigned in QuikInfra.
-        await mirrorAppRoleToCentral(dbCentral, {
+        await mirrorAppRoleToCentral(db, {
           orgId: ctx.orgId,
           userId: authUserId,
           appId,
@@ -334,7 +334,7 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
     try {
       if (grantSettings) {
         for (const p of SETTINGS_PERMS) {
-          await dbCentral.cnUserPermissionExtra.upsert({
+          await db.cnUserPermissionExtra.upsert({
             where: {
               orgId_userId_resource_action: {
                 orgId: ctx.orgId,
@@ -355,7 +355,7 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
           });
         }
       } else {
-        await dbCentral.cnUserPermissionExtra.deleteMany({
+        await db.cnUserPermissionExtra.deleteMany({
           where: {
             orgId: ctx.orgId,
             userId: authUserId,
@@ -401,7 +401,7 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
       // sub-module of an assigned module come back selected).
       let previouslyTicked: string[] | null = null;
       try {
-        const existingRevokes = (await dbCentral.cnUserPermissionExtra.findMany({
+        const existingRevokes = (await db.cnUserPermissionExtra.findMany({
           where: { userId: authUserId, orgId: ctx.orgId, revoke: true },
           select: { resource: true, action: true },
         })) as Array<{ resource: string; action: string }>;
@@ -410,7 +410,7 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
         // Couldn't read the current state — fall back to a full reconcile.
       }
       await applyModuleRevokes(
-        dbCentral as never,
+        db as never,
         authUserId,
         ctx.orgId,
         tickedModules,
@@ -435,7 +435,7 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
     );
     try {
       await applyProjectAccess(
-        dbCentral as never,
+        db as never,
         authUserId,
         ctx.orgId,
         projectIds,
@@ -483,7 +483,7 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
         p: { resource: string; action: string },
         revoke: boolean,
       ) =>
-        dbCentral.cnUserPermissionExtra.upsert({
+        db.cnUserPermissionExtra.upsert({
           where: {
             orgId_userId_resource_action: {
               orgId: ctx.orgId,

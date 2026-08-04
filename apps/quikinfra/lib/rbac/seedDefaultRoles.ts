@@ -18,7 +18,7 @@
  * Mirrors apps/quikscale/lib/api/seedAdminAppRole.ts.
  */
 
-import { db } from "@quikit/database";
+import { db } from "@/lib/db";
 import { PERMISSIONS, ROLES, type ConstructionRole } from "@/lib/permissions";
 import { parsePermissionKey, allPermissionPairs } from "./permissionsRegistry";
 import { getQuikInfraAppId } from "./userCan";

@@ -4141,7 +4141,10 @@ model CnWorkOrderLine {
   scopeId        String? // CnActivityItem.id when scopeType = ACTIVITY
   description    String
   quantity       Decimal @db.Decimal(18, 4)
-  uomId          String
+  /// Holds the UOM *code* ("CUM", "DAY"), not a CnUOM id — the write paths have
+  /// always stored the code here. Named `uomId` until the rename; readers that
+  /// assumed an id silently rendered blank UOM cells (WO PDF + Excel export).
+  uomCode        String
   negotiatedRate Decimal @db.Decimal(18, 2)
   amount         Decimal @db.Decimal(18, 2)
 

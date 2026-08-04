@@ -30,23 +30,6 @@ export function useUsers(params?: { search?: string }) {
   });
 }
 
-/**
- * Org-wide id → display-name map for audit columns (Created By / Updated By).
- * Separate from {@link useUsers} because that endpoint requires user-management
- * permission; this one only requires being signed in, so the columns resolve
- * for every role. Cached for the session — names change rarely.
- */
-export function useUserNames() {
-  return useQuery({
-    queryKey: ["org-user-names"],
-    queryFn: () =>
-      fetchApi<{ data: Array<{ id: string; name: string }> }>(
-        "/api/org/user-names",
-      ),
-    staleTime: Infinity,
-  });
-}
-
 export interface OrgRole {
   id: string;
   name: string;

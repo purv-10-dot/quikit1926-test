@@ -8,7 +8,6 @@ import {
   LayoutGrid, Columns, ChevronDown, ChevronUp, ChevronsUpDown,
 } from 'lucide-react';
 import { formatDate } from '@/lib/format/datetime';
-import { useUserNames } from '@/hooks/use-users';
 import { Pager } from './Pager';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -121,6 +120,39 @@ export const AUDIT_COLS: ColDef<Record<string, unknown>>[] = [
   { key: 'createdBy', label: 'Created By', type: 'user', width: '160px', hideable: true, freezable: false },
   { key: 'updatedBy', label: 'Updated By', type: 'user', width: '160px', hideable: true, freezable: false },
 ];
+
+// ─── User-name lookup for `type: 'user'` columns ───────────────────────────────
+
+// Deliberately a plain fetch rather than React Query: DataTable is a low-level
+// component rendered in contexts without a QueryClientProvider (unit tests
+// among them), and useQuery throws outright when the provider is absent.
+// Module-level memo means one request per page load, shared by every grid.
+const EMPTY_NAMES: ReadonlyMap<string, string> = new Map();
+let userNamesPromise: Promise<ReadonlyMap<string, string>> | null = null;
+
+function loadUserNames(): Promise<ReadonlyMap<string, string>> {
+  if (userNamesPromise) return userNamesPromise;
+  if (typeof fetch !== 'function') return Promise.resolve(EMPTY_NAMES);
+  userNamesPromise = fetch('/api/org/user-names')
+    .then((r) => (r.ok ? r.json() : { data: [] }))
+    .then((j) => {
+      const rows = (j?.data ?? []) as Array<{ id: string; name: string }>;
+      return new Map(rows.map((u) => [u.id, u.name])) as ReadonlyMap<string, string>;
+    })
+    // A failure must degrade to showing the raw id, never break the grid.
+    .catch(() => EMPTY_NAMES);
+  return userNamesPromise;
+}
+
+function useUserNameMap(): ReadonlyMap<string, string> {
+  const [names, setNames] = useState<ReadonlyMap<string, string>>(EMPTY_NAMES);
+  useEffect(() => {
+    let alive = true;
+    loadUserNames().then((m) => { if (alive) setNames(m); });
+    return () => { alive = false; };
+  }, []);
+  return names;
+}
 
 // ─── Operators ────────────────────────────────────────────────────────────────
 
@@ -986,14 +1018,8 @@ export function DataTable<T extends Record<string, unknown>>({
   hideFilter = false, hideColumns = false,
 }: DataTableProps<T>) {
   // Account lookup for `type: 'user'` columns (Created By / Updated By and any
-  // module column that stores a user id). React Query dedupes this across every
-  // grid on the page, so it costs one request per session.
-  const { data: usersData } = useUserNames();
-  const userNameById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const u of usersData?.data ?? []) map.set(u.id, u.name);
-    return map;
-  }, [usersData]);
+  // module column that stores a user id).
+  const userNameById = useUserNameMap();
 
   // Merge audit cols
   const columns = useMemo(() => {
