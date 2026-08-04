@@ -39,14 +39,27 @@ describe("POST /api/projects/:id/workflow-scheme/enable", () => {
     expect(res.status).toBe(404);
   });
 
-  it("is idempotent — no-op when a scheme already exists", async () => {
+  it("already-enabled — reports alreadyEnabled and backfills board columns", async () => {
     asAdmin();
     mockDb.qtWorkflowScheme.findUnique.mockResolvedValue({ id: "sch1" } as never);
+    // The alreadyEnabled branch runs seedBoardColumns inside $transaction. Stub
+    // the tx so an existing column short-circuits (no columns are created).
+    mockDb.$transaction.mockImplementation(async (cb: unknown) => {
+      const tx = {
+        qtBoardColumn: {
+          findFirst: () => Promise.resolve({ id: "col1" }), // columns exist → no-op
+          create: () => Promise.resolve({ id: "colX" }),
+        },
+        qtIssueStatus: { findMany: () => Promise.resolve([]) },
+        qtBoardColumnStatus: { create: () => Promise.resolve({}) },
+      };
+      return (cb as (t: unknown) => Promise<unknown>)(tx);
+    });
     const res = await POST(req(), { params: { id: PROJECT } } as never);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data.alreadyEnabled).toBe(true);
-    expect(mockDb.$transaction).not.toHaveBeenCalled();
+    expect(mockDb.$transaction).toHaveBeenCalled();
   });
 
   it("provisions a scheme when none exists", async () => {
@@ -56,6 +69,13 @@ describe("POST /api/projects/:id/workflow-scheme/enable", () => {
     mockDb.$transaction.mockImplementation(async (cb: unknown) => {
       const tx = {
         qtResolution: { createMany: () => Promise.resolve({}) },
+        // seedProjectWorkflow calls seedBoardColumns first — no existing columns
+        // → it creates the 4 defaults + maps same-name/classic statuses.
+        qtBoardColumn: {
+          findFirst: () => Promise.resolve(null),
+          create: () => Promise.resolve({ id: "colX" }),
+        },
+        qtBoardColumnStatus: { create: () => Promise.resolve({}) },
         qtWorkflowScheme: {
           findUnique: () => Promise.resolve(null),
           create: () => Promise.resolve({ id: "sch1" }),

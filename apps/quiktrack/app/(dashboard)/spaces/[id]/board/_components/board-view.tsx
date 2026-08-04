@@ -153,7 +153,8 @@ export function BoardView({ projectId }: { projectId: string }) {
       ]);
       if (!alive) return;
       if (statusesRes?.success) setStatuses(statusesRes.data || []);
-      // Only adopt column-mode when the project has actually configured columns.
+      // Board columns come from Board Settings only. Workflow attachment does NOT
+      // affect the board's columns — the board always shows its existing columns.
       if (boardColsRes?.success && boardColsRes.data?.configured) {
         setBoardColumns(boardColsRes.data.columns as { id: string; name: string; statusIds: string[] }[]);
       } else {
@@ -355,20 +356,20 @@ export function BoardView({ projectId }: { projectId: string }) {
             </div>
           ))}
 
-        {/* Functional spaces (Kanban) always show populated columns fed by
-            every task (sprintId={null} → no sprint filter). Scrum spaces only
-            populate columns once a sprint is ACTIVE. */}
         {/* ── Board-columns mode (Board settings configured) ──────────────── */}
         {!bootLoading &&
           boardColumns &&
           (isFunctional || activeSprintId) &&
           boardColumns.map((col) => {
-            const primary = statusesById[col.statusIds[0]];
-            if (!primary) return null; // column whose statuses were all deleted
+            // Render EVERY column — including ones with no statuses mapped yet
+            // (e.g. a freshly-added custom column). An unmapped column shows no
+            // cards but must still appear; a card dropped onto it moves to the
+            // column's first mapped status (drop disabled when it has none).
+            const primary = statusesById[col.statusIds[0]] ?? null;
             return (
               <BoardColumn
                 key={`${col.id}-${refreshKey}`}
-                status={primary}
+                status={primary ?? undefined}
                 columnStatusIds={col.statusIds}
                 displayName={col.name}
                 allStatuses={visibleStatuses}
@@ -384,8 +385,7 @@ export function BoardView({ projectId }: { projectId: string }) {
                 onColumnDeleted={() => {}}
                 dragHandlers={{
                   onDragOver: onColDragOver,
-                  // A card dropped on a multi-status column lands on its primary status.
-                  onDrop: onColDrop(col.statusIds[0]),
+                  onDrop: primary ? onColDrop(col.statusIds[0]) : undefined,
                   onDragStart: () => {},
                 }}
               />
@@ -396,7 +396,8 @@ export function BoardView({ projectId }: { projectId: string }) {
             <EmptyColumn key={col.id} name={col.name} showCta={idx === 0} projectId={projectId} />
           ))}
 
-        {/* ── Classic mode (one column per status) ─────────────────────────── */}
+        {/* ── No Board-Settings mapping → show the project's existing statuses
+            as columns (unchanged whether or not a workflow is attached). ─────── */}
         {!bootLoading &&
           !boardColumns &&
           (isFunctional || activeSprintId) &&
@@ -426,25 +427,17 @@ export function BoardView({ projectId }: { projectId: string }) {
               }}
             />
           ))}
-
-        {/* Scrum, no active sprint — render the column shells empty, and put
-            the "Get started in the backlog" CTA inside the first column so the
-            board structure stays visible (matches Jira's behaviour). Functional
-            spaces never hit this branch. */}
         {!bootLoading &&
           !boardColumns &&
           !isFunctional &&
           !activeSprintId &&
           visibleStatuses.map((s, idx) => (
-            <EmptyColumn
-              key={s.id}
-              name={s.name}
-              showCta={idx === 0}
-              projectId={projectId}
-            />
+            <EmptyColumn key={s.id} name={s.name} showCta={idx === 0} projectId={projectId} />
           ))}
 
-        {/* AddColumnTile only in classic mode — columns are managed in Board settings. */}
+        {/* Add a custom board status. Only offered when there's no saved column
+            mapping; once you map statuses to columns in Board Settings, columns
+            are managed there. Workflow attachment does NOT change this. */}
         {!bootLoading && !boardColumns && (
           <AddColumnTile
             projectId={projectId}

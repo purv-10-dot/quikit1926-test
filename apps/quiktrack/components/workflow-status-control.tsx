@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, Zap, GitBranch, HelpCircle } from "lucide-react";
 
@@ -77,6 +78,12 @@ export function WorkflowStatusControl({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  // Fixed-position coords for the portal menu. The menu is rendered into
+  // document.body so it can't be clipped by any scroll container (backlog,
+  // list, table all wrap this control in an `overflow-y-auto` box).
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
   // Legal transitions for THIS issue (only fetched when the menu opens, so we
   // don't fire a request for every row until the user interacts).
@@ -90,10 +97,35 @@ export function WorkflowStatusControl({
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      // The menu is portaled outside `ref`, so check both the trigger and menu.
+      if (ref.current?.contains(t)) return;
+      if (menuRef.current?.contains(t)) return;
+      setOpen(false);
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  // Position the portal menu just below the trigger. Recompute on open and on
+  // scroll/resize so it tracks the button while the menu is up. Right-aligned
+  // to the button so it never runs off the right edge of a narrow row.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const MENU_WIDTH = 240;
+    const compute = () => {
+      const r = btnRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const left = Math.max(8, Math.min(r.right - MENU_WIDTH, window.innerWidth - MENU_WIDTH - 8));
+      setPos({ top: r.bottom + 4, left });
+    };
+    compute();
+    window.addEventListener("scroll", compute, true);
+    window.addEventListener("resize", compute);
+    return () => {
+      window.removeEventListener("scroll", compute, true);
+      window.removeEventListener("resize", compute);
+    };
   }, [open]);
 
   const statusById = new Map(statuses.map((s) => [s.id, s]));
@@ -109,6 +141,7 @@ export function WorkflowStatusControl({
   return (
     <div className="relative" ref={ref}>
       <button
+        ref={btnRef}
         type="button"
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
@@ -120,8 +153,11 @@ export function WorkflowStatusControl({
         <ChevronDown className="h-3 w-3" />
       </button>
 
-      {open && (
-        <div className="absolute left-0 top-full z-30 mt-1 min-w-[220px] rounded-md border border-gray-200 bg-white py-1.5 shadow-lg">
+      {open && pos && typeof document !== "undefined" && createPortal(
+        <div
+          ref={menuRef}
+          style={{ position: "fixed", top: pos.top, left: pos.left, width: 240 }}
+          className="z-[100] min-w-[220px] rounded-md border border-gray-200 bg-white py-1.5 shadow-lg">
           {transitions.isLoading ? (
             <div className="px-3 py-2 text-xs text-gray-400">Loading…</div>
           ) : gated ? (
@@ -193,7 +229,8 @@ export function WorkflowStatusControl({
               </button>
             ))
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

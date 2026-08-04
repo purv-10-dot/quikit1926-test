@@ -5,16 +5,41 @@ import {
   SPACE_ADMIN_ROLE_NAME,
 } from "@/lib/api/permissionsRegistry";
 
-// Jira classic default statuses. Categories drive board grouping + Done/open-work
-// logic: Open=BACKLOG (to-do), In Progress/Resolved/Reopened=IN_PROGRESS,
-// Closed=DONE. (Refine via Board settings once that's the source of truth.)
+// Default statuses for a new project. These are the SAME names as the default
+// board columns (To Do / In Progress / In Review / Done) so that — with no
+// workflow enabled — the free status dropdown matches the board 1:1 (each
+// column maps to its same-name status). Categories drive Done/open-work logic:
+// To Do=BACKLOG, In Progress/In Review=IN_PROGRESS, Done=DONE.
 export const DEFAULT_STATUSES = [
-  { name: "Open", color: "#94a3b8", category: "BACKLOG", orderIndex: 0 },
+  { name: "To Do", color: "#94a3b8", category: "BACKLOG", orderIndex: 0 },
   { name: "In Progress", color: "#2563eb", category: "IN_PROGRESS", orderIndex: 1 },
-  { name: "Resolved", color: "#16a34a", category: "IN_PROGRESS", orderIndex: 2 },
-  { name: "Reopened", color: "#9333ea", category: "IN_PROGRESS", orderIndex: 3 },
-  { name: "Closed", color: "#16a34a", category: "DONE", orderIndex: 4 },
+  { name: "In Review", color: "#9333ea", category: "IN_PROGRESS", orderIndex: 2 },
+  { name: "Done", color: "#16a34a", category: "DONE", orderIndex: 3 },
 ];
+
+/**
+ * Jira-style default BOARD COLUMNS. These are the named containers shown on the
+ * board (To Do / In Progress / In Review / Done) — they are NOT statuses. A
+ * status becomes visible on the board only once it's mapped into a column (via
+ * Board Settings). Classic statuses get a sensible default mapping below;
+ * custom statuses stay unmapped until an admin drags them in.
+ */
+export const DEFAULT_BOARD_COLUMNS = [
+  { name: "To Do", orderIndex: 0 },
+  { name: "In Progress", orderIndex: 1 },
+  { name: "In Review", orderIndex: 2 },
+  { name: "Done", orderIndex: 3 },
+];
+
+// Default mapping of classic status NAME → board column NAME. Only these named
+// classic statuses are auto-mapped; any other (custom) status is left unmapped.
+export const CLASSIC_STATUS_TO_COLUMN: Record<string, string> = {
+  Open: "To Do",
+  Reopened: "To Do",
+  "In Progress": "In Progress",
+  Resolved: "In Review",
+  Closed: "Done",
+};
 
 export const DEFAULT_ISSUE_TYPES = [
   { name: "Epic", color: "#9333ea", icon: "Zap", orderIndex: 0 },
@@ -37,23 +62,23 @@ export const DEFAULT_RESOLUTIONS = [
  *
  * Every status has an incoming NORMAL transition so the graph is fully reachable
  * from the initial status (the publish gate rejects unreachable statuses):
- *   Create → Open → In Progress → Resolved → Closed → Reopened → (back to) In Progress.
- * INITIAL runs on issue creation.
+ *   Create → To Do → In Progress → In Review → Done → (reopen) → In Progress.
+ * INITIAL runs on issue creation. Defined over the DEFAULT_STATUSES names so a
+ * space's default statuses and its default workflow line up.
  */
 const CLASSIC_WORKFLOW_NAME = "classic default workflow";
-const CLASSIC_INITIAL_STATUS = "Open";
+const CLASSIC_INITIAL_STATUS = "To Do";
 const CLASSIC_TRANSITIONS: Array<{
   name: string;
   type: "INITIAL" | "NORMAL" | "GLOBAL";
   from: string[];
   to: string;
 }> = [
-  { name: "Create", type: "INITIAL", from: [], to: "Open" },
-  { name: "Start Progress", type: "NORMAL", from: ["Open"], to: "In Progress" },
-  { name: "Resolve Issue", type: "NORMAL", from: ["In Progress"], to: "Resolved" },
-  { name: "Close Issue", type: "NORMAL", from: ["Resolved"], to: "Closed" },
-  { name: "Reopen", type: "NORMAL", from: ["Closed"], to: "Reopened" },
-  { name: "Back to In Progress", type: "NORMAL", from: ["Reopened"], to: "In Progress" },
+  { name: "Create", type: "INITIAL", from: [], to: "To Do" },
+  { name: "Start Progress", type: "NORMAL", from: ["To Do"], to: "In Progress" },
+  { name: "Ready for Review", type: "NORMAL", from: ["In Progress"], to: "In Review" },
+  { name: "Done", type: "NORMAL", from: ["In Review"], to: "Done" },
+  { name: "Reopen", type: "NORMAL", from: ["Done"], to: "In Progress" },
 ];
 
 /**
@@ -61,6 +86,90 @@ const CLASSIC_TRANSITIONS: Array<{
  * a single default item mapping every issue type to it. Idempotent per project
  * (skips if a scheme already exists). Also seeds the org's resolution catalog.
  */
+/**
+ * Ensure the project has Jira-style board columns and that its classic statuses
+ * are mapped into them.
+ *
+ * Rules (owner spec):
+ *   • If the project ALREADY has board columns → preserve them, create nothing.
+ *     (A returning project keeps its custom columns exactly as they are.)
+ *   • If it has NO columns → create the default To Do / In Progress / In Review /
+ *     Done columns, then auto-map the classic statuses (Open/Reopened → To Do,
+ *     In Progress → In Progress, Resolved → In Review, Closed → Done) BY NAME.
+ *   • Custom statuses are never auto-mapped — they stay in the Unmapped bucket
+ *     until an admin drags them into a column in Board Settings.
+ *   • A status is never mapped into two columns (QtBoardColumnStatus.statusId is
+ *     the PK), so each classic status lands in exactly one column.
+ *
+ * Idempotent: keyed on "no columns exist", so it's safe to call on new-project
+ * create AND on workflow-enable for a project that already had a scheme.
+ */
+export async function seedBoardColumns(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+): Promise<void> {
+  // Preserve existing columns — never clobber a configured board.
+  const existingColumn = await tx.qtBoardColumn.findFirst({
+    where: { projectId },
+    select: { id: true },
+  });
+  if (existingColumn) return;
+
+  // Create the default columns and keep their ids by name for mapping.
+  const columnIdByName = new Map<string, string>();
+  for (const col of DEFAULT_BOARD_COLUMNS) {
+    const created = await tx.qtBoardColumn.create({
+      data: { projectId, name: col.name, orderIndex: col.orderIndex },
+      select: { id: true },
+    });
+    columnIdByName.set(col.name, created.id);
+  }
+
+  const statuses = await tx.qtIssueStatus.findMany({
+    where: { projectId, isDeleted: false },
+    select: { id: true, name: true },
+  });
+  const statusByName = new Map(statuses.map((s) => [s.name, s]));
+
+  // Decide the ONE status each column owns. Priority:
+  //   1. A status whose name matches the column exactly ("To Do" → "To Do").
+  //      This keeps a project's own statuses as its columns.
+  //   2. Otherwise the classic status that maps to this column by convention
+  //      (Open → To Do, In Progress → In Progress, Resolved → In Review,
+  //       Closed → Done). Used by pure-classic projects that have no same-name
+  //      status.
+  // Any status not chosen here stays UNMAPPED (hidden) until an admin maps it.
+  // A status is used at most once (statusId is the PK of QtBoardColumnStatus).
+  const used = new Set<string>();
+  let orderIndex = 0;
+  for (const col of DEFAULT_BOARD_COLUMNS) {
+    const columnId = columnIdByName.get(col.name)!;
+
+    // 1. Same-name status.
+    let chosen = statusByName.get(col.name);
+
+    // 2. Classic fallback — first classic status that maps to this column and
+    //    isn't already used, and only when no same-name status was found.
+    if (!chosen) {
+      for (const [statusName, columnName] of Object.entries(CLASSIC_STATUS_TO_COLUMN)) {
+        if (columnName !== col.name) continue;
+        const s = statusByName.get(statusName);
+        if (s && !used.has(s.id)) {
+          chosen = s;
+          break;
+        }
+      }
+    }
+
+    if (chosen && !used.has(chosen.id)) {
+      used.add(chosen.id);
+      await tx.qtBoardColumnStatus.create({
+        data: { statusId: chosen.id, columnId, orderIndex: orderIndex++ },
+      });
+    }
+  }
+}
+
 export async function seedProjectWorkflow(
   tx: Prisma.TransactionClient,
   projectId: string,
@@ -72,6 +181,11 @@ export async function seedProjectWorkflow(
     data: DEFAULT_RESOLUTIONS.map((r) => ({ ...r, orgId })),
     skipDuplicates: true,
   });
+
+  // Ensure board columns exist + classic statuses are mapped. Runs even when a
+  // scheme already exists (below early-returns), so already-enabled projects
+  // still get a board. No-ops when the project already has columns.
+  await seedBoardColumns(tx, projectId);
 
   // Don't clobber an existing scheme (idempotent re-seed).
   const existingScheme = await tx.qtWorkflowScheme.findUnique({
@@ -301,10 +415,12 @@ export async function seedProjectDefaults(
     skipDuplicates: true,
   });
 
-  // Attach a published "classic default workflow" + scheme so new spaces are
-  // workflow-gated out of the box. Existing spaces (no scheme) keep the legacy
-  // any→any behaviour until an admin publishes one. Idempotent per project.
-  await seedProjectWorkflow(tx, projectId, orgId, createdBy);
+  // Board columns (To Do / In Progress / In Review / Done) so the board works
+  // out of the box. NOTE: we deliberately do NOT seed a workflow here — a new
+  // project is UNGATED (free status picker) until an admin explicitly enables a
+  // workflow via /api/projects/[id]/workflow-scheme/enable. That's the owner
+  // rule: "no workflow until you turn it on."
+  await seedBoardColumns(tx, projectId);
 
   // Seed the 3 starter project roles + their grants. Idempotent: if a role
   // with the same name already exists for this project, skip both the role

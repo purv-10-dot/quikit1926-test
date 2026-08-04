@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withProjectAccess } from "@/lib/api/withProjectAccess";
-import { seedProjectWorkflow } from "@/lib/services/projectDefaults";
+import { seedProjectWorkflow, seedBoardColumns } from "@/lib/services/projectDefaults";
 
 /**
  * POST /api/projects/[id]/workflow-scheme/enable
@@ -20,6 +20,10 @@ export const POST = withProjectAccess<{ id: string }>(
       select: { id: true },
     });
     if (existing) {
+      // Already workflow-gated. Still make sure the board has columns + the
+      // classic statuses are mapped (idempotent — no-ops if columns exist), so
+      // projects enabled before board-columns shipped get provisioned too.
+      await db.$transaction((tx) => seedBoardColumns(tx, projectId));
       return NextResponse.json({ success: true, data: { alreadyEnabled: true } });
     }
 
