@@ -17,7 +17,10 @@ interface StatusOption {
 }
 
 async function fetchStatuses(projectId: string): Promise<StatusOption[]> {
-  const r = await fetch(`/api/projects/${projectId}/statuses`);
+  // includeDraft=1: the draft's new statuses (e.g. classic Open/Resolved/…) must
+  // be offered here as "Move to" migration targets even though they're hidden
+  // from item dropdowns until publish.
+  const r = await fetch(`/api/projects/${projectId}/statuses?includeDraft=1`);
   const j = await r.json();
   if (!r.ok || !j.success) return [];
   return (j.data as Array<{ id: string; name: string }>).map((s) => ({ id: s.id, name: s.name }));

@@ -27,6 +27,10 @@ export function useWorkflowEditor(wfId: string, initial: EditorDraft) {
   const [draft, setDraft] = useState<EditorDraft>(initial);
   const [publishErrors, setPublishErrors] = useState<PublishError[]>([]);
   const [migration, setMigration] = useState<MigrationItem[] | null>(null);
+  // True once the current draft has been published (no unpublished changes).
+  // Reset to false on the next edit. Drives the header: published → "Close",
+  // otherwise → "Update workflow" / "Discard changes".
+  const [published, setPublished] = useState(false);
 
   const save = useMutation({
     mutationFn: async (next: EditorDraft) => {
@@ -59,6 +63,7 @@ export function useWorkflowEditor(wfId: string, initial: EditorDraft) {
       if (!r.ok || !j.success) throw new Error(j.error ?? "Publish failed");
       setPublishErrors([]);
       setMigration(null);
+      setPublished(true);
       return j.data;
     },
   });
@@ -66,6 +71,7 @@ export function useWorkflowEditor(wfId: string, initial: EditorDraft) {
   // Apply a mutation to the draft AND persist it (debounced-ish: fire-and-save).
   const mutate = useCallback(
     (fn: (d: EditorDraft) => EditorDraft) => {
+      setPublished(false); // editing again → there are unpublished changes
       setDraft((prev) => {
         const next = fn(prev);
         save.mutate(next);
@@ -184,6 +190,7 @@ export function useWorkflowEditor(wfId: string, initial: EditorDraft) {
     draft,
     saving: save.isPending,
     saveError: save.error as Error | null,
+    published,
     publish,
     publishErrors,
     migration,

@@ -34,7 +34,9 @@ async function fetchReadModel(wfId: string): Promise<WorkflowReadModel> {
 }
 
 async function fetchStatuses(projectId: string): Promise<StatusMeta[]> {
-  const r = await fetch(`/api/projects/${projectId}/statuses`);
+  // The editor renders the workflow diagram, which includes draft statuses —
+  // include them so the nodes have names/colours.
+  const r = await fetch(`/api/projects/${projectId}/statuses?includeDraft=1`);
   const j = await r.json();
   if (!r.ok || !j.success) throw new Error(j.error ?? "Failed to load statuses");
   return (j.data as Array<{ id: string; name: string; color: string; category: string }>).map((s) => ({
@@ -212,21 +214,34 @@ function EditorBody({
 
         <div className="flex items-center gap-2">
           {ed.saving && <span className="text-xs text-gray-400">Saving…</span>}
-          <button
-            type="button"
-            onClick={() => ed.publish.mutate(undefined)}
-            disabled={ed.publish.isPending}
-            className="rounded bg-accent-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-700 disabled:opacity-60"
-          >
-            {ed.publish.isPending ? "Publishing…" : "Update workflow"}
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
-          >
-            Discard changes
-          </button>
+          {ed.published ? (
+            // Published, no unpublished changes → a single Close button.
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded bg-accent-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-700"
+            >
+              Close
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => ed.publish.mutate(undefined)}
+                disabled={ed.publish.isPending}
+                className="rounded bg-accent-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-700 disabled:opacity-60"
+              >
+                {ed.publish.isPending ? "Publishing…" : "Update workflow"}
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
+              >
+                Discard changes
+              </button>
+            </>
+          )}
           <button
             type="button"
             disabled
