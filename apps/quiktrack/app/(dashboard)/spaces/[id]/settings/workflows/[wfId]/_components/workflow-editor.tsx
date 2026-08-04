@@ -105,6 +105,9 @@ function EditorBody({
   const [helpOpen, setHelpOpen] = useState(false);
   const [addStatusOpen, setAddStatusOpen] = useState(false);
   const [addTransitionOpen, setAddTransitionOpen] = useState(false);
+  // When the Add-transition dialog is opened by drawing an edge on the diagram,
+  // pre-fill its From/To with the connected statuses.
+  const [transitionPrefill, setTransitionPrefill] = useState<{ from: string; to: string } | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
 
   const resolutions = useQuery({
@@ -122,29 +125,12 @@ function EditorBody({
       : null;
   const selectedStatusId = selection?.kind === "status" ? selection.statusId : null;
 
-  // Create a NORMAL transition when the user drags between two node handles.
+  // Drawing an edge between two statuses opens the "Create transition" dialog
+  // pre-filled with those statuses (Jira behaviour) — the user names/confirms it
+  // rather than a bare transition being created silently.
   const createTransition = (sourceStatusId: string, targetStatusId: string) => {
-    const targetName = statusMeta.get(targetStatusId)?.name ?? "Transition";
-    // Reuse an existing NORMAL transition into the target if present (add a source),
-    // else create a new one — mirrors Jira merging arrows into the same action.
-    const existing = ed.draft.transitions.find(
-      (t) => t.type === "NORMAL" && t.toStatusId === targetStatusId,
-    );
-    if (existing) {
-      if (!existing.fromStatusIds.includes(sourceStatusId)) {
-        ed.updateTransition(existing.id, {
-          fromStatusIds: [...existing.fromStatusIds, sourceStatusId],
-        });
-      }
-      setSelection({ kind: "transition", transitionId: existing.id });
-      return;
-    }
-    ed.addTransition({
-      name: targetName,
-      type: "NORMAL",
-      toStatusId: targetStatusId,
-      fromStatusIds: [sourceStatusId],
-    });
+    setTransitionPrefill({ from: sourceStatusId, to: targetStatusId });
+    setAddTransitionOpen(true);
   };
 
   // Persist a status name/category edit to the project status, then refresh the pool.
@@ -199,7 +185,10 @@ function EditorBody({
           <ToolButton
             icon={GitBranch}
             label="Add Transition"
-            onClick={() => setAddTransitionOpen(true)}
+            onClick={() => {
+              setTransitionPrefill(null); // toolbar open → empty dialog
+              setAddTransitionOpen(true);
+            }}
             disabled={ed.draft.statuses.length < 1}
           />
           <ToolButton
@@ -423,7 +412,12 @@ function EditorBody({
           draft={ed.draft}
           statusMeta={statusMeta}
           onAdd={ed.addTransition}
-          onClose={() => setAddTransitionOpen(false)}
+          prefillFrom={transitionPrefill?.from}
+          prefillTo={transitionPrefill?.to}
+          onClose={() => {
+            setAddTransitionOpen(false);
+            setTransitionPrefill(null);
+          }}
         />
       )}
     </div>
