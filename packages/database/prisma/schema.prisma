@@ -11127,10 +11127,8 @@ model Employee {
   notifications HrmsNotification[]
 
   // Ticket / Help Desk relations
-  ticketsRaised    Ticket[]         @relation("TicketRaiser")
-  ticketsAssigned  Ticket[]         @relation("TicketAssignee")
-  ticketComments   TicketComment[]
-  ticketActivities TicketActivity[]
+  ticketsRaised   Ticket[] @relation("TicketRaiser")
+  ticketsAssigned Ticket[] @relation("TicketAssignee")
 
   // RBAC v2 — quikscale mirror
   appRoles            HrmsUserAppRole[]
@@ -12745,6 +12743,9 @@ model Interview {
   // above. Read/written via raw SQL (regen-free).
   takeHomeInstructions   String?
   takeHomeAttachmentUrl  String?
+  // Optional reference link HR pastes instead of (or alongside) an uploaded
+  // spec file — e.g. a Google Doc / GitHub repo for the assignment.
+  takeHomeAttachmentLink String?
   takeHomeDueDate        DateTime? @db.Date
   submissionToken        String?   @unique
   submissionTokenExpiresAt DateTime?
@@ -13678,6 +13679,13 @@ model OnboardingTask {
   @@index([orgId, instanceId])
   @@index([orgId, assigneeId])
   @@index([orgId, status])
+  // At most one auto-injected system step (BGV / CompleteProfile, always
+  // sortOrder=-1) per instance+phase — prevents the GET route's lazy-create
+  // from double-inserting under concurrent requests. Partial index (filtered
+  // on sortOrder=-1), can't be expressed as a Prisma @@unique — applied via
+  // raw SQL:
+  //   CREATE UNIQUE INDEX IF NOT EXISTS "OnboardingTask_instanceId_phase_autostep_key"
+  //     ON "app_quikhrms"."OnboardingTask" ("instanceId", phase) WHERE "sortOrder" = -1;
   @@schema("app_quikhrms")
 }
 
@@ -13899,149 +13907,6 @@ model OffboardingTask {
   @@index([orgId, assigneeId])
   @@index([orgId, status])
   @@index([orgId, department])
-  @@schema("app_quikhrms")
-}
-
-// ─── MODULE D: ASSET MANAGEMENT ─────────────────────────
-
-enum AssetCategory {
-  Laptop
-  Desktop
-  Mobile
-  Tablet
-  IdCard
-  AccessCard
-  Furniture
-  Vehicle
-  SoftwareLicense
-  Peripheral
-  AssetOther
-
-  @@schema("app_quikhrms")
-}
-
-enum AssetStatus {
-  Available
-  Assigned
-  InRepair
-  Retired
-  AssetLost
-
-  @@schema("app_quikhrms")
-}
-
-enum AssetCondition {
-  New
-  Good
-  Fair
-  Poor
-
-  @@schema("app_quikhrms")
-}
-
-enum AssetAssignmentStatus {
-  AssignmentActive
-  AssignmentReturned
-  AssignmentOverdue
-  AssignmentLost
-
-  @@schema("app_quikhrms")
-}
-
-model Asset {
-  id    String @id @default(cuid())
-  orgId String
-
-  assetCode      String
-  name           String
-  category       String         @default("AssetOther")
-  quantity       Int            @default(1)
-  serialNumber   String?
-  brand          String?
-  model          String?
-  purchaseDate   DateTime?      @db.Date
-  purchasePrice  Decimal?       @db.Decimal(15, 2)
-  warrantyExpiry DateTime?      @db.Date
-  status         AssetStatus    @default(Available)
-  condition      AssetCondition @default(New)
-  location       String?
-  specs          Json?
-  notes          String?
-
-  disposalDate   DateTime? @db.Date
-  disposalReason String?
-  scrapValue     Decimal?  @db.Decimal(15, 2)
-  scrappedBy     String?
-
-  createdBy String?
-  updatedBy String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-
-  assignments AssetAssignment[]
-  scraps      AssetScrap[]
-
-  @@unique([orgId, assetCode])
-  @@index([orgId])
-  @@index([orgId, deletedAt])
-  @@index([orgId, status])
-  @@index([orgId, category])
-  @@index([orgId, serialNumber])
-  @@schema("app_quikhrms")
-}
-
-model AssetAssignment {
-  id         String @id @default(cuid())
-  orgId      String
-  assetId    String
-  employeeId String
-
-  assignedBy         String
-  assignedAt         DateTime              @default(now())
-  expectedReturnDate DateTime?             @db.Date
-  returnedAt         DateTime?
-  returnedTo         String?
-  returnCondition    AssetCondition?
-  status             AssetAssignmentStatus @default(AssignmentActive)
-  notes              String?
-
-  createdBy String?
-  updatedBy String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-
-  asset Asset @relation(fields: [assetId], references: [id])
-
-  @@index([orgId])
-  @@index([orgId, deletedAt])
-  @@index([orgId, assetId])
-  @@index([orgId, employeeId])
-  @@index([orgId, status])
-  @@schema("app_quikhrms")
-}
-
-model AssetScrap {
-  id      String @id @default(cuid())
-  orgId   String
-  assetId String
-
-  quantity   Int
-  reason     String
-  scrapDate  DateTime @db.Date
-  scrapValue Decimal? @db.Decimal(15, 2)
-  markedLost Boolean  @default(false)
-  scrappedBy String
-  notes      String?
-
-  createdAt DateTime @default(now())
-
-  asset Asset @relation(fields: [assetId], references: [id])
-
-  @@index([orgId])
-  @@index([orgId, assetId])
-  @@index([orgId, scrapDate])
   @@schema("app_quikhrms")
 }
 
@@ -14415,56 +14280,6 @@ model EmploymentHistory {
 // AIConversation + AIMessage + AIConversationScope removed with the AI Copilot
 // chat. lib/ai/* is retained — it's shared infra for document extraction,
 // recruit ATS scoring, and leave-policy parsing (non-copilot AI features).
-
-// ─── GAP-FILL: E-SIGN ───────────────────────────────────
-
-enum ESignStatus {
-  ESignDraft
-  ESignSent
-  ESignPartiallySigned
-  ESignCompleted
-  ESignDeclined
-  ESignCancelled
-  ESignExpired
-
-  @@schema("app_quikhrms")
-}
-
-enum ESignProvider {
-  Internal
-  DocuSign
-  AdobeSign
-  LeegalityProvider
-
-  @@schema("app_quikhrms")
-}
-
-model ESignRequest {
-  id         String  @id @default(cuid())
-  orgId      String
-  documentId String?
-
-  title       String
-  provider    ESignProvider @default(Internal)
-  signers     Json
-  message     String?
-  status      ESignStatus   @default(ESignDraft)
-  sentAt      DateTime?
-  completedAt DateTime?
-  expiresAt   DateTime?
-
-  createdBy String?
-  updatedBy String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-
-  @@index([orgId])
-  @@index([orgId, deletedAt])
-  @@index([orgId, documentId])
-  @@index([orgId, status])
-  @@schema("app_quikhrms")
-}
 
 // ─── GAP-FILL: CANDIDATE PORTAL ─────────────────────────
 
@@ -15016,6 +14831,23 @@ model PayRun {
   @@index([orgId])
   @@index([orgId, status])
   @@index([orgId, payDate])
+  @@schema("app_quikhrms")
+}
+
+// Short-lived OTP gate for the destructive "Reset Payroll Setup" action. One
+// row per active reset attempt; emailed to the requester + every employee
+// holding the "admin" role. Single-use — usedAt is stamped on successful
+// verification so a captured code can't be replayed.
+model PayrollResetOtp {
+  id          String    @id @default(cuid())
+  orgId       String
+  codeHash    String
+  requestedBy String
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([orgId])
   @@schema("app_quikhrms")
 }
 
@@ -15840,34 +15672,8 @@ model BankReconciliation {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  lines BankReconciliationLine[]
-
   @@index([orgId])
   @@index([orgId, payRunId])
-  @@schema("app_quikhrms")
-}
-
-model BankReconciliationLine {
-  id               String @id @default(cuid())
-  orgId            String
-  reconciliationId String
-
-  payslipId    String?
-  employeeName String
-  bankAccount  String?
-  ifsc         String?
-  amount       Decimal   @db.Decimal(15, 2)
-  txnDate      DateTime? @db.Date
-  txnRef       String?
-  matched      Boolean   @default(false)
-  matchReason  String?
-
-  createdAt DateTime @default(now())
-
-  reconciliation BankReconciliation @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
-
-  @@index([orgId])
-  @@index([reconciliationId])
   @@schema("app_quikhrms")
 }
 
@@ -16324,13 +16130,10 @@ model Ticket {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  category    TicketCategory?    @relation(fields: [categoryId], references: [id])
-  department  Department?        @relation("TicketDepartment", fields: [departmentId], references: [id])
-  raisedBy    Employee           @relation("TicketRaiser", fields: [raisedById], references: [id])
-  assignedTo  Employee?          @relation("TicketAssignee", fields: [assignedToId], references: [id])
-  comments    TicketComment[]
-  attachments TicketAttachment[]
-  activities  TicketActivity[]
+  category   TicketCategory? @relation(fields: [categoryId], references: [id])
+  department Department?     @relation("TicketDepartment", fields: [departmentId], references: [id])
+  raisedBy   Employee        @relation("TicketRaiser", fields: [raisedById], references: [id])
+  assignedTo Employee?       @relation("TicketAssignee", fields: [assignedToId], references: [id])
 
   @@unique([orgId, ticketNo])
   @@index([orgId])
@@ -16349,72 +16152,6 @@ model Ticket {
   @@index([orgId, assignedToId, status])
   @@index([orgId, raisedById, status])
   @@index([orgId, deletedAt, status, createdAt(sort: Desc)])
-  @@schema("app_quikhrms")
-}
-
-model TicketComment {
-  id       String @id @default(cuid())
-  orgId    String
-  ticketId String
-  userId   String
-
-  message    String
-  isInternal Boolean @default(false)
-
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-
-  ticket Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  user   Employee @relation(fields: [userId], references: [id])
-
-  @@index([orgId])
-  @@index([orgId, ticketId])
-  @@index([orgId, deletedAt])
-  @@schema("app_quikhrms")
-}
-
-model TicketAttachment {
-  id       String @id @default(cuid())
-  orgId    String
-  ticketId String
-
-  fileUrl  String
-  fileName String
-  fileType String?
-  fileSize Int?
-
-  uploadedById String?
-  createdAt    DateTime  @default(now())
-  deletedAt    DateTime?
-
-  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-
-  @@index([orgId])
-  @@index([orgId, ticketId])
-  @@schema("app_quikhrms")
-}
-
-model TicketActivity {
-  id       String  @id @default(cuid())
-  orgId    String
-  ticketId String
-  actorId  String?
-  isSystem Boolean @default(false)
-
-  action  String
-  fromVal String?
-  toVal   String?
-  meta    Json?
-
-  createdAt DateTime @default(now())
-
-  ticket Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  actor  Employee? @relation(fields: [actorId], references: [id])
-
-  @@index([orgId])
-  @@index([orgId, ticketId])
-  @@index([orgId, actorId])
   @@schema("app_quikhrms")
 }
 

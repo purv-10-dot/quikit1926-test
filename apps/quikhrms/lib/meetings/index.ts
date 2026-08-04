@@ -11,7 +11,6 @@ import type {
 export type {
   CreateMeetingInput,
   CreateMeetingResult,
-  MeetingProvider,
   MeetingProviderId,
 } from "./types";
 
@@ -21,7 +20,7 @@ const PROVIDERS: Record<MeetingProviderId, MeetingProvider> = {
 };
 
 /** Resolve the active provider: explicit arg → MEETING_PROVIDER env → "teams". */
-export function getMeetingProvider(id?: MeetingProviderId): MeetingProvider {
+function getMeetingProvider(id?: MeetingProviderId): MeetingProvider {
   const chosen = id ?? (env("MEETING_PROVIDER") as MeetingProviderId | undefined) ?? "teams";
   return PROVIDERS[chosen] ?? teamsProvider;
 }

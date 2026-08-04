@@ -34,7 +34,7 @@ const UNIT_OPTIONS = [
   { value: "Months", label: "Months" },
 ];
 
-export function NoticePeriodTab() {
+export function NoticePeriodTab({ canManage = true }: { canManage?: boolean }) {
   const api = useApiClient();
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
@@ -95,7 +95,8 @@ export function NoticePeriodTab() {
       <CrudTable title="Notice Period" data={(data?.data ?? []).slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)} columns={columns} isLoading={isLoading}
         onAdd={openAdd} onEdit={openEdit} onDelete={(id) => deleteMut.mutate(id)}
         search={search} onSearchChange={(v) => { setSearch(v); setPage(1); }} searchPlaceholder="Search notice periods..."
-        pagination={{ page, totalPages: Math.max(1, Math.ceil((data?.data ?? []).length / PAGE_SIZE)), total: (data?.data ?? []).length, limit: PAGE_SIZE, onPageChange: setPage }} />
+        pagination={{ page, totalPages: Math.max(1, Math.ceil((data?.data ?? []).length / PAGE_SIZE)), total: (data?.data ?? []).length, limit: PAGE_SIZE, onPageChange: setPage }}
+        canManage={canManage} />
 
       <Modal open={modal.open} onClose={() => setModal({ open: false, item: null })} title={modal.item ? "Edit Notice Period" : "Add Notice Period"}>
         <form onSubmit={handleSubmit} className="space-y-4">

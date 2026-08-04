@@ -1,8 +1,9 @@
 import crypto from "crypto";
+import { resolveTokenSecret } from "./token-secret";
 
 // Signed, self-contained token for the candidate "still interested?" links —
 // mirrors feedback-token (HMAC-SHA256, no DB column needed).
-const SECRET = process.env.FEEDBACK_TOKEN_SECRET || process.env.NEXTAUTH_SECRET || "dev-feedback-secret-change-me";
+const SECRET = resolveTokenSecret("reconfirm-token", "dev-feedback-secret-change-me", process.env.FEEDBACK_TOKEN_SECRET, process.env.NEXTAUTH_SECRET);
 const EXPIRY_DAYS = 14;
 
 function b64u(buf: Buffer): string {

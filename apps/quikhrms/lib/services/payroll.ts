@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 
-export async function getOrCreatePayrollSettings(orgId: string, userId: string) {
+async function getOrCreatePayrollSettings(orgId: string, userId: string) {
   const existing = await prisma.payrollSettings.findUnique({ where: { orgId } });
   if (existing) return existing;
   return prisma.payrollSettings.create({
@@ -41,9 +41,9 @@ export async function markStepCompleted(orgId: string, userId: string, step: Ste
   return updated;
 }
 
-export type StepStatus = "NotStarted" | "InProgress" | "Completed";
+type StepStatus = "NotStarted" | "InProgress" | "Completed";
 
-export interface StepState {
+interface StepState {
   status: StepStatus;
   completed: boolean;
   locked: boolean;

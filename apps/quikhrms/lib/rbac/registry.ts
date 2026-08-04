@@ -31,11 +31,6 @@ export function joinCode(resource: string, action: string): string {
   return `${resource}.${action}`;
 }
 
-/** All registry codes as (resource, action) pairs. */
-export function allPermissionPairs(): { resource: string; action: string }[] {
-  return PERMISSIONS.map((p) => splitCode(p.code));
-}
-
 /** Priority map by role name — replaces dropped Role.priority column. */
 export const ROLE_PRIORITY: Record<string, number> = Object.fromEntries(
   DEFAULT_ROLES.map((r) => [r.code, r.priority]),
@@ -44,12 +39,4 @@ export const ROLE_PRIORITY: Record<string, number> = Object.fromEntries(
 export function rolePriority(name: string | null | undefined): number {
   if (!name) return 0;
   return ROLE_PRIORITY[name] ?? 0;
-}
-
-/** Resolve permission code list for a seeded role. "*" means all codes. */
-export function defaultPermissionsForRole(name: string): string[] {
-  const seed = DEFAULT_ROLES.find((r) => r.code === name);
-  if (!seed) return [];
-  if (seed.permissions === "*") return PERMISSIONS.map((p) => p.code);
-  return seed.permissions;
 }

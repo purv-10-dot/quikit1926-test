@@ -25,6 +25,7 @@ import { SalaryBreakdown } from "@/components/hrms/salary-breakdown";
 import { PageBackground } from "@/components/hrms/page-background";
 import { INDIA_STATE_OPTS as STATE_OPTS } from "@/lib/data/india-states";
 import { INDIAN_CITIES } from "@/lib/data/indian-cities";
+import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 
 // city (lowercased) → state, built once from the "City, State" dataset. Used to
 // auto-fill Country + State when a known Indian city is typed in the address.
@@ -147,6 +148,11 @@ function NewEmployeePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const returnTo = searchParams.get("returnTo");
+  // Same gate the Edit page uses — a view-only (hrms.employee.read) user
+  // reaching this page directly (URL, bookmark) would otherwise fill out the
+  // whole form only to have POST /employees reject it with a 403 on submit.
+  const { hasPermission, isLoading: permsLoading } = useDashboardConfig();
+  const canManageEmployees = hasPermission("hrms.employee.write");
 
   const [form, setForm] = useState({
     firstName: "", lastName: "", middleName: "",
@@ -537,6 +543,24 @@ function NewEmployeePageInner() {
   const desigName = desigs?.data?.find((d) => d.id === form.designationId)?.title;
   const locName = locs?.data?.find((l) => l.id === form.officeLocationId)?.name;
   const mgr = managers?.data?.find((m) => m.id === form.reportingManagerId);
+
+  if (!permsLoading && !canManageEmployees) {
+    return (
+      <div className="max-w-2xl mx-auto mt-10">
+        <div className="surface-card overflow-hidden">
+          <div className="px-4 py-4 border-b border-amber-100 bg-gradient-to-r from-amber-50 to-white flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center">
+              <ShieldAlert size={20} />
+            </div>
+            <div>
+              <h1 className="text-base font-semibold text-gray-900">Access not allowed</h1>
+              <p className="text-xs text-gray-500">You don&apos;t have permission to add employees.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-gray-50 -m-6 flex flex-col h-[calc(100vh-0px)] min-h-screen">
@@ -968,16 +992,6 @@ function NewEmployeePageInner() {
                 </Field>
                 <Field label="Previous Experience (months)">
                   <NumberInput allowDecimal={false} value={form.previousExperience} onChange={(v) => setForm({ ...form, previousExperience: v })} className={inputCls} />
-                </Field>
-                <Field label="Status" required>
-                  <Select
-                    value={form.status}
-                    onChange={(v) => setForm({ ...form, status: v as EmployeeStatus })}
-                    options={[
-                      { value: "Active", label: "Active" },
-                      { value: "PreBoarding", label: "Pre-Boarding" },
-                    ]}
-                  />
                 </Field>
               </div>
             </Section>

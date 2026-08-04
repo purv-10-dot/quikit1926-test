@@ -29,10 +29,6 @@ export const REPORTS: ReportDefinition[] = [
 
 const byKey = new Map(REPORTS.map((r) => [r.key, r]));
 
-export function getReport(key: string): ReportDefinition | undefined {
-  return byKey.get(key);
-}
-
 /** Legacy `entity` values from the old reports page → new registry keys. */
 const ENTITY_ALIASES: Record<string, string> = {
   employees: "employee-master",

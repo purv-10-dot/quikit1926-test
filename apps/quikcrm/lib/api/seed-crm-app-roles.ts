@@ -31,9 +31,24 @@ function grants(
   return modules.flatMap((resource) => actions.map((action) => ({ resource, action })));
 }
 
+/**
+ * A mailbox is PERSONAL data, not shared org config: every user connects their
+ * own account and every read is scoped to their own `mailboxConnectionId` (see
+ * lib/services/email/mailbox-query.ts). So mailbox access belongs to every role
+ * — withholding it only produced a 403 on Inbox/Sent/Drafts/All for users who
+ * had already connected and synced their own mailbox.
+ */
+const MAILBOX_GRANTS: Grant[] = [
+  { resource: "mailbox", action: "view" },
+  { resource: "mailbox", action: "create" },
+  { resource: "mailbox", action: "edit" },
+  { resource: "mailbox", action: "delete" },
+];
+
 const SALES_USER_GRANTS: Grant[] = [
   { resource: "dashboard", action: "view" },
   ...grants(WORK_MODULES, WORK_ACTIONS),
+  ...MAILBOX_GRANTS,
 ];
 
 const SALES_MANAGER_GRANTS: Grant[] = [
@@ -58,6 +73,7 @@ const MARKETING_USER_GRANTS: Grant[] = [
   { resource: "campaigns", action: "edit" },
   { resource: "activities", action: "view" },
   { resource: "activities", action: "create" },
+  ...MAILBOX_GRANTS,
 ];
 
 const FINANCE_USER_GRANTS: Grant[] = [
@@ -70,6 +86,7 @@ const FINANCE_USER_GRANTS: Grant[] = [
   { resource: "quotes", action: "export" },
   { resource: "reports", action: "view" },
   { resource: "reports", action: "export" },
+  ...MAILBOX_GRANTS,
 ];
 
 interface RoleSpec {
@@ -164,6 +181,44 @@ async function seedRole(orgId: string, appId: string, spec: RoleSpec): Promise<s
   return role.id;
 }
 
+/**
+ * Backfill the `mailbox` grants onto the seeded non-admin roles.
+ *
+ * `seedRole` only writes grants when a role has NONE (so an admin's hand-edited
+ * permission set is never overwritten). Every org seeded before mailbox was
+ * added to the role specs therefore has roles with grants but no mailbox rows —
+ * their users connected + synced a mailbox fine but got a 403 on
+ * Inbox/Sent/Drafts/All. This adds ONLY the missing mailbox pairs and leaves
+ * every other resource untouched, so admin customisation is preserved.
+ */
+async function backfillMailboxPermissions(orgId: string, appId: string): Promise<void> {
+  const client = rbacDb();
+  if (!client) return;
+
+  const roleNames = ROLE_SPECS.filter((s) => s.grants !== "all").map((s) => s.name);
+  const roles = await client.crmAppRole.findMany({
+    where: { orgId, appId, name: { in: roleNames } },
+    select: {
+      id: true,
+      permissions: { where: { resource: "mailbox" }, select: { action: true } },
+    },
+  });
+
+  if (!Array.isArray(roles) || roles.length === 0) return;
+
+  const missing = roles.flatMap((role) => {
+    const have = new Set((role.permissions ?? []).map((p) => p.action));
+    return MAILBOX_GRANTS.filter((g) => !have.has(g.action)).map((g) => ({
+      roleId: role.id,
+      resource: g.resource,
+      action: g.action,
+    }));
+  });
+  if (missing.length === 0) return;
+
+  await client.crmRolePermission.createMany({ data: missing, skipDuplicates: true });
+}
+
 async function backfillAdminPermissions(orgId: string, appId: string): Promise<void> {
   const client = rbacDb();
   if (!client) return;
@@ -250,7 +305,10 @@ async function runSeed(orgId: string): Promise<SeedResult> {
   // parallel collapses ~15-20 sequential round-trips into one batch, which
   // is what was starving the connection pool on cold lambdas.
   const ids = await Promise.all(ROLE_SPECS.map((spec) => seedRole(orgId, appId, spec)));
-  await backfillAdminPermissions(orgId, appId);
+  await Promise.all([
+    backfillAdminPermissions(orgId, appId),
+    backfillMailboxPermissions(orgId, appId),
+  ]);
 
   seededOrgs.set(orgId, now);
   const adminRoleId = ids[0]!;

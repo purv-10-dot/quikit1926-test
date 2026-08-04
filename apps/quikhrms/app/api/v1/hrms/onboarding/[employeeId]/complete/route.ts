@@ -18,7 +18,24 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
     if (!instance) return notFound("Onboarding not found");
     if (instance.status === "OnboardCompleted") return conflict("Already completed");
 
-    const pendingMandatory = instance.tasks.filter(
+    // This finalizes the ONBOARDING phase (Day-1 checklist) — a candidate
+    // still in Pre-Onboarding hasn't even joined yet, so completing here would
+    // wrongly activate the employee and skip the whole Onboarding phase.
+    // "Move to Onboarding" is the only valid way out of Pre-Onboarding.
+    const phaseRows = await prisma.$queryRaw<Array<{ phase: string | null }>>`
+      SELECT phase FROM "app_quikhrms"."OnboardingInstance" WHERE id = ${instance.id} LIMIT 1`;
+    if ((phaseRows[0]?.phase ?? "Onboarding") === "PreOnboarding") {
+      return conflict("Still in Pre-Onboarding — use \"Move to Onboarding\" first.");
+    }
+
+    // Scope pending-task counting to the current (Onboarding) phase — a
+    // completed/skipped Pre-Onboarding step must never count against this gate.
+    const taskPhaseRows = await prisma.$queryRaw<Array<{ id: string; phase: string | null }>>`
+      SELECT id, phase FROM "app_quikhrms"."OnboardingTask" WHERE "instanceId" = ${instance.id}`;
+    const phaseOf = new Map(taskPhaseRows.map((r) => [r.id, r.phase ?? "Onboarding"]));
+    const onboardingTasks = instance.tasks.filter((t) => (phaseOf.get(t.id) ?? "Onboarding") === "Onboarding");
+
+    const pendingMandatory = onboardingTasks.filter(
       (t) => t.isMandatory && t.status !== "TaskCompleted" && t.status !== "TaskSkipped",
     );
 

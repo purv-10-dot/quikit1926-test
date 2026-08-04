@@ -3,6 +3,10 @@ import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, validationError, notFound, conflict, internalError } from "@/lib/api-response";
 import { advanceAutomation } from "@/lib/services/onboarding-automation";
+import { generateDocUploadToken } from "@/lib/services/doc-upload-token";
+import { resolveAndSend } from "@/lib/email/resolve";
+import { buildDocRejectedEmail } from "@/lib/email-templates/doc-upload-request";
+import { appBaseUrl } from "@/lib/utils/app-url";
 
 // HR reviews a candidate-uploaded document on a Document Upload task and either
 // approves or rejects it. The task completes only when every required document
@@ -100,6 +104,37 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
           : { status: "TaskInProgress" }),
       },
     });
+
+    // Notify the candidate — the doc-request/ack-request flows email them
+    // proactively, but rejection previously only changed a status flag inside
+    // the task's JSON, discoverable only by the candidate revisiting their old
+    // upload link on their own. Best-effort: never blocks the review action.
+    if (action === "reject") {
+      void (async () => {
+        try {
+          const inst = await prisma.onboardingInstance.findFirst({ where: { id: task.instanceId, orgId }, select: { employeeId: true } });
+          if (!inst) return;
+          const [candidate, company] = await Promise.all([
+            prisma.employee.findFirst({ where: { id: inst.employeeId, orgId }, select: { firstName: true, lastName: true, workEmail: true, personalEmail: true } }),
+            prisma.companySettings.findUnique({ where: { orgId }, select: { companyName: true } }),
+          ]);
+          const to = candidate?.workEmail || candidate?.personalEmail;
+          if (!to) return;
+          const candidateName = candidate ? `${candidate.firstName} ${candidate.lastName}`.trim() : "there";
+          const companyName = company?.companyName ?? "Our Company";
+          const { token } = generateDocUploadToken(task.id, orgId);
+          const link = `${appBaseUrl()}/doc-upload/${token}`;
+          await resolveAndSend(orgId, {
+            key: "onboarding.doc-rejected",
+            to,
+            vars: { candidateName, docName, reason: reason ?? "", link },
+            fallback: () => buildDocRejectedEmail({ candidateName, companyName, docName, reason, link }),
+          });
+        } catch (err) {
+          console.error("[notify] onboarding doc-rejected email failed:", err);
+        }
+      })();
+    }
 
     // Completing the last task finishes the onboarding.
     if (allApproved) {

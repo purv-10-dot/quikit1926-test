@@ -73,7 +73,25 @@ async function apiFetch<T>(
   if (!opts?.skipContentType) headers["Content-Type"] = "application/json";
 
   return managedFetch<ApiSuccess<T>>(withBasePath(url), { ...options, headers }, async (res) => {
-    const data = await res.json();
+    // A layer in front of our route (platform request-size limit, an auth
+    // redirect to the login page, a proxy/edge error page) can reject the
+    // request before it ever reaches our JSON-returning handler — the body
+    // is then an HTML error page, not JSON. res.json() throws a cryptic
+    // "Unexpected token '<' … is not valid JSON" in that case; surface a
+    // real message instead, using the HTTP status as the best signal we have.
+    let data: { success: boolean; error?: { message?: string; code?: string; details?: unknown } };
+    try {
+      data = await res.json();
+    } catch {
+      if (res.status === 401) handleSessionExpiry();
+      const message =
+        res.status === 413 ? "The file is too large for the server to accept."
+        : res.status === 401 ? "Your session has expired. Please sign in again."
+        : res.status === 403 ? "You don't have permission to do this."
+        : res.status >= 500 ? "The server hit an unexpected error. Please try again."
+        : `Unexpected response from the server (status ${res.status}). Please try again.`;
+      throw new ApiError(message, "NON_JSON_RESPONSE", res.status);
+    }
     if (!data.success) {
       if (res.status === 401) handleSessionExpiry();
       throw new ApiError(

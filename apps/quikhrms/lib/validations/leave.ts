@@ -104,7 +104,7 @@ export const adjustLeaveBalanceSchema = z.object({
 
 // ─── Leave Group ────────────────────────────────────────
 
-export const leaveGroupItemSchema = z.object({
+const leaveGroupItemSchema = z.object({
   leaveTypeId: z.string().min(1),
   overrideQuota: z.number().nullable().optional(),
   // Per-group rule set (the leave-rules wizard output). Stored as JSON on the
@@ -140,17 +140,11 @@ export const assignLeaveGroupSchema = z.object({
   { message: "employeeId or roleId required per assignee type" }
 );
 
-export type CreateLeaveTypeInput = z.infer<typeof createLeaveTypeSchema>;
-export type CreateLeaveRequestInput = z.infer<typeof createLeaveRequestSchema>;
-export type LeaveApprovalAction = z.infer<typeof leaveApprovalActionSchema>;
-export type CreateLeaveGroupInput = z.infer<typeof createLeaveGroupSchema>;
-export type UpdateLeaveGroupInput = z.infer<typeof updateLeaveGroupSchema>;
-
 // ─── Leave Policy Document (uploaded + AI-parsed) ───────
 
 const ruleNumberOrNull = z.number().nullable().optional();
 
-export const leaveTypeRuleSchema = z.object({
+const leaveTypeRuleSchema = z.object({
   leaveTypeCode: z.string().min(1),
   leaveTypeName: z.string().optional(),
   minConsecutiveDays: ruleNumberOrNull,
@@ -176,7 +170,7 @@ export const leaveTypeRuleSchema = z.object({
   notes: z.string().nullable().optional(),
 });
 
-export const leaveGlobalRuleSchema = z.object({
+const leaveGlobalRuleSchema = z.object({
   maxOpenRequests: ruleNumberOrNull,
   maxOverlapPerTeamPercent: ruleNumberOrNull,
   blackoutDates: z.array(z.string()).nullable().optional(),
@@ -202,37 +196,3 @@ export type LeaveTypeRule = z.infer<typeof leaveTypeRuleSchema>;
 export type LeaveGlobalRule = z.infer<typeof leaveGlobalRuleSchema>;
 
 // ─── Leave Policy CRUD ──────────────────────────────────
-
-export const createLeavePolicySchema = z.object({
-  name: z.string().min(1, "Policy name required"),
-  description: z.string().optional(),
-  sourceFileUrl: z.string().optional(),
-  sourceFileName: z.string().optional(),
-  sourceFileType: z.string().optional(),
-  effectiveFrom: z.string().optional(),
-  effectiveTo: z.string().optional(),
-  appliesToDeptIds: z.array(z.string()).optional(),
-  appliesToRoleIds: z.array(z.string()).optional(),
-  appliesToEmploymentTypes: z.array(z.string()).optional(),
-});
-
-export const updateLeavePolicySchema = z.object({
-  name: z.string().min(1).optional(),
-  description: z.string().nullable().optional(),
-  status: z.enum(["Draft", "PendingReview", "Active", "Archived"]).optional(),
-  approvedRules: leavePolicyRulesSchema.optional(),
-  effectiveFrom: z.string().nullable().optional(),
-  effectiveTo: z.string().nullable().optional(),
-  appliesToDeptIds: z.array(z.string()).nullable().optional(),
-  appliesToRoleIds: z.array(z.string()).nullable().optional(),
-  appliesToEmploymentTypes: z.array(z.string()).nullable().optional(),
-});
-
-export const approveLeavePolicySchema = z.object({
-  approvedRules: leavePolicyRulesSchema,
-  effectiveFrom: z.string().optional(),
-});
-
-export type CreateLeavePolicyInput = z.infer<typeof createLeavePolicySchema>;
-export type UpdateLeavePolicyInput = z.infer<typeof updateLeavePolicySchema>;
-export type ApproveLeavePolicyInput = z.infer<typeof approveLeavePolicySchema>;

@@ -55,8 +55,6 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
           lastName: true,
           workEmail: true,
           jobTitle: true,
-          dateOfJoining: true,
-          previousExperience: true,
           wfhQuotaGroupId: true,
           department: { select: { id: true, name: true } },
           designation: { select: { title: true } },
@@ -65,13 +63,6 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
       prisma.employee.count({ where }),
       prisma.org.findUnique({ where: { id: orgId }, select: { name: true } }),
     ]);
-
-    const now = new Date();
-    const expMonths = (doj: Date | null, prev: number | null | undefined) => {
-      let m = prev ?? 0;
-      if (doj) m += Math.max(0, (now.getFullYear() - doj.getFullYear()) * 12 + (now.getMonth() - doj.getMonth()));
-      return m;
-    };
 
     const rows = employees.map((e) => {
       const direct = e.wfhQuotaGroupId ? groupNameById.get(e.wfhQuotaGroupId) : undefined;
@@ -83,7 +74,6 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
         department: e.department?.name ?? "",
         designation: e.designation?.title ?? e.jobTitle ?? "",
         workEmail: e.workEmail ?? "",
-        experienceMonths: expMonths(e.dateOfJoining, e.previousExperience),
         wfhGroupName: direct ?? viaDept ?? "",
       };
     });

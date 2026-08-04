@@ -43,10 +43,11 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       (acc, r) => ({
         fetched: acc.fetched + r.fetched,
         created: acc.created + r.created,
+        standalone: acc.standalone + r.standalone,
         skipped: acc.skipped + r.skipped,
         errors: acc.errors + (r.error ? 1 : 0),
       }),
-      { fetched: 0, created: 0, skipped: 0, errors: 0 },
+      { fetched: 0, created: 0, standalone: 0, skipped: 0, errors: 0 },
     );
     console.info(`[email:cron] sweep done in ${durationMs}ms`, {
       ranSweep: result.ranSweep,

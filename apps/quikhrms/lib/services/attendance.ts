@@ -22,9 +22,11 @@ function companyWeekOffs(workWeek: unknown): number[] | null {
   return [0, 1, 2, 3, 4, 5, 6].filter((n) => !working.has(n));
 }
 
-export type DayStatus = "Present" | "Absent" | "HalfDay" | "Weekend" | "Holiday" | "OnLeave" | "OnDuty" | "CompOff" | "WFH" | "NotMarked" | "Missing";
+type Punch = { in: string; out: string | null };
 
-export interface DayCell {
+type DayStatus = "Present" | "Absent" | "HalfDay" | "Weekend" | "Holiday" | "OnLeave" | "OnDuty" | "CompOff" | "WFH" | "NotMarked" | "Missing";
+
+interface DayCell {
   recordId: string | null;
   date: Date;
   dayOfWeek: number;
@@ -256,117 +258,4 @@ export async function getWeekSummary(orgId: string, employeeId: string, weekStar
   totals.payableHours = totals.presentHours + totals.paidLeaveHours + totals.holidayHours + totals.weekendHours;
 
   return { days, totals, shift: { name: shift.name, start: shift.start, end: shift.end } };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Auto attendance on login / logout
-// Mirrors the manual /attendance/check-in & /check-out punch logic, but is
-// best-effort: it never throws, so a hiccup here can't block sign-in/out.
-// ─────────────────────────────────────────────────────────────────────────────
-
-type Punch = { in: string; out: string | null };
-
-/**
- * Clock the employee in when they log in. Opens a new punch on today's record
- * (creating the record if needed). Idempotent — if a punch is already open
- * (e.g. they logged in again without logging out), it does nothing.
- */
-export async function autoClockIn(
-  orgId: string,
-  employeeId: string,
-  ipAddress?: string | null,
-): Promise<void> {
-  try {
-    // Bucket on the same IST day key as manual check-in/out and getWeekSummary,
-    // so auto-punches don't land on a different (local/UTC-midnight) day.
-    const today = attendanceDayStart();
-    const existing = await prisma.attendanceRecord.findFirst({
-      where: { orgId, employeeId, date: today, deletedAt: null },
-    });
-    const now = new Date();
-    const punches: Punch[] = Array.isArray(existing?.punches) ? (existing!.punches as Punch[]) : [];
-
-    if (punches.some((p) => !p.out)) return; // already clocked in
-
-    const newPunches: Punch[] = [...punches, { in: now.toISOString(), out: null }];
-
-    if (existing) {
-      await prisma.attendanceRecord.update({
-        where: { id: existing.id },
-        data: {
-          checkIn: existing.checkIn ?? now,
-          checkOut: null,
-          punches: newPunches as object,
-          status: "Present",
-          source: "Web",
-          ipAddress: ipAddress ?? existing.ipAddress,
-          updatedBy: employeeId,
-        },
-      });
-    } else {
-      await prisma.attendanceRecord.create({
-        data: {
-          orgId,
-          employeeId,
-          date: today,
-          checkIn: now,
-          punches: newPunches as object,
-          status: "Present",
-          source: "Web",
-          ipAddress: ipAddress ?? undefined,
-          createdBy: employeeId,
-          updatedBy: employeeId,
-        },
-      });
-    }
-  } catch (err) {
-    console.error("[attendance] autoClockIn failed:", err);
-  }
-}
-
-/**
- * Clock the employee out when they log out. Closes the open punch on today's
- * record and recomputes gross/effective hours. No-op if there's no open punch.
- */
-export async function autoClockOut(orgId: string, employeeId: string): Promise<void> {
-  try {
-    // Find by OPEN punch, not by "today": an overtime / night session can be
-    // closed after midnight, so the open punch may live on a *prior* day's
-    // record. The punch is anchored to its check-in day; `checkOut: null`
-    // reliably marks the record with the open punch (autoClockIn sets it null,
-    // we set it here on close). Most-recent open record = the active session.
-    const record = await prisma.attendanceRecord.findFirst({
-      where: { orgId, employeeId, deletedAt: null, checkOut: null },
-      orderBy: { date: "desc" },
-    });
-    if (!record) return;
-
-    const punches: Punch[] = Array.isArray(record.punches) ? (record.punches as Punch[]) : [];
-    const openIdx = punches.findIndex((p) => !p.out);
-    if (openIdx === -1) return; // nothing open to close
-
-    const now = new Date();
-    punches[openIdx] = { ...punches[openIdx], out: now.toISOString() };
-
-    const totalMs = punches.reduce(
-      (sum, p) => (p.out ? sum + (new Date(p.out).getTime() - new Date(p.in).getTime()) : sum),
-      0,
-    );
-    const grossHours = totalMs / (1000 * 60 * 60);
-    const breakHours = Number(record.breakDuration ?? 0);
-    const effectiveHours = Math.max(0, grossHours - breakHours);
-
-    await prisma.attendanceRecord.update({
-      where: { id: record.id },
-      data: {
-        checkOut: now,
-        punches: punches as object,
-        grossHours: Math.round(grossHours * 100) / 100,
-        effectiveHours: Math.round(effectiveHours * 100) / 100,
-        updatedBy: employeeId,
-      },
-    });
-  } catch (err) {
-    console.error("[attendance] autoClockOut failed:", err);
-  }
 }

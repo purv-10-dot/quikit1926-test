@@ -108,7 +108,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId, roles, pe
     console.error("GET requisitions/approvals-queue", e);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.recruit.approve"] });
 
 interface OrgPendingItem {
   requisitionId: string;
