@@ -566,6 +566,14 @@ export async function requireAuth(): Promise<AuthResult> {
  *   - The matrix row exists and explicitly allows the action
  * Returns false (deny) only when the matrix exists AND the row has the
  * action set to `false`.
+ *
+ * NOTE: this is a matrix check ONLY — it is deliberately fail-open, because
+ * the matrix is derived purely from per-user revoke rows and a user with no
+ * revokes must not be locked out. It is therefore NOT sufficient on its own
+ * to gate a mutation: a role that never granted edit/delete produces no
+ * revoke rows, so this returns true. Every create/edit/delete route must ALSO
+ * assert the real grant (`requireMastersAction` / `requirePermission` /
+ * `withMutationRoute`'s `requirePermission`).
  */
 export function hasMatrixAction(
   ctx: TenantContext,

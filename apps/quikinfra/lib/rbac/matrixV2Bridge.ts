@@ -351,6 +351,87 @@ export function revokesToMatrix(
 }
 
 /**
+ * Does the user's effective v2 permission set allow `action` on `menuKey`?
+ *
+ * `ctx.permissions` is already fully resolved — role grants ∪ per-user grants
+ * − per-user revokes — so it is the authoritative answer whenever the row can
+ * be expressed in v2 terms. Returns `null` when it cannot be, meaning "no
+ * opinion, fall back to the legacy matrix":
+ *
+ *   - the menu row isn't bridged to a resource at all, or
+ *   - the row's resource carries no matrix-manageable action (Approvals →
+ *     `construction.workflows`, which only has the settings-tier `manage`).
+ *
+ * Cells the page doesn't support, or whose resource genuinely has no such v2
+ * action, are a hard `false` — there is no permission to hold.
+ */
+export function permissionAllowsMatrixAction(
+  permissions: ReadonlySet<string>,
+  menuKey: string,
+  action: MatrixAction,
+): boolean | null {
+  const resource = MENU_TO_RESOURCE[menuKey];
+  if (!resource) return null;
+  if (isRowUnmanaged(menuKey)) return null;
+  if (MENU_SUPPORTS[menuKey]?.[action] === false) return false;
+  if (!isMatrixCellManaged(menuKey, action)) return false;
+  return permissions.has(`${resource}.${MATRIX_TO_V2_ACTION[action]}`);
+}
+
+/**
+ * Build the display matrix straight from the user's effective permission set.
+ *
+ * Replaces `buildMatrixFromModules` as the fallback for users with no saved
+ * matrix. The module-based version answered only "is this module assigned?"
+ * and then granted the FULL add/edit/delete/view set, so a role holding just
+ * view+create still rendered Add, Edit and Delete. Deriving each cell from the
+ * real `resource.action` grant keeps the UI in step with what the route guards
+ * enforce.
+ *
+ * Rows that can't be expressed in v2 (see `permissionAllowsMatrixAction`)
+ * keep the legacy assume-allow so pages with no permission representation
+ * don't silently vanish from the sidebar.
+ */
+export function buildMatrixFromPermissions(
+  permissions: ReadonlySet<string>,
+): PermissionMatrix {
+  const matrix: PermissionMatrix = {};
+  for (const item of MENU_CATALOG) {
+    const row: Partial<Record<MatrixAction, boolean>> = {};
+    for (const action of ["add", "edit", "delete", "view"] as MatrixAction[]) {
+      const decided = permissionAllowsMatrixAction(permissions, item.key, action);
+      row[action] = decided ?? MENU_SUPPORTS[item.key]?.[action] !== false;
+    }
+    matrix[item.key] = row;
+  }
+  return matrix;
+}
+
+/**
+ * Cell-wise AND of two matrices — deny wins. Layers the revoke-derived matrix
+ * on top of the permission-derived one so a cell denied by either side stays
+ * denied. Rows present in only one side are carried through as-is.
+ */
+export function intersectMatrices(
+  a: PermissionMatrix,
+  b: PermissionMatrix,
+): PermissionMatrix {
+  const out: PermissionMatrix = {};
+  for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
+    const rowA = a[key];
+    const rowB = b[key];
+    if (!rowA) { out[key] = { ...rowB }; continue; }
+    if (!rowB) { out[key] = { ...rowA }; continue; }
+    const row: Partial<Record<MatrixAction, boolean>> = {};
+    for (const action of ["add", "edit", "delete", "view"] as MatrixAction[]) {
+      row[action] = rowA[action] !== false && rowB[action] !== false;
+    }
+    out[key] = row;
+  }
+  return out;
+}
+
+/**
  * Returns the set of (resource, action) pairs the matrix MANAGES — i.e.
  * the universe of pairs that should be reconciled against the user's
  * revoke rows when saving.

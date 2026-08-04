@@ -64,7 +64,17 @@ export function useEstimationDetail(id: string) {
   const isApproved = status === "approved";
   const isRejected = status === "rejected";
   const isInactive = status === "inactive";
-  const baseLocked = isApproved || isInactive;
+  // Submitted rows are frozen for the raiser until the approver acts —
+  // that is what the submit confirmation dialog promises, and the PUT
+  // route enforces the same rule with a 409.
+  const baseLocked = isPending || isApproved || isInactive;
+  const lockReason = isPending
+    ? "Locked — awaiting approver action"
+    : isApproved
+      ? "Locked — estimation is approved"
+      : isInactive
+        ? "Locked — estimation is deleted"
+        : null;
 
   // Seed the form whenever the estimation payload arrives or the user
   // flips back into edit mode after a save.
@@ -285,6 +295,7 @@ export function useEstimationDetail(id: string) {
     isRejected,
     isInactive,
     baseLocked,
+    lockReason,
     seedFromEstimation,
     materials,
     editTotals,

@@ -22,6 +22,7 @@
  */
 
 import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
+import { toast, withToastsSuppressed } from "@/lib/toast";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { UploadCloud, X, AlertTriangle, CheckCircle2, FileSpreadsheet, Loader2 } from "lucide-react";
 import { PrimaryButton, SecondaryButton } from "./PageShell";
@@ -255,24 +256,46 @@ export function ImportDataDrawer({
     setStage("running");
     setProgress({ done: 0, total: rows.length });
     const out: ImportRowResult[] = [];
-    for (let i = 0; i < rows.length; i++) {
-      const src = rows[i]!;
-      const mapped: Record<string, string> = {};
-      for (const f of fields) {
-        const col = mapping[f.key];
-        mapped[f.key] = col ? (src[col] ?? "") : "";
+    // `onImport` typically drives the entity's create mutation, whose meta
+    // makes the global MutationCache toast on every success. One row =
+    // one toast would bury the screen under N identical notifications, so
+    // the whole run is muted and summarised once below.
+    await withToastsSuppressed(async () => {
+      for (let i = 0; i < rows.length; i++) {
+        const src = rows[i]!;
+        const mapped: Record<string, string> = {};
+        for (const f of fields) {
+          const col = mapping[f.key];
+          mapped[f.key] = col ? (src[col] ?? "") : "";
+        }
+        try {
+          const res = await onImport(mapped);
+          out.push({ rowNumber: i + 2, ok: !!(res && res.ok), error: res && !res.ok ? res.error : undefined });
+        } catch (e: unknown) {
+          out.push({ rowNumber: i + 2, ok: false, error: toErrorMessage(e, "Failed") });
+        }
+        setProgress({ done: i + 1, total: rows.length });
       }
-      try {
-        const res = await onImport(mapped);
-        out.push({ rowNumber: i + 2, ok: !!(res && res.ok), error: res && !res.ok ? res.error : undefined });
-      } catch (e: unknown) {
-        out.push({ rowNumber: i + 2, ok: false, error: toErrorMessage(e, "Failed") });
-      }
-      setProgress({ done: i + 1, total: rows.length });
-    }
+    });
     setResults(out);
     setStage("done");
-    if (out.some((r) => r.ok)) onComplete?.();
+
+    // Single summary for the whole file. The done stage already lists the
+    // per-row failures, so this only has to carry the headline count.
+    const ok = out.filter((r) => r.ok).length;
+    const failed = out.length - ok;
+    // The noun agrees with the count it follows: "1 Vendor imported" but
+    // "1 of 2 Vendors imported".
+    const noun = (n: number) => `${entityName}${n === 1 ? "" : "s"}`;
+    if (ok === 0) {
+      toast.error(`Import failed — no ${entityName.toLowerCase()} rows were created`);
+    } else if (failed === 0) {
+      toast.success(`${ok} ${noun(ok)} imported`);
+    } else {
+      toast.warning(`${ok} of ${out.length} ${noun(out.length)} imported — ${failed} failed`);
+    }
+
+    if (ok > 0) onComplete?.();
   };
 
   const successCount = results.filter((r) => r.ok).length;

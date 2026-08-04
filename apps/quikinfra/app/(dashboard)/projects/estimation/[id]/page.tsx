@@ -75,6 +75,7 @@ export default function EstimationDetailPage() {
     isApproved,
     isRejected,
     baseLocked,
+    lockReason,
     materials,
     editTotals,
     openWorkflow,
@@ -175,11 +176,7 @@ export default function EstimationDetailPage() {
                         ? `${PILL_TONE.disabled} cursor-not-allowed`
                         : `${PILL_TONE.blue} hover:bg-orange-100`
                     }`}
-                    title={
-                      baseLocked
-                        ? "Locked — estimation is approved"
-                        : "Edit estimation"
-                    }
+                    title={baseLocked ? lockReason ?? "Locked" : "Edit estimation"}
                   >
                     <Pencil className="w-4 h-4" /> Edit
                   </button>

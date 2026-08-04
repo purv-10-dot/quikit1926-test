@@ -69,6 +69,8 @@ describe("GET /api/projects/work-orders/[id]", () => {
   it("returns the WO scoped to the org", async () => {
     setContext(makeAdminCtx());
     db.cnWorkOrder.findFirst.mockResolvedValue(woRow());
+    // The detail handler rolls up approved-DPR quantities to derive progressPct.
+    db.cnDPRWorkItem.findMany.mockResolvedValue([]);
     const res = await GET(req("GET"), params);
     expect(res.status).toBe(200);
     expect((await res.json()).id).toBe(ID);
