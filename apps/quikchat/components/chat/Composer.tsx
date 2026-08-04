@@ -7,6 +7,7 @@ import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import type { MentionRefInput } from "@/lib/shared";
 import {
+  AlertCircle,
   AudioLines,
   Bold,
   Check,
@@ -90,10 +91,16 @@ export function Composer({
   // A finished voice recording stages here TOO — same shape, plus `voice`, which
   // both flags the chip's rendering and carries the recorder's measured duration
   // through to `MediaMeta.durationSec` on send.
+  //
+  // `failed` survives a failed upload: the file stays staged so Send retries it.
+  // A boolean, not the error message — the message is operator-facing ("Upload
+  // failed (413)") and belongs in the toast, and a string field would go falsy on
+  // a non-Error throw, rendering a failed chip as if nothing had happened.
   const [pending, setPending] = useState<{
     file: File;
     localUrl: string;
     voice?: { durationSec: number };
+    failed?: boolean;
   } | null>(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [formatOpen, setFormatOpen] = useState(false);
@@ -155,6 +162,9 @@ export function Composer({
         file,
         localUrl: URL.createObjectURL(file),
         voice: { durationSec: rec.durationSec },
+        // Explicit, though this is a fresh literal: a later refactor to
+        // `{...prev, file}` must not let a new recording inherit a stale failure.
+        failed: false,
       };
     });
   }
@@ -389,7 +399,9 @@ export function Composer({
     // Stage (do NOT upload/send yet). Replace any prior staged file.
     setPending((prev) => {
       if (prev) URL.revokeObjectURL(prev.localUrl);
-      return { file, localUrl: URL.createObjectURL(file) };
+      // `failed: false` for the same reason as stageRecording — a newly picked
+      // file never shows the previous one's failure.
+      return { file, localUrl: URL.createObjectURL(file), failed: false };
     });
   }
 
@@ -400,12 +412,20 @@ export function Composer({
     });
   }
 
-  /** Upload the staged file then post it as a Media message (caption = text). */
+  /**
+   * Upload the staged file then post it as a Media message (caption = text).
+   *
+   * Also the retry path: on failure the staged file, its preview and the caption
+   * all survive, so clicking Send again re-runs this against the same `pending`.
+   */
   async function sendPending() {
     if (!pending || !channelId || !onSendMedia || uploading) return;
     const { file, localUrl, voice: staged } = pending;
     setUploading(true);
     setProgress(0);
+    // Clear the flag at the START of the attempt, not just on success: a second
+    // failure must re-render the failed state rather than sit on a stale one.
+    setPending((prev) => (prev?.failed ? { ...prev, failed: false } : prev));
     try {
       // A voice note carries its measured duration onto MediaMeta → the message
       // `data` (persisted, so it survives a reload). Plain files pass nothing.
@@ -419,8 +439,12 @@ export function Composer({
       setPending(null);
       lastTypingAt.current = 0;
     } catch (uploadErr) {
-      URL.revokeObjectURL(localUrl);
-      setPending(null);
+      // Keep the attachment staged — do NOT revoke `localUrl` and do NOT clear
+      // `pending`. Re-picking a file (or re-recording a voice note) from scratch
+      // just to retry is the bug; the caption was never cleared here either, so
+      // losing only the file made it worse, not gentler. `prev &&` so a chip the
+      // user discarded mid-flight is never resurrected.
+      setPending((prev) => (prev ? { ...prev, failed: true } : prev));
       toast.error({
         title: "Upload failed",
         body: uploadErr instanceof Error ? uploadErr.message : undefined,
@@ -573,7 +597,11 @@ export function Composer({
         </div>
       ) : null}
       {pending ? (
-        <div className="qc-attach-chip" data-testid="attach-preview">
+        <div
+          className="qc-attach-chip"
+          data-testid="attach-preview"
+          data-failed={pending.failed || undefined}
+        >
           {/* A voice note gets a mic pill + its recorded length, never a file
               thumbnail — the filename is machine-generated and meaningless here. */}
           {pending.voice ? (
@@ -597,6 +625,15 @@ export function Composer({
               <span className="qc-attach-chip__name qc-truncate">{pending.file.name}</span>
             </>
           )}
+          {/* Persistent failure indicator. The toast that also fires is gone in
+              ~3s while the file can sit staged indefinitely, so the chip has to
+              carry the state itself — and say what to do about it. */}
+          {pending.failed ? (
+            <span className="qc-attach-chip__error" data-testid="attach-failed" role="status">
+              <AlertCircle size={13} aria-hidden />
+              Upload failed — tap Send to retry
+            </span>
+          ) : null}
           <IconButton
             label={pending.voice ? "Discard voice message" : "Remove attachment"}
             onClick={removePending}

@@ -2970,6 +2970,24 @@ body {
   font-size: 13px;
   color: var(--qc-text);
   max-width: 240px;
+  min-width: 0; /* so the (truncating) name gives way first when the row is tight */
+}
+/* Upload failed but the file is STILL staged — Send retries it. Same treatment as
+   .qc-assist-error, the app's other persistent failure surface. */
+.qc-attach-chip[data-failed="true"] {
+  border-color: var(--qc-danger);
+  background: color-mix(in srgb, var(--qc-danger) 8%, var(--qc-surface));
+}
+.qc-attach-chip[data-failed="true"] .qc-attach-chip__icon {
+  color: var(--qc-danger);
+}
+.qc-attach-chip__error {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  font-size: 12px;
+  color: var(--qc-danger);
 }
 
 /* Voice-note recording bar — a SIBLING above .qc-composer__box (like the attach
