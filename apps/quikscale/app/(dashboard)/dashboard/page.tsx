@@ -40,7 +40,7 @@ import { getLatestPriorityNote } from "@/lib/utils/priorityHelpers";
 import { getColorByPercentage } from "@/lib/utils/colorLogic";
 import { dashboardKpiHiddenColumns } from "@/lib/utils/dashboardColumns";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
-import { resolveProgressQtd, resolveProgressOverall, computeKpiOverviewStats, kpiOverviewVisible } from "../kpi/components/kpiStats";
+import { resolveProgressQtd, resolveProgressOverall, resolvePace, computeKpiOverviewStats, kpiOverviewVisible } from "../kpi/components/kpiStats";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { HiddenColsPill } from "@/components/table/HiddenColsPill";
 import { HiddenColsMenu } from "../kpi/components/HiddenColsMenu";
@@ -600,13 +600,20 @@ function KPICard({ kpi, currentWeek, weekCount = 13, numberFormat = "standard" }
   // pill instead of only showing the Overall (quarterly) ratio.
   const qtd = resolveProgressQtd(kpi, currentWeek, weekCount);
   const qtdGoal = qtd.goal;
-  // Bar 1: QTD Goal / Quarterly Goal — how much of the full quarterly target
-  // is "due" by now. Color-coded with the same red/yellow/green/blue scale as
-  // Bar 2 (treated as always "updated" since it's a derived pacing number,
-  // not a user-entered value, and never reverse-scored — pacing is a
-  // time-based fact, not a KPI performance direction).
-  const qtdGoalVsQuarterlyPct = goal > 0 ? (qtdGoal / goal) * 100 : 0;
-  const paceBadge = getProgressBadgeColors(qtdGoal, goal, true, false);
+  const divisionType: "Cumulative" | "Standalone" =
+    kpi.divisionType === "Standalone" ? "Standalone" : "Cumulative";
+  // Bar 1: Pace. Cumulative — QTD Goal / Quarterly Goal, how much of the full
+  // quarterly target is "due" by now (time-based fact, always "updated",
+  // never reverse-scored). Standalone — the target is flat every week so
+  // that ratio is always 100%; instead this paces achieved-to-date against
+  // the full-quarter ceiling (target × weeksPerQuarter). See `resolvePace`.
+  const pace = resolvePace(kpi, currentWeek, weekCount);
+  const qtdGoalVsQuarterlyPct = pace.goal > 0 ? (pace.achieved / pace.goal) * 100 : 0;
+  const paceBadge = divisionType === "Standalone"
+    ? (kpi.qtdAchieved != null
+        ? getProgressBadgeColors(pace.achieved, pace.goal, hasAnyWeeklyValue, kpi.reverseColor ?? false)
+        : { bar: "bg-gray-300", text: "text-gray-500", label: "—" })
+    : getProgressBadgeColors(pace.achieved, pace.goal, true, false);
   // Bar 2: QTD Achieved / QTD Goal — actual performance against where the
   // KPI should be *right now*, not against the full quarter.
   const qtdAchievedVsQtdGoalPct = qtdGoal > 0 ? (qtd.achieved / qtdGoal) * 100 : 0;
@@ -639,9 +646,15 @@ function KPICard({ kpi, currentWeek, weekCount = 13, numberFormat = "standard" }
         <span className="text-xs text-gray-400">/ {fmtKpiVal(kpi, goal)}</span>
         <span className={`text-[11px] font-semibold ${badge.text}`}>({pct.toFixed(0)}%)</span>
       </div>
-      {/* Bar 1 — QTD Goal / Quarterly Goal: how much of the full quarterly
-          target is due by now. Color-coded the same way as Bar 2. */}
-      <div className="flex items-center gap-2 mb-1.5" title="QTD Goal / Quarterly Goal">
+      {/* Bar 1 — Pace. Cumulative: QTD Goal / Quarterly Goal (how much of the
+          full quarterly target is due by now). Standalone: achieved-to-date
+          / (target × weeksPerQuarter) — a burn-up against the full-quarter
+          ceiling, since the flat target never accrues. Color-coded the same
+          way as Bar 2. */}
+      <div
+        className="flex items-center gap-2 mb-1.5"
+        title={divisionType === "Standalone" ? "Achieved to date / (Target × Weeks)" : "QTD Goal / Quarterly Goal"}
+      >
         <span className="text-[10px] font-medium text-gray-400 w-9 flex-shrink-0">Pace</span>
         <span className={`text-xs font-semibold ${paceBadge.text}`}>{qtdGoalVsQuarterlyPct.toFixed(0)}%</span>
         <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">

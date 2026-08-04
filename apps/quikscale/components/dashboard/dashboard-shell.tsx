@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { Header } from "@/components/dashboard/header";
 import { OPSPDeadlineBanner } from "@/components/dashboard/opsp-deadline-banner";
+import { DemoDataBanner } from "@/components/dashboard/demo-data-banner";
 import { FilterProvider } from "@/lib/context/FilterContext";
 import { SessionGuard } from "@/components/session-guard";
 import { ThemeApplier } from "@quikit/ui/theme-applier";
@@ -43,6 +44,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
           {/* OPSP Deadline Banner — global, shows when threshold is active */}
           <OPSPDeadlineBanner />
+
+          {/* Demo Data Banner — global, shows while the org has seeded sample data */}
+          <DemoDataBanner />
 
           {/* Page Content */}
           <main className="flex-1 overflow-y-auto bg-[var(--color-bg-secondary)]">

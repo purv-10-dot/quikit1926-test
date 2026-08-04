@@ -283,6 +283,7 @@ model Org {
   users                    OrgMember[]
   userAppAccess            UserAppAccess[]
   subscription             Subscription?
+  demoDataState            DemoDataState?
 
   @@index([slug])
   @@index([status])
@@ -552,6 +553,7 @@ model QsTeam {
   updatedAt               DateTime                 @updatedAt
   createdBy               String?
   deletedAt               DateTime?
+  isDemoData              Boolean                  @default(false)
   accountabilityFunctions AccountabilityFunction[]
   kpis                    KPI[]
   priorities              Priority[]
@@ -601,6 +603,7 @@ model AccountabilityFunction {
   expectedOutcomes  String?
   leadingIndicators String?
   deletedAt         DateTime?
+  isDemoData        Boolean                  @default(false)
   createdAt         DateTime                 @default(now())
   updatedAt         DateTime                 @updatedAt
   assignedTo        User?                    @relation(fields: [assignedToUserId], references: [id])
@@ -665,6 +668,7 @@ model KPI {
   lastNotesAt        DateTime?
   lastNotedBy        String?
   deletedAt          DateTime?
+  isDemoData         Boolean          @default(false)
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
   createdBy          String
@@ -843,6 +847,7 @@ model Priority {
   createdBy        String
   updatedBy        String?
   deletedAt        DateTime?
+  isDemoData       Boolean                @default(false)
   org              Org                    @relation(fields: [orgId], references: [id], onDelete: Cascade)
   owner_user       User                   @relation("PriorityOwner", fields: [owner], references: [id])
   team             QsTeam?                @relation(fields: [teamId], references: [id])
@@ -902,6 +907,7 @@ model WWWItem {
   createdBy        String
   updatedBy        String?
   deletedAt        DateTime?
+  isDemoData       Boolean          @default(false)
   whoIds           String[]         @default([])
   org              Org              @relation(fields: [orgId], references: [id], onDelete: Cascade)
   revisionLogs     WWWRevisionLog[]
@@ -981,6 +987,7 @@ model CategoryMaster {
   /// Fractional manual sort position for drag-to-reorder. Null rows fall back to
   /// createdAt ordering. Mirrors the reorderable-grid `position` convention.
   position      Float?
+  isDemoData    Boolean  @default(false)
   org           Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, nameKey, dataType, currency], name: "category_tenant_name_type_currency_uniq")
@@ -1007,6 +1014,7 @@ model UnitMaster {
   deletedAt   DateTime?
   /// Fractional manual sort position for drag-to-reorder (null → createdAt order).
   position    Float?
+  isDemoData  Boolean  @default(false)
   org         Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, nameKey], name: "unit_tenant_name_uniq")
@@ -1144,6 +1152,7 @@ model Client {
   createdBy       String
   updatedBy       String?
   deletedAt       DateTime?
+  isDemoData      Boolean               @default(false)
   org             Org                   @relation(fields: [orgId], references: [id], onDelete: Cascade)
   dailyHuddles    ClientDailyHuddle[]
   memberships     ClientMembership[]
@@ -1213,6 +1222,7 @@ model ClientMember {
   createdBy         String
   updatedBy         String?
   deletedAt         DateTime?
+  isDemoData        Boolean                              @default(false)
   dailyAbsences     ClientDailyHuddleTeamAbsence[]
   org               Org                                  @relation(fields: [orgId], references: [id], onDelete: Cascade)
   clientLinks       ClientTeamMember[]
@@ -1255,6 +1265,7 @@ model ClientDailyHuddle {
   createdBy           String
   updatedBy           String?
   deletedAt           DateTime?
+  isDemoData          Boolean                        @default(false)
   client              Client                         @relation(fields: [clientId], references: [id], onDelete: Cascade)
   org                 Org                            @relation(fields: [orgId], references: [id], onDelete: Cascade)
   absentMembers       ClientDailyHuddleAbsence[]
@@ -1341,6 +1352,7 @@ model ClientWeeklyMeeting {
   createdBy              String
   updatedBy              String?
   deletedAt              DateTime?
+  isDemoData             Boolean                              @default(false)
   client                 Client                               @relation(fields: [clientId], references: [id], onDelete: Cascade)
   org                    Org                                  @relation(fields: [orgId], references: [id], onDelete: Cascade)
   absentMembers          ClientWeeklyMeetingAbsence[]
@@ -1502,6 +1514,7 @@ model OPSPData {
   updatedAt               DateTime          @updatedAt
   createdBy               String
   updatedBy               String?
+  isDemoData              Boolean           @default(false)
   org                     Org               @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user                    User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   reviewEntries           OPSPReviewEntry[]
@@ -1532,6 +1545,7 @@ model OPSPUserSection {
   updatedAt            DateTime @updatedAt
   createdBy            String
   updatedBy            String?
+  isDemoData           Boolean  @default(false)
   org                  Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -1629,6 +1643,7 @@ model OPSPPlan {
   tags               String[]
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+  isDemoData         Boolean  @default(false)
   org                Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -1673,6 +1688,7 @@ model HabitAssessment {
   /// which is the pre-existing behaviour every campaign created before this
   /// column relies on — so old rows keep working untouched.
   participantUserIds String[]                  @default([])
+  isDemoData         Boolean                   @default(false)
   org                Org                       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   responses          HabitAssessmentResponse[]
 
@@ -1710,6 +1726,10 @@ model QuarterSetting {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   createdBy  String
+  /// True when auto-generated by demo-data seeding. Informational only —
+  /// Clear All Demo Data deliberately never deletes quarters (an org needs
+  /// a fiscal calendar to function at all, real content or not).
+  isDemoData Boolean  @default(false)
   org        Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, fiscalYear, quarter])
@@ -1806,6 +1826,7 @@ model SWTEntry {
   createdBy      String
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  isDemoData     Boolean  @default(false)
   org            Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
@@ -1902,6 +1923,7 @@ model Goal {
   updatedAt       DateTime  @updatedAt
   createdBy       String
   completedAt     DateTime?
+  isDemoData      Boolean   @default(false)
   org             Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   owner           User      @relation("GoalOwner", fields: [ownerId], references: [id])
   parentGoal      Goal?     @relation("GoalHierarchy", fields: [parentGoalId], references: [id])
@@ -1979,6 +2001,21 @@ enum ClientMeetingStatus {
   HOLIDAY_FOR_CLIENT
   HOLIDAY_FOR_SUCCESS_ALCHEMIST
   OTHER
+
+  @@schema("app_quikscale")
+}
+
+/// Tracks whether an org's first-login demo/sample data has been seeded
+/// and/or cleared. `clearedAt` is a permanent guard — once an admin clears
+/// demo data, seeding never re-fires for that org.
+model DemoDataState {
+  id        String    @id @default(cuid())
+  orgId     String    @unique
+  seededAt  DateTime?
+  clearedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@schema("app_quikscale")
 }

@@ -8,6 +8,7 @@ import {
   fiscalYearLabel,
   QUARTER_STARTS,
 } from "@/lib/utils/fiscal";
+import { useCurrentQuarter } from "@/lib/hooks/useCurrentWeek";
 import { achievedPctColor, formatReviewValue, showOpspReviewOwnerColumn } from "./helpers";
 import { reviewRowVisible } from "./reviewRows";
 import { ReviewPeriodPicker } from "./ReviewPeriodPicker";
@@ -502,7 +503,24 @@ export default function OPSPReviewPage() {
   });
   const accessReady = !myPerms.loading;
   const [year, setYear] = useState(getFiscalYear);
-  const [quarter, setQuarter] = useState<string>(getFiscalQuarter);
+  const [quarter, setQuarterRaw] = useState<string>(getFiscalQuarter);
+  // Correct the calendar-derived default (getFiscalQuarter assumes an
+  // April-start fiscal year) to the org's REAL current quarter, resolved
+  // from its actual QuarterSetting date ranges — but only until the user
+  // picks a period themselves via the period picker. Without this, an org
+  // whose fiscal year doesn't start in April (the schema default is
+  // January) lands on the wrong quarter and shows "No OPSP found" even
+  // when the current quarter has data.
+  const userPickedPeriod = useRef(false);
+  const resolvedCurrentQuarter = useCurrentQuarter(year);
+  useEffect(() => {
+    if (userPickedPeriod.current || !resolvedCurrentQuarter) return;
+    setQuarterRaw(resolvedCurrentQuarter);
+  }, [resolvedCurrentQuarter]);
+  const setQuarter = useCallback((q: string) => {
+    userPickedPeriod.current = true;
+    setQuarterRaw(q);
+  }, []);
   const [horizon, setHorizon] = useState<Horizon>("quarter");
   const [viewMode, setViewMode] = useState<ViewMode>("primary");
   // Top-level Review / Critical Review tab.

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useMemo, useCallback } from "react";
+import { createContext, useContext, useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { getFiscalYear, getFiscalQuarter } from "@/lib/utils/fiscal";
 import { useSessionState } from "@/lib/hooks/useSessionState";
 
@@ -29,6 +29,8 @@ interface FilterContextValue {
 
 const DEFAULT_YEAR = getFiscalYear();
 const DEFAULT_QUARTER = getFiscalQuarter() as Quarter;
+const YEAR_STORAGE_KEY = "qs:filter:year";
+const QUARTER_STORAGE_KEY = "qs:filter:quarter";
 
 const FilterContext = createContext<FilterContextValue>({
   filterTeam: "",
@@ -52,8 +54,45 @@ export function FilterProvider({ children }: { children: React.ReactNode }) {
   // so they still persist for the browser-tab session (survive refresh).
   const [filterTeam, setFilterTeamRaw] = useState("");
   const [filterOwners, setFilterOwners] = useState<string[]>([]);
-  const [year, setYear] = useSessionState<number>("qs:filter:year", DEFAULT_YEAR);
-  const [quarter, setQuarter] = useSessionState<Quarter>("qs:filter:quarter", DEFAULT_QUARTER);
+  const [year, setYear] = useSessionState<number>(YEAR_STORAGE_KEY, DEFAULT_YEAR);
+  const [quarter, setQuarter] = useSessionState<Quarter>(QUARTER_STORAGE_KEY, DEFAULT_QUARTER);
+
+  // Correct year/quarter to the org's REAL current quarter — resolved from its
+  // actual QuarterSetting date ranges — once per fresh browser-tab session.
+  // DEFAULT_YEAR/DEFAULT_QUARTER above assume an April-start fiscal calendar
+  // (getFiscalQuarter/getFiscalYear are hardcoded), but an org's real
+  // fiscalYearStart can be anything (the schema default is actually January).
+  // Left uncorrected, a mismatched org silently defaults to the wrong quarter,
+  // which filters every list (KPI/Priority/Team KPI/...) to 0 rows even when
+  // the current quarter has real data. Only runs when sessionStorage had no
+  // stored quarter yet, so it never overrides a value the user already set.
+  const hadStoredQuarter = useRef(
+    typeof window !== "undefined" && window.sessionStorage.getItem(QUARTER_STORAGE_KEY) !== null,
+  );
+  useEffect(() => {
+    if (hadStoredQuarter.current) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/org/quarters");
+        const json = await res.json();
+        if (cancelled || !json.success) return;
+        const rows = json.data as Array<{ fiscalYear: number; quarter: Quarter; startDate: string; endDate: string }>;
+        const today = new Date();
+        const current = rows.find((r) => today >= new Date(r.startDate) && today <= new Date(r.endDate));
+        if (current) {
+          setYear(current.fiscalYear);
+          setQuarter(current.quarter);
+        }
+      } catch {
+        // silent — keep the calendar-based default
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const setFilterTeam = useCallback((v: string) => {
     setFilterTeamRaw(v);

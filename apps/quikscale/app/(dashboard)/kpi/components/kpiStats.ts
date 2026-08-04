@@ -223,6 +223,51 @@ export function kpiOverallPercent(
   return goal > 0 ? (achieved / goal) * 100 : 0;
 }
 
+/**
+ * Pace achieved/goal pair — the FIRST bar on the dashboard KPI Overview card.
+ *
+ * Cumulative — unchanged: "how much of the full quarterly target is due by
+ * now" (Σ weekly targets through last week, vs. the full quarterly goal). A
+ * time/schedule-based reference line, independent of what was achieved.
+ *
+ * Standalone — the quarterly target is the SAME flat number every week, so
+ * that schedule ratio always resolves to `target / target = 100%` and the
+ * bar was permanently pinned green regardless of performance (the target
+ * never "accrues" the way it does for Cumulative). Standalone instead paces
+ * against a full-quarter ceiling (`target × weeksPerQuarter`) using the
+ * achieved values banked so far:
+ *
+ *   Pace % = Σ achieved[1..currentWeek-1] / (target × weeksPerQuarter) × 100
+ *
+ * This is deliberately a DIFFERENT number from the QTD bar
+ * (`resolveProgressQtd`, which averages achieved ÷ elapsed weeks): Pace
+ * reads as "how much of the whole quarter's potential is banked" (can't hit
+ * 100% until every week has been filled at-or-above target), while QTD reads
+ * as "what's my average per-week rate." Both are legitimate, distinct views.
+ */
+export function resolvePace(
+  kpi: KPIRow,
+  currentWeek: number | null,
+  weeksPerQuarter: number = DEFAULT_WEEKS_PER_QUARTER,
+): { achieved: number; goal: number } {
+  const divisionType: "Cumulative" | "Standalone" =
+    kpi.divisionType === "Standalone" ? "Standalone" : "Cumulative";
+
+  if (divisionType === "Cumulative") {
+    const { goal: qtdGoal } = resolveProgressQtd(kpi, currentWeek, weeksPerQuarter);
+    const { goal } = resolveProgressOverall(kpi, currentWeek, weeksPerQuarter);
+    return { achieved: qtdGoal, goal };
+  }
+
+  if (currentWeek == null || currentWeek <= 1) return { achieved: 0, goal: 0 };
+  const totalTarget = kpi.target ?? kpi.qtdGoal ?? 0;
+  const scaleCeiling = totalTarget * weeksPerQuarter;
+  const sumOfValues = (kpi.weeklyValues ?? [])
+    .filter((v) => v.weekNumber < currentWeek)
+    .reduce((sum, v) => sum + (v.value ?? 0), 0);
+  return { achieved: sumOfValues, goal: scaleCeiling };
+}
+
 export interface KpiOverviewStats {
   /** Rounded `(Σ QTD Achieved / Σ QTD Goal) × 100` over each ENTERED KPI. */
   avg: number;
