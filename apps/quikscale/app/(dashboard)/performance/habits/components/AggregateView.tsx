@@ -20,6 +20,7 @@ import {
   useUpdateHabitCampaign,
 } from "@/lib/hooks/useHabits";
 import { toDateInputValue } from "@/lib/utils/dateUtils";
+import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { notify } from "@/lib/utils/notify";
 import { MyResponseModal } from "./MyResponseModal";
 import { useConfirm } from "@quikit/ui";
@@ -463,6 +464,11 @@ function ScoreContext({
  * The API takes a full ISO datetime while `<input type="date">` yields
  * `YYYY-MM-DD`, so the value is widened on save and narrowed on load — the same
  * conversion LaunchAssessmentModal does when creating a campaign.
+ *
+ * Past dates are gated by the org's `add_past_week_data` config flag — the same
+ * toggle KPI and Priority already honour for their past-week edits. When it's
+ * off the picker's `min` is today, so a past deadline can't be chosen. The PUT
+ * route re-checks, so this is UX, not the enforcement point.
  */
 export function DeadlineEditor({
   campaignId,
@@ -474,8 +480,13 @@ export function DeadlineEditor({
   deadlineLabel: string | null;
 }) {
   const update = useUpdateHabitCampaign(campaignId);
+  const { canAddPastWeek, loaded: flagsLoaded } = usePastWeekFlags();
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(() => toDateInputValue(deadlineISO));
+
+  // Only clamp once the flags have actually resolved — otherwise the default
+  // `false` would briefly lock the picker for orgs that DO allow past dates.
+  const minDate = flagsLoaded && !canAddPastWeek ? toDateInputValue(new Date().toISOString()) : undefined;
 
   function startEditing() {
     // Re-seed from the server value so a cancelled edit never leaks forward.
@@ -521,6 +532,8 @@ export function DeadlineEditor({
         type="date"
         autoFocus
         value={value}
+        min={minDate}
+        title={minDate ? "Past dates are disabled — enable “Add Past Week Data” in Settings → Configurations" : undefined}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter") void save();

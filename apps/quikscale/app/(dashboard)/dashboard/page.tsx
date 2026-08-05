@@ -602,18 +602,20 @@ function KPICard({ kpi, currentWeek, weekCount = 13, numberFormat = "standard" }
   const qtdGoal = qtd.goal;
   const divisionType: "Cumulative" | "Standalone" =
     kpi.divisionType === "Standalone" ? "Standalone" : "Cumulative";
-  // Bar 1: Pace. Cumulative — QTD Goal / Quarterly Goal, how much of the full
-  // quarterly target is "due" by now (time-based fact, always "updated",
-  // never reverse-scored). Standalone — the target is flat every week so
-  // that ratio is always 100%; instead this paces achieved-to-date against
-  // the full-quarter ceiling (target × weeksPerQuarter). See `resolvePace`.
+  // Bar 1: QTR — achieved-to-date ÷ the full quarter's potential. Cumulative
+  // divides by the quarterly goal; Standalone by `target × weeksPerQuarter`
+  // (its flat target never accrues, so the quarterly goal is a per-week
+  // number). See `resolvePace`.
+  //
+  // Both branches are now PERFORMANCE numbers, so both honor `reverseColor`
+  // and the not-yet-entered gray state. Cumulative used to pass
+  // `(…, true, false)` — "always updated, never reverse-scored" — because it
+  // was a pure calendar line where neither flag applied. It no longer is.
   const pace = resolvePace(kpi, currentWeek, weekCount);
   const qtdGoalVsQuarterlyPct = pace.goal > 0 ? (pace.achieved / pace.goal) * 100 : 0;
-  const paceBadge = divisionType === "Standalone"
-    ? (kpi.qtdAchieved != null
-        ? getProgressBadgeColors(pace.achieved, pace.goal, hasAnyWeeklyValue, kpi.reverseColor ?? false)
-        : { bar: "bg-gray-300", text: "text-gray-500", label: "—" })
-    : getProgressBadgeColors(pace.achieved, pace.goal, true, false);
+  const paceBadge = hasAnyWeeklyValue
+    ? getProgressBadgeColors(pace.achieved, pace.goal, hasAnyWeeklyValue, kpi.reverseColor ?? false)
+    : { bar: "bg-gray-300", text: "text-gray-500", label: "—" };
   // Bar 2: QTD Achieved / QTD Goal — actual performance against where the
   // KPI should be *right now*, not against the full quarter.
   const qtdAchievedVsQtdGoalPct = qtdGoal > 0 ? (qtd.achieved / qtdGoal) * 100 : 0;
@@ -646,16 +648,16 @@ function KPICard({ kpi, currentWeek, weekCount = 13, numberFormat = "standard" }
         <span className="text-xs text-gray-400">/ {fmtKpiVal(kpi, goal)}</span>
         <span className={`text-[11px] font-semibold ${badge.text}`}>({pct.toFixed(0)}%)</span>
       </div>
-      {/* Bar 1 — Pace. Cumulative: QTD Goal / Quarterly Goal (how much of the
-          full quarterly target is due by now). Standalone: achieved-to-date
-          / (target × weeksPerQuarter) — a burn-up against the full-quarter
-          ceiling, since the flat target never accrues. Color-coded the same
-          way as Bar 2. */}
+      {/* Bar 1 — QTR: achieved-to-date over the full quarter's potential.
+          Cumulative divides by the Quarterly Goal; Standalone by
+          (target × weeksPerQuarter), since its flat target never accrues.
+          A burn-up either way — 100% means the whole quarter is banked.
+          Color-coded the same way as Bar 2. */}
       <div
         className="flex items-center gap-2 mb-1.5"
-        title={divisionType === "Standalone" ? "Achieved to date / (Target × Weeks)" : "QTD Goal / Quarterly Goal"}
+        title={divisionType === "Standalone" ? "Achieved to date / (Target × Weeks)" : "QTD Achieved / Quarterly Goal"}
       >
-        <span className="text-[10px] font-medium text-gray-400 w-9 flex-shrink-0">Pace</span>
+        <span className="text-[10px] font-medium text-gray-400 w-9 flex-shrink-0">QTR</span>
         <span className={`text-xs font-semibold ${paceBadge.text}`}>{qtdGoalVsQuarterlyPct.toFixed(0)}%</span>
         <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
           <div className={`h-2 rounded-full ${paceBadge.bar}`} style={{ width: `${Math.min(qtdGoalVsQuarterlyPct, 100)}%` }} />

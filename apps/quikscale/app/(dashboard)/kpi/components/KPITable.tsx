@@ -8,7 +8,7 @@ import { weeksArray, weekDateLabel } from "@/lib/utils/fiscal";
 import { progressColor, weekCellColors, fmt, formatScaledKpiValue, getProgressBadgeColors, getLatestWeeklyNote, type NumberFormat } from "@/lib/utils/kpiHelpers";
 import { getColorByPercentage } from "@/lib/utils/colorLogic";
 import { UserAuditCell, DateAuditCell } from "@/components/table/AuditCells";
-import { computeQtd, weeklyGoalFor } from "./kpiStats";
+import { computeQtd, weeklyGoalFor, resolveProgressOverall } from "./kpiStats";
 import { useTableColumns, COL_LABELS, SORT_KEYS } from "../hooks/useTableColumns";
 import { useStickyOffsets } from "@/lib/hooks/useStickyOffsets";
 import { FreezeIcon } from "@/components/ui/FreezeIcon";
@@ -287,23 +287,30 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
     for (const kpi of kpis) {
       const progressDivisionType: "Cumulative" | "Standalone" =
         kpi.divisionType === "Standalone" ? "Standalone" : "Cumulative";
-      const stdProgress =
-        progressDivisionType === "Standalone"
-          ? computeQtd(kpi, qtdWeek, "Standalone", weekCount)
-          : null;
-      const progressAchieved =
-        stdProgress != null ? (stdProgress.qtdAchieved ?? 0) : (kpi.qtdAchieved ?? 0);
-      // Goal priority mirrors the "Quarterly Goal" column shown on-screen
-      // (quarterlyGoal ?? target ?? qtdGoal) so this Progress column agrees
-      // with the Dashboard KPICard and the Log modal's Overall Progress —
-      // see kpiStats.ts resolveProgressOverall for the same fallback chain.
-      const progressGoal = kpi.quarterlyGoal ?? kpi.target ?? kpi.qtdGoal ?? 0;
+      // Overall Quarter Progress = Achieved ÷ Quarterly Goal, delegated to the
+      // SAME `resolveProgressOverall` the Dashboard KPI Overview card headline
+      // uses, so the two surfaces can never drift again.
+      //
+      // This column previously read the raw `kpi.qtdAchieved` DB column for
+      // Cumulative KPIs. That column is stamped by `recalcKPI` in
+      // `api/kpi/[id]/weekly/batch/route.ts`, which sums EVERY entered week
+      // including the in-progress one — so the moment a user logged the
+      // current week the table showed (e.g.) 40% while the dashboard card
+      // showed 29% for the same KPI. `resolveProgressOverall` goes through
+      // `computeQtd`, which stops at the last COMPLETED week. Standalone is
+      // unchanged (it already routed through computeQtd).
+      const { achieved: progressAchieved, goal: progressGoal } =
+        resolveProgressOverall(kpi, qtdWeek, weekCount);
       const progressPct = progressGoal > 0 ? (progressAchieved / progressGoal) * 100 : 0;
       const ownerName = kpi.owner_user ? `${kpi.owner_user.firstName} ${kpi.owner_user.lastName}` : kpi.owner;
       const weekMap: Record<number, WeeklyValue> = {};
       (kpi.weeklyValues ?? []).forEach(wv => { weekMap[wv.weekNumber] = wv; });
       const hasAnyWeeklyValue = Object.values(weekMap).some((wv) => wv?.value != null);
-      const progressBadge = kpi.qtdAchieved != null
+      // Gate on `hasAnyWeeklyValue`, matching the dashboard card: a KPI with no
+      // logged week renders the neutral gray state instead of a colored 0% bar.
+      // (The old gate was `kpi.qtdAchieved != null`, a server column that is 0
+      // — not null — for untouched KPIs, so they rendered as red 0%.)
+      const progressBadge = hasAnyWeeklyValue
         ? getProgressBadgeColors(progressAchieved, progressGoal, hasAnyWeeklyValue, kpi.reverseColor ?? false)
         : { bar: "bg-gray-300", text: "text-gray-500", label: "—" };
       map.set(kpi.id, {
@@ -476,14 +483,14 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
               // returns the same color thresholds with readable-on-white
               // text tones (text-blue-700 etc.).
               //
-              // Standalone KPIs: server-stamped `kpi.qtdAchieved` is a
-              // cumulative SUM regardless of divisionType, so it shows
-              // (e.g.) 341% on a Standalone KPI whose true progress is
-              // ~113%. Re-derive via `computeQtd(...,"Standalone")` —
-              // that returns avg / kpi.target per the spec. Cumulative
-              // path stays byte-identical to before.
-              // Precomputed once in `rowDerived` (see above) — output identical,
-              // just not recomputed for every row on unrelated re-renders.
+              // The percentage itself is Overall Quarter Progress
+              // (Achieved ÷ Quarterly Goal) via `resolveProgressOverall` —
+              // the same helper the Dashboard KPI Overview card headline
+              // uses. Neither division type reads the server-stamped
+              // `kpi.qtdAchieved` any more; both re-derive from
+              // `weeklyValues` through the last completed week.
+              // Precomputed once in `rowDerived` (see above) so it isn't
+              // recomputed for every row on unrelated re-renders.
               const { progressDivisionType, progressPct, ownerName, weekMap, progressBarBg, progressTextColor } =
                 rowDerived.get(kpi.id)!;
 

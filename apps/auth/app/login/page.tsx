@@ -59,7 +59,7 @@ export default function LoginPage() {
       // (no hardcoded URL — set it in each env's .env). Scoped to this page
       // only — the forgot-password and invitation pages leave backUrl unset,
       // so their Back button keeps its default "/" behavior.
-      backUrl={requireProdEnv("NEXT_PUBLIC_LANDING_URL").replace(/\/+$/, "")}
+     backUrl={requireProdEnv("NEXT_PUBLIC_LAUNCHER_URL", "http://localhost:3001")}
       hardNavigate
     />
   );

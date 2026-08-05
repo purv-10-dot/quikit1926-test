@@ -234,26 +234,43 @@ export function kpiOverallPercent(
 }
 
 /**
- * Pace achieved/goal pair — the FIRST bar on the dashboard KPI Overview card.
+ * QTR achieved/goal pair — the FIRST bar on the dashboard KPI Overview card
+ * (labelled "QTR"; called "Pace" before the 2026-08 rename).
  *
- * Cumulative — unchanged: "how much of the full quarterly target is due by
- * now" (Σ weekly targets through last week, vs. the full quarterly goal). A
- * time/schedule-based reference line, independent of what was achieved.
+ * ONE concept, expressed per division type:
  *
- * Standalone — the quarterly target is the SAME flat number every week, so
- * that schedule ratio always resolves to `target / target = 100%` and the
- * bar was permanently pinned green regardless of performance (the target
- * never "accrues" the way it does for Cumulative). Standalone instead paces
- * against a full-quarter ceiling (`target × weeksPerQuarter`) using the
- * achieved values banked so far:
+ *     QTR % = achieved-to-date ÷ the full quarter's potential
  *
- *   Pace % = Σ achieved[1..currentWeek-1] / (target × weeksPerQuarter) × 100
+ * "Full quarter's potential" is the only part that differs, because the two
+ * division types define their target differently:
  *
- * This is deliberately a DIFFERENT number from the QTD bar
- * (`resolveProgressQtd`, which averages achieved ÷ elapsed weeks): Pace
- * reads as "how much of the whole quarter's potential is banked" (can't hit
- * 100% until every week has been filled at-or-above target), while QTD reads
- * as "what's my average per-week rate." Both are legitimate, distinct views.
+ *   Cumulative — weekly targets add up to the quarterly goal, so the potential
+ *     IS the quarterly goal:
+ *
+ *       QTR % = Σ achieved[1..currentWeek-1] / quarterlyGoal × 100
+ *
+ *     This is `resolveProgressOverall`, i.e. the same pair as the card's
+ *     headline figure. It replaced the previous definition (Σ weekly targets
+ *     due so far ÷ quarterly goal), which was a pure calendar line: it ignored
+ *     performance entirely, so every Cumulative KPI in a quarter showed roughly
+ *     the same QTR no matter how it was doing. See git history if that
+ *     schedule reference is ever wanted back.
+ *
+ *   Standalone — the target is the SAME flat number every week and never
+ *     accrues, so the quarterly goal is a per-WEEK number. The full-quarter
+ *     potential is therefore `target × weeksPerQuarter`:
+ *
+ *       QTR % = Σ achieved[1..currentWeek-1] / (target × weeksPerQuarter) × 100
+ *
+ *     Unchanged by the 2026-08 revision.
+ *
+ * Either way QTR can only reach 100% once the whole quarter's worth of work is
+ * banked. It stays a DIFFERENT number from the QTD bar (`resolveProgressQtd`),
+ * which divides by the goal due SO FAR and so answers "am I ahead or behind
+ * schedule right now" rather than "how much of the quarter is done".
+ *
+ * Note for Cumulative KPIs this now equals the card's headline percentage by
+ * construction. That redundancy is intentional and product-approved.
  */
 export function resolvePace(
   kpi: KPIRow,
@@ -264,9 +281,7 @@ export function resolvePace(
     kpi.divisionType === "Standalone" ? "Standalone" : "Cumulative";
 
   if (divisionType === "Cumulative") {
-    const { goal: qtdGoal } = resolveProgressQtd(kpi, currentWeek, weeksPerQuarter);
-    const { goal } = resolveProgressOverall(kpi, currentWeek, weeksPerQuarter);
-    return { achieved: qtdGoal, goal };
+    return resolveProgressOverall(kpi, currentWeek, weeksPerQuarter);
   }
 
   if (currentWeek == null || currentWeek <= 1) return { achieved: 0, goal: 0 };

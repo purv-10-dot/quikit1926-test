@@ -5,6 +5,8 @@ import type { KPIRow } from "@/lib/types/kpi";
 import type { Team } from "@/lib/hooks/useTeams";
 import { useCanManageTeamKPI } from "@/lib/hooks/useCanManageTeamKPI";
 import { progressColor, fmtCompactBy, type NumberFormat } from "@/lib/utils/kpiHelpers";
+import { useQtdReferenceWeek, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
+import { kpiOverallPercent } from "../../components/kpiStats";
 import { KPITable } from "../../components/KPITable";
 import { KPIModal } from "../../components/KPIModal";
 import { TEAM_HIDDEN_COLS } from "../../hooks/useTableColumns";
@@ -39,17 +41,29 @@ export function TeamSection({ team, kpis, year, quarter, onRefresh, defaultExpan
 
   const canManage = useCanManageTeamKPI(team.id);
 
-  // Client-side summary — count, average progress, and goal totals
+  // Weeks in this quarter (Custom Quarter Settings) + the QTD reference week —
+  // the same pair KPITable feeds into its Progress column, so the header
+  // average below is the mean of the exact percentages rendered on the rows.
+  const weekCount = useQuarterWeekCount(year, quarter);
+  const qtdWeek = useQtdReferenceWeek(year, quarter);
+
+  // Client-side summary — count, average progress, and goal totals.
+  //
+  // `avgProgress` averages `kpiOverallPercent` (Achieved ÷ Quarterly Goal),
+  // NOT the server-stamped `k.progressPercent`. That DB column is derived from
+  // the raw `qtdAchieved` aggregate, which counts the in-progress week — so
+  // the header bar read a few points higher than the rows beneath it and than
+  // the Dashboard KPI card. See kpiStats.ts `resolveProgressOverall`.
   const summary = useMemo(() => {
     const count = kpis.length;
     if (count === 0) return { count: 0, avgProgress: 0, totalGoal: 0, totalAchieved: 0 };
     const avgProgress = Math.round(
-      kpis.reduce((sum, k) => sum + (k.progressPercent || 0), 0) / count
+      kpis.reduce((sum, k) => sum + kpiOverallPercent(k, qtdWeek, weekCount), 0) / count
     );
     const totalGoal = kpis.reduce((sum, k) => sum + (k.qtdGoal ?? 0), 0);
     const totalAchieved = kpis.reduce((sum, k) => sum + (k.qtdAchieved ?? 0), 0);
     return { count, avgProgress, totalGoal, totalAchieved };
-  }, [kpis]);
+  }, [kpis, qtdWeek, weekCount]);
 
   const progColors = progressColor(summary.avgProgress);
   const accent = team.color || "#0066cc";

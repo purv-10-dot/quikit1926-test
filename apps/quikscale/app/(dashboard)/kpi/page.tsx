@@ -12,7 +12,7 @@ import { KPIListParams } from "@/lib/schemas/kpiSchema";
 import {
   getFiscalYear, getFiscalQuarter, fiscalYearLabel,
 } from "@/lib/utils/fiscal";
-import { useCurrentWeek, useCurrentQuarter, useWeekDateRange, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useCurrentQuarter, useWeekDateRange, useQuarterWeekCount, useQtdReferenceWeek } from "@/lib/hooks/useCurrentWeek";
 import { useNumberFormat } from "@/lib/hooks/useFeatureFlags";
 import { KPITable } from "./components/KPITable";
 import { KPIModal } from "./components/KPIModal";
@@ -28,6 +28,7 @@ import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreAct
 import { runExport } from "@/lib/export/xlsx";
 import { getKPIs } from "@/lib/services/kpiService";
 import { computeWeeklyGoal } from "@/lib/utils/kpiHelpers";
+import { kpiOverallPercent } from "./components/kpiStats";
 import { GlobalExportModal, type GlobalExportSelection } from "@/components/export/GlobalExportModal";
 import { downloadExport } from "@/lib/exports/downloadExport";
 import { UnreadCountsProvider } from "@/components/audit/UnreadCountsProvider";
@@ -203,6 +204,9 @@ export default function IndividualKPIPage() {
 
   // Hidden columns — now driven through Manage Columns modal via TablePrefs
   const weekCount = useQuarterWeekCount(filters.year ?? FISCAL_YEAR, filters.quarter ?? FISCAL_QUARTER);
+  // QTD reference week for the export's Progress column — same input KPITable
+  // feeds `resolveProgressOverall`, so the sheet matches the on-screen column.
+  const qtdWeek = useQtdReferenceWeek(filters.year ?? FISCAL_YEAR, filters.quarter ?? FISCAL_QUARTER);
   const allTableCols = [...ALL_STATIC_COLS, ...weeksArray(weekCount).map(w => `week${w}`)];
   const tablePrefs = useTablePrefs("kpi");
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set(tablePrefs.hiddenCols));
@@ -257,7 +261,10 @@ export default function IndividualKPIPage() {
               const wg = computeWeeklyGoal(k.weeklyTargets, k.target, k.qtdGoal, fiscalWeek ?? 1, weekCount);
               return wg > 0 ? wg : "";
             }
-            case "progress": return typeof k.progressPercent === "number" ? `${k.progressPercent.toFixed(1)}%` : "";
+            // Overall Quarter Progress (Achieved ÷ Quarterly Goal) — recomputed
+            // rather than read off the stale server `progressPercent` column so
+            // the export matches the table + Dashboard card. See kpiStats.ts.
+            case "progress": return `${kpiOverallPercent(k, qtdWeek, weekCount).toFixed(1)}%`;
             case "description": return k.description ?? "";
             default: return "";
           }

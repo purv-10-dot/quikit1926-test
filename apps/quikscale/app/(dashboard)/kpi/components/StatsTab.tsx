@@ -18,7 +18,7 @@
 
 import type { KPIRow } from "@/lib/types/kpi";
 import { fmt, formatScaledKpiValue, getProgressBadgeColors } from "@/lib/utils/kpiHelpers";
-import { computeKPIStats, computeQtd, weeklyGoalTile } from "./kpiStats";
+import { computeKPIStats, computeQtd, weeklyGoalTile, resolveProgressOverall } from "./kpiStats";
 import { useQtdReferenceWeek, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
 
 export function StatsTab({ kpi }: { kpi: KPIRow }) {
@@ -62,23 +62,32 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
   // totals when the reference week is unresolvable.
   const { qtdGoal, qtdAchieved } = computeQtd(kpi, qtdWeek, divisionType, weekCount);
 
-  // Overall Progress — for Standalone, mirror the computed qtdAchieved (the
-  // documented average) because the server-stamped `kpi.qtdAchieved` is a
-  // cumulative SUM unconditionally and would show 341% on a Standalone KPI
-  // whose true progress is 113%. For Cumulative, preserve today's behavior
-  // (read the row's qtdAchieved which includes the in-progress week — slightly
-  // different denominator from the QTD tile but unchanged from before).
-  const achieved =
-    divisionType === "Standalone"
-      ? (qtdAchieved ?? 0)
-      : (kpi.qtdAchieved ?? 0);
+  // Overall Progress = Achieved ÷ Quarterly Goal, via the SAME
+  // `resolveProgressOverall` the Dashboard KPI Overview card headline and both
+  // KPI grids use — one helper, one definition of "progress", every surface.
+  //
+  // Cumulative used to read the server-stamped `kpi.qtdAchieved` here. That
+  // column (stamped by `recalcKPI` in api/kpi/[id]/weekly/batch/route.ts) sums
+  // EVERY entered week including the in-progress one, so this panel printed
+  // 27% (214 / 800) while the QTD Achieved tile a few pixels below it printed
+  // 162 / 236 — two numbers from the same panel disagreeing. `computeQtd`,
+  // which `resolveProgressOverall` wraps, stops at the last COMPLETED week.
+  //
+  // Standalone is unchanged: it already routed through `computeQtd` (the
+  // documented per-week average), because the raw column is a cumulative SUM
+  // regardless of division type and would show 341% where 113% is correct.
+  const { achieved } = resolveProgressOverall(kpi, qtdWeek, weekCount);
   // Badge-colors helper — runs the canonical `getColorByPercentage`
   // internally and maps the result to READABLE-on-white text tones plus
   // a human status label. Use it because the percentage label here sits
   // on a white panel (not a colored cell).
   const pct = target > 0 ? (achieved / target) * 100 : 0;
   const hasAnyWeeklyValue = (kpi.weeklyValues ?? []).some((wv) => wv.value != null);
-  const colors = kpi.qtdAchieved != null
+  // Gate on `hasAnyWeeklyValue`, matching the grids and the dashboard card: a
+  // KPI with no logged week renders the neutral gray state. (The old gate was
+  // `kpi.qtdAchieved != null`, a server column that is 0 — not null — for
+  // untouched KPIs, so they rendered as a red 0%.)
+  const colors = hasAnyWeeklyValue
     ? getProgressBadgeColors(achieved, target, hasAnyWeeklyValue, kpi.reverseColor ?? false)
     : { bar: "bg-gray-300", text: "text-gray-500", label: "—" };
 

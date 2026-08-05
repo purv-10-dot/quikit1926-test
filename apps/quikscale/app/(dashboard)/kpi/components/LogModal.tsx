@@ -14,7 +14,7 @@ import { WeeklyScroller } from "./WeeklyScroller";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { weekEditState, isWeekInPast } from "@/lib/utils/weekLock";
 import { UnitSelect } from "./UnitSelect";
-import { useCurrentWeek, useWeekLabels, useQuarterWeekCount, useQuarterPosition } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useWeekLabels, useQuarterWeekCount, useQuarterPosition, useQtdReferenceWeek } from "@/lib/hooks/useCurrentWeek";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 import { humanizeApiError } from "@/lib/utils/humanizeError";
 import {
@@ -31,6 +31,7 @@ import {
 } from "./kpiModalHelpers";
 import { WeekRow } from "./WeekRow";
 import { StatsTab } from "./StatsTab";
+import { kpiOverallPercent } from "./kpiStats";
 import { QuarterField } from "./QuarterField";
 import { User as UserIcon, Calendar, CalendarDays } from "lucide-react";
 
@@ -1193,6 +1194,9 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
   const headerCurrentWeek = useCurrentWeek(kpi.year, kpi.quarter);
   const headerQuarterPos = useQuarterPosition(kpi.year, kpi.quarter);
   const weekCount = useQuarterWeekCount(kpi.year, kpi.quarter);
+  // QTD reference week — past/current/future aware. Feeds the header progress
+  // badge below so it matches StatsTab's Overall Progress panel exactly.
+  const headerQtdWeek = useQtdReferenceWeek(kpi.year, kpi.quarter);
   // Past-week edit flag — when off (default), the batch endpoint will reject
   // any row with weekNumber < currentWeek. The save handler uses this to
   // skip past weeks instead of sending them and getting a confusing
@@ -1563,9 +1567,6 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
     ? (parseFloat(editForm.target) || 0) *
       (editForm.measurementUnit === "Currency" ? getMultiplier(editForm.currency, editForm.targetScale) : 1)
     : null;
-  const liveProgressPercent = liveFormTarget != null && liveFormTarget > 0
-    ? ((kpi.qtdAchieved ?? 0) / liveFormTarget) * 100
-    : kpi.progressPercent ?? 0;
   const liveWeeklyTargets = Object.fromEntries(
     Object.entries(editForm.weeklyBreakdown).map(([k, v]) => [k, parseFloat(v) || 0])
   );
@@ -1577,9 +1578,18 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
     // shows the new value immediately instead of the old saved one.
     quarterlyGoal: liveFormTarget ?? kpi.quarterlyGoal,
     weeklyTargets: liveWeeklyTargets as unknown as typeof kpi.weeklyTargets,
-    progressPercent: liveProgressPercent,
     status: editForm.status,
   };
+  // Header badge % — Overall Quarter Progress (Achieved ÷ Quarterly Goal) via
+  // the same helper as StatsTab's Overall Progress panel, the KPI grids and the
+  // Dashboard card. Derived from `statsKpi` (not `kpi`) so an unsaved target
+  // edit updates the badge live, exactly as before.
+  //
+  // It used to be `(kpi.qtdAchieved ?? 0) / liveFormTarget` — the raw server
+  // column, which counts the in-progress week — so the badge read 27% while the
+  // Stats panel's own QTD tile read 162/236. See kpiStats.resolveProgressOverall.
+  const liveProgressPercent = kpiOverallPercent(statsKpi, headerQtdWeek, weekCount);
+  statsKpi.progressPercent = liveProgressPercent;
 
   const colors = progressColor(liveProgressPercent);
 
