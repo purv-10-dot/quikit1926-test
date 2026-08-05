@@ -16,7 +16,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ToastProvider } from "@/components/ui";
 import type { ChannelListItem } from "@/lib/shared";
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -33,11 +33,14 @@ vi.mock("@/lib/api", async (importOriginal) => ({
 vi.mock("./MessageList", async () => {
   const { useEffect } = await import("react");
   return {
+    // Real testid, not a "stub-" name: the DOM-count assertion below checks
+    // the actual contract (data-testid="message-list", per MessageList.tsx)
+    // so it can't pass by accident against a stub-only identifier.
     MessageList: () => {
       useEffect(() => {
         mounts.push("MessageList");
       }, []);
-      return <div data-testid="stub-messagelist" />;
+      return <div data-testid="message-list" />;
     },
   };
 });
@@ -132,6 +135,22 @@ describe("ConversationView sibling keys", () => {
     rerender(<Harness cid="chan-2" loading={false} />);
     expect(mounts).toEqual(["MessageList", "Composer", "MessageList", "Composer"]);
     expect(duplicateKeyWarnings()).toEqual([]);
+  });
+
+  it("exactly one message list is mounted at a time, across a channel switch", () => {
+    // This is the fix's actual user-visible invariant (confirmed on UAT via
+    // DevTools: two `div.qc-msg-scroll[data-testid=message-list]` siblings
+    // stacked under one `section.qc-pane-convo`, the old channel's list never
+    // unmounting) — not just "no console.error". A regression that produced a
+    // duplicate MOUNT without tripping React's key warning would pass the two
+    // tests above but must fail this one. No composer assertion alongside:
+    // Composer's root has no stable testid (checked, not assumed) to key it
+    // by.
+    const { rerender } = render(<Harness cid="chan-1" loading={false} />);
+    expect(screen.getAllByTestId("message-list")).toHaveLength(1);
+
+    rerender(<Harness cid="chan-2" loading={false} />);
+    expect(screen.getAllByTestId("message-list")).toHaveLength(1);
   });
 
   it("does not remount the Composer when messages finish loading", () => {
