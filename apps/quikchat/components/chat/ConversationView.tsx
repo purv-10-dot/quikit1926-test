@@ -216,6 +216,17 @@ export function ConversationView({
   // AI chats have no single peer. The query re-enables on its own when presence
   // flips the peer offline. Privacy is resolved server-side — this is just a
   // string or null.
+  //
+  // NO `staleTime`: the default 0 is load-bearing here, not an oversight. This
+  // query's subscriber switches off and on with presence, and the answer is
+  // privacy-gated — the peer can revoke `shareLastSeen` with NO event reaching us,
+  // because a privacy-only PUT deliberately skips the presence fan-out. Any
+  // non-zero window let a re-subscribing observer be served a cached answer that
+  // privacy had since changed, which is how a 60s cache became an indefinite leak
+  // (nothing refetches on staleness alone). It also makes the fix in
+  // ChatWorkspace's presence handlers order-independent: an invalidation that
+  // lands while this query is still disabled only marks it stale, and stale is
+  // enough to force the refetch when presence re-enables it a render later.
   const dmPeerId =
     channel.type === "dm"
       ? channel.members.find((m) => m.id !== currentUserId)?.id

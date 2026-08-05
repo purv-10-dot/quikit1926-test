@@ -32,6 +32,7 @@ import {
   applyDeliveredEvent,
   applyReadEvent,
   bumpChannelList,
+  dmChannelIdsWithMember,
   makeTempId,
   markChannelRead,
   mergeMessageEvent,
@@ -305,6 +306,36 @@ export function ChatWorkspace({
     [qc],
   );
 
+  /**
+   * Drop the cached DM last-seen for a user whose presence just changed, so the
+   * header re-reads it from the server.
+   *
+   * MUST go through the server route: `GET /api/channels/:id/last-seen` is the
+   * only place `getEffectiveLastSeen` runs, and therefore the only place
+   * `appear_offline` and the mutual `shareLastSeen` opt-in are applied. The
+   * gateway's offline event does carry a `lastSeen`, but it is RAW — it has passed
+   * through none of those rules — so rendering it (or the copy `applyPresence`
+   * parks in the presence store) would leak exactly what this feature withholds.
+   * Invalidate and refetch; never read the event's timestamp.
+   *
+   * Reads the channel list out of the query cache instead of closing over state:
+   * `qc` is stable, so this stays safe inside the socket effect whose deps are
+   * `[realtimeUrl]`. When the list isn't cached yet nothing is invalidated, which
+   * is harmless — the query's default `staleTime` of 0 means any later
+   * subscription refetches anyway.
+   */
+  const invalidateLastSeenFor = useCallback(
+    (userId: string) => {
+      if (!userId || userId === currentUserId) return;
+      const list = qc.getQueryData<ChannelList>(["channels"]);
+      if (!list) return;
+      for (const channelId of dmChannelIdsWithMember(list, userId)) {
+        void qc.invalidateQueries({ queryKey: ["last-seen", channelId] });
+      }
+    },
+    [qc, currentUserId],
+  );
+
   // Latest event handlers + notifications, read through a ref by the socket's
   // stable wrappers. This keeps the socket effect's deps at `[realtimeUrl]` so
   // the socket is created ONCE per session: previously `notifications` (a
@@ -357,10 +388,19 @@ export function ChatWorkspace({
     client.on("channel_deleted", (d) =>
       handlersRef.current.onChannelDeleted(d as { channelId: string }),
     );
-    client.on("presence", (d) => setPresence((s) => applyPresence(s, d as PresenceEvent)));
-    client.on("presence_status", (d) =>
-      setPresence((s) => applyStatus(s, d as PresenceStatusEvent)),
-    );
+    client.on("presence", (d) => {
+      const evt = d as PresenceEvent;
+      setPresence((s) => applyPresence(s, evt));
+      invalidateLastSeenFor(evt.userId);
+    });
+    client.on("presence_status", (d) => {
+      const evt = d as PresenceStatusEvent;
+      setPresence((s) => applyStatus(s, evt));
+      // A durable status change moves last-seen too: `appear_offline` is the
+      // first rule in getEffectiveLastSeen, and it is set while ONLINE, so this
+      // event is the only signal that the answer changed.
+      invalidateLastSeenFor(evt.userId);
+    });
     client.on("presence_snapshot", (d) =>
       setPresence((s) => applySnapshot(s, d as PresenceSnapshot)),
     );
@@ -377,7 +417,7 @@ export function ChatWorkspace({
       clientRef.current = null;
       client.disconnect();
     };
-  }, [realtimeUrl]);
+  }, [realtimeUrl, invalidateLastSeenFor]);
 
   // Expire stale typing indicators (no explicit "stop" is ever sent).
   useEffect(() => {
