@@ -62,6 +62,32 @@ All apps share **one** Postgres database (`quikit_dev` in dev). Schemas are name
 
 Encode special chars in the password (e.g. `@` → `%40`). Example: `postgresql://postgres:sa%40123@localhost:5432/quikit_dev`.
 
+#### Neon: always set `connect_timeout`
+
+**Every Neon URL (`DATABASE_URL`, `DATABASE_URL_DIRECT`, `MIGRATION_DATABASE_URL`) must carry `connect_timeout=20`.**
+
+```
+postgresql://…@ep-xxxx-pooler.<region>.aws.neon.tech/quikit?sslmode=require&channel_binding=require&connect_timeout=20
+```
+
+Neon suspends the compute when idle. The first query after a suspend pays a cold
+start, and a measured handshake against our instance takes **~4–5s** — right on
+Prisma's default `connect_timeout` of **5s**. When the wake-up is a shade slower
+Prisma throws:
+
+```
+PrismaClientInitializationError: Can't reach database server at `ep-…-pooler.…neon.tech:5432`
+```
+
+Nothing is actually wrong with the database — the port is open and the next
+request usually succeeds. But because the app-access gate in
+`packages/auth/app-access.ts` runs in every app's `(dashboard)/layout.tsx`
+server component, a single missed handshake takes out the whole dashboard with
+the generic "Something went wrong" boundary, which reads like an app bug.
+
+This applies to local `.env.local` **and** the Vercel project env vars — the
+param has to be on the deployed URLs too, not just dev.
+
 ### 2.2 NextAuth (shared session)
 
 | Variable | Required | Purpose |

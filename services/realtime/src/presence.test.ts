@@ -1,6 +1,13 @@
 import RedisMock from "ioredis-mock";
 import { beforeEach, describe, expect, it } from "vitest";
-import { markOffline, markOnline, onlineUserIds, refresh, type PresenceRedis } from "./presence";
+import {
+  lastSeenKey,
+  markOffline,
+  markOnline,
+  onlineUserIds,
+  refresh,
+  type PresenceRedis,
+} from "./presence";
 
 const ORG = "org1";
 const TTL = 30_000;
@@ -40,6 +47,22 @@ describe("markOffline", () => {
     expect(Number.isNaN(Date.parse(r.lastSeen!))).toBe(false);
     expect(await redis.exists(`presence:${ORG}:u1`)).toBe(0);
     expect(await redis.get(`presence:lastseen:${ORG}:u1`)).toBe(r.lastSeen);
+  });
+});
+
+// Cross-package contract. apps/quikchat READS this key straight off the same
+// Redis (lib/server/presence-redis.ts) and cannot import this module, so the
+// literal format is duplicated there. This test is the tripwire: change the
+// format here and it fails, pointing at the grep you owe the other package.
+describe("lastSeenKey", () => {
+  it("has the exact format apps/quikchat reads", () => {
+    expect(lastSeenKey("org1", "u1")).toBe("presence:lastseen:org1:u1");
+  });
+
+  it("is the key markOffline actually writes", async () => {
+    await markOnline(redis, ORG, "u1", "s1", TTL);
+    const r = await markOffline(redis, ORG, "u1", "s1");
+    expect(await redis.get(lastSeenKey(ORG, "u1"))).toBe(r.lastSeen);
   });
 });
 

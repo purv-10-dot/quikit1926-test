@@ -35,7 +35,10 @@ export {
   PhoneMissed,
   Voicemail,
   Headphones,
-  LifeBuoy,
+  // Voice typing (dictation). A waveform, deliberately NOT `Mic` — the mic
+  // button stages a voice-note attachment, this one types text into the editor,
+  // and one icon for both outcomes would be genuinely ambiguous.
+  AudioLines,
   Play,
   Pause,
   CornerUpRight,

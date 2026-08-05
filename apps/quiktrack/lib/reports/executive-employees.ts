@@ -169,12 +169,22 @@ export async function loadExecutiveEmployees(args: {
     return row;
   }
 
+  // With a role filter active, label each employee with the role they were
+  // matched on — a user who is Contributor in one project and Space Admin in
+  // another must not show as "Space Admin" in a Contributor-filtered table.
+  // Keeps first-seen behaviour when no role filter is applied. Mirrors the
+  // same rule in /api/reports/executive.
+  const wantedRoleKeys = new Set(teamFilter.map((s) => s.toLowerCase()));
   const userTeam = new Map<string, string>();
   const teamLabel = new Map<string, string>();
   for (const tm of teamMembers) {
     const key = tm.projectRole.name.toLowerCase();
-    if (!userTeam.has(tm.userId)) userTeam.set(tm.userId, key);
     if (!teamLabel.has(key)) teamLabel.set(key, tm.projectRole.name);
+    const current = userTeam.get(tm.userId);
+    const matchesFilter = wantedRoleKeys.has(key);
+    if (current === undefined || (matchesFilter && !wantedRoleKeys.has(current))) {
+      userTeam.set(tm.userId, key);
+    }
   }
 
   for (const t of createdIssues) {

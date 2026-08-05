@@ -7,6 +7,7 @@ import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import type { MentionRefInput } from "@/lib/shared";
 import {
+  AudioLines,
   Bold,
   Check,
   Code,
@@ -31,6 +32,14 @@ import {
   voiceFileExtension,
   type VoiceRecording,
 } from "@/lib/use-voice-recorder";
+import {
+  getSpeechLang,
+  setSpeechLang,
+  SPEECH_LANG_LABEL,
+  SPEECH_LANG_NAME,
+  useSpeechToText,
+  type SpeechLang,
+} from "@/lib/use-speech-to-text";
 
 // Full emoji picker (search + categories + skin tones), lazy-loaded so the heavy
 // emoji dataset only ships when the user actually opens the picker.
@@ -280,6 +289,83 @@ export function Composer({
     editor?.setEditable(!disabled);
   }, [editor, disabled]);
 
+  // ---- Voice typing (dictation) ----
+  // Chosen locale is read after mount (localStorage is unavailable during SSR).
+  const [speechLang, setSpeechLangState] = useState<SpeechLang>("en-IN");
+  useEffect(() => {
+    setSpeechLangState(getSpeechLang());
+  }, []);
+  // The live interim span's document range. A ref, not state: recognition
+  // callbacks outlive the render that created them.
+  const interimRangeRef = useRef<{ from: number; to: number } | null>(null);
+  const speech = useSpeechToText({ onResult: applyDictation });
+  const listening = speech.state === "listening";
+
+  /**
+   * Put a dictation result into the document.
+   *
+   * Interim results REPLACE the previous interim span rather than appending:
+   * `insertContentAt` with a *range* is a replace, and that is the whole
+   * anti-duplication mechanism. A final result replaces the span one last time,
+   * appends a separating space, and forgets the range — so the words become
+   * ordinary content and the next utterance opens a fresh span.
+   */
+  function applyDictation(text: string, isFinal: boolean) {
+    if (!editor) return;
+    const content = isFinal ? `${text} ` : text;
+    const prev = interimRangeRef.current;
+    // A stale range (the user typed or moved the caret mid-utterance, or the
+    // editor was cleared) must never replace unrelated text — fall back to
+    // inserting at the caret.
+    const usable =
+      !!prev && prev.from <= prev.to && prev.to <= editor.state.doc.content.size;
+    const from = usable ? prev!.from : editor.state.selection.from;
+    if (usable) {
+      editor.chain().focus().insertContentAt({ from: prev!.from, to: prev!.to }, content).run();
+    } else {
+      editor.chain().focus().insertContent(content).run();
+    }
+    interimRangeRef.current = isFinal ? null : { from, to: from + content.length };
+  }
+
+  function startDictation() {
+    // Mutual exclusion, reusing the existing guards. Note this does NOT require
+    // `canAttach`: dictation produces text, so it needs no channel or upload
+    // capability — unlike the voice-note button beside it.
+    if (disabled || uploading || recording || pending) return;
+    interimRangeRef.current = null;
+    speech.start(speechLang);
+  }
+
+  /** Graceful: a final result still in flight lands before the session ends. */
+  function stopDictation() {
+    speech.stop();
+  }
+
+  // Session over (idle or error) → the tracked span is meaningless. Runs AFTER
+  // any final result, which clears the ref itself, so this is just the backstop.
+  useEffect(() => {
+    if (speech.state !== "listening") interimRangeRef.current = null;
+  }, [speech.state]);
+
+  function toggleSpeechLang() {
+    const next: SpeechLang = speechLang === "en-IN" ? "hi-IN" : "en-IN";
+    setSpeechLangState(next);
+    setSpeechLang(next);
+  }
+
+  // Surface a dictation failure once, mirroring the recorder's pattern above.
+  const reportedSpeechErrorRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (speech.state !== "error" || !speech.error) return;
+    if (reportedSpeechErrorRef.current === speech.error) return;
+    reportedSpeechErrorRef.current = speech.error;
+    toast.error({ title: "Voice typing stopped", body: speech.error });
+  }, [speech.state, speech.error, toast]);
+  useEffect(() => {
+    if (speech.state !== "error") reportedSpeechErrorRef.current = undefined;
+  }, [speech.state]);
+
   // Load the emoji dataset the first time the picker opens (keeps it off the
   // initial bundle).
   useEffect(() => {
@@ -362,6 +448,14 @@ export function Composer({
   function submit() {
     // `recording` blocks Enter-to-send too: stop or cancel the recording first.
     if (disabled || uploading || recording || !editor) return;
+    // Dictation does NOT block Send — the dictated text IS the message, unlike a
+    // voice note, which is a competing payload. `cancel()` (not `stop()`) on
+    // purpose: a final result arriving after `clearContent()` would drop stray
+    // words into the now-empty composer. What you see is what gets sent.
+    if (listening) {
+      speech.cancel();
+      interimRangeRef.current = null;
+    }
     // A staged attachment sends as a Media message (with the typed caption).
     if (pending) {
       void sendPending();
@@ -458,6 +552,26 @@ export function Composer({
           </IconButton>
         </div>
       ) : null}
+      {listening ? (
+        /* Same presentational shape as the recording bar above — live dot,
+           label, trailing action — so the two "something is capturing" states
+           read identically. */
+        <div className="qc-voice-bar" data-testid="dictation-bar" role="status" aria-live="off">
+          <span className="qc-voice-bar__dot" aria-hidden />
+          <span className="qc-voice-bar__label">
+            Listening · {SPEECH_LANG_NAME[speechLang]} only
+          </span>
+          {/* Deliberately in the UI, not just the code: the browser streams this
+              audio to its vendor's speech service. */}
+          <span className="qc-speech-note qc-truncate">
+            Audio goes to your browser&apos;s speech service
+          </span>
+          <span className="qc-voice-bar__spacer" />
+          <IconButton label="Stop voice typing" onClick={stopDictation}>
+            <Check size={16} />
+          </IconButton>
+        </div>
+      ) : null}
       {pending ? (
         <div className="qc-attach-chip" data-testid="attach-preview">
           {/* A voice note gets a mic pill + its recorded length, never a file
@@ -540,7 +654,7 @@ export function Composer({
         />
         <IconButton
           label="Attach file"
-          disabled={!canAttach || uploading || !!pending || recording}
+          disabled={!canAttach || uploading || !!pending || recording || listening}
           onClick={() => fileRef.current?.click()}
         >
           <Paperclip size={18} />
@@ -550,11 +664,48 @@ export function Composer({
         {voice.supported ? (
           <IconButton
             label="Record voice message"
-            disabled={!canAttach || uploading || !!pending}
+            disabled={!canAttach || uploading || !!pending || listening}
             onClick={() => void startRecording()}
           >
             <Mic size={18} />
           </IconButton>
+        ) : null}
+        {/* Same hide-don't-disable rule as the mic button: Firefox and Opera
+            expose no SpeechRecognition at all. Unlike the mic button this needs
+            no `canAttach` — dictation yields text, not an attachment. */}
+        {speech.supported ? (
+          <>
+            {/* A toggle, so the accessible NAME stays put and `aria-pressed`
+                carries the on/off state. Renaming it to "Stop voice typing"
+                while active would both collide with the listening bar's button
+                (two controls, one name) and make the state a naming quirk
+                instead of something assistive tech can query. */}
+            <IconButton
+              label={`Voice typing (${SPEECH_LANG_NAME[speechLang]})`}
+              aria-pressed={listening}
+              data-active={listening}
+              disabled={disabled || uploading || !!pending || recording}
+              onClick={() => (listening ? stopDictation() : startDictation())}
+            >
+              <AudioLines size={18} />
+            </IconButton>
+            {/* Two-state locale pill. Text, not an icon: an icon can't show
+                WHICH language is armed, and SpeechRecognition takes exactly one
+                locale per session — there is no mixed mode to represent. Locked
+                while listening because the locale can't change mid-session. */}
+            <button
+              type="button"
+              className="qc-speech-lang"
+              data-testid="speech-lang-toggle"
+              aria-label={`Dictation language: ${SPEECH_LANG_NAME[speechLang]}. Switch to ${
+                SPEECH_LANG_NAME[speechLang === "en-IN" ? "hi-IN" : "en-IN"]
+              }`}
+              disabled={disabled || listening}
+              onClick={toggleSpeechLang}
+            >
+              {SPEECH_LANG_LABEL[speechLang]}
+            </button>
+          </>
         ) : null}
         <EditorContent editor={editor} />
         <IconButton

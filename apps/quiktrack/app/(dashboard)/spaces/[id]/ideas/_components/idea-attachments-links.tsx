@@ -35,6 +35,11 @@ export function IdeaAttachmentsLinks({ projectId, ideaId }: { projectId: string;
   const [linkType, setLinkType] = useState("relates to");
   const [q, setQ] = useState("");
   const [results, setResults] = useState<SearchItem[]>([]);
+  // The result list is a dropdown, not part of the form: it opens when the
+  // search box is clicked/focused (never just because the linker opened) and
+  // closes on outside click or Escape.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let alive = true;
@@ -44,9 +49,32 @@ export function IdeaAttachmentsLinks({ projectId, ideaId }: { projectId: string;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, ideaId]);
 
-  // Work-item search (current space) while the linker is open.
+  // Close the dropdown on an outside click / Escape, and reset it whenever the
+  // linker itself is closed so re-opening starts clean.
   useEffect(() => {
-    if (!linking) return;
+    if (!searchOpen) return;
+    function onDown(e: MouseEvent) {
+      if (!searchRef.current?.contains(e.target as Node)) setSearchOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setSearchOpen(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [searchOpen]);
+
+  useEffect(() => {
+    if (!linking) setSearchOpen(false);
+  }, [linking]);
+
+  // Work-item search (current space) — only once the user opens the dropdown,
+  // so opening "Link work item" doesn't fire a search or show results.
+  useEffect(() => {
+    if (!linking || !searchOpen) return;
     let alive = true;
     const t = setTimeout(() => {
       // Global search across all projects the user can access (JPD).
@@ -57,7 +85,7 @@ export function IdeaAttachmentsLinks({ projectId, ideaId }: { projectId: string;
     }, 200);
     return () => { alive = false; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [linking, q, projectId, ideaId]);
+  }, [linking, searchOpen, q, projectId, ideaId]);
 
   async function onFile(file: File) {
     setUploading(true);
@@ -105,6 +133,7 @@ export function IdeaAttachmentsLinks({ projectId, ideaId }: { projectId: string;
       const refreshed = await fetch(`${base}/links`).then((r) => r.json());
       if (refreshed.success) setLinks(refreshed.data);
       setQ("");
+      setSearchOpen(false);
     }
   }
 
@@ -161,13 +190,20 @@ export function IdeaAttachmentsLinks({ projectId, ideaId }: { projectId: string;
                   {LINK_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
-              <div>
+              <div ref={searchRef}>
                 <label className="mb-1 block text-xs font-medium text-gray-500">Search</label>
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-2 top-2 h-4 w-4 text-gray-400" />
-                  <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search for a work item" className="w-full rounded border border-gray-300 py-1.5 pl-8 pr-2 text-sm outline-none focus:border-blue-400" />
+                  <input
+                    value={q}
+                    onChange={(e) => { setQ(e.target.value); setSearchOpen(true); }}
+                    onFocus={() => setSearchOpen(true)}
+                    onClick={() => setSearchOpen(true)}
+                    placeholder="Search for a work item"
+                    className="w-full rounded border border-gray-300 py-1.5 pl-8 pr-2 text-sm outline-none focus:border-blue-400"
+                  />
                 </div>
-                {results.length > 0 && (
+                {searchOpen && results.length > 0 && (
                   <div className="mt-1 max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-sm">
                     {results.map((it) => (
                       <button key={it.id} type="button" onClick={() => void addLink(it)} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50">
