@@ -49,18 +49,20 @@ describe("useAnchoredPanel", () => {
     // Trigger near the bottom: only 60px below, ~810px above.
     const style = place({ x: 100, y: 840, flipY: 812 });
 
-    // Bottom edge of the flipped panel sits on the trigger's top edge.
-    expect(Number.parseInt(style.top, 10)).toBe(812 - PANEL_H);
-    expect(Number.parseInt(style.top, 10)).toBeGreaterThan(0);
+    // Pinned by its BOTTOM edge, sitting on the trigger's top edge, so the
+    // panel grows upwards rather than back through the bottom of the window.
+    expect(style.top).toBe("");
+    expect(Number.parseInt(style.bottom, 10)).toBe(VIEWPORT_H - 812);
   });
 
   it("caps the height to the available space so every option is reachable", () => {
     const style = place({ x: 100, y: 840, flipY: 812 });
 
-    const top = Number.parseInt(style.top, 10);
+    const bottom = Number.parseInt(style.bottom, 10);
     const maxHeight = Number.parseInt(style.maxHeight, 10);
     expect(style.overflowY).toBe("auto");
-    expect(top + Math.min(PANEL_H, maxHeight)).toBeLessThanOrEqual(VIEWPORT_H);
+    // Even at its cap the panel stays inside the viewport.
+    expect(bottom + maxHeight).toBeLessThanOrEqual(VIEWPORT_H);
   });
 
   it("clamps horizontally so the panel never runs off the right edge", () => {

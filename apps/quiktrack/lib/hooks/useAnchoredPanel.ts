@@ -54,8 +54,6 @@ export function useAnchoredPanel(
     const goUp = wanted > spaceBelow && spaceAbove > spaceBelow;
 
     const maxHeight = Math.max(minHeight, goUp ? spaceAbove : spaceBelow);
-    const height = Math.min(wanted, maxHeight);
-    const top = goUp ? Math.max(margin, anchor.flipY - height) : anchor.y;
 
     const panelWidth = width ?? el.offsetWidth;
     const left = Math.max(
@@ -66,7 +64,13 @@ export function useAnchoredPanel(
     setPlaced({
       position: "fixed",
       left,
-      top,
+      // Pin the edge that touches the trigger: `top` when opening downwards,
+      // `bottom` when flipped. Anchoring the flipped panel by its bottom means
+      // later growth (a filtered list getting longer) expands upwards into the
+      // free space instead of back out through the bottom of the window.
+      ...(goUp
+        ? { bottom: Math.max(margin, window.innerHeight - anchor.flipY) }
+        : { top: anchor.y }),
       width,
       maxHeight,
       overflowY: "auto",
