@@ -56,21 +56,3 @@ export function serviceUnavailable(
 ) {
   return errorResponse(ErrorCode.SERVICE_UNAVAILABLE, message, 503);
 }
-
-/**
- * Heuristic: was this error a failure to reach a backing service (database /
- * Redis) rather than a genuine bug? Used to return a clear 503 instead of an
- * opaque 500 — e.g. when DATABASE_URL points somewhere unreachable.
- */
-export function isConnectivityError(error: unknown): boolean {
-  const e = error as { name?: string; code?: string; message?: string } | null;
-  if (!e) return false;
-  // Prisma init / connectivity error codes: P1001 can't reach DB, P1002 timeout,
-  // P1008 operation timed out, P1017 server closed the connection.
-  if (typeof e.name === "string" && e.name.includes("PrismaClientInitializationError")) return true;
-  if (typeof e.code === "string" && ["P1001", "P1002", "P1008", "P1017"].includes(e.code)) return true;
-  const msg = `${e.message ?? ""}`;
-  return /ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EHOSTUNREACH|Can't reach database|Connection terminated|connection timeout|too many connections/i.test(
-    msg,
-  );
-}

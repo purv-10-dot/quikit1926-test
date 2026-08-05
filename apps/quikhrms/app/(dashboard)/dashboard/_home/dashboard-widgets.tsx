@@ -122,7 +122,7 @@ export function ScheduleSection() {
 
 /* ─────────────────── HOLIDAYS WIDGET ─────────────────── */
 
-export function HolidaysWidget({ bare = false, selected = null, onClearSelected, demo }: { bare?: boolean; selected?: StatKey | null; onClearSelected?: () => void; demo?: DemoLists }) {
+function HolidaysWidget({ bare = false, selected = null, onClearSelected, demo }: { bare?: boolean; selected?: StatKey | null; onClearSelected?: () => void; demo?: DemoLists }) {
   const api = useApiClient();
   const { data: batch, isLoading } = useDashboardBatch();
   const [cursor, setCursor] = useState(() => {
@@ -663,7 +663,7 @@ function HolidayCard({ h, idx }: { h: UpcomingHoliday; idx: number }) {
 
 /* ─────────────────── BIRTHDAYS WIDGET ─────────────────── */
 
-export function BirthdaysWidget({ bare = false }: { bare?: boolean }) {
+function BirthdaysWidget({ bare = false }: { bare?: boolean }) {
   const { data, isLoading } = useDashboardBatch();
   const all = data?.data?.birthdays ?? [];
   const todays = all.filter((b) => b.daysUntil === 0);
@@ -701,7 +701,7 @@ export function BirthdaysWidget({ bare = false }: { bare?: boolean }) {
 
 /* ─────────────────── ANNIVERSARIES WIDGET ─────────────────── */
 
-export function AnniversariesWidget({ bare = false }: { bare?: boolean }) {
+function AnniversariesWidget({ bare = false }: { bare?: boolean }) {
   const { data, isLoading } = useDashboardBatch();
   const items = data?.data?.anniversaries ?? [];
   const next = items[0] ?? null;
@@ -806,7 +806,7 @@ function PanelEmpty({ text }: { text: string }) {
   return <div className="flex items-center justify-center py-10 text-center"><p className="text-xs text-gray-400">{text}</p></div>;
 }
 
-export function HomeStatRow({ bare = false, selected = null, onSelect, demo }: { bare?: boolean; selected?: StatKey | null; onSelect?: (k: StatKey) => void; demo?: DemoLists }) {
+function HomeStatRow({ bare = false, selected = null, onSelect, demo }: { bare?: boolean; selected?: StatKey | null; onSelect?: (k: StatKey) => void; demo?: DemoLists }) {
   const { data } = useDashboardBatch();
 
   const rows = data?.data?.availability ?? [];

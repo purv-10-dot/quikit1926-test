@@ -8,7 +8,7 @@ import {
   Briefcase, MapPin, Network, GitBranch, CalendarDays,
   FileText, ClipboardList, LayoutGrid, Link2, RotateCcw, ShieldAlert,
   Home, Mail, Clock, Receipt,
-  ShieldCheck, BarChart3, CalendarClock,
+  ShieldCheck, CalendarClock,
   LifeBuoy, ExternalLink,
 } from "lucide-react";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
@@ -92,7 +92,6 @@ const CATEGORIES: CategoryDef[] = [
       { label: "Joining Letter Branding", href: "/settings/joining-letter", icon: <FileText size={14} />, perms: ["hrms.settings.write"] },
       { label: "Resignation Acceptance Letter", href: "/settings/resignation-letter", icon: <FileText size={14} />, perms: ["hrms.settings.write"] },
       { label: "Exit Letters (Relieving / Experience)", href: "/settings/exit-letters", icon: <FileText size={14} />, perms: ["hrms.settings.write"] },
-      { label: "Report Templates", href: "/reports", icon: <BarChart3 size={14} />, perms: ["hrms.reports.manage"] },
       { label: "Email Templates", href: "/settings/email-templates", icon: <Mail size={14} />, perms: ["hrms.settings.write"] },
     ],
   },

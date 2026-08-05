@@ -44,8 +44,3 @@ export const assignRoleSchema = z.object({
   roleId: z.string().nullable(),
   expiresAt: z.string().datetime().nullable().optional(),
 });
-
-export const setUserExtrasSchema = z.object({
-  grants: z.array(z.string()).default([]),
-  denies: z.array(z.string()).default([]),
-});

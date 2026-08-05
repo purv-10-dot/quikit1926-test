@@ -27,10 +27,6 @@ export async function moderationRequired(
   return true;
 }
 
-export const APPROVED_STATUS = "Approved" as const;
-export const PENDING_STATUS = "Pending" as const;
-export const REJECTED_STATUS = "Rejected" as const;
-
 type ModeratableEntity = "Announcement" | "SocialPost" | "Recognition" | "ContinuousFeedback";
 
 const ENTITY_LINK: Record<ModeratableEntity, string> = {
@@ -54,7 +50,7 @@ const APPROVER_PERM: Record<ModerationModule, string> = {
  * approver is simply a valid moderator. Returns [] when no active chain exists
  * (or it resolves to nobody), so callers know to fall back.
  */
-export async function chainApproverIds(orgId: string, module: ModerationModule): Promise<string[]> {
+async function chainApproverIds(orgId: string, module: ModerationModule): Promise<string[]> {
   const levels = await getActiveChainLevels(orgId, module);
   if (!levels || levels.length === 0) return [];
   const ids = new Set<string>();

@@ -13,9 +13,6 @@ export const createDepartmentSchema = z.object({
 
 export const updateDepartmentSchema = createDepartmentSchema.partial();
 
-export type CreateDepartmentInput = z.infer<typeof createDepartmentSchema>;
-export type UpdateDepartmentInput = z.infer<typeof updateDepartmentSchema>;
-
 // ─── Team ───────────────────────────────────────────────
 
 export const createTeamSchema = z.object({
@@ -27,9 +24,6 @@ export const createTeamSchema = z.object({
 
 export const updateTeamSchema = createTeamSchema.partial();
 
-export type CreateTeamInput = z.infer<typeof createTeamSchema>;
-export type UpdateTeamInput = z.infer<typeof updateTeamSchema>;
-
 // ─── Designation ────────────────────────────────────────
 
 export const createDesignationSchema = z.object({
@@ -39,9 +33,6 @@ export const createDesignationSchema = z.object({
 });
 
 export const updateDesignationSchema = createDesignationSchema.partial();
-
-export type CreateDesignationInput = z.infer<typeof createDesignationSchema>;
-export type UpdateDesignationInput = z.infer<typeof updateDesignationSchema>;
 
 // ─── Grade ──────────────────────────────────────────────
 
@@ -62,9 +53,6 @@ export const createGradeSchema = gradeBase.superRefine(gradeSalaryCheck);
 
 export const updateGradeSchema = gradeBase.partial().superRefine(gradeSalaryCheck);
 
-export type CreateGradeInput = z.infer<typeof createGradeSchema>;
-export type UpdateGradeInput = z.infer<typeof updateGradeSchema>;
-
 // ─── Office Location ────────────────────────────────────
 
 export const createOfficeLocationSchema = z.object({
@@ -81,6 +69,3 @@ export const createOfficeLocationSchema = z.object({
 });
 
 export const updateOfficeLocationSchema = createOfficeLocationSchema.partial();
-
-export type CreateOfficeLocationInput = z.infer<typeof createOfficeLocationSchema>;
-export type UpdateOfficeLocationInput = z.infer<typeof updateOfficeLocationSchema>;

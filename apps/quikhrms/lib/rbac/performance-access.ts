@@ -13,7 +13,7 @@ export const PERF_READ_MAP = {
  * Appraisal fields the reviewee must NOT see until the appraisal is published
  * (status === "Completed"). Managers and HR always see them.
  */
-export const APPRAISAL_PRIVILEGED_FIELDS = [
+const APPRAISAL_PRIVILEGED_FIELDS = [
   "managerRating", "managerComments", "managerResponses",
   "calibratedRating", "finalRating", "finalBand",
   "promotionRecommendation", "salaryRevisionRecommended",

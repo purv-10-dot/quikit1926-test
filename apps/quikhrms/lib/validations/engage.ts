@@ -9,9 +9,6 @@ type VisibilityDb = "Organization" | "Department" | "HrmsTeam" | "Custom";
 export function visibilityToDb(v: VisibilityApi): VisibilityDb {
   return v === "Team" ? "HrmsTeam" : v;
 }
-export function visibilityFromDb(v: VisibilityDb): VisibilityApi {
-  return v === "HrmsTeam" ? "Team" : v;
-}
 
 // ─── Social Post ────────────────────────────────────────
 
@@ -130,18 +127,4 @@ export const createRecognitionSchema = z.object({
   badge: z.string().optional(),
   // points is NOT client-supplied — it's derived server-side from the type.
   isPublic: z.boolean().default(true),
-});
-
-// ─── AI ─────────────────────────────────────────────────
-
-export const resumeScreenSchema = z.object({
-  candidateId: z.string().min(1),
-  requisitionId: z.string().min(1),
-});
-
-export const aiInsightSchema = z.object({
-  type: z.enum(["attrition_risk", "performance_trend", "team_health", "headcount_forecast"]),
-  entityType: z.string().optional(),
-  entityId: z.string().optional(),
-  parameters: z.record(z.string(), z.unknown()).optional(),
 });

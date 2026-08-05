@@ -24,6 +24,10 @@ const api = {
   fetchKeywords: vi.fn(),
   addKeywordApi: vi.fn(),
   removeKeywordApi: vi.fn(),
+  // The Privacy panel's "Share my last seen" switch is really persisted, so the
+  // module reads presence on mount and writes on toggle.
+  fetchMyPresence: vi.fn(),
+  updateMyPresence: vi.fn(),
 };
 vi.mock("@/lib/api", () => ({
   fetchNotificationSettings: (...a: unknown[]) => api.fetchNotificationSettings(...a),
@@ -31,6 +35,8 @@ vi.mock("@/lib/api", () => ({
   fetchKeywords: (...a: unknown[]) => api.fetchKeywords(...a),
   addKeywordApi: (...a: unknown[]) => api.addKeywordApi(...a),
   removeKeywordApi: (...a: unknown[]) => api.removeKeywordApi(...a),
+  fetchMyPresence: (...a: unknown[]) => api.fetchMyPresence(...a),
+  updateMyPresence: (...a: unknown[]) => api.updateMyPresence(...a),
 }));
 vi.mock("@/components/notifications/NotificationProvider", () => ({
   useNotifications: () => ({
@@ -74,6 +80,19 @@ beforeEach(() => {
   api.fetchNotificationSettings.mockResolvedValue(settings());
   api.patchNotificationSettings.mockImplementation(async (p) => settings(p as object));
   api.fetchKeywords.mockResolvedValue([]);
+  api.fetchMyPresence.mockResolvedValue({
+    status: "available",
+    statusMessage: null,
+    statusExpiresAt: null,
+    shareLastSeen: true,
+  });
+  api.updateMyPresence.mockImplementation(async (p) => ({
+    status: "available",
+    statusMessage: null,
+    statusExpiresAt: null,
+    shareLastSeen: true,
+    ...(p as object),
+  }));
 });
 afterEach(() => {
   vi.clearAllMocks();
@@ -104,6 +123,47 @@ describe("SettingsModule — notifications section is inline", () => {
     await waitFor(() =>
       expect(api.patchNotificationSettings).toHaveBeenCalledWith({ emailEnabled: true }),
     );
+  });
+});
+
+describe("SettingsModule — Privacy: share my last seen", () => {
+  const openPrivacy = () => fireEvent.click(screen.getByRole("button", { name: /Privacy/i }));
+
+  it("reflects the persisted value from the server", async () => {
+    api.fetchMyPresence.mockResolvedValue({
+      status: "available",
+      statusMessage: null,
+      statusExpiresAt: null,
+      shareLastSeen: false,
+    });
+    renderSettings();
+    openPrivacy();
+    await waitFor(() =>
+      expect(screen.getByLabelText("Share my last seen")).not.toBeChecked(),
+    );
+  });
+
+  it("persists the toggle as a privacy-only patch (no status restated)", async () => {
+    renderSettings();
+    openPrivacy();
+    await waitFor(() => expect(screen.getByLabelText("Share my last seen")).toBeChecked());
+
+    fireEvent.click(screen.getByLabelText("Share my last seen"));
+
+    await waitFor(() =>
+      expect(api.updateMyPresence).toHaveBeenCalledWith({ shareLastSeen: false }),
+    );
+  });
+
+  it("reverts the switch when the write fails", async () => {
+    api.updateMyPresence.mockRejectedValue(new Error("offline"));
+    renderSettings();
+    openPrivacy();
+    await waitFor(() => expect(screen.getByLabelText("Share my last seen")).toBeChecked());
+
+    fireEvent.click(screen.getByLabelText("Share my last seen"));
+
+    await waitFor(() => expect(screen.getByLabelText("Share my last seen")).toBeChecked());
   });
 });
 

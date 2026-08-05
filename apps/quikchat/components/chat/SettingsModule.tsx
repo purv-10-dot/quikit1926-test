@@ -17,6 +17,7 @@ import {
   Switch,
   Users,
 } from "@/components/ui";
+import { fetchMyPresence, updateMyPresence } from "@/lib/api";
 import { CalendarsSettings } from "@/components/settings/CalendarsSettings";
 import { DevicesSettings } from "@/components/settings/DevicesSettings";
 import { NotificationSettingsPanel } from "@/components/notifications/NotificationSettingsModal";
@@ -103,6 +104,28 @@ export function SettingsModule({ currentUserId, displayName, avatarUrl }: Settin
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [readReceipts, setReadReceipts] = useState(true);
   const [typingIndicators, setTypingIndicators] = useState(true);
+
+  // "Share my last seen" — REAL, persisted to QcUserPresence.shareLastSeen via
+  // /api/me/presence (unlike the two demo toggles above it in the Privacy panel).
+  // Seeded from the server; the switch is optimistic and reverts on failure.
+  const [shareLastSeen, setShareLastSeen] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    void fetchMyPresence()
+      .then((p) => {
+        if (alive) setShareLastSeen(p.shareLastSeen);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const toggleShareLastSeen = (next: boolean) => {
+    setShareLastSeen(next);
+    // Privacy-only patch: no `status`, so the server leaves the current status
+    // (and its message/expiry) untouched and skips the presence fan-out.
+    void updateMyPresence({ shareLastSeen: next }).catch(() => setShareLastSeen(!next));
+  };
 
   // Accent color theme (persisted to localStorage under STORAGE_KEY; applied via data-accent).
   const [accent, setAccent] = useState("mist");
@@ -325,6 +348,12 @@ export function SettingsModule({ currentUserId, displayName, avatarUrl }: Settin
                 <Info size={16} aria-hidden /> Privacy
               </div>
               <div className="qc-set-section__body">
+                <ToggleRow
+                  title="Share my last seen"
+                  desc="Show when you were last online. You'll only see other people's last seen if you share yours."
+                  checked={shareLastSeen}
+                  onChange={toggleShareLastSeen}
+                />
                 <ToggleRow
                   title="Read receipts"
                   desc="Let others know when you've read their messages."

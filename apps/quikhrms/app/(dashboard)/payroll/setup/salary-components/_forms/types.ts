@@ -1,6 +1,6 @@
 export type CompType = "Earning" | "Deduction" | "Benefit" | "Reimbursement";
-export type AmountType = "Fixed" | "PercentOfBasic" | "PercentOfCTC" | "PercentOfGross" | "Formula";
-export type Frequency = "Monthly" | "Quarterly" | "HalfYearly" | "Yearly" | "OneTime";
+type AmountType = "Fixed" | "PercentOfBasic" | "PercentOfCTC" | "PercentOfGross" | "Formula";
+type Frequency = "Monthly" | "Quarterly" | "HalfYearly" | "Yearly" | "OneTime";
 
 export interface SalaryComponent {
   id: string;

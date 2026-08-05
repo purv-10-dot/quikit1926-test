@@ -18,7 +18,7 @@ import type { GroupLeaveRules } from "@/lib/services/employee-leave-rules";
  * the join day is on/before `cutoffDay` — this is the "withhold leave for
  * late-month joiners" rule (default cut-off day 15).
  */
-export function proRataMonths(joinDate: Date, year: number, cutoffDay = 15): number {
+function proRataMonths(joinDate: Date, year: number, cutoffDay = 15): number {
   const joinYear = joinDate.getUTCFullYear();
   if (joinYear < year) return 12;
   if (joinYear > year) return 0;
@@ -29,7 +29,7 @@ export function proRataMonths(joinDate: Date, year: number, cutoffDay = 15): num
 }
 
 /** Pro-rated annual entitlement, rounded to nearest 0.5 day. */
-export function proRataLeaveCount(annual: number, joinDate: Date, year: number, cutoffDay = 15): number {
+function proRataLeaveCount(annual: number, joinDate: Date, year: number, cutoffDay = 15): number {
   if (annual <= 0) return 0;
   const months = proRataMonths(joinDate, year, cutoffDay);
   return Math.round((annual * months / 12) * 2) / 2;

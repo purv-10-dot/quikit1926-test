@@ -3,7 +3,7 @@ import { zPhoneOptional } from "./identifiers";
 
 // ─── Hiring Pipeline ────────────────────────────────────
 
-export const pipelineStageConfigSchema = z.object({
+const pipelineStageConfigSchema = z.object({
   name: z.string().min(1),
   sendMail: z.boolean().default(false),
   mailTemplate: z.enum(["interview", "offer-branded", "offer-default", "welcome", "joining-letter"]).nullable().optional(),

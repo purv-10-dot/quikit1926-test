@@ -103,20 +103,58 @@ export async function enumerateDevices(): Promise<DeviceSnapshot> {
 }
 
 /**
+ * Why a getUserMedia grab failed, in words a settings panel can show.
+ *
+ * Intentionally a near-duplicate of `micErrorMessage` in `use-voice-recorder.ts`:
+ * same error branches, but parameterized by kind so the camera gets camera
+ * wording, and phrased for "choose a device" rather than "record a message". The
+ * recorder's copy is deliberately left alone — it belongs to the recording flow.
+ */
+export function deviceErrorMessage(kind: "mic" | "camera", err: unknown): string {
+  const device = kind === "mic" ? "Microphone" : "Camera";
+  const lower = kind === "mic" ? "microphone" : "camera";
+  const name = err instanceof Error ? err.name : "";
+  if (name === "NotAllowedError" || name === "SecurityError") {
+    return `${device} access was blocked. Allow it in your browser settings to choose a ${lower}.`;
+  }
+  if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+    return `No ${lower} found.`;
+  }
+  if (name === "NotReadableError" || name === "TrackStartError") {
+    return `Your ${lower} is already in use by another app.`;
+  }
+  return err instanceof Error && err.message
+    ? err.message
+    : `Couldn't get ${lower} access.`;
+}
+
+/**
+ * Result of a label-unlock attempt. A discriminated union rather than a nullable
+ * string on purpose: it can't be mistaken for the boolean this used to return, so
+ * a stale call site fails to compile instead of silently inverting.
+ */
+export type DeviceLabelResult = { ok: true } | { ok: false; error: string };
+
+/**
  * Grab a capture permission purely to unlock device LABELS, then release it
  * immediately — we never keep the stream. Camera is requested separately from
  * mic so reading device names can't switch the webcam on unnecessarily.
+ *
+ * Returns WHY it failed, so the caller can say so: a denied/missing/busy device
+ * used to be indistinguishable from success.
  */
-export async function requestDeviceLabels(kind: "mic" | "camera"): Promise<boolean> {
-  if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) return false;
+export async function requestDeviceLabels(kind: "mic" | "camera"): Promise<DeviceLabelResult> {
+  if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+    return { ok: false, error: "This browser can't access audio or video devices." };
+  }
   try {
     const stream = await navigator.mediaDevices.getUserMedia(
       kind === "mic" ? { audio: true } : { video: true },
     );
     for (const track of stream.getTracks()) track.stop();
-    return true;
-  } catch {
-    return false;
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: deviceErrorMessage(kind, err) };
   }
 }
 
@@ -215,8 +253,8 @@ export function isDeviceUnavailableError(err: unknown): boolean {
 export interface UseMediaDevices extends DeviceSnapshot {
   /** Re-enumerate now (after granting permission, or on demand). */
   refresh: () => Promise<void>;
-  /** Unlock labels for one kind, then re-enumerate. */
-  requestLabels: (kind: "mic" | "camera") => Promise<boolean>;
+  /** Unlock labels for one kind, then re-enumerate. Reports why it failed. */
+  requestLabels: (kind: "mic" | "camera") => Promise<DeviceLabelResult>;
 }
 
 /**
@@ -235,10 +273,10 @@ export function useMediaDevices(): UseMediaDevices {
 
   const requestLabels = useCallback(
     async (kind: "mic" | "camera") => {
-      const ok = await requestDeviceLabels(kind);
+      const result = await requestDeviceLabels(kind);
       // Re-enumerate either way: a partial grant can still reveal some names.
       await refresh();
-      return ok;
+      return result;
     },
     [refresh],
   );

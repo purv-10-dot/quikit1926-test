@@ -4,6 +4,7 @@ import {
   formatCallDuration,
   formatChannelTime,
   formatFullDate,
+  formatLastSeen,
   formatVoiceDuration,
   sameCalendarDay,
 } from "./format";
@@ -44,6 +45,28 @@ describe("dateDividerLabel", () => {
   });
   it("full date for older", () => {
     expect(dateDividerLabel(daysAgo(30))).toMatch(/\d{4}$/);
+  });
+});
+
+describe("formatLastSeen", () => {
+  it("returns empty for missing / unparseable values so callers can fall back", () => {
+    expect(formatLastSeen(null)).toBe("");
+    expect(formatLastSeen(undefined)).toBe("");
+    expect(formatLastSeen("not-a-date")).toBe("");
+  });
+  it("says 'today at <time>' for today", () => {
+    expect(formatLastSeen(new Date())).toMatch(/^last seen today at .+/);
+  });
+  it("says 'yesterday at <time>' for yesterday", () => {
+    expect(formatLastSeen(daysAgo(1))).toMatch(/^last seen yesterday at .+/);
+  });
+  it("uses the weekday within the last week (same buckets as dateDividerLabel)", () => {
+    const out = formatLastSeen(daysAgo(3));
+    expect(out).toMatch(/^last seen [A-Z][a-z]+ at .+/);
+    expect(out).not.toMatch(/today|yesterday/);
+  });
+  it("uses 'd MMM at <time>' for older", () => {
+    expect(formatLastSeen(new Date(2026, 4, 8, 16, 0))).toMatch(/^last seen 8 May at .+/);
   });
 });
 

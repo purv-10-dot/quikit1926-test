@@ -29,14 +29,32 @@ export function validateFile(file: { type: string; size: number; name: string })
 /** PUT the bytes to the (signed) target with upload progress. */
 export function putWithProgress(
   url: string,
-  headers: Record<string, string>,
+  headers: Record<string, string> | null | undefined,
   file: Blob,
   onProgress?: (fraction: number) => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
+    const safeHeaders =
+      headers && typeof headers === "object" && !Array.isArray(headers)
+        ? Object.fromEntries(
+            Object.entries(headers).filter(
+              ([k, v]) => typeof k === "string" && typeof v === "string",
+            ),
+          )
+        : null;
+
+    if (!url || typeof url !== "string") {
+      reject(new Error("Invalid upload target"));
+      return;
+    }
+    if (!safeHeaders || Object.keys(safeHeaders).length === 0) {
+      reject(new Error("Upload target is missing headers"));
+      return;
+    }
+
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", url);
-    for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
+    for (const [k, v] of Object.entries(safeHeaders)) xhr.setRequestHeader(k, v);
     if (xhr.upload) {
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total);
@@ -79,6 +97,12 @@ export async function uploadFile(
     contentType,
     size: file.size,
   });
+  if (!target?.uploadUrl || typeof target.uploadUrl !== "string") {
+    throw new Error("Invalid upload target");
+  }
+  if (!target.headers || typeof target.headers !== "object" || Array.isArray(target.headers)) {
+    throw new Error("Invalid upload target");
+  }
   await putWithProgress(target.uploadUrl, target.headers, file, onProgress);
   return {
     objectPath: target.objectPath,

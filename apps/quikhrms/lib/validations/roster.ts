@@ -56,6 +56,3 @@ export const weeklyOffsSchema = z.object({
   employeeIds: z.array(z.string().min(1)).min(1, "Select at least one employee"),
   days: z.array(z.enum(WEEKDAYS)),
 });
-
-export type CreateRosterInput = z.infer<typeof createRosterSchema>;
-export type RosterEntriesInput = z.infer<typeof rosterEntriesSchema>;

@@ -39,22 +39,75 @@ export async function requestPermission(): Promise<NotificationPermissionState> 
   }
 }
 
+/**
+ * The desktop shell's native notification bridge, when running inside Electron.
+ * `undefined` in a plain browser tab.
+ */
+function desktopNotificationBridge() {
+  if (typeof window === "undefined") return undefined;
+  const show = window.electron?.notifications?.show;
+  return typeof show === "function" ? window.electron!.notifications! : undefined;
+}
+
+/** Is the Electron native-notification bridge reachable from this renderer? */
+export function desktopBridgeAvailable(): boolean {
+  return desktopNotificationBridge() !== undefined;
+}
+
 export interface OsNotificationInput {
   title: string;
   body?: string;
   /** Coalescing tag (per channel) so repeats replace rather than stack. */
   tag?: string;
   icon?: string;
-  /** Invoked when the user clicks the OS notification. */
+  /**
+   * Channel this alert belongs to, used by the Electron bridge to build its
+   * `quikchat://open/<channelId>` deep link. Deliberately separate from `tag`:
+   * `tag` falls back to a message id, which must never reach the bridge as a
+   * channel id.
+   */
+  channelId?: string | null;
+  /** Invoked when the user clicks the OS notification. Browser path only. */
   onClick?: () => void;
 }
 
 /**
- * Fire an OS notification IFF permission is granted and the API is supported.
+ * Fire an OS notification.
+ *
+ * Inside the Electron shell this delegates to the main process and returns null —
+ * only the main process can un-minimize/restore + focus the window on click, and
+ * its click handler already sends the `deeplink` IPC that `DesktopBridge` routes
+ * into `openChannel`. In a plain browser tab it constructs a `Notification` IFF
+ * permission is granted and the API is supported, and returns it (or null).
+ *
  * Focus + the server `desktop` flag are checked by the caller (see
- * `shouldFireOsNotification`). Returns the Notification or null.
+ * `shouldFireOsNotification`).
  */
 export function fireOsNotification(input: OsNotificationInput): Notification | null {
+  // Desktop shell: hand off and stop. Never ALSO construct a browser
+  // Notification here — that would surface two native alerts for one event.
+  const bridge = desktopNotificationBridge();
+  if (bridge) {
+    try {
+      // Fire-and-forget: `show` is an async ipcRenderer.invoke and this function
+      // is sync. `onClick` is not forwarded — a function cannot cross IPC, and
+      // the main process's deep link already closes that loop.
+      // Wrapped in Promise.resolve so a rejected invoke (no handler registered
+      // in the main process) can't surface as an unhandled rejection.
+      void Promise.resolve(
+        bridge.show({
+          title: input.title,
+          body: input.body,
+          icon: input.icon,
+          channelId: input.channelId ?? undefined,
+        }),
+      ).catch(() => undefined);
+    } catch {
+      // A broken bridge must not break the in-app feed.
+    }
+    return null;
+  }
+
   if (!notificationsSupported() || Notification.permission !== "granted") return null;
   try {
     const n = new Notification(input.title, {
@@ -76,9 +129,21 @@ export function fireOsNotification(input: OsNotificationInput): Notification | n
 
 /**
  * The client-side firing rule (the server already gated on mute/snooze/DND):
- * fire an OS notification only when the payload says `desktop`, the tab is NOT
- * focused, and permission is granted.
+ * fire an OS notification only when the payload says `desktop` and the app is
+ * NOT focused — plus a delivery path that will actually show something.
+ *
+ * Two independent delivery paths satisfy that last condition:
+ *  - the Electron bridge, which fires from the main process and is gated by the
+ *    OS rather than by this renderer's `Notification.permission`; or
+ *  - browser permission being granted.
+ *
+ * The bridge is checked separately on purpose. If it were gated behind the
+ * renderer's permission read, a shell whose renderer reports anything other than
+ * "granted" would silently lose native notifications entirely — with everything
+ * downstream (bridge present, IPC wired, click handler correct) still looking
+ * healthy, which is near-impossible to debug.
  */
 export function shouldFireOsNotification(desktop: boolean): boolean {
-  return desktop && !isAppFocused() && permissionState() === "granted";
+  if (!desktop || isAppFocused()) return false;
+  return desktopBridgeAvailable() || permissionState() === "granted";
 }

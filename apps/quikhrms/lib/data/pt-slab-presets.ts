@@ -1,4 +1,4 @@
-export interface PTSlabPreset {
+interface PTSlabPreset {
   fromAmount: number;
   toAmount: number | null;
   taxAmount: number;
