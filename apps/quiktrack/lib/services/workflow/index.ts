@@ -35,3 +35,13 @@ export type {
   DraftTransition,
   WorkflowDraft,
 } from "./draft";
+export {
+  buildTemplateFromRows,
+  isWorkflowTemplate,
+  materializeTemplateIntoProject,
+} from "./template";
+export type {
+  TemplateStatus,
+  TemplateTransition,
+  WorkflowTemplate,
+} from "./template";

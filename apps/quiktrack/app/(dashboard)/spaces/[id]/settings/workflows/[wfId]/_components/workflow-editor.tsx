@@ -3,12 +3,12 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Columns, GitBranch, Zap, Bot, MoreHorizontal, HelpCircle } from "lucide-react";
+import { Loader2, Columns, GitBranch, Zap, Bot, MoreHorizontal, HelpCircle, ChevronDown } from "lucide-react";
 import { DiagramHelpDialog } from "./diagram-help-dialog";
 import { useWorkflowEditor } from "./use-workflow-editor";
 import { errorStatusIdSet } from "./diagram-canvas";
 import { TextView } from "./text-view";
-import { AddStatusDialog, AddTransitionDialog } from "./editor-dialogs";
+import { AddStatusDialog, AddTransitionDialog, SaveAsNewWorkflowDialog } from "./editor-dialogs";
 import { FlowCanvas } from "./flow/flow-canvas";
 import { StatusPanel } from "./flow/status-panel";
 import { TransitionPanel } from "./flow/transition-panel";
@@ -108,6 +108,9 @@ function EditorBody({
   // When the Add-transition dialog is opened by drawing an edge on the diagram,
   // pre-fill its From/To with the connected statuses.
   const [transitionPrefill, setTransitionPrefill] = useState<{ from: string; to: string } | null>(null);
+  // "Update workflow ▾" split-button menu + the "Save as new workflow" dialog.
+  const [updateMenuOpen, setUpdateMenuOpen] = useState(false);
+  const [saveAsNewOpen, setSaveAsNewOpen] = useState(false);
   const [selection, setSelection] = useState<Selection>(null);
 
   const resolutions = useQuery({
@@ -217,14 +220,42 @@ function EditorBody({
             </button>
           ) : (
             <>
-              <button
-                type="button"
-                onClick={() => ed.publish.mutate(undefined)}
-                disabled={ed.publish.isPending}
-                className="rounded bg-accent-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-700 disabled:opacity-60"
-              >
-                {ed.publish.isPending ? "Publishing…" : "Update workflow"}
-              </button>
+              {/* Split button: "Update workflow" + ▾ "Save as new workflow". */}
+              <div className="relative inline-flex">
+                <button
+                  type="button"
+                  onClick={() => ed.publish.mutate(undefined)}
+                  disabled={ed.publish.isPending}
+                  className="rounded-l bg-accent-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-700 disabled:opacity-60"
+                >
+                  {ed.publish.isPending ? "Publishing…" : "Update workflow"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUpdateMenuOpen((v) => !v)}
+                  aria-label="More update options"
+                  className="rounded-r border-l border-accent-700/40 bg-accent-600 px-1.5 py-1.5 text-white hover:bg-accent-700"
+                >
+                  <ChevronDown className="h-4 w-4" />
+                </button>
+                {updateMenuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setUpdateMenuOpen(false)} />
+                    <div className="absolute right-0 top-full z-20 mt-1 min-w-[200px] rounded-md border border-gray-200 bg-white py-1 shadow-lg">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUpdateMenuOpen(false);
+                          setSaveAsNewOpen(true);
+                        }}
+                        className="block w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                      >
+                        Save as new workflow
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={onClose}
@@ -418,6 +449,17 @@ function EditorBody({
             setAddTransitionOpen(false);
             setTransitionPrefill(null);
           }}
+        />
+      )}
+      {saveAsNewOpen && (
+        <SaveAsNewWorkflowDialog
+          sourceWorkflowId={wfId}
+          defaultName={ed.draft.name}
+          onSaved={() => {
+            // Refresh the org template list so the new one appears in pickers.
+            void qc.invalidateQueries({ queryKey: ["quiktrack", "workflow-templates"] });
+          }}
+          onClose={() => setSaveAsNewOpen(false)}
         />
       )}
     </div>

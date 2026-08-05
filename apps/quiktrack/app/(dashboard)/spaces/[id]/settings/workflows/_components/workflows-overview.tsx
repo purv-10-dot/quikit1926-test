@@ -7,6 +7,7 @@ import { ChevronDown, Loader2, Pencil, Users } from "lucide-react";
 import { AssignTypesDialog } from "./assign-types-dialog";
 import { WorkTypeIcon } from "./work-type-icon";
 import { MigrationDialog, type MigrationItem } from "./migration-dialog";
+import { AddExistingWorkflowDialog } from "./add-existing-workflow-dialog";
 import { toOverviewRows, type WorkflowSchemeResponse } from "./types";
 
 async function fetchScheme(projectId: string): Promise<WorkflowSchemeResponse> {
@@ -26,6 +27,7 @@ const QKEY = (projectId: string) => ["quiktrack", "workflow-scheme", projectId];
 export function WorkflowsOverview({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
   const [assignOpen, setAssignOpen] = useState(false);
+  const [addExistingOpen, setAddExistingOpen] = useState(false);
   // When a publish needs status migration, hold the affected statuses so the
   // MigrationDialog can collect an old→new mapping and re-publish.
   const [migration, setMigration] = useState<MigrationItem[] | null>(null);
@@ -174,13 +176,12 @@ export function WorkflowsOverview({ projectId }: { projectId: string }) {
       {scheme ? (
         <>
           <div className="mb-3 flex items-center gap-2">
-            {/* Add Workflow ▾ / Switch Scheme mirror Jira's scheme toolbar. We're
-                single-workflow-per-scheme, so these are inert for now. */}
+            {/* Add Workflow → the "Add Existing Workflow" picker (reusable org
+                templates). Switch Scheme remains inert (single-scheme-per-project). */}
             <button
               type="button"
-              disabled
-              title="Adding more workflows to a scheme is coming soon"
-              className="inline-flex items-center gap-1 rounded border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-400"
+              onClick={() => setAddExistingOpen(true)}
+              className="inline-flex items-center gap-1 rounded border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100"
             >
               Add Workflow <ChevronDown className="h-3.5 w-3.5" />
             </button>
@@ -289,6 +290,13 @@ export function WorkflowsOverview({ projectId }: { projectId: string }) {
                 setAssignOpen(false);
                 qc.invalidateQueries({ queryKey: QKEY(projectId) });
               }}
+            />
+          )}
+          {addExistingOpen && (
+            <AddExistingWorkflowDialog
+              projectId={projectId}
+              onClose={() => setAddExistingOpen(false)}
+              onAdded={() => qc.invalidateQueries({ queryKey: QKEY(projectId) })}
             />
           )}
         </>

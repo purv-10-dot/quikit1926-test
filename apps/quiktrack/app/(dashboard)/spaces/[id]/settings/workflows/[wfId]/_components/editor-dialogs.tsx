@@ -61,6 +61,92 @@ function Shell({
   );
 }
 
+/**
+ * "Save as new workflow": snapshot the current workflow into a reusable org
+ * template (name required + description). POSTs to /api/workflows.
+ */
+export function SaveAsNewWorkflowDialog({
+  sourceWorkflowId,
+  defaultName,
+  onSaved,
+  onClose,
+}: {
+  sourceWorkflowId: string;
+  defaultName: string;
+  onSaved: (created: { id: string; name: string }) => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(defaultName);
+  const [description, setDescription] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async () => {
+    if (!name.trim()) return setError("Workflow name is required.");
+    setSaving(true);
+    setError(null);
+    try {
+      const r = await fetch("/api/workflows", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceWorkflowId, name: name.trim(), description: description.trim() || undefined }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.success) throw new Error(j.error ?? "Failed to save");
+      onSaved(j.data as { id: string; name: string });
+      onClose();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to save");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Shell title="Save as new workflow" onClose={onClose} wide>
+      <div className="space-y-4">
+        <p className="text-sm text-gray-600">
+          The current changes will be saved to a new inactive workflow. You can activate the workflow
+          by adding it to a workflow scheme.
+        </p>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-700">
+            Workflow name <span className="text-red-500">*</span>
+          </label>
+          <input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-700">Workflow description</label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={3}
+            className="w-full resize-none rounded border border-gray-300 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none"
+          />
+        </div>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <div className="flex justify-end gap-3 pt-1">
+          <button type="button" onClick={onClose} className="text-sm font-medium text-gray-600 hover:text-gray-800">
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={save}
+            disabled={saving || !name.trim()}
+            className="rounded bg-accent-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-accent-700 disabled:opacity-50"
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
 /** Add-status: choose from the project statuses not already in the workflow. */
 export function AddStatusDialog({
   poolStatuses,

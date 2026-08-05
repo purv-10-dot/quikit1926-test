@@ -6763,6 +6763,12 @@ model QtWorkflow {
   /// cycle with QtWorkflowTransition.workflowId; integrity enforced in app code.
   initialTransitionId String?
   isDeleted           Boolean                @default(false)
+  /// For reusable org-level templates (projectId = null): a self-contained,
+  /// name-based snapshot of the graph — { statuses:[{name,category,isInitial}],
+  /// transitions:[{name,type,from:[names],to:name,rules}] }. Independent of any
+  /// project's status rows, so the template survives if the source project (or
+  /// its statuses) change or are deleted. Materialized BY NAME on import.
+  templateJson        Json?
   createdAt           DateTime               @default(now())
   updatedAt           DateTime               @updatedAt
   createdBy           String?
