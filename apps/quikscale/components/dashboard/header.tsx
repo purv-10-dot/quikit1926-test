@@ -79,17 +79,21 @@ export function Header({ onMenuClick }: HeaderProps) {
 
       {/* Right — app switcher + shared user menu */}
       <div className="flex items-center gap-2">
-        <AppSwitcher />
-        <UserMenu
-          user={{ name: fullName, email }}
-          isImpersonating={isImpersonating}
-          onSignOut={handleSignOut}
-          onExitImpersonation={handleExitImpersonation}
-          items={[
-            { label: "Settings", icon: Settings, onClick: handleSettings },
-          ]}
-          avatarClassName="bg-accent-600"
-        />
+        <div data-tour="app-switcher">
+          <AppSwitcher />
+        </div>
+        <div data-tour="user-menu">
+          <UserMenu
+            user={{ name: fullName, email }}
+            isImpersonating={isImpersonating}
+            onSignOut={handleSignOut}
+            onExitImpersonation={handleExitImpersonation}
+            items={[
+              { label: "Settings", icon: Settings, onClick: handleSettings },
+            ]}
+            avatarClassName="bg-accent-600"
+          />
+        </div>
       </div>
     </header>
   );

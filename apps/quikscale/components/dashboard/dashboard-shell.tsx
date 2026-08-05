@@ -9,6 +9,7 @@ import { SessionGuard } from "@/components/session-guard";
 import { ThemeApplier } from "@quikit/ui/theme-applier";
 import { FeatureDisabledToast, ImpersonationBanner } from "@quikit/ui";
 import { QuarterRequiredGuard } from "@/components/quarter-required-guard";
+import { QuikScaleTour } from "@/components/tour/quikscale-tour";
 import { Toaster } from "sonner";
 
 /**
@@ -25,6 +26,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     <ThemeApplier />
     <ImpersonationBanner />
     <FeatureDisabledToast />
+    <QuikScaleTour />
     <Toaster
       richColors
       closeButton

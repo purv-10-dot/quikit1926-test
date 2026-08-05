@@ -214,6 +214,7 @@ model Org {
   userAppRoles             UserAppRole[]
   userPermissionExtras     UserPermissionExtra[]
   userTablePreferences     UserTablePreference[]
+  qsUserViewPrefs          QsUserViewPref[]
   wwwItems                 WWWItem[]
   brands                   Brand[]
   AppRole                  QtAppRole[]
@@ -349,6 +350,7 @@ model User {
   appRoles                UserAppRole[]
   permissionExtras        UserPermissionExtra[]
   tablePreferences        UserTablePreference[]
+  qsUserViewPrefs         QsUserViewPref[]
   UserAppRole             QtUserAppRole[]
   UserPermissionExtra     QtUserPermissionExtra[]
   cnUserAppRoles          CnUserAppRole[]
@@ -1122,6 +1124,24 @@ model UserTablePreference {
   org        Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([userId, orgId, tableName])
+  @@index([userId, orgId])
+  @@schema("app_quikscale")
+}
+
+/// Generic per-user, per-org flag store for QuikScale (e.g. onboarding tour
+/// completion). Mirrors QtUserViewPref's shape, pared down to what QuikScale
+/// needs today — a viewKey lookup, no project/column-state fields. Add
+/// columns here (rather than a new model) for future one-off view flags.
+model QsUserViewPref {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String
+  viewKey   String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId, viewKey])
   @@index([userId, orgId])
   @@schema("app_quikscale")
 }
