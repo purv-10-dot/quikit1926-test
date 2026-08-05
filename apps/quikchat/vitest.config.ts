@@ -19,6 +19,10 @@ export default defineConfig({
       // Playwright e2e (see QUIKCHAT_MERGE_PLAN.md Bucket 2).
       "app/api/calls/group/route.test.ts",
       "app/api/calls/route.test.ts",
+      "app/api/calls/[id]/token/route.test.ts",
+      "app/api/calls/[id]/participants/[identity]/route.test.ts",
+      "app/api/calls/[id]/mute-all/route.test.ts",
+      "app/api/livekit/webhook/route.test.ts",
       "app/api/channels/[id]/assist/route.test.ts",
       "app/api/channels/[id]/ingest/route.test.ts",
       "app/api/channels/[id]/kb-docs/route.test.ts",

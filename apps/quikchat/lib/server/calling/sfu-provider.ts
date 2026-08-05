@@ -7,6 +7,7 @@
  *   stub  (default) — mock room/participants
  *   live            — LiveKit SFU
  */
+import { logger } from "@/lib/shared";
 
 export interface SFURoom {
   roomId: string;
@@ -26,11 +27,19 @@ export interface SFUParticipant {
 
 export interface SFUProvider {
   createRoom(roomId: string): Promise<SFURoom>;
-  generateToken(roomId: string, userId: string, name: string): Promise<string>;
+  /** `opts.isHost` grants roomAdmin (mute/remove others) — initiator only. */
+  generateToken(
+    roomId: string,
+    userId: string,
+    name: string,
+    opts?: { isHost?: boolean },
+  ): Promise<string>;
   listParticipants(roomId: string): Promise<SFUParticipant[]>;
   removeParticipant(roomId: string, identity: string): Promise<void>;
   muteParticipant(roomId: string, identity: string, muted: boolean): Promise<void>;
   muteAllParticipants(roomId: string, excludeIdentity?: string): Promise<void>;
+  /** Delete the room immediately (call ended) rather than waiting on emptyTimeout. */
+  deleteRoom(roomId: string): Promise<void>;
 }
 
 export type SFUMode = "stub" | "live";
@@ -41,8 +50,14 @@ export function selectSFUMode(env: Record<string, string | undefined> = process.
   warning?: string;
 } {
   if (env.SFU_MODE === "live") {
-    if (env.LIVEKIT_URL) return { mode: "live" };
-    return { mode: "stub", warning: "SFU_MODE=live but LIVEKIT_URL is unset" };
+    const missing = ["LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"].filter(
+      (key) => !env[key],
+    );
+    if (missing.length === 0) return { mode: "live" };
+    return {
+      mode: "stub",
+      warning: `SFU_MODE=live but missing: ${missing.join(", ")}`,
+    };
   }
   return { mode: "stub" };
 }
@@ -52,7 +67,9 @@ let cachedProvider: SFUProvider | null = null;
 /** Return the configured SFU provider (cached per process). */
 export function getSFUProvider(): SFUProvider {
   if (cachedProvider) return cachedProvider;
-  const { mode } = selectSFUMode();
+  const { mode, warning } = selectSFUMode();
+  if (warning) logger.warn({ warning }, "SFU provider misconfigured — falling back to stub");
+  logger.info({ mode }, "sfu provider active");
   if (mode === "live") {
     // Dynamic import so the LiveKit SDK is only loaded in live mode
     // eslint-disable-next-line @typescript-eslint/no-var-requires
