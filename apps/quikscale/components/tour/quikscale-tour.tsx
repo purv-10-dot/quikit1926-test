@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useLayoutEffect, useRef } from "react";
+import { useSession } from "next-auth/react";
 import { X, ChevronLeft, ChevronRight, RotateCcw } from "lucide-react";
 import { QuikScaleMascot } from "./quikscale-mascot";
 
@@ -19,7 +20,34 @@ interface Rect {
   height: number;
 }
 
-const STORAGE_KEY = "qs:tour-completed";
+/**
+ * localStorage keys.
+ *
+ * Both are suffixed with the signed-in user's id. The unsuffixed key was a
+ * single browser-wide flag, which broke two ways on a shared device: user B
+ * inherited user A's "completed" state, and switching accounts could never
+ * re-show the tour. `LEGACY_STORAGE_KEY` is only read to migrate/clean up.
+ */
+const LEGACY_STORAGE_KEY = "qs:tour-completed";
+const storageKey = (userId: string) => `qs:tour-completed:${userId}`;
+/** Set when a completion POST failed — retried on the next mount. */
+const pendingSyncKey = (userId: string) => `qs:tour-pending-sync:${userId}`;
+
+/** POST the completion flag, retrying transient failures. */
+async function postCompletion(attempts = 2): Promise<boolean> {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const res = await fetch("/api/me/tour-status", { method: "POST" });
+      if (res.ok) return true;
+    } catch {
+      /* network error — fall through to retry */
+    }
+    if (i < attempts - 1) {
+      await new Promise((r) => window.setTimeout(r, 400 * (i + 1)));
+    }
+  }
+  return false;
+}
 
 const STEPS: TourStep[] = [
   {
@@ -244,6 +272,8 @@ function TourBubbleContent({
 }
 
 export function QuikScaleTour() {
+  const { data: session } = useSession();
+  const userId = session?.user?.id;
   const [open, setOpen] = useState(false);
   const [stepIdx, setStepIdx] = useState(0);
   /**
@@ -262,43 +292,86 @@ export function QuikScaleTour() {
   const [bubbleHeight, setBubbleHeight] = useState(DEFAULT_BUBBLE_HEIGHT);
   const bubbleRef = useRef<HTMLDivElement>(null);
 
-  // Auto-launch on first visit; later runs can fire via the qs:tour-start
-  // window event so a "Restart tour" button anywhere in the app can call it.
-  // Source of truth is the server (survives localStorage clears, syncs across
-  // devices). localStorage is a fast-path cache + offline fallback.
+  // Auto-launch on first visit; later runs fire via the qs:tour-start window
+  // event (the "Take the tour again" item in the user menu).
+  //
+  // The server is the ONLY source of truth, and the gate FAILS CLOSED: the
+  // tour opens only when the API explicitly answers `completed: false`. Any
+  // 500/offline/non-ok response leaves it shut.
+  //
+  // Why fail closed: `globalSignOut()` calls `localStorage.clear()`, so the
+  // local cache is wiped on every logout and cannot vouch for a returning
+  // user. Under the old fail-open branch a single broken GET meant the tour
+  // replayed on every single login, forever — which is exactly what happened
+  // when /api/me/tour-status started 500-ing. Never seeing the tour is a far
+  // cheaper failure than seeing it every login.
+  //
+  // localStorage remains a fast-path cache only: it can SUPPRESS the tour
+  // before the fetch resolves, never trigger it.
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (!userId) return; // wait for the session before keying storage
     let cancelled = false;
-    const localDone = window.localStorage.getItem(STORAGE_KEY);
+
+    // One-time migration off the old browser-wide key.
+    try {
+      if (window.localStorage.getItem(LEGACY_STORAGE_KEY)) {
+        window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+      }
+    } catch {
+      /* storage may be unavailable under strict privacy settings */
+    }
+
+    const readFlag = (key: string) => {
+      try {
+        return window.localStorage.getItem(key);
+      } catch {
+        return null;
+      }
+    };
+    const writeFlag = (key: string, value: string | null) => {
+      try {
+        if (value === null) window.localStorage.removeItem(key);
+        else window.localStorage.setItem(key, value);
+      } catch {
+        /* ignore quota / private-mode errors */
+      }
+    };
+
+    const localDone = readFlag(storageKey(userId));
+    const pendingSync = readFlag(pendingSyncKey(userId));
 
     (async () => {
+      // A previous run finished but its POST never landed — replay it so the
+      // server catches up instead of re-showing the tour on the next device.
+      if (pendingSync) {
+        const ok = await postCompletion();
+        if (cancelled) return;
+        if (ok) writeFlag(pendingSyncKey(userId), null);
+        return; // either way this user has already completed it
+      }
+
+      if (localDone) return;
+
       try {
         const res = await fetch("/api/me/tour-status", { cache: "no-store" });
+        if (cancelled || !res.ok) return; // fail closed
+        const json = (await res.json()) as { data?: { completed?: boolean } };
         if (cancelled) return;
-        if (res.ok) {
-          const json = (await res.json()) as { data?: { completed?: boolean } };
-          const serverDone = !!json?.data?.completed;
-          if (serverDone) {
-            window.localStorage.setItem(STORAGE_KEY, "1");
-            return;
-          }
-          if (!localDone) {
-            window.setTimeout(() => !cancelled && setOpen(true), 700);
-          }
+        if (json?.data?.completed) {
+          writeFlag(storageKey(userId), "1");
           return;
         }
-      } catch {
-        /* network error — fall through to localStorage */
-      }
-      if (!localDone && !cancelled) {
         window.setTimeout(() => !cancelled && setOpen(true), 700);
+      } catch {
+        /* network error — fail closed, stay silent */
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [userId]);
 
   // Re-resolve on every open — module flags can change between runs.
   useEffect(() => {
@@ -308,14 +381,28 @@ export function QuikScaleTour() {
     );
   }, [open]);
 
+  // Manual restart ("Take the tour again" in the user menu). Clearing the
+  // flags on both sides matters: leave the server row in place and the tour
+  // would open now but never again after a reload.
   useEffect(() => {
     function onStart() {
+      if (userId) {
+        try {
+          window.localStorage.removeItem(storageKey(userId));
+          window.localStorage.removeItem(pendingSyncKey(userId));
+        } catch {
+          /* ignore */
+        }
+      }
+      void fetch("/api/me/tour-status", { method: "DELETE" }).catch(() => {
+        /* best-effort — the tour still runs for this session */
+      });
       setStepIdx(0);
       setOpen(true);
     }
     window.addEventListener("qs:tour-start", onStart);
     return () => window.removeEventListener("qs:tour-start", onStart);
-  }, []);
+  }, [userId]);
 
   // Recompute the spotlight rect when the step (or window size) changes.
   const measure = useCallback(() => {
@@ -361,17 +448,33 @@ export function QuikScaleTour() {
     // to render at the same height (no bubbleHeight change to re-trigger on).
   }, [open, stepIdx, bubbleHeight]);
 
+  /**
+   * Records completion (a skip counts as done) and closes the tour.
+   *
+   * The close is optimistic — the user is finished either way — but the
+   * server write is durable: it retries, and on final failure it leaves a
+   * `pending-sync` breadcrumb so the next mount replays the POST. Without
+   * that, a failed write meant the DB never learned the tour was done, and
+   * the next logout (which clears localStorage) resurrected it.
+   */
   function finish() {
+    setOpen(false);
+    setStepIdx(0);
+    if (!userId) return;
     try {
-      window.localStorage.setItem(STORAGE_KEY, "1");
+      window.localStorage.setItem(storageKey(userId), "1");
+      window.localStorage.setItem(pendingSyncKey(userId), "1");
     } catch {
       /* ignore quota / private-mode errors */
     }
-    void fetch("/api/me/tour-status", { method: "POST" }).catch(() => {
-      /* best-effort — localStorage still gates re-show this session */
+    void postCompletion().then((ok) => {
+      if (!ok) return; // breadcrumb stays; retried on next mount
+      try {
+        window.localStorage.removeItem(pendingSyncKey(userId));
+      } catch {
+        /* ignore */
+      }
     });
-    setOpen(false);
-    setStepIdx(0);
   }
 
   if (!open) return null;
