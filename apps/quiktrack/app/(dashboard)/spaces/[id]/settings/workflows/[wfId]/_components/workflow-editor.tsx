@@ -432,9 +432,18 @@ function EditorBody({
 
       {addStatusOpen && (
         <AddStatusDialog
+          projectId={projectId}
           poolStatuses={pool}
           draft={ed.draft}
           onAdd={ed.addStatus}
+          onAddAnyStatus={(statusId, statusName) =>
+            ed.addTransition({
+              name: `To ${statusName}`,
+              type: "GLOBAL",
+              toStatusId: statusId,
+              fromStatusIds: [],
+            })
+          }
           onClose={() => setAddStatusOpen(false)}
         />
       )}

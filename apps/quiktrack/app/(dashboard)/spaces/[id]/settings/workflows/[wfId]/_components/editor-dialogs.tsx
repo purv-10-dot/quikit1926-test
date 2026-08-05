@@ -1,9 +1,30 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, ChevronDown, Info } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { X, ChevronDown, Info, Plus } from "lucide-react";
 import type { EditorDraft, StatusMeta, TransitionType } from "./editor-types";
+
+/**
+ * Statuses always offered in "Add a status" even when the project doesn't have
+ * them yet — picking one creates it by name. Covers the classic template set
+ * (Open/In Progress/Resolved/Reopened/Closed) plus common extras (Build Broken,
+ * Building, Ideation, To Do, In Review, Done) so the dropdown mirrors Jira's.
+ */
+const CLASSIC_STATUSES: Array<{ name: string; category: string }> = [
+  { name: "To Do", category: "BACKLOG" },
+  { name: "Ideation", category: "BACKLOG" },
+  { name: "Open", category: "BACKLOG" },
+  { name: "In Progress", category: "IN_PROGRESS" },
+  { name: "Building", category: "IN_PROGRESS" },
+  { name: "Build Broken", category: "IN_PROGRESS" },
+  { name: "In Review", category: "IN_PROGRESS" },
+  { name: "Resolved", category: "IN_PROGRESS" },
+  { name: "Reopened", category: "IN_PROGRESS" },
+  { name: "Closed", category: "DONE" },
+  { name: "Done", category: "DONE" },
+];
 
 /** Category → Jira-style status pill colours. */
 function pillClass(category?: string): string {
@@ -147,44 +168,198 @@ export function SaveAsNewWorkflowDialog({
   );
 }
 
-/** Add-status: choose from the project statuses not already in the workflow. */
+/**
+ * "Add a status" — Jira-style. A searchable combobox of the project's existing
+ * statuses (as category-coloured pills), a "Create <name>" option to make a new
+ * status inline, and an "Allow transitions from any status" checkbox that also
+ * wires a GLOBAL (Any → status) transition into the added status.
+ */
 export function AddStatusDialog({
+  projectId,
   poolStatuses,
   draft,
   onAdd,
+  onAddAnyStatus,
   onClose,
 }: {
+  projectId: string;
   poolStatuses: StatusMeta[];
   draft: EditorDraft;
+  /** Add an existing project status to the workflow. */
   onAdd: (statusId: string) => void;
+  /** Add a GLOBAL "Any status → statusId" transition (the checkbox). */
+  onAddAnyStatus: (statusId: string, statusName: string) => void;
   onClose: () => void;
 }) {
-  const inWorkflow = new Set(draft.statuses.map((s) => s.statusId));
-  const available = poolStatuses.filter((s) => !inWorkflow.has(s.id));
+  const qc = useQueryClient();
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const [allowAny, setAllowAny] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<StatusMeta | null>(null);
+  const ref = useClickOutside(open, () => setOpen(false));
+
+  // An option is either an EXISTING project status (has an id) or a CLASSIC
+  // template status the project doesn't have yet (id = null → created on add).
+  type StatusOption = { id: string | null; name: string; category: string };
+
+  const inWorkflowNames = useMemo(() => {
+    const byId = new Map(poolStatuses.map((s) => [s.id, s.name]));
+    return new Set(draft.statuses.map((s) => byId.get(s.statusId)).filter(Boolean) as string[]);
+  }, [draft.statuses, poolStatuses]);
+  const projectNames = useMemo(
+    () => new Set(poolStatuses.map((s) => s.name.toLowerCase())),
+    [poolStatuses],
+  );
+
+  // Options = the project's statuses + the classic statuses the project lacks,
+  // minus any already in this workflow. Deduped by name (project wins).
+  const options = useMemo<StatusOption[]>(() => {
+    const list: StatusOption[] = poolStatuses
+      .filter((s) => !inWorkflowNames.has(s.name))
+      .map((s) => ({ id: s.id, name: s.name, category: s.category }));
+    for (const c of CLASSIC_STATUSES) {
+      if (projectNames.has(c.name.toLowerCase())) continue; // already a project status
+      if (inWorkflowNames.has(c.name)) continue;
+      list.push({ id: null, name: c.name, category: c.category });
+    }
+    return list;
+  }, [poolStatuses, inWorkflowNames, projectNames]);
+
+  const q = query.trim().toLowerCase();
+  const filtered = useMemo(
+    () => (q ? options.filter((o) => o.name.toLowerCase().includes(q)) : options),
+    [options, q],
+  );
+  // Offer "Create <name>" when the typed name matches no listed option.
+  const nameExists = useMemo(
+    () => options.some((o) => o.name.toLowerCase() === q) || projectNames.has(q),
+    [options, projectNames, q],
+  );
+  const canCreate = q.length > 0 && !nameExists;
+
+  const finish = (statusId: string, statusName: string) => {
+    onAdd(statusId);
+    if (allowAny) onAddAnyStatus(statusId, statusName);
+    onClose();
+  };
+
+  // Create a status by name (for classic-only options + the "Create" action),
+  // then add it. Category defaults to the classic status's category if known.
+  const createStatus = async (name: string, category = "IN_PROGRESS") => {
+    setCreating(true);
+    setError(null);
+    try {
+      const r = await fetch(`/api/projects/${projectId}/statuses`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, category }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.success) throw new Error(j.error ?? "Failed to create status");
+      const created = j.data as { id: string; name: string };
+      await qc.invalidateQueries({ queryKey: ["quiktrack", "statuses", projectId] });
+      finish(created.id, created.name);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to create status");
+      setCreating(false);
+    }
+  };
+
+  const pick = (o: StatusOption) => {
+    setSelected({ id: o.id ?? "", name: o.name, color: "", category: o.category });
+    setOpen(false);
+  };
+
+  const add = () => {
+    if (selected) {
+      if (selected.id) return finish(selected.id, selected.name);
+      // Classic-only status not in the project yet → create it by name.
+      return void createStatus(selected.name, selected.category);
+    }
+    if (canCreate) void createStatus(query.trim());
+  };
+
   return (
-    <Shell title="Add a status" onClose={onClose}>
-      {available.length === 0 ? (
-        <p className="text-sm text-gray-500">Every project status is already in this workflow.</p>
-      ) : (
-        <ul className="max-h-72 space-y-1 overflow-y-auto">
-          {available.map((s) => (
-            <li key={s.id}>
-              <button
-                type="button"
-                onClick={() => {
-                  onAdd(s.id);
-                  onClose();
-                }}
-                className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm hover:bg-gray-100"
-              >
-                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: s.color }} />
-                <span className="font-medium text-gray-800">{s.name}</span>
-                <span className="ml-auto text-[11px] text-gray-400">{s.category}</span>
+    <Shell title="Add a status" onClose={onClose} wide>
+      <div className="space-y-4">
+        <p className="text-sm text-gray-600">
+          Statuses capture the stages of your working process. Add more statuses to represent
+          different stages in your team&apos;s process.
+        </p>
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-700">Search for a status</label>
+          <div className="relative" ref={ref}>
+            <div className="flex items-center rounded border border-gray-300 px-2 focus-within:border-accent-500">
+              {selected ? (
+                <span className={`my-1.5 inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium ${pillClass(selected.category)}`}>
+                  {selected.name}
+                  <X className="h-3 w-3 cursor-pointer opacity-60 hover:opacity-100" onClick={() => setSelected(null)} />
+                </span>
+              ) : (
+                <input
+                  value={query}
+                  onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+                  onFocus={() => setOpen(true)}
+                  className="min-w-0 flex-1 bg-transparent py-2 text-sm focus:outline-none"
+                />
+              )}
+              <button type="button" onClick={() => setOpen((v) => !v)} className="ml-auto text-gray-400">
+                <ChevronDown className="h-4 w-4" />
               </button>
-            </li>
-          ))}
-        </ul>
-      )}
+            </div>
+            {open && !selected && (
+              <div className="absolute left-0 top-full z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg">
+                {filtered.map((o) => (
+                  <button
+                    key={o.id ?? `classic:${o.name}`}
+                    type="button"
+                    onClick={() => pick(o)}
+                    className="flex w-full items-center px-3 py-1.5 text-left hover:bg-gray-50"
+                  >
+                    <StatusPill name={o.name} category={o.category} />
+                  </button>
+                ))}
+                {canCreate && (
+                  <button
+                    type="button"
+                    onClick={() => { setOpen(false); void createStatus(query.trim()); }}
+                    className="flex w-full items-center gap-2 border-l-2 border-accent-500 px-3 py-2 text-left text-sm text-accent-700 hover:bg-accent-50"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Create “{query.trim()}”
+                  </button>
+                )}
+                {filtered.length === 0 && !canCreate && (
+                  <div className="px-3 py-2 text-sm text-gray-400">No statuses.</div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <label className="flex items-center gap-2 text-sm text-gray-700">
+          <input type="checkbox" checked={allowAny} onChange={(e) => setAllowAny(e.target.checked)} />
+          Allow transitions from any status
+        </label>
+
+        {error && <p className="text-sm text-red-600">{error}</p>}
+
+        <div className="flex justify-end gap-3 pt-1">
+          <button type="button" onClick={onClose} className="text-sm font-medium text-gray-600 hover:text-gray-800">
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={add}
+            disabled={creating || (!selected && !canCreate)}
+            className="rounded bg-accent-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-accent-700 disabled:opacity-50"
+          >
+            {creating ? "Adding…" : "Add"}
+          </button>
+        </div>
+      </div>
     </Shell>
   );
 }
