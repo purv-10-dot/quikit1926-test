@@ -25,6 +25,7 @@ import {
   useToast,
   X,
 } from "@/components/ui";
+import { clearDraft, getDraft, saveDraft } from "@/lib/composer-drafts";
 import { formatVoiceDuration } from "@/lib/format";
 import { computeMentions, findMentionQuery, type MentionMember } from "@/lib/mentions";
 import { serializeToMarkdown } from "@/lib/tiptap-markdown";
@@ -53,7 +54,9 @@ export interface ComposerProps {
   onSend: (content: string, mentions: MentionRefInput[]) => void;
   /** Fired (debounced to ≤ once/3s) while the user is actively typing. */
   onTyping?: () => void;
-  /** Channel id — required for the attach/upload flow. */
+  /** Current user — namespaces the per-channel draft so a shared machine never mixes drafts. */
+  currentUserId: string;
+  /** Channel id — required for the attach/upload flow AND for draft persistence. */
   channelId?: string;
   /** Send a Media message after a successful upload (with a local preview URL). */
   onSendMedia?: (media: MediaMeta, caption: string, localUrl: string) => void;
@@ -72,10 +75,15 @@ export function parseAssistCommand(text: string): string | null {
 /** Debounce window for typing notifications — never emit more than once per 3s. */
 const TYPING_THROTTLE_MS = 3_000;
 
+/** Debounce window for the draft-save backstop — covers a hard reload/crash,
+ *  which the unmount-time save (the channel-switch case) can't. */
+const DRAFT_SAVE_DEBOUNCE_MS = 500;
+
 export function Composer({
   members,
   onSend,
   onTyping,
+  currentUserId,
   channelId,
   onSendMedia,
   onAssist,
@@ -107,6 +115,12 @@ export function Composer({
   const [emojiData, setEmojiData] = useState<unknown>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const lastTypingAt = useRef(0);
+  // Debounced draft-save timer — the hard-reload/crash backstop (see
+  // scheduleDraftSave). Cleared on unmount and on every successful send so a
+  // stale timer can't fire after the content it captured is gone (it would be
+  // harmless anyway — persistDraft reads live editor state, not a snapshot —
+  // but there's no reason to let a pointless write happen).
+  const draftSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Always points at the latest submit() so the editor's once-created
   // handleKeyDown closure calls the current version.
   const submitRef = useRef<() => void>(() => {});
@@ -289,6 +303,7 @@ export function Composer({
     onUpdate: ({ editor }) => {
       if (editor.getText().trim()) notifyTyping();
       refreshMentionQuery(editor);
+      scheduleDraftSave(editor);
     },
     onSelectionUpdate: ({ editor }) => refreshMentionQuery(editor),
     immediatelyRender: false, // Next SSR guard
@@ -298,6 +313,70 @@ export function Composer({
   useEffect(() => {
     editor?.setEditable(!disabled);
   }, [editor, disabled]);
+
+  /** Save now if there's real content, else clear a leftover draft. Reads
+   *  live editor state at call time — never a stale snapshot from when a
+   *  debounce/unmount timer was armed. */
+  function persistDraft(ed: Editor) {
+    if (!channelId) return;
+    if (ed.getText().trim()) saveDraft(currentUserId, channelId, ed.getJSON());
+    else clearDraft(currentUserId, channelId);
+  }
+
+  /** The hard-reload/crash backstop: unmount (below) covers a clean channel
+   *  switch, but nothing runs React's unmount lifecycle on a tab close or
+   *  crash, so this keeps the persisted draft within 500ms of what's typed. */
+  function scheduleDraftSave(ed: Editor) {
+    if (!channelId) return;
+    if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
+    draftSaveTimer.current = setTimeout(() => persistDraft(ed), DRAFT_SAVE_DEBOUNCE_MS);
+  }
+
+  /** Every successful-send path clears the editor through here instead of a
+   *  bare `clearContent()`, so a sent draft can never resurface. Cancelling
+   *  the pending debounce timer is a courtesy, not a correctness fix —
+   *  `persistDraft` reads live (now-empty) editor state even if a stale timer
+   *  fired anyway, so it would just re-clear the same key. */
+  function clearComposerAndDraft(ed: Editor) {
+    if (draftSaveTimer.current) {
+      clearTimeout(draftSaveTimer.current);
+      draftSaveTimer.current = null;
+    }
+    ed.commands.clearContent();
+    if (channelId) clearDraft(currentUserId, channelId);
+  }
+
+  // Restore a saved draft once, after the editor exists. Deliberately a
+  // post-mount `setContent` rather than Tiptap's constructor-time `content`
+  // option: a stored doc whose shape no longer matches the current
+  // extensions (e.g. a future StarterKit config change) must not crash the
+  // whole render — `setContent` defaults `emitUpdate` to false, so this can't
+  // fire `onUpdate`/notifyTyping either. On a shape mismatch, self-heal by
+  // clearing the bad entry so the next mount doesn't retry it.
+  useEffect(() => {
+    if (!editor || !channelId) return;
+    const doc = getDraft(currentUserId, channelId);
+    if (doc == null) return;
+    try {
+      editor.commands.setContent(doc);
+    } catch {
+      clearDraft(currentUserId, channelId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, channelId, currentUserId]);
+
+  // Save on unmount — the channel-switch case. Declared AFTER `useEditor()`
+  // so its cleanup runs BEFORE Tiptap's own internal `editor.destroy()`
+  // cleanup (React unwinds one component's effect cleanups in reverse
+  // declaration order), meaning the editor is still alive and `.getJSON()`
+  // still reflects the last keystroke when this fires.
+  useEffect(() => {
+    return () => {
+      if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
+      if (editor && channelId) persistDraft(editor);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, channelId, currentUserId]);
 
   // ---- Voice typing (dictation) ----
   // Chosen locale is read after mount (localStorage is unavailable during SSR).
@@ -435,7 +514,7 @@ export function Composer({
       // Keep localUrl alive — handleSendMedia uses it for the optimistic preview
       // until the realtime echo reconciles with the server URL.
       onSendMedia(media, serializeToMarkdown(editor?.getJSON()).trim(), localUrl);
-      editor?.commands.clearContent();
+      if (editor) clearComposerAndDraft(editor);
       setPending(null);
       lastTypingAt.current = 0;
     } catch (uploadErr) {
@@ -491,13 +570,13 @@ export function Composer({
     const askPrompt = onAssist ? parseAssistCommand(content) : null;
     if (askPrompt) {
       onAssist!(askPrompt);
-      editor.commands.clearContent();
+      clearComposerAndDraft(editor);
       lastTypingAt.current = 0;
       return;
     }
     const mentions = computeMentions(content, members);
     onSend(content, mentions);
-    editor.commands.clearContent();
+    clearComposerAndDraft(editor);
     // Reset so the next keystroke after sending re-notifies immediately.
     lastTypingAt.current = 0;
   }

@@ -453,6 +453,7 @@ export function ConversationView({
           // half-typed text — stays frozen on whichever channel was open first.
           // Prefixed to stay distinct from MessageList's key (same parent).
           key={`composer-${channelId}`}
+          currentUserId={currentUserId}
           members={mentionableMembers(
             channel.members.map((m) => ({ id: m.id, displayName: m.displayName })),
             currentUserId,

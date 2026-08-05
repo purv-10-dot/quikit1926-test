@@ -51,7 +51,13 @@ const members = [{ id: "u1", displayName: "Alice" }];
 function renderComposer(onSendMedia = vi.fn()) {
   render(
     <ToastProvider>
-      <Composer members={members} onSend={vi.fn()} channelId="c1" onSendMedia={onSendMedia} />
+      <Composer
+        members={members}
+        onSend={vi.fn()}
+        currentUserId="u1"
+        channelId="c1"
+        onSendMedia={onSendMedia}
+      />
     </ToastProvider>,
   );
   return onSendMedia;

@@ -70,7 +70,13 @@ let getUserMedia: ReturnType<typeof vi.fn>;
 function renderComposer(onSendMedia = vi.fn()) {
   render(
     <ToastProvider>
-      <Composer members={members} onSend={vi.fn()} channelId="c1" onSendMedia={onSendMedia} />
+      <Composer
+        members={members}
+        onSend={vi.fn()}
+        currentUserId="u1"
+        channelId="c1"
+        onSendMedia={onSendMedia}
+      />
     </ToastProvider>,
   );
   return onSendMedia;
@@ -288,7 +294,13 @@ describe("Composer voice notes (record → stage → existing send path)", () =>
   it("unmounting mid-recording releases the mic", async () => {
     const { unmount } = render(
       <ToastProvider>
-        <Composer members={members} onSend={vi.fn()} channelId="c1" onSendMedia={vi.fn()} />
+        <Composer
+          members={members}
+          onSend={vi.fn()}
+          currentUserId="u1"
+          channelId="c1"
+          onSendMedia={vi.fn()}
+        />
       </ToastProvider>,
     );
     fireEvent.click(await screen.findByRole("button", { name: "Record voice message" }));
