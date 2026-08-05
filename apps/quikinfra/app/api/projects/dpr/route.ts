@@ -9,6 +9,7 @@ import { err as envelopeErr } from "@/lib/http/envelope";
 import { parsePagination, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 import { parseStoredWeatherDetail } from "@/lib/weather/dpr-weather";
 import { canActOnCurrentStep } from "@/lib/approvals/workflow-rbac";
+import { loadRepairFlags } from "@/lib/approvals/list-repair-flags";
 import { resolveMaterialMeta } from "@/lib/projects/dpr-material-meta";
 import { persistDprImages } from "@/lib/dpr/dpr-images";
 
@@ -455,6 +456,9 @@ export async function GET(req: NextRequest) {
     roleKey: ctx.roleKey,
     projectIds: ctx.projectIds,
   };
+  // Flags rows whose workflow was edited after submission, so the list marks
+  // them instead of the user opening each pending row to find out.
+  const repairByApprovalId = await loadRepairFlags(approvalIds);
   data = data.map((row) => {
     const instance = row.approvalId ? instanceById.get(row.approvalId) : null;
     return {
@@ -462,6 +466,9 @@ export async function GET(req: NextRequest) {
       canActOnCurrentStep: instance
         ? canActOnCurrentStep(actor, instance, row.projectId ?? null)
         : false,
+      approvalRepair: row.approvalId
+        ? (repairByApprovalId.get(row.approvalId) ?? null)
+        : null,
     };
   });
 

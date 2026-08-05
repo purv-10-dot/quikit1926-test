@@ -5,6 +5,12 @@ import { db } from "@/lib/db";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
+import { resolveEffectiveStep } from "@/lib/approvals/step-resolution";
+import {
+  repairHistoryComment,
+  repointNote,
+  validateRepairCompletion,
+} from "@/lib/approvals/complete-repaired-approval";
 import { boqService, BOQError } from "@/lib/boq";
 import { recordAudit } from "@/lib/workflow/audit";
 import { postDPRConsumptionOutward, StockError } from "@/lib/stock/ledger-service";
@@ -23,7 +29,7 @@ import { postDPRConsumptionOutward, StockError } from "@/lib/stock/ledger-servic
  * Body: { action: "approve" | "reject" | "return", comments? }
  */
 
-type Action = "approve" | "reject" | "return";
+type Action = "approve" | "reject" | "return" | "complete";
 
 export async function POST(
   req: NextRequest,
@@ -46,7 +52,7 @@ export async function POST(
   const action = (body.action ?? "approve") as Action;
   const comments = String(body.comments ?? "").trim();
 
-  if (!["approve", "reject", "return"].includes(action)) {
+  if (!["approve", "reject", "return", "complete"].includes(action)) {
     return NextResponse.json(
       { error: `Unknown action: ${action}` },
       { status: 400 },
@@ -119,22 +125,48 @@ export async function POST(
     );
   }
 
-  const currentStep = await db.cnApprovalWorkflowStep.findFirst({
-    where: {
-      workflowId: instance.workflowId,
-      stepOrder: instance.currentStepOrder,
-    },
-  });
+  // A mid-flight workflow edit can remove the step this instance is parked on.
+  // Resolve against the instance's own chain (its submit-time snapshot when it
+  // has one) and fall back to the highest surviving step below — the previous
+  // hard 500 fired before the actor check, so nobody could action the DPR.
+  const resolved = await resolveEffectiveStep(db, instance);
+  const currentStep = resolved.step;
   if (!currentStep) {
     return NextResponse.json(
       {
-        error: `Workflow step ${instance.currentStepOrder} is missing — the workflow may have been edited while this DPR was mid-flight.`,
+        error:
+          "This DPR's workflow has no steps configured, so it cannot be actioned. " +
+          "Reconfigure it under Settings → Workflows.",
       },
       { status: 500 },
     );
   }
 
+  // `complete` closes an instance whose chain is already fully approved — no
+  // approver has anything left to act on. Authorised here, then routed through
+  // the normal final-approve path below so BOQ progress and material
+  // consumption still post exactly once.
+  let repair: { closingStep: number; totalSteps: number; reason: string } | null =
+    null;
+  if (action === "complete") {
+    const check = await validateRepairCompletion({
+      ctx,
+      instance,
+      entityLabel: "DPR",
+      reason: comments,
+    });
+    if (check.kind === "error") {
+      return NextResponse.json(check.body, { status: check.status });
+    }
+    repair = {
+      closingStep: check.closingStep,
+      totalSteps: check.totalSteps,
+      reason: check.reason,
+    };
+  }
+
   if (
+    !repair &&
     !canActOnStep(
       { userId: ctx.userId, roleKey: ctx.roleKey, projectIds: ctx.projectIds },
       {
@@ -157,23 +189,26 @@ export async function POST(
     }
     return NextResponse.json(
       {
-        error: `You are not authorized to ${action} this DPR at step ${instance.currentStepOrder}. Expected: ${expected}.`,
+        error: `You are not authorized to ${action} this DPR at step ${resolved.effectiveStepOrder}. Expected: ${expected}.`,
       },
       { status: 403 },
     );
   }
 
-  const nextStep = await db.cnApprovalWorkflowStep.findFirst({
-    where: {
-      workflowId: instance.workflowId,
-      stepOrder: { gt: instance.currentStepOrder },
-    },
-    orderBy: { stepOrder: "asc" },
-  });
+  // The step the history row is written against.
+  const actingStepOrder = repair?.closingStep ?? resolved.effectiveStepOrder;
+
+  // A repair is terminal by definition — its chain has no unapproved step left.
+  const nextStep = repair
+    ? null
+    : (resolved.steps.find((s) => s.stepOrder > actingStepOrder) ?? null);
+
+  // A repair takes the approve branches: same side effects, different authority.
+  const effectiveAction: Action = repair ? "approve" : action;
 
   // ── Pre-resolve BOQ ids → boqNos so the txn doesn't do extra reads. ──
-  // Only used when action === "approve" AND this is the final step.
-  const isFinalApprove = action === "approve" && !nextStep;
+  // Only used when approving AND this is the final step.
+  const isFinalApprove = effectiveAction === "approve" && !nextStep;
 
   // Material consumption is deducted from a single location on final
   // approve. Block early if there are materials but no location to
@@ -219,20 +254,36 @@ export async function POST(
       await tx.cnApprovalHistory.create({
         data: {
           instanceId: instance.id,
-          stepOrder: instance.currentStepOrder,
-          action,
+          stepOrder: actingStepOrder,
+          action: effectiveAction,
           actionById: ctx.userId,
-          comments: comments || null,
+          comments: repair
+            ? repairHistoryComment({
+                missingStepOrder: instance.currentStepOrder,
+                totalSteps: repair.totalSteps,
+                reason: repair.reason,
+              })
+            : resolved.repointed
+              ? repointNote({
+                  parkedStepOrder: instance.currentStepOrder,
+                  actedStepOrder: actingStepOrder,
+                  comments,
+                })
+              : comments || null,
         },
       });
 
-      if (action === "approve") {
+      if (effectiveAction === "approve") {
         if (!nextStep) {
           // Final step → flip DPR to approved AND post BOQ progress
           // entries inside this same transaction.
           await tx.cnApprovalInstance.update({
             where: { id: instance.id },
-            data: { status: "approved", completedAt: new Date() },
+            data: {
+              status: "approved",
+              completedAt: new Date(),
+              currentStepOrder: actingStepOrder,
+            },
           });
 
           for (const line of dpr.workItems ?? []) {
@@ -322,6 +373,12 @@ export async function POST(
               linesApplied: appliedUpdates.length,
               materialsConsumed,
               comments: comments || undefined,
+              ...(repair
+                ? {
+                    completedViaRepair: true,
+                    parkedOnRemovedStep: instance.currentStepOrder,
+                  }
+                : {}),
             },
           });
 
@@ -333,10 +390,14 @@ export async function POST(
           });
           // Mid-flow — DPR stays "submitted" / "pending_approval".
         }
-      } else if (action === "reject") {
+      } else if (effectiveAction === "reject") {
         await tx.cnApprovalInstance.update({
           where: { id: instance.id },
-          data: { status: "rejected", completedAt: new Date() },
+          data: {
+            status: "rejected",
+            completedAt: new Date(),
+            currentStepOrder: actingStepOrder,
+          },
         });
         await recordAudit(tx, ctx, {
           entityType: "dpr",
@@ -350,7 +411,11 @@ export async function POST(
         // approvalId means the next submit creates a fresh instance.
         await tx.cnApprovalInstance.update({
           where: { id: instance.id },
-          data: { status: "returned", completedAt: new Date() },
+          data: {
+            status: "returned",
+            completedAt: new Date(),
+            currentStepOrder: actingStepOrder,
+          },
         });
         await recordAudit(tx, ctx, {
           entityType: "dpr",

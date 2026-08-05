@@ -53,12 +53,11 @@ export async function POST(
   if (guard.cached) return guard.cachedResponse!;
   if (guard.conflict) return guard.conflictResponse!;
 
-  let body: { action?: string; comments?: string } = {};
-  try {
-    body = await req.json();
-  } catch {
-    /* empty body — defaults to "approve" */
-  }
+  // Read the payload off the guard, NOT `req.json()`. `idempotencyGuard`
+  // already consumed the stream to hash it, so a second read throws and the
+  // action silently fell back to "approve" — a reject landed as an approval,
+  // stock included.
+  const body = (guard.parsedBody ?? {}) as { action?: string; comments?: string };
   const action = (body.action ?? "approve") as Action;
   const comments = String(body.comments ?? "").trim();
 

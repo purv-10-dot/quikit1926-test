@@ -6,6 +6,7 @@ import {
   softDeleteUserCentral,
 } from "@/lib/users/central-repository";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
+import { logger } from "@/lib/observability/logger";
 import { getQuikInfraAppId } from "@/lib/rbac/userCan";
 import { mirrorAppRoleToCentral } from "@quikit/auth/assign-app-roles";
 import { type PermissionMatrix } from "@/lib/rbac/menu-catalog";
@@ -506,8 +507,22 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
       for (const p of toRevoke) await writeExtra(p, true);
       // …and explicitly grant the checked cells.
       for (const p of toGrant) await writeExtra(p, false);
-    } catch {
-      // Non-fatal — admin can retry by re-saving.
+    } catch (error: unknown) {
+      // This block IS the permission save. Swallowing a failure here reported
+      // "saved successfully" while nothing was persisted, so the admin had no
+      // way to tell an un-enforced permission from an un-saved one. Fail loud.
+      const message =
+        error instanceof Error ? error.message : "Failed to save permissions";
+      logger.error({
+        msg: "user_permission_matrix_save_failed",
+        userId: id,
+        orgId: ctx.orgId,
+        error: message,
+      });
+      return NextResponse.json(
+        { success: false, error: `Failed to save permissions: ${message}` },
+        { status: 500 },
+      );
     }
   }
 

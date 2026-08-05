@@ -21,9 +21,28 @@ export interface ApprovalHistoryEntry {
   comments?: string | null;
 }
 
+/**
+ * Set when a pending instance's workflow was edited after submission, so the
+ * step it is parked on may no longer exist. Drives the "workflow changed"
+ * banner and the admin Complete Approval action.
+ */
+export interface ApprovalRepairInfo {
+  orphaned: boolean;
+  missingStepOrder: number | null;
+  totalSteps: number;
+  lastStepOrder: number | null;
+  allStepsApproved: boolean;
+  /** History step orders with no matching step left in the workflow. */
+  orphanedHistorySteps: number[];
+  /** Orphaned AND every surviving step already approved — nothing left to approve. */
+  completable: boolean;
+}
+
 export interface ApprovalInfo {
   status?: string | null;
   currentStepOrder?: number | null;
+  /** Null unless the instance is pending. */
+  repair?: ApprovalRepairInfo | null;
   /** Server-computed: whether the current user can act on the current step. */
   canActOnCurrentStep?: boolean | null;
   requestedByName?: string | null;

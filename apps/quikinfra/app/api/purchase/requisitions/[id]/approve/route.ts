@@ -7,6 +7,12 @@ import { tenantCreate, hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { findPRById } from "@/lib/purchase/pr-repository";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
+import { resolveEffectiveStep } from "@/lib/approvals/step-resolution";
+import {
+  repairHistoryComment,
+  repointNote,
+  validateRepairCompletion,
+} from "@/lib/approvals/complete-repaired-approval";
 
 /**
  * POST /api/purchase/requisitions/:id/approve
@@ -27,7 +33,7 @@ import { canActOnStep } from "@/lib/approvals/workflow-rbac";
  * Body: { action: "approve" | "reject" | "return", comments?, sourceLocationId? }
  */
 
-type Action = "approve" | "reject" | "return";
+type Action = "approve" | "reject" | "return" | "complete";
 
 export async function POST(
   req: NextRequest,
@@ -51,7 +57,7 @@ export async function POST(
   const comments = String(body.comments ?? "").trim();
   const sourceLocationId: string = body?.sourceLocationId ?? "";
 
-  if (!["approve", "reject", "return"].includes(action)) {
+  if (!["approve", "reject", "return", "complete"].includes(action)) {
     return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
   }
   if ((action === "reject" || action === "return") && !comments) {
@@ -83,22 +89,48 @@ export async function POST(
     );
   }
 
-  const currentStep = await db.cnApprovalWorkflowStep.findFirst({
-    where: {
-      workflowId: instance.workflowId,
-      stepOrder: instance.currentStepOrder,
-    },
-  });
+  // Resolve against the instance's own chain (its submit-time snapshot when it
+  // has one), falling back to the highest surviving step below when a workflow
+  // edit removed the one it is parked on. The old hard 500 fired before the
+  // actor check, so nobody could action the PR at all.
+  const resolved = await resolveEffectiveStep(db, instance);
+  const currentStep = resolved.step;
   if (!currentStep) {
     return NextResponse.json(
       {
-        error: `Workflow step ${instance.currentStepOrder} is missing — the workflow may have been edited while this PR was mid-flight.`,
+        error:
+          "This PR's workflow has no steps configured, so it cannot be actioned. " +
+          "Reconfigure it under Settings → Workflows.",
       },
       { status: 500 },
     );
   }
 
+  // `complete` closes an instance whose chain is already fully approved — no
+  // approver has anything left to act on. Authorised here, then routed through
+  // the normal final-approve branch so the PR's own side effects (status flip,
+  // auto Material Issue) still run exactly once.
+  let repair: { closingStep: number; totalSteps: number; reason: string } | null =
+    null;
+  if (action === "complete") {
+    const check = await validateRepairCompletion({
+      ctx,
+      instance,
+      entityLabel: "PR",
+      reason: comments,
+    });
+    if (check.kind === "error") {
+      return NextResponse.json(check.body, { status: check.status });
+    }
+    repair = {
+      closingStep: check.closingStep,
+      totalSteps: check.totalSteps,
+      reason: check.reason,
+    };
+  }
+
   if (
+    !repair &&
     !canActOnStep(
       { userId: ctx.userId, roleKey: ctx.roleKey, projectIds: ctx.projectIds },
       {
@@ -123,21 +155,24 @@ export async function POST(
     }
     return NextResponse.json(
       {
-        error: `You are not authorized to ${action} this PR at step ${instance.currentStepOrder}. Expected: ${expected}.`,
+        error: `You are not authorized to ${action} this PR at step ${resolved.effectiveStepOrder}. Expected: ${expected}.`,
       },
       { status: 403 },
     );
   }
 
-  // Find the next step by ascending stepOrder so approvals follow the
-  // admin's actual numbering, even if it's non-contiguous (e.g. [1,3,5]).
-  const nextStep = await db.cnApprovalWorkflowStep.findFirst({
-    where: {
-      workflowId: instance.workflowId,
-      stepOrder: { gt: instance.currentStepOrder },
-    },
-    orderBy: { stepOrder: "asc" },
-  });
+  // The step the history row is written against.
+  const actingStepOrder = repair?.closingStep ?? resolved.effectiveStepOrder;
+
+  // Next step by ascending stepOrder within the instance's own chain, so
+  // approvals follow the admin's actual numbering even if it's non-contiguous
+  // (e.g. [1,3,5]). A repair is terminal — its chain has nothing left to approve.
+  const nextStep = repair
+    ? null
+    : (resolved.steps.find((s) => s.stepOrder > actingStepOrder) ?? null);
+
+  // A repair takes the approve branch: same side effects, different authority.
+  const effectiveAction: Action = repair ? "approve" : action;
 
   const summary = String(pr.stockCheckSummary ?? "").toUpperCase();
   const finalPRStatusOnApprove =
@@ -149,19 +184,35 @@ export async function POST(
     await tx.cnApprovalHistory.create({
       data: {
         instanceId: instance.id,
-        stepOrder: instance.currentStepOrder,
-        action,
+        stepOrder: actingStepOrder,
+        action: effectiveAction,
         actionById: ctx.userId,
-        comments: comments || null,
+        comments: repair
+          ? repairHistoryComment({
+              missingStepOrder: instance.currentStepOrder,
+              totalSteps: repair.totalSteps,
+              reason: repair.reason,
+            })
+          : resolved.repointed
+            ? repointNote({
+                parkedStepOrder: instance.currentStepOrder,
+                actedStepOrder: actingStepOrder,
+                comments,
+              })
+            : comments || null,
       },
     });
 
-    if (action === "approve") {
+    if (effectiveAction === "approve") {
       if (!nextStep) {
         // No step after this one — close the instance and flip the PR.
         await tx.cnApprovalInstance.update({
           where: { id: instance.id },
-          data: { status: "approved", completedAt: new Date() },
+          data: {
+            status: "approved",
+            completedAt: new Date(),
+            currentStepOrder: actingStepOrder,
+          },
         });
         await tx.cnPurchaseRequisition.update({
           where: { id: pr.id },
@@ -175,10 +226,14 @@ export async function POST(
           data: { currentStepOrder: nextStep.stepOrder },
         });
       }
-    } else if (action === "reject") {
+    } else if (effectiveAction === "reject") {
       await tx.cnApprovalInstance.update({
         where: { id: instance.id },
-        data: { status: "rejected", completedAt: new Date() },
+        data: {
+          status: "rejected",
+          completedAt: new Date(),
+          currentStepOrder: actingStepOrder,
+        },
       });
       await tx.cnPurchaseRequisition.update({
         where: { id: pr.id },
@@ -189,7 +244,11 @@ export async function POST(
       // "return" — sends the PR back to draft for the requester to edit.
       await tx.cnApprovalInstance.update({
         where: { id: instance.id },
-        data: { status: "returned", completedAt: new Date() },
+        data: {
+          status: "returned",
+          completedAt: new Date(),
+          currentStepOrder: actingStepOrder,
+        },
       });
       await tx.cnPurchaseRequisition.update({
         where: { id: pr.id },
@@ -204,7 +263,7 @@ export async function POST(
   // (`cn_material_issues`) — write directly via Prisma so the MR queue
   // and the stock register both see the new issue.
   if (
-    action === "approve" &&
+    effectiveAction === "approve" &&
     finalPRStatus === "approved_stock_available" &&
     summary === "ALL_AVAILABLE"
   ) {

@@ -297,6 +297,16 @@ export const PERMISSION_TREE: readonly PermissionModule[] = [
         ],
       },
       {
+        key: "ActivityScope",
+        label: "Activity Scope",
+        leaves: [
+          // The manual-BOQ screen for FREE_SCOPE projects. Its own resource
+          // rather than sharing construction.boq, so the Activity Scope and BOQ
+          // checkboxes move independently on the Permissions page.
+          { resource: "construction.activity_scope", label: "Activity Scope", actions: ["view", "create", "edit", "delete", "lock"] },
+        ],
+      },
+      {
         key: "WBS",
         label: "Work Breakdown Structure",
         leaves: [
@@ -400,6 +410,7 @@ export const NAV_RESOURCE: Record<string, string> = {
   "equip.fixed_assets":   "construction.equipment_fixed_assets",
   "projects.project":     "construction.project",
   "projects.boq":         "construction.boq",
+  "projects.activities":  "construction.activity_scope",
   "projects.estimation":  "construction.estimation",
   "projects.wo":          "construction.wo",
   "projects.dpr":         "construction.dpr",
@@ -449,6 +460,15 @@ export const MODULE_TO_RESOURCES: Readonly<Record<string, readonly string[]>> = 
     "construction.org_terms",
   ],
   masters: [
+    // `construction.project` backs the MASTERS → Projects page, so it belongs
+    // to this module. It used to sit in `project_mgmt` below, which made
+    // PROJECT MGMT impossible to switch off: `modulesFromPermissions` marks a
+    // module assigned when ANY of its resources is held, and a masters-only
+    // user legitimately keeps `construction.project`. The whole PROJECT MGMT
+    // group therefore stayed visible after an admin unticked all 8 of its
+    // pages. Pages under PROJECT MGMT gate on their own resources
+    // (boq / wbs / estimation / wo / dpr / gantt / hindrance / documents).
+    "construction.project",
     "construction.master_item",
     "construction.master_item_group",
     "construction.master_vendor",
@@ -481,8 +501,8 @@ export const MODULE_TO_RESOURCES: Readonly<Record<string, readonly string[]>> = 
     "construction.grn",
   ],
   project_mgmt: [
-    "construction.project",
     "construction.boq",
+    "construction.activity_scope",
     "construction.wbs",
     "construction.estimation",
     "construction.wo",

@@ -150,6 +150,9 @@ interface DrawerState {
     steps: Array<{ stepOrder: string; approverRole: string; approverUserIds: string[] }>;
   };
   replaceIds?: string[];
+  /** Requests mid-approval on the workflow being edited, bucketed by the step
+   *  they are waiting at. Drives the save warnings. */
+  pendingByStep?: Array<{ stepOrder: number; count: number; atRisk: number }>;
 }
 
 interface WorkflowStep {
@@ -161,6 +164,7 @@ interface WorkflowRow {
   id: string; name?: string; isActive?: boolean;
   projectId?: string | null; entityType?: string;
   steps?: WorkflowStep[];
+  pendingByStep?: Array<{ stepOrder: number; count: number; atRisk: number }>;
 }
 interface ProjectLite {
   id: string; code?: string; name?: string; siteName?: string;
@@ -321,6 +325,7 @@ export default function WorkflowsPage() {
         }),
       },
       replaceIds: existing ? [existing.id] : [],
+      pendingByStep: existing?.pendingByStep ?? [],
     });
   };
 
@@ -594,6 +599,7 @@ export default function WorkflowsPage() {
                 replaceIds: drawerState.replaceIds,
                 projectId: drawerState.scopeProjectId,
                 projectLabel: drawerState.scopeLabel,
+                pendingByStep: drawerState.pendingByStep,
               }
             : undefined
         }

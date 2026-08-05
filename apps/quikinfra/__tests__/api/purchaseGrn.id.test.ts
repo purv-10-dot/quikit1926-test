@@ -144,8 +144,10 @@ describe("POST /api/purchase/grn/[id]/submit", () => {
 
 // ═══════════════════════════════════════════════
 // POST /api/purchase/grn/[id]/approve  (gate: construction.grn.approve + matrix purchase.grn:edit)
-// NOTE: the idempotency guard consumes the request body, so the route always
-// reads `action` as the default "approve" (req.json() after the guard fails).
+// NOTE: the idempotency guard consumes the request stream to hash it, so the
+// route MUST read the payload off `guard.parsedBody`. It used to call
+// `req.json()` after the guard — that always threw, `action` fell back to
+// "approve", and a reject silently approved the GRN and posted stock.
 // ═══════════════════════════════════════════════
 
 describe("POST /api/purchase/grn/[id]/approve", () => {
@@ -214,6 +216,103 @@ describe("POST /api/purchase/grn/[id]/approve", () => {
     expect(body.action).toBe("approve");
     expect(body.grn.status).toBe("approved");
     expect(body.approval.status).toBe("approved");
+  });
+
+  /** Stage a GRN sitting on the single (final) step of its workflow. */
+  function stagePendingFinalStep() {
+    setContext(makeAdminCtx({ roleKey: "super_admin" }));
+    db.cnGoodsReceiptNote.findFirst.mockResolvedValue({
+      id: ID,
+      orgId: TEST_TENANT,
+      grnNumber: "GRN-SITE-26-0001",
+      projectId: "proj1",
+      status: "pending_approval",
+      approvalId: "inst1",
+      storageLocationId: "loc1",
+      lines: [
+        { itemId: "item1", uomId: "uom1", acceptedQty: "10", unitRate: "100" },
+      ],
+    });
+    db.cnApprovalInstance.findFirst.mockResolvedValue({
+      id: "inst1",
+      orgId: TEST_TENANT,
+      workflowId: "wf1",
+      status: "pending_approval",
+      currentStepOrder: 1,
+    });
+    db.cnApprovalWorkflowStep.findFirst
+      .mockResolvedValueOnce({ stepOrder: 1, approverUserId: null, approverRoleId: "SITE_ADMIN" })
+      .mockResolvedValueOnce(null); // no next step → final
+    db.$transaction.mockImplementation(async (cb: any) => cb(db));
+    db.cnApprovalWorkflowStep.count.mockResolvedValue(1);
+  }
+
+  it("rejects: flips the GRN to rejected, keeps the comment, posts no stock", async () => {
+    stagePendingFinalStep();
+    db.cnGoodsReceiptNote.update.mockResolvedValue({ status: "rejected" });
+    db.cnApprovalInstance.findUnique.mockResolvedValue({
+      id: "inst1",
+      status: "rejected",
+      currentStepOrder: 1,
+    });
+
+    const res = await APPROVE(
+      req("POST", { action: "reject", comments: "Damaged material" }),
+      params,
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.action).toBe("reject");
+    expect(body.grn.status).toBe("rejected");
+    expect(body.approval.status).toBe("rejected");
+
+    expect(db.cnGoodsReceiptNote.update.mock.calls[0][0].data.status).toBe("rejected");
+    expect(db.cnApprovalInstance.update.mock.calls[0][0].data.status).toBe("rejected");
+    expect(db.cnApprovalHistory.create.mock.calls[0][0].data).toMatchObject({
+      action: "reject",
+      comments: "Damaged material",
+    });
+    // A rejected GRN must never credit inward stock.
+    expect(db.cnStockLedger.create).not.toHaveBeenCalled();
+    expect(db.cnStockBalance.upsert).not.toHaveBeenCalled();
+  });
+
+  it("returns: sends the GRN back to draft and detaches the instance", async () => {
+    stagePendingFinalStep();
+    db.cnGoodsReceiptNote.update.mockResolvedValue({ status: "draft" });
+    db.cnApprovalInstance.findUnique.mockResolvedValue({
+      id: "inst1",
+      status: "returned",
+      currentStepOrder: 1,
+    });
+
+    const res = await APPROVE(
+      req("POST", { action: "return", comments: "Attach the weighbridge slip" }),
+      params,
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.action).toBe("return");
+    expect(body.grn.status).toBe("draft");
+    expect(db.cnGoodsReceiptNote.update.mock.calls[0][0].data).toMatchObject({
+      status: "draft",
+      approvalId: null,
+    });
+    expect(db.cnStockLedger.create).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 COMMENT_REQUIRED when a reject carries no comment", async () => {
+    setContext(makeAdminCtx({ roleKey: "super_admin" }));
+    const res = await APPROVE(req("POST", { action: "reject" }), params);
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe("COMMENT_REQUIRED");
+  });
+
+  it("returns 400 on an unknown action instead of defaulting to approve", async () => {
+    setContext(makeAdminCtx({ roleKey: "super_admin" }));
+    const res = await APPROVE(req("POST", { action: "yolo" }), params);
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe("INVALID_ACTION");
   });
 });
 

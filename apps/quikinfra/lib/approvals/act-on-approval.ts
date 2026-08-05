@@ -35,8 +35,14 @@ import { db } from "@/lib/db";
 import { findCnUsersByIds } from "@/lib/users/lookup";
 import type { TenantContext } from "@/lib/auth/context";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
+import { resolveEffectiveStep } from "@/lib/approvals/step-resolution";
+import {
+  completeRepairedApproval,
+  repointNote,
+} from "@/lib/approvals/complete-repaired-approval";
 
-export type ApprovalAction = "approve" | "reject" | "return";
+export type ApprovalAction = "approve" | "reject" | "return" | "complete";
+
 export type ApprovalPhase =
   | "intermediate-approve"
   | "final-approve"
@@ -99,7 +105,7 @@ export async function actOnApproval(
 ): Promise<ActOnApprovalOutcome> {
   const { ctx, entity, entityLabel, action, comments } = input;
 
-  if (!["approve", "reject", "return"].includes(action)) {
+  if (!["approve", "reject", "return", "complete"].includes(action)) {
     return {
       kind: "error",
       status: 400,
@@ -144,21 +150,31 @@ export async function actOnApproval(
     };
   }
 
-  const currentStep = await db.cnApprovalWorkflowStep.findFirst({
-    where: {
-      workflowId: instance.workflowId,
-      stepOrder: instance.currentStepOrder,
-    },
-  });
+  if (action === "complete") {
+    return await completeRepairedApproval({
+      ctx,
+      instance,
+      entityLabel,
+      reason: comments,
+      applyEntityPatch: input.applyEntityPatch,
+    });
+  }
+
+  // The instance may be parked on a stepOrder the workflow no longer has
+  // (a mid-flight edit removed it). Fall back to the highest surviving step
+  // below it rather than dead-ending the request — see step-resolution.ts.
+  const resolved = await resolveEffectiveStep(db, instance);
+  const currentStep = resolved.step;
   if (!currentStep) {
     return {
       kind: "error",
       status: 500,
       body: {
-        error: `Workflow step ${instance.currentStepOrder} is missing — the workflow may have been edited while this ${entityLabel} was mid-flight.`,
+        error: `Workflow for this ${entityLabel} has no steps configured — it cannot be actioned. Reconfigure the workflow under Settings → Workflows.`,
       },
     };
   }
+  const actingStepOrder = resolved.effectiveStepOrder;
 
   if (
     !canActOnStep(
@@ -207,18 +223,15 @@ export async function actOnApproval(
       kind: "error",
       status: 403,
       body: {
-        error: `You are not authorized to ${action} this ${entityLabel} at step ${instance.currentStepOrder}. Expected: ${expected}.`,
+        error: `You are not authorized to ${action} this ${entityLabel} at step ${actingStepOrder}. Expected: ${expected}.`,
       },
     };
   }
 
-  const nextStep = await db.cnApprovalWorkflowStep.findFirst({
-    where: {
-      workflowId: instance.workflowId,
-      stepOrder: { gt: instance.currentStepOrder },
-    },
-    orderBy: { stepOrder: "asc" },
-  });
+  // Derived from the instance's own chain, not a fresh query — a snapshotted
+  // instance must advance through the steps it was submitted under.
+  const nextStep =
+    resolved.steps.find((s) => s.stepOrder > actingStepOrder) ?? null;
 
   let phase: ApprovalPhase;
   if (action === "approve") {
@@ -233,7 +246,7 @@ export async function actOnApproval(
     await tx.cnApprovalHistory.create({
       data: {
         instanceId: instance.id,
-        stepOrder: instance.currentStepOrder,
+        stepOrder: actingStepOrder,
         action,
         actionById: ctx.userId,
         // Write the timestamp app-side (UTC) instead of relying on the DB
@@ -242,7 +255,13 @@ export async function actOnApproval(
         // offset — leaving approval-history times out of sync with the
         // app-written createdAt/updatedAt. new Date() keeps them consistent.
         actionAt: new Date(),
-        comments: comments || null,
+        comments: resolved.repointed
+          ? repointNote({
+              parkedStepOrder: instance.currentStepOrder,
+              actedStepOrder: actingStepOrder,
+              comments,
+            })
+          : comments || null,
       },
     });
 
@@ -254,29 +273,43 @@ export async function actOnApproval(
     } else if (phase === "final-approve") {
       await tx.cnApprovalInstance.update({
         where: { id: instance.id },
-        data: { status: "approved", completedAt: new Date() },
+        data: {
+          status: "approved",
+          completedAt: new Date(),
+          // Land the instance on the step actually actioned — a repointed
+          // instance would otherwise keep a currentStepOrder that no
+          // workflow step matches, and every later read re-derives the
+          // fallback for nothing.
+          currentStepOrder: actingStepOrder,
+        },
       });
     } else if (phase === "reject") {
       await tx.cnApprovalInstance.update({
         where: { id: instance.id },
-        data: { status: "rejected", completedAt: new Date() },
+        data: {
+          status: "rejected",
+          completedAt: new Date(),
+          currentStepOrder: actingStepOrder,
+        },
       });
     } else {
       await tx.cnApprovalInstance.update({
         where: { id: instance.id },
-        data: { status: "returned", completedAt: new Date() },
+        data: {
+          status: "returned",
+          completedAt: new Date(),
+          currentStepOrder: actingStepOrder,
+        },
       });
     }
 
     await input.applyEntityPatch(tx, { phase, comments });
   });
 
-  const totalSteps = await db.cnApprovalWorkflowStep.count({
-    where: { workflowId: instance.workflowId },
-  });
+  const totalSteps = resolved.totalSteps;
 
   let newInstanceStatus: ActOnApprovalSuccess["newInstanceStatus"];
-  let newCurrentStepOrder = instance.currentStepOrder;
+  let newCurrentStepOrder = actingStepOrder;
   if (phase === "intermediate-approve") {
     newInstanceStatus = "pending_approval";
     newCurrentStepOrder = nextStep!.stepOrder;

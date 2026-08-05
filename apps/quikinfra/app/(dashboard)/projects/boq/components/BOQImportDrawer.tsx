@@ -28,7 +28,6 @@ import {
   Loader2,
   Info,
   ChevronRight,
-  PencilLine,
   Folder,
   Download,
 } from "lucide-react";
@@ -37,7 +36,6 @@ import { RIGHT_DRAWER_BACKDROP, RIGHT_DRAWER_FRAME, RIGHT_DRAWER_PANEL } from "@
 import type { ImportMode } from "../lib/types";
 import { MODE_LABEL, MODE_HINT } from "../lib/constants";
 import { useBoqImport } from "../hooks/useBoqImport";
-import { SelfFill } from "../steps/SelfFill";
 import { ColumnMapping } from "../steps/ColumnMapping";
 import { Preview } from "../steps/Preview";
 
@@ -58,15 +56,10 @@ export function BOQImportDrawer({ open, onClose, projectId }: Props) {
     importResult,
     uniDetected, setUniDetected,
     uniFieldToCol, setUniFieldToCol,
-    sfCategory, setSfCategory,
-    sfParents,
     fileInputRef,
-    sfRows, sfRolledAmt, sfSummary, uniStats,
-    canConfirm, descriptionMapped, selfFillActive, stageStep,
+    uniStats,
+    canConfirm, descriptionMapped, stageStep,
     reset, resetUniToSuggestions, setUniColForField,
-    addChild, addLineItem, addParent,
-    removeChild, removeLineItem, removeParent,
-    updateChild, updateLineItem, updateParent, setChildMode,
     handleClose, handleConfirm, handleModeChange,
     handleUniversalConfirmMapping,
     onDrop, onFileInputChange,
@@ -79,7 +72,7 @@ export function BOQImportDrawer({ open, onClose, projectId }: Props) {
       <div className={RIGHT_DRAWER_BACKDROP} onClick={handleClose} />
       <div className={RIGHT_DRAWER_FRAME}>
         <div
-          className={`${RIGHT_DRAWER_PANEL} transition-[max-width] ${selfFillActive ? "max-w-6xl" : "max-w-3xl"}`}
+          className={`${RIGHT_DRAWER_PANEL} max-w-3xl`}
         >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
@@ -143,7 +136,6 @@ export function BOQImportDrawer({ open, onClose, projectId }: Props) {
                     }`}
                   >
                     <div className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
-                      {m === "SELF_FILL" && <PencilLine className="w-3.5 h-3.5 text-accent-500" />}
                       {m === "UNIVERSAL" && <FileSpreadsheet className="w-3.5 h-3.5 text-accent-500" />}
                       {m === "ALPHABETIC_SOR" && <Folder className="w-3.5 h-3.5 text-accent-500" />}
                       {MODE_LABEL[m]}
@@ -156,7 +148,7 @@ export function BOQImportDrawer({ open, onClose, projectId }: Props) {
           )}
 
           {/* Download blank templates — visible alongside the file picker */}
-          {stage === "pick" && projectId && mode !== "SELF_FILL" && (
+          {stage === "pick" && projectId && (
             <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
               <div className="flex items-center justify-between gap-3 mb-2">
                 <div>
@@ -197,9 +189,9 @@ export function BOQImportDrawer({ open, onClose, projectId }: Props) {
             </div>
           )}
 
-          {/* Step 1a — file picker (hidden in SELF_FILL and STRICT_TEMPLATE
-              modes; STRICT_TEMPLATE is download-only — switch to AUTO to upload) */}
-          {stage === "pick" && projectId && mode !== "SELF_FILL" && mode !== "STRICT_TEMPLATE" && (
+          {/* Step 1a — file picker (hidden in STRICT_TEMPLATE mode;
+              STRICT_TEMPLATE is download-only — switch to AUTO to upload) */}
+          {stage === "pick" && projectId && mode !== "STRICT_TEMPLATE" && (
             <div
               onDrop={onDrop}
               onDragOver={(e) => e.preventDefault()}
@@ -234,30 +226,6 @@ export function BOQImportDrawer({ open, onClose, projectId }: Props) {
                 </div>
               </div>
             </div>
-          )}
-
-          {/* Step 1b — Self-Fill builder + live Excel grid */}
-          {stage === "pick" && projectId && mode === "SELF_FILL" && (
-            <SelfFill
-              sfCategory={sfCategory}
-              setSfCategory={setSfCategory}
-              sfParents={sfParents}
-              addParent={addParent}
-              removeParent={removeParent}
-              updateParent={updateParent}
-              addChild={addChild}
-              removeChild={removeChild}
-              updateChild={updateChild}
-              setChildMode={setChildMode}
-              addLineItem={addLineItem}
-              removeLineItem={removeLineItem}
-              updateLineItem={updateLineItem}
-              sfRows={sfRows}
-              sfRolledAmt={sfRolledAmt}
-              sfSummary={sfSummary}
-              replaceExisting={replaceExisting}
-              setReplaceExisting={setReplaceExisting}
-            />
           )}
 
           {/* Parsing spinner */}
@@ -338,11 +306,7 @@ export function BOQImportDrawer({ open, onClose, projectId }: Props) {
               {stage === "mapping" && uniDetected &&
                 `${uniDetected.sheets.length} sheet(s) · review each column's mapping then continue`}
               {stage === "confirming" && "Importing…"}
-              {stage === "pick" && mode === "SELF_FILL" &&
-                (sfSummary.leaves > 0
-                  ? `${sfSummary.totalRows} rows · ${sfSummary.leaves} line item(s) · ₹${sfSummary.totalAmt.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`
-                  : "Add at least one line item")}
-              {stage === "pick" && mode !== "SELF_FILL" && "Choose a file to begin"}
+              {stage === "pick" && "Choose a file to begin"}
             </div>
             <div className="flex items-center gap-3">
               <SecondaryButton onClick={handleClose}>Cancel</SecondaryButton>
@@ -366,11 +330,7 @@ export function BOQImportDrawer({ open, onClose, projectId }: Props) {
                   ) : (
                     <>
                       <Upload className="w-4 h-4" /> Import
-                      {mode === "SELF_FILL"
-                        ? sfSummary.totalRows > 0
-                          ? ` (${sfSummary.totalRows})`
-                          : ""
-                        : preview && ` (${preview.summary.totalRows})`}
+                      {preview && ` (${preview.summary.totalRows})`}
                     </>
                   )}
                 </PrimaryButton>

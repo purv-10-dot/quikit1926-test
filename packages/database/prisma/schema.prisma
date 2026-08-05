@@ -3997,6 +3997,10 @@ model CnStockReconciliation {
   locationId           String
   reconciliationDate   DateTime
   conductedById        String
+  // Free-typed name of the person who conducted the count. Kept alongside
+  // conductedById (always the creator) because the conductor is often not a
+  // system user — a contractor's storekeeper, for example.
+  conductedByName      String?
   approvedById         String?
   status               String   @default("draft")
   approvalId           String?
@@ -4942,6 +4946,16 @@ model CnApprovalInstance {
   requestedById    String
   requestedAt      DateTime  @default(now())
   completedAt      DateTime?
+  /// Copy of the workflow's steps as they stood when this instance was
+  /// created: [{ stepOrder, approverRoleId, approverUserId, approverUserIds }].
+  /// Editing a workflow replaces its step rows wholesale, which used to
+  /// retro-change in-flight instances — a shrunk workflow left them parked on
+  /// a step that no longer existed (unactionable by anyone), and a grown one
+  /// made already-approved instances look under-approved. Resolution reads
+  /// this first so a submitted request keeps the chain it was submitted under.
+  /// Null for rows created before this column existed; those fall back to the
+  /// live workflow steps.
+  stepsSnapshot    Json?
 
   workflow CnApprovalWorkflow  @relation(fields: [workflowId], references: [id])
   history  CnApprovalHistory[]

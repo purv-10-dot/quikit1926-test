@@ -38,6 +38,7 @@ import { useDPR, useDeleteDPR, useBOQ, useWorkOrders } from "@/hooks/use-project
 import { groupWorkItemsByBoq } from "@/lib/projects/boq-work-groups";
 import { useContractors } from "@/hooks/use-masters";
 import { usePermissions } from "@/hooks/use-permissions";
+import { RepairApprovalNotice } from "@/components/RepairApprovalNotice";
 import { useWorkflowConfirm } from "@/hooks/use-workflow-confirm";
 import { DPRWeatherMetrics } from "@/components/DPRWeatherMetrics";
 import { parseStoredWeatherDetail } from "@/lib/weather/dpr-weather";
@@ -110,7 +111,7 @@ export default function DPRDetailPage() {
   const { data: dpr, isLoading } = useDPR(id);
   const deleteMutation = useDeleteDPR();
 
-  const { permissionMatrix, isSuper } = usePermissions();
+  const { permissionMatrix, isSuper, me } = usePermissions();
   const matrixRow = permissionMatrix?.[MENU_KEY];
   const canEdit = isSuper || !matrixRow || matrixRow.edit !== false;
   const canDelete = isSuper || !matrixRow || matrixRow.delete !== false;
@@ -424,6 +425,14 @@ export default function DPRDetailPage() {
       <PageContainer>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
+            <RepairApprovalNotice
+              repair={dpr.approval?.repair}
+              entityLabel="DPR"
+              actionEndpoint={`/api/projects/dpr/${id}/approve`}
+              invalidateKeys={[["dprs"], ["dpr", id]]}
+              me={me}
+            />
+
             {/* ── Overview ──────────────────────────────────────── */}
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">

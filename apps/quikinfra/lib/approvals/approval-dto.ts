@@ -10,6 +10,10 @@
  */
 
 import type { Prisma } from "@prisma/client";
+import {
+  classifyRepair,
+  parseStepsSnapshot,
+} from "@/lib/approvals/step-resolution";
 
 /** The include every detail route uses when loading its approval instance. */
 export const APPROVAL_INSTANCE_INCLUDE = {
@@ -25,6 +29,36 @@ export type ApprovalInstanceFull = Prisma.CnApprovalInstanceGetPayload<{
 /** The client-facing approval-timeline shape returned by detail routes. */
 export type ApprovalDto = ReturnType<typeof buildApprovalDto>;
 
+/**
+ * Every user id whose name the timeline needs: the requester, everyone who
+ * acted, and every approver on the instance's chain.
+ *
+ * Covers both the live workflow steps and the submit-time snapshot. Those
+ * diverge as soon as the workflow is edited, and the snapshot is what gets
+ * rendered — resolving only the live steps left the original approver showing
+ * as a bare role with no name. Also covers `approverUserIds` pools, not just
+ * the legacy single `approverUserId`.
+ */
+export function collectApprovalUserIds(
+  instance: ApprovalInstanceFull,
+): string[] {
+  const ids = new Set<string>();
+  ids.add(instance.requestedById);
+  for (const h of instance.history) ids.add(h.actionById);
+
+  const addStep = (s: {
+    approverUserId?: string | null;
+    approverUserIds?: string[] | null;
+  }) => {
+    if (s.approverUserId) ids.add(s.approverUserId);
+    for (const id of s.approverUserIds ?? []) if (id) ids.add(id);
+  };
+  for (const s of instance.workflow.steps) addStep(s);
+  for (const s of parseStepsSnapshot(instance.stepsSnapshot) ?? []) addStep(s);
+
+  return [...ids].filter(Boolean);
+}
+
 export function buildApprovalDto(
   instance: ApprovalInstanceFull,
   nameById: Map<string, string>,
@@ -36,11 +70,26 @@ export function buildApprovalDto(
    */
   canActOnCurrentStep?: boolean,
 ) {
+  // The instance's own chain — its submit-time snapshot when it has one, else
+  // the live workflow rows. Rendering the live rows for a snapshotted instance
+  // would show whoever the workflow names today rather than who this request
+  // was actually routed to.
+  const steps =
+    parseStepsSnapshot(instance.stepsSnapshot) ?? instance.workflow.steps;
+
+  // Derived from the chain + history already loaded — no extra query. Non-null
+  // only while pending: a settled instance has nothing to repair.
+  const repair =
+    instance.status === "pending_approval"
+      ? classifyRepair(steps, instance.history, instance.currentStepOrder)
+      : null;
+
   return {
     id: instance.id,
     status: instance.status,
     currentStepOrder: instance.currentStepOrder,
     canActOnCurrentStep,
+    repair,
     completedAt: instance.completedAt?.toISOString?.() ?? null,
     requestedAt: instance.requestedAt.toISOString(),
     requestedById: instance.requestedById,
@@ -48,14 +97,23 @@ export function buildApprovalDto(
     workflow: {
       id: instance.workflow.id,
       name: instance.workflow.name,
-      steps: instance.workflow.steps.map((s) => ({
-        stepOrder: s.stepOrder,
-        approverRoleId: s.approverRoleId,
-        approverUserId: s.approverUserId,
-        approverUserName: s.approverUserId
-          ? (nameById.get(s.approverUserId) ?? null)
-          : null,
-      })),
+      steps: steps.map((s) => {
+        const pool = (s.approverUserIds ?? []).filter(Boolean);
+        // Name the step's approver from the legacy single id, else the first of
+        // the pool — a pool-only step used to render as a bare role label.
+        const namedId = s.approverUserId ?? pool[0] ?? null;
+        return {
+          stepOrder: s.stepOrder,
+          approverRoleId: s.approverRoleId,
+          approverUserId: s.approverUserId,
+          approverUserIds: pool,
+          approverUserName: namedId ? (nameById.get(namedId) ?? null) : null,
+          /** Every eligible approver's name, for pool steps. */
+          approverUserNames: pool
+            .map((id) => nameById.get(id) ?? null)
+            .filter((n): n is string => Boolean(n)),
+        };
+      }),
     },
     history: instance.history.map((h) => ({
       stepOrder: h.stepOrder,

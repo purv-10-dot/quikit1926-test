@@ -174,32 +174,40 @@ describe("display scope follows the resource's module, not the menu group", () =
     }
   });
 
-  it("keeps a saved Projects grant when project_mgmt is assigned but masters is not", () => {
+  it("drops a saved Projects grant when only project_mgmt is assigned", () => {
+    // `construction.project` belongs to `masters` (the module of the page that
+    // uses it). Assigning project_mgmt alone must not put Projects in scope —
+    // the old union kept construction.project alive for project_mgmt, which is
+    // what made PROJECT MGMT impossible to switch off.
     const saved = buildDefaultMatrix(false);
     saved["master.project"] = { add: true, edit: true, delete: true, view: true };
     const scoped = buildModuleScopedMatrix(["project_mgmt"], saved);
+    expect(scoped["master.project"]?.view).toBe(false);
+    expect(scoped["master.item"]?.view).toBe(false);
+  });
+
+  it("keeps a saved Projects grant when masters is assigned", () => {
+    const saved = buildDefaultMatrix(false);
+    saved["master.project"] = { add: true, edit: true, delete: true, view: true };
+    const scoped = buildModuleScopedMatrix(["masters"], saved);
     expect(scoped["master.project"]).toEqual({
       add: true,
       edit: true,
       delete: true,
       view: true,
     });
-    // sibling MASTERS pages stay off — their resources belong to `masters`
-    expect(scoped["master.item"]?.view).toBe(false);
   });
 
-  it("scopes Projects to masters OR project_mgmt — a union, never a swap", () => {
-    // masters is the page's own menu group: unchanged, still grants it.
+  it("scopes Projects to masters only", () => {
+    // masters is both the page's menu group and its resource's module.
     expect(buildMatrixFromModules(["masters"])["master.project"]?.view).toBe(true);
-    // project_mgmt owns construction.project: now grants it too.
+    // project_mgmt no longer owns construction.project, so it grants nothing here.
     expect(buildMatrixFromModules(["project_mgmt"])["master.project"]?.view).toBe(
-      true,
+      false,
     );
     // an unrelated module grants neither.
     expect(buildMatrixFromModules(["store"])["master.project"]?.view).toBe(false);
-    // project_mgmt does NOT leak the rest of MASTERS.
-    expect(buildMatrixFromModules(["project_mgmt"])["master.item"]?.view).toBe(
-      false,
-    );
+    // …and masters does not leak PROJECT MGMT pages.
+    expect(buildMatrixFromModules(["masters"])["pm.boq"]?.view).toBe(false);
   });
 });

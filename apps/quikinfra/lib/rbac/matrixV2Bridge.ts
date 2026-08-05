@@ -84,6 +84,11 @@ export const MENU_TO_RESOURCE: Readonly<Record<string, string>> = {
   "equip.fixed_assets":"construction.equipment_fixed_assets",
   // Project Mgmt
   "pm.boq":        "construction.boq",
+  // Activity Scope = manual BOQ for FREE_SCOPE projects. Its OWN resource, so
+  // its checkbox is independent of BOQ's (sharing one would tie them together —
+  // matrixToRevokes only revokes a shared resource when every page on it is
+  // denied, so neither could be turned off alone).
+  "pm.activity_scope": "construction.activity_scope",
   "pm.wbs":        "construction.wbs",
   "pm.estimation": "construction.estimation",
   "pm.work_order": "construction.wo",

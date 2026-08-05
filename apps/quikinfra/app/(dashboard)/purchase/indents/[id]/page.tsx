@@ -19,6 +19,7 @@ import {
   PrimaryButton, ApprovalTimeline, PageSkeleton,
 } from "@/components/PageShell";
 import { ApprovalActionBar } from "@/components/ApprovalActionBar";
+import { RepairApprovalNotice } from "@/components/RepairApprovalNotice";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ProcurementCells } from "@/components/ProcurementCells";
 import dynamic from "next/dynamic";
@@ -46,6 +47,12 @@ interface TimelineEntry {
   actionAt: string;
   comments?: string;
   title?: string;
+}
+
+function actionTitle(action: string): string {
+  if (action === "reject") return "Rejected";
+  if (action === "return") return "Returned";
+  return "Approve";
 }
 
 /** Human-readable label for a userType key stored in workflow steps. */
@@ -198,6 +205,14 @@ export default function IndentDetailPage() {
       <PageContainer>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
+            <RepairApprovalNotice
+              repair={indent.approval?.repair}
+              entityLabel="indent"
+              actionEndpoint={`/api/purchase/indents/${id}/approve`}
+              invalidateKeys={[["indents"], ["indent", id]]}
+              me={me}
+            />
+
             {/* Header Info */}
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -402,6 +417,29 @@ export default function IndentDetailPage() {
                       actionAt: isCurrent ? "Awaiting action" : "Not yet reached",
                     });
                   });
+
+                  // Approvals recorded against steps the workflow no longer
+                  // has. Without this they vanish from the timeline — a real
+                  // approval silently unrendered, which reads as if it never
+                  // happened. Appended after the configured steps because
+                  // their numbering no longer slots into the current chain.
+                  (approval.repair?.orphanedHistorySteps ?? []).forEach(
+                    (stepOrder: number) => {
+                      const acted = [...(approval.history ?? [])]
+                        .reverse()
+                        .find((h) => h.stepOrder === stepOrder);
+                      if (!acted) return;
+                      entries.push({
+                        step: stepOrder,
+                        action: acted.action,
+                        title: `${actionTitle(acted.action)} — Step ${stepOrder} (step since removed)`,
+                        actionBy: acted.actionByName || "User",
+                        actionAt: formatDateTimeIST(acted.actionAt),
+                        comments: acted.comments || undefined,
+                      });
+                    },
+                  );
+
                   return <ApprovalTimeline entries={entries} />;
                 })()
               )}

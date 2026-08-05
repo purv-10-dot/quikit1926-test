@@ -31,6 +31,7 @@ import { SelectInput } from "@/components/FormDrawer";
 import { usePurchaseRequisition, useSubmitPR } from "@/hooks/use-purchase";
 import { useLocations } from "@/hooks/use-masters";
 import { usePermissions, type MeResponse } from "@/hooks/use-permissions";
+import { RepairApprovalNotice } from "@/components/RepairApprovalNotice";
 import { USER_TYPE_CATALOG } from "@/lib/rbac/user-types";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
 
@@ -345,6 +346,14 @@ export default function PRDetailPage() {
       <PageContainer>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
+            <RepairApprovalNotice
+              repair={pr.approval?.repair}
+              entityLabel="PR"
+              actionEndpoint={`/api/purchase/requisitions/${id}/approve`}
+              invalidateKeys={[["requisitions"], ["requisition", id]]}
+              me={me}
+            />
+
             {/* Header Info */}
             <div className="relative bg-white rounded-2xl border border-slate-200 shadow-soft p-5 overflow-hidden">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

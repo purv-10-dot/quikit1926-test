@@ -38,7 +38,9 @@ import {
   X as XIcon,
   CalendarDays,
   LayoutList,
+  AlertTriangle,
 } from "lucide-react";
+import type { ApprovalRepairInfo } from "@/lib/approvals/approval-info";
 import { PageFrame, PageHeader, PageContainer } from "@/components/PageShell";
 import { Pager } from "@/components/Pager";
 import { FilterPopoverButton } from "@/components/FilterPopoverButton";
@@ -63,6 +65,8 @@ interface DprRow {
   reportDate?: string;
   canActOnCurrentStep?: boolean;
   workItemCount?: number;
+  /** Set when the workflow was edited after submission — see ApprovalRepairInfo. */
+  approvalRepair?: ApprovalRepairInfo | null;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -1002,6 +1006,19 @@ function DPRRow({
         >
           {(row.status ?? "draft").replace(/_/g, " ")}
         </span>
+        {row.approvalRepair?.orphaned && (
+          <span
+            title={
+              `Approval workflow was changed after submission — waiting at step ` +
+              `${row.approvalRepair.missingStepOrder}, which no longer exists. ` +
+              `Open the DPR for details.`
+            }
+            className="mt-1 inline-flex items-center whitespace-nowrap rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800"
+          >
+            <AlertTriangle className="mr-0.5 h-3 w-3" />
+            Workflow changed
+          </span>
+        )}
       </td>
 
       {/* Actions */}

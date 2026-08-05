@@ -55,7 +55,23 @@ export interface ListWorkflowsOptions {
 
 // Shape returned to the frontend. Matches what the existing in-memory
 // store produced so the UI doesn't need to change.
-function enrichWorkflow(row: Prisma.CnApprovalWorkflowGetPayload<{ include: { steps: true } }>) {
+function enrichWorkflow(
+  row: Prisma.CnApprovalWorkflowGetPayload<{ include: { steps: true } }>,
+  /**
+   * Requests currently mid-approval on this workflow, bucketed by the step they
+   * are waiting at.
+   *
+   * `atRisk` counts only those with no `stepsSnapshot` — they still resolve
+   * their approvers from the live workflow, so an edit here really does change
+   * their chain, and deleting a step really does strand them. Requests that
+   * carry a snapshot are immune, so warning about them would be false alarm.
+   */
+  pendingByStep: Array<{
+    stepOrder: number;
+    count: number;
+    atRisk: number;
+  }> = [],
+) {
   const steps = (row.steps ?? []).map((s) => ({
     id: s.id,
     stepOrder: s.stepOrder,
@@ -75,6 +91,8 @@ function enrichWorkflow(row: Prisma.CnApprovalWorkflowGetPayload<{ include: { st
     entityType: row.entityType,
     isActive: !!row.isActive,
     steps,
+    pendingByStep,
+    pendingRequestCount: pendingByStep.reduce((sum, p) => sum + p.count, 0),
     createdAt: row.createdAt?.toISOString?.() ?? null,
     updatedAt: row.updatedAt?.toISOString?.() ?? null,
     createdBy: row.createdBy,
@@ -101,7 +119,54 @@ export async function listWorkflows(opts: ListWorkflowsOptions): Promise<any[]> 
     include: { steps: { orderBy: { stepOrder: "asc" } } },
     orderBy: { createdAt: "desc" },
   });
-  return rows.map(enrichWorkflow);
+
+  // One grouped count for the whole page — the editor warns when a save would
+  // strand requests already mid-approval.
+  const pendingByWorkflow = new Map<
+    string,
+    Array<{ stepOrder: number; count: number; atRisk: number }>
+  >();
+  if (rows.length > 0) {
+    const workflowIds = rows.map((r) => r.id);
+    const baseWhere = {
+      orgId: opts.orgId,
+      workflowId: { in: workflowIds },
+      status: "pending_approval",
+    };
+    const grouped = await db.cnApprovalInstance.groupBy({
+      by: ["workflowId", "currentStepOrder"],
+      where: baseWhere,
+      _count: { _all: true },
+    });
+    // No snapshot = still resolves approvers from the live workflow, so an edit
+    // here really does change its chain. `DbNull` is the SQL NULL (the column
+    // was never written), as opposed to a stored JSON `null`.
+    const groupedAtRisk = await db.cnApprovalInstance.groupBy({
+      by: ["workflowId", "currentStepOrder"],
+      where: { ...baseWhere, stepsSnapshot: { equals: Prisma.DbNull } },
+      _count: { _all: true },
+    });
+
+    const atRiskByKey = new Map<string, number>();
+    for (const g of groupedAtRisk) {
+      atRiskByKey.set(`${g.workflowId}::${g.currentStepOrder}`, g._count._all);
+    }
+
+    for (const g of grouped) {
+      const list = pendingByWorkflow.get(g.workflowId) ?? [];
+      list.push({
+        stepOrder: g.currentStepOrder,
+        count: g._count._all,
+        atRisk: atRiskByKey.get(`${g.workflowId}::${g.currentStepOrder}`) ?? 0,
+      });
+      pendingByWorkflow.set(g.workflowId, list);
+    }
+    for (const list of pendingByWorkflow.values()) {
+      list.sort((a, b) => a.stepOrder - b.stepOrder);
+    }
+  }
+
+  return rows.map((r) => enrichWorkflow(r, pendingByWorkflow.get(r.id) ?? []));
 }
 
 export async function findWorkflowById(

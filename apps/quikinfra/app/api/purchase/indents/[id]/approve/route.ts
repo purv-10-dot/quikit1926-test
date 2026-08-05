@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { findIndentById } from "@/lib/purchase/indent-repository";
-import { actOnApproval } from "@/lib/approvals/act-on-approval";
+import { actOnApproval, type ApprovalAction } from "@/lib/approvals/act-on-approval";
 
 /**
  * POST /api/purchase/indents/:id/approve
@@ -39,7 +39,7 @@ export async function POST(
   } catch {
     /* empty body ok */
   }
-  const action = (body.action ?? "approve") as "approve" | "reject" | "return";
+  const action = (body.action ?? "approve") as ApprovalAction;
   const comments = String(body.comments ?? "").trim();
 
   const indent = await findIndentById(ctx.orgId, params.id);
