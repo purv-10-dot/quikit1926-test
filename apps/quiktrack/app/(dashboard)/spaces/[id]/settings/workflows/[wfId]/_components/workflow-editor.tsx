@@ -3,12 +3,12 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Columns, GitBranch, Zap, Bot, MoreHorizontal, HelpCircle, ChevronDown } from "lucide-react";
+import { Loader2, Columns, GitBranch, Zap, Bot, MoreHorizontal, HelpCircle, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { DiagramHelpDialog } from "./diagram-help-dialog";
 import { useWorkflowEditor } from "./use-workflow-editor";
 import { errorStatusIdSet } from "./diagram-canvas";
 import { TextView } from "./text-view";
-import { AddStatusDialog, AddTransitionDialog, SaveAsNewWorkflowDialog } from "./editor-dialogs";
+import { AddStatusDialog, AddTransitionDialog, SaveAsNewWorkflowDialog, EditStatusDialog, ReplaceStatusDialog } from "./editor-dialogs";
 import { FlowCanvas } from "./flow/flow-canvas";
 import { StatusPanel } from "./flow/status-panel";
 import { TransitionPanel } from "./flow/transition-panel";
@@ -111,6 +111,11 @@ function EditorBody({
   // "Update workflow ▾" split-button menu + the "Save as new workflow" dialog.
   const [updateMenuOpen, setUpdateMenuOpen] = useState(false);
   const [saveAsNewOpen, setSaveAsNewOpen] = useState(false);
+  // The right detail panel is collapsible (Jira parity).
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
+  // Edit-status / Replace-status modals (opened from the Status panel pencils).
+  const [editStatusOpen, setEditStatusOpen] = useState(false);
+  const [replaceStatusOpen, setReplaceStatusOpen] = useState(false);
   const [selection, setSelection] = useState<Selection>(null);
 
   const resolutions = useQuery({
@@ -399,21 +404,31 @@ function EditorBody({
           )}
         </div>
 
-        {tab === "diagram" && selectedStatusId && (
+        {tab === "diagram" && selectedStatusId && !panelCollapsed && (
           <StatusPanel
             statusId={selectedStatusId}
             meta={statusMeta.get(selectedStatusId)}
             draft={ed.draft}
-            onRenamed={(name) => patchStatus(selectedStatusId, { name })}
-            onRecategorised={(category) => patchStatus(selectedStatusId, { category })}
+            statusMeta={statusMeta}
+            onEdit={() => setEditStatusOpen(true)}
+            onReplace={() => setReplaceStatusOpen(true)}
             onSelectTransition={(transitionId) => setSelection({ kind: "transition", transitionId })}
+            onAddIncoming={() => {
+              // Prefill the Create-transition dialog with To = this status.
+              setTransitionPrefill({ from: "", to: selectedStatusId });
+              setAddTransitionOpen(true);
+            }}
+            onAddOutgoing={() => {
+              setTransitionPrefill({ from: selectedStatusId, to: "" });
+              setAddTransitionOpen(true);
+            }}
             onRemove={() => {
               ed.removeStatus(selectedStatusId);
               setSelection(null);
             }}
           />
         )}
-        {tab === "diagram" && selectedTransition && (
+        {tab === "diagram" && selectedTransition && !panelCollapsed && (
           <TransitionPanel
             transition={selectedTransition}
             statusMeta={statusMeta}
@@ -427,7 +442,21 @@ function EditorBody({
             }}
           />
         )}
-        {tab === "diagram" && !selection && <EmptyStatePanel />}
+        {tab === "diagram" && !selection && !panelCollapsed && <EmptyStatePanel />}
+
+        {/* Collapse / expand the right detail panel (Jira parity). */}
+        {tab === "diagram" && (
+          <button
+            type="button"
+            onClick={() => setPanelCollapsed((v) => !v)}
+            title={panelCollapsed ? "Expand panel" : "Collapse panel"}
+            className="flex w-7 shrink-0 items-center justify-center border-l border-gray-200 bg-white text-gray-400 hover:bg-gray-50 hover:text-gray-700"
+          >
+            {/* Open → ◀ (click pulls the panel closed toward the right).
+                Collapsed → ▶ (click expands the panel back out to the left). */}
+            {panelCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          </button>
+        )}
       </div>
 
       {addStatusOpen && (
@@ -447,13 +476,36 @@ function EditorBody({
           onClose={() => setAddStatusOpen(false)}
         />
       )}
+      {editStatusOpen && selectedStatusId && (
+        <EditStatusDialog
+          name={statusMeta.get(selectedStatusId)?.name ?? selectedStatusId}
+          category={statusMeta.get(selectedStatusId)?.category ?? "BACKLOG"}
+          onUpdate={(name, category) => patchStatus(selectedStatusId, { name, category })}
+          onReplace={() => { setEditStatusOpen(false); setReplaceStatusOpen(true); }}
+          onClose={() => setEditStatusOpen(false)}
+        />
+      )}
+      {replaceStatusOpen && selectedStatusId && (
+        <ReplaceStatusDialog
+          projectId={projectId}
+          currentName={statusMeta.get(selectedStatusId)?.name ?? selectedStatusId}
+          currentCategory={statusMeta.get(selectedStatusId)?.category ?? "BACKLOG"}
+          poolStatuses={pool}
+          draft={ed.draft}
+          onReplace={(newStatusId) => {
+            ed.replaceStatus(selectedStatusId, newStatusId);
+            setSelection({ kind: "status", statusId: newStatusId });
+          }}
+          onClose={() => setReplaceStatusOpen(false)}
+        />
+      )}
       {addTransitionOpen && (
         <AddTransitionDialog
           draft={ed.draft}
           statusMeta={statusMeta}
           onAdd={ed.addTransition}
-          prefillFrom={transitionPrefill?.from}
-          prefillTo={transitionPrefill?.to}
+          prefillFrom={transitionPrefill?.from || undefined}
+          prefillTo={transitionPrefill?.to || undefined}
           onClose={() => {
             setAddTransitionOpen(false);
             setTransitionPrefill(null);

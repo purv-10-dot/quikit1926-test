@@ -118,6 +118,33 @@ export function useWorkflowEditor(wfId: string, initial: EditorDraft, hasPending
     [mutate],
   );
 
+  /**
+   * Replace a status in THIS workflow with another (which must NOT already be a
+   * node here): swap the node (keep its initial flag/position) and re-point every
+   * transition's To/From from old → new. Other workflows are untouched.
+   */
+  const replaceStatus = useCallback(
+    (oldStatusId: string, newStatusId: string) =>
+      mutate((d) => {
+        if (oldStatusId === newStatusId) return d;
+        if (d.statuses.some((s) => s.statusId === newStatusId)) return d; // already present
+        return {
+          ...d,
+          statuses: d.statuses.map((s) =>
+            s.statusId === oldStatusId ? { ...s, statusId: newStatusId } : s,
+          ),
+          transitions: d.transitions.map((t) => ({
+            ...t,
+            toStatusId: t.toStatusId === oldStatusId ? newStatusId : t.toStatusId,
+            fromStatusIds: Array.from(
+              new Set(t.fromStatusIds.map((id) => (id === oldStatusId ? newStatusId : id))),
+            ),
+          })),
+        };
+      }),
+    [mutate],
+  );
+
   const moveNode = useCallback(
     (statusId: string, x: number, y: number) =>
       mutate((d) => ({
@@ -205,6 +232,7 @@ export function useWorkflowEditor(wfId: string, initial: EditorDraft, hasPending
     clearMigration: () => setMigration(null),
     addStatus,
     removeStatus,
+    replaceStatus,
     moveNode,
     setInitial,
     addTransition,

@@ -168,6 +168,252 @@ export function SaveAsNewWorkflowDialog({
   );
 }
 
+const CATEGORY_OPTIONS = [
+  { value: "BACKLOG", label: "To do" },
+  { value: "IN_PROGRESS", label: "In progress" },
+  { value: "DONE", label: "Done" },
+];
+const CATEGORY_DOT: Record<string, string> = {
+  BACKLOG: "bg-gray-400",
+  IN_PROGRESS: "bg-blue-500",
+  DONE: "bg-green-500",
+};
+
+/**
+ * "Edit status" — Jira modal opened from the Name/Category pencil. Warning
+ * banner (edits impact other workflows) + Status name + Status Category, an
+ * "Update status" that PATCHes the project status, and a "Replace status" link.
+ */
+export function EditStatusDialog({
+  name: initialName,
+  category: initialCategory,
+  onUpdate,
+  onReplace,
+  onClose,
+}: {
+  name: string;
+  category: string;
+  onUpdate: (name: string, category: string) => void;
+  onReplace: () => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(initialName);
+  const [category, setCategory] = useState(initialCategory);
+  const [catOpen, setCatOpen] = useState(false);
+  const catRef = useClickOutside(catOpen, () => setCatOpen(false));
+  const catLabel = CATEGORY_OPTIONS.find((c) => c.value === category)?.label ?? category;
+
+  return (
+    <Shell title="Edit status" onClose={onClose} wide>
+      <div className="space-y-4">
+        <div className="rounded-md bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
+          <div className="flex items-start gap-2">
+            <span className="mt-0.5 text-amber-500">⚠</span>
+            <div>
+              <p>Changes will impact multiple workflows that reference this status, and may also affect filters and reports.</p>
+              <button type="button" onClick={onReplace} className="mt-1 font-medium text-accent-700 hover:underline">
+                Replace status
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-700">Status name</label>
+          <input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-700">Status Category</label>
+          <div className="relative" ref={catRef}>
+            <button
+              type="button"
+              onClick={() => setCatOpen((v) => !v)}
+              className="flex w-full items-center gap-2 rounded border border-gray-300 px-3 py-2 text-left text-sm focus:border-accent-500 focus:outline-none"
+            >
+              <span className={`h-3 w-3 rounded-sm ${CATEGORY_DOT[category]}`} />
+              {catLabel}
+              <ChevronDown className="ml-auto h-4 w-4 text-gray-400" />
+            </button>
+            {catOpen && (
+              <div className="absolute left-0 top-full z-10 mt-1 w-full rounded-md border border-gray-200 bg-white py-1 shadow-lg">
+                {CATEGORY_OPTIONS.map((c) => (
+                  <button
+                    key={c.value}
+                    type="button"
+                    onClick={() => { setCategory(c.value); setCatOpen(false); }}
+                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-gray-50 ${c.value === category ? "bg-blue-50/60" : ""}`}
+                  >
+                    <span className={`h-3 w-3 rounded-sm ${CATEGORY_DOT[c.value]}`} />
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center pt-1">
+          <button type="button" onClick={onReplace} className="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100">
+            Replace status
+          </button>
+          <div className="ml-auto flex gap-3">
+            <button type="button" onClick={onClose} className="text-sm font-medium text-gray-600 hover:text-gray-800">
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => { onUpdate(name.trim() || initialName, category); onClose(); }}
+              disabled={!name.trim()}
+              className="rounded bg-accent-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-accent-700 disabled:opacity-50"
+            >
+              Update status
+            </button>
+          </div>
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
+/**
+ * "Replace status" — swap the current status for another (NOT already in this
+ * workflow), creating it by name if the project lacks it. Only THIS workflow is
+ * affected.
+ */
+export function ReplaceStatusDialog({
+  projectId,
+  currentName,
+  currentCategory,
+  poolStatuses,
+  draft,
+  onReplace,
+  onClose,
+}: {
+  projectId: string;
+  currentName: string;
+  currentCategory: string;
+  poolStatuses: StatusMeta[];
+  draft: EditorDraft;
+  /** Replace the current status with the given one (may need creating). */
+  onReplace: (newStatusId: string) => void;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<{ id: string | null; name: string; category: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const ref = useClickOutside(open, () => setOpen(false));
+
+  // Names already in this workflow (can't replace with an existing node).
+  const inWorkflowNames = useMemo(() => {
+    const byId = new Map(poolStatuses.map((s) => [s.id, s.name]));
+    return new Set(draft.statuses.map((s) => byId.get(s.statusId)).filter(Boolean) as string[]);
+  }, [draft.statuses, poolStatuses]);
+  const projectNames = useMemo(() => new Set(poolStatuses.map((s) => s.name.toLowerCase())), [poolStatuses]);
+
+  type Opt = { id: string | null; name: string; category: string };
+  const options = useMemo<Opt[]>(() => {
+    const list: Opt[] = poolStatuses
+      .filter((s) => !inWorkflowNames.has(s.name) && s.name !== currentName)
+      .map((s) => ({ id: s.id, name: s.name, category: s.category }));
+    for (const c of CLASSIC_STATUSES) {
+      if (projectNames.has(c.name.toLowerCase())) continue;
+      if (inWorkflowNames.has(c.name) || c.name === currentName) continue;
+      list.push({ id: null, name: c.name, category: c.category });
+    }
+    return list;
+  }, [poolStatuses, inWorkflowNames, projectNames, currentName]);
+
+  const doReplace = async () => {
+    if (!selected) return;
+    setBusy(true);
+    setError(null);
+    try {
+      let newId = selected.id;
+      if (!newId) {
+        const r = await fetch(`/api/projects/${projectId}/statuses`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: selected.name, category: selected.category }),
+        });
+        const j = await r.json();
+        if (!r.ok || !j.success) throw new Error(j.error ?? "Failed to create status");
+        newId = (j.data as { id: string }).id;
+        await qc.invalidateQueries({ queryKey: ["quiktrack", "statuses", projectId] });
+      }
+      onReplace(newId);
+      onClose();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to replace status");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Shell title="Replace status" onClose={onClose} wide>
+      <div className="space-y-4">
+        <p className="text-sm text-gray-600">
+          Replace with another status, or create a new one. Other workflows using “{currentName}” aren&apos;t affected.
+        </p>
+        <div>
+          <div className="mb-1 text-xs font-medium text-gray-700">Current status</div>
+          <StatusPill name={currentName} category={currentCategory} />
+        </div>
+        <hr className="border-gray-100" />
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-700">Change to status</label>
+          <div className="relative" ref={ref}>
+            <button
+              type="button"
+              onClick={() => setOpen((v) => !v)}
+              className="flex min-h-[38px] w-full items-center rounded border border-gray-300 px-2 py-1.5 text-left text-sm focus:border-accent-500 focus:outline-none"
+            >
+              {selected ? <StatusPill name={selected.name} category={selected.category} /> : <span className="text-gray-400">Select a status</span>}
+              <ChevronDown className="ml-auto h-4 w-4 text-gray-400" />
+            </button>
+            {open && (
+              <div className="absolute left-0 top-full z-10 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg">
+                {options.map((o) => (
+                  <button
+                    key={o.id ?? `classic:${o.name}`}
+                    type="button"
+                    onClick={() => { setSelected(o); setOpen(false); }}
+                    className="flex w-full items-center px-3 py-1.5 text-left hover:bg-gray-50"
+                  >
+                    <StatusPill name={o.name} category={o.category} />
+                  </button>
+                ))}
+                {options.length === 0 && <div className="px-3 py-2 text-sm text-gray-400">No other statuses.</div>}
+              </div>
+            )}
+          </div>
+        </div>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <div className="flex justify-end gap-3 pt-1">
+          <button type="button" onClick={onClose} className="text-sm font-medium text-gray-600 hover:text-gray-800">
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={doReplace}
+            disabled={!selected || busy}
+            className="rounded bg-accent-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-accent-700 disabled:opacity-50"
+          >
+            {busy ? "Replacing…" : "Replace"}
+          </button>
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
 /**
  * "Add a status" — Jira-style. A searchable combobox of the project's existing
  * statuses (as category-coloured pills), a "Create <name>" option to make a new
