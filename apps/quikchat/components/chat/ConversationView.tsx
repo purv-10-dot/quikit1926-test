@@ -225,7 +225,6 @@ export function ConversationView({
     queryKey: ["last-seen", channelId],
     queryFn: () => fetchChannelLastSeen(channelId),
     enabled: !!dmPeerId && !dmPeerOnline,
-    staleTime: 60_000,
   });
   const detailQuery = useQuery({
     queryKey: ["channel-detail", channelId],
@@ -341,7 +340,10 @@ export function ConversationView({
           </div>
         ) : (
           <MessageList
-            key={channelId}
+            // Prefixed so this can't collide with Composer's key below — React's
+            // key uniqueness spans ALL siblings of one parent, across component
+            // types. Still channel-scoped, so the remount-per-switch stands.
+            key={`ml-${channelId}`}
             messages={messages ?? []}
             currentUserId={currentUserId}
             members={channel.members}
@@ -438,7 +440,8 @@ export function ConversationView({
           // builds the editor (and `Placeholder.configure`) once per mount and
           // never re-reads the prop, so without this the placeholder — and any
           // half-typed text — stays frozen on whichever channel was open first.
-          key={channelId}
+          // Prefixed to stay distinct from MessageList's key (same parent).
+          key={`composer-${channelId}`}
           members={mentionableMembers(
             channel.members.map((m) => ({ id: m.id, displayName: m.displayName })),
             currentUserId,
