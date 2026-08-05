@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Avatar,
   Bell,
@@ -109,11 +109,20 @@ export function SettingsModule({ currentUserId, displayName, avatarUrl }: Settin
   // /api/me/presence (unlike the two demo toggles above it in the Privacy panel).
   // Seeded from the server; the switch is optimistic and reverts on failure.
   const [shareLastSeen, setShareLastSeen] = useState(true);
+  // Set the instant the user touches the switch, and checked before applying
+  // the seed GET's result below. Without this, clicking before that GET
+  // resolves — a real window: StrictMode double-invokes this effect in dev, and
+  // the first request pays a compile — lets the LATE response's
+  // `setShareLastSeen(server value)` silently overwrite the optimistic flip.
+  // The PUT still persists, so the UI would end up lying about which way a
+  // privacy switch is set. Never reset: this effect only ever seeds once, on
+  // mount, so there's no later legitimate seed to un-guard for.
+  const touchedRef = useRef(false);
   useEffect(() => {
     let alive = true;
     void fetchMyPresence()
       .then((p) => {
-        if (alive) setShareLastSeen(p.shareLastSeen);
+        if (alive && !touchedRef.current) setShareLastSeen(p.shareLastSeen);
       })
       .catch(() => undefined);
     return () => {
@@ -121,10 +130,20 @@ export function SettingsModule({ currentUserId, displayName, avatarUrl }: Settin
     };
   }, []);
   const toggleShareLastSeen = (next: boolean) => {
+    touchedRef.current = true;
     setShareLastSeen(next);
     // Privacy-only patch: no `status`, so the server leaves the current status
     // (and its message/expiry) untouched and skips the presence fan-out.
-    void updateMyPresence({ shareLastSeen: next }).catch(() => setShareLastSeen(!next));
+    void updateMyPresence({ shareLastSeen: next }).catch(() => {
+      // The UI must land on the server's ACTUAL value, not a guessed inverse:
+      // `!next` is only correct if the pre-click display was already synced
+      // with the server, which a click landing inside the seed-GET window
+      // breaks. Re-read the truth; fall back to the guess only if that fails
+      // too (no connectivity — nothing better available).
+      void fetchMyPresence()
+        .then((p) => setShareLastSeen(p.shareLastSeen))
+        .catch(() => setShareLastSeen(!next));
+    });
   };
 
   // Accent color theme (persisted to localStorage under STORAGE_KEY; applied via data-accent).
