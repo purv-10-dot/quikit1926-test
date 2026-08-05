@@ -186,15 +186,22 @@ export function kpiProgressPercent(
  * `resolveProgressQtd` which divides by the to-date goal (33.2K / 125.2K = 27%,
  * a "pace vs where you should be by now" view).
  *
- * It mirrors EXACTLY the formula the Individual-KPI table's Progress column and
- * the Stats modal's "Overall Progress" headline already use, so the dashboard
- * KPI Overview cards agree with both:
- *   • Cumulative — achieved = server-stamped `kpi.qtdAchieved` (a cumulative
- *     SUM), goal = `kpi.qtdGoal ?? kpi.target` (the full quarterly goal).
- *   • Standalone — `kpi.qtdAchieved` is a SUM regardless of division type, so
- *     re-derive the per-week average via `computeQtd`; its `qtdGoal` is already
- *     the constant quarterly target. (Identical to `resolveProgressQtd` for
- *     Standalone — only Cumulative changes denominator.)
+ * `achieved` is ALWAYS derived from `computeQtd()` (both division types) —
+ * the same function `resolveProgressQtd`, `StatsTab`, `KPITable`'s "QTD
+ * Achieved" column, and `kpiAuditConfig` all use. `computeQtd` sums weekly
+ * actuals through the LAST COMPLETED week only (excludes the current
+ * in-progress week — see its own doc comment). The raw server-stamped
+ * `kpi.qtdAchieved` DB column is a DIFFERENT, wider aggregate: the batch
+ * weekly-save route (`api/kpi/[id]/weekly/batch/route.ts` `recalcKPI`) sums
+ * EVERY entered week, including the current one. Reading that raw field here
+ * (as this function used to, for Cumulative KPIs only) made the Dashboard
+ * KPICard headline disagree with its own QTD bar and with the KPI table's
+ * "QTD Achieved" column the moment a user logged a value for the current
+ * week — the two numbers are both "real", just scoped differently, and
+ * showing both under the same "QTD Achieved" label read as a calculation bug.
+ * `computeQtd` internally falls back to the raw field when `currentWeek` is
+ * null (quarter not started/already ended), so this stays safe for
+ * historical/future KPIs.
  */
 export function resolveProgressOverall(
   kpi: KPIRow,
@@ -203,8 +210,8 @@ export function resolveProgressOverall(
 ): { achieved: number; goal: number } {
   const divisionType: "Cumulative" | "Standalone" =
     kpi.divisionType === "Standalone" ? "Standalone" : "Cumulative";
-  const std = divisionType === "Standalone" ? computeQtd(kpi, currentWeek, "Standalone", weeksPerQuarter) : null;
-  const achieved = std != null ? (std.qtdAchieved ?? 0) : (kpi.qtdAchieved ?? 0);
+  const { qtdAchieved } = computeQtd(kpi, currentWeek, divisionType, weeksPerQuarter);
+  const achieved = qtdAchieved ?? 0;
   // Goal priority mirrors the "Quarterly Goal" column shown on-screen
   // (quarterlyGoal ?? target ?? qtdGoal) so this percentage always agrees
   // with the number the user sees, instead of a different KPI field.
