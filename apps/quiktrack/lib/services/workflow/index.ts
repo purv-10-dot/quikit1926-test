@@ -39,6 +39,8 @@ export {
   buildTemplateFromRows,
   isWorkflowTemplate,
   materializeTemplateIntoProject,
+  classicWorkflowTemplate,
+  CLASSIC_TEMPLATE_ID,
 } from "./template";
 export type {
   TemplateStatus,

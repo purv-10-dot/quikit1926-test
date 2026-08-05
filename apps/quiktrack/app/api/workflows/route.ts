@@ -7,6 +7,8 @@ import { hasAdminAccess, userCanInProject } from "@/lib/api/permissions";
 import {
   buildTemplateFromRows,
   isWorkflowTemplate,
+  classicWorkflowTemplate,
+  CLASSIC_TEMPLATE_ID,
   type TransitionType,
 } from "@/lib/services/workflow";
 
@@ -22,15 +24,28 @@ export const GET = withOrgAuth(async ({ orgId }) => {
     orderBy: { updatedAt: "desc" },
     select: { id: true, name: true, description: true, updatedAt: true, templateJson: true },
   });
+  const classic = classicWorkflowTemplate();
   return NextResponse.json({
     success: true,
-    data: templates.map((t) => ({
-      id: t.id,
-      name: t.name,
-      description: t.description,
-      updatedAt: t.updatedAt,
-      template: isWorkflowTemplate(t.templateJson) ? t.templateJson : null,
-    })),
+    data: [
+      // The built-in classic default workflow is always offered first.
+      {
+        id: CLASSIC_TEMPLATE_ID,
+        name: "Classic default workflow",
+        description: classic.description,
+        updatedAt: new Date(0),
+        template: classic,
+        builtIn: true,
+      },
+      ...templates.map((t) => ({
+        id: t.id,
+        name: t.name,
+        description: t.description,
+        updatedAt: t.updatedAt,
+        template: isWorkflowTemplate(t.templateJson) ? t.templateJson : null,
+        builtIn: false,
+      })),
+    ],
   });
 });
 

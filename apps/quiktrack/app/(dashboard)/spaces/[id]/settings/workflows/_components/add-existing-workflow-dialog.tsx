@@ -153,14 +153,17 @@ export function AddExistingWorkflowDialog({
             ) : (
               <>
                 <h4 className="mb-3 text-center text-base font-semibold text-gray-900">{selected.name}</h4>
-                <div className="h-64 rounded-md border border-gray-200 bg-gray-50">
+                <div className="h-80 overflow-hidden rounded-md border border-gray-200 bg-gray-50">
                   {flow ? (
                     <ReactFlow
+                      key={selected.id}
                       nodes={flow.nodes}
                       edges={flow.edges}
                       nodeTypes={flowNodeTypes}
                       edgeTypes={flowEdgeTypes}
                       fitView
+                      fitViewOptions={{ padding: 0.18, maxZoom: 1 }}
+                      minZoom={0.2}
                       nodesDraggable={false}
                       nodesConnectable={false}
                       elementsSelectable={false}
@@ -168,8 +171,14 @@ export function AddExistingWorkflowDialog({
                       zoomOnScroll={false}
                       proOptions={{ hideAttribution: true }}
                     >
-                      <Background />
-                      <Controls showInteractive={false} />
+                      <Background gap={16} />
+                      {/* Zoom controls in the top-left so they don't overlap the
+                          centered diagram; no fit/interactive buttons. */}
+                      <Controls
+                        position="top-left"
+                        showFitView={false}
+                        showInteractive={false}
+                      />
                     </ReactFlow>
                   ) : (
                     <div className="flex h-full items-center justify-center text-sm text-gray-400">

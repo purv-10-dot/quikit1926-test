@@ -2,7 +2,13 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withProjectAccess } from "@/lib/api/withProjectAccess";
-import { isWorkflowTemplate, materializeTemplateIntoProject } from "@/lib/services/workflow";
+import {
+  isWorkflowTemplate,
+  materializeTemplateIntoProject,
+  classicWorkflowTemplate,
+  CLASSIC_TEMPLATE_ID,
+  type WorkflowTemplate,
+} from "@/lib/services/workflow";
 
 /**
  * POST /api/projects/[id]/workflow-scheme/add-existing
@@ -30,15 +36,25 @@ export const POST = withProjectAccess<{ id: string }>(
     }
     const { workflowId, name, issueTypeIds } = parsed.data;
 
-    const tmpl = await db.qtWorkflow.findFirst({
-      where: { id: workflowId, orgId, projectId: null, isDeleted: false },
-      select: { name: true, templateJson: true },
-    });
-    if (!tmpl || !isWorkflowTemplate(tmpl.templateJson)) {
-      return NextResponse.json(
-        { success: false, error: "Template workflow not found." },
-        { status: 404 },
-      );
+    // Resolve the template: the built-in classic, or a saved org template.
+    let template: WorkflowTemplate;
+    let templateName: string;
+    if (workflowId === CLASSIC_TEMPLATE_ID) {
+      template = classicWorkflowTemplate();
+      templateName = "classic default workflow";
+    } else {
+      const tmpl = await db.qtWorkflow.findFirst({
+        where: { id: workflowId, orgId, projectId: null, isDeleted: false },
+        select: { name: true, templateJson: true },
+      });
+      if (!tmpl || !isWorkflowTemplate(tmpl.templateJson)) {
+        return NextResponse.json(
+          { success: false, error: "Template workflow not found." },
+          { status: 404 },
+        );
+      }
+      template = tmpl.templateJson as WorkflowTemplate;
+      templateName = tmpl.name;
     }
 
     // Validate the requested issue types belong to this project.
@@ -59,10 +75,10 @@ export const POST = withProjectAccess<{ id: string }>(
 
     const newWorkflowId = await db.$transaction((tx) =>
       materializeTemplateIntoProject(tx, {
-        template: tmpl.templateJson as never,
+        template,
         projectId,
         orgId,
-        workflowName: name?.trim() || tmpl.name,
+        workflowName: name?.trim() || templateName,
         createdBy: userId,
         issueTypeIds: typeIds,
       }),

@@ -45,6 +45,35 @@ export function isWorkflowTemplate(v: unknown): v is WorkflowTemplate {
 }
 
 /**
+ * The built-in "Classic default workflow" as a name-based template. Always
+ * offered in the "Add Existing Workflow" picker (id CLASSIC_TEMPLATE_ID) so a
+ * project can adopt the classic Jira lifecycle without an org template existing.
+ * Kept in sync with the classic constants in projectDefaults.ts.
+ */
+export const CLASSIC_TEMPLATE_ID = "__classic__";
+
+export function classicWorkflowTemplate(): WorkflowTemplate {
+  return {
+    description: "The classic Jira default workflow (Open → In Progress → Resolved → Closed, with reopen).",
+    statuses: [
+      { name: "Open", category: "BACKLOG", color: "#94a3b8", isInitial: true },
+      { name: "In Progress", category: "IN_PROGRESS", color: "#2563eb", isInitial: false },
+      { name: "Resolved", category: "IN_PROGRESS", color: "#16a34a", isInitial: false },
+      { name: "Reopened", category: "IN_PROGRESS", color: "#9333ea", isInitial: false },
+      { name: "Closed", category: "DONE", color: "#16a34a", isInitial: false },
+    ],
+    transitions: [
+      { name: "Create", type: "INITIAL", toName: "Open", fromNames: [] },
+      { name: "Start Progress", type: "NORMAL", toName: "In Progress", fromNames: ["Open"] },
+      { name: "Resolve Issue", type: "NORMAL", toName: "Resolved", fromNames: ["In Progress"] },
+      { name: "Close Issue", type: "NORMAL", toName: "Closed", fromNames: ["Resolved"] },
+      { name: "Reopen", type: "NORMAL", toName: "Reopened", fromNames: ["Closed"] },
+      { name: "Back to In Progress", type: "NORMAL", toName: "In Progress", fromNames: ["Reopened"] },
+    ],
+  };
+}
+
+/**
  * Build a name-based template snapshot from a live workflow's rows. Called when
  * saving a workflow as a reusable template. `statusNameById` maps the source
  * project's QtIssueStatus ids → { name, category, color }.

@@ -44,8 +44,12 @@ describe("GET /api/workflows (list org templates)", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
-    expect(body.data).toHaveLength(1);
-    expect(body.data[0].id).toBe("wf_t1");
+    // The built-in classic template is always first; saved org templates follow.
+    expect(body.data[0].builtIn).toBe(true);
+    expect(body.data[0].name).toBe("Classic default workflow");
+    const saved = body.data.filter((w: { builtIn: boolean }) => !w.builtIn);
+    expect(saved).toHaveLength(1);
+    expect(saved[0].id).toBe("wf_t1");
     // Query is scoped to org + projectId null.
     const where = mockDb.qtWorkflow.findMany.mock.calls[0]?.[0]?.where;
     expect(where).toMatchObject({ orgId: TENANT, projectId: null, isDeleted: false });
