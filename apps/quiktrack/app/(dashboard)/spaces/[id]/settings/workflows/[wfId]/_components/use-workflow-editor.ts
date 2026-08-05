@@ -203,6 +203,20 @@ export function useWorkflowEditor(wfId: string, initial: EditorDraft, hasPending
     [mutate],
   );
 
+  /** Replace the rule at `index` on a transition (Edit Rule modal). */
+  const updateRule = useCallback(
+    (transitionId: string, index: number, rule: EditorRule) =>
+      mutate((d) => ({
+        ...d,
+        transitions: d.transitions.map((t) =>
+          t.id === transitionId
+            ? { ...t, rules: t.rules.map((r, i) => (i === index ? rule : r)) }
+            : t,
+        ),
+      })),
+    [mutate],
+  );
+
   const updateTransition = useCallback(
     (id: string, patch: Partial<EditorTransition>) =>
       mutate((d) => ({
@@ -240,5 +254,6 @@ export function useWorkflowEditor(wfId: string, initial: EditorDraft, hasPending
     removeTransition,
     addRule,
     removeRule,
+    updateRule,
   };
 }

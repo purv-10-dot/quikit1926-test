@@ -18,6 +18,8 @@ import {
   type StatusMeta,
   type WorkflowReadModel,
 } from "./editor-types";
+import { AddRuleDialog, EditRuleDialog } from "./flow/rule-dialogs";
+import { metaFor, type RuleTypeMeta } from "./flow/rule-catalog";
 
 async function fetchResolutions(projectId: string): Promise<{ id: string; name: string }[]> {
   const r = await fetch(`/api/projects/${projectId}/resolutions`);
@@ -116,6 +118,10 @@ function EditorBody({
   // Edit-status / Replace-status modals (opened from the Status panel pencils).
   const [editStatusOpen, setEditStatusOpen] = useState(false);
   const [replaceStatusOpen, setReplaceStatusOpen] = useState(false);
+  // Rule dialogs on the Transition panel: pick a rule type (add) or edit one.
+  const [addRuleOpen, setAddRuleOpen] = useState(false);
+  // The rule being configured — either a fresh pick (add) or an existing index (edit).
+  const [rulePick, setRulePick] = useState<{ meta: RuleTypeMeta; index: number | null } | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
 
   const resolutions = useQuery({
@@ -431,11 +437,34 @@ function EditorBody({
         {tab === "diagram" && selectedTransition && !panelCollapsed && (
           <TransitionPanel
             transition={selectedTransition}
+            draft={ed.draft}
             statusMeta={statusMeta}
-            resolutions={resolutions.data ?? []}
             onRename={(name) => ed.updateTransition(selectedTransition.id, { name })}
-            onAddRule={(rule) => ed.addRule(selectedTransition.id, rule)}
+            onUpdatePath={(patch) => ed.updateTransition(selectedTransition.id, patch)}
+            onOpenAddRule={() => setAddRuleOpen(true)}
+            onEditRule={(index) => {
+              const r = selectedTransition.rules[index];
+              const m = metaFor(r.type);
+              if (m) setRulePick({ meta: m, index });
+            }}
             onRemoveRule={(i) => ed.removeRule(selectedTransition.id, i)}
+            conditionsMode={
+              // ANY = all conditions share one group; ALL = distinct groups.
+              (() => {
+                const groups = selectedTransition.rules
+                  .filter((r) => r.kind === "CONDITION")
+                  .map((r) => r.groupNo ?? 0);
+                return new Set(groups).size <= 1 ? "ANY" : "ALL";
+              })()
+            }
+            onSetConditionsMode={(mode) => {
+              // ALL → each condition its own group; ANY → all share group 0.
+              let g = 0;
+              const remapped = selectedTransition.rules.map((r) =>
+                r.kind === "CONDITION" ? { ...r, groupNo: mode === "ANY" ? 0 : g++ } : r,
+              );
+              ed.updateTransition(selectedTransition.id, { rules: remapped });
+            }}
             onDelete={() => {
               ed.removeTransition(selectedTransition.id);
               setSelection(null);
@@ -497,6 +526,34 @@ function EditorBody({
             setSelection({ kind: "status", statusId: newStatusId });
           }}
           onClose={() => setReplaceStatusOpen(false)}
+        />
+      )}
+      {/* Add-rule catalog → pick a type → opens the Edit-rule config. */}
+      {addRuleOpen && selectedTransition && (
+        <AddRuleDialog
+          onPick={(meta) => { setAddRuleOpen(false); setRulePick({ meta, index: null }); }}
+          onClose={() => setAddRuleOpen(false)}
+        />
+      )}
+      {rulePick && selectedTransition && (
+        <EditRuleDialog
+          meta={rulePick.meta}
+          initialConfig={rulePick.index != null ? selectedTransition.rules[rulePick.index]?.config : undefined}
+          transitionName={selectedTransition.name}
+          fromNames={selectedTransition.fromStatusIds.map((id) => statusMeta.get(id)?.name ?? id)}
+          toName={statusMeta.get(selectedTransition.toStatusId)?.name ?? selectedTransition.toStatusId}
+          resolutions={resolutions.data ?? []}
+          statuses={pool.map((s) => ({ id: s.id, name: s.name, category: s.category }))}
+          onSubmit={(rule) => {
+            if (rulePick.index != null) ed.updateRule(selectedTransition.id, rulePick.index, rule);
+            else ed.addRule(selectedTransition.id, rule);
+          }}
+          onDelete={
+            rulePick.index != null
+              ? () => ed.removeRule(selectedTransition.id, rulePick.index as number)
+              : undefined
+          }
+          onClose={() => setRulePick(null)}
         />
       )}
       {addTransitionOpen && (

@@ -24,16 +24,37 @@ export interface RuleIssueSnapshot {
   priority: string | null;
 }
 
+/** One recorded status change on a work item (from the transition log). */
+export interface TransitionHistoryEntry {
+  fromStatusId: string | null;
+  toStatusId: string;
+  actorId: string | null;
+}
+
 /** Injected async primitives (backed by the DB in production, stubs in tests). */
 export interface RulePrimitives {
   /** Does the acting user hold (resource, action) in the issue's project? */
   userCanInProject: (resource: string, action: string) => Promise<boolean>;
   /** Is the acting user assigned the named project role in this project? */
   userInProjectRole: (roleName: string) => Promise<boolean>;
+  /** Status ids of this work item's (non-deleted) subtasks. Empty if none. */
+  subtaskStatusIds: () => Promise<string[]>;
+  /**
+   * This work item's status changes in chronological order (oldest → newest),
+   * from the transition log. Empty when the item has never moved. Used by the
+   * "been through a status" and "previous updater" rules.
+   */
+  transitionHistory: () => Promise<TransitionHistoryEntry[]>;
 }
 
 export interface RuleContext {
   userId: string;
+  /**
+   * True when the move is driven by an API/automation actor rather than a human.
+   * Undefined today (no API-actor plumbing) — read by restrict_from_all's
+   * "allow APIs" mode, which treats undefined as "not an API actor".
+   */
+  isApiActor?: boolean;
   issue: RuleIssueSnapshot;
   /** The transition being taken (id + target). */
   toStatusId: string;

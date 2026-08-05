@@ -108,6 +108,21 @@ export async function executeTransition(params: {
         });
         return assignment?.projectRole.name === roleName;
       },
+      subtaskStatusIds: async () => {
+        const kids = await db.qtIssue.findMany({
+          where: { parentId: issue.id, isDeleted: false },
+          select: { statusId: true },
+        });
+        return kids.map((k) => k.statusId);
+      },
+      transitionHistory: async () => {
+        const rows = await db.qtIssueTransitionLog.findMany({
+          where: { issueId: issue.id },
+          orderBy: { createdAt: "asc" },
+          select: { fromStatusId: true, toStatusId: true, actorId: true },
+        });
+        return rows;
+      },
     },
   };
 

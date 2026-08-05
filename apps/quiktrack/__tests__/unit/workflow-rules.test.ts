@@ -29,6 +29,8 @@ function ctx(over: Partial<RuleContext> = {}): RuleContext {
     prim: {
       userCanInProject: async () => false,
       userInProjectRole: async () => false,
+      subtaskStatusIds: async () => [],
+      transitionHistory: async () => [],
     },
     ...over,
   };
@@ -72,7 +74,7 @@ describe("evaluateConditions — grouping", () => {
 
   it("has_permission passes when the primitive grants it", async () => {
     const c = ctx({
-      prim: { userCanInProject: async () => true, userInProjectRole: async () => false },
+      prim: { userCanInProject: async () => true, userInProjectRole: async () => false, subtaskStatusIds: async () => [], transitionHistory: async () => [] },
     });
     const conds = [rule({ id: "p", type: "has_permission", config: { resource: "Issue", action: "update" } })];
     expect(await evaluateConditions(c, conds)).toBe(true);
