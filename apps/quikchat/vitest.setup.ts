@@ -1,6 +1,12 @@
-// Load .env so integration tests (Prisma against local Postgres) and the auth
-// harness see DATABASE_URL / NEXTAUTH_SECRET, mirroring how the app boots.
-import "dotenv/config";
+// Load .env.local so integration tests (Prisma against local Postgres) and the
+// auth harness see DATABASE_URL / NEXTAUTH_SECRET, mirroring how the app boots.
+// This app only ever has `.env.local` (dev secrets, gitignored) — plain
+// `dotenv/config` only reads `.env`, which doesn't exist here, so it silently
+// loaded nothing. List `.env.local` first so it wins; `.env` stays as a
+// fallback for anyone who does have one (dotenv doesn't overwrite keys already
+// set by an earlier file in the list).
+import { config } from "dotenv";
+config({ path: [".env.local", ".env"] });
 // Runtime registration of the jest-dom matchers. jest-dom is hoisted to the repo
 // root, so `@testing-library/jest-dom/vitest`'s self-extend binds root vitest 4.x's
 // `expect` — a different instance than quikchat's nested vitest 3.2.4 that the tests
