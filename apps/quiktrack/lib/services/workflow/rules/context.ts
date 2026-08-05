@@ -22,6 +22,17 @@ export interface RuleIssueSnapshot {
   assigneeId: string | null;
   resolutionId: string | null;
   priority: string | null;
+  // Extra fields the "Restrict to when a field is a specific value" rule can
+  // test. Optional so existing snapshot builders/tests keep compiling; the
+  // field-value rule treats an absent field as null (never-equal).
+  reporterId?: string | null;
+  title?: string | null;
+  description?: string | null;
+  storyPoints?: number | null;
+  eta?: number | null;
+  /** ISO strings (or null). Date rules parse these to timestamps. */
+  dueDate?: string | null;
+  startDate?: string | null;
 }
 
 /** One recorded status change on a work item (from the transition log). */

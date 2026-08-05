@@ -154,52 +154,101 @@ const restrictFromAll: ConditionHandler = {
 /**
  * restrict_field_value — Jira "Restrict to when a field is a specific value".
  * The transition is available only when the chosen field satisfies the operator
- * against the configured value.
+ * against the configured value. The comparison differs by field KIND:
+ *   • text   — Type / Priority / Status / Resolution / Assignee / Reporter /
+ *              Summary / Description. ops: eq | neq (string compare).
+ *   • number — Story points / ETA. ops: eq | neq (numeric compare).
+ *   • date   — Due date / Start date. ops: eq | neq | after | aftereq |
+ *              before | beforeeq (timestamp compare).
  *
  * config: {
- *   field: "type" | "priority" | "assignee" | "resolution" | "status",
- *   valueType: "text" | "number",
- *   op: "eq" | "neq",
- *   value: string,
+ *   field: string,                 // one of FIELD_KIND keys below
+ *   op: string,                    // operator (see per-kind sets)
+ *   value: string,                 // text / number / ISO date (YYYY-MM-DD)
+ *   time?: string,                 // date "with time" only — "HH:MM" (24h)
  * }
+ * (The UI's "Review its value as" just picks number-vs-text / date-with-vs-
+ * without-time; the field's kind is authoritative here.)
  *
- * Only fields readable from the issue snapshot are supported (the UI offers
- * exactly these). An unknown field fails safe (transition hidden).
+ * Only fields the issue snapshot carries are supported. Unknown field or op, or
+ * an unparseable value, fails safe (transition hidden).
  */
-const FIELD_TO_SNAPSHOT: Record<string, "type" | "priority" | "assigneeId" | "resolutionId" | "statusId"> = {
-  type: "type",
-  priority: "priority",
-  assignee: "assigneeId",
-  resolution: "resolutionId",
-  status: "statusId",
+type SnapKey =
+  | "type" | "priority" | "assigneeId" | "resolutionId" | "statusId"
+  | "reporterId" | "title" | "description" | "storyPoints" | "eta"
+  | "dueDate" | "startDate";
+
+const FIELD_MAP: Record<string, { key: SnapKey; kind: "text" | "number" | "date" }> = {
+  type: { key: "type", kind: "text" },
+  priority: { key: "priority", kind: "text" },
+  status: { key: "statusId", kind: "text" },
+  resolution: { key: "resolutionId", kind: "text" },
+  assignee: { key: "assigneeId", kind: "text" },
+  reporter: { key: "reporterId", kind: "text" },
+  title: { key: "title", kind: "text" },
+  description: { key: "description", kind: "text" },
+  storyPoints: { key: "storyPoints", kind: "number" },
+  eta: { key: "eta", kind: "number" },
+  dueDate: { key: "dueDate", kind: "date" },
+  startDate: { key: "startDate", kind: "date" },
 };
+
+const TEXT_OPS = ["eq", "neq"];
+const NUMBER_OPS = ["eq", "neq"];
+const DATE_OPS = ["eq", "neq", "after", "aftereq", "before", "beforeeq"];
+
+/** Combine an ISO date ("YYYY-MM-DD") + optional "HH:MM" into ms, or NaN. */
+function parseDateMs(value: string, time?: string): number {
+  if (!value) return NaN;
+  const iso = time ? `${value}T${time}:00` : `${value}T00:00:00`;
+  return Date.parse(iso);
+}
 
 const restrictFieldValue: ConditionHandler = {
   evaluate: async (ctx, config) => {
-    const field = String(config.field ?? "");
-    const key = FIELD_TO_SNAPSHOT[field];
-    if (!key) return false; // unknown field → fail safe
-    const op = String(config.op ?? "eq");
-    const valueType = String(config.valueType ?? "text");
-    const target = String(config.value ?? "");
-    const actual = ctx.issue[key]; // string | null
+    const spec = FIELD_MAP[String(config.field ?? "")];
+    if (!spec) return false; // unknown field → fail safe
+    const op = String(config.op ?? "");
+    // Snapshot key is one of the SnapKey union members, all valid issue fields.
+    const actual = (ctx.issue as unknown as Record<string, unknown>)[spec.key] ?? null;
+    const rawValue = String(config.value ?? "");
 
-    let equal: boolean;
-    if (valueType === "number") {
-      const a = actual == null ? NaN : Number(actual);
-      const b = target === "" ? NaN : Number(target);
-      // NaN never equals anything → an unset field is "not equal" to any number.
-      equal = !Number.isNaN(a) && !Number.isNaN(b) && a === b;
+    let result: boolean;
+    if (spec.kind === "number") {
+      if (!NUMBER_OPS.includes(op)) return false;
+      const a = actual == null || actual === "" ? NaN : Number(actual);
+      const b = rawValue === "" ? NaN : Number(rawValue);
+      const equal = !Number.isNaN(a) && !Number.isNaN(b) && a === b;
+      result = op === "neq" ? !equal : equal;
+    } else if (spec.kind === "date") {
+      if (!DATE_OPS.includes(op)) return false;
+      const a = actual == null ? NaN : Date.parse(String(actual));
+      const b = parseDateMs(rawValue, config.time ? String(config.time) : undefined);
+      if (Number.isNaN(b)) return false; // no target → nothing to match
+      if (Number.isNaN(a)) return op === "neq"; // unset field ≠ any date
+      switch (op) {
+        case "eq": result = a === b; break;
+        case "neq": result = a !== b; break;
+        case "after": result = a > b; break;
+        case "aftereq": result = a >= b; break;
+        case "before": result = a < b; break;
+        case "beforeeq": result = a <= b; break;
+        default: result = false;
+      }
     } else {
-      equal = (actual ?? "") === target;
+      if (!TEXT_OPS.includes(op)) return false;
+      const equal = (actual == null ? "" : String(actual)) === rawValue;
+      result = op === "neq" ? !equal : equal;
     }
-    return op === "neq" ? !equal : equal;
+    return result;
   },
   validateConfig: (config) => {
     const errs: string[] = [];
-    if (!FIELD_TO_SNAPSHOT[String(config.field ?? "")]) errs.push("Choose a field");
+    const spec = FIELD_MAP[String(config.field ?? "")];
+    if (!spec) return ["Choose a field"];
     const op = String(config.op ?? "");
-    if (op !== "eq" && op !== "neq") errs.push("Choose whether it equals or doesn't equal");
+    const okOps = spec.kind === "number" ? NUMBER_OPS : spec.kind === "date" ? DATE_OPS : TEXT_OPS;
+    if (!okOps.includes(op)) errs.push("Choose a comparison");
     if (String(config.value ?? "").trim() === "") errs.push("Enter a value to compare against");
     return errs;
   },

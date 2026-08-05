@@ -122,6 +122,7 @@ export const PATCH = withOrgAuth<{ id: string }>(
         projectId: true,
         resolutionId: true, // for the workflow pipeline (resolution post-functions)
         description: true, // for the mention diff (only email newly-added @mentions)
+        reporterId: true, // for the workflow field-value rule (Reporter field)
         // Snapshot every tracked field for the activity-history diff.
         // (`title`, `statusId`, `assigneeId` are part of this snapshot too.)
         ...selectIssueHistorySnapshot,
@@ -218,6 +219,13 @@ export const PATCH = withOrgAuth<{ id: string }>(
             assigneeId: issue.assigneeId ?? null,
             resolutionId: issue.resolutionId ?? null,
             priority: issue.priority ?? null,
+            reporterId: issue.reporterId ?? null,
+            title: issue.title ?? null,
+            description: issue.description ?? null,
+            storyPoints: issue.storyPoints ?? null,
+            eta: issue.eta ?? null,
+            dueDate: issue.dueDate ? new Date(issue.dueDate).toISOString() : null,
+            startDate: issue.startDate ? new Date(issue.startDate).toISOString() : null,
           },
           toStatusId: allowedFields.statusId as string,
           userId,

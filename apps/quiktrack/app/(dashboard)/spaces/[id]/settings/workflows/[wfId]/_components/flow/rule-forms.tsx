@@ -5,7 +5,6 @@ import {
   USER_OPTIONS,
   ROLE_OPTIONS,
   PERMISSION_OPTIONS,
-  FIELD_OPTIONS,
   permissionKey,
 } from "./restrict-options";
 
@@ -146,97 +145,12 @@ export function RestrictFromAllForm({
   );
 }
 
-/* ── "Restrict to when a field is a specific value" config form ──────────── */
-
-const VALUE_TYPE_OPTIONS: DropdownOption[] = [
-  { value: "text", label: "Text" },
-  { value: "number", label: "A number" },
-];
-const OP_OPTIONS: DropdownOption[] = [
-  { value: "eq", label: "Equals" },
-  { value: "neq", label: "Doesn't equal" },
-];
-
-export function isRestrictFieldValueValid(config: Record<string, unknown>): boolean {
-  const field = String(config.field ?? "");
-  const op = String(config.op ?? "");
-  const value = String(config.value ?? "").trim();
-  if (!FIELD_OPTIONS.some((f) => f.value === field)) return false;
-  if (op !== "eq" && op !== "neq") return false;
-  return value.length > 0;
-}
-
-export function RestrictFieldValueForm({
-  value,
-  onChange,
-}: {
-  value: Record<string, unknown>;
-  onChange: (next: Record<string, unknown>) => void;
-}) {
-  const field = String(value.field ?? "");
-  const valueType = String(value.valueType ?? "text");
-  const op = String(value.op ?? "");
-  const val = String(value.value ?? "");
-  const set = (patch: Record<string, unknown>) => onChange({ ...value, ...patch });
-
-  return (
-    <div className="space-y-4">
-      <div>
-        <label className="mb-1 block text-xs font-medium text-gray-700">For this field</label>
-        <PortalDropdown
-          placeholder="Choose a field"
-          options={FIELD_OPTIONS.map((f) => ({ value: f.value, label: f.label }))}
-          selected={field ? [field] : []}
-          onChange={(next) => set({ field: next[0] ?? "" })}
-        />
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-700">Review its value as</label>
-          <PortalDropdown
-            options={VALUE_TYPE_OPTIONS}
-            selected={[valueType]}
-            onChange={(next) => set({ valueType: next[0] ?? "text" })}
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-700">Check if it</label>
-          <PortalDropdown
-            placeholder="Choose an option"
-            options={OP_OPTIONS}
-            selected={op ? [op] : []}
-            onChange={(next) => set({ op: next[0] ?? "" })}
-          />
-        </div>
-      </div>
-
-      <div>
-        <label className="mb-1 block text-xs font-medium text-gray-700">This value</label>
-        {valueType === "number" ? (
-          <input
-            type="number"
-            value={val}
-            onChange={(e) => set({ value: e.target.value })}
-            placeholder="Enter a number"
-            className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none"
-          />
-        ) : (
-          <textarea
-            value={val}
-            onChange={(e) => set({ value: e.target.value })}
-            placeholder="Enter some text"
-            rows={4}
-            className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none"
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
-// Status-based config forms live in a sibling file to keep this one under the
-// 300-line ceiling; re-exported here so callers import from one place.
+// Field-value and status-based config forms live in sibling files to keep this
+// file under the 300-line ceiling; re-exported here so callers import from one place.
+export {
+  RestrictFieldValueForm,
+  isRestrictFieldValueValid,
+} from "./rule-forms-field-value";
 export {
   SubtaskStatusForm,
   BeenThroughStatusForm,

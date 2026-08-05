@@ -65,29 +65,44 @@ export function permissionKey(p: { resource: string; action: string }): string {
 
 /**
  * Fields the "Restrict to when a field is a specific value" rule can test —
- * ONLY fields QuikTrack has AND the rule engine can actually read from the issue
- * snapshot (RuleIssueSnapshot: type / priority / assigneeId / resolutionId /
- * statusId). Jira's Affects-versions / Components / Creator etc. are intentionally
- * omitted — we don't have them, and the engine can't evaluate them.
+ * ONLY fields QuikTrack has AND the rule engine can read from the issue snapshot
+ * (RuleIssueSnapshot). Jira's Affects-versions / Components / Creator etc. are
+ * intentionally omitted — we don't have them, and the engine can't evaluate them.
  *
- * `defaultValueType` seeds the "Review its value as" control; `numeric` fields
- * (none today — story points/eta aren't in the snapshot) would allow "A number".
+ * `kind` drives the config form: the "Review its value as", "Check if it"
+ * operators, and the value input all differ by field kind (text / number / date).
  */
+export type FieldKind = "text" | "number" | "date";
+
 export interface FieldOption {
   value: string;
   label: string;
   /** Snapshot key the engine compares against. */
-  snapshotKey: "type" | "priority" | "assigneeId" | "resolutionId" | "statusId";
+  snapshotKey:
+    | "type" | "priority" | "assigneeId" | "resolutionId" | "statusId"
+    | "reporterId" | "title" | "description" | "storyPoints" | "eta"
+    | "dueDate" | "startDate";
+  kind: FieldKind;
 }
 
 export const FIELD_OPTIONS: FieldOption[] = [
-  { value: "type", label: "Work item type", snapshotKey: "type" },
-  { value: "priority", label: "Priority", snapshotKey: "priority" },
-  { value: "assignee", label: "Assignee", snapshotKey: "assigneeId" },
-  { value: "resolution", label: "Resolution", snapshotKey: "resolutionId" },
-  { value: "status", label: "Status", snapshotKey: "statusId" },
+  { value: "type", label: "Work item type", snapshotKey: "type", kind: "text" },
+  { value: "priority", label: "Priority", snapshotKey: "priority", kind: "text" },
+  { value: "status", label: "Status", snapshotKey: "statusId", kind: "text" },
+  { value: "resolution", label: "Resolution", snapshotKey: "resolutionId", kind: "text" },
+  { value: "assignee", label: "Assignee", snapshotKey: "assigneeId", kind: "text" },
+  { value: "reporter", label: "Reporter", snapshotKey: "reporterId", kind: "text" },
+  { value: "title", label: "Summary", snapshotKey: "title", kind: "text" },
+  { value: "description", label: "Description", snapshotKey: "description", kind: "text" },
+  { value: "storyPoints", label: "Story points", snapshotKey: "storyPoints", kind: "number" },
+  { value: "eta", label: "ETA", snapshotKey: "eta", kind: "number" },
+  { value: "dueDate", label: "Due date", snapshotKey: "dueDate", kind: "date" },
+  { value: "startDate", label: "Start date", snapshotKey: "startDate", kind: "date" },
 ];
 
-export function fieldSnapshotKey(field: string): FieldOption["snapshotKey"] | null {
-  return FIELD_OPTIONS.find((f) => f.value === field)?.snapshotKey ?? null;
+export function fieldOption(field: string): FieldOption | undefined {
+  return FIELD_OPTIONS.find((f) => f.value === field);
+}
+export function fieldKind(field: string): FieldKind | null {
+  return fieldOption(field)?.kind ?? null;
 }

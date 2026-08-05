@@ -26,6 +26,13 @@ export const GET = withOrgAuth<{ id: string }>(
         assigneeId: true,
         resolutionId: true,
         priority: true,
+        reporterId: true,
+        title: true,
+        description: true,
+        storyPoints: true,
+        eta: true,
+        dueDate: true,
+        startDate: true,
       },
     });
     if (!issue) {
@@ -53,6 +60,13 @@ export const GET = withOrgAuth<{ id: string }>(
         assigneeId: issue.assigneeId,
         resolutionId: issue.resolutionId,
         priority: issue.priority,
+        reporterId: issue.reporterId,
+        title: issue.title,
+        description: issue.description,
+        storyPoints: issue.storyPoints,
+        eta: issue.eta,
+        dueDate: issue.dueDate ? issue.dueDate.toISOString() : null,
+        startDate: issue.startDate ? issue.startDate.toISOString() : null,
       },
     });
     return NextResponse.json({ success: true, data });
