@@ -39,9 +39,11 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
     const base = fmt(v);
     return numberUnit && v != null ? `${base} ${numberUnit}` : base;
   };
-  // kpi.target is the user-set quarterly target; kpi.qtdGoal is a derived aggregate
-  // that can lag behind after a target edit. Use kpi.target as the primary.
-  const target = kpi.target ?? kpi.qtdGoal ?? 0;
+  // Goal priority mirrors the "Quarterly Goal" column shown on-screen
+  // (quarterlyGoal ?? target ?? qtdGoal) so Overall Progress here always
+  // agrees with the Dashboard KPICard and KPI table's Progress column —
+  // see kpiStats.ts resolveProgressOverall for the same fallback chain.
+  const target = kpi.quarterlyGoal ?? kpi.target ?? kpi.qtdGoal ?? 0;
   // Standalone vs Cumulative — drives both the QTD tile math AND the Overall
   // Progress panel below. Defaults to Cumulative (schema default).
   const divisionType: "Cumulative" | "Standalone" =

@@ -293,10 +293,11 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
           : null;
       const progressAchieved =
         stdProgress != null ? (stdProgress.qtdAchieved ?? 0) : (kpi.qtdAchieved ?? 0);
-      const progressGoal =
-        stdProgress != null
-          ? (stdProgress.qtdGoal ?? kpi.target ?? 0)
-          : (kpi.qtdGoal ?? kpi.target ?? 0);
+      // Goal priority mirrors the "Quarterly Goal" column shown on-screen
+      // (quarterlyGoal ?? target ?? qtdGoal) so this Progress column agrees
+      // with the Dashboard KPICard and the Log modal's Overall Progress —
+      // see kpiStats.ts resolveProgressOverall for the same fallback chain.
+      const progressGoal = kpi.quarterlyGoal ?? kpi.target ?? kpi.qtdGoal ?? 0;
       const progressPct = progressGoal > 0 ? (progressAchieved / progressGoal) * 100 : 0;
       const ownerName = kpi.owner_user ? `${kpi.owner_user.firstName} ${kpi.owner_user.lastName}` : kpi.owner;
       const weekMap: Record<number, WeeklyValue> = {};

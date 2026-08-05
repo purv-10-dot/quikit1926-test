@@ -205,7 +205,10 @@ export function resolveProgressOverall(
     kpi.divisionType === "Standalone" ? "Standalone" : "Cumulative";
   const std = divisionType === "Standalone" ? computeQtd(kpi, currentWeek, "Standalone", weeksPerQuarter) : null;
   const achieved = std != null ? (std.qtdAchieved ?? 0) : (kpi.qtdAchieved ?? 0);
-  const goal = std != null ? (std.qtdGoal ?? kpi.target ?? 0) : (kpi.qtdGoal ?? kpi.target ?? 0);
+  // Goal priority mirrors the "Quarterly Goal" column shown on-screen
+  // (quarterlyGoal ?? target ?? qtdGoal) so this percentage always agrees
+  // with the number the user sees, instead of a different KPI field.
+  const goal = kpi.quarterlyGoal ?? kpi.target ?? kpi.qtdGoal ?? 0;
   return { achieved, goal };
 }
 
@@ -284,6 +287,8 @@ export interface KpiOverviewStats {
    * lower-is-better KPI comfortably under target lands here too.
    */
   overAchieved: number;
+  /** No weekly value entered yet — the gray "Not Started" card on the dashboard pill. */
+  notStarted: number;
 }
 
 /**
@@ -299,7 +304,7 @@ export interface KpiOverviewStats {
  *   Green (≥100%)                → onTrack
  *   Yellow (80–99%)              → atRisk
  *   Red (<80%, entered)          → behind
- *   Neutral (no value entered)   → excluded from all four counts
+ *   Neutral (no value entered)   → notStarted (excluded from the other four counts + avg)
  *
  * Blue used to be folded into `onTrack`, which hid over-achievement behind the
  * same green count. It is now its own bucket, so `onTrack` means strictly
@@ -329,6 +334,7 @@ export function computeKpiOverviewStats(
   let atRisk = 0;
   let behind = 0;
   let overAchieved = 0;
+  let notStarted = 0;
   let achievedSum = 0;
   let goalSum = 0;
   let entered = 0;
@@ -336,7 +342,10 @@ export function computeKpiOverviewStats(
   for (const kpi of kpis) {
     const { achieved, goal } = resolveProgressQtd(kpi, currentWeek, weeksPerQuarter);
     const hasAnyWeeklyValue = (kpi.weeklyValues ?? []).some((wv) => wv.value != null);
-    if (!hasAnyWeeklyValue) continue; // neutral/gray card — excluded
+    if (!hasAnyWeeklyValue) {
+      notStarted += 1; // neutral/gray card — excluded from avg + the other 4 buckets
+      continue;
+    }
     entered += 1;
     achievedSum += achieved;
     goalSum += goal;
@@ -348,7 +357,7 @@ export function computeKpiOverviewStats(
   }
 
   const avg = goalSum > 0 ? Math.round((achievedSum / goalSum) * 100) : 0;
-  return { avg, onTrack, atRisk, behind, overAchieved };
+  return { avg, onTrack, atRisk, behind, overAchieved, notStarted };
 }
 
 /**

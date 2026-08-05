@@ -685,7 +685,7 @@ function AvgKPICard({ kpis, currentWeek, weekCount = 13 }: { kpis: KPIRow[]; cur
   // raw server-stamped `kpi.progressPercent` over-counted Standalone KPIs
   // (cumulative SUM ÷ goal) — see computeKpiOverviewStats /
   // docs/STANDALONE_QTD_ACHIEVED_FIX.md §4.
-  const { avg, onTrack, atRisk, behind, overAchieved } = computeKpiOverviewStats(kpis, currentWeek, weekCount);
+  const { avg, onTrack, atRisk, behind, overAchieved, notStarted } = computeKpiOverviewStats(kpis, currentWeek, weekCount);
 
   const ringColor = avg >= 80 ? "#22c55e" : avg >= 50 ? "#f59e0b" : "#ef4444";
   const textColor = avg >= 80 ? "text-green-600" : avg >= 50 ? "text-amber-500" : "text-red-500";
@@ -726,7 +726,13 @@ function AvgKPICard({ kpis, currentWeek, weekCount = 13 }: { kpis: KPIRow[]; cur
             rather than accent-* (see CLAUDE.md §Accent Color System). */}
         <div className="flex flex-col items-center leading-tight">
           <span className="text-sm font-bold text-blue-600">{overAchieved}</span>
-          <span className="text-[10px] text-blue-500 whitespace-nowrap">over achieved</span>
+          <span className="text-[10px] text-blue-500 whitespace-nowrap">ahead</span>
+        </div>
+        {/* Not Started — gray, mirrors the neutral card color; dashboard-only
+            bucket (excluded from the KPI table's own gray/neutral styling). */}
+        <div className="flex flex-col items-center leading-tight">
+          <span className="text-sm font-bold text-gray-500">{notStarted}</span>
+          <span className="text-[10px] text-gray-400 whitespace-nowrap">idle</span>
         </div>
       </div>
     </div>
