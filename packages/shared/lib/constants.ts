@@ -265,6 +265,30 @@ export const SUPPORT_TICKET_STATUS_LABELS: Record<SupportTicketStatus, string> =
 export const SUPPORT_SUBJECT_MAX = 160;
 export const SUPPORT_DESCRIPTION_MAX = 5000;
 
+/* Attachment limits. Client-safe (no storage/GCS import) so the file picker
+   can enforce them before uploading anything; the server re-checks all three
+   in `@quikit/shared/supportAttachments` — the client copy is a courtesy, not
+   the boundary. */
+export const SUPPORT_ATTACHMENT_MAX_COUNT = 5;
+export const SUPPORT_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024; // 10 MB
+
+/** Screenshots and PDFs only. Support attachments exist to show us a broken
+    screen — this is deliberately narrower than QuikInfra's document allowlist
+    (no Office docs, no CAD, no archives), because a support form that accepts
+    zips is a malware vector aimed at our own staff. */
+export const SUPPORT_ATTACHMENT_ALLOWED_MIME_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+  "image/heic",
+  "image/heif",
+  "application/pdf",
+] as const;
+
+/** `accept` attribute for the file input. */
+export const SUPPORT_ATTACHMENT_ACCEPT = SUPPORT_ATTACHMENT_ALLOWED_MIME_TYPES.join(",");
+
 export const SUPPORT_TICKET_PRIORITIES = ["low", "medium", "high", "urgent"] as const;
 export type SupportTicketPriority = (typeof SUPPORT_TICKET_PRIORITIES)[number];
 

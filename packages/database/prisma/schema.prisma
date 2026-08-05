@@ -2409,8 +2409,9 @@ model SupportTicket {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  org      Org                    @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  messages SupportTicketMessage[]
+  org         Org                       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  messages    SupportTicketMessage[]
+  attachments SupportTicketAttachment[]
 
   @@index([orgId])
   @@index([orgId, userId, createdAt(sort: Desc)])
@@ -2437,6 +2438,38 @@ model SupportTicketMessage {
   ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
   @@index([ticketId, createdAt])
+  @@schema("public")
+}
+
+/// Screenshots / files attached to a SupportTicket at submit time.
+///
+/// The row stores the GCS OBJECT KEY, never a URL: bucket objects are private
+/// and signed URLs expire in minutes, so a persisted URL would be dead on
+/// arrival. Readers mint a fresh signed GET through the app's
+/// `/api/support/uploads/view/<key>` route.
+///
+/// `orgId` is denormalized off the parent ticket so the view route can check
+/// tenant ownership from the KEY ALONE, without a ticket join — the key layout
+/// is `support/<orgId>/<yyyy-mm>/<random>.<ext>`, and the route compares the
+/// segment against the caller's org before signing anything.
+model SupportTicketAttachment {
+  id       String @id @default(cuid())
+  ticketId String
+  orgId    String
+  /// Original client-side filename, shown in the UI. Never used to build the
+  /// object key — that is randomised so a hostile name cannot traverse paths.
+  fileName  String
+  /// Path within the bucket. Unique: the random basename makes collisions
+  /// vanishingly unlikely, and the constraint turns "impossible" into "checked".
+  objectKey String @unique
+  mimeType  String
+  sizeBytes Int
+
+  createdAt DateTime      @default(now())
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+  @@index([orgId])
   @@schema("public")
 }
 

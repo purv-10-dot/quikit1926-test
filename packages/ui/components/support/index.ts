@@ -13,7 +13,10 @@ export { SupportPanel, type SupportPanelProps } from "./support-panel";
 export { SupportStatusTab, type SupportStatusTabProps } from "./support-status-tab";
 export { SupportMenu } from "./support-menu";
 export { SupportGuide } from "./support-guide";
-export { SupportChat } from "./support-chat";
 export { SupportRequestForm } from "./support-request-form";
-export { SupportRequests } from "./support-requests";
+export {
+  SupportAttachmentPicker,
+  formatBytes,
+  type PickedFile,
+} from "./support-attachment-picker";
 export type { SupportView } from "./types";

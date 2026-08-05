@@ -342,6 +342,16 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
                   >
                     Profile settings
                   </Link>
+                  {/* Role-agnostic, like /profile — every role sees their own
+                      requests, so it sits in the shared menu rather than any
+                      one portal's sidebar. */}
+                  <Link
+                    href="/settings/support"
+                    onClick={() => setMenuOpen(false)}
+                    className="block px-3 py-2 text-sm text-fg transition-colors hover:bg-surface-muted"
+                  >
+                    Support status
+                  </Link>
                   <button
                     onClick={handleSignOut}
                     disabled={signingOut}

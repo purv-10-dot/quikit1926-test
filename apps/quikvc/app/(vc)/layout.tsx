@@ -24,6 +24,8 @@ const ALL_NAV_ITEMS = [
   { label: "Deals",     href: "/deals",     roles: null },
   { label: "Investors", href: "/investors", roles: FUND_ADMIN_ROLES },
   { label: "Admin",     href: "/admin",     roles: FUND_ADMIN_ROLES },
+  // Shared, ungated route — see app/settings/support/page.tsx.
+  { label: "Support",   href: "/settings/support", roles: null },
 ] as const;
 
 export default async function VCLayout({ children }: { children: React.ReactNode }) {

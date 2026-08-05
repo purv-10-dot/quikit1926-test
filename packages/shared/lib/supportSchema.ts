@@ -14,11 +14,23 @@
 
 import { z } from "zod";
 import {
+  SUPPORT_ATTACHMENT_MAX_COUNT,
   SUPPORT_DESCRIPTION_MAX,
   SUPPORT_REQUEST_TYPES,
-  SUPPORT_SUBJECT_MAX,
   SUPPORT_TICKET_STATUSES,
 } from "./constants";
+
+/** One attachment descriptor, as returned by POST /api/support/uploads.
+ *
+ *  Every field here is re-verified server-side against the stored object before
+ *  a row is written (`verifySupportAttachments`) — this schema only checks the
+ *  payload is well-formed, never that it is truthful. */
+export const supportAttachmentSchema = z.object({
+  objectKey: z.string().trim().min(1).max(512),
+  fileName: z.string().trim().min(1).max(255),
+  mimeType: z.string().trim().min(1).max(128),
+  sizeBytes: z.number().int().positive(),
+});
 
 /**
  * Payload for POST /api/support/tickets.
@@ -26,13 +38,12 @@ import {
  * `orgId`, `userId`, `appId`, `appSlug` and `roleName` are all derived
  * server-side from the session — they are deliberately absent here so a
  * client cannot file a ticket as another org, user or app.
+ *
+ * `subject` is absent too, and for a related reason: the form no longer asks
+ * for one (it asks for a screenshot instead), so the server derives it from the
+ * description. A client-supplied subject is ignored rather than trusted.
  */
 export const createSupportTicketSchema = z.object({
-  subject: z
-    .string()
-    .trim()
-    .min(3, "Subject must be at least 3 characters")
-    .max(SUPPORT_SUBJECT_MAX, `Subject must be ${SUPPORT_SUBJECT_MAX} characters or fewer`),
   description: z
     .string()
     .trim()
@@ -44,6 +55,14 @@ export const createSupportTicketSchema = z.object({
   requestType: z.enum(SUPPORT_REQUEST_TYPES, {
     errorMap: () => ({ message: "Select a valid request type" }),
   }),
+  attachments: z
+    .array(supportAttachmentSchema)
+    .max(
+      SUPPORT_ATTACHMENT_MAX_COUNT,
+      `Attach at most ${SUPPORT_ATTACHMENT_MAX_COUNT} files`,
+    )
+    .optional()
+    .default([]),
 });
 
 export type CreateSupportTicketInput = z.infer<typeof createSupportTicketSchema>;

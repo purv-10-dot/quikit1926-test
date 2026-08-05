@@ -21,6 +21,8 @@ const NAV = [
   { label: "Summary",    href: "/summary" },
   { label: "Portfolio",  href: "/portfolio" },
   { label: "Repayments", href: "/repayments" },
+  // Shared, ungated route — see app/settings/support/page.tsx.
+  { label: "Support",    href: "/settings/support" },
 ];
 
 export default async function InvestorLayout({

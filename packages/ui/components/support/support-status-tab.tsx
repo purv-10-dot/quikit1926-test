@@ -18,7 +18,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { LifeBuoy } from "lucide-react";
+import { LifeBuoy, Paperclip } from "lucide-react";
 import {
   SUPPORT_REQUEST_TYPE_LABELS,
   SUPPORT_TICKET_STATUS_LABELS,
@@ -44,6 +44,14 @@ interface SupportTicketRow {
   respondedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  attachments?: Array<{
+    id: string;
+    fileName: string;
+    mimeType: string;
+    sizeBytes: number;
+    /** Viewer route — redirects to a fresh signed URL per request. */
+    url: string;
+  }>;
 }
 
 /** Status pill colours. Semantic (data state), so intentionally not accent-*. */
@@ -170,6 +178,31 @@ export function SupportStatusTab({
           <div className="text-gray-500 truncate">{r.description}</div>
         </div>
       ),
+    },
+    {
+      key: "attachments",
+      label: "Files",
+      width: 150,
+      render: (r) =>
+        (r.attachments?.length ?? 0) === 0 ? (
+          <span className="text-gray-400">—</span>
+        ) : (
+          <div className="flex flex-col gap-0.5 max-w-[140px]">
+            {r.attachments!.map((a) => (
+              <a
+                key={a.id}
+                href={a.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={a.fileName}
+                className="inline-flex items-center gap-1 text-blue-600 hover:underline truncate"
+              >
+                <Paperclip className="h-3 w-3 flex-shrink-0" />
+                <span className="truncate">{a.fileName}</span>
+              </a>
+            ))}
+          </div>
+        ),
     },
     {
       key: "status",

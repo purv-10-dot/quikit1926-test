@@ -4,16 +4,22 @@
  * "Raise a request" view — the one part of the widget backed by a real API.
  *
  * Submits to `POST {apiBase}` (default `/api/support/tickets`), which derives
- * org, user, app and role server-side; the user then tracks it under
- * Settings → Support Status.
+ * org, user, app and role server-side.
  *
  * Deliberate differences from the reference widget this was ported from:
- *   - Adds a Subject field. The reference posted nowhere, so a bare description
- *     was fine; a real triage queue needs a scannable one-line summary.
- *   - Omits the attachment picker. The reference's picker only stored
- *     `{ name, size }` in local state and never uploaded — a control that
- *     silently discards the user's file is worse than no control. Needs object
- *     storage before it can ship for real.
+ *   - No Subject field. It was dropped in favour of attachments: a screenshot
+ *     of the broken screen tells triage more than a one-line summary, and the
+ *     summary is now derived server-side from the first line of the
+ *     description (`deriveSubject` in @quikit/shared/supportTickets), so the
+ *     admin queue still has something scannable in its title column.
+ *   - Real attachments. The reference's picker only stored `{ name, size }` in
+ *     local state and never uploaded — a control that silently discards the
+ *     user's file is worse than no control. Files now go to Google Cloud
+ *     Storage via `POST {uploadBase}`.
+ *
+ * Submit is two requests: upload the files, then create the ticket referencing
+ * the returned keys. If ticket creation fails the uploaded objects are cleaned
+ * up server-side, so a retry never double-stores.
  *
  * Uses plain `fetch` rather than react-query on purpose: @quikit/ui is consumed
  * by apps on three different @tanstack/react-query majors (and two with none at
@@ -26,10 +32,10 @@ import {
   SUPPORT_DESCRIPTION_MAX,
   SUPPORT_REQUEST_TYPES,
   SUPPORT_REQUEST_TYPE_LABELS,
-  SUPPORT_SUBJECT_MAX,
   formatSupportTicketNo,
   type SupportRequestType,
 } from "@quikit/shared";
+import { SupportAttachmentPicker, type PickedFile } from "./support-attachment-picker";
 
 interface CreatedTicket {
   id: string;
@@ -37,50 +43,89 @@ interface CreatedTicket {
   requestType: SupportRequestType;
 }
 
+interface UploadedDescriptor {
+  objectKey: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
 const FIELD_CLS =
   "w-full px-3 py-2 text-sm rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-accent-400";
 
 export function SupportRequestForm({
   apiBase,
+  uploadBase,
   onClose,
 }: {
   apiBase: string;
+  uploadBase: string;
   onClose: () => void;
 }) {
   const [requestType, setRequestType] = useState<SupportRequestType | "">("");
-  const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
+  const [files, setFiles] = useState<PickedFile[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [phase, setPhase] = useState<"idle" | "uploading" | "sending">("idle");
   const [sent, setSent] = useState<CreatedTicket | null>(null);
 
+  const isSubmitting = phase !== "idle";
+
   function resetForm() {
+    files.forEach((f) => {
+      if (f.previewUrl) URL.revokeObjectURL(f.previewUrl);
+    });
     setRequestType("");
-    setSubject("");
     setDescription("");
+    setFiles([]);
     setErrors({});
     setSubmitError(null);
+    setPhase("idle");
     setSent(null);
+  }
+
+  async function uploadFiles(): Promise<UploadedDescriptor[]> {
+    if (files.length === 0) return [];
+    const form = new FormData();
+    files.forEach((f) => form.append("files", f.file));
+
+    const res = await fetch(uploadBase, { method: "POST", body: form });
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.success) {
+      throw new Error(json?.error || "Could not upload your attachments");
+    }
+    return (json.data?.files ?? []) as UploadedDescriptor[];
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const next: Record<string, string> = {};
     if (!requestType) next.requestType = "Select a request type";
-    if (subject.trim().length < 3) next.subject = "Subject must be at least 3 characters";
     if (description.trim().length < 10)
       next.description = "Please describe the issue in at least 10 characters";
     setErrors(next);
     if (Object.keys(next).length > 0) return;
 
-    setIsSubmitting(true);
     setSubmitError(null);
     try {
+      setPhase("uploading");
+      const attachments = await uploadFiles();
+
+      setPhase("sending");
       const res = await fetch(apiBase, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ requestType, subject, description }),
+        body: JSON.stringify({
+          requestType,
+          description,
+          attachments: attachments.map((a) => ({
+            objectKey: a.objectKey,
+            fileName: a.fileName,
+            mimeType: a.mimeType,
+            sizeBytes: a.sizeBytes,
+          })),
+        }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) {
@@ -90,11 +135,9 @@ export function SupportRequestForm({
     } catch (err: unknown) {
       // Reported inline rather than as a toast: the panel is already on screen
       // and several apps have no toaster mounted at all.
-      setSubmitError(
-        err instanceof Error ? err.message : "Failed to submit support request",
-      );
+      setSubmitError(err instanceof Error ? err.message : "Failed to submit support request");
     } finally {
-      setIsSubmitting(false);
+      setPhase("idle");
     }
   }
 
@@ -179,29 +222,6 @@ export function SupportRequestForm({
 
         <div>
           <label
-            htmlFor="support-subject"
-            className="block text-sm font-medium text-[var(--color-text-primary)] mb-1.5"
-          >
-            Subject <span className="text-red-500">*</span>
-          </label>
-          <input
-            id="support-subject"
-            type="text"
-            maxLength={SUPPORT_SUBJECT_MAX}
-            value={subject}
-            onChange={(e) => {
-              setSubject(e.target.value);
-              setErrors((p) => ({ ...p, subject: "" }));
-            }}
-            disabled={isSubmitting}
-            placeholder="Short summary of your request"
-            className={FIELD_CLS}
-          />
-          {errors.subject && <p className="mt-1 text-xs text-red-600">{errors.subject}</p>}
-        </div>
-
-        <div>
-          <label
             htmlFor="support-description"
             className="block text-sm font-medium text-[var(--color-text-primary)] mb-1.5"
           >
@@ -209,7 +229,7 @@ export function SupportRequestForm({
           </label>
           <textarea
             id="support-description"
-            rows={4}
+            rows={5}
             maxLength={SUPPORT_DESCRIPTION_MAX}
             value={description}
             onChange={(e) => {
@@ -231,6 +251,8 @@ export function SupportRequestForm({
             </span>
           </div>
         </div>
+
+        <SupportAttachmentPicker files={files} onChange={setFiles} disabled={isSubmitting} />
       </div>
 
       <div className="flex gap-2 justify-end px-5 py-3 border-t border-[var(--color-border)] bg-[var(--color-neutral-50)]">
@@ -248,7 +270,11 @@ export function SupportRequestForm({
           className="px-4 py-2 text-sm font-medium rounded-lg bg-accent-600 hover:bg-accent-700 text-white disabled:opacity-50 inline-flex items-center gap-2"
         >
           {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-          {isSubmitting ? "Sending…" : "Send request"}
+          {phase === "uploading"
+            ? "Uploading…"
+            : phase === "sending"
+              ? "Sending…"
+              : "Send request"}
         </button>
       </div>
     </form>

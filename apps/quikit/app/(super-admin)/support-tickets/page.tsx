@@ -46,6 +46,16 @@ interface Ticket {
   requesterEmail: string | null;
   createdAt: string;
   updatedAt: string;
+  attachments?: TicketAttachment[];
+}
+
+interface TicketAttachment {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  /** Super-admin viewer route — redirects to a fresh signed GCS URL. */
+  url: string;
 }
 
 interface AppOption {
@@ -72,6 +82,61 @@ function fmtDateTime(iso: string | null): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+/** Human-readable file size for the grid's Files column. */
+function fmtBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * Files column — thumbnails for images, an extension chip for anything else.
+ *
+ * Each thumbnail is a link straight to the attachment, so triage can eyeball a
+ * screenshot without opening the drawer at all. `stopPropagation` is required:
+ * the whole <tr> is a click target that opens the detail drawer, and without it
+ * clicking a thumbnail would open the drawer *and* navigate.
+ *
+ * Only the first three are rendered inline — a ticket may carry up to five, and
+ * five thumbnails would blow out the row height for every row in the table.
+ * The remainder show as "+N", and the drawer lists them all.
+ */
+function AttachmentCell({ attachments }: { attachments?: TicketAttachment[] }) {
+  const files = attachments ?? [];
+  if (files.length === 0) return <span className="text-gray-300">—</span>;
+
+  const shown = files.slice(0, 3);
+  const extra = files.length - shown.length;
+
+  return (
+    <div className="flex items-center gap-1">
+      {shown.map((a) => (
+        <a
+          key={a.id}
+          href={a.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          title={`${a.fileName} · ${fmtBytes(a.sizeBytes)}`}
+          className="block h-8 w-8 flex-shrink-0 overflow-hidden rounded border border-gray-200 hover:border-blue-400"
+        >
+          {a.mimeType.startsWith("image/") ? (
+            // Points at the viewer route, which redirects to a short-lived
+            // signed GCS URL — the bucket itself is not public.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={a.url} alt={a.fileName} className="h-full w-full object-cover" />
+          ) : (
+            <span className="flex h-full w-full items-center justify-center bg-gray-50 text-[9px] font-semibold uppercase text-gray-500">
+              {a.fileName.split(".").pop()?.slice(0, 3) ?? "doc"}
+            </span>
+          )}
+        </a>
+      ))}
+      {extra > 0 && <span className="text-[11px] text-gray-500">+{extra}</span>}
+    </div>
+  );
 }
 
 export default function SupportTicketsPage() {
@@ -266,7 +331,9 @@ export default function SupportTicketsPage() {
       </div>
 
       {loading ? (
-        <TableSkeleton rows={8} cols={7} />
+        // cols tracks the header array below — Ticket, Org, App, Requester,
+        // Type, Files, Status, Created, Updated.
+        <TableSkeleton rows={8} cols={9} />
       ) : items.length === 0 ? (
         <EmptyState
           icon={LifeBuoy}
@@ -279,7 +346,17 @@ export default function SupportTicketsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-amber-50 border-b border-gray-200">
-                  {["Ticket", "Org", "App", "Requester", "Type", "Status", "Created", "Updated"].map(
+                  {[
+                    "Ticket",
+                    "Org",
+                    "App",
+                    "Requester",
+                    "Type",
+                    "Files",
+                    "Status",
+                    "Created",
+                    "Updated",
+                  ].map(
                     (h) => (
                       <th
                         key={h}
@@ -314,6 +391,9 @@ export default function SupportTicketsPage() {
                     </td>
                     <td className="px-3 py-2 text-gray-700">
                       {SUPPORT_REQUEST_TYPE_LABELS[t.requestType] ?? t.requestType}
+                    </td>
+                    <td className="px-3 py-2">
+                      <AttachmentCell attachments={t.attachments} />
                     </td>
                     <td className="px-3 py-2">
                       <span
@@ -371,6 +451,51 @@ export default function SupportTicketsPage() {
                 {selected.description}
               </p>
             </div>
+
+            {(selected.attachments?.length ?? 0) > 0 && (
+              <div>
+                <div className="text-xs font-medium text-gray-500 mb-1">
+                  Attachments ({selected.attachments!.length})
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {selected.attachments!.map((a) => (
+                    <a
+                      key={a.id}
+                      href={a.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={a.fileName}
+                      className="flex items-center gap-2 rounded-lg border border-gray-200 p-2 hover:border-blue-400 hover:bg-blue-50"
+                    >
+                      {a.mimeType.startsWith("image/") ? (
+                        // Thumbnails hit the viewer route, which redirects to a
+                        // short-lived signed URL — the bucket is not public.
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={a.url}
+                          alt=""
+                          className="h-10 w-10 flex-shrink-0 rounded object-cover bg-gray-100"
+                        />
+                      ) : (
+                        <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded bg-gray-100 text-[10px] font-semibold uppercase text-gray-500">
+                          {a.fileName.split(".").pop()?.slice(0, 4) ?? "file"}
+                        </span>
+                      )}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-xs font-medium text-gray-800">
+                          {a.fileName}
+                        </span>
+                        <span className="block text-[11px] text-gray-500">
+                          {a.sizeBytes < 1024 * 1024
+                            ? `${Math.round(a.sizeBytes / 1024)} KB`
+                            : `${(a.sizeBytes / (1024 * 1024)).toFixed(1)} MB`}
+                        </span>
+                      </span>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {selected.adminResponse && (
               <div>

@@ -35,6 +35,7 @@ export {
   PhoneMissed,
   Voicemail,
   Headphones,
+  LifeBuoy,
   Play,
   Pause,
   CornerUpRight,

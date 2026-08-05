@@ -13,38 +13,34 @@
  *   import { SupportLauncher } from "@quikit/ui/support";
  *   <SupportLauncher appSlug="quikcrm" />
  *
- * The guide sections and assistant knowledge base come from
- * `@quikit/shared/supportContent`, keyed by that slug. An app with no bespoke
- * content there still gets a working widget (generic guide + the shared KB),
- * so shipping support in a new app never blocks on writing its copy first.
+ * The guide sections come from `@quikit/shared/supportContent`, keyed by that
+ * slug. An app with no bespoke content there still gets a working widget (a
+ * generic guide), so shipping support in a new app never blocks on writing its
+ * copy first.
  */
 
 import { useMemo, useRef, useState } from "react";
 import { MessageCircle, X } from "lucide-react";
-import {
-  getSupportContent,
-  supportGreeting,
-  type GuideSection,
-  type KbEntry,
-} from "@quikit/shared/supportContent";
+import { getSupportContent, type GuideSection } from "@quikit/shared/supportContent";
 import { SupportPanel } from "./support-panel";
 
 export interface SupportLauncherProps {
-  /** App registry slug, e.g. "quikcrm". Selects the guide + KB content. */
+  /** App registry slug, e.g. "quikcrm". Selects the guide content. */
   appSlug: string;
-  /** Override the product name shown in the header and assistant copy. */
+  /** Override the product name shown in the panel header. */
   appName?: string;
   /** Override the guide sections for this app. */
   guide?: GuideSection[];
-  /** Override or extend the assistant knowledge base. */
-  kb?: KbEntry[];
-  /** Override the assistant's opening line. */
-  greeting?: string;
   /**
    * Ticket endpoint. Defaults to `/api/support/tickets` — override only for an
    * app whose API lives under a version prefix (e.g. QuikFinance's `/api/v1`).
    */
   apiBase?: string;
+  /**
+   * Attachment upload endpoint. Defaults to `/api/support/uploads` — override
+   * alongside `apiBase` for an app whose API lives under a version prefix.
+   */
+  uploadBase?: string;
   /**
    * Extra pixels to lift the FAB (and the panel above it) off the bottom edge.
    *
@@ -63,9 +59,8 @@ export function SupportLauncher({
   appSlug,
   appName,
   guide,
-  kb,
-  greeting,
   apiBase = "/api/support/tickets",
+  uploadBase = "/api/support/uploads",
   bottomOffset = 0,
 }: SupportLauncherProps) {
   const [open, setOpen] = useState(false);
@@ -73,14 +68,11 @@ export function SupportLauncher({
 
   const content = useMemo(() => {
     const base = getSupportContent(appSlug);
-    const name = appName ?? base.appName;
     return {
-      appName: name,
+      appName: appName ?? base.appName,
       guide: guide ?? base.guide,
-      kb: kb ?? base.kb,
-      greeting: greeting ?? supportGreeting(name),
     };
-  }, [appSlug, appName, guide, kb, greeting]);
+  }, [appSlug, appName, guide]);
 
   return (
     <>
@@ -89,9 +81,8 @@ export function SupportLauncher({
         onOpenChange={setOpen}
         appName={content.appName}
         guide={content.guide}
-        kb={content.kb}
-        greeting={content.greeting}
         apiBase={apiBase}
+        uploadBase={uploadBase}
         launcherRef={launcherRef}
         bottomPx={PANEL_BOTTOM_PX + bottomOffset}
       />

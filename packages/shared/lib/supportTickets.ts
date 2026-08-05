@@ -31,7 +31,12 @@ import {
   type ListSupportTicketsInput,
 } from "./supportSchema";
 import { rateLimitAsync } from "./rateLimit";
-import type { SupportRequestType, SupportTicketStatus } from "./constants";
+import { SUPPORT_SUBJECT_MAX, type SupportRequestType, type SupportTicketStatus } from "./constants";
+import {
+  attachmentViewUrl,
+  deleteSupportAttachments,
+  verifySupportAttachments,
+} from "./supportAttachments";
 
 /* ─── Result envelope ────────────────────────────────────────────────────── */
 
@@ -59,6 +64,7 @@ export interface SupportTicketRow {
   respondedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  attachments: SupportAttachmentRow[];
 }
 
 export interface SupportListMeta {
@@ -78,6 +84,43 @@ export interface SupportTicketMessageRow {
   statusFrom: string | null;
   statusTo: string | null;
   createdAt: Date;
+}
+
+/** An attachment as the UI sees it — `url` is the app-relative viewer route,
+ *  which mints a fresh signed GCS URL per request. The raw object key is never
+ *  sent to the browser. */
+export interface SupportAttachmentRow {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  url: string;
+}
+
+const SELECT_ATTACHMENT = {
+  id: true,
+  fileName: true,
+  objectKey: true,
+  mimeType: true,
+  sizeBytes: true,
+} as const;
+
+function toAttachmentRows(
+  rows: Array<{
+    id: string;
+    fileName: string;
+    objectKey: string;
+    mimeType: string;
+    sizeBytes: number;
+  }>,
+): SupportAttachmentRow[] {
+  return rows.map((a) => ({
+    id: a.id,
+    fileName: a.fileName,
+    mimeType: a.mimeType,
+    sizeBytes: a.sizeBytes,
+    url: attachmentViewUrl(a.objectKey),
+  }));
 }
 
 /** Columns the client may sort the Support Status table by. */
@@ -103,6 +146,10 @@ const SELECT_ROW = {
   respondedAt: true,
   createdAt: true,
   updatedAt: true,
+  attachments: {
+    select: SELECT_ATTACHMENT,
+    orderBy: { createdAt: "asc" as const },
+  },
 } as const;
 
 /* ─── LIST ───────────────────────────────────────────────────────────────── */
@@ -179,7 +226,12 @@ export async function listSupportTickets(
     ok: true,
     status: 200,
     data: {
-      tickets: tickets as SupportTicketRow[],
+      // Object keys are swapped for viewer URLs here — the browser never sees
+      // a raw bucket path.
+      tickets: tickets.map((t) => ({
+        ...t,
+        attachments: toAttachmentRows(t.attachments),
+      })) as SupportTicketRow[],
       meta: { page, limit, total, totalPages, hasMore: page < totalPages },
     },
   };
@@ -190,6 +242,39 @@ export async function listSupportTickets(
 /** Nobody legitimately files 10+ tickets an hour. */
 export const SUPPORT_CREATE_RATE_LIMIT = 10;
 export const SUPPORT_CREATE_RATE_WINDOW_MS = 60 * 60 * 1000;
+
+/**
+ * One-line summary for the triage queue, derived from the description.
+ *
+ * The Raise-a-request form used to ask for a Subject and now asks for a
+ * screenshot instead — but the super-admin queue is a table, and a table needs
+ * something scannable in its title column. Rather than relax
+ * `SupportTicket.subject` to nullable and make every reader handle the gap, the
+ * server derives it: first non-empty line, collapsed and truncated on a word
+ * boundary.
+ *
+ * Deriving beats nulling because the result is genuinely useful — the first
+ * line of "the KPI page spins forever after I pick Q3" IS the subject a user
+ * would have typed.
+ */
+export function deriveSubject(description: string): string {
+  const firstLine =
+    description
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.length > 0) ?? "";
+  const collapsed = firstLine.replace(/\s+/g, " ").trim();
+
+  if (!collapsed) return "Support request";
+  if (collapsed.length <= SUPPORT_SUBJECT_MAX) return collapsed;
+
+  // Cut on a word boundary when there is one reasonably close to the limit,
+  // so we don't slice a word in half for the sake of three characters.
+  const clipped = collapsed.slice(0, SUPPORT_SUBJECT_MAX - 1);
+  const lastSpace = clipped.lastIndexOf(" ");
+  const body = lastSpace > SUPPORT_SUBJECT_MAX * 0.6 ? clipped.slice(0, lastSpace) : clipped;
+  return `${body.trimEnd()}…`;
+}
 
 export interface CreateSupportTicketArgs {
   orgId: string;
@@ -246,6 +331,16 @@ export async function createSupportTicket(
     return fail(parsed.error.errors[0]?.message ?? "Invalid support request", 400);
   }
 
+  // Never trust the descriptors the client echoed back, even though they came
+  // from our own upload route: each key must sit under the caller's own org
+  // prefix and actually exist in the bucket. Size and MIME are re-read from
+  // object metadata rather than taken from the body.
+  const verified = await verifySupportAttachments({
+    orgId: args.orgId,
+    attachments: parsed.data.attachments ?? [],
+  });
+  if (!verified.ok) return fail(verified.error, verified.status);
+
   const [app, membership] = await Promise.all([
     db.app.findUnique({ where: { slug: args.appSlug }, select: { id: true } }),
     db.orgMember.findFirst({
@@ -254,29 +349,51 @@ export async function createSupportTicket(
     }),
   ]);
 
-  const ticket = await db.supportTicket.create({
-    data: {
-      orgId: args.orgId,
-      userId: args.userId,
-      appId: app?.id ?? "",
-      appSlug: args.appSlug,
-      roleName: membership?.role ?? null,
-      subject: parsed.data.subject,
-      description: parsed.data.description,
-      requestType: parsed.data.requestType,
-      status: "open",
-    },
-    select: {
-      id: true,
-      ticketNo: true,
-      subject: true,
-      requestType: true,
-      status: true,
-      createdAt: true,
-    },
-  });
+  try {
+    const ticket = await db.supportTicket.create({
+      data: {
+        orgId: args.orgId,
+        userId: args.userId,
+        appId: app?.id ?? "",
+        appSlug: args.appSlug,
+        roleName: membership?.role ?? null,
+        // Derived, not submitted — the form no longer has a Subject field.
+        subject: deriveSubject(parsed.data.description),
+        description: parsed.data.description,
+        requestType: parsed.data.requestType,
+        status: "open",
+        // Nested create so the ticket and its attachment rows land in one
+        // statement — a ticket that references objects it failed to record
+        // would show the user an attachment that is not there.
+        attachments: {
+          create: verified.data.map((att) => ({
+            orgId: args.orgId,
+            fileName: att.fileName,
+            objectKey: att.objectKey,
+            mimeType: att.mimeType,
+            sizeBytes: att.sizeBytes,
+          })),
+        },
+      },
+      select: {
+        id: true,
+        ticketNo: true,
+        subject: true,
+        requestType: true,
+        status: true,
+        createdAt: true,
+      },
+    });
 
-  return { ok: true, status: 201, data: ticket as CreatedSupportTicket };
+    return { ok: true, status: 201, data: ticket as CreatedSupportTicket };
+  } catch (error: unknown) {
+    // The objects are already in the bucket but no row now points at them.
+    // Remove them rather than leave paid-for bytes nobody can reach.
+    if (verified.data.length > 0) {
+      await deleteSupportAttachments(verified.data.map((a) => a.objectKey));
+    }
+    throw error;
+  }
 }
 
 /* ─── DETAIL ─────────────────────────────────────────────────────────────── */
@@ -286,6 +403,7 @@ export interface SupportTicketDetail extends SupportTicketRow {
   resolvedAt: Date | null;
   closedAt: Date | null;
   messages: SupportTicketMessageRow[];
+  attachments: SupportAttachmentRow[];
 }
 
 /** Display name for a message author. Mirrors `toAuditInfo` in the apps. */
@@ -325,6 +443,10 @@ export async function getSupportTicketDetail(args: {
         },
         orderBy: { createdAt: "asc" as const },
       },
+      attachments: {
+        select: SELECT_ATTACHMENT,
+        orderBy: { createdAt: "asc" as const },
+      },
     },
   });
 
@@ -351,6 +473,9 @@ export async function getSupportTicketDetail(args: {
         authorName:
           m.authorRole === "super_admin" ? "QuikIT Support" : nameById.get(m.authorId) ?? "—",
       })),
+      // Object keys are swapped for viewer URLs here — the browser never sees
+      // a raw bucket path.
+      attachments: toAttachmentRows(ticket.attachments),
     } as SupportTicketDetail,
   };
 }

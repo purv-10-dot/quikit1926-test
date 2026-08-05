@@ -79,6 +79,16 @@ export const GET = withSuperAdminAuth<{ id: string }>(async (_auth, _req, { para
           },
           orderBy: { createdAt: "asc" },
         },
+        attachments: {
+          select: {
+            id: true,
+            fileName: true,
+            objectKey: true,
+            mimeType: true,
+            sizeBytes: true,
+          },
+          orderBy: { createdAt: "asc" },
+        },
       },
     });
 
@@ -101,6 +111,16 @@ export const GET = withSuperAdminAuth<{ id: string }>(async (_auth, _req, { para
         messages: ticket.messages.map((m) => ({
           ...m,
           authorName: nameById.get(m.authorId) ?? "QuikIT Support",
+        })),
+        // The SUPER-ADMIN viewer, not the tenant one: these objects belong to
+        // the raising org, and reading across orgs is the whole point of the
+        // triage queue. The route it points at is gated by withSuperAdminAuth.
+        attachments: ticket.attachments.map((a) => ({
+          id: a.id,
+          fileName: a.fileName,
+          mimeType: a.mimeType,
+          sizeBytes: a.sizeBytes,
+          url: `/api/super/support-tickets/attachments/${a.objectKey}`,
         })),
       },
     });

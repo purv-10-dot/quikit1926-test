@@ -81,6 +81,19 @@ export const GET = withSuperAdminAuth(async (_auth, request: NextRequest) => {
           createdAt: true,
           updatedAt: true,
           org: { select: { name: true, slug: true } },
+          // Selected in the LIST, not just the detail route: the triage drawer
+          // renders from the row it was opened with, so fetching them here is
+          // what lets a super-admin open a screenshot without a second request.
+          attachments: {
+            select: {
+              id: true,
+              fileName: true,
+              objectKey: true,
+              mimeType: true,
+              sizeBytes: true,
+            },
+            orderBy: { createdAt: "asc" as const },
+          },
         },
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         ...paginationToSkipTake(pagination),
@@ -103,6 +116,15 @@ export const GET = withSuperAdminAuth(async (_auth, request: NextRequest) => {
       return {
         ...t,
         orgName: t.org?.name ?? "—",
+        // Object keys are swapped for the SUPER-ADMIN viewer route — the tenant
+        // one would refuse these, since they belong to the raising org.
+        attachments: t.attachments.map((a) => ({
+          id: a.id,
+          fileName: a.fileName,
+          mimeType: a.mimeType,
+          sizeBytes: a.sizeBytes,
+          url: `/api/super/support-tickets/attachments/${a.objectKey}`,
+        })),
         requesterName:
           u ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email : "—",
         requesterEmail: u?.email ?? null,

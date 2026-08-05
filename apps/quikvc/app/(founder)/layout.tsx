@@ -17,6 +17,8 @@ const NAV = [
   { label: "Application", href: "/application" },
   { label: "Documents", href: "/documents" },
   { label: "Questions", href: "/questions" },
+  // Shared, ungated route — see app/settings/support/page.tsx.
+  { label: "Support", href: "/settings/support" },
 ];
 
 export default async function FounderLayout({

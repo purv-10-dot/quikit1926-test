@@ -3,16 +3,14 @@
 /**
  * Support popup shell — the panel half of the floating support launcher.
  *
- * Five-view state machine:
+ * Three-view state machine:
  *
- *   menu ──┬─→ guide     (getting-started docs)
- *          ├─→ chat      (AI Copilot, scripted KB)
- *          ├─→ request   (raise a ticket)
- *          └─→ requests  (track the tickets you raised)
+ *   menu ──┬─→ guide    (getting-started docs)
+ *          └─→ request  (raise a ticket)
  *
  * The header shows a back arrow on every view except menu. Views are
- * conditionally rendered rather than CSS-toggled, which gives the chat its
- * fresh-conversation-on-entry behaviour for free via unmount.
+ * conditionally rendered rather than CSS-toggled, so leaving a view discards
+ * its state — a half-typed request doesn't survive a trip to the guide.
  *
  * Docked bottom-right above the FAB, with no backdrop: the user should be able
  * to keep reading the page they're reporting a problem about.
@@ -21,12 +19,10 @@
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, X } from "lucide-react";
-import type { GuideSection, KbEntry } from "@quikit/shared/supportContent";
+import type { GuideSection } from "@quikit/shared/supportContent";
 import { SupportMenu } from "./support-menu";
-import { SupportChat } from "./support-chat";
 import { SupportGuide } from "./support-guide";
 import { SupportRequestForm } from "./support-request-form";
-import { SupportRequests } from "./support-requests";
 import type { SupportView } from "./types";
 
 export interface SupportPanelProps {
@@ -34,9 +30,9 @@ export interface SupportPanelProps {
   onOpenChange: (open: boolean) => void;
   appName: string;
   guide: GuideSection[];
-  kb: KbEntry[];
-  greeting: string;
   apiBase: string;
+  /** Attachment upload endpoint, e.g. `/api/support/uploads`. */
+  uploadBase: string;
   /** Ref of the launcher button, so an outside-click on it doesn't double-toggle. */
   launcherRef?: React.RefObject<HTMLElement | null>;
   /** Distance from the viewport bottom, in px. Set by the launcher so the
@@ -49,9 +45,8 @@ export function SupportPanel({
   onOpenChange,
   appName,
   guide,
-  kb,
-  greeting,
   apiBase,
+  uploadBase,
   launcherRef,
   bottomPx = 96,
 }: SupportPanelProps) {
@@ -60,10 +55,8 @@ export function SupportPanel({
 
   const titles: Record<SupportView, string> = {
     menu: "How can we help?",
-    chat: `${appName} Assistant`,
     guide: "User Guide",
     request: "Raise a request",
-    requests: "Your requests",
   };
 
   function close() {
@@ -115,9 +108,19 @@ export function SupportPanel({
           transition={{ duration: 0.18, ease: "easeOut" }}
           style={{ bottom: bottomPx, maxHeight: `calc(100vh - ${bottomPx + 32}px)` }}
           /* Anchored above the FAB (56px tall). On small screens it spans the
-             viewport width minus a gutter instead of overflowing. Fixed height
-             so the chat and guide scroll internally. */
-          className="fixed z-[201] right-4 sm:right-6 w-[calc(100vw-2rem)] sm:w-[380px] h-[560px] flex flex-col rounded-2xl bg-[var(--color-bg-primary)] border border-[var(--color-border)] shadow-2xl overflow-hidden"
+             viewport width minus a gutter instead of overflowing.
+             Height follows the VIEW rather than being fixed:
+               - menu    → auto, so the short option list doesn't leave a big
+                           empty panel under it (it did when the menu dropped
+                           from four options to two);
+               - guide   → tall, it's long-form content that must scroll;
+               - request → tall enough that the form doesn't jump in height as
+                           attachments are added and removed.
+             `maxHeight` still caps everything to the viewport, and the inner
+             views own their scrolling via `flex-1 overflow-y-auto`. */
+          className={`fixed z-[201] right-4 sm:right-6 w-[calc(100vw-2rem)] sm:w-[380px] flex flex-col rounded-2xl bg-[var(--color-bg-primary)] border border-[var(--color-border)] shadow-2xl overflow-hidden ${
+            view === "menu" ? "" : "h-[560px]"
+          }`}
         >
           {/* Header — back arrow on every view except the menu */}
           <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--color-border)] bg-accent-600 flex-shrink-0">
@@ -131,13 +134,8 @@ export function SupportPanel({
                 <ArrowLeft className="h-4 w-4" />
               </button>
             )}
-            <h2 className="flex-1 min-w-0 text-sm font-semibold text-white truncate flex items-center gap-2">
+            <h2 className="flex-1 min-w-0 text-sm font-semibold text-white truncate">
               {titles[view]}
-              {view === "chat" && (
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-white/20 text-white flex-shrink-0">
-                  AI
-                </span>
-              )}
             </h2>
             <button
               type="button"
@@ -151,9 +149,9 @@ export function SupportPanel({
 
           {view === "menu" && <SupportMenu appName={appName} onSelect={setView} />}
           {view === "guide" && <SupportGuide sections={guide} />}
-          {view === "chat" && <SupportChat greeting={greeting} kb={kb} />}
-          {view === "request" && <SupportRequestForm apiBase={apiBase} onClose={close} />}
-          {view === "requests" && <SupportRequests apiBase={apiBase} />}
+          {view === "request" && (
+            <SupportRequestForm apiBase={apiBase} uploadBase={uploadBase} onClose={close} />
+          )}
         </motion.div>
       )}
     </AnimatePresence>

@@ -3,12 +3,13 @@
 /**
  * "How can we help?" menu — the support panel's default view.
  *
- * All three options are ACTIVE. The reference widget this was ported from
- * shipped the guide and request tiles disabled behind a "Soon" badge because it
- * had no backend; the request tile now posts to a real endpoint.
+ * Two options. The widget this was ported from also offered an "Ask the AI
+ * Copilot" chat (backed by a scripted keyword knowledge base, not a real model)
+ * and a "Track your requests" list; both were removed. What's left is the pair
+ * that does real work: read the docs, or reach a human.
  */
 
-import { FileText, HelpCircle, ListChecks, Sparkles } from "lucide-react";
+import { FileText, HelpCircle } from "lucide-react";
 import type { SupportView } from "./types";
 
 const OPTIONS: {
@@ -24,22 +25,11 @@ const OPTIONS: {
     desc: (appName) => `Step-by-step help on how to get the most out of ${appName}.`,
   },
   {
-    view: "chat",
-    icon: Sparkles,
-    label: "Ask the AI Copilot",
-    desc: (appName) => `Chat with the assistant for instant answers on how ${appName} works.`,
-  },
-  {
     view: "request",
     icon: HelpCircle,
     label: "Raise a request",
-    desc: () => "Report an issue or ask our team for help — we'll get back to you shortly.",
-  },
-  {
-    view: "requests",
-    icon: ListChecks,
-    label: "Track your requests",
-    desc: () => "See everything you've raised, its current status and our latest reply.",
+    desc: () =>
+      "Report an issue or ask our team for help — attach a screenshot and we'll get back to you shortly.",
   },
 ];
 
@@ -51,7 +41,10 @@ export function SupportMenu({
   onSelect: (view: SupportView) => void;
 }) {
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
+    /* `min-h-0` + `flex-1` rather than a bare `flex-1`: the panel sizes itself
+       to this view, so the list must be free to be short. It still scrolls if
+       the viewport is too small for even two options. */
+    <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 space-y-2">
       {OPTIONS.map(({ view, icon: Icon, label, desc }) => (
         <button
           key={view}

@@ -35,8 +35,21 @@ vi.mock("../lib/rateLimit", () => ({
   LIMITS: { mutation: { limit: 60, windowMs: 60_000 } },
 }));
 
+// Attachment storage has its own suite (supportAttachments.test.ts). Here it is
+// stubbed so these tests stay about ticket creation.
+const { verifyAttachments, deleteAttachments } = vi.hoisted(() => ({
+  verifyAttachments: vi.fn(),
+  deleteAttachments: vi.fn(),
+}));
+vi.mock("../lib/supportAttachments", () => ({
+  verifySupportAttachments: verifyAttachments,
+  deleteSupportAttachments: deleteAttachments,
+  attachmentViewUrl: (key: string) => `/api/support/uploads/view/${key}`,
+}));
+
 import {
   createSupportTicket,
+  deriveSubject,
   listSupportTickets,
   getSupportTicketDetail,
   parseSupportListQuery,
@@ -51,13 +64,45 @@ beforeEach(() => {
   rateLimitAsync.mockResolvedValue({ ok: true, retryAfterSeconds: 0 });
   dbMock.app.findUnique.mockResolvedValue({ id: "app-1" });
   dbMock.orgMember.findFirst.mockResolvedValue({ role: "member" });
+  verifyAttachments.mockResolvedValue({ ok: true, data: [] });
+  deleteAttachments.mockResolvedValue(undefined);
 });
 
 const validBody = {
-  subject: "Cannot open the KPI page",
-  description: "It shows a spinner forever after I pick Q3.",
+  description: "Cannot open the KPI page\nIt shows a spinner forever after I pick Q3.",
   requestType: "bug",
 };
+
+/* ── deriveSubject ───────────────────────────────────────────────────────── */
+
+describe("deriveSubject", () => {
+  it("uses the first non-empty line", () => {
+    expect(deriveSubject("\n\n  Login is broken  \nmore detail here")).toBe("Login is broken");
+  });
+
+  it("collapses internal whitespace", () => {
+    expect(deriveSubject("KPI    page   spins")).toBe("KPI page spins");
+  });
+
+  it("truncates on a word boundary with an ellipsis", () => {
+    const long = `${"word ".repeat(60)}end`;
+    const subject = deriveSubject(long);
+    expect(subject.length).toBeLessThanOrEqual(160);
+    expect(subject.endsWith("…")).toBe(true);
+    // Cut between words, not mid-word.
+    expect(subject).not.toMatch(/wor…$/);
+  });
+
+  it("hard-cuts when there is no nearby space to break on", () => {
+    const subject = deriveSubject("x".repeat(300));
+    expect(subject.length).toBeLessThanOrEqual(160);
+    expect(subject.endsWith("…")).toBe(true);
+  });
+
+  it("falls back to a placeholder for a whitespace-only description", () => {
+    expect(deriveSubject("   \n\t  ")).toBe("Support request");
+  });
+});
 
 /* ── createSupportTicket ─────────────────────────────────────────────────── */
 
@@ -66,7 +111,7 @@ describe("createSupportTicket", () => {
     dbMock.supportTicket.create.mockResolvedValue({
       id: "t1",
       ticketNo: 42,
-      subject: validBody.subject,
+      subject: "Cannot open the KPI page",
       requestType: "bug",
       status: "open",
       createdAt: new Date(),
@@ -96,7 +141,7 @@ describe("createSupportTicket", () => {
     dbMock.supportTicket.create.mockResolvedValue({
       id: "t1",
       ticketNo: 1,
-      subject: validBody.subject,
+      subject: "Cannot open the KPI page",
       requestType: "bug",
       status: "open",
       createdAt: new Date(),
@@ -129,7 +174,7 @@ describe("createSupportTicket", () => {
     dbMock.supportTicket.create.mockResolvedValue({
       id: "t1",
       ticketNo: 1,
-      subject: validBody.subject,
+      subject: "Cannot open the KPI page",
       requestType: "bug",
       status: "open",
       createdAt: new Date(),
@@ -201,11 +246,157 @@ describe("createSupportTicket", () => {
     if (!res.ok) expect(res.status).toBe(429);
   });
 
+  it("derives the subject from the description — the form no longer sends one", async () => {
+    dbMock.supportTicket.create.mockResolvedValue({
+      id: "t1",
+      ticketNo: 1,
+      subject: "x",
+      requestType: "bug",
+      status: "open",
+      createdAt: new Date(),
+    });
+
+    await createSupportTicket({
+      orgId: ORG,
+      userId: USER,
+      appSlug: "quikcrm",
+      body: validBody,
+    });
+
+    expect(dbMock.supportTicket.create.mock.calls[0][0].data.subject).toBe(
+      "Cannot open the KPI page",
+    );
+  });
+
+  it("ignores a client-supplied subject rather than trusting it", async () => {
+    dbMock.supportTicket.create.mockResolvedValue({
+      id: "t1",
+      ticketNo: 1,
+      subject: "x",
+      requestType: "bug",
+      status: "open",
+      createdAt: new Date(),
+    });
+
+    await createSupportTicket({
+      orgId: ORG,
+      userId: USER,
+      appSlug: "quikcrm",
+      body: { ...validBody, subject: "ATTACKER CONTROLLED" },
+    });
+
+    expect(dbMock.supportTicket.create.mock.calls[0][0].data.subject).toBe(
+      "Cannot open the KPI page",
+    );
+  });
+
+  it("persists verified attachments alongside the ticket in one statement", async () => {
+    verifyAttachments.mockResolvedValue({
+      ok: true,
+      data: [
+        {
+          objectKey: `support/${ORG}/2026-08/abc.png`,
+          fileName: "shot.png",
+          mimeType: "image/png",
+          sizeBytes: 2048,
+        },
+      ],
+    });
+    dbMock.supportTicket.create.mockResolvedValue({
+      id: "t1",
+      ticketNo: 1,
+      subject: "x",
+      requestType: "bug",
+      status: "open",
+      createdAt: new Date(),
+    });
+
+    const res = await createSupportTicket({
+      orgId: ORG,
+      userId: USER,
+      appSlug: "quikcrm",
+      body: {
+        ...validBody,
+        attachments: [
+          {
+            objectKey: `support/${ORG}/2026-08/abc.png`,
+            fileName: "shot.png",
+            mimeType: "image/png",
+            sizeBytes: 2048,
+          },
+        ],
+      },
+    });
+
+    expect(res.ok).toBe(true);
+    const created = dbMock.supportTicket.create.mock.calls[0][0].data.attachments.create;
+    expect(created).toHaveLength(1);
+    expect(created[0].objectKey).toBe(`support/${ORG}/2026-08/abc.png`);
+    // Denormalized so the viewer route can check ownership without a join.
+    expect(created[0].orgId).toBe(ORG);
+  });
+
+  it("refuses the ticket when an attachment fails verification", async () => {
+    verifyAttachments.mockResolvedValue({
+      ok: false,
+      error: "Attachment not found",
+      status: 400,
+    });
+
+    const res = await createSupportTicket({
+      orgId: ORG,
+      userId: USER,
+      appSlug: "quikcrm",
+      body: {
+        ...validBody,
+        attachments: [
+          {
+            objectKey: "support/other-org/2026-08/x.png",
+            fileName: "x.png",
+            mimeType: "image/png",
+            sizeBytes: 10,
+          },
+        ],
+      },
+    });
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.status).toBe(400);
+    expect(dbMock.supportTicket.create).not.toHaveBeenCalled();
+  });
+
+  it("cleans up stored objects when the ticket insert fails", async () => {
+    verifyAttachments.mockResolvedValue({
+      ok: true,
+      data: [
+        {
+          objectKey: `support/${ORG}/2026-08/abc.png`,
+          fileName: "shot.png",
+          mimeType: "image/png",
+          sizeBytes: 2048,
+        },
+      ],
+    });
+    dbMock.supportTicket.create.mockRejectedValue(new Error("db down"));
+
+    await expect(
+      createSupportTicket({
+        orgId: ORG,
+        userId: USER,
+        appSlug: "quikcrm",
+        body: validBody,
+      }),
+    ).rejects.toThrow("db down");
+
+    // Otherwise the bucket keeps bytes no row can ever reach.
+    expect(deleteAttachments).toHaveBeenCalledWith([`support/${ORG}/2026-08/abc.png`]);
+  });
+
   it("keys the bucket on org+user so one tenant cannot throttle another", async () => {
     dbMock.supportTicket.create.mockResolvedValue({
       id: "t1",
       ticketNo: 1,
-      subject: validBody.subject,
+      subject: "Cannot open the KPI page",
       requestType: "bug",
       status: "open",
       createdAt: new Date(),
@@ -344,6 +535,7 @@ describe("getSupportTicketDetail", () => {
     dbMock.supportTicket.findFirst.mockResolvedValue({
       id: "t1",
       ticketNo: 7,
+      attachments: [],
       messages: [
         { id: "m1", authorId: "u1", authorRole: "user", body: "hi" },
         { id: "m2", authorId: "u1", authorRole: "user", body: "again" },
@@ -367,7 +559,12 @@ describe("getSupportTicketDetail", () => {
   });
 
   it("skips the author lookup entirely when there are no messages", async () => {
-    dbMock.supportTicket.findFirst.mockResolvedValue({ id: "t1", ticketNo: 7, messages: [] });
+    dbMock.supportTicket.findFirst.mockResolvedValue({
+      id: "t1",
+      ticketNo: 7,
+      messages: [],
+      attachments: [],
+    });
 
     const res = await getSupportTicketDetail({ orgId: ORG, userId: USER, id: "t1" });
 
