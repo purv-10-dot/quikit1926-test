@@ -93,7 +93,7 @@ export function KnowledgeBase() {
             type="button"
             onClick={goBack}
             aria-label="Back"
-            className="inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition-colors hover:border-accent-200 hover:bg-accent-50 hover:text-accent-700"
+            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition-colors hover:border-accent-200 hover:bg-accent-50 hover:text-accent-700"
           >
             <ArrowLeft className="h-4 w-4" />
           </button>
