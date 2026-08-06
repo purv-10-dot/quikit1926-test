@@ -149,7 +149,9 @@ export function IssueDevelopment({
                   }))}
                 />
               ) : (
-                <CreatePrRow issueKey={issueKey} />
+                // "Create pull request" needs a branch to base it on — only
+                // offer it once at least one branch is linked.
+                branches.length > 0 && <CreatePrRow issueKey={issueKey} />
               )}
             </div>
           )}
