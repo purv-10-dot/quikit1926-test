@@ -349,6 +349,7 @@ export const NAV_TREE: NavGroup[] = [
       { key: "documents.company", label: "Company Documents" },
       { key: "documents.employees", label: "Employee Documents" },
       { key: "documents.my-vault", label: "My Vault" },
+      { key: "documents.insurance", label: "Insurance" },
     ],
   },
   {

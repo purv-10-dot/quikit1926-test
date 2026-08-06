@@ -28,7 +28,7 @@ const rowSchema = z.object({
 });
 
 const bodySchema = z.object({
-  requisitionId: z.string().min(1, "A requisition is required"),
+  requisitionId: z.string().optional(),
   candidates: z.array(z.record(z.string(), z.unknown())).min(1, "No rows found").max(500, "At most 500 candidates per upload"),
 });
 
@@ -62,7 +62,11 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         where: { orgId, deletedAt: null, ...(reqRow.pipelineId ? { id: reqRow.pipelineId } : { isDefault: true }) },
         select: { stages: true },
       });
-      firstStage = stageNames(pipeline?.stages)[0] ?? "Screening";
+      const stages = stageNames(pipeline?.stages);
+      // Linking to a requisition at import time means these candidates are
+      // already past initial screening — skip straight to Phone Screening
+      // when the pipeline has that stage, else fall back to its first stage.
+      firstStage = stages.includes("PhoneScreen") ? "PhoneScreen" : (stages[0] ?? "Screening");
     }
 
     let created = 0;
