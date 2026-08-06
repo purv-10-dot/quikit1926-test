@@ -13,7 +13,12 @@ export class StubSFUProvider implements SFUProvider {
     };
   }
 
-  async generateToken(roomId: string, userId: string, name: string): Promise<string> {
+  async generateToken(
+    roomId: string,
+    userId: string,
+    name: string,
+    _opts?: { isHost?: boolean },
+  ): Promise<string> {
     return `stub-token:${roomId}:${userId}:${name}`;
   }
 
@@ -30,6 +35,10 @@ export class StubSFUProvider implements SFUProvider {
   }
 
   async muteAllParticipants(_roomId: string, _excludeIdentity?: string): Promise<void> {
+    // No-op in stub mode
+  }
+
+  async deleteRoom(_roomId: string): Promise<void> {
     // No-op in stub mode
   }
 }

@@ -31,8 +31,15 @@ const ORG = "org-a";
 const CH = "ch-1";
 
 describe("dispatchFanout routing", () => {
-  it("routes message / message_update / reaction / read / delivered verbatim to the channel room", () => {
-    for (const event of ["message", "message_update", "reaction", "read", "delivered"] as const) {
+  it("routes message / message_update / reaction / read / delivered / call_group_started verbatim to the channel room", () => {
+    for (const event of [
+      "message",
+      "message_update",
+      "reaction",
+      "read",
+      "delivered",
+      "call_group_started",
+    ] as const) {
       const { io, emits } = fakeIo();
       const payload = { id: event };
       dispatchFanout(io, { orgId: ORG, channelId: CH, event, payload });

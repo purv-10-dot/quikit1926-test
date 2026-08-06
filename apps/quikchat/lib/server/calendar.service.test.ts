@@ -77,10 +77,10 @@ const dayWindow = { from: "2026-06-20T00:00:00.000Z", to: "2026-06-20T23:59:59.9
 const slot = { start: "2026-06-20T10:00:00.000Z", end: "2026-06-20T10:30:00.000Z" };
 
 describe("getFreeBusy", () => {
-  it("returns busy blocks keyed by userId, including the caller", async () => {
+  it("reports the caller + target as unknown (stub has no real calendar to see)", async () => {
     const fb = await calendar.getFreeBusy(ctxAlice(), [daveId], dayWindow.from, dayWindow.to);
-    expect(Object.keys(fb.busy).sort()).toEqual([aliceId, daveId].sort());
-    expect(Array.isArray(fb.busy[daveId])).toBe(true);
+    expect(fb.busy).toEqual({});
+    expect(fb.unknown.sort()).toEqual([aliceId, daveId].sort());
   });
 
   it("rejects a target who is not in the caller's org (cross-tenant)", async () => {
@@ -106,7 +106,7 @@ describe("getFreeBusy", () => {
     );
     expect(Object.keys(fb.busy)).not.toContain(ASSISTANT_BOT_USER_ID);
     expect(fb.unknown).not.toContain(ASSISTANT_BOT_USER_ID);
-    expect(Object.keys(fb.busy).sort()).toEqual([aliceId, daveId].sort());
+    expect(fb.unknown.sort()).toEqual([aliceId, daveId].sort());
   });
 });
 
@@ -124,7 +124,8 @@ describe("createMeeting", () => {
 
     expect(message.type).toBe("Meeting");
     expect((message.data as { meetingId?: string }).meetingId).toBe(meeting.id);
-    expect(meeting.joinUrl).toMatch(/^https:\/\/meet\.stub\//);
+    // The stub never fabricates a join link, even with conferencing requested.
+    expect(meeting.joinUrl).toBeNull();
 
     const row = await prisma.qcMeeting.findUniqueOrThrow({
       where: { id: meeting.id },

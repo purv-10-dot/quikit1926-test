@@ -41,7 +41,14 @@ export type FanoutEventType =
   // `channel:{orgId}:{id}` room. Payload:
   //   { userId, status, statusMessage?, statusExpiresAt?: string, channelIds: string[] }
   | "presence_status"
-  | "typing";
+  | "typing"
+  // A group call started (CALL-3 §3). APP-PUBLISHED from POST /api/calls/group.
+  // Relayed to the channel room like `channel_updated` — every member with the
+  // channel open gets a live "join" nudge; a member who's offline still finds
+  // the call later via GET /api/calls/active (they're already a
+  // QcCallParticipant from call creation). Payload:
+  //   { callId, channelId, initiatorId, type: "audio" | "video" }
+  | "call_group_started";
 
 export interface FanoutEvent {
   orgId: string;
