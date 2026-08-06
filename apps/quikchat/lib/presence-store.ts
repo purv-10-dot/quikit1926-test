@@ -51,7 +51,22 @@ export interface PresenceState {
    * `expiresAt` (epoch ms) marks a timed status; once past it reads as absent.
    */
   setStatus: Readonly<Record<string, { status: SetStatus; message?: string; expiresAt?: number }>>;
-  /** Last-seen ISO timestamp per user that has gone offline. */
+  /**
+   * Last-seen ISO timestamp per user that has gone offline, as broadcast by the
+   * gateway.
+   *
+   * ⚠️ RAW — DO NOT RENDER THIS. The gateway emits it unconditionally and it has
+   * passed through NONE of `getEffectiveLastSeen`'s rules: not the subject's
+   * `appear_offline`, not the mutual `shareLastSeen` opt-in. Wiring it into a
+   * header would silently bypass every privacy guarantee this feature exists to
+   * enforce, and it would look entirely reasonable in review.
+   *
+   * Nothing reads it today (kept only so the store models the full event). The DM
+   * header goes through `GET /api/channels/:id/last-seen` — the only code path
+   * that applies the privacy rules — and ChatWorkspace's presence handlers
+   * invalidate that query so it re-reads. If you need a peer's last-seen, refetch
+   * that route; never reach in here.
+   */
   lastSeen: Readonly<Record<string, string>>;
 }
 

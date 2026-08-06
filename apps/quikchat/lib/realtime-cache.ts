@@ -146,6 +146,30 @@ export function bumpChannelList(
   return state;
 }
 
+/**
+ * DM channels (never groups) whose members include `userId` — the exact set of
+ * `["last-seen", channelId]` queries a presence change for that user invalidates.
+ *
+ * Derived from the client's own `["channels"]` cache rather than from the event
+ * payload, because the two producers of a presence event disagree: the app's
+ * `publishFanout` for `presence_status` carries `channelIds`, while the gateway's
+ * connect-time `broadcastSetStatus` seed does not. Reading the local list is
+ * uniform across both and across the `presence` connectivity event, which never
+ * carries channel ids at all.
+ *
+ * Groups are excluded deliberately: last-seen is a 1:1 readout (the route rejects
+ * non-DMs) so a group can never hold such a query to invalidate.
+ */
+export function dmChannelIdsWithMember(state: ChannelList, userId: string): string[] {
+  const ids: string[] = [];
+  for (const c of [...state.priority, ...state.recent]) {
+    if (c.type !== "dm") continue;
+    if (!c.members.some((m) => m.id === userId)) continue;
+    if (!ids.includes(c.channelId)) ids.push(c.channelId);
+  }
+  return ids;
+}
+
 /** Optimistically clear a channel's unread badge (on open). */
 export function markChannelRead(state: ChannelList, channelId: string): ChannelList {
   const clear = (items: ChannelList["priority"]) =>

@@ -27,6 +27,11 @@ export function dateDividerLabel(value: string | Date): string {
   return format(date, "d MMM yyyy");
 }
 
+/** Unread-divider label: "1 unread message" / "N unread messages". */
+export function unreadDividerLabel(count: number): string {
+  return `${count} unread message${count === 1 ? "" : "s"}`;
+}
+
 /**
  * DM header last-seen readout, e.g. "last seen today at 3:42 PM".
  *

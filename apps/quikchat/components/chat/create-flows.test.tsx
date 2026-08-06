@@ -117,4 +117,35 @@ describe("DiscoverModal", () => {
       true,
     );
   });
+
+  it("shows the empty state when no public channels are found", async () => {
+    mockApi((u) => {
+      if (u.includes("/discover")) return [];
+      return {};
+    });
+    render(<DiscoverModal open onClose={vi.fn()} onJoined={vi.fn()} />);
+    expect(await screen.findByText("No public channels found")).toBeInTheDocument();
+  });
+
+  it("debounces the search query before calling discoverChannels", async () => {
+    mockApi((u) => {
+      if (u.includes("/discover")) return [];
+      return {};
+    });
+    render(<DiscoverModal open onClose={vi.fn()} onJoined={vi.fn()} />);
+    await waitFor(() => expect(calls.some((c) => c.url.includes("/discover"))).toBe(true));
+    const callsBeforeTyping = calls.length;
+
+    fireEvent.change(screen.getByLabelText("Search public channels"), {
+      target: { value: "eng" },
+    });
+    // Debounce window hasn't elapsed yet — no new request fired immediately.
+    expect(calls.length).toBe(callsBeforeTyping);
+
+    await waitFor(() => {
+      expect(calls.some((c) => c.url.includes("/discover") && c.url.includes("q=eng"))).toBe(
+        true,
+      );
+    });
+  });
 });
