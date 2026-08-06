@@ -8,7 +8,7 @@ datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DATABASE_URL_DIRECT")
-  schemas   = ["app_quikasset", "app_quikchat", "app_quikcrm", "app_quikfinance", "app_quikhrms", "app_quikinfra", "app_quiklms", "app_quikscale", "app_quiksocial", "app_quiksupport", "app_quiktrack", "app_quikvc", "auth", "public", "quikit"]
+  schemas   = ["app_quikasset", "app_quikchat", "app_quikcrm", "app_quikfinance", "app_quikhrms", "app_quikinfra", "app_quikinsight", "app_quiklms", "app_quikscale", "app_quiksocial", "app_quiksupport", "app_quiktrack", "app_quikvc", "auth", "public", "quikit"]
 }
 
 model App {
@@ -22911,4 +22911,203 @@ model QcCallParticipant {
 
   @@unique([callId, userId])
   @@schema("app_quikchat")
+}
+
+// --- QuikInsight schema -------------------------------------------------------
+
+model QiWorkspace {
+  id          String   @id @default(cuid())
+  userId      String
+  orgId       String
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  connections QiPlatformConnection[]
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@schema("app_quikinsight")
+}
+
+model QiPlatformConnection {
+  id             String    @id @default(cuid())
+  userId         String
+  orgId          String
+  workspaceId    String
+  platform       String
+  accessToken    String
+  refreshToken   String?
+  tokenExpiresAt DateTime?
+  scopes         String[]  @default([])
+  metadata       Json      @default("{}")
+  status         String    @default("CONNECTED")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @default(now()) @updatedAt
+
+  workspace QiWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  syncs     QiDataSync[]
+
+  @@unique([workspaceId, platform])
+  @@index([workspaceId])
+  @@index([userId])
+  @@index([orgId])
+  @@schema("app_quikinsight")
+}
+
+model QiDataSync {
+  id            String    @id @default(cuid())
+  userId        String
+  connectionId  String
+  platform      String
+  syncType      String    @default("incremental")
+  status        String
+  startedAt     DateTime  @default(now())
+  completedAt   DateTime?
+  recordCount   Int?
+  errorMessage  String?
+
+  connection QiPlatformConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@index([userId, connectionId])
+  @@index([connectionId, startedAt(sort: Desc)])
+  @@schema("app_quikinsight")
+}
+
+model QiConnectedAccount {
+  id          String   @id @default(cuid())
+  userId      String
+  teamId      String
+  provider    String
+  accountName String
+  credentials Json?
+  createdAt   DateTime @default(now())
+
+  @@index([teamId])
+  @@index([userId])
+  @@schema("app_quikinsight")
+}
+
+model QiDashboard {
+  id        String   @id @default(cuid())
+  teamId    String
+  name      String   @default("Dashboard")
+  config    Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  snapshots QiDashboardSnapshot[]
+
+  @@index([teamId])
+  @@schema("app_quikinsight")
+}
+
+model QiDashboardSnapshot {
+  id          String   @id @default(cuid())
+  dashboardId String
+  data        Json
+  snapshotAt  DateTime @default(now())
+
+  dashboard QiDashboard @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+
+  @@index([dashboardId, snapshotAt(sort: Desc)])
+  @@schema("app_quikinsight")
+}
+
+model QiEmailReportSettings {
+  id         String    @id @default(cuid())
+  userId     String    @unique
+  enabled    Boolean   @default(false)
+  recipients String[]  @default([])
+  frequency  String    @default("WEEKLY")
+  lastSentAt DateTime?
+
+  @@schema("app_quikinsight")
+}
+
+model QiAiInsightCache {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  orgId       String
+  data        Json
+  source      String   @default("rules")
+  generatedAt DateTime @default(now())
+
+  @@index([orgId])
+  @@schema("app_quikinsight")
+}
+
+model QiUserRole {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  role      String
+  teamId    String?
+  createdAt DateTime @default(now())
+
+  @@index([teamId])
+  @@schema("app_quikinsight")
+}
+
+model QiInvitation {
+  id         String    @id @default(cuid())
+  email      String
+  orgId      String
+  role       String    @default("MEMBER")
+  teamId     String?
+  token      String    @unique
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([orgId])
+  @@index([email])
+  @@schema("app_quikinsight")
+}
+
+model QiTokenBalance {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  orgId       String
+  totalTokens Int      @default(100000)
+  usedTokens  Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  @@index([orgId])
+  @@schema("app_quikinsight")
+}
+
+model QiTokenUsageLog {
+  id           String   @id @default(cuid())
+  userId       String
+  orgId        String
+  feature      String
+  model        String
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  totalTokens  Int      @default(0)
+  status       String   @default("success")
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([orgId, createdAt(sort: Desc)])
+  @@schema("app_quikinsight")
+}
+
+model QiTokenTransaction {
+  id            String   @id @default(cuid())
+  userId        String
+  orgId         String
+  type          String
+  amount        Int
+  balanceBefore Int
+  balanceAfter  Int
+  reason        String
+  referenceId   String?
+  createdAt     DateTime @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([orgId, createdAt(sort: Desc)])
+  @@schema("app_quikinsight")
 }
