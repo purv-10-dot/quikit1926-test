@@ -110,11 +110,27 @@
       "Bash(node gen-diagrams.js)",
       "Bash(node build-docx.js)",
       "Bash(unzip -l QUIKSCALE_ONBOARDING.docx)",
-      "Bash(unzip -p QUIKSCALE_ONBOARDING.docx word/document.xml)"
+      "Bash(unzip -p QUIKSCALE_ONBOARDING.docx word/document.xml)",
+      "Bash(npx tsx *)",
+      "Bash(psql \"postgresql://postgres:sa%40123@localhost:5432/quikit_Moreyeahs_27.7.26\" -c \"SELECT id, slug, name, status FROM quikit.\\\\\"App\\\\\" WHERE slug = 'quikflow';\")",
+      "Bash(psql \"postgresql://postgres:sa%40123@localhost:5432/quikit_Moreyeahs_27.7.26\" -c \"\\\\d quikit.\\\\\"App\\\\\"\" -c \"\\\\d quikit.\\\\\"OrgAppAccess\\\\\"\" -c \"\\\\d quikit.\\\\\"OAuthClient\\\\\"\")",
+      "Read(//c/Users/user/Downloads/migration_prod/**)",
+      "Bash(psql \"postgresql://postgres:sa%40123@localhost:5432/quikit_Moreyeahs_27.7.26\" -v ON_ERROR_STOP=1 -f \"C:\\\\Users\\\\user\\\\Downloads\\\\migration_prod\\\\20260806020000_quikflow_orgwide_grant.sql\")",
+      "Bash(psql \"postgresql://postgres:sa%40123@localhost:5432/quikit_Moreyeahs_27.7.26\" -c \"SELECT o.name, oaa.enabled FROM quikit.\\\\\"OrgAppAccess\\\\\" oaa JOIN quikit.\\\\\"Org\\\\\" o ON o.id=oaa.\\\\\"orgId\\\\\" JOIN quikit.\\\\\"App\\\\\" a ON a.id=oaa.\\\\\"appId\\\\\" WHERE a.slug='quikflow' AND o.name='MoreYeahs';\")",
+      "Bash(psql postgresql://postgres:sa%40123@localhost:5432/quikit_Moreyeahs_27.7.26 -c ' *)",
+      "Bash(psql \"postgresql://postgres:sa%40123@localhost:5432/quikit_Moreyeahs_27.7.26\" -c \"\\\\d quikit.\\\\\"UserAppAccess\\\\\"\")",
+      "Bash(psql \"postgresql://postgres:sa%40123@localhost:5432/quikit_Moreyeahs_27.7.26\" -v ON_ERROR_STOP=1 -f \"C:\\\\Users\\\\user\\\\Downloads\\\\migration_prod\\\\20260806030000_quikflow_userappaccess_grant.sql\")",
+      "Bash(psql \"postgresql://postgres:sa%40123@localhost:5432/quikit_Moreyeahs_27.7.26\" -v ON_ERROR_STOP=1 -v org_name=\"MoreYeahs\" -f \"C:\\\\Users\\\\user\\\\Downloads\\\\migration_prod\\\\grant-quikflow-by-orgname.sql\")",
+      "Read(//c/Users/user/Downloads/migration_prod/quikflow/**)",
+      "Read(//c/Users/user/Downloads/migration_prod/quikflow_20260714/**)",
+      "Bash(echo \"---exit: $?\")",
+      "Bash(find / -maxdepth 6 -iname \"*.prisma\" -path \"*node_modules*\" 2>/dev/null | grep -i client | head -5 *)",
+      "Read(//c//**)"
     ],
     "additionalDirectories": [
       "C:\\Users\\user\\AppData\\Local\\Temp\\qs-doc-build\\sections",
-      "C:\\Users\\user\\.claude\\plans"
+      "C:\\Users\\user\\.claude\\plans",
+      "C:\\Users\\user\\Downloads\\migration_prod"
     ]
   },
   "hooks": {

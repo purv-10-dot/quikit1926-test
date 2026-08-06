@@ -203,7 +203,8 @@ export const HIDDEN_APP_SLUGS = ["quikvc", "quiksocial"] as const;
 // They still appear in the launcher's "Active" section once granted; they are
 // just excluded from the "Other Tools in Our Suite" trial list and the
 // self-serve activate endpoint. QuikFlow is off-by-default + super-admin-gated
-// per the QuikFlow PRD (FR-A2).
+// per the QuikFlow PRD (FR-A2). Existing orgs are opted in via a DB migration
+// (OrgAppAccess grant) instead of an entitlement-tier code change.
 export const SUPER_ADMIN_GRANT_ONLY_SLUGS = ["quikflow"] as const;
 
 // Length of the free trial granted to a newly self-registered workspace.
