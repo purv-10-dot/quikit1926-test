@@ -442,14 +442,26 @@ function EditorBody({
             <TextView
               draft={ed.draft}
               statusMeta={statusMeta}
-              onRemoveStatus={ed.removeStatus}
-              onSetInitial={ed.setInitial}
-              onRemoveTransition={ed.removeTransition}
+              selectedTransitionId={selection?.kind === "transition" ? selection.transitionId : null}
+              onSelectStatus={(statusId) => setSelection({ kind: "status", statusId })}
+              onSelectTransition={(transitionId) => setSelection({ kind: "transition", transitionId })}
             />
           )}
         </div>
 
-        {tab === "diagram" && selectedStatusId && !panelCollapsed && (
+        {/* Right detail panel region + its left-edge collapse toggle. */}
+        <div className="relative flex min-h-0">
+        {/* Small round collapse/expand button on the panel's LEFT edge (Jira). */}
+        <button
+          type="button"
+          onClick={() => setPanelCollapsed((v) => !v)}
+          title={panelCollapsed ? "Expand panel" : "Collapse panel"}
+          className="absolute -left-3 top-4 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm hover:bg-gray-50 hover:text-gray-700"
+        >
+          {panelCollapsed ? <ChevronLeft className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+        </button>
+
+        {selectedStatusId && !panelCollapsed && (
           <StatusPanel
             statusId={selectedStatusId}
             meta={statusMeta.get(selectedStatusId)}
@@ -473,7 +485,7 @@ function EditorBody({
             }}
           />
         )}
-        {tab === "diagram" && selectedTransition && !panelCollapsed && (
+        {selectedTransition && !panelCollapsed && (
           <TransitionPanel
             transition={selectedTransition}
             draft={ed.draft}
@@ -511,21 +523,8 @@ function EditorBody({
             }}
           />
         )}
-        {tab === "diagram" && !selection && !panelCollapsed && <EmptyStatePanel />}
-
-        {/* Collapse / expand the right detail panel (Jira parity). */}
-        {tab === "diagram" && (
-          <button
-            type="button"
-            onClick={() => setPanelCollapsed((v) => !v)}
-            title={panelCollapsed ? "Expand panel" : "Collapse panel"}
-            className="flex w-7 shrink-0 items-center justify-center border-l border-gray-200 bg-white text-gray-400 hover:bg-gray-50 hover:text-gray-700"
-          >
-            {/* Open → ◀ (click pulls the panel closed toward the right).
-                Collapsed → ▶ (click expands the panel back out to the left). */}
-            {panelCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-          </button>
-        )}
+        {!selection && !panelCollapsed && <EmptyStatePanel />}
+        </div>
       </div>
 
       {addStatusOpen && (
@@ -638,7 +637,7 @@ function EditorBody({
 /** Jira's default right-hand panel shown when nothing is selected. */
 function EmptyStatePanel() {
   return (
-    <aside className="flex h-full w-[340px] shrink-0 flex-col items-center justify-center border-l border-gray-200 bg-gray-50 px-8 text-center">
+    <aside className="flex w-[340px] shrink-0 flex-col items-center justify-center self-stretch border-l border-gray-200 bg-gray-50 px-8 text-center">
       <svg width="120" height="90" viewBox="0 0 120 90" className="mb-6" aria-hidden>
         <g stroke="#cbd5e1" strokeWidth="1.5">
           <line x1="30" y1="20" x2="70" y2="16" />

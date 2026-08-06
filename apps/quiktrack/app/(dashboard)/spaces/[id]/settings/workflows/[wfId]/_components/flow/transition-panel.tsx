@@ -88,7 +88,7 @@ export function TransitionPanel({
   const targetName = nameOf(transition.toStatusId);
 
   return (
-    <aside className="flex h-full w-[360px] shrink-0 flex-col overflow-y-auto border-l border-gray-200 bg-white">
+    <aside className="flex min-h-0 w-[360px] shrink-0 flex-col self-stretch overflow-y-auto border-l border-gray-200 bg-white">
       <div className="border-b border-gray-200 px-4 py-3">
         <h2 className="text-base font-semibold text-gray-900">Transition</h2>
         <p className="mt-0.5 text-xs text-gray-500">
