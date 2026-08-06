@@ -44,7 +44,6 @@ import {
   MENU_CATALOG,
   MATRIX_ACTIONS,
   buildDefaultMatrix,
-  buildModuleScopedMatrix,
   mergeMatrix,
   groupByModule,
   type PermissionMatrix,
@@ -53,7 +52,29 @@ import {
   type MenuItem,
 } from "@/lib/rbac/menu-catalog";
 import { getUserTypeDescriptor } from "@/lib/rbac/user-types";
-import { siblingMenuKeys } from "@/lib/rbac/matrixV2Bridge";
+import {
+  siblingMenuKeys,
+  isMatrixCellManaged,
+  isMatrixRowManaged,
+} from "@/lib/rbac/matrixV2Bridge";
+
+/**
+ * Can this cell actually be granted or revoked?
+ *
+ * A column is real only when the PAGE offers it (read-only pages have no
+ * add/edit/delete) AND the page's backing resource carries the action —
+ * `construction.quality_safety` has no `delete`, `construction.stock` is
+ * view-only. Ticking an inert cell wrote nothing and reverted on reload,
+ * which read as "the system selected these on its own".
+ *
+ * Rows whose resource the matrix can't manage at all (Approvals) keep the
+ * page's own `supports` map so they render exactly as before.
+ */
+function cellSupported(item: MenuItem, action: MatrixAction): boolean {
+  if (!item.supports[action]) return false;
+  if (!isMatrixRowManaged(item.key)) return true;
+  return isMatrixCellManaged(item.key, action);
+}
 
 /**
  * Icon + color mapping for the four action columns. Picked so a green
@@ -138,17 +159,18 @@ export default function UserPermissionMatrixPage() {
 
   useEffect(() => {
     if (!user) return;
-    // Module-driven display: the matrix shows ONLY the user's assigned
-    // modules (view-ticked by default), with the admin's own within-module
-    // customizations preserved. Pages in unassigned modules stay off — this
-    // avoids the old "granted-unless-revoked" noise where unrelated pages
-    // (Assets, Quality delete, Approvals, …) appeared ticked just because a
-    // revoke wasn't written or they shared a v2 resource with an assigned
-    // module. Admins fine-tune within the assigned modules and Save.
-    const seeded = buildModuleScopedMatrix(
-      user.modulesAssigned,
-      user.permissionMatrix,
-    );
+    // Show ONLY what the admin explicitly saved — never auto-grant every
+    // action on every page inside the assigned modules. buildModuleScopedMatrix
+    // would seed all assigned-module pages as fully checked, causing the
+    // "assign 2-3 sub-modules → all remaining ones appear selected" bug.
+    // Instead, start from an all-off baseline and overlay the saved matrix
+    // so exactly the boxes the admin ticked are shown. Admin users get an
+    // all-on baseline (central admin matrix is locked; app-level admins can
+    // fine-tune their own overlay via the matrix).
+    const roleName = String(user.roleKey ?? user.userType ?? "").toLowerCase();
+    const seeded = roleName === "admin"
+      ? mergeMatrix(buildDefaultMatrix(true), user.permissionMatrix)
+      : mergeMatrix(buildDefaultMatrix(false), user.permissionMatrix ?? undefined);
     setMatrix(seeded);
     setDirty(false);
   }, [user]);
@@ -171,25 +193,25 @@ export default function UserPermissionMatrixPage() {
   const toggleCell = (menuKey: string, action: MatrixAction) => {
     if (locked) return; // central admin matrix is read-only
     const item = MENU_CATALOG.find((m) => m.key === menuKey);
-    if (!item || !item.supports[action]) return; // unsupported cell stays off
+    if (!item || !cellSupported(item, action)) return; // inert cell stays off
     const nextValue = !matrix[menuKey]?.[action];
     const keys = siblingMenuKeys(menuKey);
     setMatrix((prev) => {
       const next = { ...prev };
       for (const k of keys) {
         const sib = MENU_CATALOG.find((m) => m.key === k);
-        if (!sib || !sib.supports[action]) continue; // skip pages lacking it
+        if (!sib || !cellSupported(sib, action)) continue; // skip pages lacking it
         const row = { ...next[k], [action]: nextValue };
         // View is a prerequisite for any action: you can't add/edit/delete a
         // page you can't see. So enabling add/edit/delete auto-enables view,
         // and disabling view clears add/edit/delete.
-        if (nextValue && action !== "view" && sib.supports.view) {
+        if (nextValue && action !== "view" && cellSupported(sib, "view")) {
           row.view = true;
         }
         if (!nextValue && action === "view") {
-          if (sib.supports.add) row.add = false;
-          if (sib.supports.edit) row.edit = false;
-          if (sib.supports.delete) row.delete = false;
+          if (cellSupported(sib, "add")) row.add = false;
+          if (cellSupported(sib, "edit")) row.edit = false;
+          if (cellSupported(sib, "delete")) row.delete = false;
         }
         next[k] = row;
       }
@@ -209,10 +231,10 @@ export default function UserPermissionMatrixPage() {
         const sib = MENU_CATALOG.find((m) => m.key === k);
         if (!sib) continue;
         next[k] = {
-          add: sib.supports.add && value,
-          edit: sib.supports.edit && value,
-          delete: sib.supports.delete && value,
-          view: sib.supports.view && value,
+          add: cellSupported(sib, "add") && value,
+          edit: cellSupported(sib, "edit") && value,
+          delete: cellSupported(sib, "delete") && value,
+          view: cellSupported(sib, "view") && value,
         };
       }
       return next;
@@ -650,7 +672,7 @@ function ModuleGroup({
   const allOn =
     locked ||
     items.every((item) =>
-      MATRIX_ACTIONS.every((a) => !item.supports[a] || matrix[item.key]?.[a])
+      MATRIX_ACTIONS.every((a) => !cellSupported(item, a) || matrix[item.key]?.[a])
     );
   const none = !locked && rowsGranted === 0;
   const partial = !allOn && !none;
@@ -748,7 +770,7 @@ function ModuleGroup({
               {item.url ?? "—"}
             </td>
             {MATRIX_ACTIONS.map((a) => {
-              const supported = item.supports[a];
+              const supported = cellSupported(item, a);
               // Locked central admin → every supported cell shows granted + disabled.
               const checked = locked ? supported : !!row[a];
               return (

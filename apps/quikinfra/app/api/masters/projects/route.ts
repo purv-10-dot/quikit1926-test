@@ -14,7 +14,7 @@ import {
   validateRequired,
 } from "@/lib/validators";
 import { cachedJson } from "@/lib/http/cache";
-import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 
 /**
  * Projects master — Postgres-backed.
@@ -52,6 +52,7 @@ export async function GET(req: NextRequest) {
     searchParams,
     ["code", "name", "city", "state", "status", "createdAt"],
     { field: "createdAt", order: "desc" },
+    NEWEST_FIRST_TIEBREAK,
   );
   const baseOpts = {
     orgId: ctx.orgId,

@@ -6,9 +6,9 @@ import type { PoFormConfigDeps } from "./po-form-deps";
 
 export function buildMainFields(deps: PoFormConfigDeps): QuickCreateConfig["fields"] {
   const {
-    projectOptions, termsOptions, sourceRfqOptions, sourceIndentOptions,
-    readyRfqs, vendorById, termsById, indentById, rfqById,
-    defaultPoTermsId, todayIso, resolveItemId, pickRfqVendorAndRates,
+    projectOptions, sourceRfqOptions, sourceIndentOptions,
+    readyRfqs, vendorById, indentById, rfqById,
+    todayIso, resolveItemId, pickRfqVendorAndRates,
   } = deps;
   return [
       {
@@ -304,33 +304,6 @@ export function buildMainFields(deps: PoFormConfigDeps): QuickCreateConfig["fiel
         placeholder:
           "Full shipping address — project site / warehouse, street, city, state, pincode",
         hint: "Appears on the PO PDF as the buyer's delivery location.",
-      },
-      {
-        // Picks from the T&C master (Masters → Terms & Conditions).
-        // Renders the selected template's body inline below the
-        // dropdown so the raiser can verify the clauses before save
-        // without leaving the drawer. Required — every PO must ship
-        // with an explicit commercial terms reference.
-        key: "termsTemplateId",
-        label: "Terms & Conditions",
-        type: "select" as const,
-        span: 2 as const,
-        required: true,
-        options: termsOptions,
-        placeholder:
-          termsOptions.length === 0
-            ? "No templates — add one under Masters → T&C"
-            : "Pick a template…",
-        defaultValue: defaultPoTermsId,
-        afterNode: (value: string) => {
-          const body = value ? termsById.get(value)?.body ?? "" : "";
-          if (!body.trim()) return null;
-          return (
-            <pre className="mt-2 whitespace-pre-wrap text-[11px] leading-snug text-gray-600 bg-gray-50 border border-gray-200 rounded-lg p-3 max-h-40 overflow-auto font-sans">
-              {body}
-            </pre>
-          );
-        },
       },
   ];
 }

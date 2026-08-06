@@ -26,7 +26,6 @@ import {
   getDescriptorByRoleName,
   formatRoleLabel,
 } from "@/lib/rbac/user-types";
-import { mergeModulesWithMatrix } from "@/lib/rbac/menu-catalog";
 import { toast } from "@/lib/toast";
 import type { UserRow, ExistingMemberHit, InviteResult } from "./lib/types";
 import { emptyForm } from "./lib/constants";
@@ -359,18 +358,15 @@ export default function UsersPage() {
   const handleEdit = (item: UserRow) => {
     setEditingId(item.id);
     setOriginalEmail(item.email ?? "");
-    // Modules are shown as ticked when EITHER explicitly assigned on the
-    // user record OR granted through a row in the permission matrix. The
-    // server keeps these in sync on save, but deriving again here means
-    // the drawer reflects the matrix instantly even if the row hasn't
-    // been re-fetched yet (optimistic consistency).
+    // Modules shown are ONLY those explicitly assigned on the user record
+    // (server-derived from CnUserPermissionExtra revokes). We do NOT union
+    // with matrix-derived modules here: deriveModulesFromMatrix would pull
+    // in every module whose role grants still have an un-revoked view action,
+    // causing ALL remaining sub-modules to appear auto-selected when the admin
+    // only explicitly assigned 2-3.
     const assigned = Array.isArray(item.modulesAssigned)
       ? item.modulesAssigned
       : [];
-    const matrix =
-      item.permissionMatrix && typeof item.permissionMatrix === "object"
-        ? item.permissionMatrix
-        : null;
     // ADMIN is implicitly all-modules — tick every module on the form
     // so the picker shows the truth even if the DB row doesn't list them
     // explicitly (the descriptor sets requiresModuleAssignment=false, so
@@ -391,7 +387,7 @@ export default function UsersPage() {
       userType: roleName,
       modulesAssigned: isAdmin
         ? ASSIGNABLE_MODULES.map((m) => m.key)
-        : mergeModulesWithMatrix(assigned, matrix),
+        : assigned,
       projectsAssigned: Array.isArray(item.projectsAssigned) ? item.projectsAssigned : [],
       department: item.department ?? "",
       isHoUser: !!item.isHoUser,

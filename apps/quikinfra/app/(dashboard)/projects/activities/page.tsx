@@ -205,6 +205,7 @@ export default function ActivitiesPage() {
   const [folderForm, setFolderForm] = useState(emptyFolder);
   const [lineForm, setLineForm] = useState(emptyLine);
   const [lineError, setLineError] = useState("");
+  const [folderError, setFolderError] = useState("");
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ActivityTreeRow | null>(null);
@@ -223,17 +224,23 @@ export default function ActivitiesPage() {
       : "";
 
   const createFolder = async () => {
-    if (!projectId || !folderForm.description.trim()) return;
+    setFolderError("");
+    if (!projectId) return;
+    if (!folderForm.description.trim()) return setFolderError("Name is required.");
     const data = {
       isGroup: true,
       activityCode: folderForm.code.trim() || undefined,
       description: folderForm.description.trim(),
       parentId: folderForm.parentId || null,
     };
-    if (editingFolderId) {
-      await updateMutation.mutateAsync({ projectId, activityId: editingFolderId, data });
-    } else {
-      await createMutation.mutateAsync({ projectId, data });
+    try {
+      if (editingFolderId) {
+        await updateMutation.mutateAsync({ projectId, activityId: editingFolderId, data });
+      } else {
+        await createMutation.mutateAsync({ projectId, data });
+      }
+    } catch (e: unknown) {
+      return setFolderError(e instanceof Error ? e.message : "Could not save the folder.");
     }
     setFolderForm(emptyFolder);
     setEditingFolderId(null);
@@ -260,10 +267,14 @@ export default function ActivitiesPage() {
       endDate: lineForm.endDate || null,
       parentId: lineForm.parentId || null,
     };
-    if (editingLineId) {
-      await updateMutation.mutateAsync({ projectId, activityId: editingLineId, data });
-    } else {
-      await createMutation.mutateAsync({ projectId, data });
+    try {
+      if (editingLineId) {
+        await updateMutation.mutateAsync({ projectId, activityId: editingLineId, data });
+      } else {
+        await createMutation.mutateAsync({ projectId, data });
+      }
+    } catch (e: unknown) {
+      return setLineError(e instanceof Error ? e.message : "Could not save the line item.");
     }
     setLineForm(emptyLine);
     setEditingLineId(null);
@@ -275,6 +286,7 @@ export default function ActivitiesPage() {
 
   const openFolder = (parentId = "") => {
     setEditingFolderId(null);
+    setFolderError("");
     setFolderForm({ ...emptyFolder, parentId });
     setFolderOpen(true);
   };
@@ -286,6 +298,7 @@ export default function ActivitiesPage() {
   };
   const editFolder = (r: ActivityTreeRow) => {
     setEditingFolderId(r.id);
+    setFolderError("");
     setFolderForm({ code: r.activityCode, description: r.description, parentId: r.parentId ?? "" });
     setFolderOpen(true);
   };
@@ -554,6 +567,11 @@ export default function ActivitiesPage() {
         submitLabel={editingFolderId ? "Save" : "Create"}
         loading={busy}
       >
+        {folderError && (
+          <div className="mb-5 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
+            {folderError}
+          </div>
+        )}
         <FormSection title="Folder">
           <Field label="Name" required hint="Code is auto-generated (BOQ-style path, e.g. 1.2)">
             <TextInput value={folderForm.description} onChange={(v) => setFolderForm((f) => ({ ...f, description: v }))} placeholder="e.g. Substructure" />

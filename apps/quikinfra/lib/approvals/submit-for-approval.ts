@@ -31,6 +31,7 @@ import {
   isSkippableByRaiser,
   userTypeFromRoleKey,
 } from "@/lib/approvals/workflow-rbac";
+import { buildStepsSnapshot } from "@/lib/approvals/step-resolution";
 
 type WorkflowWithSteps = Prisma.CnApprovalWorkflowGetPayload<{
   include: { steps: true };
@@ -179,6 +180,17 @@ export async function submitForApproval(
   // `now` keeps every auto-recorded step on the same instant.
   const now = new Date();
 
+  // Freeze the chain onto the instance. A workflow edit replaces its step
+  // rows, which used to retro-change every in-flight instance — shrinking it
+  // left requests parked on a step that no longer existed (unactionable by
+  // anyone), growing it made settled requests look under-approved. With the
+  // snapshot, an edit only affects requests submitted after it.
+  // Cast for the Json column: Prisma widens a typed object array to
+  // InputJsonObject and rejects it, though the value is valid JSON.
+  const stepsSnapshot = buildStepsSnapshot(
+    workflow.steps,
+  ) as unknown as Prisma.InputJsonValue;
+
   return await db.$transaction(async (tx) => {
     if (!startStep) {
       // Every step is filled by the raiser. The instance jumps to the
@@ -193,6 +205,7 @@ export async function submitForApproval(
           entityId,
           entityNumber,
           currentStepOrder: lastStep.stepOrder,
+          stepsSnapshot,
           status: autoApprovedInstanceStatus,
           ...(autoApprovedInstanceStatus === "approved"
             ? { completedAt: new Date() }
@@ -240,6 +253,7 @@ export async function submitForApproval(
         entityId,
         entityNumber,
         currentStepOrder: startStep.stepOrder,
+        stepsSnapshot,
         status: "pending_approval",
         requestedById: ctx.userId,
       },

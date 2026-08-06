@@ -27,7 +27,10 @@ export interface AuditEntry {
  */
 export async function recordAudit(
   tx: Prisma.TransactionClient,
-  ctx: TenantContext,
+  // Only the tenant + actor are needed. Accepting the narrow shape lets master
+  // repositories that carry just `orgId` + `userId` record audit honestly,
+  // instead of fabricating a full TenantContext to satisfy the signature.
+  ctx: Pick<TenantContext, "orgId" | "userId">,
   entry: AuditEntry
 ): Promise<void> {
   await tx.cnAuditLog.create({

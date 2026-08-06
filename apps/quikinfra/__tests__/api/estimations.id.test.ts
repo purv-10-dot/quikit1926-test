@@ -99,6 +99,31 @@ describe("PUT /api/estimations/[id]", () => {
     expect((await res.json()).phase).toBe("Structure");
     expect(db.$executeRaw).toHaveBeenCalled();
   });
+
+  it("returns 409 while the estimation is awaiting approval", async () => {
+    setContext(makeAdminCtx());
+    db.$queryRaw.mockResolvedValue([estRow({ status: "pending_approval" })]);
+    const res = await PUT(req("PUT", { phase: "Structure" }), params);
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/awaiting approval/i);
+    expect(db.$executeRaw).not.toHaveBeenCalled();
+  });
+
+  it("returns 409 once the estimation is approved", async () => {
+    setContext(makeAdminCtx());
+    db.$queryRaw.mockResolvedValue([estRow({ status: "approved" })]);
+    const res = await PUT(req("PUT", { phase: "Structure" }), params);
+    expect(res.status).toBe(409);
+    expect(db.$executeRaw).not.toHaveBeenCalled();
+  });
+
+  it("still allows edits after a rejection so the raiser can resubmit", async () => {
+    setContext(makeAdminCtx());
+    db.$queryRaw.mockResolvedValue([estRow({ status: "rejected", phase: "Structure" })]);
+    const res = await PUT(req("PUT", { phase: "Structure" }), params);
+    expect(res.status).toBe(200);
+    expect(db.$executeRaw).toHaveBeenCalled();
+  });
 });
 
 // ═══════════════════════════════════════════════
@@ -128,6 +153,14 @@ describe("DELETE /api/estimations/[id]", () => {
     const res = await DELETE(req("DELETE"), params);
     expect(res.status).toBe(200);
     expect((await res.json()).success).toBe(true);
+  });
+
+  it("returns 409 while the estimation is parked in the approval queue", async () => {
+    setContext(makeAdminCtx());
+    db.$queryRaw.mockResolvedValue([estRow({ status: "pending_approval" })]);
+    const res = await DELETE(req("DELETE"), params);
+    expect(res.status).toBe(409);
+    expect(db.$executeRaw).not.toHaveBeenCalled();
   });
 });
 
@@ -237,9 +270,10 @@ describe("POST /api/estimations/[id]/approve", () => {
       status: "pending_approval",
       currentStepOrder: 1,
     });
-    db.cnApprovalWorkflowStep.findFirst
-      .mockResolvedValueOnce({ stepOrder: 1, approverUserId: null, approverRoleId: "SITE_ADMIN" })
-      .mockResolvedValueOnce(null);
+    db.cnApprovalWorkflowStep.findMany.mockResolvedValue([
+      { stepOrder: 1, approverUserId: null, approverUserIds: [], approverRoleId: "SITE_ADMIN" },
+    ] as never); // single step → final
+    db.cnApprovalInstance.updateMany.mockResolvedValue({ count: 1 } as never);
     db.$transaction.mockImplementation(async (cb: any) => cb(db));
     db.cnApprovalWorkflowStep.count.mockResolvedValue(1);
     const res = await APPROVE(req("POST", { action: "approve" }), params);

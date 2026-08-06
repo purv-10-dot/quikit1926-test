@@ -2,7 +2,7 @@ import { toErrorMessage } from "@/lib/api/errors";
 import { requireEquipmentAction } from "@/lib/auth/requireEquipmentAction";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
-import { parsePagination, parseSort } from "@/lib/http/pagination";
+import { parsePagination, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 import { db } from "@/lib/db";
 import { canActOnCurrentStep } from "@/lib/approvals/workflow-rbac";
 import {
@@ -88,7 +88,7 @@ export async function GET(req: NextRequest) {
   const sort = parseSort(req, EQUIPMENT_LOG_SORT_COLUMNS, {
     field: "logDate",
     order: "desc",
-  });
+  }, NEWEST_FIRST_TIEBREAK);
   const result = await listEquipmentLogs({
     ...baseOpts,
     orderBy: sort.orderBy as never,

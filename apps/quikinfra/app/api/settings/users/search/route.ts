@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db as dbCentral } from "@quikit/database";
+import { db } from "@/lib/db";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { getQuikInfraAppId } from "@/lib/rbac/userCan";
 
@@ -32,7 +32,7 @@ export const GET = auth.manage(
 
     const appId = await getQuikInfraAppId();
 
-    const members = (await dbCentral.orgMember.findMany({
+    const members = (await db.orgMember.findMany({
       where: {
         orgId,
         user: { email: { contains: q, mode: "insensitive" } },

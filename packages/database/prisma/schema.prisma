@@ -4186,6 +4186,10 @@ model CnStockReconciliation {
   locationId           String
   reconciliationDate   DateTime
   conductedById        String
+  // Free-typed name of the person who conducted the count. Kept alongside
+  // conductedById (always the creator) because the conductor is often not a
+  // system user — a contractor's storekeeper, for example.
+  conductedByName      String?
   approvedById         String?
   status               String   @default("draft")
   approvalId           String?
@@ -4330,7 +4334,10 @@ model CnWorkOrderLine {
   scopeId        String? // CnActivityItem.id when scopeType = ACTIVITY
   description    String
   quantity       Decimal @db.Decimal(18, 4)
-  uomId          String
+  /// Holds the UOM *code* ("CUM", "DAY"), not a CnUOM id — the write paths have
+  /// always stored the code here. Named `uomId` until the rename; readers that
+  /// assumed an id silently rendered blank UOM cells (WO PDF + Excel export).
+  uomCode        String
   negotiatedRate Decimal @db.Decimal(18, 2)
   amount         Decimal @db.Decimal(18, 2)
 
@@ -4638,6 +4645,9 @@ model CnRfq {
   /// create time so later edits to the template don't retroactively
   /// change what was sent to the vendor.
   termsTemplateId    String?
+  /// Snapshot of the T&C body at RFQ create time, editable per RFQ.
+  /// Edits here never write back to the template master.
+  termsAndConditions String?
   status             String    @default("draft")
   approvalId         String?
   createdAt          DateTime  @default(now())
@@ -4687,6 +4697,11 @@ model CnRfqVendor {
   // list for this specific vendor. Stored as a JSON string for
   // Postgres + SQLite portability via Prisma's String type.
   assignedItemIds Json      @default("[]")
+  /// Per-vendor T&C override. Null/empty = use the RFQ's default
+  /// `termsAndConditions`. Never written back to the T&C master.
+  termsAndConditions String?
+  /// Template the override was seeded from, kept for audit only.
+  termsTemplateId    String?
   sentAt          DateTime?
   respondedAt     DateTime?
 
@@ -5063,6 +5078,12 @@ model CnApprovalWorkflow {
   projectId  String?
   name       String
   entityType String // purchase_requisitions | purchase_indents | purchase_order | grn | work_order | dpr | stock_reconciliation | good_return
+  /// Single fallback approver for the whole workflow. When set, this user can
+  /// approve a request from any step without waiting — the escape hatch for a
+  /// listed approver being on leave or simply never acting. Null = none, and the
+  /// workflow behaves exactly as before. Any active user qualifies regardless of
+  /// role; they may not approve a request they raised themselves.
+  masterApproverUserId String?
   isActive   Boolean  @default(true)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -5120,6 +5141,16 @@ model CnApprovalInstance {
   requestedById    String
   requestedAt      DateTime  @default(now())
   completedAt      DateTime?
+  /// Copy of the workflow's steps as they stood when this instance was
+  /// created: [{ stepOrder, approverRoleId, approverUserId, approverUserIds }].
+  /// Editing a workflow replaces its step rows wholesale, which used to
+  /// retro-change in-flight instances — a shrunk workflow left them parked on
+  /// a step that no longer existed (unactionable by anyone), and a grown one
+  /// made already-approved instances look under-approved. Resolution reads
+  /// this first so a submitted request keeps the chain it was submitted under.
+  /// Null for rows created before this column existed; those fall back to the
+  /// live workflow steps.
+  stepsSnapshot    Json?
 
   workflow CnApprovalWorkflow  @relation(fields: [workflowId], references: [id])
   history  CnApprovalHistory[]
