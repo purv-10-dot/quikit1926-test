@@ -19,6 +19,7 @@ import {
   type WorkflowReadModel,
 } from "./editor-types";
 import { AddRuleDialog, EditRuleDialog } from "./flow/rule-dialogs";
+import { TriggersDialog } from "./flow/triggers-dialog";
 import { metaFor, type RuleTypeMeta, type BucketId } from "./flow/rule-catalog";
 
 async function fetchResolutions(projectId: string): Promise<{ id: string; name: string }[]> {
@@ -144,6 +145,7 @@ function EditorBody({
   // Rule dialogs on the Transition panel: pick a rule type (add) or edit one.
   // Holds the rail bucket the Add-rule catalog should open on, or null (closed).
   const [addRuleBucket, setAddRuleBucket] = useState<BucketId | null>(null);
+  const [triggersOpen, setTriggersOpen] = useState(false);
   // The rule being configured — either a fresh pick (add) or an existing index (edit).
   const [rulePick, setRulePick] = useState<{ meta: RuleTypeMeta; index: number | null } | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
@@ -479,6 +481,7 @@ function EditorBody({
             onRename={(name) => ed.updateTransition(selectedTransition.id, { name })}
             onUpdatePath={(patch) => ed.updateTransition(selectedTransition.id, patch)}
             onOpenAddRule={(bucket) => setAddRuleBucket(bucket)}
+            onOpenTriggers={() => setTriggersOpen(true)}
             onEditRule={(index) => {
               const r = selectedTransition.rules[index];
               const m = metaFor(r.type);
@@ -563,6 +566,14 @@ function EditorBody({
             setSelection({ kind: "status", statusId: newStatusId });
           }}
           onClose={() => setReplaceStatusOpen(false)}
+        />
+      )}
+      {triggersOpen && selectedTransition && (
+        <TriggersDialog
+          transitionName={selectedTransition.name}
+          selected={selectedTransition.triggers}
+          onDone={(events) => { ed.setTriggers(selectedTransition.id, events); setTriggersOpen(false); }}
+          onClose={() => setTriggersOpen(false)}
         />
       )}
       {/* Add-rule catalog → pick a type → opens the Edit-rule config. */}

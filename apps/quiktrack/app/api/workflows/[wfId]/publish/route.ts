@@ -10,6 +10,7 @@ import {
   validateWorkflowGraph,
   type WorkflowDraft,
 } from "@/lib/services/workflow";
+import { isTriggerEvent } from "@/lib/services/workflow/triggers";
 
 /**
  * POST /api/workflows/[wfId]/publish
@@ -308,6 +309,14 @@ export const POST = withOrgAuth<{ wfId: string }>(
               groupNo: r.groupNo ?? 0,
               orderNo: r.orderNo ?? ri,
             })),
+          });
+        }
+        // Dev triggers (GitHub events) that auto-fire this transition.
+        const triggerEvents = Array.from(new Set((t.triggers ?? []).filter(isTriggerEvent)));
+        if (triggerEvents.length > 0) {
+          await tx.qtWorkflowTrigger.createMany({
+            data: triggerEvents.map((event) => ({ transitionId: created.id, event })),
+            skipDuplicates: true,
           });
         }
         if (t.type === "INITIAL") initialTransitionId = created.id;

@@ -174,7 +174,19 @@ export function useWorkflowEditor(wfId: string, initial: EditorDraft, hasPending
     }) =>
       mutate((d) => ({
         ...d,
-        transitions: [...d.transitions, { id: newId(), rules: [], ...t }],
+        transitions: [...d.transitions, { id: newId(), rules: [], triggers: [], ...t }],
+      })),
+    [mutate],
+  );
+
+  /** Replace a transition's dev trigger set (checkbox list in the modal). */
+  const setTriggers = useCallback(
+    (transitionId: string, triggers: string[]) =>
+      mutate((d) => ({
+        ...d,
+        transitions: d.transitions.map((t) =>
+          t.id === transitionId ? { ...t, triggers } : t,
+        ),
       })),
     [mutate],
   );
@@ -260,5 +272,6 @@ export function useWorkflowEditor(wfId: string, initial: EditorDraft, hasPending
     addRule,
     removeRule,
     updateRule,
+    setTriggers,
   };
 }

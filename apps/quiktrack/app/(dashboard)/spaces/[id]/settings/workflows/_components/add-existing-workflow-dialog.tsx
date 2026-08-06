@@ -50,6 +50,7 @@ function templateToFlow(t: TemplateGraph): { nodes: Node[]; edges: Edge[]; statu
       toStatusId: tr.toName,
       fromStatusIds: tr.fromNames,
       rules: [],
+      triggers: [],
     })),
   };
   return {

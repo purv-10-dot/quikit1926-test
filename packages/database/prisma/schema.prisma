@@ -6820,6 +6820,7 @@ model QtWorkflowTransition {
   toStatus    QtIssueStatus             @relation("TransitionToStatus", fields: [toStatusId], references: [id], onDelete: Cascade)
   fromStatuses QtWorkflowTransitionFrom[]
   rules       QtWorkflowRule[]
+  triggers    QtWorkflowTrigger[]
 
   @@unique([workflowId, name])
   @@index([workflowId])
@@ -6896,6 +6897,22 @@ model QtWorkflowScheme {
   items     QtWorkflowSchemeItem[]
 
   @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+/// A dev trigger on a transition: when a GitHub event (`event`) fires on an
+/// issue linked to a connected repo, and the issue is currently in one of the
+/// transition's source statuses, the transition auto-executes. `event` is one
+/// of: pr_created | pr_merged | pr_declined | pr_reopened | branch_created |
+/// commit_created.
+model QtWorkflowTrigger {
+  id           String               @id @default(cuid())
+  transitionId String
+  event        String
+  transition   QtWorkflowTransition  @relation(fields: [transitionId], references: [id], onDelete: Cascade)
+
+  @@unique([transitionId, event])
+  @@index([transitionId])
   @@schema("app_quiktrack")
 }
 

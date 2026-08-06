@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Trash2, Plus, ChevronDown, ChevronRight, Zap, X, MoreHorizontal } from "lucide-react";
+import { Trash2, Plus, ChevronDown, ChevronRight, Zap, X, MoreHorizontal, GitBranch } from "lucide-react";
 import type { EditorDraft, EditorRule, EditorTransition, StatusMeta } from "../editor-types";
 import { metaFor, type BucketId } from "./rule-catalog";
 import { ruleSummary } from "./rule-summary";
+import { triggerLabel } from "@/lib/services/workflow/triggers";
 
 function pillClass(category?: string): string {
   if (category === "IN_PROGRESS") return "bg-blue-100 text-blue-800";
@@ -47,6 +48,7 @@ export function TransitionPanel({
   onRename,
   onUpdatePath,
   onOpenAddRule,
+  onOpenTriggers,
   onEditRule,
   onRemoveRule,
   onSetConditionsMode,
@@ -59,6 +61,7 @@ export function TransitionPanel({
   onRename: (name: string) => void;
   onUpdatePath: (patch: { fromStatusIds?: string[]; toStatusId?: string }) => void;
   onOpenAddRule: (bucket: BucketId) => void;
+  onOpenTriggers: () => void;
   onEditRule: (index: number) => void;
   onRemoveRule: (index: number) => void;
   /** ALL = each condition its own group (AND); ANY = all in one group (OR). */
@@ -188,6 +191,31 @@ export function TransitionPanel({
               ))}
             </RuleBucket>
           </div>
+        </div>
+
+        {/* Triggers — GitHub dev events that auto-fire this transition. */}
+        <div>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-medium text-gray-800">Triggers</span>
+              {transition.triggers.length > 0 && (
+                <span className="rounded bg-blue-50 px-1.5 text-[11px] font-medium text-blue-700">{transition.triggers.length}</span>
+              )}
+            </div>
+            <button type="button" onClick={onOpenTriggers} className="text-gray-400 hover:text-gray-700" aria-label="Add triggers">
+              <Plus className="h-4 w-4" />
+            </button>
+          </div>
+          {transition.triggers.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {transition.triggers.map((event) => (
+                <div key={event} className="flex items-center gap-2 rounded border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700">
+                  <GitBranch className="h-3.5 w-3.5 text-gray-400" />
+                  {triggerLabel(event)}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
