@@ -3675,6 +3675,20 @@ body {
   white-space: nowrap;
   max-width: 60%;
 }
+/* Delete affordance (edit mode) pins to the left, same trick as qc-schedule__err. */
+.qc-schedule__actions-left {
+  margin-right: auto;
+}
+.qc-schedule__delete-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+}
+.qc-schedule__delete-confirm-text {
+  font-size: 13px;
+  color: var(--qc-text-2);
+}
 
 /* --- Free/busy grid --- */
 .qc-fbgrid {
