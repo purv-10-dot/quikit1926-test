@@ -4,6 +4,9 @@
  * a circular import.
  */
 
+import type { CustomFieldDTO } from "@/lib/services/customFields";
+import type { FieldValue } from "@/lib/customFields/registry";
+
 export type IssueType = "TASK" | "BUG" | "STORY" | "EPIC" | "SUBTASK";
 export type Priority = "HIGHEST" | "HIGH" | "MEDIUM" | "LOW" | "LOWEST";
 
@@ -58,4 +61,6 @@ export interface IssuePageData {
   projectId: string;
   subtasks?: IssueSubtask[];
   timeLogs?: { id: string; hours: number }[];
+  customFields?: CustomFieldDTO[];
+  customFieldValues?: Record<string, FieldValue>;
 }

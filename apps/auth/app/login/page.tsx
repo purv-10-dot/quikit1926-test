@@ -54,12 +54,10 @@ export default function LoginPage() {
       initialError={initialError}
       initialStep={initialStep}
       signUpUrl="/register"
-      // Back button on THIS login page returns to the external marketing/
-      // landing site, configured per-environment via NEXT_PUBLIC_LANDING_URL
-      // (no hardcoded URL — set it in each env's .env). Scoped to this page
-      // only — the forgot-password and invitation pages leave backUrl unset,
-      // so their Back button keeps its default "/" behavior.
-     backUrl={requireProdEnv("NEXT_PUBLIC_LAUNCHER_URL", "http://localhost:3001")}
+      // ← button goes to the QuikIT marketing landing page, not this app's
+      // own "/" (the auth app has no landing page — "/" just bounces to
+      // /login). Absolute + cross-origin, so the component hard-navigates.
+      backUrl={requireProdEnv("NEXT_PUBLIC_WEBSITE_URL", "http://localhost:1001").replace(/\/+$/, "")}
       hardNavigate
     />
   );

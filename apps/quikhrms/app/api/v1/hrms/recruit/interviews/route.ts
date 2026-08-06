@@ -10,7 +10,10 @@ import { buildInterviewInviteEmail } from "@/lib/email-templates/interview-invit
 import { buildInterviewerNotificationEmail } from "@/lib/email-templates/interview-notification";
 import { notifyInterviewScheduled } from "@/lib/services/interview-notifications";
 import { generateMeetingLink } from "@/lib/meetings";
+import { appBaseUrl } from "@/lib/utils/app-url";
 import { generateFeedbackToken } from "@/lib/services/feedback-token";
+import { generateTakeHomeToken } from "@/lib/services/take-home-token";
+import { buildTakeHomeTaskEmail } from "@/lib/email-templates/take-home-task";
 import type { Prisma } from "@quikit/database";
 
 // Interview types that warrant an auto-generated video meeting link.
@@ -58,7 +61,7 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
             select: {
               id: true,
               candidate: { select: { id: true, firstName: true, lastName: true, email: true } },
-              requisition: { select: { title: true } },
+              requisition: { select: { title: true, pipelineId: true } },
             },
           },
           interviewer: { select: { id: true, firstName: true, lastName: true, workEmail: true } },
@@ -66,10 +69,28 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
       }),
       prisma.interview.count({ where }),
     ]);
+
+    // Resolve each interview's stage name from ITS OWN requisition pipeline (not
+    // a globally-selected one) so labels are correct when the org runs multiple
+    // pipelines. Falls back to the default pipeline, then to "Round N".
+    const pipelineIds = [...new Set(
+      interviews.map((i) => i.application?.requisition?.pipelineId).filter((p): p is string => !!p),
+    )];
+    const pipelines = pipelineIds.length
+      ? await prisma.hiringPipeline.findMany({ where: { orgId, deletedAt: null, id: { in: pipelineIds } }, select: { id: true, stages: true } })
+      : [];
+    const defaultPipeline = await prisma.hiringPipeline.findFirst({ where: { orgId, deletedAt: null, isDefault: true }, select: { stages: true } });
+    const stagesByPipeline = new Map(pipelines.map((p) => [p.id, stageNames(p.stages)]));
+    const defaultStages = stageNames(defaultPipeline?.stages);
+    const resolveStage = (pipelineId: string | null | undefined, round: number) => {
+      const stages = (pipelineId && stagesByPipeline.get(pipelineId)) || defaultStages;
+      return stages[round - 1] ?? `Round ${round}`;
+    };
     // Scorecard fields now live on the interview row; re-expose under the
     // historical `scorecard` shape so existing consumers keep working.
     const shaped = interviews.map((i) => ({
       ...i,
+      stageName: resolveStage(i.application?.requisition?.pipelineId, i.round),
       scorecard: i.overallRating != null
         ? {
             id: i.id, overallRating: i.overallRating, recommendation: i.recommendation,
@@ -80,7 +101,7 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     }));
     return successResponse(shaped, paginationMeta(page, limit, total));
   } catch (error) { console.error("GET /recruit/interviews error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.read"] });
 
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
   try {
@@ -198,6 +219,26 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       data: { deletedAt: new Date(), updatedBy: userId },
     }).catch(() => null);
 
+    // Take-Home Task: persist the brief + a fresh tokenised submission link via
+    // RAW SQL. The take-home columns exist in the DB but the generated Prisma
+    // client isn't regenerated, so they must never be touched through the typed
+    // client. Strictly guarded behind type === "TakeHome" — every other type is
+    // untouched. The token drives the candidate's public submission page.
+    let takeHomeToken: string | null = null;
+    if (data.type === "TakeHome") {
+      const { token, expiresAt } = generateTakeHomeToken(interview.id, orgId);
+      takeHomeToken = token;
+      await prisma.$executeRaw`
+        UPDATE "app_quikhrms"."Interview"
+        SET "takeHomeInstructions" = ${data.takeHomeInstructions ?? null},
+            "takeHomeAttachmentUrl" = ${data.takeHomeAttachmentUrl ?? null},
+            "takeHomeAttachmentLink" = ${data.takeHomeAttachmentLink ?? null},
+            "takeHomeDueDate" = ${data.takeHomeDueDate ?? null}::date,
+            "submissionToken" = ${token},
+            "submissionTokenExpiresAt" = ${expiresAt}
+        WHERE id = ${interview.id} AND "orgId" = ${orgId}`;
+    }
+
     // Resolve this round's pipeline stage once — reused for the "technical round"
     // JD decision below and the currentStage auto-advance further down.
     const pipeline = interview.application?.requisition?.pipelineId
@@ -205,9 +246,15 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       : await prisma.hiringPipeline.findFirst({ where: { orgId, deletedAt: null, isDefault: true } });
     const pipelineStageNames = stageNames(pipeline?.stages);
     const roundStage = pipelineStageNames[data.round - 1] ?? "";
-    // JD is shared with interviewers only on technical rounds so they can prep.
+    // JD sent to interviewers: an explicit override from the schedule dialog wins
+    // (any round); otherwise the requisition JD is auto-shared on technical rounds.
     const isTechnicalRound = /technical/i.test(roundStage);
-    const roundJobDescription = isTechnicalRound ? (interview.application?.requisition?.jobDescription ?? null) : null;
+    const roundJobDescription =
+      (data.jobDescription && data.jobDescription.trim())
+        ? data.jobDescription.trim()
+        : isTechnicalRound
+          ? (interview.application?.requisition?.jobDescription ?? null)
+          : null;
 
     // Auto-send invite emails to BOTH candidate and interviewer (regardless of interview type).
     let mailStatus: { candidate: { sent: boolean; to: string | null; error?: string }; interviewer: { sent: boolean; to: string | null; error?: string } } = {
@@ -226,7 +273,31 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       const candidateName = candidate ? `${candidate.firstName} ${candidate.lastName}`.trim() : "Candidate";
       const jobTitle = interview.application?.requisition?.title ?? "the role";
 
-      if (candidate?.email) {
+      if (candidate?.email && interview.type === "TakeHome") {
+        // Take-Home: send the task brief + tokenised submit link INSTEAD of the
+        // standard interview invite. No meeting link is generated for this type.
+        const base = appBaseUrl();
+        const submitUrl = base && takeHomeToken ? `${base}/take-home/${takeHomeToken}` : "";
+        const dueStr = data.takeHomeDueDate
+          ? new Date(`${data.takeHomeDueDate}T00:00:00`).toLocaleDateString("en-IN", { weekday: "long", day: "2-digit", month: "long", year: "numeric", timeZone: "Asia/Kolkata" })
+          : "";
+        const thData = {
+          candidateName, jobTitle, companyName,
+          roundName: roundStage || `Round ${interview.round}`,
+          instructions: data.takeHomeInstructions ?? "",
+          dueDate: dueStr,
+          submitUrl,
+          hasAttachment: !!data.takeHomeAttachmentUrl,
+          attachmentLink: data.takeHomeAttachmentLink ?? null,
+        };
+        void resolveAndSend(orgId, {
+          key: "recruit.take-home-task",
+          to: candidate.email,
+          vars: { ...thData, roundName: thData.roundName ?? "", dueDate: thData.dueDate ?? "", hasAttachment: thData.hasAttachment, attachmentLink: thData.attachmentLink ?? "" },
+          fallback: () => buildTakeHomeTaskEmail(thData),
+        }).catch((e) => console.error("[interview] take-home mail failed:", e));
+        mailStatus.candidate = { sent: true, to: candidate.email };
+      } else if (candidate?.email) {
         const inviteData = {
           candidateName, jobTitle,
           interviewDate: dateStr, interviewTime: timeStr,
@@ -253,7 +324,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       if (interview.interviewer.workEmail && candidate) {
         // Tokenised, no-login feedback link. Persisted on the interview so the
         // post-interview reminder/cron reuse the same token (see send-feedback-reminder).
-        const base = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "";
+        const base = appBaseUrl();
         const { token: fbToken, expiresAt: fbExpiresAt } = generateFeedbackToken(interview.id, orgId);
         const notifyData = {
           interviewerName,
@@ -378,4 +449,4 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
 
     return successResponse({ ...interview, mailStatus }, undefined, 201);
   } catch (error) { console.error("POST /recruit/interviews error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });

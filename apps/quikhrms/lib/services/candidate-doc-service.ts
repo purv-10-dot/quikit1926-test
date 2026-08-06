@@ -5,6 +5,7 @@ import { resolveAndSend } from "@/lib/email/resolve";
 import { buildCandidateDocRequestEmail } from "@/lib/email-templates/candidate-document-request";
 import { ensureCandidateDocDefaults } from "@/lib/services/candidate-doc-setup";
 import { whereEmployeeHasAnyRole, sortByMaxRolePriorityDesc, appRolesNameSelect } from "@/lib/rbac/queries";
+import { appBaseUrl } from "@/lib/utils/app-url";
 
 export interface TriggerResult {
   requestId: string;
@@ -135,7 +136,7 @@ export async function triggerCandidateDocBundle(
   });
   const hr = sortByMaxRolePriorityDesc(hrCandidates)[0] ?? null;
 
-  const base = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "";
+  const base = appBaseUrl();
   const portalUrl = `${base}/candidate-documents/${token}`;
 
   const docData = {
@@ -271,7 +272,7 @@ export async function sendCandidateDocReminder(
   });
   const hr = sortByMaxRolePriorityDesc(hrCandidates2)[0] ?? null;
 
-  const base = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "";
+  const base = appBaseUrl();
   const portalUrl = `${base}/candidate-documents/${token}`;
 
   const reminderLevel = ((request.reminderCount ?? 0) >= 2 ? 3 : (request.reminderCount ?? 0) === 1 ? 2 : 1) as 1 | 2 | 3;

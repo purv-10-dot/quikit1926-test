@@ -1,12 +1,11 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, notFound, validationError, forbidden, internalError } from "@/lib/api-response";
+import { successResponse, notFound, validationError, forbidden, conflict, internalError } from "@/lib/api-response";
 import { leaveApprovalActionSchema } from "@/lib/validations/leave";
 import { fireWorkflow } from "@/lib/workflows/executor";
 import { resolveAndSend } from "@/lib/email/resolve";
 import { buildLeaveDecisionEmail } from "@/lib/email-templates/leave-decision";
-import { publishNotification } from "@/lib/services/realtime";
 import {
   getActiveChainLevels,
   getCallerRoleIds,
@@ -72,12 +71,14 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
     const year = new Date(request.startDate).getFullYear();
 
     const updated = await prisma.$transaction(async (tx) => {
-      // Record the actioner on the current level's row so the audit trail shows
-      // who actually approved (may differ from the apply-time representative).
-      await tx.leaveApproval.update({
-        where: { id: current.id },
+      // Atomic level claim: only transition this level if it's STILL Pending.
+      // Two parallel approves can't both win — the loser matches 0 rows and we
+      // abort, so `taken` is incremented exactly once.
+      const claimed = await tx.leaveApproval.updateMany({
+        where: { id: current.id, status: "Pending" },
         data: { status, comment, actionAt: new Date(), approverId: userId },
       });
+      if (claimed.count === 0) throw new Error("ALREADY_ACTIONED");
 
       if (allApproved) {
         await Promise.all([
@@ -126,14 +127,24 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
     });
 
     if (updated && (updated.status === "Approved" || updated.status === "Rejected")) {
-      // Real-time notification to employee
+      // In-app notification to employee. `publishNotification` (lib/services/
+      // realtime.ts) was a Pub/Sub no-op left behind after realtime removal —
+      // this call looked wired but silently notified no one; write the row
+      // directly like every other module (Requisition, Delegation, etc.) does.
       const decision = updated.status === "Approved" ? "approved" : "rejected";
-      publishNotification(orgId, [updated.employeeId], {
-        title: `Leave ${decision}`,
-        message: `Your ${updated.leaveType?.name ?? "leave"} request has been ${decision}.`,
-        type: updated.status === "Approved" ? "Success" : "Error",
-        link: `/leaves`,
-      }).catch(() => {});
+      prisma.hrmsNotification.create({
+        data: {
+          orgId,
+          employeeId: updated.employeeId,
+          type: updated.status === "Approved" ? "Success" : "Error",
+          channel: "InApp",
+          title: `Leave ${decision}`,
+          message: `Your ${updated.leaveType?.name ?? "leave"} request has been ${decision}.`,
+          link: "/leaves",
+          entityType: "LeaveRequest",
+          entityId: updated.id,
+        },
+      }).catch((err) => console.error("[notify] leave decision in-app notify failed:", err));
 
       void fireWorkflow({
         orgId,
@@ -208,12 +219,19 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
               nextApproverIds = holders.map((h) => h.id);
             }
             if (nextApproverIds.length > 0) {
-              publishNotification(orgId, nextApproverIds, {
-                title: "Leave awaiting your approval",
-                message: `A ${updated.leaveType?.name ?? "leave"} request has advanced to your approval level.`,
-                type: "Info",
-                link: `/leaves/team-leaves`,
-              }).catch(() => {});
+              await prisma.hrmsNotification.createMany({
+                data: nextApproverIds.map((id) => ({
+                  orgId,
+                  employeeId: id,
+                  type: "Info" as const,
+                  channel: "InApp" as const,
+                  title: "Leave awaiting your approval",
+                  message: `A ${updated.leaveType?.name ?? "leave"} request has advanced to your approval level.`,
+                  link: "/leaves/team-leaves",
+                  entityType: "LeaveRequest",
+                  entityId: updated.id,
+                })),
+              });
             }
           } catch (err) {
             console.error("[notify] next-level leave approver notify failed:", err);
@@ -224,6 +242,9 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
 
     return successResponse(updated);
   } catch (error) {
+    if (error instanceof Error && error.message === "ALREADY_ACTIONED") {
+      return conflict("This approval level was just actioned by someone else.");
+    }
     console.error("POST /leaves/requests/:id/approve error:", error);
     return internalError();
   }

@@ -72,6 +72,7 @@ describe("settings route", () => {
     const body = (await (await getSettings(get())).json()) as Record<string, unknown>;
     expect(body.defaultChannelLevel).toBe("all");
     expect(body.priorityDuringDnd).toBe(true);
+    expect(body.callSoundsEnabled).toBe(true); // calls ring out of the box
   });
 
   it("PATCH updates allow-listed fields", async () => {
@@ -79,6 +80,30 @@ describe("settings route", () => {
     const body = (await res.json()) as { dmsLevel: string; desktopEnabled: boolean };
     expect(body.dmsLevel).toBe("mentions");
     expect(body.desktopEnabled).toBe(false);
+  });
+
+  // Regression: callSoundsEnabled reached the DB column, the DTO and the
+  // service allow-list but was missing its line in the route's per-field chain,
+  // so the PATCH 200'd and persisted nothing. Round-trips against the real DB
+  // here; settings/route.test.ts covers the input gate without one.
+  it("PATCH persists callSoundsEnabled:false and GET reads it back", async () => {
+    const patched = (await (
+      await patchSettings(send("PATCH", { callSoundsEnabled: false }))
+    ).json()) as { callSoundsEnabled: boolean };
+    expect(patched.callSoundsEnabled).toBe(false);
+
+    const reread = (await (await getSettings(get())).json()) as { callSoundsEnabled: boolean };
+    expect(reread.callSoundsEnabled).toBe(false);
+  });
+
+  it("PATCH callSoundsEnabled does not disturb soundEnabled (independent toggles)", async () => {
+    await patchSettings(send("PATCH", { soundEnabled: true, callSoundsEnabled: false }));
+    const body = (await (await getSettings(get())).json()) as {
+      soundEnabled: boolean;
+      callSoundsEnabled: boolean;
+    };
+    expect(body.soundEnabled).toBe(true);
+    expect(body.callSoundsEnabled).toBe(false);
   });
 });
 

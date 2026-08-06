@@ -38,6 +38,9 @@ export const updateIssueSchema = createIssueSchema
     // Nullable so the start/due date can be cleared from the details panel.
     startDate: z.string().datetime().nullable().optional(),
     dueDate: z.string().datetime().nullable().optional(),
+    // Nullable so the story-point estimate / ETA can be cleared (badge emptied).
+    storyPoints: z.number().int().min(0).max(1000).nullable().optional(),
+    eta: z.number().min(0).max(10_000).nullable().optional(),
     customFields: z.record(z.unknown()).optional(),
   });
 

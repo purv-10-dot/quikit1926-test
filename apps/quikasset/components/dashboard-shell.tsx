@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ThemeApplier } from "@quikit/ui/theme-applier";
+import { SupportLauncher } from "@quikit/ui/support";
 import { Sidebar } from "@/components/sidebar";
 import { Topbar } from "@/components/topbar";
 
@@ -45,6 +46,10 @@ export function DashboardShell({
           <main className="flex-1 overflow-y-auto">{children}</main>
         </div>
       </div>
+
+      {/* Floating support launcher — outside the scroll containers above so it
+          stays pinned to the viewport on every dashboard route. */}
+      <SupportLauncher appSlug="quikasset" />
     </>
   );
 }

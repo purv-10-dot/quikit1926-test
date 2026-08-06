@@ -5,6 +5,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { read, utils } from "xlsx";
 import { Upload, CheckCircle, XCircle, AlertTriangle, Download, ArrowRight, Building2 } from "lucide-react";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface BankRow {
   employeeCode: string;
@@ -136,6 +137,8 @@ export default function BulkBankImportPage() {
 
   return (
     <div className="max-w-5xl">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center gap-3 mb-4">
         <Building2 className="text-[#22c55e]" />
         <h1 className="text-base font-semibold text-gray-900">

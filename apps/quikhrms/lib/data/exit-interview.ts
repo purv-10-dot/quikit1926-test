@@ -20,5 +20,3 @@ export const EXIT_INTERVIEW_QUESTIONS: ExitInterviewQuestion[] = [
   { key: "companyDifferently", label: "Is there anything the company could have done differently to change your decision?", type: "textarea" },
   { key: "additionalComments", label: "Additional comments", type: "textarea" },
 ];
-
-export type ExitInterviewResponse = Record<string, string> & { signatureName?: string; submittedAt?: string };

@@ -4,6 +4,7 @@ import { withAuth } from "@/lib/with-auth";
 import { successResponse, internalError } from "@/lib/api-response";
 import { getCached, cacheKeys } from "@/lib/services/cache";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
+import { getTodayAvailability, canSeeSensitiveAvailability } from "@/lib/services/availability";
 
 /**
  * GET /api/v1/hrms/dashboard/batch
@@ -24,26 +25,12 @@ import { resolveEmployeeId } from "@/lib/resolve-employee";
  * Celebration/dashboard data is read straight from Postgres, never cached.
  */
 
-interface AvailabilityRow {
-  category: "Sick" | "Parental" | "WFH" | "Holiday";
-  label: string;
-  count: number;
-  avatars: { id: string; firstName: string; lastName: string; profilePhoto: string | null }[];
-}
-
-function classifyLeave(name: string, code: string): AvailabilityRow["category"] {
-  const s = `${name} ${code}`.toLowerCase();
-  if (/sick|medical/.test(s)) return "Sick";
-  if (/parent|matern|patern|child/.test(s)) return "Parental";
-  return "Holiday";
-}
-
-export const GET = withAuth(async (_req: NextRequest, { orgId, userId }) => {
+export const GET = withAuth(async (_req: NextRequest, ctx) => {
   try {
+    const { orgId, userId } = ctx;
+    const canSeeSensitive = canSeeSensitiveAvailability(ctx.permissions);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const todayEnd = new Date(today);
-    todayEnd.setHours(23, 59, 59, 999);
     const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
     const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59);
     const yearEnd = new Date(today.getFullYear() + 1, today.getMonth(), today.getDate());
@@ -54,8 +41,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId }) => {
       celebrationEmployees,
       holidayRows,
       monthHolidayRows,
-      leaves,
-      wfh,
+      availability,
       openReqs,
       attendance,
     ] = await Promise.all([
@@ -82,6 +68,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId }) => {
       //    Birthdays + anniversaries are derived from this single scan.
       prisma.employee.findMany({
         where: { orgId, deletedAt: null, status: "Active" },
+        take: 5000,
         select: {
           id: true, firstName: true, lastName: true, profilePhoto: true,
           jobTitle: true, dateOfBirth: true, dateOfJoining: true,
@@ -103,28 +90,9 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId }) => {
         select: { id: true, name: true, date: true, type: true },
       }),
 
-      // 6. Approved leaves overlapping today — availability.
-      prisma.leaveRequest.findMany({
-        where: {
-          orgId, deletedAt: null, status: "Approved",
-          startDate: { lte: todayEnd }, endDate: { gte: today },
-        },
-        select: {
-          leaveType: { select: { name: true, code: true } },
-          employee: { select: { id: true, firstName: true, lastName: true, profilePhoto: true } },
-        },
-      }),
-
-      // 7. Approved WFH overlapping today — availability.
-      prisma.wfhRequest.findMany({
-        where: {
-          orgId, deletedAt: null, status: "Approved",
-          startDate: { lte: todayEnd }, endDate: { gte: today },
-        },
-        select: {
-          employee: { select: { id: true, firstName: true, lastName: true, profilePhoto: true } },
-        },
-      }),
+      // 6+7. Today's availability (approved leave + WFH). Sick/Parental identities
+      //      are anonymized for non-HR callers by the shared service.
+      getTodayAvailability(orgId, canSeeSensitive),
 
       // 8. Open requisitions — open-positions total + first cards.
       prisma.jobRequisition.findMany({
@@ -210,29 +178,6 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId }) => {
     const todayKey = today.toDateString();
     const eventsToday = upcoming.filter((h) => new Date(h.date).toDateString() === todayKey).length;
 
-    // ── Availability: bucket today's approved leaves + WFH ──
-    const buckets = new Map<AvailabilityRow["category"], AvailabilityRow["avatars"]>();
-    for (const cat of ["Sick", "Parental", "Holiday", "WFH"] as const) buckets.set(cat, []);
-    for (const r of leaves) {
-      const cat = classifyLeave(r.leaveType?.name ?? "", r.leaveType?.code ?? "");
-      if (r.employee) buckets.get(cat)!.push(r.employee);
-    }
-    for (const w of wfh) {
-      if (w.employee) buckets.get("WFH")!.push(w.employee);
-    }
-    const availabilityLabels: Record<AvailabilityRow["category"], string> = {
-      Sick: "Sick leave",
-      Parental: "Parental leave",
-      WFH: "Work from home (WFH)",
-      Holiday: "On holiday",
-    };
-    const availability: AvailabilityRow[] = (["Sick", "Parental", "WFH", "Holiday"] as const)
-      .map((cat) => {
-        const list = buckets.get(cat) ?? [];
-        return { category: cat, label: availabilityLabels[cat], count: list.length, avatars: list };
-      })
-      .filter((r) => r.count > 0);
-
     // ── Job openings: total open positions + first 6 cards ──
     const totalOpen = openReqs.reduce((s, o) => s + Math.max(0, o.positions - o.filledPositions), 0);
     const jobOpenings = { totalOpen, items: openReqs.slice(0, 6) };
@@ -253,4 +198,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId }) => {
     console.error("GET /dashboard/batch error:", error);
     return internalError();
   }
+}, {
+  // Fires on every home-page load and fans out to several scans — throttle per user.
+  rateLimit: { max: 30, windowSec: 60, by: "user" },
 });

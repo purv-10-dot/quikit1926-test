@@ -79,10 +79,15 @@ const inlineBox = "flex flex-wrap items-center gap-2 text-[13px] text-gray-700 b
 const numCls = "w-20 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-center font-semibold";
 
 // ── Wizard ──────────────────────────────────────────────────────────────────
-export function LeaveRulesWizard({ leaveType, allTypes, onClose }: {
+export function LeaveRulesWizard({ leaveType, allTypes, onClose, onSave }: {
   leaveType: LeaveTypeRules;
   allTypes: { id: string; name: string; code: string }[];
   onClose: () => void;
+  /**
+   * When provided, the wizard hands back the rule payload instead of PATCHing the
+   * LeaveType — used when configuring per-group rules (saved onto the group item).
+   */
+  onSave?: (payload: Record<string, unknown>) => void | Promise<void>;
 }) {
   const api = useApiClient();
   const qc = useQueryClient();
@@ -162,8 +167,11 @@ export function LeaveRulesWizard({ leaveType, allTypes, onClose }: {
   }), [f]);
 
   const saveMut = useMutation({
-    mutationFn: () => api.patch(`/api/v1/hrms/leaves/types/${leaveType.id}`, payload),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["leave-types"] }); toast.success("Leave rules saved"); onClose(); },
+    mutationFn: async () => {
+      if (onSave) { await onSave(payload); return; }
+      await api.patch(`/api/v1/hrms/leaves/types/${leaveType.id}`, payload);
+    },
+    onSuccess: () => { if (!onSave) qc.invalidateQueries({ queryKey: ["leave-types"] }); toast.success("Leave rules saved"); onClose(); },
     onError: () => toast.error("Couldn't save rules"),
   });
 
@@ -197,7 +205,7 @@ export function LeaveRulesWizard({ leaveType, allTypes, onClose }: {
         })}
       </div>
 
-      <div className="border-t border-gray-100 pt-3 max-h-[calc(100dvh-250px)] overflow-y-auto pr-0.5">
+      <div className="border-t border-gray-100 pt-3 min-h-[380px] max-h-[calc(100dvh-250px)] overflow-y-auto pr-0.5">
         {/* ── Step 1 ── */}
         {step === 0 && (
           <div className="space-y-4">

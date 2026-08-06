@@ -39,7 +39,7 @@ import {
   CalendarDays,
   LayoutList,
 } from "lucide-react";
-import { PageHeader, PageContainer } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer } from "@/components/PageShell";
 import { Pager } from "@/components/Pager";
 import { FilterPopoverButton } from "@/components/FilterPopoverButton";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -59,6 +59,7 @@ interface DprRow {
   workHalted?: boolean;
   dprNumber?: string;
   projectName?: string;
+  projectId?: string;
   reportDate?: string;
   canActOnCurrentStep?: boolean;
   workItemCount?: number;
@@ -124,6 +125,15 @@ export default function DPRPage() {
 
   // Projects for the Filter popover's project dropdown.
   const { data: projectsResult } = useProjects();
+  const freeScopeProjectIds = useMemo(
+    () =>
+      new Set(
+        ((projectsResult?.data ?? []) as Array<{ id: string; executionMode?: string }>)
+          .filter((p) => p.executionMode === "FREE_SCOPE")
+          .map((p) => p.id),
+      ),
+    [projectsResult],
+  );
   const projectOptions = useMemo(
     () => (projectsResult?.data ?? []) as Array<{ id: string; name?: string }>,
     [projectsResult],
@@ -245,6 +255,7 @@ export default function DPRPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Daily Progress Report (DPR)"
         subtitle="Track daily site activities, material consumption, and labor"
@@ -265,7 +276,7 @@ export default function DPRPage() {
         }
       />
 
-      <PageContainer>
+      <PageContainer fill>
         {/* ── KPI cards ── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
           <KPICard
@@ -295,8 +306,8 @@ export default function DPRPage() {
         </div>
 
         {/* ── Action strip + table ── */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-soft overflow-hidden">
-          <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
+        <div className="flex min-h-0 flex-1 flex-col bg-white rounded-2xl border border-slate-200 shadow-soft overflow-hidden">
+          <div className="shrink-0 flex items-center gap-3 px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
             <div className="flex items-center gap-2 flex-1 max-w-sm">
               <div className="relative w-full">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -401,7 +412,7 @@ export default function DPRPage() {
               }}
             />
           ) : (
-          <div className="overflow-x-auto">
+          <div className="min-h-0 flex-1 overflow-auto">
             <table className="w-full">
               <thead className="bg-gradient-to-b from-slate-50 to-slate-100/70 border-b border-slate-200">
                 <tr className="text-[11px] uppercase font-bold text-slate-600 tracking-wider">
@@ -438,6 +449,7 @@ export default function DPRPage() {
                     <DPRRow
                       key={row.id}
                       row={row}
+                      isFreeScope={freeScopeProjectIds.has(String(row.projectId ?? ""))}
                       canEdit={canEdit}
                       canDelete={canDelete}
                       canSubmit={canSubmit}
@@ -455,17 +467,19 @@ export default function DPRPage() {
             </table>
           </div>
           )}
+          {!isCalendar && total > 0 && (
+            <Pager
+              variant="footer"
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
+          )}
         </div>
-        {!isCalendar && total > 0 && (
-          <Pager
-            page={page}
-            pageSize={pageSize}
-            total={total}
-            onPageChange={setPage}
-            onPageSizeChange={setPageSize}
-          />
-        )}
       </PageContainer>
+      </PageFrame>
 
       <ConfirmDialog
         open={!!deleteTarget}
@@ -887,6 +901,7 @@ function KPICard({
 
 function DPRRow({
   row,
+  isFreeScope,
   canEdit,
   canDelete,
   canSubmit,
@@ -899,6 +914,7 @@ function DPRRow({
   onReject,
 }: {
   row: DprRow;
+  isFreeScope?: boolean;
   canEdit: boolean;
   canDelete: boolean;
   canSubmit: boolean;
@@ -955,7 +971,12 @@ function DPRRow({
       <td className="px-4 py-3">
         <div className="flex items-center gap-2 text-sm text-slate-900">
           <Building2 className="w-3.5 h-3.5 text-slate-400" />
-          <span className="font-medium">{row.projectName ?? "—"}</span>
+          <span className="font-medium truncate">{row.projectName ?? "—"}</span>
+          {isFreeScope && (
+            <span className="shrink-0 whitespace-nowrap rounded bg-accent-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-accent-700 border border-accent-200">
+              Free-Scope
+            </span>
+          )}
         </div>
         {row.workHalted && (
           <div className="mt-1">

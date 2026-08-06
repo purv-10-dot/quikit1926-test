@@ -4,6 +4,7 @@ import type { LucideIcon } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Sparkles, Megaphone, Trophy, Users, MessageSquare } from "lucide-react";
+import { PageBackground } from "@/components/hrms/page-background";
 import { ShoutoutComposer } from "../../dashboard/_home/shoutout-composer";
 import { SocialFeed } from "../../dashboard/_home/social-feed";
 
@@ -50,6 +51,8 @@ export default function SocialWallPage() {
 
   return (
     <div>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       {/* Hero header */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#0F1F3D] via-[#14532d] to-[#16a34a] mb-4">
         <svg className="absolute inset-0 w-full h-full opacity-40" viewBox="0 0 1200 200" preserveAspectRatio="none">

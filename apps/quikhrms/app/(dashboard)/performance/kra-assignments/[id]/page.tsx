@@ -9,6 +9,7 @@ import { useDialog } from "@/components/hrms/dialog";
 import { Save, Briefcase, Building2, Calendar, CheckCircle2, XCircle, AlertCircle, Target, ChevronDown, MessageSquare } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonLine } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface SnapshotKpi {
   id: string;
@@ -170,6 +171,8 @@ export default function KraAssignmentDetailPage() {
 
   return (
     <div className="w-full max-w-5xl mx-auto pb-28">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       {/* Simple header — Who · What · Score */}
       <div className="rounded-2xl bg-white ring-1 ring-gray-200 px-4 py-4 flex items-center gap-4 mb-5">
         {a.employee?.profilePhoto ? (

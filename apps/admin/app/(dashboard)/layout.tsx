@@ -5,6 +5,7 @@ import Sidebar from "@/components/dashboard/sidebar";
 import Header from "@/components/dashboard/header";
 import { SessionGuard } from "@/components/session-guard";
 import { FeatureDisabledToast } from "@quikit/ui";
+import { SupportLauncher } from "@quikit/ui/support";
 
 export default async function DashboardLayout({
   children,
@@ -31,6 +32,9 @@ export default async function DashboardLayout({
         </div>
         <FeatureDisabledToast />
       </div>
+      {/* Floating support launcher — outside the overflow-hidden shell above so
+          it stays pinned to the viewport rather than being clipped. */}
+      <SupportLauncher appSlug="admin" />
     </SessionGuard>
   );
 }

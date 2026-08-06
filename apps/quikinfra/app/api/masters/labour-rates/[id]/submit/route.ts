@@ -9,7 +9,7 @@ export async function POST(
   _req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const ctxOrResp = await requireMastersAction("edit");
+  const ctxOrResp = await requireMastersAction("construction.master_labour", "edit");
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
   try {

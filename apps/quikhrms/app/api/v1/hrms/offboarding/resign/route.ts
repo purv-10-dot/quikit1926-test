@@ -7,6 +7,13 @@ import { fireWorkflow } from "@/lib/workflows/executor";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { resolveAndSend } from "@/lib/email/resolve";
 import { buildResignationNoticeEmail } from "@/lib/email-templates/resignation-notice";
+import { resolveApprovalChainLevels } from "@/lib/services/approval-chain";
+import { whereEmployeeHasAnyRole } from "@/lib/rbac/queries";
+
+/** Convert a linked notice period to whole days (same math as the forms). */
+function periodToDays(p: { duration: number; unit: string }): number {
+  return p.unit === "Months" ? p.duration * 30 : p.unit === "Weeks" ? p.duration * 7 : p.duration;
+}
 
 /**
  * POST /api/v1/hrms/offboarding/resign
@@ -27,6 +34,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         id: true, firstName: true, lastName: true, status: true, noticePeriodDays: true,
         employeeCode: true, jobTitle: true, reportingManagerId: true,
         department: { select: { name: true } },
+        noticePeriodRef: { select: { duration: true, unit: true } },
       },
     });
     if (!employee) return notFound("Employee record not found");
@@ -50,7 +58,11 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     const userNotes = body.notes ? String(body.notes).trim() : null;
 
     const resignationDate = new Date();
-    const noticeDays = Math.max(0, employee.noticePeriodDays ?? 0);
+    // Prefer the linked notice period (single source of truth) so editing a
+    // period updates the calculation everywhere; fall back to the cached number.
+    const noticeDays = Math.max(0, employee.noticePeriodRef
+      ? periodToDays(employee.noticePeriodRef)
+      : (employee.noticePeriodDays ?? 0));
     const defaultLwd = new Date(resignationDate);
     defaultLwd.setDate(defaultLwd.getDate() + noticeDays);
 
@@ -70,11 +82,23 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       `Submitted by employee via self-service.`,
     ].filter(Boolean).join("\n");
 
-    // Approval routing: the employee's direct reporting manager approves. If
-    // there's no manager, there's nobody to approve → auto-approve so behaviour
-    // matches the pre-approval flow.
-    const approverId = employee.reportingManagerId ?? null;
-    const approvalStatus = approverId ? "Pending" : "Approved";
+    // Approval routing: use the configured Offboarding approval chain
+    // (Settings → Approval Chains) — level 1 is the first approver. If no chain
+    // is configured, fall back to the employee's direct reporting manager, then
+    // to an org admin. A resignation is NEVER silently self-approved — it always
+    // stays Pending until someone with authority decides it.
+    let approverId: string | null = null;
+    const chain = await resolveApprovalChainLevels(orgId, "Offboarding", employeeId);
+    if (chain.ok) approverId = chain.levels[0]?.approverId ?? null;
+    if (!approverId) approverId = employee.reportingManagerId ?? null;
+    if (!approverId) {
+      const admin = await prisma.employee.findFirst({
+        where: { orgId, deletedAt: null, status: "Active", id: { not: employeeId }, ...whereEmployeeHasAnyRole(["admin"]) },
+        select: { id: true },
+      });
+      approverId = admin?.id ?? null;
+    }
+    const approvalStatus = "Pending";
 
     const resignData = {
       resignationDate,
@@ -131,7 +155,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     });
 
     // Walk up reporting chain → notify each manager
-    const chain: { id: string; firstName: string; lastName: string; workEmail: string | null }[] = [];
+    const mgrChain: { id: string; firstName: string; lastName: string; workEmail: string | null }[] = [];
     let cursorId: string | null = employee.reportingManagerId;
     const seen = new Set<string>([employee.id]);
     let safety = 12;
@@ -142,7 +166,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         select: { id: true, firstName: true, lastName: true, workEmail: true, reportingManagerId: true },
       });
       if (!mgr) break;
-      chain.push({ id: mgr.id, firstName: mgr.firstName, lastName: mgr.lastName, workEmail: mgr.workEmail });
+      mgrChain.push({ id: mgr.id, firstName: mgr.firstName, lastName: mgr.lastName, workEmail: mgr.workEmail });
       cursorId = mgr.reportingManagerId;
     }
 
@@ -153,7 +177,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     const resignStr = resignationDate.toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" });
 
     const mailStatus: { to: string; sent: boolean; error?: string }[] = [];
-    void Promise.all(chain.map(async (mgr, idx) => {
+    void Promise.all(mgrChain.map(async (mgr, idx) => {
       if (!mgr.workEmail) {
         mailStatus.push({ to: `${mgr.firstName} ${mgr.lastName}`, sent: false, error: "workEmail missing" });
         return;
@@ -199,7 +223,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       instance,
       employee: { id: employee.id, name: employeeName },
       noticePeriodDays: noticeDays,
-      notifiedManagers: chain.map((c) => ({ id: c.id, name: `${c.firstName} ${c.lastName}`, email: c.workEmail })),
+      notifiedManagers: mgrChain.map((c) => ({ id: c.id, name: `${c.firstName} ${c.lastName}`, email: c.workEmail })),
     }, undefined, 201);
   } catch (error) {
     console.error("POST /offboarding/resign error:", error);

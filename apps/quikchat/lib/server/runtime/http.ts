@@ -13,7 +13,18 @@ import type { IngestResult } from "@/lib/shared";
 import { IngestError } from "./types";
 import type { AssistInput, IngestInput, RuntimeClient, RuntimeEvent } from "./types";
 
-const REQUEST_TIMEOUT_MS = 60_000; // Render free-tier cold starts can add 30–50s.
+// Time-to-first-response guard: covers connection + response headers (Render
+// free-tier cold starts can add 30–50s). Retired the moment the stream is open.
+const CONNECT_TIMEOUT_MS = 60_000;
+// Per-chunk idle guard for the SSE read loop: reset on every read, so a
+// long-but-progressing generation streams freely and only a genuinely silent
+// (hung / no-first-byte) runtime aborts.
+const IDLE_TIMEOUT_MS = 60_000;
+// Ingest is a single request/response — the runtime does extract+embed
+// server-side BEFORE replying, so the whole cost is time-to-response and there's
+// no stream to idle-monitor. A large doc can legitimately exceed 60s, so give it
+// a generous single-shot budget rather than an idle window.
+const INGEST_TIMEOUT_MS = 180_000;
 
 export class HttpRuntimeClient implements RuntimeClient {
   constructor(private readonly baseUrl: string) {}
@@ -45,7 +56,9 @@ export class HttpRuntimeClient implements RuntimeClient {
     });
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    // Guards connection + headers only. Cleared once the stream is open (below)
+    // so a long-but-live generation isn't killed by a total-time cap.
+    const connectTimer = setTimeout(() => controller.abort(), CONNECT_TIMEOUT_MS);
 
     let res: Response;
     try {
@@ -61,7 +74,7 @@ export class HttpRuntimeClient implements RuntimeClient {
         signal: controller.signal,
       });
     } catch (e) {
-      clearTimeout(timer);
+      clearTimeout(connectTimer);
       yield {
         type: "error",
         message: e instanceof Error ? e.message : "runtime request failed",
@@ -71,22 +84,34 @@ export class HttpRuntimeClient implements RuntimeClient {
     }
 
     if (!res.ok) {
-      clearTimeout(timer);
+      clearTimeout(connectTimer);
       yield { type: "error", message: `runtime responded ${res.status}`, code: String(res.status) };
       return;
     }
     if (!res.body) {
-      clearTimeout(timer);
+      clearTimeout(connectTimer);
       yield { type: "error", message: "runtime returned no stream", code: "no_body" };
       return;
     }
+
+    // Stream confirmed open — the cold-start/connect guard has done its job.
+    // Clear it here (synchronously, before getReader() — no await in between, so
+    // a hung body can never sit unguarded) and hand off to the per-chunk idle
+    // timer below. After this point only the idle timer can abort, so a
+    // mid-stream abort is unambiguously an idle stall → code:"stream".
+    clearTimeout(connectTimer);
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
     try {
       for (;;) {
-        const { value, done } = await reader.read();
+        // Arm a fresh idle window before EVERY read (first included), and clear
+        // it the instant the read settles — resolve OR reject. `.finally` clears
+        // on abort too, so the rejection still propagates to the catch below and
+        // maps to code:"stream" (mapping unchanged).
+        const idleTimer = setTimeout(() => controller.abort(), IDLE_TIMEOUT_MS);
+        const { value, done } = await reader.read().finally(() => clearTimeout(idleTimer));
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
         let sep: number;
@@ -109,7 +134,6 @@ export class HttpRuntimeClient implements RuntimeClient {
         code: "stream",
       };
     } finally {
-      clearTimeout(timer);
       reader.releaseLock();
     }
   }
@@ -136,7 +160,7 @@ export class HttpRuntimeClient implements RuntimeClient {
     });
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), INGEST_TIMEOUT_MS);
 
     let res: Response;
     try {

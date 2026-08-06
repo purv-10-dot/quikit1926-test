@@ -4,6 +4,7 @@ import { resolveAndSend } from "@/lib/email/resolve";
 import { generateFeedbackToken } from "@/lib/services/feedback-token";
 import { buildInterviewFeedbackRequestEmail } from "@/lib/email-templates/interview-feedback-request";
 import { stageNames } from "@/lib/services/pipeline-stages";
+import { appBaseUrl } from "@/lib/utils/app-url";
 
 /**
  * POST /api/v1/hrms/cron/interview-feedback-trigger
@@ -21,7 +22,7 @@ export async function POST(req: NextRequest) {
   if (header !== secret) return NextResponse.json({ success: false, error: "unauthorized" }, { status: 401 });
 
   const now = new Date();
-  const base = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "";
+  const base = appBaseUrl();
   const candidates = await prisma.interview.findMany({
     where: {
       deletedAt: null,

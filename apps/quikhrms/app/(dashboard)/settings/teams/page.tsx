@@ -6,6 +6,8 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { CrudTable, type Column } from "@/components/hrms/crud-table";
 import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/ui/select";
+import { PageBackground } from "@/components/hrms/page-background";
+import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 
 interface TeamItem {
   id: string;
@@ -19,7 +21,11 @@ interface TeamItem {
 export default function TeamsPage() {
   const api = useApiClient();
   const qc = useQueryClient();
+  const { hasPermission } = useDashboardConfig();
+  const canManage = hasPermission("hrms.org.write");
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [modal, setModal] = useState<{ open: boolean; item: TeamItem | null }>({ open: false, item: null });
   const [form, setForm] = useState({ name: "", departmentId: "", description: "" });
 
@@ -65,9 +71,13 @@ export default function TeamsPage() {
 
   return (
     <>
-      <CrudTable title="Teams" data={data?.data ?? []} columns={columns} isLoading={isLoading}
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
+      <CrudTable title="Teams" data={(data?.data ?? []).slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)} columns={columns} isLoading={isLoading}
         onAdd={openAdd} onEdit={openEdit} onDelete={(id) => deleteMut.mutate(id)}
-        search={search} onSearchChange={setSearch} searchPlaceholder="Search teams..." />
+        search={search} onSearchChange={(v) => { setSearch(v); setPage(1); }} searchPlaceholder="Search teams..."
+        pagination={{ page, totalPages: Math.max(1, Math.ceil((data?.data ?? []).length / PAGE_SIZE)), total: (data?.data ?? []).length, limit: PAGE_SIZE, onPageChange: setPage }}
+        canManage={canManage} />
 
       <Modal open={modal.open} onClose={() => setModal({ open: false, item: null })} title={modal.item ? "Edit Team" : "Add Team"}>
         <form onSubmit={handleSubmit} className="space-y-4">

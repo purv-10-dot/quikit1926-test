@@ -13,7 +13,8 @@
  */
 
 import nodemailer, { type Transporter } from "nodemailer";
-import { requireProdEnv } from "@quikit/shared";
+import { requireProdEnv, renderWelcomeEmail } from "@quikit/shared";
+import { buildLoginUrl } from "@quikit/shared/login-url";
 
 let _smtpTransporter: Transporter | null = null;
 let _smtpResolved = false;
@@ -240,6 +241,30 @@ export async function sendPasswordResetInviteEmail(params: {
         params.to,
         "— SMTP/Resend not configured; check the OrgMember.invitationToken to construct the link manually",
       ),
+  );
+}
+
+/**
+ * Welcome / trial-started email, sent when self-serve registration is fully
+ * complete — i.e. the user clicked Continue or Skip for now on the "A few quick
+ * details" onboarding screen. Text-only content comes from the shared renderer
+ * so apps/quikit's super-admin path sends a byte-identical email.
+ *
+ * Uses the same `deliver()` transport as every other email in this app; no
+ * separate mail configuration.
+ */
+export async function sendWelcomeEmail(params: {
+  to: string;
+  firstName: string;
+}): Promise<void> {
+  // Same builder the Login / Sign In buttons across every app use
+  // (`NEXT_PUBLIC_AUTH_URL` + /login). No new env var, no hardcoded host.
+  const { subject, html } = renderWelcomeEmail({
+    firstName: params.firstName,
+    loginUrl: buildLoginUrl(),
+  });
+  await deliver({ to: params.to, subject, html }, () =>
+    console.log("[auth-email] welcome email for", params.to, "— SMTP/Resend not configured"),
   );
 }
 

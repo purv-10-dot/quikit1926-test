@@ -16,6 +16,15 @@ import {
 } from "./period";
 import { formatINRLong, formatCompactCurrency, formatINR } from "./currency";
 import { resolveOwnerScope, spreadOwnerFilter } from "./owner-scope";
+import { activityWindow, countActivitiesForUser } from "./activity-target-count";
+import { computeAttainment } from "./activity-target-status";
+import {
+  getActivityTargetConfig,
+  isTargetAssigned,
+  resolveDailyTarget,
+  resolveWeeklyTarget,
+} from "@/lib/services/workspace/activity-target-config";
+import type { SalespersonActivityTarget } from "@/lib/dashboard/salesperson-detail-types";
 
 function classifyActivity(type: string, code: string | null) {
   const t = `${type} ${code ?? ""}`.toLowerCase();
@@ -141,6 +150,42 @@ async function computeAvgResponseTime(
 
   if (diffs.length === 0) return null;
   return Math.round(diffs.reduce((s, d) => s + d, 0) / diffs.length);
+}
+
+/**
+ * Activity-target attainment for this salesperson. Reuses the EXACT services
+ * the admin tracker uses — config resolution, the 3-source count, and the
+ * green/yellow/red thresholds — so the numbers are identical to the tracker for
+ * the same user + tz. Uses TODAY + THIS WEEK (not the detail page's date range),
+ * matching the tracker's window. Returns null on any failure so the rest of the
+ * detail page is never affected.
+ */
+async function buildActivityTarget(
+  orgId: string,
+  userId: string,
+  tz: string,
+): Promise<SalespersonActivityTarget | null> {
+  try {
+    const config = await getActivityTargetConfig(orgId);
+    // Opt-in: no block for users without an assigned target.
+    if (!isTargetAssigned(config, userId)) return null;
+
+    const counts = await countActivitiesForUser(orgId, userId, activityWindow(tz));
+    const dailyTarget = resolveDailyTarget(config, userId);
+    const weeklyTarget = resolveWeeklyTarget(config, userId);
+    const daily = computeAttainment(dailyTarget, counts.today);
+    return {
+      dailyTarget,
+      todayActivities: daily.actual,
+      remaining: daily.remaining,
+      completionPct: daily.completionPct,
+      weeklyTarget,
+      weeklyActivities: counts.week,
+      status: daily.status,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function getSalespersonDetail(
@@ -552,6 +597,9 @@ export async function getSalespersonDetail(
     leadCreatedMap,
   );
 
+  // ── Activity target attainment (shared with the admin tracker) ─────────────
+  const activityTarget = await buildActivityTarget(orgId, userId, range.tz);
+
   return {
     userId,
     userName,
@@ -586,6 +634,7 @@ export async function getSalespersonDetail(
       avgResponseTimeMins,
       overdueTasksCount,
     },
+    activityTarget,
     prevKpis: {
       leadsCreated: prevLeadsCreated,
       leadsConverted: prevConvertedLeads,

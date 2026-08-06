@@ -15,7 +15,7 @@
  * `{{companyName}}` is available in every event and is appended automatically.
  */
 
-export interface EmailVar {
+interface EmailVar {
   name: string;
   description: string;
   example: string;
@@ -51,6 +51,8 @@ const INTERVIEW_ROWS: EmailVar[] = [
 export const GROUPS = [
   "Leave",
   "WFH",
+  "Attendance",
+  "Expense",
   "Payroll",
   "Recruitment",
   "Onboarding",
@@ -108,6 +110,55 @@ const EVENTS: EmailEvent[] = [
     ],
   })),
 
+  // ── Attendance ─────────────────────────────────────────────────────────
+  {
+    key: "attendance.regularization-request", label: "Regularization Request → Approver", group: "Attendance",
+    variables: [
+      v("recipientName", "Approver's name", "Anita Rao"),
+      EMP_NAME, EMP_CODE,
+      v("date", "Attendance date", "15 Jul 2026"),
+      v("reason", "Employee's reason", "Forgot to check out"),
+      v("reviewUrl", "Link to review", "https://…"),
+    ],
+  },
+  {
+    key: "attendance.regularization-decision", label: "Regularization Approved / Rejected → Employee", group: "Attendance",
+    variables: [
+      EMP_NAME,
+      v("date", "Attendance date", "15 Jul 2026"),
+      v("approverName", "Approver's name", "Anita Rao"),
+      v("comment", "Approver's note", "Approved."),
+      v("decision", "Approved or Rejected", "Approved"),
+    ],
+  },
+
+  // ── Expense ────────────────────────────────────────────────────────────
+  {
+    key: "expense.approval-request", label: "Expense Claim → Approver", group: "Expense",
+    variables: [
+      v("recipientName", "Approver's name", "Anita Rao"),
+      EMP_NAME, EMP_CODE,
+      v("title", "Claim title", "Client visit — Mumbai"),
+      v("category", "Expense category", "Travel"),
+      v("totalAmount", "Claim amount", "₹4,500"),
+      v("currency", "Currency", "INR"),
+      v("level", "Approval level", "1"),
+      v("reviewUrl", "Link to review", "https://…"),
+    ],
+  },
+  {
+    key: "expense.decision", label: "Expense Claim Approved / Rejected → Employee", group: "Expense",
+    variables: [
+      EMP_NAME,
+      v("title", "Claim title", "Client visit — Mumbai"),
+      v("totalAmount", "Claim amount", "₹4,500"),
+      v("currency", "Currency", "INR"),
+      v("approverName", "Approver's name", "Anita Rao"),
+      v("comment", "Approver's note", "Approved."),
+      v("decision", "Approved or Rejected", "Approved"),
+    ],
+  },
+
   // ── Payroll ──────────────────────────────────────────────────────────────
   {
     key: "payslip.release", label: "Payslip Released", group: "Payroll",
@@ -119,6 +170,16 @@ const EVENTS: EmailEvent[] = [
       v("totalDeductions", "Total deductions", "₹18,000"),
       v("netPay", "Net pay", "₹1,02,000"),
       v("payslipUrl", "Link to payslip", "https://…"),
+    ],
+  },
+
+  {
+    key: "payroll.reset-otp", label: "Payroll Reset — OTP Verification", group: "Payroll",
+    variables: [
+      v("recipientName", "Recipient's name", "Anita Rao"),
+      v("otpCode", "One-time verification code", "4821"),
+      v("expiresInMinutes", "Code validity window in minutes", "10"),
+      v("requestedByName", "Name of the admin who initiated the reset", "Rohit Sharma"),
     ],
   },
 
@@ -283,22 +344,6 @@ const EVENTS: EmailEvent[] = [
     ],
   },
   {
-    key: "recruit.joining-letter", label: "Joining Letter → Candidate", group: "Recruitment",
-    variables: [
-      CANDIDATE, JOB_TITLE, EMP_CODE,
-      v("designation", "Designation", "Senior Engineer"),
-      v("offeredCTC", "Offered CTC", "₹18,00,000"),
-      v("joiningDate", "Joining date", "1 Aug 2026"),
-      v("department", "Department", "Engineering"),
-      v("reportingTo", "Reporting manager", "Anita Rao"),
-      v("workLocation", "Work location", "Indore"),
-      v("companyAddress", "Company address", "Indore"),
-      v("signatoryName", "Signatory name", "Anita Rao"),
-      v("signatoryDesignation", "Signatory designation", "Head HR"),
-      v("letterDate", "Letter date", "10 Jul 2026"),
-    ],
-  },
-  {
     key: "recruit.rejection", label: "Application Rejected → Candidate", group: "Recruitment",
     variables: [
       CANDIDATE, JOB_TITLE,
@@ -317,6 +362,30 @@ const EVENTS: EmailEvent[] = [
   {
     key: "recruit.reconfirm", label: "Still Interested? (restored from hold) → Candidate", group: "Recruitment",
     variables: [CANDIDATE, JOB_TITLE],
+  },
+  {
+    key: "recruit.take-home-task", label: "Take-Home Task Assigned → Candidate", group: "Recruitment",
+    variables: [
+      CANDIDATE, JOB_TITLE,
+      v("roundName", "Interview round", "Technical"),
+      v("instructions", "Task brief HR wrote", "Build a small REST API…"),
+      v("dueDate", "Submission deadline", "20 Jul 2026"),
+      v("submitUrl", "Candidate's submission link", "https://…"),
+      v("hasAttachment", "Whether a spec file is attached", "true"),
+      v("attachmentLink", "Optional reference link HR pasted", "https://docs.google.com/…"),
+    ],
+  },
+  {
+    key: "recruit.take-home-submitted", label: "Take-Home Task Submitted → Interviewer", group: "Recruitment",
+    variables: [
+      v("interviewerName", "Interviewer's name", "Anita Rao"),
+      CANDIDATE, JOB_TITLE,
+      v("roundName", "Interview round", "Technical"),
+      v("submittedAt", "Submission time", "31 Jul 2026, 6:40 PM"),
+      v("hasFile", "Whether the candidate uploaded a file", "true"),
+      v("hasLink", "Whether the candidate pasted a link", "false"),
+      v("reviewUrl", "Link to review the submission", "https://…"),
+    ],
   },
 
   // ── Onboarding / Employee ────────────────────────────────────────────────
@@ -339,6 +408,34 @@ const EVENTS: EmailEvent[] = [
       v("inviterName", "Who sent the invite", "Anita Rao"),
       v("role", "Assigned role", "Employee"),
       v("inviteUrl", "Invitation accept link", "https://…"),
+    ],
+  },
+  {
+    key: "onboarding.doc-rejected", label: "Onboarding Document Rejected → New Hire", group: "Onboarding",
+    variables: [
+      v("candidateName", "New hire's full name", "Rahul Verma"),
+      v("docName", "Document that was rejected", "PAN Card"),
+      v("reason", "Rejection reason", "Blurry scan"),
+      v("link", "Secure re-upload link", "https://…"),
+    ],
+  },
+  {
+    key: "onboarding.doc-upload-request", label: "Document Upload Requested", group: "Onboarding",
+    variables: [
+      v("candidateName", "New hire's full name", "Rahul Verma"),
+    ],
+  },
+  {
+    key: "onboarding.policy-ack-request", label: "Policy Acknowledgement Requested", group: "Onboarding",
+    variables: [
+      v("candidateName", "New hire's or exiting employee's full name", "Rahul Verma"),
+    ],
+  },
+  {
+    key: "onboarding.task-assigned", label: "Checklist Task Assigned → Assignee", group: "Onboarding",
+    variables: [
+      v("assigneeName", "Who the task was assigned to", "Anita Rao"),
+      v("newHireName", "New hire's (or exiting employee's) name", "Rahul Verma"),
     ],
   },
   {
@@ -375,6 +472,13 @@ const EVENTS: EmailEvent[] = [
       v("reason", "Reason", "Career growth"),
       v("notes", "Additional notes", "—"),
       v("portalUrl", "Link to offboarding", "https://…"),
+    ],
+  },
+  {
+    key: "offboarding.exit-interview", label: "Exit Interview Invite → Employee", group: "Offboarding",
+    variables: [
+      v("employeeName", "Exiting employee's full name", "Rahul Verma"),
+      v("portalUrl", "Link to the exit interview form", "https://…"),
     ],
   },
 

@@ -3,6 +3,7 @@ import { requireAppAccess } from "@quikit/auth/app-access";
 import { ThemeApplier } from "@quikit/ui/theme-applier";
 import { authOptions } from "@/lib/auth";
 import { SessionGuard } from "@/components/session-guard";
+import { SupportLauncher } from "@quikit/ui/support";
 
 // Reads the session per request and gates on app access — never prerender.
 export const dynamic = "force-dynamic";
@@ -45,6 +46,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
           the user's stored accentColor (same source as every other app). */}
       <ThemeApplier />
       {children}
+      {/* Floating support launcher — pinned to the viewport across the whole
+          workspace, including the full-height conversation panes. */}
+      <SupportLauncher appSlug="quikchat" />
     </SessionGuard>
   );
 }

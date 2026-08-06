@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Zap } from "lucide-react";
 import { useApiData } from "@/lib/hooks/useApiData";
+import { CustomFieldsSection } from "@/components/custom-fields/custom-fields-section";
+import type { MemberOption } from "@/components/custom-fields/field-control";
+import type { FieldValue } from "@/lib/customFields/registry";
 import type { IssuePageData } from "./types";
 import {
   AssigneeField,
@@ -55,6 +58,27 @@ export function IssueDetailsPanel({
   const [statusOpen, setStatusOpen] = useState(false);
 
   const reporter = members.find((m) => m.userId === issue.reporterId);
+
+  // Custom (JPD/global + space) fields for this issue. The full-page view
+  // hydrates these from `/api/issues/[id]/full`; we keep a local mirror of the
+  // values so inline edits show instantly, then persist via the shared PATCH
+  // (`{ customFields: { [id]: value } }`) — the same contract the side modal
+  // uses.
+  const customFields = issue.customFields ?? [];
+  const [customValues, setCustomValues] = useState<Record<string, FieldValue>>(
+    issue.customFieldValues ?? {},
+  );
+  const memberOptions: MemberOption[] = useMemo(
+    () =>
+      members
+        .filter((m) => m.user)
+        .map((m) => ({ id: m.userId, label: memberName(m.user) })),
+    [members],
+  );
+  function commitCustomField(id: string, value: FieldValue) {
+    setCustomValues((prev) => ({ ...prev, [id]: value }));
+    void onPatch({ customFields: { [id]: value } });
+  }
 
   return (
     <aside className="space-y-3 text-sm">
@@ -143,12 +167,6 @@ export function IssueDetailsPanel({
             onChange={(iso) => void onPatch({ dueDate: iso ?? undefined })}
           />
         </Row>
-        <Row label="Labels">
-          <span className="text-gray-500">None</span>
-        </Row>
-        <Row label="Team">
-          <span className="text-gray-500">None</span>
-        </Row>
         {/* Sprint row hidden on epics (epics span sprints by definition) and on
             functional projects, which have no sprints (so none to pick). */}
         {issue.type !== "EPIC" && sprints.length > 0 && (
@@ -166,9 +184,6 @@ export function IssueDetailsPanel({
             suffix="h"
             onCommit={(n) => void onPatch({ eta: n ?? undefined })}
           />
-        </Row>
-        <Row label="Time remaining">
-          <span className="text-gray-700">0m</span>
         </Row>
         <Row label="Story point estimate">
           <NumberField
@@ -191,6 +206,19 @@ export function IssueDetailsPanel({
             <span className="text-gray-500">None</span>
           )}
         </Row>
+        {/* JPD/global + space custom fields — same picker the side modal uses,
+            so the full-page panel stays in parity. Compact "detail" variant. */}
+        {customFields.length > 0 && (
+          <div className="pt-1">
+            <CustomFieldsSection
+              variant="detail"
+              fields={customFields}
+              values={customValues}
+              onChange={commitCustomField}
+              members={memberOptions}
+            />
+          </div>
+        )}
       </Card>
     </aside>
   );

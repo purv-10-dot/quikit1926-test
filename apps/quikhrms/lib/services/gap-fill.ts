@@ -2,38 +2,6 @@ import { randomBytes } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { APP_ID } from "@/lib/rbac/registry";
 
-// ─── Time/Timesheet helpers ─────────────────────────────
-
-export function hoursBetween(start: Date, end: Date | null): number {
-  if (!end) return 0;
-  return Math.round(((end.getTime() - start.getTime()) / (1000 * 60 * 60)) * 100) / 100;
-}
-
-export function weekBoundary(date: Date): { start: Date; end: Date } {
-  const d = new Date(date);
-  const day = d.getDay();
-  const start = new Date(d);
-  start.setDate(d.getDate() - day);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(start);
-  end.setDate(start.getDate() + 6);
-  end.setHours(23, 59, 59, 999);
-  return { start, end };
-}
-
-// ─── Delegation check ───────────────────────────────────
-
-export async function getActiveDelegations(orgId: string, delegatorId: string, module: string) {
-  const now = new Date();
-  return prisma.delegation.findMany({
-    where: {
-      orgId, delegatorId, deletedAt: null, isActive: true,
-      fromDate: { lte: now },
-      OR: [{ toDate: null }, { toDate: { gte: now } }],
-    },
-  }).then((rows) => rows.filter((r) => (r.modules as string[]).includes(module)));
-}
-
 // ─── Bulk import processor ──────────────────────────────
 
 type BulkEmpRow = {
@@ -122,12 +90,12 @@ const clean = (v: string | null | undefined): string | undefined => {
   return s;
 };
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const cleanEmail = (v: string | null | undefined): string | undefined => {
-  const c = clean(v);
-  if (!c) return undefined;
-  return EMAIL_REGEX.test(c) ? c : undefined;
-};
+// Format check removed for bulk import — any non-blank value is accepted
+// as-is (previously dropped silently if it failed a basic email regex).
+// NOTE: workEmail specifically is used for login/invites/SSO elsewhere in
+// HRMS — a malformed one saves fine but that employee can't be invited until
+// HR corrects it via Edit Employee.
+const cleanEmail = (v: string | null | undefined): string | undefined => clean(v);
 
 const EMPLOYMENT_TYPE_MAP: Record<string, string> = {
   "fulltime": "FullTime",
@@ -339,8 +307,15 @@ export interface CreatedEmployeeSummary {
 
 export async function processBulkEmployees(
   orgId: string, userId: string, rows: BulkEmpRow[], dryRun: boolean, markActive: boolean = false,
-): Promise<{ success: number; failed: number; errors: Array<{ row: number; error: string }>; createdEmployees: CreatedEmployeeSummary[] }> {
+): Promise<{
+  success: number; failed: number; errors: Array<{ row: number; error: string }>;
+  warnings: Array<{ row: number; warning: string }>; createdEmployees: CreatedEmployeeSummary[];
+}> {
   const errors: Array<{ row: number; error: string }> = [];
+  // Non-blocking notes — the row still imports, but something was silently
+  // skipped (e.g. a given-but-unresolvable reporting manager) and HR should
+  // know to go fix it, rather than never finding out.
+  const warnings: Array<{ row: number; warning: string }> = [];
   const createdEmployees: CreatedEmployeeSummary[] = [];
   let success = 0;
 
@@ -352,13 +327,36 @@ export async function processBulkEmployees(
   const deptByName = new Map(depts.map((d) => [d.name.toLowerCase(), d.id]));
 
   // Build manager lookup so reporting manager can be set in same import.
-  // Build/refresh inside loop because earlier rows may add new managers.
+  // Keyed by BOTH employeeCode and email — real-world exports often put the
+  // manager's email in this column instead of their EMP ID code, so either
+  // one resolves the link. Build/refresh inside loop because earlier rows may
+  // add new managers.
   const managerByCode = new Map<string, string>();
   const existingMgrs = await prisma.employee.findMany({
     where: { orgId, deletedAt: null },
-    select: { id: true, employeeCode: true },
+    select: { id: true, employeeCode: true, workEmail: true, personalEmail: true },
   });
-  for (const e of existingMgrs) managerByCode.set(e.employeeCode.toLowerCase(), e.id);
+  for (const e of existingMgrs) {
+    managerByCode.set(e.employeeCode.toLowerCase(), e.id);
+    if (e.workEmail) managerByCode.set(e.workEmail.toLowerCase(), e.id);
+    if (e.personalEmail) managerByCode.set(e.personalEmail.toLowerCase(), e.id);
+  }
+
+  // Employee codes/emails this file itself will create. A manager may sit in a
+  // LATER row than the people reporting to them, so row order must not decide
+  // whether the link resolves — rows are created first, managers linked in a
+  // second pass below, and this set lets an up-front check tell "manager
+  // comes later in the file" apart from "manager code doesn't exist anywhere"
+  // (a typo).
+  const codesInFile = new Set(
+    rows.flatMap((row) => [
+      clean(row.employeeCode)?.toLowerCase(),
+      cleanEmail(row.workEmail)?.toLowerCase(),
+      cleanEmail(row.personalEmail)?.toLowerCase(),
+    ].filter((c): c is string => !!c)),
+  );
+  // Employees created without a resolvable manager yet — linked after the loop.
+  const pendingManagerLinks: Array<{ id: string; code: string; mgrCode: string | null; dotCode: string | null }> = [];
 
   // Pre-load active employee codes for dryRun-time conflict detection.
   // Work email duplicates are allowed; only employeeCode is enforced unique.
@@ -407,36 +405,28 @@ export async function processBulkEmployees(
       }
 
       // Reject rows missing any field that is mandatory in the Add Employee form.
+      // Work Location / Office Location / Job Title / Notice Period / Emergency
+      // Contact (Name/Relation/Phone) / current-address / PAN / Aadhaar / Bank
+      // details were required here too for a while, but that blocked imports
+      // whose source file just doesn't carry these columns — they're collected
+      // instead of blocked; HR fills them in later via Edit Employee. Format is
+      // still enforced when a value IS present (zPanOptional/zAadhaarOptional/
+      // zBankAccountOptional/zIfscOptional in bulkEmployeeRowSchema).
       const missingRequired: string[] = [];
       if (!clean(r.workEmail)) missingRequired.push("Work Email");
       if (!clean(r.personalPhone)) missingRequired.push("Personal Phone");
       if (!clean(r.gender)) missingRequired.push("Gender");
       if (!clean(r.dateOfBirth)) missingRequired.push("Date of Birth");
-      if (!clean(r.jobTitle)) missingRequired.push("Job Title");
       if (!clean(r.designation)) missingRequired.push("Designation");
       if (!clean(r.departmentName) && !clean(r.departmentCode)) missingRequired.push("Department");
-      if (!clean(r.officeLocation)) missingRequired.push("Office Location");
-      if (!clean(r.reportingManagerCode)) missingRequired.push("Reporting Manager (EMP ID)");
+      if (!clean(r.employmentType)) missingRequired.push("Employment Type");
       if (!clean(r.dateOfJoining)) missingRequired.push("Date of Joining");
-      if (!clean(r.panNumber)) missingRequired.push("PAN Number");
-      if (!clean(r.aadhaarNumber)) missingRequired.push("Aadhaar Number");
-      if (!clean(r.bankName)) missingRequired.push("Bank Name");
-      if (!clean(r.bankAccountNumber)) missingRequired.push("Bank Account Number");
-      if (!clean(r.bankIfsc)) missingRequired.push("Bank IFSC");
-      if (!clean(r.currentAddressLine1)) missingRequired.push("Current Address Line 1");
-      if (!clean(r.currentCity)) missingRequired.push("Current City");
-      if (!clean(r.currentState)) missingRequired.push("Current State");
-      if (!clean(r.currentZip)) missingRequired.push("Current ZIP");
-      if (!clean(r.currentCountry)) missingRequired.push("Current Country");
       if (missingRequired.length > 0) {
         errors.push({ row: i + 1, error: `Missing required field(s): ${missingRequired.join(", ")}` });
         continue;
       }
-      // Personal phone must be exactly 10 digits (matches the Add Employee form).
-      if ((clean(r.personalPhone) ?? "").replace(/\D/g, "").length !== 10) {
-        errors.push({ row: i + 1, error: "Personal phone must be exactly 10 digits" });
-        continue;
-      }
+      // Phone format check removed for bulk import (was: exactly 10 digits) —
+      // a bad value saves as-is; HR fixes it later via Edit Employee.
 
       const workEmail = cleanEmail(r.workEmail);
       const personalEmail = cleanEmail(r.personalEmail);
@@ -447,6 +437,28 @@ export async function processBulkEmployees(
           error: "Missing email — please provide a valid Work Email or Personal Email",
         });
         continue;
+      }
+
+      // Reporting manager is optional — HR can set it later via Edit Employee.
+      // When given but it doesn't resolve to a real employee (in HRMS already,
+      // or another row in this file) by code or email, don't block the whole
+      // row over it — import with the manager left blank, but leave a warning
+      // so a typo doesn't just silently vanish with no trace.
+      const mgrCodeGiven = clean(r.reportingManagerCode);
+      if (mgrCodeGiven) {
+        const mgrKey = mgrCodeGiven.toLowerCase();
+        if (!managerByCode.has(mgrKey) && !codesInFile.has(mgrKey)) {
+          warnings.push({
+            row: i + 1,
+            warning: `Reporting manager ${mgrCodeGiven} not found — imported without a manager, set it manually later`,
+          });
+        } else {
+          const ownCode = clean(r.employeeCode)?.toLowerCase();
+          if (mgrKey === ownCode || mgrKey === effectiveEmail.toLowerCase()) {
+            errors.push({ row: i + 1, error: `Employee cannot report to themselves (${mgrCodeGiven})` });
+            continue;
+          }
+        }
       }
 
       // Look up only soft-deleted matches for re-hire restoration.
@@ -765,8 +777,22 @@ export async function processBulkEmployees(
             roleId: defaultRoleId,
           });
         }
-        // Add to manager lookup so subsequent rows can reference this employee as manager
+        // Add to manager lookup so subsequent rows can reference this employee as
+        // manager — by code OR either email.
         managerByCode.set(code.toLowerCase(), savedId);
+        if (workEmail) managerByCode.set(workEmail.toLowerCase(), savedId);
+        if (personalEmail) managerByCode.set(personalEmail.toLowerCase(), savedId);
+
+        // Manager still unknown → it lives in a later row of this same file.
+        // Queue the link for the second pass, once every row has been created.
+        if ((mgrCode && !reportingManagerId) || (dotMgrCode && !dottedLineManagerId)) {
+          pendingManagerLinks.push({
+            id: savedId,
+            code,
+            mgrCode: mgrCode && !reportingManagerId ? mgrCode : null,
+            dotCode: dotMgrCode && !dottedLineManagerId ? dotMgrCode : null,
+          });
+        }
 
         // Assign the default "employee" role if the employee has none yet.
         // Re-hires may retain a prior role — don't overwrite it.
@@ -788,31 +814,23 @@ export async function processBulkEmployees(
     }
   }
 
-  return { success, failed: errors.length, errors, createdEmployees };
-}
+  // ── Second pass: link managers that were defined further down the same file ──
+  // Every row exists in `managerByCode` by now, so file order no longer matters.
+  // A code that still doesn't resolve means the manager's OWN row failed — that
+  // failure is already reported, so leave this employee's manager blank rather
+  // than double-counting one bad row as two errors.
+  for (const link of pendingManagerLinks) {
+    const mgrId = link.mgrCode ? managerByCode.get(link.mgrCode.toLowerCase()) ?? null : null;
+    const dotId = link.dotCode ? managerByCode.get(link.dotCode.toLowerCase()) ?? null : null;
+    // Guard against self-links (a code can resolve to the row's own employee).
+    const data: { reportingManagerId?: string; dottedLineManagerId?: string } = {};
+    if (mgrId && mgrId !== link.id) data.reportingManagerId = mgrId;
+    if (dotId && dotId !== link.id) data.dottedLineManagerId = dotId;
+    if (Object.keys(data).length === 0) continue;
+    await prisma.employee.update({ where: { id: link.id }, data }).catch(() => {});
+  }
 
-// ─── AI stub ────────────────────────────────────────────
-
-export function mockAIReply(scope: string, message: string): { reply: string; tokens: number } {
-  const lowered = message.toLowerCase();
-  if (scope === "HRChat") {
-    if (lowered.includes("leave")) return { reply: "You have 12 casual leaves remaining this year. Want to apply?", tokens: 28 };
-    if (lowered.includes("holiday")) return { reply: "Upcoming: Independence Day (Aug 15), Diwali (Nov 12). See calendar for full list.", tokens: 30 };
-    return { reply: "I can help with leave, policies, attendance, and more. What do you need?", tokens: 22 };
-  }
-  if (scope === "ResumeScreening") {
-    return { reply: "Candidate scored 78/100. Strong React + TypeScript match. Gap: no payment-gateway experience.", tokens: 40 };
-  }
-  if (scope === "PerformanceInsight") {
-    return { reply: "Employee trending upward. Goal completion 92%. Skill gap: presentation skills. Recommend PIP: No.", tokens: 36 };
-  }
-  if (scope === "AnomalyDetection") {
-    return { reply: "Detected 3 late check-ins this week. Expense claim of ₹45,000 exceeds policy (₹20,000 cap).", tokens: 32 };
-  }
-  if (scope === "SmartSuggestion") {
-    return { reply: "Suggest: Hire 2 senior engineers to meet Q3 OKRs. Benchmark salary: ₹28-35 LPA.", tokens: 30 };
-  }
-  return { reply: "AI insight generated.", tokens: 10 };
+  return { success, failed: errors.length, errors, warnings, createdEmployees };
 }
 
 // ─── Portal token ───────────────────────────────────────

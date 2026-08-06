@@ -19,7 +19,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Eye, Send, AlertCircle } from "lucide-react";
 import { toast } from "@/lib/toast";
-import { PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { useSubmitIndent } from "@/hooks/use-approvals";
@@ -400,6 +400,7 @@ export default function IndentsPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Purchase Indents"
         subtitle="Consolidate approved material requirements for ordering"
@@ -409,7 +410,7 @@ export default function IndentsPage() {
         ]}
       />
       <TabBar tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
-      <PageContainer>
+      <PageContainer fill>
         {approvedPrs.length === 0 && (
           <div className="mb-4 flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600" />
@@ -451,6 +452,7 @@ export default function IndentsPage() {
           onSortChange={(k, d) => setSort({ by: k, order: d })}
         />
       </PageContainer>
+      </PageFrame>
       <QuickCreateDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}

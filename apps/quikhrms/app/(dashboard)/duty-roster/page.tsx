@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useAccessibleDepartments } from "@/lib/hooks/use-ref-data";
@@ -12,6 +12,8 @@ import { EmptyState } from "@/components/hrms/empty-state";
 import { useToast } from "@/components/hrms/toast";
 import { useDialog } from "@/components/hrms/dialog";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
+import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 import { ChevronLeft, ChevronRight, CalendarDays, Plus, CalendarOff, CheckCircle2, Lock, Search, Check, Info, Users, Clock } from "lucide-react";
 import Link from "next/link";
 import { clsx } from "clsx";
@@ -91,6 +93,8 @@ export default function DutyRosterPage() {
   const [editCell, setEditCell] = useState<{ emp: RosterRow; date: string; cell?: RosterCell } | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showWeekOff, setShowWeekOff] = useState(false);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 15;
 
   const { from, to } = useMemo(() => rangeOf(mode, cursor), [mode, cursor]);
   const query = useMemo(() => {
@@ -108,6 +112,13 @@ export default function DutyRosterPage() {
   const days = grid?.days ?? [];
   const employees = grid?.employees ?? [];
   const shifts = grid?.shifts ?? [];
+
+  // Paginate the employee rows (the grid can list the whole org).
+  const totalPages = Math.max(1, Math.ceil(employees.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageEmployees = employees.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  // Reset to the first page whenever the filter/period changes the result set.
+  useEffect(() => { setPage(1); }, [query]);
 
   // Flatten the rendered roster grid into one row per assigned cell (skips empty
   // days) — the most table-like underlying data behind the week/month grid.
@@ -178,9 +189,11 @@ export default function DutyRosterPage() {
 
   return (
     <div className="w-full h-full flex flex-col px-5 py-4 overflow-hidden">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3 shrink-0">
         <div>
-          <h1 className="text-base font-semibold text-gray-900">Duty Roster</h1>
+          <h1 className="text-base font-semibold text-gray-900">Shift Roster</h1>
           <p className="text-xs text-gray-500 mt-1">Who works which shift on which day — with week-offs, leaves and holidays.</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -282,7 +295,7 @@ export default function DutyRosterPage() {
               </tr>
             </thead>
             <tbody>
-              {employees.map((emp) => (
+              {pageEmployees.map((emp) => (
                 <tr key={emp.id} className="border-b border-gray-100 hover:bg-gray-50/50">
                   <td className="sticky left-0 z-10 bg-white px-3 py-2 border-r border-gray-200">
                     <div className="text-[13px] font-semibold text-gray-900 truncate max-w-[170px]">{emp.name}</div>
@@ -302,6 +315,12 @@ export default function DutyRosterPage() {
           </table>
         )}
       </div>
+
+      {employees.length > PAGE_SIZE && (
+        <div className="shrink-0">
+          <Pagination page={safePage} totalPages={totalPages} total={employees.length} limit={PAGE_SIZE} onPageChange={setPage} className="border-t-0 px-0" />
+        </div>
+      )}
 
       {!canManage && <p className="text-[11px] text-gray-400 mt-3">Read-only view.</p>}
 

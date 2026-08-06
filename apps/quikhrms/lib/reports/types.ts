@@ -2,8 +2,6 @@
 // run() pulls tenant-scoped data and returns columns + rows; the engine renders those
 // to CSV / XLSX / PDF. Adding a report = adding one definition, no engine changes.
 
-export type ReportFormat = "json" | "csv" | "xlsx" | "pdf";
-
 export const REPORT_CATEGORIES = [
   "Organization",
   "Payroll",
@@ -48,5 +46,11 @@ export interface ReportDefinition {
   description: string;
   category: ReportCategory;
   usesDateRange?: boolean; // UI hint: show the From/To pickers for this report
+  /**
+   * Permission required to RUN this report. When omitted, the registry derives
+   * it from the category (see reportRequiredPermission) — sensitive categories
+   * (Payroll/Statutory/Tax) default to the elevated hrms.reports.manage.
+   */
+  requiredPermission?: string;
   run: (ctx: ReportContext) => Promise<ReportResult>;
 }

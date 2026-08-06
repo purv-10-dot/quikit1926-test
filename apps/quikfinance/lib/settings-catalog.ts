@@ -1,5 +1,6 @@
 import {
   Building2, Users, ShieldCheck, SlidersHorizontal, Zap, BookOpen, Package, ShoppingCart, ShoppingBag, Plug, Wrench,
+  LifeBuoy,
   type LucideIcon
 } from "lucide-react";
 
@@ -38,6 +39,10 @@ export const SETTINGS_CATALOG: SettingsSection[] = [
       { title: "Automation", icon: Zap, links: [
         { title: "Approval Policies", href: "/settings/approval-policies" },
         { title: "Transaction Locking", href: "/transaction-locking" }
+      ] },
+      // Per-user, not org-level — every member sees their own requests here.
+      { title: "Help & Support", icon: LifeBuoy, links: [
+        { title: "Support Status", href: "/settings/support" }
       ] }
     ]
   },

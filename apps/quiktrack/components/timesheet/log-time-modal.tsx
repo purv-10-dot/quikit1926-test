@@ -9,6 +9,8 @@ import { ProjectPicker } from "./project-picker";
 interface ProjectOption {
   id: string;
   name: string;
+  icon: string | null;
+  color: string | null;
 }
 interface IssueOption {
   id: string;
@@ -76,10 +78,14 @@ export function LogTimeModal({
       .then((r) => r.json())
       .then((j) => {
         if (j?.success) {
-          const list = (j.data ?? []).map((p: { id: string; name: string }) => ({
-            id: p.id,
-            name: p.name,
-          }));
+          const list = (j.data ?? []).map(
+            (p: { id: string; name: string; icon?: string | null; color?: string | null }) => ({
+              id: p.id,
+              name: p.name,
+              icon: p.icon ?? null,
+              color: p.color ?? null,
+            }),
+          );
           setProjects(list);
         }
       })

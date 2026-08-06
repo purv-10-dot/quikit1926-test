@@ -101,11 +101,28 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
       icon: true,
       color: true,
       projectType: true,
+      templateKey: true,
       status: true,
       leadUserId: true,
       updatedAt: true,
     },
   });
+
+  // `managementStyle` is a newly-added column the stale dev Prisma client can't
+  // `select`, so fetch it with a raw query and merge by id. (Safe: ids come from
+  // the org-scoped `findMany` above, not user input.)
+  let styleById = new Map<string, string>();
+  if (projects.length > 0) {
+    const rows = await db.$queryRawUnsafe<
+      { id: string; managementStyle: string | null }[]
+    >(
+      `SELECT id, "managementStyle" FROM app_quiktrack."QtProject" WHERE id IN (${projects
+        .map((_, i) => `$${i + 1}`)
+        .join(", ")})`,
+      ...projects.map((p) => p.id),
+    );
+    styleById = new Map(rows.map((r) => [r.id, r.managementStyle ?? "team-managed"]));
+  }
 
   const leadIds = Array.from(
     new Set(
@@ -146,6 +163,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
 
   const data = projects.map((p) => ({
     ...p,
+    managementStyle: styleById.get(p.id) ?? "team-managed",
     lead: p.leadUserId ? leadById.get(p.leadUserId) ?? null : null,
     canArchive: isAdmin || spaceAdminIds.has(p.id),
   }));
@@ -196,6 +214,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const projectType =
     parsed.data.projectType ??
     (templateKey === "discovery" ? "discovery" : "software");
+  const managementStyle = parsed.data.managementStyle ?? "team-managed";
   // Functional/Kanban projects open with a curated tab set; discovery spaces
   // show only the "Ideas" tab (their whole surface); others show all.
   const initialTabConfig =
@@ -227,6 +246,17 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
           updatedBy: userId,
         },
       });
+      // The generated Prisma client on this dev box is stale and doesn't yet
+      // know the `managementStyle` column, so we can't pass it to `create`.
+      // Set it with a raw UPDATE in the same transaction. Only write when the
+      // caller picked the non-default so existing rows keep their DB default.
+      if (managementStyle && managementStyle !== "team-managed") {
+        await tx.$executeRawUnsafe(
+          `UPDATE app_quiktrack."QtProject" SET "managementStyle" = $1 WHERE id = $2`,
+          managementStyle,
+          p.id,
+        );
+      }
       await tx.qtProjectMember.create({
         data: {
           projectId: p.id,

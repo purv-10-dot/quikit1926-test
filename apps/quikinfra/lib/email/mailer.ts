@@ -216,13 +216,6 @@ function getSmtpConfig(): {
   return { host, port, secure, user, pass };
 }
 
-export function getAppUrl(): string {
-  return (
-    process.env.APP_URL ??
-    process.env.NEXTAUTH_URL ??
-    "http://localhost:3010"
-  ).replace(/\/$/, "");
-}
 
 function getOutboxDir(): string {
   return (

@@ -7,14 +7,17 @@ import {
   BookOpen,
   ListTree,
 } from "lucide-react";
+import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { LinkedWorkItems } from "@/components/linked-work-items";
 import { IssueActivity } from "@/components/issue-activity";
 import { IssueAttachments } from "@/components/issue-attachments";
+import { DescriptionAttachments } from "@/components/description-attachments";
 import { IssueViewSkeleton } from "@/components/skeleton";
 import { IssueDetailsPanel } from "./issue-details-panel";
 import { IssueHeaderSections } from "./issue-header-sections";
+import { IssueDevelopment } from "./issue-development";
 import type { IssuePageData, IssueType } from "./types";
 import type { MentionItem } from "@/components/editor/mention";
 
@@ -108,6 +111,18 @@ export function IssueFullView({
     },
   );
 
+  // Reflect the issue in the browser tab (Jira-style "[SCRUM-58] title"), and
+  // restore the previous title when navigating away so other pages aren't left
+  // showing a stale work-item name.
+  useEffect(() => {
+    if (!issue?.key) return;
+    const previous = document.title;
+    document.title = `[${issue.key}] ${issue.title}`;
+    return () => {
+      document.title = previous;
+    };
+  }, [issue?.key, issue?.title]);
+
   async function patch(data: Record<string, unknown>) {
     const res = await fetch(`/api/issues/${issueId}`, {
       method: "PATCH",
@@ -162,6 +177,10 @@ export function IssueFullView({
             window.location.href = `/spaces/${projectId}/work/${id}`;
           }}
         />
+        {/* Separate "Attachments" section — mirrors the files embedded in the
+            description as cards (same as shown inside Description), plus the
+            migration-imported attachments below. */}
+        <DescriptionAttachments html={issue.description} heading />
         <IssueAttachments issueId={issue.id} />
         <IssueActivity issueId={issue.id} projectId={projectId} mentions={memberMentions} />
       </div>
@@ -170,6 +189,13 @@ export function IssueFullView({
           visible while the long left column scrolls. */}
       <div className="sticky top-0 self-start max-h-[calc(100vh-2rem)] overflow-y-auto pt-6">
         <IssueDetailsPanel issue={issue} members={members} onPatch={patch} />
+        {/* Development sits directly under Details (branches/commits/PRs +
+            action links), the same place the issue drawer puts it — it belongs
+            with the work item's metadata, not stranded mid-page in the content
+            column between Linked work items and Attachments. */}
+        <div className="mt-6">
+          <IssueDevelopment issueId={issue.id} issueKey={issue.key} />
+        </div>
       </div>
     </div>
   );

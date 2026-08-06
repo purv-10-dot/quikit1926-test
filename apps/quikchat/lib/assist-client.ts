@@ -83,6 +83,29 @@ export async function streamAssist(
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  // Exactly-one-terminal-callback contract. `done` and `error` are terminal, and
+  // so is a body that closes having emitted NEITHER (proxy drop, runtime
+  // generator ending mid-turn, route `finish()` on a loop that never saw a
+  // terminal event). Without the close case the caller gets no callback at all
+  // and its loader has no off-switch — stuck on "Thinking…" forever. Post-
+  // terminal deltas are swallowed for the same reason: they'd repopulate a
+  // bubble the caller has already torn down.
+  let settled = false;
+  const guarded: AssistHandlers = {
+    onDelta: (t) => {
+      if (!settled) handlers.onDelta(t);
+    },
+    onDone: (p) => {
+      if (settled) return;
+      settled = true;
+      handlers.onDone(p);
+    },
+    onError: (m) => {
+      if (settled) return;
+      settled = true;
+      handlers.onError(m);
+    },
+  };
   try {
     for (;;) {
       const { value, done } = await reader.read();
@@ -92,13 +115,15 @@ export async function streamAssist(
       while ((sep = buffer.indexOf("\n\n")) >= 0) {
         const block = buffer.slice(0, sep);
         buffer = buffer.slice(sep + 2);
-        dispatch(parseBlock(block), handlers);
+        dispatch(parseBlock(block), guarded);
       }
     }
-    dispatch(parseBlock(buffer), handlers);
+    dispatch(parseBlock(buffer), guarded);
+    // Stream closed cleanly but nothing terminal ever arrived.
+    guarded.onError("The assistant stream ended unexpectedly");
   } catch (e) {
     if ((e as { name?: string })?.name === "AbortError") return; // user stopped
-    handlers.onError("The assistant stream was interrupted");
+    guarded.onError("The assistant stream was interrupted");
   } finally {
     reader.releaseLock();
   }

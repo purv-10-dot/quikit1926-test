@@ -54,7 +54,7 @@ describe("GET /api/masters/projects/[id]", () => {
 });
 
 describe("PUT /api/masters/projects/[id]", () => {
-  it("returns 403 when the user lacks construction.masters.edit", async () => {
+  it("returns 403 when the user lacks construction.project.edit", async () => {
     setContext(makeUserCtx([]));
     expect((await PUT(req("PUT", { name: "X" }), params)).status).toBe(403);
   });
@@ -83,7 +83,7 @@ describe("PUT /api/masters/projects/[id]", () => {
 });
 
 describe("DELETE /api/masters/projects/[id]", () => {
-  it("returns 403 when the user lacks construction.masters.delete", async () => {
+  it("returns 403 when the user lacks construction.project.delete", async () => {
     setContext(makeUserCtx([]));
     expect((await DELETE(req("DELETE"), params)).status).toBe(403);
   });

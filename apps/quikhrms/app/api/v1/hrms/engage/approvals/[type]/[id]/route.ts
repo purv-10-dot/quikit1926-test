@@ -4,6 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, notFound, validationError, forbidden, internalError } from "@/lib/api-response";
 import { fireWorkflow } from "@/lib/workflows/executor";
+import { getActiveChainLevels, callerCanActionLevel, getCallerRoleIds } from "@/lib/services/approval-chain";
+import { getCallerEmployeeId } from "@/lib/rbac/scope";
+import type { ModerationModule } from "@/lib/services/content-moderation";
 
 const ENGAGE_TYPES = ["announcement", "post", "recognition"] as const;
 const FEEDBACK_TYPES = ["feedback"] as const;
@@ -23,8 +26,9 @@ function requiredPerm(type: ContentType): string {
  * type: announcement | post | recognition | feedback
  * body: { action: "approve" | "reject", reason?: string }
  */
-export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissions }, params) => {
+export const POST = withAuth(async (req: NextRequest, ctx, params) => {
   try {
+    const { orgId, userId, permissions } = ctx;
     const { type, id } = params as { type: string; id: string };
     if (!(ENGAGE_TYPES as readonly string[]).includes(type) && !(FEEDBACK_TYPES as readonly string[]).includes(type)) {
       return notFound("Unknown content type");
@@ -32,7 +36,20 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
     const t = type as ContentType;
 
     const perm = requiredPerm(t);
-    if (!permissions.includes("*") && !permissions.includes(perm)) {
+    let authorized = permissions.includes("*") || permissions.includes(perm);
+    // Also allow whoever Settings → Approval Chains names for this module —
+    // previously that config was decorative and had zero effect on who could
+    // actually approve/reject (only the flat hrms.*.approve permission did).
+    if (!authorized) {
+      const chainModule: ModerationModule = t === "feedback" ? "Feedback" : "Engagement";
+      const levels = await getActiveChainLevels(orgId, chainModule);
+      if (levels && levels.length > 0) {
+        const callerEmpId = await getCallerEmployeeId(ctx);
+        const roleIds = callerEmpId ? await getCallerRoleIds(orgId, callerEmpId) : [];
+        authorized = !!callerEmpId && levels.some((lv) => callerCanActionLevel(lv, { employeeId: callerEmpId, roleIds }));
+      }
+    }
+    if (!authorized) {
       return forbidden(`Missing permission: ${perm}`);
     }
 

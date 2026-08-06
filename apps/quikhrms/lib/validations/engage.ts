@@ -1,5 +1,15 @@
 import { z } from "zod";
 
+// The UI/API use the visibility value "Team", but the Prisma `PostVisibility`
+// enum stores it as "HrmsTeam" (renamed to avoid a cross-app clash). Translate
+// at the route boundary so "Team" never reaches Prisma (enum error → 500) and
+// DB reads surface "Team" back to the UI.
+type VisibilityApi = "Organization" | "Department" | "Team" | "Custom";
+type VisibilityDb = "Organization" | "Department" | "HrmsTeam" | "Custom";
+export function visibilityToDb(v: VisibilityApi): VisibilityDb {
+  return v === "Team" ? "HrmsTeam" : v;
+}
+
 // ─── Social Post ────────────────────────────────────────
 
 const mediaItemSchema = z.object({
@@ -115,20 +125,6 @@ export const createRecognitionSchema = z.object({
   type: z.enum(["Kudos", "Badge", "Award", "Shoutout"]).default("Kudos"),
   message: z.string().min(1, "Message required"),
   badge: z.string().optional(),
-  points: z.number().int().default(0),
+  // points is NOT client-supplied — it's derived server-side from the type.
   isPublic: z.boolean().default(true),
-});
-
-// ─── AI ─────────────────────────────────────────────────
-
-export const resumeScreenSchema = z.object({
-  candidateId: z.string().min(1),
-  requisitionId: z.string().min(1),
-});
-
-export const aiInsightSchema = z.object({
-  type: z.enum(["attrition_risk", "performance_trend", "team_health", "headcount_forecast"]),
-  entityType: z.string().optional(),
-  entityId: z.string().optional(),
-  parameters: z.record(z.string(), z.unknown()).optional(),
 });

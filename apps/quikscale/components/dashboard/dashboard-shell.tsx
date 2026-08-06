@@ -11,6 +11,7 @@ import { ThemeApplier } from "@quikit/ui/theme-applier";
 import { FeatureDisabledToast, ImpersonationBanner } from "@quikit/ui";
 import { QuarterRequiredGuard } from "@/components/quarter-required-guard";
 import { QuikScaleTour } from "@/components/tour/quikscale-tour";
+import { SupportLauncher } from "@quikit/ui/support";
 import { Toaster } from "sonner";
 
 /**
@@ -60,6 +61,10 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           </main>
         </div>
       </div>
+
+      {/* Floating support launcher — outside the scroll containers above so it
+          stays pinned to the viewport on every dashboard route. */}
+      <SupportLauncher appSlug="quikscale" />
     </FilterProvider>
     </SessionGuard>
   );

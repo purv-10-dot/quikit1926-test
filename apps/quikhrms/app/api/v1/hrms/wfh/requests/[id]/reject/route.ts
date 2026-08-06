@@ -25,6 +25,8 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
     });
     if (!wfh) return notFound("WFH request not found");
     if (wfh.status !== "Pending") return conflict(`Already ${wfh.status}`);
+    // Segregation of duties — you can never reject your own request.
+    if (wfh.employeeId === employeeId) return forbidden("You can't reject your own WFH request.");
 
     const nextPending = wfh.approvals.find((a) => a.status === "Pending");
     if (!nextPending) return conflict("No pending approval level");

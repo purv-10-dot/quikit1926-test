@@ -45,11 +45,13 @@ import {
 } from "@/components/ui";
 import { useProfile } from "@/components/profile/ProfileProvider";
 import { MeetingCard } from "./MeetingCard";
+import { VoiceNotePlayer } from "./VoiceNotePlayer";
 import { formatMessageTime } from "@/lib/format";
 import { computeMentions } from "@/lib/mentions";
+import { canEditMessage } from "@/lib/message-actions";
 import { relativeTime } from "@/lib/notif-format";
 import { emojiName, QUICK_REACTIONS, reactorSummary } from "@/lib/reactions";
-import { RichText } from "@/lib/richtext";
+import { flattenMarkdown, RichText } from "@/lib/richtext";
 import { partitionMessageAudience, tickState, type TickState } from "@/lib/ticks";
 
 interface MediaData {
@@ -57,6 +59,15 @@ interface MediaData {
   mediaType?: string;
   originalName?: string;
   size?: number;
+  /**
+   * Storage key of the media object. Always present at runtime (it's how the
+   * server mints the URL); declared optional so a legacy row can't break tsc.
+   * Used as the voice-note waveform seed — waveform identity belongs to the
+   * audio, so a forwarded note keeps the original's bars.
+   */
+  objectPath?: string;
+  /** Voice notes: the sender's recorded length, persisted on the message data. */
+  durationSec?: number;
   forwardedFrom?: {
     channelId: string;
     senderId: string | null;
@@ -121,7 +132,16 @@ function MediaContent({ media, onOpen }: { media: MediaData; onOpen?: () => void
     );
   }
   if (media.mediaType?.startsWith("audio/")) {
-    return <audio src={url} controls />;
+    return (
+      <VoiceNotePlayer
+        url={url}
+        durationSec={media.durationSec}
+        // The storage key is stable across reloads, users and forwards. The
+        // fallback pairs two other persisted MediaMeta fields; it should never
+        // fire, since objectPath is required on every media message written.
+        seed={media.objectPath || `${media.originalName ?? "voice"}:${media.size ?? 0}`}
+      />
+    );
   }
   // PDFs preview in-app (the lightbox renders them in an iframe) — clicking the
   // chip opens the preview rather than downloading. `onOpen` is wired by the
@@ -296,7 +316,7 @@ function ParentQuote({
       ? "This message was deleted"
       : parent.type === "Media"
         ? "📎 Attachment"
-        : parent.content;
+        : flattenMarkdown(parent.content);
   return (
     <button
       type="button"
@@ -373,7 +393,9 @@ function MessageToolbar({
   onStartEdit: () => void;
   onMessageInfo: () => void;
 }) {
-  const canEdit = isOwn && message.type === "Text";
+  // QC_007: also gated on the edit window, so we never offer an Edit the server
+  // would reject with 403. Delete stays available indefinitely.
+  const canEdit = canEditMessage(message, actions.meId, Date.now());
   return (
     <div className="qc-msg-toolbar" data-own={isOwn} role="toolbar" aria-label="Message actions">
       <Popover

@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
     {
       entityLabel: "item",
       successStatus: 201,
-      requirePermission: "construction.masters.create",
+      requirePermission: "construction.master_item.create",
       requireMatrix: { menuKey: "master.item", action: "add" },
       parseBody: (raw): ItemBody => {
         const body = (raw ?? {}) as Record<string, unknown>;

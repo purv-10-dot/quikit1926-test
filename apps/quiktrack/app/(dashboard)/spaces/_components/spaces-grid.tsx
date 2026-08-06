@@ -36,6 +36,7 @@ interface Space {
   icon?: string | null;
   color?: string | null;
   projectType?: string;
+  managementStyle?: string;
   status?: string;
   updatedAt?: string;
   lead?: Lead | null;
@@ -67,10 +68,12 @@ function leadName(l: Lead | null | undefined): string {
   return fn || l.email;
 }
 
-function typeLabel(t?: string): string {
-  if (t === "software") return "Team-managed software";
+function typeLabel(t?: string, style?: string): string {
+  // Jira-style prefix from the chosen management style; defaults to team-managed.
+  const managed = style === "company-managed" ? "Company-managed" : "Team-managed";
+  if (t === "software") return `${managed} software`;
   if (t === "discovery") return "Product Discovery";
-  if (t === "service") return "Service management";
+  if (t === "service") return `${managed} service`;
   return t ?? "—";
 }
 
@@ -391,7 +394,7 @@ export function SpacesGrid() {
                   )}
                 </td>
                 <td className="px-4 py-3 text-gray-700">{s.projectKey}</td>
-                <td className="px-4 py-3 text-gray-700">{typeLabel(s.projectType)}</td>
+                <td className="px-4 py-3 text-gray-700">{typeLabel(s.projectType, s.managementStyle)}</td>
                 <td className="px-4 py-3">
                   <div className="inline-flex items-center gap-2">
                     <span className="h-6 w-6 rounded-full bg-blue-600 text-white text-[10px] font-semibold flex items-center justify-center">

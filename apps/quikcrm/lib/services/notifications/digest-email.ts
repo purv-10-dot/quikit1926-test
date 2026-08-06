@@ -1,5 +1,5 @@
 /**
- * Daily-digest email RENDERER (Phase 5 template unit).
+ * Daily-digest email RENDERER (redesigned — detailed per-user breakdown).
  *
  * renderDigestEmail(assembled) → email-client-safe { subject, text, html }.
  * Matches the existing transactional-email convention (lib/notifications/
@@ -7,31 +7,61 @@
  * (no <style> block, no flex/grid), #1e40af brand header, escHtml() on every
  * dynamic value, safe fallback font stack.
  *
- * Sections (content shape locked from the prototype):
- *   - DEMO banner (prominent, top — from assembled.demoBanner; the data is
- *     ALL-TIME, not yesterday, while window unit (i) is deferred).
- *   - §1 Activity volume by rep
- *   - §2 Activity mix by type
- *   - §3 Per-rep custom-field aggregates (top-N types): Number → per-rep sum +
- *        team total; Select/Text → value×count.
- *   - §4 Tasks DUE/OVERDUE — LAYOUT + a LOUD "NOT BUILT" placeholder. The tasks
- *        DATA is a separate unit; this section must look UNMISTAKABLY unwired,
- *        never mistakable for "zero tasks today".
+ * ─── REDESIGN (leadership-digest v2) ─────────────────────────────────────────
+ * The old summary-only layout (counts by rep / by type / field aggregates) is
+ * replaced with DETAILED, per-CRM-user sections. For each rep we render four
+ * tables of ACTUAL records logged in the window:
+ *   📞 Calls    — Time · Contact · Company · Duration · Outcome · Notes
+ *   📧 Emails   — Time · To · Subject · Delivery · Reply Status
+ *   🤝 Meetings — Time · Client · Meeting Type · Status · Notes
+ *   ✅ Tasks    — Time · Task · Related Record · Status
+ *   📌 <Any other type> — Time · Related Record · Subject · Outcome · Notes
+ * Each empty section shows an honest "No Calls" / "No Emails" / … line, and each
+ * user's block ends with a compact count summary (Calls/Emails/Meetings/Tasks/
+ * every dynamic type/Total). A small org-wide totals strip sits at the very top.
+ *
+ * ─── ALL activity types, not just four ───────────────────────────────────────
+ * The four sections above keep bespoke columns because they join extra tables.
+ * EVERY other activity type — the remaining seeded defaults (Note, WhatsApp,
+ * Demo, Site Visit, …) and anything an admin adds in Settings → Activity Types —
+ * arrives via `u.otherSections`, which digest-detail builds from the DATA. The
+ * renderer just loops it, so a new custom type needs no change here. Per-user
+ * and org totals count every type (see userTotal).
+ *
+ * ─── The two bands show DIFFERENT slices of that one list ────────────────────
+ * digest-detail pads otherSections with `{ total: 0, rows: [] }` placeholders
+ * for every ACTIVE configured type the user didn't log. From that single list:
+ *   - Team Member Summary  → renders ALL rows, so leadership sees the full
+ *     activity menu and a 0 reads as real information ("no demos today").
+ *   - Detailed Activity Report → renders only sections with total > 0, so no
+ *     empty "Demo (0) / No Demo" block bloats the report.
+ * Both read the same array, so the two bands can never disagree on labels.
+ * Zero-count placeholders carry no rows and so never affect any total.
+ *
+ * `otherSections`/`otherTotal` are read defensively (`?? []` / `?? 0`) so a
+ * caller constructing UserActivityDetail without them still renders.
+ *
+ * HONEST LABELS (data-model constraints, see digest-detail.ts):
+ *   - Email "Delivery" shows "Sent" — the model has no real delivery/bounce
+ *     tracking, so we never fabricate "Delivered".
+ *   - Email "Reply Status" is DERIVED from an inbound message in the same thread.
+ *   - Meeting "Status" is the meeting outcome (no dedicated status column exists).
  *
  * sendDigestEmail(assembled) is CODED but the boundary is: it is NEVER fired
- * without explicit approval. (This env's email driver defaults to "console"
- * anyway — no real inbox is reachable here.)
- *
- * HONEST LABEL: a correct HTML string ≠ verified across real inbox clients
- * (Outlook/Gmail/Apple Mail) — that is OWED, deploy-only.
+ * without explicit approval. (This env's email driver defaults to "console".)
  */
 
 import { sendTransactionalEmail } from "@/lib/services/email/send";
 import type { AssembledDigest } from "@/lib/services/notifications/digest-run";
-import type { ActivityFieldAggregate } from "@/lib/services/dashboard/activity-field-aggregates";
-
-// Named tunable render limits.
-const MAX_VALUE_CHIPS_PER_REP = 6; // Select/Text: cap value×count chips per rep cell
+import type {
+  UserActivityDetail,
+  CallDetail,
+  EmailDetail,
+  MeetingDetail,
+  TaskDetail,
+  GenericActivitySection,
+} from "@/lib/services/notifications/digest-detail";
+import { MAX_ROWS_PER_SECTION } from "@/lib/services/notifications/digest-detail";
 
 const FONT_STACK =
   "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif";
@@ -47,137 +77,259 @@ function escHtml(str: string | null | undefined): string {
     .replace(/'/g, "&#39;");
 }
 
-// ── Section heading ─────────────────────────────────────────────────────────
-function sectionHeading(label: string): string {
-  return `<tr><td style="padding:22px 28px 6px;">
-    <h3 style="margin:0;font-size:13px;font-weight:700;letter-spacing:0.4px;
-               text-transform:uppercase;color:#1e40af;font-family:${FONT_STACK};">
-      ${escHtml(label)}
-    </h3></td></tr>`;
+// ── Time formatting — stable, TZ-agnostic HH:MM (24h) from a Date ────────────
+// We intentionally render in UTC-derived clock parts to keep the output
+// deterministic (no server-locale drift); the digest window itself is already
+// computed in the business timezone upstream.
+function fmtTime(d: Date | null | undefined): string {
+  if (!d) return "—";
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mm = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
 }
 
-// ── §1 Activity volume by rep ───────────────────────────────────────────────
-// FLIPPED (2026-06-24): now consumes assembled.activityByRep — TRUE per-rep
-// activity volume (count of CrmActivity rows per owner, tier-scoped), sourced
-// from buildRoleMetrics' new activityByRep DTO field (single-sourced scope). The
-// earlier honest-label workaround (field-aggregate CONTRIBUTIONS + amber flag) is
-// removed because the number is now correct. ownerName is the denormalized
-// CrmActivity.ownerName (same name source as §3 — one name behavior per email).
-// NOTE: numbers are ALL-TIME (the window param is built+verified but not yet
-// applied here — DEMO banner covers that). §1 now shows the right METRIC; the
-// banner covers the time-scope.
-function renderByRep(d: AssembledDigest): string {
-  const ranked = [...d.activityByRep].sort((a, b) => b.count - a.count);
-
-  const rows = ranked.length
-    ? ranked
-        .map(
-          (r) => `<tr>
-            <td style="padding:7px 28px;font-size:14px;color:#0f172a;font-family:${FONT_STACK};border-top:1px solid #f1f5f9;">${escHtml(r.ownerName ?? r.ownerId)}</td>
-            <td align="right" style="padding:7px 28px;font-size:14px;font-weight:600;color:#0f172a;font-family:${FONT_STACK};border-top:1px solid #f1f5f9;">${Number(r.count)}</td>
-          </tr>`,
-        )
-        .join("")
-    : `<tr><td style="padding:7px 28px;font-size:13px;color:#94a3b8;font-family:${FONT_STACK};">No rep activity in scope.</td></tr>`;
-
-  return (
-    sectionHeading("Activity volume by rep") +
-    `<tr><td style="padding:0 0 4px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table></td></tr>`
-  );
+// ── Small style helpers for email-safe tables ────────────────────────────────
+function th(label: string): string {
+  return `<th align="left" style="padding:6px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.3px;color:#475569;background:#eff6ff;font-family:${FONT_STACK};border-bottom:1px solid #e2e8f0;">${escHtml(label)}</th>`;
+}
+function td(inner: string): string {
+  return `<td style="padding:6px 10px;font-size:13px;color:#0f172a;font-family:${FONT_STACK};border-bottom:1px solid #f1f5f9;vertical-align:top;">${inner}</td>`;
 }
 
-// ── §2 Activity mix by type ─────────────────────────────────────────────────
-function renderByType(d: AssembledDigest): string {
-  const rows = d.activitiesByType.length
-    ? d.activitiesByType
-        .map(
-          (t) => `<tr>
-            <td style="padding:7px 28px;font-size:14px;color:#0f172a;font-family:${FONT_STACK};border-top:1px solid #f1f5f9;">${escHtml(t.type)}</td>
-            <td align="right" style="padding:7px 28px;font-size:14px;font-weight:600;color:#0f172a;font-family:${FONT_STACK};border-top:1px solid #f1f5f9;">${Number(t.count)}</td>
-          </tr>`,
-        )
-        .join("")
-    : `<tr><td style="padding:7px 28px;font-size:13px;color:#94a3b8;font-family:${FONT_STACK};">No activities in scope.</td></tr>`;
-
-  return (
-    sectionHeading("Activity mix by type") +
-    `<tr><td style="padding:0 0 4px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table></td></tr>`
-  );
+/** Wrap a rows-string in the standard bordered table shell with a header row. */
+function dataTable(headers: string[], bodyRows: string): string {
+  const head = `<tr>${headers.map(th).join("")}</tr>`;
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:separate;overflow:hidden;margin:0 0 6px;">${head}${bodyRows}</table>`;
 }
 
-// ── §3 Per-rep custom-field aggregates ──────────────────────────────────────
-function renderFieldCell(agg: ActivityFieldAggregate, ownerId: string): string {
-  const rep = agg.perRep.find((r) => r.ownerId === ownerId);
-  if (!rep) return "—";
-  if (agg.fieldType === "Number") {
-    return String(rep.numberSum ?? 0);
-  }
-  const chips = (rep.countsByValue ?? []).slice(0, MAX_VALUE_CHIPS_PER_REP);
-  if (chips.length === 0) return "—";
-  return chips.map((c) => `${escHtml(c.value)}&times;${Number(c.count)}`).join(", ");
+/** An honest empty-state line for a section that has no records. */
+function emptyLine(label: string): string {
+  return `<p style="margin:2px 0 10px;font-size:13px;color:#94a3b8;font-family:${FONT_STACK};">${escHtml(label)}</p>`;
 }
 
-function renderTypeTable(typeId: string, aggs: ActivityFieldAggregate[]): string {
-  if (aggs.length === 0) return "";
+/** "+N more …" overflow note when a section was capped. */
+function overflowNote(total: number, shown: number, noun: string): string {
+  if (total <= shown) return "";
+  return `<p style="margin:2px 0 10px;font-size:12px;color:#64748b;font-style:italic;font-family:${FONT_STACK};">+${total - shown} more ${escHtml(noun)} not shown (capped at ${MAX_ROWS_PER_SECTION}).</p>`;
+}
 
-  const owners = new Map<string, string>();
-  for (const a of aggs) for (const r of a.perRep) if (!owners.has(r.ownerId)) owners.set(r.ownerId, r.ownerName ?? r.ownerId);
-  const ownerList = Array.from(owners.entries());
-  const hasTotals = aggs.some((a) => a.teamTotal?.numberSum != null);
+/** Section sub-heading inside a user block (e.g. "📞 Calls (5)"). */
+function subHeading(text: string): string {
+  return `<p style="margin:14px 0 6px;font-size:14px;font-weight:700;color:#1e40af;font-family:${FONT_STACK};">${escHtml(text)}</p>`;
+}
 
-  const th = (label: string) =>
-    `<th align="left" style="padding:6px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.3px;color:#475569;background:#eff6ff;font-family:${FONT_STACK};border-bottom:1px solid #e2e8f0;">${escHtml(label)}</th>`;
-  const td = (inner: string) =>
-    `<td style="padding:6px 10px;font-size:13px;color:#0f172a;font-family:${FONT_STACK};border-bottom:1px solid #f1f5f9;">${inner}</td>`;
-
-  const head = `<tr>${th("Rep")}${aggs.map((a) => th(a.fieldLabel)).join("")}</tr>`;
-  const body = ownerList
-    .map(([oid, name]) => `<tr>${td(escHtml(name))}${aggs.map((a) => td(renderFieldCell(a, oid))).join("")}</tr>`)
+// ── Per-section renderers ─────────────────────────────────────────────────────
+function renderCalls(calls: CallDetail[], total: number): string {
+  const heading = subHeading(`📞 Calls (${total})`);
+  if (total === 0) return heading + emptyLine("No Calls");
+  const rows = calls
+    .map(
+      (c) =>
+        `<tr>${td(escHtml(fmtTime(c.time)))}${td(escHtml(c.contact))}${td(escHtml(c.company))}${td(escHtml(c.durationLabel))}${td(escHtml(c.outcome))}${td(escHtml(c.notes))}</tr>`,
+    )
     .join("");
-  const foot = hasTotals
-    ? `<tr>${td("<strong>Team total</strong>")}${aggs
-        .map((a) => td(a.teamTotal?.numberSum != null ? `<strong>${Number(a.teamTotal.numberSum)}</strong>` : ""))
-        .join("")}</tr>`
-    : "";
+  return (
+    heading +
+    dataTable(["Time", "Contact", "Company", "Duration", "Outcome", "Notes"], rows) +
+    overflowNote(total, calls.length, "calls")
+  );
+}
 
-  return `<tr><td style="padding:4px 28px 14px;">
-    <p style="margin:0 0 6px;font-size:12px;font-weight:600;color:#475569;font-family:${FONT_STACK};">${escHtml(typeId)}</p>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:separate;overflow:hidden;">
-      ${head}${body}${foot}
+function renderEmails(emails: EmailDetail[], total: number): string {
+  const heading = subHeading(`📧 Emails (${total})`);
+  if (total === 0) return heading + emptyLine("No Emails");
+  const rows = emails
+    .map(
+      (e) =>
+        `<tr>${td(escHtml(fmtTime(e.time)))}${td(escHtml(e.to))}${td(escHtml(e.subject))}${td(escHtml(e.delivery))}${td(escHtml(e.replyStatus))}</tr>`,
+    )
+    .join("");
+  return (
+    heading +
+    dataTable(["Time", "To", "Subject", "Delivery", "Reply Status"], rows) +
+    overflowNote(total, emails.length, "emails")
+  );
+}
+
+function renderMeetings(meetings: MeetingDetail[], total: number): string {
+  const heading = subHeading(`🤝 Meetings (${total})`);
+  if (total === 0) return heading + emptyLine("No Meetings");
+  const rows = meetings
+    .map(
+      (m) =>
+        `<tr>${td(escHtml(fmtTime(m.time)))}${td(escHtml(m.client))}${td(escHtml(m.meetingType))}${td(escHtml(m.status))}${td(escHtml(m.notes))}</tr>`,
+    )
+    .join("");
+  return (
+    heading +
+    dataTable(["Time", "Client", "Meeting Type", "Status", "Notes"], rows) +
+    overflowNote(total, meetings.length, "meetings")
+  );
+}
+
+function renderTasks(tasks: TaskDetail[], total: number): string {
+  const heading = subHeading(`✅ Tasks Completed (${total})`);
+  if (total === 0) return heading + emptyLine("No Tasks");
+  const rows = tasks
+    .map(
+      (t) =>
+        `<tr>${td(escHtml(fmtTime(t.time)))}${td(escHtml(t.task))}${td(escHtml(t.relatedRecord))}${td(escHtml(t.status))}</tr>`,
+    )
+    .join("");
+  return (
+    heading +
+    dataTable(["Time", "Task", "Related Record", "Status"], rows) +
+    overflowNote(total, tasks.length, "tasks")
+  );
+}
+
+/**
+ * One DYNAMIC activity-type section (any type without a specialized renderer).
+ * Columns are the ones every activity has, so a new custom type needs no code.
+ *
+ * Only called for sections with total > 0 — renderUserBlock filters out the
+ * zero-count placeholders that digest-detail pads in for the summary band, so
+ * the detail report never shows an empty "Demo (0) / No Demo" section. The
+ * empty-state branch below is retained as a defensive fallback for a caller
+ * that hands us a zero section directly.
+ */
+function renderGenericSection(s: GenericActivitySection): string {
+  const heading = subHeading(`📌 ${s.typeLabel} (${s.total})`);
+  if (s.total === 0) return heading + emptyLine(`No ${s.typeLabel}`);
+  const rows = s.rows
+    .map(
+      (r) =>
+        `<tr>${td(escHtml(fmtTime(r.time)))}${td(escHtml(r.relatedRecord))}${td(escHtml(r.subject))}${td(escHtml(r.outcome))}${td(escHtml(r.notes))}</tr>`,
+    )
+    .join("");
+  return (
+    heading +
+    dataTable(["Time", "Related Record", "Subject", "Outcome", "Notes"], rows) +
+    overflowNote(s.total, s.rows.length, s.typeLabel.toLowerCase())
+  );
+}
+
+/**
+ * Total activities for one user across EVERY type — the four specialized
+ * sections plus all dynamically-discovered ones. Single source of truth so the
+ * per-user summary, the org strip, and the text fallback can never disagree.
+ */
+function userTotal(u: UserActivityDetail): number {
+  return u.callsTotal + u.emailsTotal + u.meetingsTotal + u.tasksTotal + (u.otherTotal ?? 0);
+}
+
+/** Compact per-user vertical key-value summary. */
+function renderUserSummary(u: UserActivityDetail): string {
+  const totalActivities = userTotal(u);
+  // Vertical key : value rows. Label column is fixed-width so the colons line
+  // up; a monospace stack keeps the alignment stable across email clients.
+  const row = (label: string, n: number, emphasize = false) =>
+    `<tr>
+      <td style="padding:3px 12px 3px 0;font-size:13px;color:${emphasize ? "#1e40af" : "#475569"};font-family:${FONT_STACK};white-space:nowrap;">${escHtml(label)}</td>
+      <td style="padding:3px 0;font-size:13px;color:${emphasize ? "#1e40af" : "#475569"};font-family:${FONT_STACK};">:</td>
+      <td style="padding:3px 0 3px 10px;font-size:13px;font-family:${FONT_STACK};"><strong style="color:${emphasize ? "#1e40af" : "#0f172a"};">${n}</strong></td>
+    </tr>`;
+  return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 4px;border-collapse:collapse;">
+    ${row("Calls", u.callsTotal)}
+    ${row("Emails", u.emailsTotal)}
+    ${row("Meetings", u.meetingsTotal)}
+    ${row("Tasks", u.tasksTotal)}
+    ${(u.otherSections ?? []).map((s) => row(s.typeLabel, s.total)).join("")}
+    ${row("Total Activities", totalActivities, true)}
+  </table>`;
+}
+
+/** Blue user-name banner reused by both the summary and detail sections. */
+function renderUserBanner(u: UserActivityDetail): string {
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+           style="background:#1e40af;border-radius:8px;">
+      <tr><td style="padding:10px 14px;font-size:16px;font-weight:700;color:#ffffff;font-family:${FONT_STACK};">
+        👤 ${escHtml(u.userName)}
+      </td></tr>
+    </table>`;
+}
+
+/** Section band heading (e.g. "Team Member Summary" / "Detailed Activity Report"). */
+function renderSectionHeading(text: string): string {
+  return `<tr><td style="padding:20px 28px 4px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+           style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;">
+      <tr><td align="center" style="padding:12px 14px;font-size:15px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#1e40af;font-family:${FONT_STACK};">
+        ${escHtml(text)}
+      </td></tr>
     </table>
   </td></tr>`;
 }
 
-function renderFieldAggregates(d: AssembledDigest): string {
-  const tables = d.fieldAggregates.map((fa) => renderTypeTable(fa.activityTypeId, fa.aggregates)).join("");
-  return (
-    sectionHeading("Per-rep field aggregates (top types)") +
-    (tables ||
-      `<tr><td style="padding:4px 28px 14px;font-size:13px;color:#94a3b8;font-family:${FONT_STACK};">No custom-field activity in scope.</td></tr>`)
-  );
+/** Per-user summary-only block (banner + count summary + divider). */
+function renderUserSummaryBlock(u: UserActivityDetail): string {
+  return `<tr><td style="padding:8px 28px 4px;">
+    ${renderUserBanner(u)}
+    ${renderUserSummary(u)}
+  </td></tr>
+  <tr><td style="padding:0 28px;"><div style="border-top:1px solid #e2e8f0;margin:12px 0;"></div></td></tr>`;
 }
 
-// ── §4 Tasks completed in the window — per-rep + total (matches §2 style) ─────
-function renderCompletedTasks(d: AssembledDigest): string {
-  const rows = d.completedTasksByRep.length
-    ? d.completedTasksByRep
-        .map(
-          (r) => `<tr>
-            <td style="padding:7px 28px;font-size:14px;color:#0f172a;font-family:${FONT_STACK};border-top:1px solid #f1f5f9;">${escHtml(r.ownerName ?? r.userId)}</td>
-            <td align="right" style="padding:7px 28px;font-size:14px;font-weight:600;color:#0f172a;font-family:${FONT_STACK};border-top:1px solid #f1f5f9;">${Number(r.count)}</td>
-          </tr>`,
-        )
-        .join("") +
-      `<tr>
-        <td style="padding:7px 28px;font-size:13px;font-weight:600;color:#475569;font-family:${FONT_STACK};border-top:1px solid #e2e8f0;">Total</td>
-        <td align="right" style="padding:7px 28px;font-size:14px;font-weight:700;color:#0f172a;font-family:${FONT_STACK};border-top:1px solid #e2e8f0;">${Number(d.completedTasksTotal)}</td>
-      </tr>`
-    : `<tr><td style="padding:7px 28px;font-size:13px;color:#94a3b8;font-family:${FONT_STACK};">No tasks completed in the last 24h.</td></tr>`;
+/**
+ * One complete per-user detail block: banner + the four specialized sections +
+ * one section per dynamically-discovered activity type that HAS records.
+ *
+ * Zero-count dynamic sections are filtered out here: digest-detail pads every
+ * active configured type onto otherSections so the Team Member Summary can list
+ * the full menu, but the detail report only shows types with actual activity.
+ * The four specialized sections still render their honest "No Calls"/"No Emails"
+ * empty states — those are fixed columns of the report, not the dynamic menu.
+ */
+function renderUserBlock(u: UserActivityDetail): string {
+  const logged = (u.otherSections ?? []).filter((s) => s.total > 0);
+  return `<tr><td style="padding:8px 28px 4px;">
+    ${renderUserBanner(u)}
+    ${renderCalls(u.calls, u.callsTotal)}
+    ${renderEmails(u.emails, u.emailsTotal)}
+    ${renderMeetings(u.meetings, u.meetingsTotal)}
+    ${renderTasks(u.tasks, u.tasksTotal)}
+    ${logged.map(renderGenericSection).join("")}
+  </td></tr>
+  <tr><td style="padding:0 28px;"><div style="border-top:2px solid #e2e8f0;margin:14px 0;"></div></td></tr>`;
+}
 
-  return (
-    sectionHeading("Tasks completed") +
-    `<tr><td style="padding:0 0 4px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table></td></tr>`
+// ── Org-wide summary strip (compact overview above the detail) ────────────────
+function renderOrgSummary(d: AssembledDigest): string {
+  const totals = d.userDetails.reduce(
+    (acc, u) => {
+      acc.calls += u.callsTotal;
+      acc.emails += u.emailsTotal;
+      acc.meetings += u.meetingsTotal;
+      acc.tasks += u.tasksTotal;
+      acc.other += u.otherTotal ?? 0;
+      return acc;
+    },
+    { calls: 0, emails: 0, meetings: 0, tasks: 0, other: 0 },
   );
+  // Total spans EVERY activity type, including all dynamic ones.
+  const total = d.userDetails.reduce((sum, u) => sum + userTotal(u), 0);
+  const cell = (label: string, n: number) =>
+    `<td align="center" style="padding:10px 8px;font-family:${FONT_STACK};border-right:1px solid #e2e8f0;">
+      <div style="font-size:20px;font-weight:700;color:#1e40af;">${n}</div>
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#64748b;">${escHtml(label)}</div>
+    </td>`;
+  return `<tr><td style="padding:16px 28px 4px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+           style="border:1px solid #e2e8f0;border-radius:10px;border-collapse:separate;overflow:hidden;">
+      <tr>
+        ${cell("Reps", d.userDetails.length)}
+        ${cell("Calls", totals.calls)}
+        ${cell("Emails", totals.emails)}
+        ${cell("Meetings", totals.meetings)}
+        ${cell("Tasks", totals.tasks)}
+        ${totals.other > 0 ? cell("Other", totals.other) : ""}
+        <td align="center" style="padding:10px 8px;font-family:${FONT_STACK};background:#eff6ff;">
+          <div style="font-size:20px;font-weight:700;color:#1e40af;">${total}</div>
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#1e40af;">Total</div>
+        </td>
+      </tr>
+    </table>
+  </td></tr>`;
 }
 
 // ── Demo banner (prominent, top) ─────────────────────────────────────────────
@@ -193,6 +345,46 @@ function renderDemoBanner(d: AssembledDigest): string {
   </td></tr>`;
 }
 
+// ── All per-user blocks (or an honest empty state) ────────────────────────────
+// Layout: a "Team Member Summary" section (summaries only, every user) followed
+// by a "Detailed Activity Report" section (full per-user tables, every user).
+function renderUserSections(d: AssembledDigest): string {
+  if (d.userDetails.length === 0) {
+    return `<tr><td style="padding:20px 28px;font-size:14px;color:#94a3b8;font-family:${FONT_STACK};">
+      No rep activity in scope for this period.
+    </td></tr>`;
+  }
+
+  const summarySection =
+    renderSectionHeading("Team Member Summary") +
+    d.userDetails.map(renderUserSummaryBlock).join("");
+
+  const detailSection =
+    renderSectionHeading("Detailed Activity Report") +
+    d.userDetails.map(renderUserBlock).join("");
+
+  return summarySection + detailSection;
+}
+
+// ── Plain-text fallback (per-user counts) ─────────────────────────────────────
+function renderTextBody(d: AssembledDigest): string {
+  return d.userDetails
+    .map((u) => {
+      const total = userTotal(u);
+      // Dynamic types are appended after the four fixed ones, same order as HTML.
+      const parts = [
+        `Calls: ${u.callsTotal}`,
+        `Emails: ${u.emailsTotal}`,
+        `Meetings: ${u.meetingsTotal}`,
+        `Tasks: ${u.tasksTotal}`,
+        ...(u.otherSections ?? []).map((s) => `${s.typeLabel}: ${s.total}`),
+        `Total: ${total}`,
+      ];
+      return [`👤 ${u.userName}`, `  ${parts.join(" | ")}`].join("\n");
+    })
+    .join("\n\n");
+}
+
 // ── Public renderer ──────────────────────────────────────────────────────────
 export function renderDigestEmail(assembled: AssembledDigest): {
   subject: string;
@@ -205,7 +397,6 @@ export function renderDigestEmail(assembled: AssembledDigest): {
   const isWeekly = assembled.variant === "weekly";
   const headerLabel = isWeekly ? "Weekly Summary" : "Activity Digest";
   const baseSubject = isWeekly ? "QuikCRM Weekly Summary — last 7 days" : "QuikCRM Activity Digest";
-  const windowLabel = isWeekly ? "last 7 days" : "last 24h";
   const subject = assembled.isDemo ? `[DEMO] ${baseSubject}` : baseSubject;
 
   // Plain-text fallback.
@@ -214,9 +405,7 @@ export function renderDigestEmail(assembled: AssembledDigest): {
     "",
     `Prepared for: ${who}`,
     "",
-    "Activity volume by rep / Activity mix by type / Per-rep field aggregates — see HTML.",
-    "",
-    `Tasks completed (${windowLabel}): ${assembled.completedTasksTotal}.`,
+    assembled.userDetails.length ? renderTextBody(assembled) : "No rep activity in scope for this period.",
   ].join("\n");
 
   const html = `<!DOCTYPE html>
@@ -229,8 +418,8 @@ export function renderDigestEmail(assembled: AssembledDigest): {
 <body style="margin:0;padding:0;background:#f1f5f9;font-family:${FONT_STACK};">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:32px 16px;">
     <tr><td align="center">
-      <table role="presentation" width="600" cellpadding="0" cellspacing="0"
-             style="background:#ffffff;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden;max-width:600px;width:100%;">
+      <table role="presentation" width="640" cellpadding="0" cellspacing="0"
+             style="background:#ffffff;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden;max-width:640px;width:100%;">
 
         <!-- Header -->
         <tr><td style="background:#1e40af;padding:18px 28px;">
@@ -244,10 +433,8 @@ export function renderDigestEmail(assembled: AssembledDigest): {
         </td></tr>
 
         ${renderDemoBanner(assembled)}
-        ${renderByRep(assembled)}
-        ${renderByType(assembled)}
-        ${renderFieldAggregates(assembled)}
-        ${renderCompletedTasks(assembled)}
+        ${renderOrgSummary(assembled)}
+        ${renderUserSections(assembled)}
 
         <!-- Footer -->
         <tr><td style="padding:16px 28px;border-top:1px solid #f1f5f9;">
@@ -267,9 +454,9 @@ export function renderDigestEmail(assembled: AssembledDigest): {
 
 /**
  * Send a rendered digest to its recipient. CODED, but the BOUNDARY is: this is
- * NOT fired without explicit approval. No test invokes it. (The email driver in
- * this env defaults to "console" — no real inbox is reachable — but we still do
- * not call this on any automated path until the cron schedule + send are approved.)
+ * NOT fired without explicit approval. (The email driver in this env defaults to
+ * "console" — no real inbox is reachable — but we still do not call this on any
+ * automated path until the cron schedule + send are approved.)
  */
 export async function sendDigestEmail(assembled: AssembledDigest): Promise<void> {
   const { subject, text, html } = renderDigestEmail(assembled);

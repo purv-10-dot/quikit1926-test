@@ -4,8 +4,10 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Check, X, Clock, FileText, Loader2 } from "lucide-react";
-import { clsx } from "clsx";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
+import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
+import { TabSwitcher } from "@/components/hrms/tab-switcher";
 
 const REG_EXPORT_COLUMNS = [
   { header: "Date", key: "date", width: 16 },
@@ -20,6 +22,12 @@ interface RegRecord {
   date: string;
   checkIn: string | null;
   checkOut: string | null;
+  // The employee's REQUESTED corrected times — set while regularizationStatus
+  // is "Pending". On Approve they get copied onto checkIn/checkOut (and these
+  // are cleared); on Reject/Cancel both stay/become null. So checkIn/checkOut
+  // alone are empty for the exact rows an approver needs to review.
+  regularizedCheckIn: string | null;
+  regularizedCheckOut: string | null;
   regularizationStatus: "None" | "Pending" | "Approved" | "Rejected" | "Cancelled";
   regularizationReason: string | null;
   employee: {
@@ -38,6 +46,8 @@ export default function RegularizationApprovalsPage() {
   const api = useApiClient();
   const qc = useQueryClient();
   const [tab, setTab] = useState<Tab>("Pending");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   const { data, isLoading } = useQuery({
     queryKey: ["regularizations", tab],
@@ -45,12 +55,16 @@ export default function RegularizationApprovalsPage() {
   });
 
   const records = data?.data ?? [];
+  const totalPages = Math.max(1, Math.ceil(records.length / PAGE_SIZE));
+  const pageItems = records.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const exportRows = useMemo(
     () =>
       records.map((r) => {
-        const ci = r.checkIn ? new Date(r.checkIn).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—";
-        const co = r.checkOut ? new Date(r.checkOut).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—";
+        const inVal = r.checkIn ?? r.regularizedCheckIn;
+        const outVal = r.checkOut ?? r.regularizedCheckOut;
+        const ci = inVal ? new Date(inVal).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—";
+        const co = outVal ? new Date(outVal).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—";
         return {
           date: new Date(r.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
           employee: `${r.employee.firstName} ${r.employee.lastName}`.trim() + (r.employee.employeeCode ? ` (${r.employee.employeeCode})` : ""),
@@ -73,26 +87,19 @@ export default function RegularizationApprovalsPage() {
 
   return (
     <div>
-      <h1 className="text-base font-semibold text-gray-900 mb-1">Regularization Approvals</h1>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
+      <h1 className="text-base font-semibold text-gray-900 mb-1">Approve Regularizations</h1>
       <p className="text-xs text-gray-500 mb-5">Review attendance regularization requests from your team.</p>
 
-      <div className="border-b border-[var(--border)] mb-4">
-        <div className="flex items-center gap-4">
-          {(["Pending", "Approved", "Rejected", "Cancelled"] as Tab[]).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={clsx(
-                "text-[13px] font-semibold py-3 border-b-2 -mb-px transition-colors",
-                tab === t ? "border-[#166534] text-[#166534] font-semibold" : "border-transparent text-gray-600 hover:text-gray-900",
-              )}
-            >
-              {t}
-            </button>
-          ))}
-          <div className="ml-auto pb-2">
-            <ExcelExportButton filename="regularizations" sheetName="Regularizations" columns={REG_EXPORT_COLUMNS} rows={exportRows} label="Excel" />
-          </div>
+      <div className="flex items-center gap-4 mb-4 flex-wrap">
+        <TabSwitcher
+          value={tab}
+          onChange={(v) => { setTab(v as Tab); setPage(1); }}
+          tabs={(["Pending", "Approved", "Rejected", "Cancelled"] as Tab[]).map((t) => ({ value: t, label: t }))}
+        />
+        <div className="ml-auto">
+          <ExcelExportButton filename="regularizations" sheetName="Regularizations" columns={REG_EXPORT_COLUMNS} rows={exportRows} label="Excel" />
         </div>
       </div>
 
@@ -106,6 +113,7 @@ export default function RegularizationApprovalsPage() {
             <Clock size={28} className="text-gray-300" /> No {tab.toLowerCase()} regularizations
           </div>
         ) : (
+          <>
           <table className="w-full text-xs">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200 text-left text-[11px] uppercase tracking-[0.04em] text-gray-500 font-semibold">
@@ -118,8 +126,13 @@ export default function RegularizationApprovalsPage() {
               </tr>
             </thead>
             <tbody>
-              {records.map((r, i) => {
+              {pageItems.map((r, i) => {
                 const initials = `${r.employee.firstName[0] ?? ""}${r.employee.lastName[0] ?? ""}`.toUpperCase();
+                // Pending rows carry the requested time in regularizedCheckIn/Out
+                // (checkIn/Out are still empty); Approved rows have it copied onto
+                // checkIn/Out already — this fallback covers both.
+                const inVal = r.checkIn ?? r.regularizedCheckIn;
+                const outVal = r.checkOut ?? r.regularizedCheckOut;
                 return (
                   <tr key={r.id} className="row-stagger border-b border-gray-100 last:border-0 hover:bg-slate-50/60 transition-colors" style={{ ["--i" as never]: Math.min(i, 10) }}>
                     <td className="px-4 py-2.5">
@@ -142,10 +155,10 @@ export default function RegularizationApprovalsPage() {
                       {new Date(r.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
                     </td>
                     <td className="px-4 py-2.5 tabular-nums text-gray-800">
-                      {r.checkIn ? new Date(r.checkIn).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—"}
+                      {inVal ? new Date(inVal).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—"}
                     </td>
                     <td className="px-4 py-2.5 tabular-nums text-gray-800">
-                      {r.checkOut ? new Date(r.checkOut).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—"}
+                      {outVal ? new Date(outVal).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—"}
                     </td>
                     <td className="px-4 py-2.5 max-w-sm">
                       <div className="flex items-start gap-2 text-gray-700 text-xs">
@@ -178,6 +191,8 @@ export default function RegularizationApprovalsPage() {
               })}
             </tbody>
           </table>
+          <Pagination page={page} totalPages={totalPages} total={records.length} limit={PAGE_SIZE} onPageChange={setPage} />
+          </>
         )}
       </div>
     </div>

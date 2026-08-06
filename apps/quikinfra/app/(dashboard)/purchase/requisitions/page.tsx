@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, Send } from "lucide-react";
 import {
+  PageFrame,
   PageHeader, PageContainer, StatusChip, TabBar,
 } from "@/components/PageShell";
 import type { LineProcurement } from "@/lib/purchase/procurement-types";
@@ -228,6 +229,7 @@ export default function PurchaseRequisitionsPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Purchase Requisitions"
         subtitle="Request materials needed for site operations"
@@ -236,7 +238,7 @@ export default function PurchaseRequisitionsPage() {
 
       <TabBar tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
 
-      <PageContainer>
+      <PageContainer fill>
         <DataTable
           id="purchase-requisitions"
           columns={columns}
@@ -257,6 +259,7 @@ export default function PurchaseRequisitionsPage() {
           onSortChange={(k, d) => setSort({ by: k, order: d })}
         />
       </PageContainer>
+      </PageFrame>
 
       <PRCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
 

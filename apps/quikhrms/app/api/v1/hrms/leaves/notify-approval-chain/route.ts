@@ -5,6 +5,7 @@ import { successResponse, internalError } from "@/lib/api-response";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { APP_ID } from "@/lib/rbac/registry";
 import { resolveAndSend } from "@/lib/email/resolve";
+import { appBaseUrl } from "@/lib/utils/app-url";
 
 /**
  * POST /api/v1/hrms/leaves/notify-approval-chain
@@ -65,7 +66,7 @@ export const POST = withAuth(async (_req: NextRequest, { orgId, userId }) => {
       if (recipients.length > 0) {
         const company = await prisma.companySettings.findUnique({ where: { orgId }, select: { companyName: true } });
         const companyName = company?.companyName ?? "QuikIT HRMS";
-        const base = (process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "").replace(/\/$/, "");
+        const base = appBaseUrl();
         const settingsUrl = base ? `${base}/settings/approval-chains` : "Settings → Approval Chains";
         const linkHtml = base
           ? `<a href="${settingsUrl}" style="color:#16a34a;font-weight:600;">Set up the Leave approval chain</a>`
@@ -93,4 +94,4 @@ export const POST = withAuth(async (_req: NextRequest, { orgId, userId }) => {
     console.error("POST /leaves/notify-approval-chain error:", error);
     return internalError();
   }
-});
+}, { rateLimit: { max: 3, windowSec: 3600, by: "user", scope: "leaves.notify-chain" } });

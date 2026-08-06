@@ -7,6 +7,7 @@
  */
 
 import { Fragment, useState, useEffect, useCallback } from "react"
+import { useRevalidateOnFocus } from "@/lib/hooks/useRevalidateOnFocus"
 import { Loader2, ClipboardList, Plus, Info, ChevronUp } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { RequirePerm } from "@/components/require-perm"
@@ -60,6 +61,8 @@ function MyRequests() {
   useEffect(() => {
     void load()
   }, [load])
+
+  useRevalidateOnFocus(load)
 
   async function handleCreate(payload: NewRequestPayload) {
     const res = await fetch("/api/asset-requests", {

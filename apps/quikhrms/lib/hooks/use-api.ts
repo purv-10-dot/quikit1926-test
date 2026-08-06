@@ -73,7 +73,25 @@ async function apiFetch<T>(
   if (!opts?.skipContentType) headers["Content-Type"] = "application/json";
 
   return managedFetch<ApiSuccess<T>>(withBasePath(url), { ...options, headers }, async (res) => {
-    const data = await res.json();
+    // A layer in front of our route (platform request-size limit, an auth
+    // redirect to the login page, a proxy/edge error page) can reject the
+    // request before it ever reaches our JSON-returning handler — the body
+    // is then an HTML error page, not JSON. res.json() throws a cryptic
+    // "Unexpected token '<' … is not valid JSON" in that case; surface a
+    // real message instead, using the HTTP status as the best signal we have.
+    let data: { success: boolean; error?: { message?: string; code?: string; details?: unknown } };
+    try {
+      data = await res.json();
+    } catch {
+      if (res.status === 401) handleSessionExpiry();
+      const message =
+        res.status === 413 ? "The file is too large for the server to accept."
+        : res.status === 401 ? "Your session has expired. Please sign in again."
+        : res.status === 403 ? "You don't have permission to do this."
+        : res.status >= 500 ? "The server hit an unexpected error. Please try again."
+        : `Unexpected response from the server (status ${res.status}). Please try again.`;
+      throw new ApiError(message, "NON_JSON_RESPONSE", res.status);
+    }
     if (!data.success) {
       if (res.status === 401) handleSessionExpiry();
       throw new ApiError(
@@ -145,6 +163,25 @@ async function apiDownloadPost(url: string, body: unknown, fallbackName?: string
   URL.revokeObjectURL(objectUrl);
 }
 
+/**
+ * Fetch a binary response (with auth) and return a blob object URL. The caller
+ * MUST revoke it (URL.revokeObjectURL) when done. Used by the in-app PDF viewer
+ * so files render inside HRMS instead of navigating the tab to a bare blob URL.
+ */
+async function apiBlobUrl(url: string): Promise<string> {
+  const res = await fetch(withBasePath(url), { headers: getAuthHeaders() });
+  if (!res.ok) {
+    let msg = `Couldn't open file (${res.status})`;
+    try {
+      const data = await res.json();
+      msg = data?.error?.message ?? msg;
+    } catch { /* not JSON */ }
+    throw new ApiError(msg, "VIEW_FAILED", res.status);
+  }
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
 /** Fetch a binary response (with auth) and open it inline in a new tab. */
 async function apiView(url: string): Promise<void> {
   const res = await fetch(withBasePath(url), { headers: getAuthHeaders() });
@@ -181,5 +218,6 @@ export function useApiClient() {
     download: (url: string, filename?: string) => apiDownload(url, filename),
     downloadPost: (url: string, body: unknown, filename?: string) => apiDownloadPost(url, body, filename),
     view: (url: string) => apiView(url),
+    blobUrl: (url: string) => apiBlobUrl(url),
   };
 }

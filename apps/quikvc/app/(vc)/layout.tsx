@@ -16,6 +16,7 @@ import { getVCRole, FUND_ADMIN_ROLES } from "@/lib/rbac";
 import { homePathForPortal, portalForRole } from "@/lib/roles";
 import { db } from "@/lib/db";
 import { SessionGuard } from "@/components/session-guard";
+import { SupportLauncher } from "@quikit/ui/support";
 
 const ALL_NAV_ITEMS = [
   { label: "Home",      href: "/home",      roles: null },
@@ -23,6 +24,8 @@ const ALL_NAV_ITEMS = [
   { label: "Deals",     href: "/deals",     roles: null },
   { label: "Investors", href: "/investors", roles: FUND_ADMIN_ROLES },
   { label: "Admin",     href: "/admin",     roles: FUND_ADMIN_ROLES },
+  // Shared, ungated route — see app/settings/support/page.tsx.
+  { label: "Support",   href: "/settings/support", roles: null },
 ] as const;
 
 export default async function VCLayout({ children }: { children: React.ReactNode }) {
@@ -117,6 +120,9 @@ export default async function VCLayout({ children }: { children: React.ReactNode
         <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
     </div>
+    {/* Floating support launcher — a sibling of the portal shell so it stays
+        pinned to the viewport on every route in this portal. */}
+    <SupportLauncher appSlug="quikvc" />
     </SessionGuard>
   );
 }

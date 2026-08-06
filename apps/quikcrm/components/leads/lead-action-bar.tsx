@@ -8,7 +8,6 @@ import { useToast } from "@/hooks/use-toast";
 import { LeadCallDispositionModal } from "@/components/leads/call-disposition-modal";
 import { CallModal } from "@/components/telephony/call-modal";
 import { ConvertLeadModal, type ConvertResult } from "@/components/leads/convert-lead-modal";
-import { LogActivityModal } from "@/components/activities/log-activity-modal";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 
@@ -38,7 +37,6 @@ export function LeadActionBar({
 }: Props) {
   const router = useRouter();
   const toast = useToast();
-  const [logActivityOpen, setLogActivityOpen] = useState(false);
   const [smbOpen, setSmbOpen] = useState(false);
   const [dispositionOpen, setDispositionOpen] = useState(false);
   const [callOpen, setCallOpen] = useState(false);
@@ -64,13 +62,18 @@ export function LeadActionBar({
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <button
-          onClick={() => setLogActivityOpen(true)}
-          disabled={!canLogActivity}
-          className="crm-btn-secondary disabled:opacity-50"
-        >
-          Log activity
-        </button>
+        {canLogActivity ? (
+          <Link
+            href={`/activities/log?relatedKind=Lead&relatedObjectId=${encodeURIComponent(leadId)}&label=${encodeURIComponent(leadName)}`}
+            className="crm-btn-secondary"
+          >
+            Log activity
+          </Link>
+        ) : (
+          <button disabled className="crm-btn-secondary disabled:opacity-50">
+            Log activity
+          </button>
+        )}
         <button
           onClick={() => setSmbOpen(true)}
           className="inline-flex items-center justify-center gap-2 rounded-lg bg-crm-blue px-4 py-2 text-sm font-medium text-white shadow-sm hover:brightness-110"
@@ -100,17 +103,6 @@ export function LeadActionBar({
           Open dialer
         </button>
       </div>
-
-      <LogActivityModal
-        open={logActivityOpen}
-        onClose={() => setLogActivityOpen(false)}
-        onSuccess={() => {
-          setLogActivityOpen(false);
-          router.refresh();
-        }}
-        canViewLeads={canLogActivity}
-        initialLead={{ id: leadId, label: leadName }}
-      />
 
       <Modal open={smbOpen} onClose={() => setSmbOpen(false)} title="SMB Outreach">
         <p className="text-sm text-crm-muted">

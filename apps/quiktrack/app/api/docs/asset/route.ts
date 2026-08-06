@@ -2,6 +2,8 @@
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { getPresignedGetUrl, keyBelongsToTenant } from "@/lib/storage";
 
+export const runtime = "nodejs";
+
 /**
  * GET /api/docs/asset?key=tenants/{orgId}/...
  *
@@ -24,8 +26,20 @@ export const GET = withOrgAuth(async (ctx, req) => {
     return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
   }
 
+  // Assets are served from GCS only (no local-disk storage) — mint a fresh
+  // signed GET URL and redirect the browser there. When `download=1`, the
+  // signed URL carries `Content-Disposition: attachment` so the browser saves
+  // the file instead of opening it (the anchor `download` attr can't do this
+  // across the redirect to Google's cross-origin host). `name` sets the saved
+  // filename.
+  const wantsDownload = url.searchParams.get("download") === "1";
+  const downloadName = url.searchParams.get("name")?.trim() || undefined;
   try {
-    const signed = await getPresignedGetUrl(key);
+    const signed = await getPresignedGetUrl(
+      key,
+      900,
+      wantsDownload ? downloadName ?? "download" : undefined,
+    );
     // 302 so the browser follows to the freshly signed Cloud Storage URL, but
     // `no-store` so the redirect itself is never cached. If the browser
     // cached the redirect, it could keep pointing at a signed URL that

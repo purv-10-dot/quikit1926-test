@@ -10,6 +10,7 @@ import {
   ChevronLeft, ChevronRight, CalendarDays, Filter, FileText,
 } from "lucide-react";
 import { SkeletonTable } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface AuditLogItem {
   id: string;
@@ -170,6 +171,8 @@ export default function AuditLogPage() {
 
   return (
     <div className="w-full space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3">

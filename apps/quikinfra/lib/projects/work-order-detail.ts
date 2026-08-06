@@ -4,6 +4,8 @@ import type { ApprovalInfo } from "@/lib/approvals/approval-info";
 export interface BoqScopeItem {
   boqNo?: string | null;
   itemCode?: string | null;
+  scopeType?: string | null;
+  scopeId?: string | null;
   description?: string | null;
   itemName?: string | null;
   uomCode?: string | null;

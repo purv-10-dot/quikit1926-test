@@ -6,6 +6,8 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { CrudTable, type Column } from "@/components/hrms/crud-table";
 import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/ui/select";
+import { PageBackground } from "@/components/hrms/page-background";
+import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 
 interface Dept {
   id: string;
@@ -21,7 +23,13 @@ interface Dept {
 export default function DepartmentsPage() {
   const api = useApiClient();
   const qc = useQueryClient();
+  const { hasPermission } = useDashboardConfig();
+  // Backend requires hrms.org.write to create/update/delete — hide those
+  // actions for a view-only user instead of letting them click through to a 403.
+  const canManage = hasPermission("hrms.org.write");
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [modal, setModal] = useState<{ open: boolean; item: Dept | null }>({
     open: false,
     item: null,
@@ -89,17 +97,21 @@ export default function DepartmentsPage() {
 
   return (
     <>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <CrudTable
         title="Departments"
-        data={data?.data ?? []}
+        data={(data?.data ?? []).slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)}
         columns={columns}
         isLoading={isLoading}
         onAdd={openAdd}
         onEdit={openEdit}
         onDelete={(id) => deleteMutation.mutate(id)}
         search={search}
-        onSearchChange={setSearch}
+        onSearchChange={(v) => { setSearch(v); setPage(1); }}
         searchPlaceholder="Search departments..."
+        pagination={{ page, totalPages: Math.max(1, Math.ceil((data?.data ?? []).length / PAGE_SIZE)), total: (data?.data ?? []).length, limit: PAGE_SIZE, onPageChange: setPage }}
+        canManage={canManage}
       />
 
       <Modal

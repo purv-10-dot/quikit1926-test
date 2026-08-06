@@ -141,22 +141,13 @@ export function btnSecondary(label: string, url: string, accent: Accent = "blue"
     <a href="${url}" style="display:block;padding:12px 24px;font-size:14px;font-weight:700;color:${c.base};text-decoration:none;border-radius:10px;">${esc(label)}</a>
   </td></tr></table>`;
 }
-/** Two buttons side by side (primary + secondary). */
-export function btnRow(primary: { label: string; url: string }, secondary: { label: string; url: string }, accent: Accent = "blue"): string {
-  const c = A(accent);
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:8px 0 18px;"><tr>
-    <td width="49%" align="center" bgcolor="${c.base}" style="border-radius:10px;"><a href="${primary.url}" style="display:block;padding:13px 12px;font-size:13px;font-weight:700;color:#fff;text-decoration:none;border-radius:10px;">${esc(primary.label)}</a></td>
-    <td width="2%"></td>
-    <td width="49%" align="center" style="border:1.5px solid ${c.base};border-radius:10px;"><a href="${secondary.url}" style="display:block;padding:12px;font-size:13px;font-weight:700;color:${c.base};text-decoration:none;border-radius:10px;">${esc(secondary.label)}</a></td>
-  </tr></table>`;
-}
-
 /* ── Alerts ───────────────────────────────────────────────────────────── */
-export function alert(kind: "success" | "info" | "warning", html: string, title?: string): string {
+export function alert(kind: "success" | "info" | "warning" | "danger", html: string, title?: string): string {
   const map = {
     success: { bg: "#ecfdf3", bd: "#abefc6", fg: "#15803d", icon: "✅" },
     info:    { bg: "#eff6ff", bd: "#bfdbfe", fg: "#1d4ed8", icon: "ℹ️" },
     warning: { bg: "#fffbeb", bd: "#fde68a", fg: "#b45309", icon: "⚠️" },
+    danger:  { bg: "#fef2f2", bd: "#fecaca", fg: "#b91c1c", icon: "⚠️" },
   }[kind];
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${map.bg};border:1px solid ${map.bd};border-radius:10px;margin:0 0 18px;"><tr>
     <td style="padding:12px 14px;font-size:13px;color:${BRAND.ink};line-height:1.5;">
@@ -195,7 +186,7 @@ export function para(html: string): string {
   return `<p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:${BRAND.ink};">${html}</p>`;
 }
 
-export function needHelp({ name, phone, email }: { name?: string | null; phone?: string | null; email?: string | null }): string {
+function needHelp({ name, phone, email }: { name?: string | null; phone?: string | null; email?: string | null }): string {
   const bits: string[] = [];
   if (name) bits.push(esc(name));
   if (phone) bits.push(esc(phone));
@@ -205,22 +196,4 @@ export function needHelp({ name, phone, email }: { name?: string | null; phone?:
     <td style="padding:12px 14px;font-size:12.5px;color:${BRAND.soft};line-height:1.5;">
       <span style="font-weight:700;color:${BRAND.ink};">Need help?</span> Reply to this email${contact ? ` or contact ${contact}` : ""}${mailLine}.
     </td></tr></table>`;
-}
-
-/* ── Legacy helpers (kept for templates not yet migrated) ─────────────── */
-export interface BaseLayoutInput {
-  title: string; subtitle?: string; greeting: string; body: string;
-  ctaLabel?: string; ctaUrl?: string; companyName: string; accent?: string;
-}
-export function baseLayout({ title, subtitle, greeting, body, ctaLabel, ctaUrl, companyName, accent = "#2563eb" }: BaseLayoutInput): string {
-  const toAccent: Record<string, Accent> = { "#2563eb": "blue", "#3b82f6": "blue", "#10b981": "green", "#16a34a": "green", "#f59e0b": "amber", "#d97706": "amber", "#ef4444": "red", "#dc2626": "red" };
-  const acc = toAccent[accent] ?? "blue";
-  const cta = ctaLabel && ctaUrl ? btnPrimary(ctaLabel, ctaUrl, acc) : "";
-  return emailShell({
-    accent: acc, companyName,
-    body: `${hero({ title, subtitle, accent: acc })}${para(greeting)}${body}${cta}`,
-  });
-}
-export function infoTable(rows: Array<[string, string]>): string {
-  return detailBlock(rows);
 }

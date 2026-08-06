@@ -33,13 +33,18 @@ export interface ApiError {
   };
 }
 
-export type ApiResponse<T> = ApiSuccess<T> | ApiError;
 
 export interface AuthContext {
   userId: string;
   orgId: string;
   roles: string[];
   permissions: string[];
+  /**
+   * The caller's OWN permissions, WITHOUT any authorities folded in from active
+   * delegations. Use this (not `permissions`) for checks where borrowed
+   * authority must not count — e.g. re-delegation guards.
+   */
+  basePermissions: string[];
   roleCode: string | null;
   /** True when the user must change a temporary password before doing anything else. */
   mustChangePassword?: boolean;

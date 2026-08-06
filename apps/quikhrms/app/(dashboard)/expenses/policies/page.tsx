@@ -4,11 +4,11 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Modal } from "@/components/hrms/modal";
+import { PageBackground } from "@/components/hrms/page-background";
 import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { useDialog } from "@/components/hrms/dialog";
 import { Plus, ShieldCheck, Trash2, Pencil } from "lucide-react";
-import { ExpenseTabs } from "../_components/expense-tabs";
 import { PageHeader } from "@/components/hrms/ui/page-header";
 import { EmptyState } from "@/components/hrms/empty-state";
 import { clsx } from "clsx";
@@ -83,6 +83,8 @@ export default function ExpensePoliciesPage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <PageHeader
         icon={<ShieldCheck size={28} className="text-[#22c55e]" />}
         title="Expense policies"
@@ -93,7 +95,6 @@ export default function ExpensePoliciesPage() {
           </button>
         }
       />
-      <div className="mb-5"><ExpenseTabs /></div>
 
       {isLoading ? <SkeletonCards count={4} /> : policies.length === 0 ? (
         <div className="p-1"><EmptyState variant="bot" title="No Data Found" className="border border-gray-200 shadow-sm" /></div>
@@ -140,8 +141,6 @@ export default function ExpensePoliciesPage() {
               </div>
               <div className="flex flex-wrap gap-1 mt-3">
                 {p.requiresReceipt && <span className="text-[11px] font-medium bg-[#dcfce7] text-[#16a34a] px-2 py-0.5 rounded">Receipt ≥ ₹{Number(p.receiptThreshold)}</span>}
-                {p.requiresPreApproval && <span className="text-[11px] font-medium bg-yellow-50 text-yellow-700 px-2 py-0.5 rounded">Pre-approval</span>}
-                <span className="text-[11px] font-medium bg-gray-100 text-gray-700 px-2 py-0.5 rounded">{p.approvalLevels} approval level{p.approvalLevels > 1 ? "s" : ""}</span>
               </div>
             </div>
           ))}
@@ -156,6 +155,10 @@ export default function ExpensePoliciesPage() {
             maxPerTransaction: form.maxPerTransaction || undefined,
             maxPerMonth: form.maxPerMonth || undefined,
             maxPerYear: form.maxPerYear || undefined,
+            // Blank → let the backend default kick in (500), same as the max
+            // caps above. `receiptThreshold` isn't nullable server-side the way
+            // those are, so a bare `null` used to fail validation outright.
+            receiptThreshold: form.receiptThreshold ?? undefined,
           };
           if (editingId) updateMut.mutate(body); else createMut.mutate(body);
         }} className="space-y-4">
@@ -178,16 +181,10 @@ export default function ExpensePoliciesPage() {
             <div><label className="block text-sm font-medium text-gray-700 mb-1">Receipt threshold</label>
               <NumberInput value={form.receiptThreshold} onChange={(v) => setForm({ ...form, receiptThreshold: v })}
                 className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" /></div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Approval levels</label>
-              <NumberInput allowDecimal={false} min={1} value={form.approvalLevels} onChange={(v) => setForm({ ...form, approvalLevels: v ?? 1 })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" /></div>
           </div>
           <div className="flex items-center gap-4">
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={form.requiresReceipt} onChange={(e) => setForm({ ...form, requiresReceipt: e.target.checked })} /> Requires receipt
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={form.requiresPreApproval} onChange={(e) => setForm({ ...form, requiresPreApproval: e.target.checked })} /> Pre-approval
             </label>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} /> Active

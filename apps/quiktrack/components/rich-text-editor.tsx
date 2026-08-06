@@ -57,8 +57,11 @@ import {
   Highlighter,
   Check,
   Smile,
+  Paperclip,
+  Loader2,
 } from "lucide-react";
 import { useEffect, useCallback, useState, useRef } from "react";
+import { FileAttachment } from "@/components/editor/file-attachment";
 
 export interface RichTextEditorProps {
   value: string;
@@ -78,6 +81,9 @@ export interface RichTextEditorProps {
    *  returned URL as the image src. When unset, the editor falls back to
    *  embedding the file as a data URL (legacy behavior). */
   uploadImage?: (file: File) => Promise<string>;
+  /** Optional async uploader for non-image files. When set, an "Attach file"
+   *  toolbar button uploads the chosen file and inserts a download chip. */
+  uploadFile?: (file: File) => Promise<{ url: string; fileName: string; mimeType: string; size: number }>;
   /** When provided, enables `@`-mention autocomplete over these people. The
    *  saved HTML carries `data-mention-id` chips so the server can notify them. */
   mentions?: MentionItem[];
@@ -94,6 +100,7 @@ export function RichTextEditor({
   chromeless = false,
   slotBetween,
   uploadImage,
+  uploadFile,
   mentions,
 }: RichTextEditorProps) {
   // Keep the latest people list in a ref so the (init-once) editor's mention
@@ -146,6 +153,7 @@ export function RichTextEditor({
           class: "max-w-full h-auto rounded-md cursor-pointer image-element",
         },
       }),
+      FileAttachment,
       createSlashMenuExtension({
         onPickImage: () => handleImageUploadRef.current(),
         onPickEmoji: () => openEmojiAtCursorRef.current(),
@@ -282,6 +290,55 @@ export function RichTextEditor({
     };
     input.click();
   }, [editor, insertImageFile]);
+
+  // Attach a non-image file: upload, then insert a download chip. Surfaces the
+  // server's error (unsupported type / too large) as a toast.
+  const [fileUploading, setFileUploading] = useState(false);
+  // Progress for the inline "Uploading…" banner (current index / total).
+  const [fileProgress, setFileProgress] = useState<{ done: number; total: number } | null>(null);
+  // Upload + insert one or more files. Uploaded sequentially so insertion order
+  // matches selection order and we don't fire many parallel GCS requests; each
+  // file's own error surfaces as a toast without aborting the rest.
+  const insertFiles = useCallback(
+    async (files: File[]) => {
+      if (!editor || !uploadFile || files.length === 0) return;
+      setFileUploading(true);
+      setFileProgress({ done: 0, total: files.length });
+      try {
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i]!;
+          try {
+            const { url, fileName, mimeType, size } = await uploadFile(file);
+            editor.chain().focus().setFileAttachment({ href: url, fileName, mimeType, size }).run();
+          } catch (err: unknown) {
+            showToast(
+              err instanceof Error ? err.message : `Couldn't upload ${file.name}`,
+              "error",
+            );
+          }
+          setFileProgress({ done: i + 1, total: files.length });
+        }
+      } finally {
+        setFileUploading(false);
+        setFileProgress(null);
+      }
+    },
+    [editor, uploadFile],
+  );
+
+  const handleFileUpload = useCallback(() => {
+    if (!editor || !uploadFile) return;
+    const input = document.createElement("input");
+    input.type = "file";
+    input.multiple = true;
+    input.accept =
+      ".pdf,.csv,.txt,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,image/*,application/pdf,text/csv,text/plain,application/zip";
+    input.onchange = () => {
+      const files = Array.from(input.files ?? []);
+      if (files.length) void insertFiles(files);
+    };
+    input.click();
+  }, [editor, uploadFile, insertFiles]);
 
   const openEmojiPicker = useCallback(
     (anchorEl?: HTMLElement | null) => {
@@ -423,6 +480,15 @@ export function RichTextEditor({
         >
           <ImageIcon className={cn("h-4 w-4", imageUploading && "opacity-50 animate-pulse")} />
         </TbBtn>
+        {uploadFile && (
+          <TbBtn
+            onClick={handleFileUpload}
+            title={fileUploading ? "Uploading…" : "Attach file"}
+            disabled={fileUploading}
+          >
+            <Paperclip className={cn("h-4 w-4", fileUploading && "opacity-50 animate-pulse")} />
+          </TbBtn>
+        )}
         <TbBtn
           onClick={() => editor.chain().focus().toggleCodeBlock().run()}
           active={editor.isActive("codeBlock")}
@@ -500,6 +566,22 @@ export function RichTextEditor({
           "[&_.ProseMirror_img]:max-w-full [&_.ProseMirror_img]:h-auto [&_.ProseMirror_img]:rounded-md [&_.ProseMirror_img]:my-2",
         )}
       />
+
+      {/* Upload progress banner — visible while files (or an image) upload, so
+          it's clear something is happening (esp. for multi-file selections). */}
+      {(fileUploading || imageUploading) && (
+        <div
+          className={cn(
+            "flex items-center gap-2 text-xs text-gray-600 bg-blue-50 border border-blue-100 rounded px-3 py-1.5 mb-2",
+            chromeless ? "mx-10" : "mx-3",
+          )}
+        >
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600" />
+          {fileProgress
+            ? `Uploading ${fileProgress.done}/${fileProgress.total} file${fileProgress.total === 1 ? "" : "s"}…`
+            : "Uploading…"}
+        </div>
+      )}
 
       {/* Link dialog */}
       {showLinkDialog && (

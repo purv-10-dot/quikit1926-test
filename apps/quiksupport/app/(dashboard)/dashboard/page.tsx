@@ -14,10 +14,10 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
-  
   const tenantId = session.user.orgId;
   const externalUserId = session.user.id;
 
+  
   // Ensure HdTenant + default HdApp + HdUser exist (auto-provision from session).
   const user = await ensureHelpdeskUser(tenantId, externalUserId, session);
   const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } });

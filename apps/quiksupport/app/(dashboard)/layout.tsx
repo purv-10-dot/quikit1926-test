@@ -1,14 +1,13 @@
 import { getServerSession } from "next-auth";
 import { requireAppAccess } from "@quikit/auth/app-access";
 import { authOptions } from "@/lib/auth";
+import { SupportLauncher } from "@quikit/ui/support";
 import { SessionGuard } from "@/components/session-guard";
 
 // Reads the session per request and gates on app access — never prerender.
 export const dynamic = "force-dynamic";
 
 const APP_SLUG = "quiksupport";
-
-
 
 /**
  * Server layout for the dashboard route group. Mirrors quikscale/quiktrack:
@@ -36,5 +35,13 @@ export default async function DashboardLayout({
     homeUrl: process.env.QUIKIT_URL ?? process.env.NEXT_PUBLIC_QUIKIT_URL,
   });
 
-  return <SessionGuard>{children}</SessionGuard>;
+  return (
+    <SessionGuard>
+      {children}
+      {/* Floating support launcher — QuikSupport is a helpdesk for OUR
+          customers' customers; this is how a QuikSupport agent reaches the
+          QuikIT team about QuikSupport itself. */}
+      <SupportLauncher appSlug="quiksupport" />
+    </SessionGuard>
+  );
 }

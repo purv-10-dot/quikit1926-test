@@ -14,9 +14,12 @@ import {
   AlertTriangle,
   Download,
   ArrowRight,
+  ShieldAlert,
 } from "lucide-react";
 import { Select } from "@/components/hrms/select";
 import { useDialog } from "@/components/hrms/dialog";
+import { PageBackground } from "@/components/hrms/page-background";
+import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 
 interface ImportResult {
   importId: string;
@@ -153,29 +156,35 @@ const CANONICAL_FIELDS: { key: CanonicalKey; label: string; required?: boolean }
   { key: "dateOfJoining", label: "Date of Joining", required: true },
   { key: "confirmationDate", label: "Confirmation Date" },
   { key: "probationEndDate", label: "Probation End Date" },
-  { key: "employmentType", label: "Employment Type" },
+  { key: "employmentType", label: "Employment Type", required: true },
   { key: "workerType", label: "Worker Type" },
+  // Work Location / Office Location / Job Title / Notice Period were required
+  // for a while (mirroring the Add Employee form) but that blocked imports
+  // whose source system just doesn't carry these columns — left Optional so
+  // the row still imports; HR fills them in later via Edit Employee.
   { key: "workLocation", label: "Work Location (Office/Remote/Hybrid)" },
-  { key: "officeLocation", label: "Office Location / Branch", required: true },
-  { key: "jobTitle", label: "Job Title", required: true },
+  { key: "officeLocation", label: "Office Location / Branch" },
+  { key: "jobTitle", label: "Job Title" },
   { key: "sourceOfHire", label: "Source of Hire" },
   { key: "noticePeriodDays", label: "Notice Period (Days)" },
   { key: "previousExperience", label: "Previous Experience (Months)" },
   { key: "lastWorkingDate", label: "Last Working Date" },
   { key: "tentativeJoiningDate", label: "Tentative Joining Date" },
-  { key: "panNumber", label: "PAN Number", required: true },
-  { key: "aadhaarNumber", label: "Aadhaar Number", required: true },
+  { key: "panNumber", label: "PAN Number" },
+  { key: "aadhaarNumber", label: "Aadhaar Number" },
   { key: "uanNumber", label: "UAN Number" },
   { key: "pfAccountNumber", label: "PF Account" },
   { key: "esiNumber", label: "ESI Number" },
   { key: "taxIdentificationNumber", label: "Tax ID (TIN)" },
-  // Address (current)
-  { key: "currentAddressLine1", label: "Current Address Line 1", required: true },
+  // Address (current) — left Optional: most source files carry address as one
+  // free-text field, not split into Line1/City/State/ZIP/Country, so requiring
+  // all 5 blocked otherwise-clean imports. HR fills these in later via Edit Employee.
+  { key: "currentAddressLine1", label: "Current Address Line 1" },
   { key: "currentAddressLine2", label: "Current Address Line 2" },
-  { key: "currentCity", label: "Current City", required: true },
-  { key: "currentState", label: "Current State", required: true },
-  { key: "currentZip", label: "Current ZIP / PIN", required: true },
-  { key: "currentCountry", label: "Current Country", required: true },
+  { key: "currentCity", label: "Current City" },
+  { key: "currentState", label: "Current State" },
+  { key: "currentZip", label: "Current ZIP / PIN" },
+  { key: "currentCountry", label: "Current Country" },
   // Address (permanent)
   { key: "permanentAddressLine1", label: "Permanent Address Line 1" },
   { key: "permanentAddressLine2", label: "Permanent Address Line 2" },
@@ -183,18 +192,20 @@ const CANONICAL_FIELDS: { key: CanonicalKey; label: string; required?: boolean }
   { key: "permanentState", label: "Permanent State" },
   { key: "permanentZip", label: "Permanent ZIP / PIN" },
   { key: "permanentCountry", label: "Permanent Country" },
-  // Emergency Contact
+  // Emergency Contact — all Optional now (HR can fill in later).
   { key: "emergencyContactName", label: "Emergency Contact Name" },
   { key: "emergencyContactRelation", label: "Emergency Contact Relation" },
   { key: "emergencyContactPhone", label: "Emergency Contact Phone" },
   { key: "emergencyContactEmail", label: "Emergency Contact Email" },
-  // Bank
-  { key: "bankName", label: "Bank Name", required: true },
-  { key: "bankAccountNumber", label: "Bank Account Number", required: true },
-  { key: "bankIfsc", label: "Bank IFSC", required: true },
+  // Bank — Optional now (HR can fill in later via Edit Employee).
+  { key: "bankName", label: "Bank Name" },
+  { key: "bankAccountNumber", label: "Bank Account Number" },
+  { key: "bankIfsc", label: "Bank IFSC" },
   { key: "bankAccountHolder", label: "Bank Account Holder Name" },
   // Manager
-  { key: "reportingManagerCode", label: "Reporting Manager (EMP ID)", required: true },
+  // Optional — accepts an employee code OR email now (gap-fill.ts matches
+  // either), and HR can set the manager later via Edit Employee if left blank.
+  { key: "reportingManagerCode", label: "Reporting Manager (EMP ID / Email)" },
   { key: "dottedLineManagerCode", label: "Dotted-line Manager (EMP ID)" },
   // Education / Skills
   { key: "highestQualification", label: "Highest Qualification" },
@@ -261,7 +272,7 @@ const AUTO_MAP_HINTS: Array<{ patterns: string[]; key: CanonicalKey }> = [
   // Emergency contact
   { patterns: ["emergencycontactname", "emergencyname", "ecname"], key: "emergencyContactName" },
   { patterns: ["emergencycontactrelation", "emergencyrelation", "relation"], key: "emergencyContactRelation" },
-  { patterns: ["emergencycontactphone", "emergencyphone", "ecphone"], key: "emergencyContactPhone" },
+  { patterns: ["emergencycontactphone", "emergencyphone", "ecphone", "emergencycontactnumber", "emergencynumber", "emergencymobile"], key: "emergencyContactPhone" },
   { patterns: ["emergencycontactemail", "emergencyemail"], key: "emergencyContactEmail" },
   // Bank
   { patterns: ["bankname"], key: "bankName" },
@@ -305,14 +316,21 @@ function autoMap(headers: string[]): Record<string, CanonicalKey> {
         break;
       }
     }
-    // Pass 2: substring match, only if no exact match was found.
+    // Pass 2: substring match, only if no exact match was found. The LONGEST
+    // matching pattern wins, not the first one in the list — otherwise a short
+    // generic alias hijacks a longer, more specific header:
+    //   "Reporting Manager (EMP ID)" → "empid"  → employeeCode  (manager lost)
+    //   "Previous Experience (Months)" → "sex"  → gender        (experience lost)
     if (mapped === "skip") {
+      let best: { key: CanonicalKey; len: number } | null = null;
       for (const hint of AUTO_MAP_HINTS) {
-        if (hint.patterns.some((p) => norm.includes(p))) {
-          mapped = hint.key;
-          break;
+        for (const p of hint.patterns) {
+          if (norm.includes(p) && (!best || p.length > best.len)) {
+            best = { key: hint.key, len: p.length };
+          }
         }
       }
+      if (best) mapped = best.key;
     }
     result[h] = mapped;
   }
@@ -416,27 +434,20 @@ const MANDATORY_TEMPLATE_HEADERS = [
   "Personal Phone",
   "Gender",
   "Date of Birth",
-  "Current Address Line 1",
-  "Current City",
-  "Current State",
-  "Current ZIP",
-  "Current Country",
-  "Job Title",
   "Designation",
   "Department",
-  "Office/Branch",
-  "Reporting Manager (EMP ID)",
+  "Employment Type",
   "Date of Joining",
-  "PAN Number",
-  "Aadhaar Number",
-  "Bank Name",
-  "Bank Account Number",
-  "Bank IFSC",
 ];
 
 export default function BulkImportEmployeesPage() {
   const api = useApiClient();
   const dialog = useDialog();
+  // Same gate as Add/Edit Employee — a view-only (hrms.employee.read) user
+  // reaching this page directly (URL, bookmark) would otherwise map an entire
+  // file only to have the backend reject the import with a 403.
+  const { hasPermission, isLoading: permsLoading } = useDashboardConfig();
+  const canManageEmployees = hasPermission("hrms.employee.write");
   const [fileName, setFileName] = useState("");
   const [rawText, setRawText] = useState("");
   const [dryRun, setDryRun] = useState(true);
@@ -842,6 +853,24 @@ export default function BulkImportEmployeesPage() {
   const isPlaceholder = (v: string): boolean =>
     NA_VALUES.has(v.trim().toLowerCase());
 
+  // Identifier columns are validated with strict regexes server-side (zPan,
+  // zAadhaar, zIfsc, zBankAccount). Spreadsheets routinely carry them lowercase
+  // or space-separated ("abcde1234f", "2345 6789 0123"), which would fail the
+  // row for a purely cosmetic reason — normalise the shape here instead.
+  const normalizeIdentifier = (canon: CanonicalKey, v: string): string => {
+    switch (canon) {
+      case "panNumber":
+      case "bankIfsc":
+        return v.replace(/[\s-]/g, "").toUpperCase();
+      case "aadhaarNumber":
+        return v.replace(/\D/g, "");
+      case "bankAccountNumber":
+        return v.replace(/[\s-]/g, "");
+      default:
+        return v;
+    }
+  };
+
   const canonicalRows = useMemo(() => {
     if (rawRows.length === 0) return [];
     return rawRows.map((row) => {
@@ -856,7 +885,7 @@ export default function BulkImportEmployeesPage() {
           if (lastName && !out.lastName) out.lastName = lastName;
         } else {
           // Don't overwrite if already set (e.g. fullName already filled firstName)
-          if (!out[canon]) out[canon] = v;
+          if (!out[canon]) out[canon] = normalizeIdentifier(canon, v);
         }
       }
       return out;
@@ -898,6 +927,20 @@ export default function BulkImportEmployeesPage() {
     });
     return issues;
   }, [canonicalRows]);
+
+  // Required canonical fields with no column mapped to them. The server rejects
+  // such rows one by one ("Missing required field(s): …"); surfacing it here
+  // means the user fixes the mapping before spending an import run on it.
+  const unmappedRequired = useMemo(() => {
+    const mapped = new Set(Object.values(mapping));
+    const nameCovered = mapped.has("fullName");
+    return CANONICAL_FIELDS.filter((f) => {
+      if (!f.required || mapped.has(f.key)) return false;
+      // fullName satisfies firstName + lastName.
+      if (nameCovered && (f.key === "firstName" || f.key === "lastName")) return false;
+      return true;
+    });
+  }, [mapping]);
 
   // Validate that required canonical fields are mapped
   const mappingValid = useMemo(() => {
@@ -966,7 +1009,9 @@ export default function BulkImportEmployeesPage() {
       "Skills": "Node.js, React, PostgreSQL",
       // Identity (KYC)
       "PAN Number": "ABCDE1234F",
-      "Aadhaar Number": "123456789012",
+      // Aadhaar must start with 2-9 (zAadhaar) — a 1xxx sample is itself invalid
+      // and made users copy a row the import then rejected.
+      "Aadhaar Number": "234567890123",
       "UAN Number": "100200300400",
       "PF Account": "MH/BAN/0012345/000/0000456",
       "ESI Number": "3100123456",
@@ -1065,8 +1110,28 @@ export default function BulkImportEmployeesPage() {
     importMut.mutate({ fileName: fileName || "bulk.csv", rows: importable, dryRun, markActive });
   };
 
+  if (!permsLoading && !canManageEmployees) {
+    return (
+      <div className="max-w-2xl mx-auto mt-10">
+        <div className="surface-card overflow-hidden">
+          <div className="px-4 py-4 border-b border-amber-100 bg-gradient-to-r from-amber-50 to-white flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center">
+              <ShieldAlert size={20} />
+            </div>
+            <div>
+              <h1 className="text-base font-semibold text-gray-900">Access not allowed</h1>
+              <p className="text-xs text-gray-500">You don&apos;t have permission to import employees.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-6xl">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center gap-3 mb-4">
         <Upload className="text-[#22c55e]" />
         <h1 className="text-base font-semibold text-gray-900">
@@ -1200,6 +1265,20 @@ export default function BulkImportEmployeesPage() {
                 You must map either <strong>Full Name</strong>, or both{" "}
                 <strong>First Name</strong> and <strong>Last Name</strong>.
               </span>
+            </div>
+          )}
+
+          {unmappedRequired.length > 0 && (
+            <div className="mt-3 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-800 flex items-start gap-2">
+              <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="font-semibold mb-1">
+                  {unmappedRequired.length} required field{unmappedRequired.length > 1 ? "s" : ""} not mapped — every row will fail
+                </p>
+                <p>
+                  {unmappedRequired.map((f) => f.label).join(", ")}
+                </p>
+              </div>
             </div>
           )}
         </div>

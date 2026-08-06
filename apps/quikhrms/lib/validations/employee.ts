@@ -152,6 +152,7 @@ const employeeBaseSchema = z.object({
   confirmationDate: z.string().optional(),
   probationEndDate: z.string().optional(),
   noticePeriodDays: z.number().int().default(0),
+  noticePeriodId: z.string().nullish(),
   previousExperience: z.number().int().default(0),
   sourceOfHire: z.enum(["Referral", "JobPortal", "LinkedIn", "Agency", "Campus", "Direct", "Other"]).optional(),
   referredById: z.string().optional(),
@@ -174,7 +175,7 @@ const employeeBaseSchema = z.object({
 
   // Initial salary assignment — required on create so onboarded employees always have a salary.
   salaryTemplateId: z.string().min(1, "Salary template required"),
-  ctcLpa: z.number().positive("CTC (LPA) required"),
+  ctcLpa: z.number().positive("CTC (LPA) required").max(10000, "CTC (LPA) is unrealistically large"),
 
   // When true, send a portal-access invite (account-setup email) instead of the
   // informational welcome email. Decided via the popup on the Add Employee form.
@@ -216,6 +217,3 @@ export const updateEmployeeSchema = employeeBaseSchema.partial().omit({
   workEmail: true,
   dateOfJoining: true,
 }).superRefine(employeeDateChecks);
-
-export type CreateEmployeeInput = z.infer<typeof createEmployeeSchema>;
-export type UpdateEmployeeInput = z.infer<typeof updateEmployeeSchema>;

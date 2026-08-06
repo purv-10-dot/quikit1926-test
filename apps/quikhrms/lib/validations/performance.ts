@@ -53,11 +53,11 @@ export const updateGoalSchema = z.object({
   currentValue: z.number().optional(),
   progress: z.number().min(0).max(100).optional(),
   status: z.enum(["NotStarted", "InProgress", "AtRisk", "Completed", "Exceeded", "Deferred", "Cancelled"]).optional(),
-  weight: z.number().optional(),
+  weight: z.number().min(0, "Weight can’t be negative").max(100, "Weight can’t exceed 100%").optional(),
 });
 
 export const goalCheckInSchema = z.object({
-  currentValue: z.number(),
+  currentValue: z.number().min(0, "Value can’t be negative"),
   note: z.string().optional(),
 });
 
@@ -177,14 +177,20 @@ export const updatePIPSchema = z.object({
   status: z.enum(["PIPActive", "PIPExtended", "PIPCompletedSuccess", "PIPFailed", "PIPWithdrawn"]).optional(),
   outcome: z.enum(["Improved", "Terminated", "Extended", "Probation"]).optional(),
   objectives: z.array(z.unknown()).optional(),
+  startDate: z.string().optional(),
   endDate: z.string().optional(),
-});
+}).refine(
+  // When both dates are in the body, endDate must be on/after startDate. (The
+  // route additionally enforces endDate against the PIP's existing start date.)
+  (d) => !d.endDate || !d.startDate || d.endDate >= d.startDate,
+  { message: "End date must be on or after the PIP start date", path: ["endDate"] },
+);
 
 // ─── KRA / KPI Templates ─────────────────────────────────────────────
 
 const weight = z.number().min(0).max(100);
 
-export const kpiEntrySchema = z.object({
+const kpiEntrySchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().optional().nullable(),
   measurementMethod: z.string().max(500).optional().nullable(),
@@ -194,7 +200,7 @@ export const kpiEntrySchema = z.object({
   sortOrder: z.number().int().min(0).default(0),
 });
 
-export const kraEntrySchema = z.object({
+const kraEntrySchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().optional().nullable(),
   weight,
@@ -248,7 +254,7 @@ export const assignKraSchema = z.object({
 
 // Update progress for one or more KPIs on an assignment.
 // Keyed by KPI id (the KpiTemplateEntry.id frozen into the snapshot).
-export const kpiProgressEntrySchema = z.object({
+const kpiProgressEntrySchema = z.object({
   currentValue: z.string().max(200).optional().nullable(),
   score: z.number().min(0).max(5).optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
@@ -259,7 +265,3 @@ export const updateKraAssignmentProgressSchema = z.object({
 export const updateKraAssignmentStatusSchema = z.object({
   status: z.enum(["Active", "Completed", "Cancelled"]),
 });
-
-export type CreateKraScorecardInput = z.infer<typeof createKraScorecardSchema>;
-export type KraEntryInput = z.infer<typeof kraEntrySchema>;
-export type KpiEntryInput = z.infer<typeof kpiEntrySchema>;

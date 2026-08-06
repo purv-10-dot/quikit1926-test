@@ -70,7 +70,7 @@ async function resolveEmployeeByAuthUser(claims: {
       where: { orgId, status: "Pending", deletedAt: null, email: { equals: email, mode: "insensitive" } },
       select: {
         id: true, firstName: true, lastName: true, roleIds: true,
-        departmentId: true, designationId: true, managerId: true,
+        departmentId: true, designationId: true, managerId: true, invitedBy: true,
       },
     });
     if (invite) {
@@ -102,7 +102,7 @@ async function resolveEmployeeByAuthUser(claims: {
  * Exported for non-NextResponse handlers (e.g. the SSE stream route) that
  * need authenticated identity but can't go through the withAuth wrapper.
  */
-export async function resolveIdentity(
+async function resolveIdentity(
   req: NextRequest
 ): Promise<{ orgId: string; userId: string; fromSession: boolean } | null> {
   // verifyJWT = decode the NextAuth JWT AND confirm its shared `sessionId` is
@@ -574,6 +574,12 @@ export function withAuth(handler: RouteHandler, options?: WithAuthOptions) {
         }
       }
 
+      // The caller's OWN (non-delegated) permissions, snapshotted before any
+      // delegated authorities are folded in. Used where borrowed authority must
+      // NOT count — e.g. you can't re-delegate a permission you only hold via a
+      // delegation yourself.
+      const basePermissions = permissions;
+
       // Delegation: fold in any permissions lent to this user by active
       // delegations pointed at them (never exceeding the delegator, auto-
       // expiring). Skipped for locked-out states — super-admin already has "*",
@@ -609,6 +615,7 @@ export function withAuth(handler: RouteHandler, options?: WithAuthOptions) {
         orgId,
         roles: effectiveRoles,
         permissions: isSuperAdmin ? ["*"] : permissions,
+        basePermissions: isSuperAdmin ? ["*"] : basePermissions,
         roleCode,
         mustChangePassword,
         actorType: service ? "ai_agent" : "user",

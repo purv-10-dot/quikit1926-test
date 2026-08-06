@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolveAndSend } from "@/lib/email/resolve";
 import { buildCandidateDocRequestEmail } from "@/lib/email-templates/candidate-document-request";
+import { appBaseUrl } from "@/lib/utils/app-url";
 
 const HOUR = 3600_000;
 const TIERS: Array<{ level: 1 | 2 | 3; minAgeMs: number; maxAgeMs: number }> = [
@@ -17,7 +18,7 @@ export async function POST(req: NextRequest) {
   if (header !== secret) return NextResponse.json({ success: false, error: "unauthorized" }, { status: 401 });
 
   const now = new Date();
-  const base = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "";
+  const base = appBaseUrl();
 
   const requests = await prisma.candidateDocumentRequest.findMany({
     where: { status: "Pending", deletedAt: null },

@@ -15,10 +15,13 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (status === "unauthenticated") {
-      void signIn("quikit", { callbackUrl: "/dashboard" });
+      // Land on "/" so its server-side, permission-aware redirect picks the
+      // right page (/dashboard for admins, /employee-view for plain Members) —
+      // never hardcode /dashboard, which 403s for Members into a dead spinner.
+      void signIn("quikit", { callbackUrl: "/" });
     }
     if (status === "authenticated") {
-      router.replace("/dashboard");
+      router.replace("/");
     }
   }, [status, router]);
 

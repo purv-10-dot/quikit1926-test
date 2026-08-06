@@ -131,6 +131,39 @@ describe("streamAssist", () => {
     expect(onError).toHaveBeenCalled();
   });
 
+  // Loader-lifecycle contract: the caller's "thinking" state has exactly one
+  // off-switch per turn, so every way a stream can end must produce exactly one
+  // terminal callback — otherwise the loader hangs on forever.
+  it("calls onError when the stream closes without a terminal event", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => sseResponse(['data: {"type":"delta","text":"partial"}\n\n'])),
+    );
+    const { h, onDelta, onDone, onError } = handlers();
+    await streamAssist("c1", { prompt: "hi" }, h);
+    expect(onDelta).toHaveBeenCalledWith("partial");
+    expect(onDone).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+
+  it("emits exactly one terminal callback (no close-error after done)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        sseResponse([
+          'data: {"type":"done","text":"Hello","agentRunId":"r1","clientMessageId":"assist-r1"}\n\n',
+          // Anything the server sends after `done` must not reopen the turn.
+          'data: {"type":"delta","text":"late"}\n\n',
+        ]),
+      ),
+    );
+    const { h, onDelta, onDone, onError } = handlers();
+    await streamAssist("c1", { prompt: "hi" }, h);
+    expect(onDone).toHaveBeenCalledTimes(1);
+    expect(onError).not.toHaveBeenCalled();
+    expect(onDelta).not.toHaveBeenCalled();
+  });
+
   it("stays silent when aborted (no error toast)", async () => {
     vi.stubGlobal(
       "fetch",

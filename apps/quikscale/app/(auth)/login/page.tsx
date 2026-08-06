@@ -12,13 +12,13 @@ import { useSearchParams } from "next/navigation";
  * user lands on dashboard. No login form shown.
  */
 
+
 export default function LoginPage() {
   const { status } = useSession();
   const searchParams = useSearchParams();
   const error = searchParams.get("error");
   const callbackUrl = searchParams.get("callbackUrl") ?? "/dashboard";
 
-  
   useEffect(() => {
     if (status === "unauthenticated" && !error) {
       signIn("quikit", { callbackUrl });

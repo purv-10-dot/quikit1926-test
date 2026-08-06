@@ -91,7 +91,9 @@ export function Header({ onMenuClick }: HeaderProps) {
         )}
       </div>
 
-      {/* Right — help + app switcher + shared user menu */}
+      {/* Right — app switcher + shared user menu.
+          Support lives in the floating launcher (components/support/
+          support-launcher.tsx), mounted globally in dashboard-shell. */}
       <div className="flex items-center gap-2">
         {/* Knowledge Base. Sits immediately left of the app switcher and is
             available from every screen — it documents the product, not the

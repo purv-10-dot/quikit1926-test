@@ -5,6 +5,8 @@ import { successResponse, internalError } from "@/lib/api-response";
 import { APP_ID } from "@/lib/rbac/registry";
 import { widgetsForRole } from "@/lib/rbac/widgets";
 import { isValidNavKey } from "@/lib/rbac/permissions-tree";
+import { resolveEmployeeId } from "@/lib/resolve-employee";
+import { getActiveChainLevels, callerCanActionLevel, getCallerRoleIds } from "@/lib/services/approval-chain";
 
 /**
  * GET /api/v1/hrms/dashboard/config
@@ -25,8 +27,12 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId, roleCode,
         })).map((e) => ({ delegatorId: e.id, name: `${e.firstName} ${e.lastName}`.trim() || "a colleague" }))
       : [];
     const cached = await (async () => {
-        const emp = await prisma.employee.findFirst({
-          where: { orgId, deletedAt: null, OR: [{ id: userId }, { employeeCode: "QK-EMP-0001" }] },
+        // Resolve the CURRENT logged-in user's employee (same as /employees/me).
+        // Previously this OR-matched a hardcoded "QK-EMP-0001", which could return
+        // the wrong person in the sidebar profile.
+        const employeeId = await resolveEmployeeId(orgId, userId);
+        const emp = employeeId ? await prisma.employee.findFirst({
+          where: { id: employeeId, orgId, deletedAt: null },
           select: {
             id: true,
             firstName: true,
@@ -39,7 +45,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId, roleCode,
               take: 1,
             },
           },
-        });
+        }) : null;
 
         let role = emp?.appRoles[0]?.role ?? null;
         if (!role) {
@@ -81,10 +87,35 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId, roleCode,
         };
       })();
 
+    // Sidebar links and page gates (e.g. Engagement & Feedback Approvals) read
+    // `permissions` from THIS response, not the request-scoped RBAC check —
+    // someone named in a Settings → Approval Chains config for a module can
+    // now actually action items there (the approve/reject route resolves the
+    // chain independently), but had no way to even SEE the "Approvals" nav
+    // link or page without also holding the flat approve permission. Synthesize
+    // the equivalent permission here so chain membership grants UI visibility
+    // too — this list is display-only and never substitutes for the real
+    // per-request RBAC check the API routes perform.
+    const employeeId = cached.employee?.id ?? null;
+    const uiPermissions = new Set(permissions);
+    if (employeeId && !uiPermissions.has("*")) {
+      const roleIds = await getCallerRoleIds(orgId, employeeId);
+      const caller = { employeeId, roleIds };
+      const chainGrants: Array<[string, "Engagement" | "Feedback"]> = [
+        ["hrms.engage.approve", "Engagement"],
+        ["hrms.feedback.approve", "Feedback"],
+      ];
+      for (const [perm, module] of chainGrants) {
+        if (uiPermissions.has(perm)) continue;
+        const levels = await getActiveChainLevels(orgId, module);
+        if (levels?.some((lv) => callerCanActionLevel(lv, caller))) uiPermissions.add(perm);
+      }
+    }
+
     return successResponse({
       role: cached.roleMeta ?? { code: roleCode ?? "unknown", name: roleCode ?? "Unknown" },
       widgets: cached.widgets,
-      permissions,
+      permissions: [...uiPermissions],
       navKeys: cached.navKeys,
       employee: cached.employee,
       actingFor,

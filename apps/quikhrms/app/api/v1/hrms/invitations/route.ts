@@ -5,6 +5,7 @@ import { successResponse, validationError, conflict, internalError, serviceUnava
 import { createInvitationSchema } from "@/lib/validations/invitation";
 import { createAuditLog } from "@/lib/utils/audit";
 import { provisionCentralInvite } from "@/lib/services/invitation";
+import { joinCode } from "@/lib/rbac/registry";
 
 /** Display status: a Pending invite past its expiry reads as Expired. */
 function effectiveStatus(status: string, expiresAt: Date): string {
@@ -22,6 +23,40 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
       orderBy: { createdAt: "desc" },
     });
 
+    // Reconcile stale invites. Acceptance happens in central QuikIT (a separate
+    // DB), so the local Invitation row never flips to Accepted on its own — it
+    // lingers as "Pending" even after the person becomes an active, provisioned
+    // employee, showing a duplicate (Active member + Pending invite). Here we
+    // detect any pending invite whose email now belongs to a provisioned
+    // employee (authUserId or passwordHash set), mark it Accepted, and hide it
+    // from the list so only the active member remains.
+    const pendingEmails = [...new Set(
+      invitations.filter((i) => i.status === "Pending").map((i) => i.email.toLowerCase()),
+    )];
+    let acceptedEmails = new Set<string>();
+    if (pendingEmails.length) {
+      const emps = await prisma.employee.findMany({
+        where: {
+          orgId, deletedAt: null,
+          OR: pendingEmails.map((e) => ({ workEmail: { equals: e, mode: "insensitive" as const } })),
+        },
+        select: { workEmail: true, authUserId: true, passwordHash: true },
+      });
+      acceptedEmails = new Set(
+        emps.filter((e) => e.authUserId != null || e.passwordHash != null)
+          .map((e) => e.workEmail.toLowerCase()),
+      );
+      const toAccept = invitations.filter(
+        (i) => i.status === "Pending" && acceptedEmails.has(i.email.toLowerCase()),
+      );
+      if (toAccept.length) {
+        await prisma.invitation.updateMany({
+          where: { id: { in: toAccept.map((i) => i.id) } },
+          data: { status: "Accepted", acceptedAt: new Date() },
+        }).catch(() => { /* best-effort; still filtered from the response below */ });
+      }
+    }
+
     // Resolve role + inviter names for display.
     const roleIds = [...new Set(invitations.flatMap((i) => i.roleIds))];
     const inviterIds = [...new Set(invitations.map((i) => i.invitedBy))];
@@ -33,6 +68,9 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     const inviterName = new Map(inviters.map((e) => [e.id, `${e.firstName} ${e.lastName}`.trim()]));
 
     const shaped = invitations
+      // Hide invites already fulfilled by a provisioned employee — the active
+      // member row represents them now, so showing the invite too is a duplicate.
+      .filter((i) => !acceptedEmails.has(i.email.toLowerCase()))
       .map((i) => ({
         id: i.id,
         email: i.email,
@@ -56,7 +94,7 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
 }, { requiredPermissions: ["hrms.user.invite"] });
 
 /** POST /api/v1/hrms/invitations — create an invitation + email the link. */
-export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
+export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissions }) => {
   try {
     const body = await req.json();
     const parsed = createInvitationSchema.safeParse(body);
@@ -80,10 +118,24 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     if (existingInvite) return conflict("A pending invitation already exists for this email");
 
     // Validate the supplied roles belong to this tenant.
-    const validRoles = await prisma.hrmsAppRole.count({
+    const roleRows = await prisma.hrmsAppRole.findMany({
       where: { id: { in: data.roleIds }, orgId: orgId },
+      select: { id: true, permissions: { select: { resource: true, action: true } } },
     });
-    if (validRoles !== data.roleIds.length) return validationError("One or more roles are invalid");
+    if (roleRows.length !== data.roleIds.length) return validationError("One or more roles are invalid");
+
+    // Tier guard: you can't invite someone into a role that carries permissions
+    // you don't hold yourself (mirrors PUT /employees/:id/role). super_admin ("*")
+    // may grant anything.
+    if (!permissions.includes("*")) {
+      const held = new Set(permissions);
+      const missing = [...new Set(
+        roleRows.flatMap((r) => r.permissions.map((p) => joinCode(p.resource, p.action))).filter((c) => !held.has(c)),
+      )];
+      if (missing.length) {
+        return validationError(`You can't grant roles carrying permissions you don't hold: ${missing.join(", ")}`);
+      }
+    }
 
     // Provision directly against central QuikIT (creates the User + OrgMember +
     // UserAppAccess and sends the onboarding invite email) and record the local

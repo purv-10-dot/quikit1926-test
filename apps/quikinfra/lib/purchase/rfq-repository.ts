@@ -617,30 +617,6 @@ export async function createRfq(input: CreateRfqInput): Promise<EnrichedRfq> {
   return enrichRfq(row, itemById, uomById, vendorById, projectById);
 }
 
-export async function updateRfqStatus(
-  orgId: string,
-  id: string,
-  status: string,
-  updatedBy: string,
-  extras?: { approvalId?: string | null },
-): Promise<EnrichedRfq | null> {
-  const existing = await db.cnRfq.findFirst({
-    where: { id, orgId },
-    select: { id: true },
-  });
-  if (!existing) return null;
-  await db.cnRfq.update({
-    where: { id },
-    data: {
-      status,
-      updatedBy,
-      ...(extras?.approvalId !== undefined
-        ? { approvalId: extras.approvalId }
-        : {}),
-    },
-  });
-  return findRfqById(orgId, id);
-}
 
 export interface SaveQuoteInput {
   orgId: string;

@@ -1,8 +1,9 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, notFound, validationError, internalError } from "@/lib/api-response";
+import { successResponse, notFound, validationError, conflict, internalError } from "@/lib/api-response";
 import { updateInterviewSchema, createScorecardSchema } from "@/lib/validations/recruit";
+import { feedbackNotYetOpen, feedbackNotOpenMessage } from "@/lib/recruit/feedback-window";
 import { generateMeetingLink } from "@/lib/meetings";
 import { sendInterviewInvites } from "@/lib/recruit/interview-notify";
 import { createAuditLog } from "@/lib/utils/audit";
@@ -34,7 +35,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
         : null,
     });
   } catch (error) { console.error("GET /recruit/interviews/:id error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.read"] });
 
 export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
   try {
@@ -44,6 +45,11 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
 
     // Check if it's a scorecard submission
     if (body.overallRating !== undefined) {
+      // Not before the interview has started (same rule as the pipeline UI and
+      // the emailed feedback link).
+      if (feedbackNotYetOpen(existing.scheduledAt)) {
+        return conflict(feedbackNotOpenMessage(existing.scheduledAt));
+      }
       const parsed = createScorecardSchema.safeParse({ ...body, interviewId: params.id, applicationId: existing.applicationId });
       if (!parsed.success) return validationError("Validation failed", parsed.error.flatten().fieldErrors);
 
@@ -221,4 +227,4 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
 
     return successResponse(i);
   } catch (error) { console.error("PATCH /recruit/interviews/:id error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });

@@ -7,6 +7,9 @@
 
 export interface WorkItem {
   boqItemId: string;
+  /** FREE_SCOPE anchor — set instead of a BOQ leaf when the project is Free-Scope. */
+  scopeType?: string;
+  scopeId?: string;
   boqNo: string;
   description: string;
   unit: string;
@@ -73,6 +76,8 @@ export interface MachineryRow {
 // ── Raw shapes of an existing DPR record (edit mode hydration source) ──
 export interface DprEditWorkItem {
   boqItemId?: string;
+  scopeType?: string;
+  scopeId?: string;
   boqNo?: string;
   description?: string;
   unit?: string;

@@ -105,6 +105,13 @@ interface LeadFormProps {
   /** Pre-fill owner on create (logged-in user). */
   defaultOwnerId?: string;
   defaultOwnerName?: string;
+  /**
+   * Force the Lead Source to a fixed value and render it read-only. Used by the
+   * Convert-to-Lead (from prospect) flow to lock the source to "LinkedIn". The
+   * value is auto-selected (and injected into the options if the org doesn't
+   * already have it) and always submitted, with no user input required.
+   */
+  lockedSource?: string;
 }
 
 const DEFAULT_STAGES = ["New", "Contacted", "Qualified", "Proposal", "Negotiation", "Closed"];
@@ -162,6 +169,7 @@ export function LeadForm({
   draftScope,
   defaultOwnerId,
   defaultOwnerName,
+  lockedSource,
 }: LeadFormProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -215,7 +223,7 @@ export function LeadForm({
   const [rating, setRating] = useState(
     () => String(initial?.dynamicFields?.rating ?? ""),
   );
-  const [source, setSource] = useState(initial?.source ?? "");
+  const [source, setSource] = useState(lockedSource ?? initial?.source ?? "");
   const [status, setStatus] = useState(initial?.status ?? "Open");
   const [stage, setStage] = useState(initial?.stage ?? "New");
   const [country, setCountry] = useState(initial?.country ?? "");
@@ -415,9 +423,17 @@ export function LeadForm({
     setSourcesLoading(true);
     fetchSources()
       .then((list) => {
-        const resolved = list;
+        // When the source is locked (e.g. prospect → lead conversion forces
+        // "LinkedIn"), make sure it is always a selectable option — inject it if
+        // the org's configured sources don't include it — and keep it selected.
+        let resolved = list;
+        if (lockedSource && !resolved.some((s) => s.name === lockedSource)) {
+          resolved = [...resolved, { id: `locked:${lockedSource}`, name: lockedSource }];
+        }
         setSources(resolved);
-        if (!initial?.id) {
+        if (lockedSource) {
+          setSource(lockedSource);
+        } else if (!initial?.id) {
           // Do not auto-select the first source for new leads.
           // The dropdown shows "— Select source —" until the user chooses.
           setSource((cur) => {
@@ -455,7 +471,7 @@ export function LeadForm({
         );
       })
       .catch(() => setAutoScoreLocked(false));
-  }, [initial?.id]);
+  }, [initial?.id, lockedSource]);
 
   // Re-run when route changes (e.g. back from /settings/stages on lead detail).
   // Next.js router cache can restore the page without remounting this component.
@@ -654,14 +670,14 @@ export function LeadForm({
     const errs: Record<string, string> = {};
     if (!name.trim()) errs.name = "Lead name is required";
     if (!company.trim()) errs.company = "Company name is required";
-    if (!firstName.trim()) errs.firstName = "First name is required";
-    if (!lastName.trim()) errs.lastName = "Last name is required";
-    if (!email.trim()) errs.email = "Email is required";
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) errs.email = "Invalid email format";
+    // Contact Information fields (first name, last name, email, mobile) are
+    // optional — a lead can be created with them left blank. Format checks
+    // still apply, but only when a value is actually entered.
+    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) errs.email = "Invalid email format";
     if (secondaryEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(secondaryEmail.trim())) {
       errs.secondaryEmail = "Invalid email format";
     }
-    if (mobile.number.length !== 10) errs.mobile = "Mobile must be exactly 10 digits";
+    if (mobile.number && mobile.number.length !== 10) errs.mobile = "Mobile must be exactly 10 digits";
     if (phone.number && phone.number.length !== 10) errs.phone = "Phone must be exactly 10 digits";
     if (lat.trim()) {
       const n = Number(lat);
@@ -739,9 +755,9 @@ export function LeadForm({
 
     const data = {
       name: name.trim(),
-      email: email.trim(),
+      email: email.trim() || null,
       phone: phone.number ? phoneValueToE164(phone) : null,
-      mobile: phoneValueToE164(mobile),
+      mobile: mobile.number ? phoneValueToE164(mobile) : null,
       company: company.trim() || null,
       jobTitle: jobTitle.trim() || null,
       source: source.trim(),
@@ -762,8 +778,8 @@ export function LeadForm({
       linkedinUrl: linkedinUrl.trim() || null,
       annualRevenueDisplay: annualRevenueDisplay.trim() || null,
       leadType: leadType || null,
-      firstName: firstName.trim(),
-      lastName: lastName.trim(),
+      firstName: firstName.trim() || null,
+      lastName: lastName.trim() || null,
       contactLinkedinUrl: contactLinkedinUrl.trim() || null,
       technology: reqTechnology.length > 0 ? reqTechnology : null,
       requirementDetails: Object.keys(cleanedReq).length > 0 ? cleanedReq : null,
@@ -866,6 +882,7 @@ export function LeadForm({
         setSource={setSource}
         sourcesLoading={sourcesLoading}
         sources={sources}
+        sourceLocked={Boolean(lockedSource)}
         stage={stage}
         setStage={setStage}
         visibleStages={visibleStages}

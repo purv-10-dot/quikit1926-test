@@ -316,17 +316,6 @@ export function useApproveStockReconciliation() {
   });
 }
 
-export function useCreateStockReconciliation() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (data: unknown) => mutateApi("/api/store/reconciliations", "POST", data),
-    onSuccess: async () => {
-      await refreshListQueries(qc, "stock-reconciliations");
-      await refreshListQueries(qc, "stock-register");
-    },
-    meta: entityMeta("create", "Stock reconciliation"),
-  });
-}
 
 // ─── Diesel Log ────────────────────────────────────────────────────
 

@@ -8,7 +8,7 @@ datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DATABASE_URL_DIRECT")
-  schemas   = ["app_quikasset", "app_quikchat", "app_quikcrm", "app_quikfinance", "app_quikhrms", "app_quikinfra", "app_quikscale", "app_quiksocial", "app_quiksupport", "app_quiktrack", "app_quikvc", "auth", "public", "quikit"]
+  schemas   = ["app_quikasset", "app_quikchat", "app_quikcrm", "app_quikfinance", "app_quikhrms", "app_quikinfra", "app_quiklms", "app_quikscale", "app_quiksocial", "app_quiksupport", "app_quiktrack", "app_quikvc", "auth", "public", "quikit"]
 }
 
 model App {
@@ -133,6 +133,12 @@ model Org {
   brandColor               String?                   @default("#0066cc")
   plan                     String                    @default("startup")
   billingEmail             String?
+  /// Optional workspace profile captured on the post-registration
+  /// "A few quick details" onboarding step. All nullable — the step is
+  /// skippable, so existing/older orgs simply leave these empty.
+  industry                 String?
+  companySize              String?
+  primaryUseCase           String?
   /// Empty = no restriction. Non-empty = POST /api/members must match one
   /// (case-insensitive, no @ prefix — e.g. ["acme.com", "acme.co.uk"]).
   allowedEmailDomains      String[]                  @default([])
@@ -224,6 +230,7 @@ model Org {
   QtInvitation             QtInvitation[]
   qtIssues                 QtIssue[]
   qtProjects               QtProject[]
+  qtSprintSnapshots        QtSprintSnapshot[]
   qtTeams                  QtTeam[]
   qtCustomFields           QtCustomField[]
   qtIssueFieldValues       QtIssueFieldValue[]
@@ -232,6 +239,7 @@ model Org {
   QtUserActivity           QtUserActivity[]
   QtUserViewPref           QtUserViewPref[]
   QtReportView             QtReportView[]
+  QtSavedFilter            QtSavedFilter[]
   UserAppRole              QtUserAppRole[]
   UserPermissionExtra      QtUserPermissionExtra[]
   qsAppRoles               QsAppRole[]
@@ -275,6 +283,7 @@ model Org {
   featureFlags             FeatureFlag[]
   invoices                 Invoice[]
   notifications            Notification[]
+  supportTickets           SupportTicket[]
   sessionEvents            SessionEvent[]
   teams                    Team[]
   userTeams                UserTeam[]
@@ -303,6 +312,9 @@ model User {
   country                 String?
   timezone                String?
   bio                     String?
+  /// Optional self-described role captured on the post-registration
+  /// "A few quick details" onboarding step (Founder / CEO, Operations, …).
+  jobRole                 String?
   themeMode               String?                          @default("light")
   accentColor             String?                          @default("#0066cc")
   kpiFrozenCol            String?
@@ -2412,6 +2424,124 @@ model PlatformAlert {
   @@schema("public")
 }
 
+/// Platform support ticket — raised by an app user (QuikScale today, any app
+/// tomorrow via `appSlug`) and triaged by the QuikIT super-admin team.
+///
+/// Deliberately NOT the QuikSupport `Hd*` domain: that is a per-org helpdesk
+/// PRODUCT (the org's own agents serving the org's own customers, gated behind
+/// OrgAppAccess licensing). These tickets go org-user → QuikIT vendor, need
+/// cross-org super-admin visibility, and must work for orgs that never license
+/// QuikSupport. Hence `public`, alongside BroadcastAnnouncement/PlatformAlert.
+///
+/// `requestType`/`status`/`priority` are Strings, not enums — the house style
+/// for this schema (see Notification.type, AuditLog.action). Value space and
+/// legal transitions live in `@quikit/shared` (SUPPORT_* constants).
+model SupportTicket {
+  id       String @id @default(cuid())
+  /// Race-free human id, rendered `TKT-000042` via formatSupportTicketNo().
+  /// Backed by a Postgres sequence created in the migration.
+  ticketNo Int    @unique @default(dbgenerated("nextval('\"public\".\"SupportTicket_ticketNo_seq\"')"))
+
+  /// Raising org. FK to quikit.Org — the org-wise admin filter and the
+  /// isolation predicate on every user-facing query.
+  orgId String
+  /// Raising user (auth.User.id). No FK, matching Notification.userId and
+  /// AuditLog.actorId; names are stitched in via a batched findMany.
+  userId String
+  /// Which app the ticket was raised from — quikit.App.id. No FK (the App
+  /// registry is in another schema and rows are never hard-deleted), so a
+  /// retired app still resolves historical tickets.
+  appId String
+  /// Denormalized App.slug ("quikscale"). Kept alongside appId so the
+  /// app-wise filter and the admin table need no join. Same style as
+  /// BroadcastAnnouncement.targetAppSlugs.
+  appSlug String
+  /// Snapshot of the raiser's OrgMember.role at submit time ("admin",
+  /// "member", …). Snapshot, not a live lookup: triage needs to know what the
+  /// user could see WHEN they hit the problem, and roles change later.
+  roleName String?
+
+  subject     String
+  description String @db.Text
+  requestType String
+  priority    String @default("medium")
+  status      String @default("open")
+
+  /// Latest super-admin remark, denormalized so the user's Support Status
+  /// table renders in a single query. Full history lives in messages[].
+  adminResponse String?   @db.Text
+  respondedById String?
+  respondedAt   DateTime?
+
+  resolvedAt DateTime?
+  closedAt   DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  org         Org                       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  messages    SupportTicketMessage[]
+  attachments SupportTicketAttachment[]
+
+  @@index([orgId])
+  @@index([orgId, userId, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
+  @@index([appSlug, status])
+  @@index([appId])
+  @@index([orgId, status])
+  @@schema("public")
+}
+
+/// Reply thread + status history for a SupportTicket. A message carrying
+/// statusFrom/statusTo IS the status-history record — no fourth table needed.
+model SupportTicketMessage {
+  id         String  @id @default(cuid())
+  ticketId   String
+  authorId   String
+  /// "user" | "super_admin"
+  authorRole String
+  body       String  @db.Text
+  statusFrom String?
+  statusTo   String?
+
+  createdAt DateTime      @default(now())
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+  @@schema("public")
+}
+
+/// Screenshots / files attached to a SupportTicket at submit time.
+///
+/// The row stores the GCS OBJECT KEY, never a URL: bucket objects are private
+/// and signed URLs expire in minutes, so a persisted URL would be dead on
+/// arrival. Readers mint a fresh signed GET through the app's
+/// `/api/support/uploads/view/<key>` route.
+///
+/// `orgId` is denormalized off the parent ticket so the view route can check
+/// tenant ownership from the KEY ALONE, without a ticket join — the key layout
+/// is `support/<orgId>/<yyyy-mm>/<random>.<ext>`, and the route compares the
+/// segment against the caller's org before signing anything.
+model SupportTicketAttachment {
+  id       String @id @default(cuid())
+  ticketId String
+  orgId    String
+  /// Original client-side filename, shown in the UI. Never used to build the
+  /// object key — that is randomised so a hostile name cannot traverse paths.
+  fileName  String
+  /// Path within the bucket. Unique: the random basename makes collisions
+  /// vanishingly unlikely, and the constraint turns "impossible" into "checked".
+  objectKey String @unique
+  mimeType  String
+  sizeBytes Int
+
+  createdAt DateTime      @default(now())
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+  @@index([orgId])
+  @@schema("public")
+}
+
 /// Invoice records. Dummy payment flow in Phase B writes these via the
 /// super admin's "Mark paid" / "Mark failed" buttons. No real Stripe yet —
 /// externalId column is there for future integration.
@@ -2623,9 +2753,6 @@ model CnUOM {
 
   items               CnItem[]
   grnLines            CnGRNLine[]
-  materialIssueLines  CnMaterialIssueLine[]
-  stockTransferLines  CnStockTransferLine[]
-  reconciliationLines CnStockReconciliationLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -2786,9 +2913,6 @@ model CnItem {
   uom                 CnUOM                       @relation(fields: [uomId], references: [id])
   stockLedger         CnStockLedger[]
   grnLines            CnGRNLine[]
-  materialIssueLines  CnMaterialIssueLine[]
-  stockTransferLines  CnStockTransferLine[]
-  reconciliationLines CnStockReconciliationLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -3006,6 +3130,8 @@ model CnProject {
   purchaseLimit    Decimal?  @db.Decimal(18, 2)
   projectManagerId String?
   status           String    @default("active")
+  executionMode    String    @default("BOQ") // BOQ | FREE_SCOPE
+  freeScopeLocked  Boolean   @default(false)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   createdBy        String
@@ -3418,6 +3544,8 @@ model CnPurchaseRequisition {
   isUrgent             Boolean   @default(false)
   urgencyJustification String?
   workCategoryId       String?
+  scopeType            String? // "BOQ" | "ACTIVITY" (FREE_SCOPE optional tag)
+  scopeId              String? // CnActivityItem.id when scopeType = ACTIVITY
   deliveryLocationId   String?
   estimatedTotal       Decimal?  @db.Decimal(18, 2)
   stockCheckSummary    String?
@@ -3769,7 +3897,6 @@ model CnMaterialIssue {
 
   project         CnProject             @relation(fields: [projectId], references: [id])
   location        CnLocation?           @relation(fields: [locationId], references: [id])
-  lines           CnMaterialIssueLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -3782,25 +3909,6 @@ model CnMaterialIssue {
   @@index([orgId, status, issueDate(sort: Desc)])
   @@index([orgId, projectId, issueDate(sort: Desc)])
   @@map("Material_issues")
-  @@schema("app_quikinfra")
-}
-
-model CnMaterialIssueLine {
-  id        String  @id @default(cuid())
-  issueId   String
-  itemId    String
-  issuedQty Decimal @db.Decimal(18, 4)
-  uomId     String
-  unitRate  Decimal @db.Decimal(18, 2)
-  amount    Decimal @db.Decimal(18, 2)
-  remarks   String?
-
-  issue CnMaterialIssue @relation(fields: [issueId], references: [id], onDelete: Cascade)
-  item  CnItem          @relation(fields: [itemId], references: [id])
-  uom   CnUOM           @relation(fields: [uomId], references: [id])
-
-  @@index([issueId])
-  @@map("Material_issue_lines")
   @@schema("app_quikinfra")
 }
 
@@ -3919,7 +4027,6 @@ model CnGatePass {
   updatedBy          String
 
   project CnProject?       @relation(fields: [projectId], references: [id])
-  lines   CnGatePassLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -3983,7 +4090,6 @@ model CnGoodReturn {
 
   project CnProject?         @relation(fields: [projectId], references: [id])
   vendor  CnVendor?          @relation(fields: [vendorId], references: [id])
-  lines   CnGoodReturnLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -3993,23 +4099,6 @@ model CnGoodReturn {
   @@index([projectId])
   @@index([status])
   @@map("Good_returns")
-  @@schema("app_quikinfra")
-}
-
-model CnGoodReturnLine {
-  id        String  @id @default(cuid())
-  returnId  String
-  itemId    String
-  returnQty Decimal @db.Decimal(18, 4)
-  uomId     String
-  unitRate  Decimal @db.Decimal(18, 2)
-  amount    Decimal @db.Decimal(18, 2)
-  reason    String?
-
-  goodReturn CnGoodReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
-
-  @@index([returnId])
-  @@map("Good_return_lines")
   @@schema("app_quikinfra")
 }
 
@@ -4074,7 +4163,6 @@ model CnStockTransfer {
   fromProject  CnProject?            @relation(fields: [fromProjectId], references: [id])
   fromLocation CnLocation?           @relation("StockTransferFrom", fields: [fromLocationId], references: [id])
   toLocation   CnLocation?           @relation("StockTransferTo", fields: [toLocationId], references: [id])
-  lines        CnStockTransferLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -4090,24 +4178,6 @@ model CnStockTransfer {
   @@schema("app_quikinfra")
 }
 
-model CnStockTransferLine {
-  id          String   @id @default(cuid())
-  transferId  String
-  itemId      String
-  sentQty     Decimal  @db.Decimal(18, 4)
-  receivedQty Decimal? @db.Decimal(18, 4)
-  uomId       String
-  remarks     String?
-
-  transfer CnStockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
-  item     CnItem          @relation(fields: [itemId], references: [id])
-  uom      CnUOM           @relation(fields: [uomId], references: [id])
-
-  @@index([transferId])
-  @@map("Stock_transfer_lines")
-  @@schema("app_quikinfra")
-}
-
 model CnStockReconciliation {
   id                   String   @id @default(cuid())
   orgId                String
@@ -4119,6 +4189,11 @@ model CnStockReconciliation {
   approvedById         String?
   status               String   @default("draft")
   approvalId           String?
+  lineCount            Int      @default(0)
+  // Reconciliation lines are stored inline as a JSONB array (same single-table
+  // pattern as issues/transfers/gate-pass/good-return). Each element:
+  // { id?, itemId, uomId, systemQty, physicalQty, varianceQty, reason }.
+  materials            Json?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
   createdBy            String
@@ -4126,7 +4201,6 @@ model CnStockReconciliation {
 
   project  CnProject                   @relation(fields: [projectId], references: [id])
   location CnLocation                  @relation(fields: [locationId], references: [id])
-  lines    CnStockReconciliationLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -4141,24 +4215,6 @@ model CnStockReconciliation {
   @@schema("app_quikinfra")
 }
 
-model CnStockReconciliationLine {
-  id               String  @id @default(cuid())
-  reconciliationId String
-  itemId           String
-  systemQty        Decimal @db.Decimal(18, 4)
-  physicalQty      Decimal @db.Decimal(18, 4)
-  varianceQty      Decimal @db.Decimal(18, 4)
-  uomId            String
-  reason           String?
-
-  reconciliation CnStockReconciliation @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
-  item           CnItem                @relation(fields: [itemId], references: [id])
-  uom            CnUOM                 @relation(fields: [uomId], references: [id])
-
-  @@index([reconciliationId])
-  @@map("Stock_reconciliation_lines")
-  @@schema("app_quikinfra")
-}
 
 model CnDieselLog {
   id             String   @id @default(cuid())
@@ -4269,7 +4325,9 @@ model CnWorkOrderLine {
   id             String  @id @default(cuid())
   woId           String
   lineType       String  @default("boq") // "boq" | "labour"
-  boqItemId      String
+  boqItemId      String? // null in FREE_SCOPE mode
+  scopeType      String? // "BOQ" | "ACTIVITY"
+  scopeId        String? // CnActivityItem.id when scopeType = ACTIVITY
   description    String
   quantity       Decimal @db.Decimal(18, 4)
   uomId          String
@@ -4293,7 +4351,9 @@ model CnWorkOrderLine {
 model CnRABLine {
   id               String  @id @default(cuid())
   rabId            String
-  boqItemId        String
+  boqItemId        String? // null in FREE_SCOPE mode
+  scopeType        String? // "BOQ" | "ACTIVITY"
+  scopeId          String? // CnActivityItem.id when scopeType = ACTIVITY
   woLineId         String
   description      String
   uomId            String
@@ -4650,27 +4710,14 @@ model CnRfqVendor {
   @@schema("app_quikinfra")
 }
 
-model CnGatePassLine {
-  id         String  @id @default(cuid())
-  gatePassId String
-  itemId     String
-  quantity   Decimal @db.Decimal(18, 4)
-  uomId      String
-  remarks    String?
-
-  gatePass CnGatePass @relation(fields: [gatePassId], references: [id], onDelete: Cascade)
-
-  @@index([gatePassId])
-  @@map("Gate_pass_lines")
-  @@schema("app_quikinfra")
-}
-
 model CnMaterialEstimation {
   id              String    @id @default(cuid())
   orgId           String
   projectId       String
   projectName     String?
-  boqItemId       String
+  boqItemId       String? // null in FREE_SCOPE mode
+  scopeType       String? // "BOQ" | "ACTIVITY"
+  scopeId         String? // CnActivityItem.id when scopeType = ACTIVITY
   boqNo           String?
   boqDescription  String?
   boqQuantity     Decimal?  @db.Decimal(18, 4)
@@ -4783,7 +4830,9 @@ model CnProjectDocument {
 model CnDPRWorkItem {
   id            String   @id @default(cuid())
   dprId         String
-  boqItemId     String
+  boqItemId     String? // null in FREE_SCOPE mode
+  scopeType     String? // "BOQ" | "ACTIVITY"
+  scopeId       String? // CnActivityItem.id when scopeType = ACTIVITY
   woId          String?
   description   String
   todayQty      Decimal  @db.Decimal(18, 4)
@@ -5169,6 +5218,53 @@ model CnBOQItemV2 {
   @@schema("app_quikinfra")
 }
 
+// FREE_SCOPE anchor — a MANUAL BOQ. When CnProject.executionMode = "FREE_SCOPE"
+// the lifecycle is anchored on these activity items instead of imported BOQ
+// leaves (CnBOQItemV2). Same field shape as a BOQ line (tender qty / scope / rate) —
+// the only difference is these are entered by hand instead of imported from
+// Excel. FKs are plain String (no @relation), matching the loose-link convention.
+model CnActivityItem {
+  id           String @id @default(cuid())
+  orgId        String
+  projectId    String
+  activityCode String // unique per project — the manual "BOQ No", e.g. "ACT-001"
+  description  String @default("")
+
+  // Classification / unit
+  category String? // "Civil" | "Electrical" | "Road" | ...
+  uomId    String? // unit of measure (CnUOM.id)
+
+  // Manual baseline — mirrors BOQ tenderQty / rate
+  tenderQty Decimal? @db.Decimal(18, 4)
+  scopeQty  Decimal  @default(0) @db.Decimal(18, 4)
+  rate      Decimal? @db.Decimal(18, 2)
+
+  // Schedule
+  startDate DateTime?
+  endDate   DateTime?
+
+  // Hierarchy — folders (isGroup=true, not anchorable) + leaf line items
+  parentId  String?
+  isGroup   Boolean @default(false)
+  depth     Int     @default(0)
+  sortOrder Int     @default(0)
+
+  status String  @default("active")
+  locked Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String
+  updatedBy String
+
+  @@unique([projectId, activityCode])
+  @@index([orgId])
+  @@index([projectId, parentId])
+  @@index([projectId, isGroup])
+  @@map("Activity_items")
+  @@schema("app_quikinfra")
+}
+
 model CnBOQImportBatch {
   id             String   @id @default(cuid())
   orgId          String
@@ -5230,9 +5326,11 @@ model CnBOQProgressLedger {
   id             String   @id @default(cuid())
   orgId          String
   projectId      String
-  boqItemId      String
-  boqNo          String
-  category       String
+  boqItemId      String? // null in FREE_SCOPE mode
+  boqNo          String? // null in FREE_SCOPE mode
+  category       String? // null in FREE_SCOPE mode
+  scopeType      String? // "BOQ" | "ACTIVITY"
+  scopeId        String? // CnActivityItem.id when scopeType = ACTIVITY
   qty            Decimal  @db.Decimal(18, 4)
   direction      Int // +1 for apply, -1 for reverse
   workType       String // "sub_contractor" | "self"
@@ -5258,9 +5356,11 @@ model CnBOQBillingLedger {
   id             String   @id @default(cuid())
   orgId          String
   projectId      String
-  boqItemId      String
-  boqNo          String
-  category       String
+  boqItemId      String? // null in FREE_SCOPE mode
+  boqNo          String? // null in FREE_SCOPE mode
+  category       String? // null in FREE_SCOPE mode
+  scopeType      String? // "BOQ" | "ACTIVITY"
+  scopeId        String? // CnActivityItem.id when scopeType = ACTIVITY
   qty            Decimal  @db.Decimal(18, 4)
   direction      Int // +1 for bill, -1 for reverse
   rabId          String?
@@ -6187,6 +6287,11 @@ model QtProject {
   name             String
   description      String?
   projectType      String              @default("software")
+  /// Jira-style management style chosen at creation: "team-managed" (default)
+  /// or "company-managed". Display/label only today (drives the "Type" column
+  /// label on the Projects list); distinct from `projectType`, which is the
+  /// template kind (software / discovery / service).
+  managementStyle  String              @default("team-managed")
   /// Which template the space was created from. Drives runtime behavior:
   ///   "scrum"      → sprints + sprint-gated board (default; all existing spaces)
   ///   "functional" → no sprints; Kanban-style "Activity Board" (all tasks);
@@ -6220,6 +6325,7 @@ model QtProject {
   members          QtProjectMember[]
   teams            QtProjectTeam[]
   sprints          QtSprint[]
+  sprintSnapshots  QtSprintSnapshot[]
   projectRoles     QtProjectRole[]
   projectUserRoles QtProjectUserRole[]
   customFields     QtCustomField[]
@@ -6525,8 +6631,61 @@ model QtSprint {
   updatedBy   String?
   issues      QtIssue[]
   project     QtProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  snapshot    QtSprintSnapshot?
 
   @@index([projectId, status])
+  @@schema("app_quiktrack")
+}
+
+/// Velocity report support. One row per sprint, capturing the sprint's
+/// "committed" scope at START (PLANNING → ACTIVE) and its "completed" scope at
+/// COMPLETE. Needed because completing a sprint moves unfinished issues OUT of
+/// it, so a closed sprint no longer knows what it originally committed to —
+/// the velocity chart reads committed vs completed from this frozen snapshot.
+///
+/// Jira semantics: the row is written ONCE, at "Complete sprint", and is
+/// IMMUTABLE thereafter — editing issues later never changes a completed
+/// sprint's velocity. The Velocity Report reads these stored values verbatim
+/// and never recalculates. Only COMPLETED sprints have a row.
+///
+/// Scope rule (matches the velocity calc in lib/reports/velocity.ts): only
+/// estimable leaf work counts — EPIC, SUBTASK and BUG types are excluded.
+/// Committed = every scoped issue in the sprint at completion time (before
+/// incomplete items are moved out). Completed = the subset in a DONE status.
+/// Points sum QtIssue.storyPoints (null → 0); hours sum QtIssue.eta (the
+/// original estimate, in hours — logged/timesheet hours are NOT used).
+model QtSprintSnapshot {
+  id                String    @id @default(cuid())
+  orgId             String
+  projectId         String
+  sprintId          String    @unique
+  /// Σ storyPoints of committed (non-EPIC/SUBTASK/BUG) issues at completion.
+  committedPoints   Int       @default(0)
+  /// Count of committed issues at completion.
+  committedCount    Int       @default(0)
+  /// Frozen list of QtIssue ids committed to the sprint (the velocity "scope").
+  committedIssueIds Json      @default("[]")
+  /// Σ storyPoints of committed issues that were DONE at completion.
+  completedPoints   Int       @default(0)
+  /// Count of committed issues DONE at completion.
+  completedCount    Int       @default(0)
+  /// Σ eta (estimated hours) of committed issues at completion.
+  committedHours    Float     @default(0)
+  /// Σ eta (estimated hours) of committed issues that were DONE at completion.
+  completedHours    Float     @default(0)
+  /// Points-based completion %: round(completedPoints / committedPoints * 100).
+  /// 0 when nothing was committed.
+  completionPct     Int       @default(0)
+  /// When the sprint was completed (= the frozen "sprint completed date").
+  completedAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  org               Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  project           QtProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sprint            QtSprint  @relation(fields: [sprintId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([orgId])
   @@schema("app_quiktrack")
 }
 
@@ -6612,6 +6771,9 @@ model QtIssue {
   timesheetEntries QtTimesheetEntry[]
   attachments      QtIssueAttachment[]
   fieldValues      QtIssueFieldValue[]
+  devBranches      QtDevBranch[]
+  devCommits       QtDevCommit[]
+  devPullRequests  QtDevPullRequest[]
 
   @@unique([projectId, key])
   @@index([orgId])
@@ -6735,6 +6897,142 @@ model QtIssueLink {
   @@index([orgId])
   @@index([projectId])
   @@index([targetIssueId])
+  @@schema("app_quiktrack")
+}
+
+// ── GitHub development integration ─────────────────────────────────────────
+// One row per connected GitHub org/account. Tokens are stored encrypted
+// (AES-256-GCM via lib/crypto/token-cipher); never plaintext. Org-scoped by
+// `orgId` column (matching QtIssueComment/History/Link — no Org back-relation
+// so the shared Org model stays untouched).
+model QtGithubInstallation {
+  id                 String         @id @default(cuid())
+  orgId              String
+  /// GitHub App installation id (from the install callback).
+  installationId     String
+  /// Login of the org/user the App was installed on (e.g. "KanishkaJ19").
+  githubAccountLogin String
+  /// Numeric GitHub account id, stable across renames.
+  githubAccountId    String?
+  /// "Organization" | "User".
+  targetType         String         @default("Organization")
+  /// "ALL" | "SELECTED" — repo access chosen at install time.
+  repoSelection      String         @default("SELECTED")
+  /// Cached installation access token, encrypted; re-minted when expired.
+  accessTokenEnc     String?
+  tokenExpiresAt     DateTime?
+  /// "PENDING" | "RUNNING" | "FINISHED" | "ERROR".
+  backfillStatus     String         @default("PENDING")
+  backfilledFrom     DateTime?
+  /// "ACTIVE" | "SUSPENDED" | "DISCONNECTED".
+  status             String         @default("ACTIVE")
+  lastError          String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  createdBy          String?
+  repos              QtGithubRepo[]
+
+  @@unique([orgId, installationId])
+  @@index([orgId])
+  @@index([githubAccountLogin])
+  @@schema("app_quiktrack")
+}
+
+// A repository exposed by an installation, optionally linked to a Space.
+model QtGithubRepo {
+  id             String               @id @default(cuid())
+  orgId          String
+  installationId String
+  /// GitHub numeric repo id (stable across renames).
+  repoId         String
+  /// "owner/name" (e.g. "KanishkaJ19/LowCodeNoCode_Backend").
+  repoFullName   String
+  defaultBranch  String               @default("main")
+  /// Optional Space this repo is linked to. Null = org-wide only.
+  projectId      String?
+  /// Per-task backfill state as JSON: branches/commits/pullRequests/etc.
+  backfillStatus Json?
+  isActive       Boolean              @default(true)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  installation   QtGithubInstallation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, repoId])
+  @@index([orgId])
+  @@index([installationId])
+  @@index([projectId])
+  @@schema("app_quiktrack")
+}
+
+// A branch linked to a work item via its issue key (QT-123) parsed from the
+// branch name. Idempotent on (issueId, repoId, name).
+model QtDevBranch {
+  id           String   @id @default(cuid())
+  orgId        String
+  issueId      String
+  /// GitHub repo id (denormalized; joins to QtGithubRepo.repoId).
+  repoId       String
+  repoFullName String
+  name         String
+  url          String?
+  sourceSystem String   @default("github")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  issue        QtIssue  @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@unique([issueId, repoId, name])
+  @@index([orgId])
+  @@index([issueId])
+  @@index([repoId])
+  @@schema("app_quiktrack")
+}
+
+// A commit linked to a work item via its issue key in the commit message.
+// Idempotent on (repoId, sha).
+model QtDevCommit {
+  id           String   @id @default(cuid())
+  orgId        String
+  issueId      String
+  repoId       String
+  repoFullName String
+  sha          String
+  message      String
+  authorName   String?
+  url          String?
+  committedAt  DateTime?
+  sourceSystem String   @default("github")
+  createdAt    DateTime @default(now())
+  issue        QtIssue  @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@unique([repoId, sha])
+  @@index([orgId])
+  @@index([issueId])
+  @@schema("app_quiktrack")
+}
+
+// A pull request linked to a work item via its issue key in the title/body.
+// Idempotent on (repoId, number).
+model QtDevPullRequest {
+  id           String   @id @default(cuid())
+  orgId        String
+  issueId      String
+  repoId       String
+  repoFullName String
+  number       Int
+  title        String
+  /// "OPEN" | "MERGED" | "CLOSED" | "DRAFT".
+  state        String   @default("OPEN")
+  url          String?
+  authorName   String?
+  updatedAtGh  DateTime?
+  sourceSystem String   @default("github")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  issue        QtIssue  @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@unique([repoId, number])
+  @@index([orgId])
+  @@index([issueId])
   @@schema("app_quiktrack")
 }
 
@@ -6972,6 +7270,34 @@ model QtReportView {
   Org         Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId, userId, kind])
+  @@schema("app_quiktrack")
+}
+
+/// A user-saved work-item filter for the global Filters surface (the Jira-style
+/// "Save filter" flow). `criteria` is the opaque toolbar state blob the UI
+/// persists (search + built-in filters + customFilters) — shape owned by the
+/// client. Reuses the app's existing saved-view conventions (owner userId,
+/// JSON blob, `visibility` "private"|"shared" like QtIdeaView, `starred` like
+/// QtDashboard) rather than a bespoke viewer/editor sharing matrix.
+model QtSavedFilter {
+  id          String   @id @default(cuid())
+  orgId       String
+  userId      String
+  name        String
+  description String?
+  criteria    Json
+  visibility  String   @default("private") // "private" | "org" | "space" | "user"
+  // For "space": project ids whose members may see it. For "user": user ids.
+  // Empty for "private"/"org".
+  viewerIds   String[] @default([])
+  starred     Boolean  @default(false)
+  isDeleted   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  Org         Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, userId])
+  @@index([orgId, visibility])
   @@schema("app_quiktrack")
 }
 
@@ -8003,6 +8329,46 @@ model CrmLeadSource {
   @@schema("app_quikcrm")
 }
 
+// Prospects captured by the LinkedIn Chrome extension ("Save to CRM"). This is
+// a standalone capture table — it is intentionally NOT a CrmLead. The extension
+// authenticates with a Bearer JWT and posts the extracted profile to
+// /api/leads/from-linkedin, which upserts one row here per (orgId, linkedinUrl).
+model CrmProspect {
+  id             String   @id @default(cuid())
+  orgId          String
+  name           String
+  email          String?
+  phone          String?
+  title          String?
+  company        String?
+  linkedinUrl    String?
+  shortSummary   String?
+  about          String?
+  profilePicture String?
+  // Raw extracted blobs (posts, company data, experiences) kept verbatim for
+  // later enrichment — shape is owned by the extension, so stored as Json.
+  posts          Json?
+  companyData    Json?
+  experiences    Json?
+  savedById      String?
+  savedByName    String?
+  // Conversion state. "New" until the prospect is converted into a CrmLead via
+  // the Prospects page; then "Converted" with a pointer to the created lead.
+  status         String    @default("New")
+  convertedLeadId String?
+  convertedAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // One prospect per LinkedIn profile per org — re-saving the same profile
+  // updates the existing row instead of creating duplicates.
+  @@unique([orgId, linkedinUrl], name: "prospect_org_linkedin_uk")
+  @@index([orgId])
+  @@index([orgId, createdAt])
+  @@index([orgId, status])
+  @@schema("app_quikcrm")
+}
+
 model CrmOpportunity {
   id                  String                          @id @default(cuid())
   orgId               String
@@ -8717,6 +9083,163 @@ model CrmOutboundMessageLog {
   createdAt DateTime  @default(now())
 
   @@index([orgId])
+  @@schema("app_quikcrm")
+}
+
+// ─── Email integration (P1) ──────────────────────────────────────────────────
+// Per-user connected mailbox (Gmail / Microsoft 365) via OAuth. Two-way sync:
+// send from CRM records + poll inbox/sent for replies. Each synced/sent message
+// also produces a CrmActivity (type "email", sourceSystem=provider,
+// externalId=providerMessageId) so it appears on the Activity Timeline and
+// dedupes via CrmActivity's @@unique([orgId, sourceSystem, externalId]).
+// Tokens are AES-256-GCM encrypted at rest — never plaintext, never passwords.
+
+model CrmMailboxConnection {
+  id              String                @id @default(cuid())
+  orgId           String
+  userId          String
+  provider        String // "gmail" | "microsoft"
+  emailAddress    String
+  accessTokenEnc  String
+  refreshTokenEnc String
+  tokenExpiresAt  DateTime?
+  scope           String?
+  status          String                @default("active") // "active" | "error" | "disconnected"
+  historyId       String? // Gmail incremental sync cursor
+  deltaLink       String? // (legacy P1 single Graph delta cursor; superseded by deltaInbox/deltaSent)
+  // Full-history sync (P2): one-time 90-day backfill of Inbox + Sent, then
+  // incremental. Microsoft delta is per-folder, so two cursors are required.
+  syncState       String                @default("initial") // "initial" | "backfilling" | "live"
+  backfillCursor  String? // provider continuation token for the paginated backfill (Graph nextLink / Gmail pageToken)
+  backfillSince   DateTime? // low-water mark of the backfill window for this connection
+  deltaInbox      String? // Microsoft Graph inbox deltaLink
+  deltaSent       String? // Microsoft Graph sentitems deltaLink
+  deltaDrafts     String? // Microsoft Graph drafts deltaLink (P3 Mailbox module)
+  lastSyncedAt    DateTime?
+  lastError       String?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  threads         CrmEmailThread[]
+  messages        CrmEmailMessage[]
+  mailboxEmails   CrmMailboxEmail[]
+
+  @@unique([orgId, userId]) // one mailbox per user in P1
+  @@index([orgId, status])
+  @@schema("app_quikcrm")
+}
+
+model CrmEmailThread {
+  id                  String               @id @default(cuid())
+  orgId               String
+  mailboxConnectionId String
+  providerThreadId    String
+  subject             String?
+  relatedKind         String // "Lead" | "Contact" | "Account" | "Opportunity"
+  relatedObjectId     String
+  lastMessageAt       DateTime?
+  messageCount        Int                  @default(0)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  mailbox             CrmMailboxConnection @relation(fields: [mailboxConnectionId], references: [id], onDelete: Cascade)
+  messages            CrmEmailMessage[]
+
+  @@unique([orgId, mailboxConnectionId, providerThreadId])
+  @@index([orgId, relatedKind, relatedObjectId])
+  @@schema("app_quikcrm")
+}
+
+model CrmEmailMessage {
+  id                  String                @id @default(cuid())
+  orgId               String
+  mailboxConnectionId String
+  threadId            String
+  providerMessageId   String
+  rfcMessageId        String?
+  inReplyTo           String?
+  direction           String // "outbound" | "inbound"
+  fromAddress         String
+  toAddresses         String[]
+  ccAddresses         String[]
+  subject             String?
+  snippet             String?
+  bodyHtml            String?
+  bodyText            String?
+  sentAt              DateTime?
+  receivedAt          DateTime?
+  activityId          String? // linked CrmActivity.id (timeline entry)
+  relatedKind         String
+  relatedObjectId     String
+  createdAt           DateTime              @default(now())
+  mailbox             CrmMailboxConnection  @relation(fields: [mailboxConnectionId], references: [id], onDelete: Cascade)
+  thread              CrmEmailThread        @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  attachments         CrmEmailAttachment[]
+
+  @@unique([orgId, mailboxConnectionId, providerMessageId]) // dedupe on sync
+  @@index([orgId, threadId])
+  @@index([orgId, relatedKind, relatedObjectId])
+  @@schema("app_quikcrm")
+}
+
+model CrmEmailAttachment {
+  id                   String          @id @default(cuid())
+  orgId                String
+  messageId            String
+  filename             String
+  mimeType             String?
+  sizeBytes            Int?
+  providerAttachmentId String? // fetched lazily on download
+  storageUrl           String? // populated only if persisted to GCS
+  createdAt            DateTime        @default(now())
+  message              CrmEmailMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, messageId])
+  @@schema("app_quikcrm")
+}
+
+// ─── Mailbox module (P3) ──────────────────────────────────────────────────────
+// Raw per-connection mirror of EVERY email in the connected mailbox (not just
+// CRM-matched mail). Powers the in-CRM "Mailbox" module (Inbox/Sent/Drafts/All),
+// read entirely from this table — no provider call when a user opens the inbox.
+// The CRM-matched view (CrmEmailMessage/Thread/Activity/Timeline) is unchanged;
+// when an email also matches a CRM record, crmEmailMessageId cross-links the two.
+model CrmMailboxEmail {
+  id                  String               @id @default(cuid())
+  orgId               String
+  mailboxConnectionId String
+  provider            String // "google" | "microsoft"
+  providerMessageId   String
+  providerThreadId    String?
+  folder              String // "inbox" | "sent" | "drafts"
+  direction           String // "inbound" | "outbound"
+  fromAddress         String
+  fromName            String?
+  toAddresses         String[]
+  ccAddresses         String[]
+  bccAddresses        String[]
+  subject             String?
+  preview             String?
+  bodyHtml            String? // truncated to a size cap; preview always present
+  bodyText            String?
+  hasAttachments      Boolean              @default(false)
+  attachments         Json? // [{filename,mimeType,sizeBytes,providerAttachmentId}]
+  receivedAt          DateTime?
+  sentAt              DateTime?
+  isRead              Boolean              @default(false)
+  isStarred           Boolean              @default(false)
+  labels              String[] // Gmail labelIds / Graph categories
+  // Cross-link to the CRM-matched row (P1/P2), when this email was also attached.
+  crmEmailMessageId   String?
+  matchedKind         String?
+  matchedObjectId     String?
+  syncedAt            DateTime             @default(now())
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  mailbox             CrmMailboxConnection @relation(fields: [mailboxConnectionId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, mailboxConnectionId, providerMessageId]) // dedupe on sync
+  @@index([orgId, mailboxConnectionId, folder, receivedAt])
+  @@index([orgId, mailboxConnectionId, isRead])
+  @@index([orgId, mailboxConnectionId, providerThreadId])
   @@schema("app_quikcrm")
 }
 
@@ -10658,7 +11181,9 @@ model Employee {
   tentativeJoiningDate DateTime?      @db.Date
   confirmationDate     DateTime?
   probationEndDate     DateTime?
+  nextReviewDate       DateTime?      @db.Date
   noticePeriodDays     Int            @default(0)
+  noticePeriodId       String?
   lastWorkingDate      DateTime?
   previousExperience   Int            @default(0) // months
   sourceOfHire         SourceOfHire?
@@ -10728,6 +11253,7 @@ model Employee {
   // Relations
   department        Department?     @relation("EmployeeDepartment", fields: [departmentId], references: [id])
   team              HrmsTeam?       @relation("EmployeeTeam", fields: [teamId], references: [id])
+  noticePeriodRef   NoticePeriod?   @relation("EmployeeNoticePeriod", fields: [noticePeriodId], references: [id])
   designation       Designation?    @relation("EmployeeDesignation", fields: [designationId], references: [id])
   grade             Grade?          @relation("EmployeeGrade", fields: [gradeId], references: [id])
   officeLocation    OfficeLocation? @relation("EmployeeOfficeLocation", fields: [officeLocationId], references: [id])
@@ -10789,10 +11315,8 @@ model Employee {
   notifications HrmsNotification[]
 
   // Ticket / Help Desk relations
-  ticketsRaised    Ticket[]         @relation("TicketRaiser")
-  ticketsAssigned  Ticket[]         @relation("TicketAssignee")
-  ticketComments   TicketComment[]
-  ticketActivities TicketActivity[]
+  ticketsRaised   Ticket[] @relation("TicketRaiser")
+  ticketsAssigned Ticket[] @relation("TicketAssignee")
 
   // RBAC v2 — quikscale mirror
   appRoles            HrmsUserAppRole[]
@@ -10803,6 +11327,11 @@ model Employee {
   // creating duplicate records. authUserId is nullable (manual employees), and
   // Postgres treats NULLs as distinct, so manual records are unaffected.
   @@unique([orgId, authUserId])
+  // Prevents duplicate employees for the same work email in a tenant (e.g. a
+  // double-clicked onboarding). Enforced in the DB as a PARTIAL unique index on
+  // active rows only (WHERE "deletedAt" IS NULL) so an email can be reused after
+  // an employee is soft-deleted — see the raw SQL that ships with this change.
+  @@unique([orgId, workEmail])
   @@index([orgId, workEmail])
   @@index([orgId])
   @@index([orgId, deletedAt])
@@ -10963,12 +11492,19 @@ model AttendanceRecord {
 
   regularizationStatus RegularizationStatus @default(None)
   regularizationReason String?
+  // Requested check-in/out for a PENDING regularization — held here (not applied
+  // to the live checkIn/checkOut) until an approver approves. Cleared on decide.
+  regularizedCheckIn   DateTime?
+  regularizedCheckOut  DateTime?
 
   remarks         String?
   isLateCheckIn   Boolean @default(false)
   isEarlyCheckOut Boolean @default(false)
   lateByMinutes   Int     @default(0)
   earlyByMinutes  Int     @default(0)
+  // Checked in on a past day but never checked out — flagged by the daily
+  // missed-checkout cron so the employee can regularize it.
+  missedCheckout  Boolean @default(false)
 
   createdBy String?
   updatedBy String?
@@ -11291,6 +11827,10 @@ model LeaveGroupItem {
   leaveGroupId  String
   leaveTypeId   String
   overrideQuota Decimal? @db.Decimal(5, 2)
+  // Per-group rule set for this leave type (entitlement, accrual, applying,
+  // restrictions) — the leave-rules wizard's output. Lets the same leave type
+  // carry different rules in different groups.
+  rules         Json?
 
   createdAt DateTime @default(now())
 
@@ -11400,6 +11940,9 @@ model LeaveBalance {
   carriedForward Decimal @default(0) @db.Decimal(5, 2)
   encashed       Decimal @default(0) @db.Decimal(5, 2)
   lapsed         Decimal @default(0) @db.Decimal(5, 2)
+  // Accrual/carry-forward engine bookkeeping (idempotency guards).
+  lastAccrualYm  Int?     // YYYYMM of the last monthly accrual applied to this row
+  carryProcessed Boolean  @default(false) // year-end rollover already run for this row
 
   createdBy String?
   updatedBy String?
@@ -12012,6 +12555,8 @@ enum CandidateSource {
   CandCampus
   CandDirect
   CandInbound
+  CandNaukri
+  CandIndeed
 
   @@schema("app_quikhrms")
 }
@@ -12281,6 +12826,8 @@ model JobApplication {
   appliedDate  DateTime @default(now())
   currentStage String?
   stageHistory Json?
+  // Screening-call sheet captured from the pipeline (answers + technical Q&A + comments).
+  screeningAnswers Json?
 
   status ApplicationStatus @default(AppActive)
 
@@ -12289,6 +12836,9 @@ model JobApplication {
 
   rejectionReason String?
   rejectionStage  String?
+  // Stable timestamp of when the application was rejected — the re-apply
+  // cooling window counts from this, not from `updatedAt` (which later edits move).
+  rejectedAt      DateTime?
   // A "penalty-free" rejection (e.g. closed because the requisition was
   // cancelled / not selected after a hold-resume review). Excluded from the
   // re-apply cooling-period block so the candidate can still apply elsewhere.
@@ -12372,6 +12922,25 @@ model Interview {
   feedbackRequestSentAt  DateTime?
   lastReminderAt         DateTime?
   reminderCount          Int       @default(0)
+
+  // ─── Take-Home Task (type = TakeHome) ──────────────────────────────
+  // Set when HR assigns a take-home: the brief, an optional attached spec
+  // file, and the deadline. The candidate submits via a tokenised public page
+  // (submissionToken); their work is stored as submissionUrl (uploaded file OR
+  // pasted link) + note. The reviewer scores using the normal scorecard fields
+  // above. Read/written via raw SQL (regen-free).
+  takeHomeInstructions   String?
+  takeHomeAttachmentUrl  String?
+  // Optional reference link HR pastes instead of (or alongside) an uploaded
+  // spec file — e.g. a Google Doc / GitHub repo for the assignment.
+  takeHomeAttachmentLink String?
+  takeHomeDueDate        DateTime? @db.Date
+  submissionToken        String?   @unique
+  submissionTokenExpiresAt DateTime?
+  submissionUrl          String?
+  submissionFileName     String?
+  submissionNote         String?
+  submittedAt            DateTime?
 
   // Interview scorecard — formerly the separate InterviewScorecard table
   // (1:1, keyed by interviewId). Folded in here. All nullable: an interview
@@ -12608,8 +13177,32 @@ model HrmsSurveyResponse {
   survey   HrmsSurvey @relation(fields: [surveyId], references: [id])
   employee Employee?  @relation(fields: [employeeId], references: [id])
 
+  // A PARTIAL unique index on (orgId, surveyId, employeeId) WHERE employeeId IS
+  // NOT NULL dedups IDENTIFIED responses. Prisma can't express partial unique
+  // indexes, so it is maintained via raw SQL:
+  //   CREATE UNIQUE INDEX "SurveyResponse_orgId_surveyId_employeeId_key"
+  //     ON "app_quikhrms"."SurveyResponse" ("orgId","surveyId","employeeId")
+  //     WHERE "employeeId" IS NOT NULL;
+  // Anonymous dedup uses the separate SurveyRespondent table below.
   @@index([orgId, surveyId])
   @@map("SurveyResponse")
+  @@schema("app_quikhrms")
+}
+
+/// Records WHO responded to a survey, kept SEPARATE from SurveyResponse so
+/// anonymous answers stay unlinked to the person. Enforces one response per
+/// (survey, employee) — including anonymous surveys. Written via raw SQL from
+/// the respond route.
+model HrmsSurveyRespondent {
+  id          String   @id @default(cuid())
+  orgId       String
+  surveyId    String
+  employeeId  String
+  respondedAt DateTime @default(now())
+
+  @@unique([orgId, surveyId, employeeId])
+  @@index([orgId, surveyId])
+  @@map("SurveyRespondent")
   @@schema("app_quikhrms")
 }
 
@@ -12808,6 +13401,8 @@ enum ApprovalModule {
   SalaryRevision
   OneTimeEarning
   Requisition
+  WFH
+  Payroll
 
   @@schema("app_quikhrms")
 }
@@ -12889,6 +13484,16 @@ model CompanySettings {
   // Editable offer-letter body template with {{dynamic}} fields (see
   // lib/recruit/offer-letter-fields.ts). Null → renderer uses the built-in default.
   offerLetterBody      String?
+  // Editable joining/appointment-letter body template with {{dynamic}} fields
+  // (see lib/recruit/joining-letter-fields.ts). Null → renderer uses the default.
+  joiningLetterBody    String?
+  // Editable resignation-acceptance-letter body template with {{dynamic}} fields
+  // (see lib/offboarding/resignation-letter-fields.ts). Read/written via raw SQL.
+  resignationLetterBody String?
+  // Editable relieving-letter + experience-letter body templates ({{dynamic}}
+  // fields, see lib/offboarding/exit-letter-fields.ts). Read/written via raw SQL.
+  relievingLetterBody  String?
+  experienceLetterBody String?
 
   // First-run org setup gate (admin onboarding). Latched true once Departments,
   // Locations, a complete Approval chain, and Payroll setup are all done — after
@@ -13132,6 +13737,14 @@ enum OffboardingReason {
   @@schema("app_quikhrms")
 }
 
+enum NoticePeriodUnit {
+  Days
+  Weeks
+  Months
+
+  @@schema("app_quikhrms")
+}
+
 enum OffboardingTaskCategory {
   AssetReturn
   AccessRevoke
@@ -13163,6 +13776,9 @@ model OnboardingTemplate {
   designationId String?
   tasks         Json
   isActive      Boolean @default(true)
+  // "Onboarding" (Day-1 checklist) or "PreOnboarding" (pre-joining checklist).
+  // Read/written via raw SQL. Null/absent = Onboarding.
+  kind          String  @default("Onboarding")
 
   createdBy String?
   updatedBy String?
@@ -13188,6 +13804,12 @@ model OnboardingInstance {
   status      OnboardingStatus @default(NotStarted)
   completedAt DateTime?
   notes       String?
+  // When true, completing a step auto-sends the next sendable step's request
+  // (the "Start onboarding" automation chain). Read/written via raw SQL.
+  automated   Boolean          @default(false)
+  // "PreOnboarding" (pre-joining) or "Onboarding" (Day-1+). Read/written via raw
+  // SQL. Null/absent = Onboarding.
+  phase       String           @default("Onboarding")
 
   createdBy String?
   updatedBy String?
@@ -13224,6 +13846,18 @@ model OnboardingTask {
   sortOrder    Int                    @default(0)
   isMandatory  Boolean                @default(true)
 
+  // Workflow step type (e.g. SendEmail, Approval, DocumentUpload) + its
+  // type-specific settings, carried from the onboarding template so the tracker
+  // can render type-aware actions. Null = a plain task.
+  stepType String?
+  config   Json?
+
+  // Which lifecycle phase this task belongs to: "PreOnboarding" (pre-joining
+  // checklist) or "Onboarding" (Day-1+ checklist). Lets one instance hold both
+  // checklists; the tracker shows only the tasks for the instance's current
+  // phase. Read/written via raw SQL (no prisma generate). Default = Onboarding.
+  phase String @default("Onboarding")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -13233,6 +13867,13 @@ model OnboardingTask {
   @@index([orgId, instanceId])
   @@index([orgId, assigneeId])
   @@index([orgId, status])
+  // At most one auto-injected system step (BGV / CompleteProfile, always
+  // sortOrder=-1) per instance+phase — prevents the GET route's lazy-create
+  // from double-inserting under concurrent requests. Partial index (filtered
+  // on sortOrder=-1), can't be expressed as a Prisma @@unique — applied via
+  // raw SQL:
+  //   CREATE UNIQUE INDEX IF NOT EXISTS "OnboardingTask_instanceId_phase_autostep_key"
+  //     ON "app_quikhrms"."OnboardingTask" ("instanceId", phase) WHERE "sortOrder" = -1;
   @@schema("app_quikhrms")
 }
 
@@ -13328,11 +13969,58 @@ enum ResignationApprovalStatus {
   @@schema("app_quikhrms")
 }
 
+model NoticePeriod {
+  id          String           @id @default(cuid())
+  orgId       String
+  name        String
+  description String?
+  duration    Int              @default(0)
+  unit        NoticePeriodUnit @default(Days)
+  createdBy   String?
+  updatedBy   String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  deletedAt   DateTime?
+
+  offboardingInstances OffboardingInstance[]
+  employees            Employee[]            @relation("EmployeeNoticePeriod")
+
+  @@index([orgId])
+  @@index([orgId, deletedAt])
+  @@schema("app_quikhrms")
+}
+
+model OffboardingTemplate {
+  id    String @id @default(cuid())
+  orgId String
+
+  name          String
+  description   String?
+  departmentId  String?
+  designationId String?
+  tasks         Json
+  isActive      Boolean @default(true)
+
+  createdBy String?
+  updatedBy String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  instances OffboardingInstance[]
+
+  @@index([orgId])
+  @@index([orgId, deletedAt])
+  @@index([orgId, departmentId])
+  @@schema("app_quikhrms")
+}
+
 model OffboardingInstance {
-  id         String  @id @default(cuid())
-  orgId      String
-  employeeId String
-  templateId String?
+  id             String  @id @default(cuid())
+  orgId          String
+  employeeId     String
+  templateId     String?
+  noticePeriodId String?
 
   resignationDate    DateTime          @db.Date
   lastWorkingDate    DateTime          @db.Date
@@ -13357,7 +14045,12 @@ model OffboardingInstance {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  tasks OffboardingTask[]
+  // Completion-chained automation ("Start offboarding"). Read/written via raw SQL.
+  automated Boolean @default(false)
+
+  tasks        OffboardingTask[]
+  noticePeriod NoticePeriod?     @relation(fields: [noticePeriodId], references: [id])
+  template     OffboardingTemplate? @relation(fields: [templateId], references: [id])
 
   @@unique([orgId, employeeId])
   @@index([orgId])
@@ -13366,6 +14059,7 @@ model OffboardingInstance {
   @@index([orgId, employeeId])
   @@index([orgId, resignationApprovalStatus])
   @@index([orgId, resignationApproverId])
+  @@index([orgId, noticePeriodId])
   @@schema("app_quikhrms")
 }
 
@@ -13384,6 +14078,12 @@ model OffboardingTask {
   completedBy String?
   notes       String?
   sortOrder   Int                     @default(0)
+  dueDate     DateTime?               @db.Date
+  // Rich workflow step type (AssetReturn, AccessRevoke, SendEmail, …) + its
+  // type-specific settings, carried from the offboarding template. Read/written
+  // via raw SQL (mirrors onboarding). Null = a plain task.
+  stepType    String?
+  config      Json?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -13395,149 +14095,6 @@ model OffboardingTask {
   @@index([orgId, assigneeId])
   @@index([orgId, status])
   @@index([orgId, department])
-  @@schema("app_quikhrms")
-}
-
-// ─── MODULE D: ASSET MANAGEMENT ─────────────────────────
-
-enum AssetCategory {
-  Laptop
-  Desktop
-  Mobile
-  Tablet
-  IdCard
-  AccessCard
-  Furniture
-  Vehicle
-  SoftwareLicense
-  Peripheral
-  AssetOther
-
-  @@schema("app_quikhrms")
-}
-
-enum AssetStatus {
-  Available
-  Assigned
-  InRepair
-  Retired
-  AssetLost
-
-  @@schema("app_quikhrms")
-}
-
-enum AssetCondition {
-  New
-  Good
-  Fair
-  Poor
-
-  @@schema("app_quikhrms")
-}
-
-enum AssetAssignmentStatus {
-  AssignmentActive
-  AssignmentReturned
-  AssignmentOverdue
-  AssignmentLost
-
-  @@schema("app_quikhrms")
-}
-
-model Asset {
-  id    String @id @default(cuid())
-  orgId String
-
-  assetCode      String
-  name           String
-  category       String         @default("AssetOther")
-  quantity       Int            @default(1)
-  serialNumber   String?
-  brand          String?
-  model          String?
-  purchaseDate   DateTime?      @db.Date
-  purchasePrice  Decimal?       @db.Decimal(15, 2)
-  warrantyExpiry DateTime?      @db.Date
-  status         AssetStatus    @default(Available)
-  condition      AssetCondition @default(New)
-  location       String?
-  specs          Json?
-  notes          String?
-
-  disposalDate   DateTime? @db.Date
-  disposalReason String?
-  scrapValue     Decimal?  @db.Decimal(15, 2)
-  scrappedBy     String?
-
-  createdBy String?
-  updatedBy String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-
-  assignments AssetAssignment[]
-  scraps      AssetScrap[]
-
-  @@unique([orgId, assetCode])
-  @@index([orgId])
-  @@index([orgId, deletedAt])
-  @@index([orgId, status])
-  @@index([orgId, category])
-  @@index([orgId, serialNumber])
-  @@schema("app_quikhrms")
-}
-
-model AssetAssignment {
-  id         String @id @default(cuid())
-  orgId      String
-  assetId    String
-  employeeId String
-
-  assignedBy         String
-  assignedAt         DateTime              @default(now())
-  expectedReturnDate DateTime?             @db.Date
-  returnedAt         DateTime?
-  returnedTo         String?
-  returnCondition    AssetCondition?
-  status             AssetAssignmentStatus @default(AssignmentActive)
-  notes              String?
-
-  createdBy String?
-  updatedBy String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-
-  asset Asset @relation(fields: [assetId], references: [id])
-
-  @@index([orgId])
-  @@index([orgId, deletedAt])
-  @@index([orgId, assetId])
-  @@index([orgId, employeeId])
-  @@index([orgId, status])
-  @@schema("app_quikhrms")
-}
-
-model AssetScrap {
-  id      String @id @default(cuid())
-  orgId   String
-  assetId String
-
-  quantity   Int
-  reason     String
-  scrapDate  DateTime @db.Date
-  scrapValue Decimal? @db.Decimal(15, 2)
-  markedLost Boolean  @default(false)
-  scrappedBy String
-  notes      String?
-
-  createdAt DateTime @default(now())
-
-  asset Asset @relation(fields: [assetId], references: [id])
-
-  @@index([orgId])
-  @@index([orgId, assetId])
-  @@index([orgId, scrapDate])
   @@schema("app_quikhrms")
 }
 
@@ -13911,56 +14468,6 @@ model EmploymentHistory {
 // AIConversation + AIMessage + AIConversationScope removed with the AI Copilot
 // chat. lib/ai/* is retained — it's shared infra for document extraction,
 // recruit ATS scoring, and leave-policy parsing (non-copilot AI features).
-
-// ─── GAP-FILL: E-SIGN ───────────────────────────────────
-
-enum ESignStatus {
-  ESignDraft
-  ESignSent
-  ESignPartiallySigned
-  ESignCompleted
-  ESignDeclined
-  ESignCancelled
-  ESignExpired
-
-  @@schema("app_quikhrms")
-}
-
-enum ESignProvider {
-  Internal
-  DocuSign
-  AdobeSign
-  LeegalityProvider
-
-  @@schema("app_quikhrms")
-}
-
-model ESignRequest {
-  id         String  @id @default(cuid())
-  orgId      String
-  documentId String?
-
-  title       String
-  provider    ESignProvider @default(Internal)
-  signers     Json
-  message     String?
-  status      ESignStatus   @default(ESignDraft)
-  sentAt      DateTime?
-  completedAt DateTime?
-  expiresAt   DateTime?
-
-  createdBy String?
-  updatedBy String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-
-  @@index([orgId])
-  @@index([orgId, deletedAt])
-  @@index([orgId, documentId])
-  @@index([orgId, status])
-  @@schema("app_quikhrms")
-}
 
 // ─── GAP-FILL: CANDIDATE PORTAL ─────────────────────────
 
@@ -14512,6 +15019,23 @@ model PayRun {
   @@index([orgId])
   @@index([orgId, status])
   @@index([orgId, payDate])
+  @@schema("app_quikhrms")
+}
+
+// Short-lived OTP gate for the destructive "Reset Payroll Setup" action. One
+// row per active reset attempt; emailed to the requester + every employee
+// holding the "admin" role. Single-use — usedAt is stamped on successful
+// verification so a captured code can't be replayed.
+model PayrollResetOtp {
+  id          String    @id @default(cuid())
+  orgId       String
+  codeHash    String
+  requestedBy String
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([orgId])
   @@schema("app_quikhrms")
 }
 
@@ -15336,34 +15860,8 @@ model BankReconciliation {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  lines BankReconciliationLine[]
-
   @@index([orgId])
   @@index([orgId, payRunId])
-  @@schema("app_quikhrms")
-}
-
-model BankReconciliationLine {
-  id               String @id @default(cuid())
-  orgId            String
-  reconciliationId String
-
-  payslipId    String?
-  employeeName String
-  bankAccount  String?
-  ifsc         String?
-  amount       Decimal   @db.Decimal(15, 2)
-  txnDate      DateTime? @db.Date
-  txnRef       String?
-  matched      Boolean   @default(false)
-  matchReason  String?
-
-  createdAt DateTime @default(now())
-
-  reconciliation BankReconciliation @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
-
-  @@index([orgId])
-  @@index([reconciliationId])
   @@schema("app_quikhrms")
 }
 
@@ -15524,6 +16022,15 @@ model WfhQuotaGroup {
   yearlyQuota Int
   mode        WfhGroupMode @default(Department)
   isActive    Boolean      @default(true)
+
+  // ── WFH rules (per group) ────────────────────────────────────────────────
+  maxPerWeek          Int?     // max WFH days in a calendar week
+  maxPerMonth         Int?     // max WFH days in a calendar month
+  maxConsecutiveDays  Int?     // max WFH days in a single request (in a row)
+  advanceNoticeDays   Int?     // must apply at least N days before the start
+  applicableAfterDays Int?     // eligible only N days after joining
+  requiresApproval    Boolean  @default(true)  // false = auto-approved on apply
+  blockedDuringNotice Boolean  @default(false) // notice-period employees can't WFH
 
   createdBy String?
   updatedBy String?
@@ -15811,13 +16318,10 @@ model Ticket {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  category    TicketCategory?    @relation(fields: [categoryId], references: [id])
-  department  Department?        @relation("TicketDepartment", fields: [departmentId], references: [id])
-  raisedBy    Employee           @relation("TicketRaiser", fields: [raisedById], references: [id])
-  assignedTo  Employee?          @relation("TicketAssignee", fields: [assignedToId], references: [id])
-  comments    TicketComment[]
-  attachments TicketAttachment[]
-  activities  TicketActivity[]
+  category   TicketCategory? @relation(fields: [categoryId], references: [id])
+  department Department?     @relation("TicketDepartment", fields: [departmentId], references: [id])
+  raisedBy   Employee        @relation("TicketRaiser", fields: [raisedById], references: [id])
+  assignedTo Employee?       @relation("TicketAssignee", fields: [assignedToId], references: [id])
 
   @@unique([orgId, ticketNo])
   @@index([orgId])
@@ -15836,72 +16340,6 @@ model Ticket {
   @@index([orgId, assignedToId, status])
   @@index([orgId, raisedById, status])
   @@index([orgId, deletedAt, status, createdAt(sort: Desc)])
-  @@schema("app_quikhrms")
-}
-
-model TicketComment {
-  id       String @id @default(cuid())
-  orgId    String
-  ticketId String
-  userId   String
-
-  message    String
-  isInternal Boolean @default(false)
-
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-
-  ticket Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  user   Employee @relation(fields: [userId], references: [id])
-
-  @@index([orgId])
-  @@index([orgId, ticketId])
-  @@index([orgId, deletedAt])
-  @@schema("app_quikhrms")
-}
-
-model TicketAttachment {
-  id       String @id @default(cuid())
-  orgId    String
-  ticketId String
-
-  fileUrl  String
-  fileName String
-  fileType String?
-  fileSize Int?
-
-  uploadedById String?
-  createdAt    DateTime  @default(now())
-  deletedAt    DateTime?
-
-  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-
-  @@index([orgId])
-  @@index([orgId, ticketId])
-  @@schema("app_quikhrms")
-}
-
-model TicketActivity {
-  id       String  @id @default(cuid())
-  orgId    String
-  ticketId String
-  actorId  String?
-  isSystem Boolean @default(false)
-
-  action  String
-  fromVal String?
-  toVal   String?
-  meta    Json?
-
-  createdAt DateTime @default(now())
-
-  ticket Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  actor  Employee? @relation(fields: [actorId], references: [id])
-
-  @@index([orgId])
-  @@index([orgId, ticketId])
-  @@index([orgId, actorId])
   @@schema("app_quikhrms")
 }
 
@@ -16175,6 +16613,2786 @@ model Invitation {
 // migration — HRMS no longer has its own login/2FA. They had zero code
 // references and no DB tables (schema-only drift). `RefreshToken` was also
 // removed (custom-auth refresh tokens, superseded by central SSO).
+
+
+// ============================================================================
+// QuikLMS (app_quiklms) — folded in from the standalone quikskill_lms DB.
+// Models/enums prefixed `Lms`; tables preserved via @@map. tenantId -> orgId
+// remap is a follow-up. See apps/quiklms/INTEGRATION-PLAN.md.
+// ============================================================================
+
+// ============================================================================
+// QuikSkill LMS — Prisma schema (PostgreSQL)
+// Phase 1 of the NestJS/Mongo → Next.js/Postgres re-platform.
+//
+// Source of truth: the 55 Mongoose schemas under QuikSkillsbackend/src.
+//
+// FK STRATEGY = HYBRID (approved):
+//   • Real Prisma relations for OWNING AGGREGATES (Course→Module→Lesson,
+//     Exam→ExamQuestion, Conversation→Message→Reaction, Batch→children, …)
+//     and the §8 JOIN/CHILD tables (group_members, batch_students, user_parents,
+//     exam_questions, payout_*, course prerequisites, the split-out subdoc arrays).
+//   • `tenantId` and every ACTOR reference (userId / teacherId / learnerId /
+//     studentId / createdBy / authorId / …) are indexed `String` SCALARS with
+//     NO relation — identical to MongoDB (which enforced no FKs) and enforced at
+//     the app layer by the mandatory tenantScope() helper (Phase 2).
+//   • CROSS-aggregate references (notably `courseId`, which in the legacy data
+//     points at EITHER the `courses` OR `mastercourses` collection) are also
+//     scalar Strings, so the ETL never fails on a mixed-target id.
+//
+// CONVENTIONS:
+//   • ObjectId → String @id @default(uuid())
+//   • Mongo TTL collections (otps 600s, analytics-cache) keep `expiresAt`;
+//     a worker cron purges them (Phase 4).
+//   • Json columns per §8: all *Config blobs, exam/assessment settings,
+//     progress.lessonProgress, examSession.answers, proctoringFlags,
+//     providerMetadata, notificationPreferences, textPlacements, eventData, …
+//   • Enum member name = stored value when it is a valid identifier; otherwise
+//     an identifier + @map("<exact stored value>").
+//   • Join/child tables intentionally OMIT a denormalized orgId — they are
+//     tenant-scoped through their parent (documented deviation from the blanket
+//     "all tables get orgId" rule, to avoid denormalization drift).
+// ============================================================================
+
+// ════════════════════════════════════════════════════════════════════════════
+// ENUMS
+// ════════════════════════════════════════════════════════════════════════════
+
+enum LmsUserRole {
+  SUPER_ADMIN
+  TENANT_ADMIN
+  SUB_ADMIN
+  MANAGER
+  TEACHER
+  PARENT
+  LEARNER
+  @@map("UserRole")
+  @@schema("app_quiklms")
+}
+
+enum LmsTenantType {
+  corporate
+  school
+  @@map("TenantType")
+  @@schema("app_quiklms")
+}
+
+// LmsTenantStatus (Active | Paused | Trial) was removed with LmsTenant.status.
+// Tenant status is now the platform `quikit.Org.status` (active | suspended),
+// translated at the edge by apps/quiklms/lib/tenant-status.ts. `Trial` had no
+// Org equivalent — a trial is Subscription.status + OrgAppAccess.trialEndsAt —
+// and no row ever used it. See migration 20260722160000_quiklms_tenant_collapse.
+
+// User.rateType & TeacherPayout.rateType
+enum LmsRateType {
+  per_class
+  per_hour
+  monthly
+  hybrid
+  @@map("RateType")
+  @@schema("app_quiklms")
+}
+
+enum LmsUserQualification {
+  PGT
+  TGT
+  PRT
+  NTT
+  Other
+  @@map("UserQualification")
+  @@schema("app_quiklms")
+}
+
+enum LmsCourseStatus {
+  Draft
+  Published
+  Archived
+  @@map("CourseStatus")
+  @@schema("app_quiklms")
+}
+
+// Module.lessons[].type
+enum LmsLessonType {
+  Video
+  PDF
+  PPT
+  SCORM
+  Text
+  Quiz
+  Audio
+  Document
+  Slides
+  @@map("LessonType")
+  @@schema("app_quiklms")
+}
+
+enum LmsCourseLevel {
+  Beginner
+  Intermediate
+  Advanced
+  Expert
+  @@map("CourseLevel")
+  @@schema("app_quiklms")
+}
+
+enum LmsMasterCourseStatus {
+  Draft
+  Published
+  Archived
+  PendingTenantApproval
+  RejectedByTenantAdmin
+  PendingApproval
+  Rejected
+  Resubmitted
+  @@map("MasterCourseStatus")
+  @@schema("app_quiklms")
+}
+
+// MasterCourse embedded question type
+enum LmsMasterQuestionType {
+  mcq
+  multi_select
+  true_false
+  drag_drop
+  fill_blank
+  @@map("MasterQuestionType")
+  @@schema("app_quiklms")
+}
+
+// MasterCourse embedded resource type
+enum LmsResourceType {
+  video_upload
+  video_youtube
+  video_vimeo
+  audio_upload
+  audio_soundcloud
+  document_pdf
+  document_ppt
+  document_word
+  document_excel
+  rich_text
+  scorm_12
+  scorm_2004
+  external_link
+  iframe_embed
+  @@map("ResourceType")
+  @@schema("app_quiklms")
+}
+
+// Assessment.questions[].type
+enum LmsAssessmentQuestionType {
+  MCQ
+  TrueFalse @map("True/False")
+  @@map("AssessmentQuestionType")
+  @@schema("app_quiklms")
+}
+
+enum LmsProgressStatus {
+  NotStarted @map("Not Started")
+  InProgress @map("In Progress")
+  Overdue
+  Completed
+  Failed
+  @@map("ProgressStatus")
+  @@schema("app_quiklms")
+}
+
+enum LmsAssignmentTargetType {
+  USER
+  GROUP
+  @@map("AssignmentTargetType")
+  @@schema("app_quiklms")
+}
+
+enum LmsCertificateApprovalStatus {
+  pending_approval
+  approved
+  rejected
+  @@map("CertificateApprovalStatus")
+  @@schema("app_quiklms")
+}
+
+enum LmsConsentType {
+  video_recording
+  data_processing
+  photo_usage
+  @@map("ConsentType")
+  @@schema("app_quiklms")
+}
+
+enum LmsEmailTemplateType {
+  welcome_kit       @map("welcome-kit")
+  course_completion @map("course-completion")
+  certificate
+  upgrade_invoice   @map("upgrade-invoice")
+  @@map("EmailTemplateType")
+  @@schema("app_quiklms")
+}
+
+enum LmsBatchStatus {
+  draft
+  active
+  archived
+  @@map("BatchStatus")
+  @@schema("app_quiklms")
+}
+
+enum LmsBatchType {
+  regular
+  one_on_one
+  @@map("BatchType")
+  @@schema("app_quiklms")
+}
+
+enum LmsBatchSource {
+  manual
+  auto_tutoring
+  @@map("BatchSource")
+  @@schema("app_quiklms")
+}
+
+enum LmsBatchClassType {
+  regular
+  demo
+  trial
+  @@map("BatchClassType")
+  @@schema("app_quiklms")
+}
+
+// Batch.defaultMeetingProvider (subset — no 'teams')
+enum LmsBatchMeetingProvider {
+  zoom
+  google_meet
+  jitsi
+  manual
+  @@map("BatchMeetingProvider")
+  @@schema("app_quiklms")
+}
+
+enum LmsClassStatus {
+  scheduled
+  in_progress
+  completed
+  cancelled
+  rescheduled
+  @@map("ClassStatus")
+  @@schema("app_quiklms")
+}
+
+enum LmsRescheduleApprovalStatus {
+  pending
+  approved
+  rejected
+  @@map("RescheduleApprovalStatus")
+  @@schema("app_quiklms")
+}
+
+enum LmsCreditPackageStatus {
+  active
+  exhausted
+  expired
+  @@map("CreditPackageStatus")
+  @@schema("app_quiklms")
+}
+
+enum LmsTransactionType {
+  purchase
+  deduct
+  refund
+  expire
+  adjustment
+  tutoring_hold
+  tutoring_hold_release
+  tutoring_deduction
+  @@map("TransactionType")
+  @@schema("app_quiklms")
+}
+
+enum LmsAttendanceStatus {
+  present
+  absent
+  late
+  excused
+  @@map("AttendanceStatus")
+  @@schema("app_quiklms")
+}
+
+enum LmsHomeworkStatus {
+  draft
+  published
+  closed
+  @@map("HomeworkStatus")
+  @@schema("app_quiklms")
+}
+
+enum LmsHomeworkType {
+  assignment
+  quiz
+  project
+  reading
+  @@map("HomeworkType")
+  @@schema("app_quiklms")
+}
+
+enum LmsSubmissionStatus {
+  submitted
+  graded
+  returned
+  @@map("SubmissionStatus")
+  @@schema("app_quiklms")
+}
+
+enum LmsPayoutStatus {
+  draft
+  pending
+  approved
+  paid
+  disputed
+  rejected
+  @@map("PayoutStatus")
+  @@schema("app_quiklms")
+}
+
+enum LmsPayoutAdjustmentType {
+  bonus
+  deduction
+  reimbursement
+  @@map("PayoutAdjustmentType")
+  @@schema("app_quiklms")
+}
+
+enum LmsPayoutSource {
+  batch
+  tutoring
+  @@map("PayoutSource")
+  @@schema("app_quiklms")
+}
+
+enum LmsMeetingStatus {
+  scheduled
+  started
+  ended
+  cancelled
+  @@map("MeetingStatus")
+  @@schema("app_quiklms")
+}
+
+enum LmsMeetingProvider {
+  zoom
+  google_meet
+  teams
+  jitsi
+  manual
+  @@map("MeetingProvider")
+  @@schema("app_quiklms")
+}
+
+enum LmsRecordingStatus {
+  pending
+  processing
+  available
+  expired
+  @@map("RecordingStatus")
+  @@schema("app_quiklms")
+}
+
+enum LmsMeetingAttendanceRole {
+  teacher
+  student
+  @@map("MeetingAttendanceRole")
+  @@schema("app_quiklms")
+}
+
+enum LmsDeviceType {
+  desktop
+  mobile
+  tablet
+  unknown
+  @@map("DeviceType")
+  @@schema("app_quiklms")
+}
+
+enum LmsTaskCategory {
+  curriculum
+  content
+  training
+  meeting
+  other
+  @@map("TaskCategory")
+  @@schema("app_quiklms")
+}
+
+enum LmsTaskStatus {
+  assigned
+  in_progress
+  completed_pending
+  approved
+  rejected
+  @@map("TaskStatus")
+  @@schema("app_quiklms")
+}
+
+enum LmsTeacherStatus {
+  beginner
+  intermediate
+  lead
+  @@map("TeacherStatus")
+  @@schema("app_quiklms")
+}
+
+enum LmsEscalationStatus {
+  pending
+  escalating
+  resolved
+  failed
+  @@map("EscalationStatus")
+  @@schema("app_quiklms")
+}
+
+// Shared by CallEscalation.callAttempts & StudentReminderCall.callAttempts
+enum LmsCallStatus {
+  initiated
+  ringing
+  answered
+  no_answer
+  busy
+  failed
+  @@map("CallStatus")
+  @@schema("app_quiklms")
+}
+
+enum LmsTutoringRequestStatus {
+  pending
+  accepted
+  rejected
+  completed
+  @@map("TutoringRequestStatus")
+  @@schema("app_quiklms")
+}
+
+enum LmsReminderCallStatus {
+  pending
+  calling
+  resolved
+  failed
+  @@map("ReminderCallStatus")
+  @@schema("app_quiklms")
+}
+
+enum LmsExamStatus {
+  draft
+  published
+  active
+  completed
+  results_published
+  @@map("ExamStatus")
+  @@schema("app_quiklms")
+}
+
+enum LmsProctoringLevel {
+  none
+  soft
+  @@map("ProctoringLevel")
+  @@schema("app_quiklms")
+}
+
+enum LmsQuestionSelectionMode {
+  manual
+  auto_random
+  @@map("QuestionSelectionMode")
+  @@schema("app_quiklms")
+}
+
+enum LmsExamSessionStatus {
+  not_started
+  in_progress
+  submitted
+  auto_submitted
+  timed_out
+  voided
+  @@map("ExamSessionStatus")
+  @@schema("app_quiklms")
+}
+
+// Shared by exam IncidentReport & QuizIncidentReport
+enum LmsIncidentDisposition {
+  pending
+  dismissed
+  confirmed_violation
+  @@map("IncidentDisposition")
+  @@schema("app_quiklms")
+}
+
+enum LmsIncidentAction {
+  none
+  warning
+  penalty_applied
+  session_voided
+  @@map("IncidentAction")
+  @@schema("app_quiklms")
+}
+
+enum LmsProctoringEventType {
+  tab_switch
+  fullscreen_exit
+  copy_attempt
+  paste_attempt
+  right_click
+  shortcut_key
+  print_attempt
+  blur
+  beforeunload
+  @@map("ProctoringEventType")
+  @@schema("app_quiklms")
+}
+
+// Shared by ProctoringLog & QuizProctoringLog
+enum LmsProctoringSeverity {
+  low
+  medium
+  high
+  @@map("ProctoringSeverity")
+  @@schema("app_quiklms")
+}
+
+enum LmsQuizSessionStatus {
+  in_progress
+  submitted
+  auto_submitted
+  voided
+  @@map("QuizSessionStatus")
+  @@schema("app_quiklms")
+}
+
+enum LmsQuizProctoringEventType {
+  tab_switch
+  fullscreen_exit
+  copy_attempt
+  paste_attempt
+  right_click
+  shortcut_key
+  print_attempt
+  blur
+  beforeunload
+  face_no_face
+  face_multiple
+  face_looking_away
+  face_looking_down
+  face_eyes_closed
+  face_too_far
+  face_camera_error
+  @@map("QuizProctoringEventType")
+  @@schema("app_quiklms")
+}
+
+// Question-bank question type
+enum LmsBankQuestionType {
+  mcq
+  multi_select
+  true_false
+  short_answer
+  long_answer
+  fill_blank
+  one_word
+  match_column
+  @@map("BankQuestionType")
+  @@schema("app_quiklms")
+}
+
+enum LmsDifficulty {
+  easy
+  medium
+  hard
+  @@map("Difficulty")
+  @@schema("app_quiklms")
+}
+
+enum LmsConversationType {
+  direct
+  group
+  @@map("ConversationType")
+  @@schema("app_quiklms")
+}
+
+enum LmsConversationParticipantRole {
+  admin
+  member
+  @@map("ConversationParticipantRole")
+  @@schema("app_quiklms")
+}
+
+enum LmsMessageType {
+  text
+  file
+  image
+  system
+  @@map("MessageType")
+  @@schema("app_quiklms")
+}
+
+enum LmsActivityType {
+  upload
+  storage_threshold
+  course_created
+  course_deleted
+  tenant_created
+  tenant_updated
+  user_action
+  @@map("ActivityType")
+  @@schema("app_quiklms")
+}
+
+enum LmsTenantActionType {
+  NewLearnerInvited            @map("New Learner Invited")
+  CourseAssignedToUser         @map("Course Assigned to User")
+  CourseAssignedToGroup        @map("Course Assigned to Group")
+  CourseCompleted              @map("Course Completed")
+  QuizPassingScoreUpdated      @map("Quiz Passing Score Updated")
+  UserActivated                @map("User Activated")
+  UserDeactivated              @map("User Deactivated")
+  BrandingUpdated              @map("Branding Updated")
+  StorageRequested             @map("Storage Requested")
+  QuizResetByManager           @map("Quiz Reset by Manager")
+  UserNudgedByManager          @map("User Nudged by Manager")
+  AttendanceMarkedByManager    @map("Attendance Marked by Manager")
+  CertificateApprovedByManager @map("Certificate Approved by Manager")
+  TeamReportExportedByManager  @map("Team Report Exported by Manager")
+  @@map("TenantActionType")
+  @@schema("app_quiklms")
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// FOUNDATION: tenants, users, otp, counters, groups, consent
+// ════════════════════════════════════════════════════════════════════════════
+
+model LmsTenant {
+  id         String        @id @default(uuid())
+  name       String        @unique
+  subdomain  String        @unique
+  tenantType LmsTenantType @default(corporate)
+  gstNumber  String?       @unique // nullable @unique = sparse (Postgres treats NULLs as distinct)
+  tenantKey  String        @unique
+  /// Platform Org id. NOT NULL and always equal to `id` — this table is a
+  /// per-tenant LMS profile hanging off `quikit.Org`, not a second tenant
+  /// registry. It was nullable while the orgId fold was in flight, which left
+  /// the "Tenant.id === orgId" invariant unenforceable; the one unlinked row
+  /// has since been removed.
+  orgId      String        @unique
+  //
+  // REMOVED in migration 20260722160000_quiklms_tenant_collapse:
+  //   dbConnectionString  — per-tenant DB connection string, a leftover from the
+  //                         pre-fold design; every tenant is in the one shared
+  //                         database now, and it stored a credential in a plain
+  //                         column. No row ever held a value.
+  //   status              — a SECOND org status, independent of Org.status and
+  //                         consulted by no gate, so "Paused" suspended nothing.
+  //                         Now derived from / written to quikit.Org.status.
+  //                         See apps/quiklms/lib/tenant-status.ts.
+  //   auth0OrganizationId — residue of a third identity system, retired.
+  //   auth0UserId         — ditto.
+  //   loginUrl            — always `${BASE_URL}/login`; derived at the edge now
+  //                         rather than denormalised per tenant.
+
+  // Organization profile
+  orgName       String
+  fullAddress   String
+  country       String
+  officialPhone String
+  website       String?
+  officialEmail String
+
+  // Primary contact
+  contactFirstName          String
+  contactMiddleName         String?
+  contactLastName           String
+  contactPhone              String
+  contactEmail              String
+  contactRoleInOrganization String
+
+  // Billing
+  billingFirstName  String
+  billingMiddleName String?
+  billingLastName   String
+  billingAddress    String
+
+  // Config blobs (Json per §8)
+  featureConfig     Json  @default("{}")
+  schoolConfig      Json?
+  corporateConfig   Json?
+  creditConfig      Json?
+  payoutConfig      Json?
+  videoConfig       Json? // provider credentials encrypted at rest (lib/crypto)
+  enhancementConfig Json?
+
+  // Localization
+  timezone         String   @default("UTC")
+  defaultLanguage  String   @default("en")
+  enabledLanguages String[] @default(["en"])
+  locale           String   @default("en-US")
+  currency         String   @default("USD")
+  localeSettings   Json? // { dateFormat, timeFormat, firstDayOfWeek }
+
+  // Storage & branding
+  storageLimit   Int     @default(2) // GB
+  logoUrl        String?
+  faviconUrl     String?
+  primaryColor   String  @default("#3B82F6")
+  secondaryColor String  @default("#1E40AF")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantType])
+  @@map("tenants")
+  @@schema("app_quiklms")
+}
+
+model LmsUser {
+  id String @id @default(uuid())
+
+  /// Central `auth.User.id` this LMS person is bridged to — the same pattern as
+  /// `Employee.authUserId` in app_quikhrms (baseline §9).
+  ///
+  /// PHASE 1 OF THE BRIDGE. Today `id` still carries the central User id for
+  /// every centrally-provisioned row, and this column mirrors it, so nothing
+  /// behaves differently yet. What it buys now is that the link becomes
+  /// EXPLICIT and enforceable rather than a naming convention nothing checks.
+  ///
+  /// NULL means "no central identity" — a legitimate state, not missing data.
+  /// It covers people who exist only in the LMS (legacy/demo rows, and later,
+  /// roster entries created without provisioning a login). HRMS relies on the
+  /// same nullability for its manually-created employees.
+  ///
+  /// The unique below is what makes multi-org POSSIBLE later: one LMS row per
+  /// central user PER ORG. Reaching it needs `id` to stop doubling as the
+  /// central id — see the phased plan; that flip is deliberately NOT part of
+  /// this change, because ~35 tables reference users by bare scalar with no
+  /// foreign key, so a partial migration would orphan rows silently.
+  authUserId String?
+
+  email     String // lowercased/trimmed in app layer
+  firstName String
+  lastName  String
+  role          LmsUserRole  @default(LEARNER)
+  secondaryRole LmsUserRole?
+  orgId      String? // scalar — global super-admins have no tenant
+  managerId     String? // corporate team manager (scalar self-ref)
+  isActive      Boolean   @default(true)
+
+  // Parent-child linking (graph modelled via UserParent join)
+  parentEmail      String? // deferred-link placeholder during bulk upload
+  guardianContact  String?
+  phone            String?
+  guardianRelation String?
+
+  // School-specific
+  grade         String?
+  subjects      String[]           @default([])
+  ratePerClass  Float?
+  ratePerHour   Float?
+  rateType      LmsRateType?          @default(per_class)
+  qualification LmsUserQualification?
+  monthlyPayout Float?
+  employeeId    String?
+  studentId     String?
+  parentCode    String?
+  dateOfBirth   DateTime?
+  section       String?
+
+  // Teacher availability (SCH-005) — split to UserAvailabilitySlot child
+  availableSlots     LmsUserAvailabilitySlot[]
+  maxSlotsPerWeek    Int?                   @default(0)
+  tutoringEnabled    Boolean                @default(false)
+  tutoringCreditCost Float?
+
+  // Class statistics
+  classesCompleted               Int?   @default(0)
+  classesMissed                  Int?   @default(0)
+  classesCancelled               Int?   @default(0)
+  classesRescheduledAndCompleted Int?   @default(0)
+  punctualityScore               Float? @default(0)
+
+  // Profile. The credential + session columns that used to live here
+  // (password, mustChangePassword, passwordSetupToken/Expiry, provider,
+  // providerId, activeSessionId) were dropped: they duplicated `auth.User` and
+  // the shared Redis session id, were never read at runtime under centralized
+  // auth, and constituted a second, unsynchronised identity store. Credentials
+  // are owned solely by the QuikIT auth service; session revocation is the
+  // shared `sessionId`. See migration 20260722140000_quiklms_drop_vestigial_auth.
+  profilePicture String?
+  aiApiKey       String? // encrypted (lib/crypto)
+
+  // Gamification
+  currentStreak    Int       @default(0)
+  totalPoints      Int       @default(0)
+  lastActivityDate DateTime?
+
+  // Localization & notifications
+  preferredLanguage       String  @default("en")
+  timezone                String?
+  notificationPreferences Json? // defaults applied in service layer
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // parent↔child graph
+  children LmsUserParent[] @relation("UserChildren") // rows where this user is the parent
+  parents  LmsUserParent[] @relation("UserParents") // rows where this user is the child
+
+  // Per-app RBAC (see the QuikLMS RBAC block at the end of this schema).
+  appRoles         LmsUserAppRole[]
+  permissionExtras LmsUserPermissionExtra[]
+
+  // Email is unique per tenant. It was previously unconstrained — only indexed
+  // — while every other identity-ish column on this model was constrained, so
+  // duplicate rows for one address inside an org were possible. Scoped to the
+  // org (not global) to match the siblings below and stay forward-compatible
+  // with the multi-org bridge; NULL orgId keeps it sparse, as Postgres treats
+  // NULLs as distinct.
+  // One LMS row per central user, per org. Sparse: rows with a NULL
+  // `authUserId` (no central identity) are exempt, as Postgres treats NULLs as
+  // distinct — same behaviour the three sparse uniques below rely on, and the
+  // same shape as `@@unique([orgId, authUserId])` on the HRMS Employee.
+  @@unique([orgId, authUserId])
+  @@unique([orgId, email])
+  @@unique([orgId, studentId]) // sparse per-tenant unique (NULL-distinct)
+  @@unique([orgId, employeeId])
+  @@unique([orgId, parentCode])
+  @@index([orgId, role])
+  @@index([orgId, grade])
+  // No plain @@index([orgId, email]) — the unique above already serves those
+  // lookups; keeping both would only cost writes.
+  @@index([orgId, totalPoints(sort: Desc)])
+  @@index([orgId, currentStreak(sort: Desc)])
+  @@index([orgId, parentEmail])
+  @@index([managerId])
+  @@map("users")
+  @@schema("app_quiklms")
+}
+
+// User.availableSlots[] (SCH-005)
+model LmsUserAvailabilitySlot {
+  id        String @id @default(uuid())
+  userId    String
+  user      LmsUser   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dayOfWeek Int // 0-6
+  startTime String
+  endTime   String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("user_availability_slots")
+  @@schema("app_quiklms")
+}
+
+// parent↔child link (user_parents)
+model LmsUserParent {
+  id       String @id @default(uuid())
+  parentId String
+  childId  String
+  parent   LmsUser   @relation("UserChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  child    LmsUser   @relation("UserParents", fields: [childId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([parentId, childId])
+  @@index([childId])
+  @@map("user_parents")
+  @@schema("app_quiklms")
+}
+
+// LmsOtp was removed alongside the vestigial credential columns. It backed a
+// local email-OTP login that centralized auth retired: the platform's
+// registration OTP is Redis-backed and owned by apps/auth (baseline §8A). The
+// table held zero rows and nothing wrote to it — only a worker cron deleting
+// expired entries. See migration 20260722140000_quiklms_drop_vestigial_auth.
+
+model LmsCounter {
+  id       String @id @default(uuid())
+  orgId String
+  type     String // 'teacher' | 'student' | 'parent'
+  seq      Int    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, type])
+  @@map("counters")
+  @@schema("app_quiklms")
+}
+
+model LmsGroup {
+  id          String        @id @default(uuid())
+  orgId    String
+  name        String
+  description String?
+  createdBy   String? // actor scalar
+  members     LmsGroupMember[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, name])
+  @@index([orgId])
+  @@map("groups")
+  @@schema("app_quiklms")
+}
+
+// Group.memberIds[] (group_members)
+model LmsGroupMember {
+  id      String @id @default(uuid())
+  groupId String
+  group   LmsGroup  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId  String // actor scalar
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([groupId, userId])
+  @@index([userId])
+  @@map("group_members")
+  @@schema("app_quiklms")
+}
+
+model LmsConsentRecord {
+  id             String      @id @default(uuid())
+  orgId       String
+  studentId      String // actor scalar
+  parentId       String // actor scalar
+  consentType    LmsConsentType
+  granted        Boolean     @default(false)
+  grantedAt      DateTime?
+  revokedAt      DateTime?
+  ipAddress      String?
+  consentVersion String      @default("1.0")
+  notes          String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, studentId, consentType])
+  @@index([orgId, parentId])
+  @@map("consent_records")
+  @@schema("app_quiklms")
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// COURSES: course, module, lesson, master-course, assessment, quiz-attempt
+// ════════════════════════════════════════════════════════════════════════════
+
+model LmsCourse {
+  id           String       @id @default(uuid())
+  orgId     String? // optional for master courses
+  title        String
+  category     String?
+  description  String?
+  authorId     String // actor scalar
+  status       LmsCourseStatus @default(Draft)
+  thumbnailUrl String?
+  isMaster     Boolean      @default(false)
+  isFeatured   Boolean      @default(false)
+  version      Int          @default(1)
+
+  modules         LmsModule[]
+  selectedTenants LmsCourseSelectedTenant[]
+  prerequisites   LmsCoursePrerequisite[]   @relation("CourseToPrereqs")
+  prerequisiteFor LmsCoursePrerequisite[]   @relation("CoursePrereqOf")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, status])
+  @@index([isMaster])
+  @@index([isFeatured, status])
+  @@index([category, orgId])
+  @@map("courses")
+  @@schema("app_quiklms")
+}
+
+// Course.selectedTenants[] (course_selected_tenants)
+model LmsCourseSelectedTenant {
+  id       String @id @default(uuid())
+  courseId String
+  course   LmsCourse @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  orgId String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([courseId, orgId])
+  @@index([orgId])
+  @@map("course_selected_tenants")
+  @@schema("app_quiklms")
+}
+
+// Course.prerequisites[] (course prerequisites self-join)
+model LmsCoursePrerequisite {
+  id             String @id @default(uuid())
+  courseId       String
+  prerequisiteId String
+  course         LmsCourse @relation("CourseToPrereqs", fields: [courseId], references: [id], onDelete: Cascade)
+  prerequisite   LmsCourse @relation("CoursePrereqOf", fields: [prerequisiteId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([courseId, prerequisiteId])
+  @@index([prerequisiteId])
+  @@map("course_prerequisites")
+  @@schema("app_quiklms")
+}
+
+model LmsModule {
+  id           String  @id @default(uuid())
+  orgId     String? // optional for master courses
+  courseId     String
+  course       LmsCourse  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title        String
+  description  String?
+  orderIndex   Int
+  assessmentId String? // scalar (avoids Module↔Assessment double-link cycle)
+
+  lessons LmsLesson[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, courseId])
+  @@index([courseId, orderIndex])
+  @@map("modules")
+  @@schema("app_quiklms")
+}
+
+// Module.lessons[] (lessons child table)
+model LmsLesson {
+  id          String     @id @default(uuid())
+  moduleId    String
+  module      LmsModule     @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  title       String
+  type        LmsLessonType
+  contentUrl  String?
+  orderIndex  Int
+  isMaster    Boolean    @default(false)
+  description String?
+  duration    Int? // minutes
+  fileSize    Int? // bytes
+  captions    Json? // [{ language, label, url }]
+  quiz        Json? // { questions[], passingScore }
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([moduleId, orderIndex])
+  @@map("lessons")
+  @@schema("app_quiklms")
+}
+
+// Tier-1 authoring document. Deeply nested 3-tier content (modules→subModules→
+// resources, quizzes, assignments) is kept as Json blobs per §8 (queried whole).
+model LmsMasterCourse {
+  id                   String             @id @default(uuid())
+  title                String
+  description          String?
+  category             String?
+  level                LmsCourseLevel        @default(Beginner)
+  thumbnailUrl         String?
+  aiGeneratedThumbnail Boolean            @default(false)
+  authorId             String // actor scalar
+  modules              Json               @default("[]") // CourseModule[] (3-tier nested)
+  settings             Json               @default("{}") // CourseSettings
+  status               LmsMasterCourseStatus @default(Draft)
+  isMaster             Boolean            @default(true)
+  tags                 String[]           @default([])
+  estimatedDuration    Int?
+
+  // Auto-save draft
+  lastAutoSaveAt DateTime?
+  draftData      Json?
+  version        Int       @default(1)
+
+  // Approval workflow
+  submittedBy           String? // actor scalar
+  submittedByTenantId   String? // scalar
+  parentCourseId        String? // scalar self-ref (pending/rejected revision of a published parent)
+  revisionNumber        Int       @default(1)
+  tenantApprovedBy      String?
+  tenantApprovalDate    DateTime?
+  tenantRejectionReason String?
+  approvedBy            String?
+  approvalDate          DateTime?
+  rejectionReason       String?
+
+  selectedTenants LmsMasterCourseSelectedTenant[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isMaster, status])
+  @@index([authorId])
+  @@index([category, level])
+  @@index([status, submittedByTenantId])
+  @@index([parentCourseId, status])
+  @@map("master_courses")
+  @@schema("app_quiklms")
+}
+
+// MasterCourse.selectedTenants[] (certificate_selected_tenants analogue for master courses)
+model LmsMasterCourseSelectedTenant {
+  id             String       @id @default(uuid())
+  masterCourseId String
+  masterCourse   LmsMasterCourse @relation(fields: [masterCourseId], references: [id], onDelete: Cascade)
+  orgId       String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([masterCourseId, orgId])
+  @@index([orgId])
+  @@map("master_course_selected_tenants")
+  @@schema("app_quiklms")
+}
+
+model LmsAssessment {
+  id        String @id @default(uuid())
+  orgId  String
+  moduleId  String // scalar (cross-aggregate; avoids cycle with Module.assessmentId)
+  title     String
+  questions Json   @default("[]") // embedded Question[] (text, type, options, correctAnswerIndex, …)
+
+  passingScore Int  @default(75)
+  retryLimit   Int  @default(3)
+  timeLimit    Int? // minutes
+
+  randomizeQuestions           Boolean @default(false)
+  questionsToShow              Int?
+  additionalQuestions          Json    @default("[]") // bonus pool Question[]
+  additionalQuestionsToInclude Int?
+  isMaster                     Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, moduleId])
+  @@index([isMaster])
+  @@map("assessments")
+  @@schema("app_quiklms")
+}
+
+model LmsQuizAttempt {
+  id                  String   @id @default(uuid())
+  orgId            String
+  learnerId           String // actor scalar
+  courseId            String // scalar (Course|MasterCourse ambiguous)
+  assessmentId        String // scalar
+  answers             Json     @default("[]") // QuestionAnswer[]
+  score               Int
+  totalPoints         Int
+  percentage          Float
+  passed              Boolean
+  submittedAt         DateTime @default(now())
+  proctoringSessionId String? // scalar (optional QuizProctoringSession link)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, learnerId, courseId])
+  @@index([orgId, learnerId, assessmentId])
+  @@index([learnerId, courseId, submittedAt(sort: Desc)])
+  @@map("quiz_attempts")
+  @@schema("app_quiklms")
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// PROGRESS, ASSIGNMENTS, CERTIFICATES, DISCUSSIONS, BOOKMARKS, ACADEMIC, ETC.
+// ════════════════════════════════════════════════════════════════════════════
+
+model LmsProgress {
+  id                   String         @id @default(uuid())
+  orgId             String
+  learnerId            String // actor scalar
+  courseId             String // scalar (ambiguous target)
+  currentModuleId      String? // scalar
+  status               LmsProgressStatus @default(NotStarted)
+  completionPercentage Int            @default(0)
+  scorePercentage      Float?
+  quizScore            Float?
+  isPassed             Boolean        @default(false)
+  completedAt          DateTime?
+  startedAt            DateTime       @default(now())
+  lessonProgress       Json? // Record<lessonId, {...}> per §8
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, learnerId, courseId])
+  @@index([learnerId, status])
+  @@map("progress")
+  @@schema("app_quiklms")
+}
+
+model LmsCourseAssignment {
+  id          String               @id @default(uuid())
+  orgId    String
+  courseId    String // scalar
+  targetType  LmsAssignmentTargetType
+  targetId    String // User or Group id (scalar)
+  dueDate     DateTime?
+  isMandatory Boolean              @default(true)
+  assignedBy  String // actor scalar
+  assignedAt  DateTime             @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, courseId])
+  @@index([orgId, targetId, targetType])
+  @@index([orgId, isMandatory])
+  @@map("course_assignments")
+  @@schema("app_quiklms")
+}
+
+model LmsCertificate {
+  id                 String  @id @default(uuid())
+  orgId           String? // optional for global templates
+  name               String
+  backgroundImageUrl String
+  logoImageUrl       String?
+  signatureImageUrl  String?
+  designation        String?
+  signatoryName      String?
+  textPlacements     Json? // per §8
+  logoPlacement      Json?
+  signaturePlacement Json?
+  isActive           Boolean @default(true)
+
+  // Approval workflow
+  approvalStatus      LmsCertificateApprovalStatus @default(approved)
+  submittedBy         String?
+  submittedByTenantId String?
+  approvedBy          String?
+  approvalDate        DateTime?
+  rejectionReason     String?
+
+  selectedTenants LmsCertificateSelectedTenant[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, isActive])
+  @@index([approvalStatus])
+  @@map("certificates")
+  @@schema("app_quiklms")
+}
+
+// Certificate.selectedTenants[] (certificate_selected_tenants)
+model LmsCertificateSelectedTenant {
+  id            String      @id @default(uuid())
+  certificateId String
+  certificate   LmsCertificate @relation(fields: [certificateId], references: [id], onDelete: Cascade)
+  orgId      String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([certificateId, orgId])
+  @@index([orgId])
+  @@map("certificate_selected_tenants")
+  @@schema("app_quiklms")
+}
+
+model LmsCertificateIssued {
+  id                      String    @id @default(uuid())
+  orgId                String
+  learnerId               String // actor scalar
+  courseId                String // scalar (refs MasterCourse in legacy)
+  certificateTemplateId   String? // scalar
+  courseName              String?
+  learnerName             String?
+  certificateId           String    @unique // public verification id
+  pdfUrl                  String    @default("")
+  qrCodeUrl               String    @default("")
+  verificationUrl         String
+  issuedAt                DateTime
+  isComplianceCertificate Boolean   @default(false)
+  expiresAt               DateTime?
+
+  // Quiz pass-criteria snapshot (frozen at issue time)
+  score        Float?
+  passingScore Float?
+  passed       Boolean?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, learnerId, courseId], name: "unique_cert_per_learner_course_tenant")
+  @@index([orgId, learnerId, courseId])
+  @@index([expiresAt])
+  @@map("certificates_issued")
+  @@schema("app_quiklms")
+}
+
+model LmsDiscussion {
+  id          String    @id @default(uuid())
+  orgId    String
+  courseId    String // scalar
+  lessonId    String? // scalar
+  userId      String // actor scalar
+  parentId    String? // scalar self-ref (threaded replies)
+  content     String
+  upvotes     Int       @default(0)
+  downvotes   Int       @default(0)
+  upvotedBy   String[]  @default([]) // userId list (scalar array — matches Mongo)
+  downvotedBy String[]  @default([])
+  isSticky    Boolean   @default(false)
+  isResolved  Boolean   @default(false)
+  isDeleted   Boolean   @default(false)
+  editedAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([courseId, isSticky, createdAt])
+  @@index([courseId, lessonId, createdAt])
+  @@index([parentId, createdAt])
+  @@index([userId, createdAt])
+  @@index([orgId, courseId, isDeleted])
+  @@map("discussions")
+  @@schema("app_quiklms")
+}
+
+model LmsGradeRecord {
+  id                String    @id @default(uuid())
+  orgId          String
+  studentId         String // actor scalar
+  batchId           String
+  batch             LmsBatch     @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  subject           String
+  term              String?
+  academicYear      String?
+  homeworkAverage   Float     @default(0)
+  assessmentAverage Float     @default(0)
+  attendancePercent Float     @default(0)
+  finalGrade        String?
+  gradePoints       Float?
+  overallPercentage Float?
+  remarks           String?
+  gradedBy          String? // actor scalar
+  gradedAt          DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, studentId, batchId, term])
+  @@index([orgId, batchId, overallPercentage(sort: Desc)])
+  @@map("grade_records")
+  @@schema("app_quiklms")
+}
+
+model LmsBookmark {
+  id       String  @id @default(uuid())
+  orgId String
+  userId   String // actor scalar
+  courseId String // scalar
+  moduleId String?
+  lessonId String?
+  note     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, userId, courseId])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("bookmarks")
+  @@schema("app_quiklms")
+}
+
+model LmsSection {
+  id       String @id @default(uuid())
+  orgId String
+  grade    String
+  name     String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, grade, name])
+  @@index([orgId])
+  @@map("sections")
+  @@schema("app_quiklms")
+}
+
+model LmsSubject {
+  id        String  @id @default(uuid())
+  orgId  String
+  name      String
+  isDefault Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, name])
+  @@index([orgId])
+  @@map("subjects")
+  @@schema("app_quiklms")
+}
+
+model LmsAcademicCalendar {
+  id           String            @id @default(uuid())
+  orgId     String
+  academicYear String
+  createdBy    String? // actor scalar
+  terms        LmsAcademicTerm[]
+  holidays     LmsAcademicHoliday[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, academicYear])
+  @@index([orgId])
+  @@map("academic_calendars")
+  @@schema("app_quiklms")
+}
+
+// AcademicCalendar.terms[] (academic_terms)
+model LmsAcademicTerm {
+  id         String           @id @default(uuid())
+  calendarId String
+  calendar   LmsAcademicCalendar @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  name       String
+  startDate  DateTime
+  endDate    DateTime
+  isActive   Boolean          @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([calendarId])
+  @@map("academic_terms")
+  @@schema("app_quiklms")
+}
+
+// AcademicCalendar.holidays[] (academic_holidays)
+model LmsAcademicHoliday {
+  id         String           @id @default(uuid())
+  calendarId String
+  calendar   LmsAcademicCalendar @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  date       DateTime
+  name       String
+  type       String           @default("custom") // national | regional | custom
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([calendarId])
+  @@map("academic_holidays")
+  @@schema("app_quiklms")
+}
+
+model LmsEmailTemplate {
+  id          String            @id @default(uuid())
+  type        LmsEmailTemplateType @unique
+  subject     String
+  htmlContent String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("email_templates")
+  @@schema("app_quiklms")
+}
+
+model LmsSharedContent {
+  id             String   @id @default(uuid())
+  masterCourseId String // scalar (legacy ref is inconsistent Course/MasterCourse)
+  orgId       String
+  tenantCourseId String // scalar
+  sharedAt       DateTime @default(now())
+  isActive       Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([masterCourseId, orgId])
+  @@index([orgId, isActive])
+  @@map("shared_content")
+  @@schema("app_quiklms")
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SCHOOL OPS: batches, scheduling, credits, attendance, homework, payouts,
+// meetings, non-teaching, teacher-level, escalation, tutoring, reminders, jobs
+// ════════════════════════════════════════════════════════════════════════════
+
+model LmsBatch {
+  id          String  @id @default(uuid())
+  orgId    String
+  name        String
+  grade       String?
+  section     String?
+  subject     String
+  description String?
+  teacherId   String // actor scalar
+
+  academicYear String
+  term         String?
+  startDate    DateTime
+  endDate      DateTime
+
+  maxCapacity            Int?
+  defaultMeetingProvider LmsBatchMeetingProvider? @default(jitsi)
+
+  creditPerClass Float? @default(1)
+  ratePerClass   Float?
+  ratePerHour    Float?
+
+  classType          LmsBatchClassType? @default(regular)
+  trialClassCount    Int?            @default(0)
+  convertedToRegular Boolean?        @default(false)
+  convertedAt        DateTime?
+
+  status    LmsBatchStatus @default(active)
+  createdBy String? // actor scalar
+
+  batchType         LmsBatchType   @default(regular)
+  source            LmsBatchSource @default(manual)
+  tutoringRequestId String? // scalar
+
+  // Decomposed arrays + owned aggregates
+  schedule           LmsBatchSchedule[]
+  students           LmsBatchStudent[]
+  substituteTeachers LmsBatchSubstituteTeacher[]
+  scheduledClasses   LmsScheduledClass[]
+  homeworks          LmsHomework[]
+  gradeRecords       LmsGradeRecord[]
+  exams              LmsExam[]
+  attendances        LmsAttendance[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, name, academicYear])
+  @@index([orgId, academicYear, status])
+  @@index([orgId, teacherId, status])
+  @@index([orgId, grade, section, subject])
+  @@map("batches")
+  @@schema("app_quiklms")
+}
+
+// Batch.schedule[] (batch_schedule)
+model LmsBatchSchedule {
+  id        String  @id @default(uuid())
+  batchId   String
+  batch     LmsBatch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  dayOfWeek Int // 0-6
+  startTime String
+  endTime   String
+  location  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([batchId])
+  @@map("batch_schedule")
+  @@schema("app_quiklms")
+}
+
+// Batch.studentIds[] (batch_students)
+model LmsBatchStudent {
+  id        String @id @default(uuid())
+  batchId   String
+  batch     LmsBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  studentId String // actor scalar
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([batchId, studentId])
+  @@index([studentId])
+  @@map("batch_students")
+  @@schema("app_quiklms")
+}
+
+// Batch.substituteTeacherIds[] (batch_substitute_teachers)
+model LmsBatchSubstituteTeacher {
+  id        String @id @default(uuid())
+  batchId   String
+  batch     LmsBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  teacherId String // actor scalar
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([batchId, teacherId])
+  @@index([teacherId])
+  @@map("batch_substitute_teachers")
+  @@schema("app_quiklms")
+}
+
+model LmsScheduledClass {
+  id                       String                    @id @default(uuid())
+  orgId                 String
+  batchId                  String
+  batch                    LmsBatch                     @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  teacherId                String // actor scalar
+  substituteTeacherId      String? // actor scalar
+  title                    String
+  startTime                DateTime
+  endTime                  DateTime
+  location                 String?
+  status                   LmsClassStatus               @default(scheduled)
+  cancellationReason       String?
+  rescheduledTo            String? // scalar self-ref
+  rescheduledFrom          String? // scalar self-ref
+  rescheduleReason         String?
+  rescheduleApprovalStatus LmsRescheduleApprovalStatus?
+  meetingId                String? // scalar
+  attendanceMarkedAt       DateTime?
+  classNotes               String?
+  isRecurring              Boolean                   @default(false)
+  recurringPattern         Json? // { frequency, endDate }
+
+  attendances            LmsAttendance[]
+  payoutCompletedClasses LmsPayoutCompletedClass[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([batchId, startTime]) // guards race-condition double-inserts
+  @@index([orgId, teacherId, startTime])
+  @@index([orgId, batchId, startTime])
+  @@index([orgId, status, startTime])
+  @@index([startTime])
+  @@map("scheduled_classes")
+  @@schema("app_quiklms")
+}
+
+model LmsCreditPackage {
+  id               String              @id @default(uuid())
+  orgId         String
+  studentId        String // actor scalar
+  packageName      String
+  purchasedCredits Float
+  usedCredits      Float               @default(0)
+  remainingCredits Float
+  purchaseDate     DateTime
+  expiresAt        DateTime?
+  status           LmsCreditPackageStatus @default(active)
+  price            Float?
+  notes            String?
+  allocatedBy      String? // actor scalar
+
+  transactions LmsCreditTransaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([studentId, status, expiresAt])
+  @@index([orgId, studentId])
+  @@map("credit_packages")
+  @@schema("app_quiklms")
+}
+
+/// Purchasable credit-package DEFINITIONS (tenant catalogue).
+///
+/// Previously these lived inside the `LmsTenant.creditConfig` JSON blob. Every
+/// edit was a read-modify-write of the whole object, so two admins editing
+/// packages concurrently silently lost one of the edits — and the blob rewrite
+/// could also clobber a concurrent change to any OTHER creditConfig key
+/// (expiryMonths, lowCreditThreshold, zeroCreditPolicy). Mongo's `$push`/`$pull`
+/// on the subdocument array could not lose a sibling write that way.
+///
+/// Promoted to a real table so each definition is an independently-updatable row.
+/// The remaining scalar settings stay on `creditConfig`.
+model LmsCreditPackageDefinition {
+  id             String  @id @default(uuid())
+  orgId          String
+  name           String
+  credits        Float
+  price          Float
+  validityMonths Int
+  isActive       Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, isActive])
+  @@map("credit_package_definitions")
+  @@schema("app_quiklms")
+}
+
+model LmsCreditTransaction {
+  id                  String          @id @default(uuid())
+  orgId            String
+  packageId           String
+  package             LmsCreditPackage   @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  studentId           String // actor scalar
+  transactionType     LmsTransactionType
+  amount              Float // +add / -deduct
+  balanceAfter        Float
+  relatedClassId      String? // scalar
+  relatedAttendanceId String? // scalar
+  notes               String?
+  processedBy         String? // actor scalar
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, studentId, createdAt(sort: Desc)])
+  @@index([packageId])
+  @@map("credit_transactions")
+  @@schema("app_quiklms")
+}
+
+model LmsAttendance {
+  id                  String           @id @default(uuid())
+  orgId            String
+  scheduledClassId    String
+  scheduledClass      LmsScheduledClass   @relation(fields: [scheduledClassId], references: [id], onDelete: Cascade)
+  batchId             String
+  batch               LmsBatch            @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  studentId           String // actor scalar
+  markedBy            String // actor scalar
+  status              LmsAttendanceStatus
+  classDate           DateTime
+  notes               String?
+  creditDeducted      Boolean          @default(false)
+  creditTransactionId String? // scalar
+  editedBy            String? // actor scalar
+  editReason          String?
+  editedAt            DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([scheduledClassId, studentId])
+  @@index([orgId, scheduledClassId])
+  @@index([orgId, studentId, classDate(sort: Desc)])
+  @@index([orgId, batchId, classDate(sort: Desc)])
+  @@map("attendance")
+  @@schema("app_quiklms")
+}
+
+model LmsHomework {
+  id                     String         @id @default(uuid())
+  orgId               String
+  batchId                String
+  batch                  LmsBatch          @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  teacherId              String // actor scalar
+  title                  String
+  description            String?
+  instructions           String?
+  attachmentUrls         String[]       @default([])
+  resourceLinks          Json           @default("[]") // [{ url, label }]
+  dueDate                DateTime
+  assignedToStudentIds   String[]       @default([]) // actor id list (scalar array)
+  maxScore               Int?
+  allowLateSubmission    Boolean        @default(false)
+  lateSubmissionDeadline DateTime?
+  latePenaltyPercent     Int?
+  status                 LmsHomeworkStatus @default(published)
+  type                   LmsHomeworkType   @default(assignment)
+  publishedAt            DateTime?
+
+  submissions LmsHomeworkSubmission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, batchId, status])
+  @@index([orgId, teacherId])
+  @@map("homework")
+  @@schema("app_quiklms")
+}
+
+model LmsHomeworkSubmission {
+  id                 String           @id @default(uuid())
+  orgId           String
+  homeworkId         String
+  homework           LmsHomework         @relation(fields: [homeworkId], references: [id], onDelete: Cascade)
+  studentId          String // actor scalar
+  attachmentUrls     String[]         @default([])
+  textResponse       String?
+  submittedAt        DateTime
+  isLate             Boolean          @default(false)
+  status             LmsSubmissionStatus @default(submitted)
+  score              Int?
+  feedback           String?
+  gradedBy           String? // actor scalar
+  gradedAt           DateTime?
+  correctedFileUrl   String?
+  richFeedback       String?
+  latePenaltyApplied Float?
+  finalScore         Float?
+
+  rubricScores LmsHomeworkRubricScore[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([homeworkId, studentId])
+  @@index([orgId, studentId, submittedAt(sort: Desc)])
+  @@map("homework_submissions")
+  @@schema("app_quiklms")
+}
+
+// HomeworkSubmission.rubricScores[] (homework_rubric_scores)
+model LmsHomeworkRubricScore {
+  id           String             @id @default(uuid())
+  submissionId String
+  submission   LmsHomeworkSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  criterion    String
+  maxScore     Float
+  score        Float
+  comment      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([submissionId])
+  @@map("homework_rubric_scores")
+  @@schema("app_quiklms")
+}
+
+model LmsTeacherPayout {
+  id                    String        @id @default(uuid())
+  orgId              String
+  teacherId             String // actor scalar
+  periodStart           DateTime
+  periodEnd             DateTime
+  totalClassesCompleted Int           @default(0)
+  ratePerClass          Float
+  rateType              LmsRateType?     @default(per_class)
+  grossAmount           Float
+  totalBonus            Float         @default(0)
+  totalDeductions       Float         @default(0)
+  nonTeachingWorkAmount Float         @default(0)
+  netAmount             Float
+  status                LmsPayoutStatus  @default(draft)
+  approvedBy            String? // actor scalar
+  approvedAt            DateTime?
+  paidAt                DateTime?
+  paymentMethod         String?
+  paymentReference      String?
+  notes                 String?
+  source                LmsPayoutSource? @default(batch)
+
+  adjustments      LmsPayoutAdjustment[]
+  completedClasses LmsPayoutCompletedClass[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, teacherId, periodStart, periodEnd])
+  @@index([orgId, status])
+  @@map("teacher_payouts")
+  @@schema("app_quiklms")
+}
+
+// TeacherPayout.adjustments[] (payout_adjustments)
+model LmsPayoutAdjustment {
+  id        String               @id @default(uuid())
+  payoutId  String
+  payout    LmsTeacherPayout        @relation(fields: [payoutId], references: [id], onDelete: Cascade)
+  type      LmsPayoutAdjustmentType
+  amount    Float
+  reason    String
+  appliedBy String? // actor scalar
+  appliedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([payoutId])
+  @@map("payout_adjustments")
+  @@schema("app_quiklms")
+}
+
+// TeacherPayout.completedClassIds[] (payout_completed_classes)
+model LmsPayoutCompletedClass {
+  id               String         @id @default(uuid())
+  payoutId         String
+  payout           LmsTeacherPayout  @relation(fields: [payoutId], references: [id], onDelete: Cascade)
+  scheduledClassId String
+  scheduledClass   LmsScheduledClass @relation(fields: [scheduledClassId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([payoutId, scheduledClassId])
+  @@index([scheduledClassId])
+  @@map("payout_completed_classes")
+  @@schema("app_quiklms")
+}
+
+model LmsMeeting {
+  id                 String          @id @default(uuid())
+  orgId           String
+  scheduledClassId   String? // scalar
+  hostId             String? // actor scalar
+  provider           LmsMeetingProvider
+  externalMeetingId  String?
+  joinUrl            String
+  hostUrl            String?
+  password           String?
+  scheduledStartTime DateTime
+  scheduledEndTime   DateTime
+  actualStartTime    DateTime?
+  actualEndTime      DateTime?
+  status             LmsMeetingStatus   @default(scheduled)
+  recordingEnabled   Boolean         @default(false)
+  recordingUrls      String[]        @default([])
+  recordingStatus    LmsRecordingStatus @default(pending)
+  providerMetadata   Json? // per §8
+  createdBy          String? // actor scalar
+  title              String?
+  isInstant          Boolean         @default(false)
+  participantCount   Int             @default(0)
+
+  attendees LmsMeetingAttendance[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, scheduledClassId])
+  @@index([orgId, status])
+  @@index([status, scheduledStartTime])
+  @@map("meetings")
+  @@schema("app_quiklms")
+}
+
+model LmsMeetingAttendance {
+  id               String                @id @default(uuid())
+  meetingId        String
+  meeting          LmsMeeting               @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  userId           String // actor scalar
+  role             LmsMeetingAttendanceRole
+  joinedAt         DateTime
+  leftAt           DateTime?
+  durationMinutes  Int?
+  deviceType       LmsDeviceType            @default(unknown)
+  deviceInfo       String?
+  joinLeaveHistory Json                  @default("[]") // [{ action, timestamp }]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([meetingId, userId])
+  @@map("meeting_attendance")
+  @@schema("app_quiklms")
+}
+
+model LmsNonTeachingTask {
+  id              String       @id @default(uuid())
+  orgId        String
+  teacherId       String // actor scalar
+  assignedBy      String // actor scalar
+  title           String
+  description     String?
+  category        LmsTaskCategory @default(other)
+  paymentAmount   Float
+  status          LmsTaskStatus   @default(assigned)
+  dueDate         DateTime?
+  completedAt     DateTime?
+  approvedAt      DateTime?
+  approvedBy      String? // actor scalar
+  rejectionReason String?
+  completionNotes String?
+  hoursSpent      Float?
+  attachmentUrls  String[]     @default([])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, teacherId, status])
+  @@index([orgId, status, createdAt(sort: Desc)])
+  @@map("non_teaching_tasks")
+  @@schema("app_quiklms")
+}
+
+model LmsTeacherLevel {
+  id                     String        @id @default(uuid())
+  orgId               String
+  teacherId              String        @unique // actor scalar, one record per teacher
+  currentLevel           LmsTeacherStatus @default(beginner)
+  totalClassesTaught     Int           @default(0)
+  attendanceScore        Float         @default(0)
+  homeworkCompletionRate Float         @default(0)
+  parentFeedbackScore    Float         @default(0)
+  classesMissed          Int           @default(0)
+  overallScore           Float         @default(0)
+  lastCalculatedAt       DateTime?
+
+  levelHistory LmsTeacherLevelHistory[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, teacherId])
+  @@map("teacher_levels")
+  @@schema("app_quiklms")
+}
+
+// TeacherLevel.levelHistory[] (teacher_level_history)
+model LmsTeacherLevelHistory {
+  id             String        @id @default(uuid())
+  teacherLevelId String
+  teacherLevel   LmsTeacherLevel  @relation(fields: [teacherLevelId], references: [id], onDelete: Cascade)
+  month          Int
+  year           Int
+  level          LmsTeacherStatus
+  score          Float
+  calculatedAt   DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([teacherLevelId])
+  @@map("teacher_level_history")
+  @@schema("app_quiklms")
+}
+
+model LmsCallEscalation {
+  id               String           @id @default(uuid())
+  orgId         String
+  scheduledClassId String // scalar
+  teacherId        String // actor scalar
+  status           LmsEscalationStatus @default(pending)
+  resolutionTime   DateTime?
+  teacherJoinedAt  DateTime?
+  adminNotified    Boolean          @default(false)
+  adminNotifiedAt  DateTime?
+  notes            String?
+
+  callAttempts LmsCallEscalationAttempt[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, scheduledClassId])
+  @@index([orgId, teacherId, createdAt(sort: Desc)])
+  @@map("call_escalations")
+  @@schema("app_quiklms")
+}
+
+// CallEscalation.callAttempts[] (call_attempts)
+model LmsCallEscalationAttempt {
+  id            String         @id @default(uuid())
+  escalationId  String
+  escalation    LmsCallEscalation @relation(fields: [escalationId], references: [id], onDelete: Cascade)
+  attemptNumber Int // 1-3
+  attemptTime   DateTime
+  phoneNumber   String
+  callStatus    LmsCallStatus
+  callDuration  Int?
+  callSid       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([escalationId])
+  @@map("call_escalation_attempts")
+  @@schema("app_quiklms")
+}
+
+model LmsTutoringRequest {
+  id                  String                @id @default(uuid())
+  orgId            String
+  studentId           String // actor scalar
+  teacherId           String? // actor scalar
+  subject             String
+  notes               String?
+  proposedSlots       Json // [{ date, startTime, endTime }]
+  confirmedSlot       Json? // { date, startTime, endTime }
+  status              LmsTutoringRequestStatus @default(pending)
+  rejectionReason     String?
+  teacherNotes        String?
+  batchId             String? // scalar
+  scheduledClassId    String? // scalar
+  creditCostSnapshot  Float?
+  teacherRateSnapshot Float?
+  creditHoldId        String? // scalar (CreditTransaction)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, studentId, status])
+  @@index([orgId, teacherId, status])
+  @@map("tutoring_requests")
+  @@schema("app_quiklms")
+}
+
+model LmsStudentReminderCall {
+  id               String             @id @default(uuid())
+  orgId         String
+  scheduledClassId String // scalar
+  studentId        String // actor scalar
+  batchId          String // scalar
+  status           LmsReminderCallStatus @default(pending)
+  resolvedAt       DateTime?
+  notes            String?
+
+  callAttempts LmsStudentReminderCallAttempt[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, scheduledClassId, studentId])
+  @@index([orgId, studentId, createdAt(sort: Desc)])
+  @@map("student_reminder_calls")
+  @@schema("app_quiklms")
+}
+
+// StudentReminderCall.callAttempts[] (call_attempts)
+model LmsStudentReminderCallAttempt {
+  id             String              @id @default(uuid())
+  reminderCallId String
+  reminderCall   LmsStudentReminderCall @relation(fields: [reminderCallId], references: [id], onDelete: Cascade)
+  attemptNumber  Int // 1-3
+  attemptTime    DateTime
+  phoneNumber    String
+  callStatus     LmsCallStatus
+  callDuration   Int?
+  callSid        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([reminderCallId])
+  @@map("student_reminder_call_attempts")
+  @@schema("app_quiklms")
+}
+
+model LmsTeacherLatenessReminderLog {
+  id                           String   @id @default(uuid())
+  orgId                     String
+  batchId                      String // scalar
+  teacherId                    String // actor scalar
+  lastNotifiedScheduledClassId String // scalar
+  notifiedAt                   DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, batchId, teacherId])
+  @@index([batchId])
+  @@index([teacherId])
+  @@map("teacher_lateness_reminder_logs")
+  @@schema("app_quiklms")
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// EXAMS, QUESTION-BANK, PROCTORING, QUIZ-PROCTORING
+// ════════════════════════════════════════════════════════════════════════════
+
+model LmsQuestion {
+  id            String           @id @default(uuid())
+  orgId      String
+  createdBy     String // actor scalar
+  subject       String
+  topic         String?
+  difficulty    LmsDifficulty       @default(medium)
+  tags          String[]         @default([])
+  type          LmsBankQuestionType
+  text          String
+  imageUrl      String?
+  audioUrl      String?
+  options       Json             @default("[]") // [{ text, isCorrect }]
+  correctAnswer Json? // boolean | string | string[]
+  points        Int              @default(1)
+  negativeMarks Int              @default(0)
+  explanation   String?
+  isActive      Boolean          @default(true)
+  version       Int              @default(1)
+
+  examQuestions LmsExamQuestion[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, subject, difficulty])
+  @@index([orgId, type])
+  @@index([orgId, tags])
+  @@map("questions")
+  @@schema("app_quiklms")
+}
+
+model LmsExam {
+  id                    String                @id @default(uuid())
+  orgId              String
+  createdBy             String // actor scalar
+  title                 String
+  description           String                @default("")
+  instructions          String                @default("")
+  subject               String                @default("")
+  batchId               String?
+  batch                 LmsBatch?                @relation(fields: [batchId], references: [id])
+  duration              Int // minutes
+  totalMarks            Int                   @default(0)
+  questionSelectionMode LmsQuestionSelectionMode @default(manual)
+  autoSelectRules       Json? // { count, difficulty?, subject?, tags? }
+  settings              Json                  @default("{}") // ExamSettings (defaults applied in service layer)
+  proctoringLevel       LmsProctoringLevel       @default(soft)
+  scheduledStartTime    DateTime?
+  scheduledEndTime      DateTime?
+  status                LmsExamStatus            @default(draft)
+  resultPublishedAt     DateTime?
+
+  questions LmsExamQuestion[]
+  sessions  LmsExamSession[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, batchId, status])
+  @@index([orgId, status, scheduledStartTime])
+  @@map("exams")
+  @@schema("app_quiklms")
+}
+
+// Exam.questions[] (exam_questions)
+model LmsExamQuestion {
+  id         String   @id @default(uuid())
+  examId     String
+  exam       LmsExam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  questionId String
+  question   LmsQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  points     Int      @default(1)
+  order      Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([examId, questionId])
+  @@index([questionId])
+  @@map("exam_questions")
+  @@schema("app_quiklms")
+}
+
+model LmsExamSession {
+  id                String            @id @default(uuid())
+  orgId          String
+  examId            String
+  exam              LmsExam              @relation(fields: [examId], references: [id], onDelete: Cascade)
+  studentId         String // actor scalar
+  startedAt         DateTime?
+  endedAt           DateTime?
+  serverDeadline    DateTime?
+  status            LmsExamSessionStatus @default(not_started)
+  answers           Json              @default("{}") // Map<questionId, AnswerEntry> per §8
+  lastSavedAt       DateTime?
+  assignedQuestions Json              @default("[]") // [{ questionId, order }]
+  score             Float?
+  totalPoints       Float?
+  percentage        Float?
+  passed            Boolean?
+  teacherRemarks    String?
+  gradedBy          String? // actor scalar
+  gradedAt          DateTime?
+  proctoringFlags   Json              @default("{}") // per §8
+  isReconnection    Boolean           @default(false)
+  disconnectedAt    DateTime?
+  reconnectedAt     DateTime?
+
+  logs            LmsProctoringLog[]
+  incidentReports LmsIncidentReport[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, examId, studentId])
+  @@index([status, serverDeadline])
+  @@map("exam_sessions")
+  @@schema("app_quiklms")
+}
+
+model LmsProctoringLog {
+  id        String              @id @default(uuid())
+  orgId  String
+  sessionId String
+  session   LmsExamSession         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  studentId String // actor scalar
+  eventType LmsProctoringEventType
+  timestamp DateTime
+  metadata  Json?
+  severity  LmsProctoringSeverity  @default(low)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sessionId, eventType])
+  @@index([sessionId, timestamp])
+  @@map("proctoring_logs")
+  @@schema("app_quiklms")
+}
+
+model LmsIncidentReport {
+  id          String              @id @default(uuid())
+  orgId    String
+  sessionId   String
+  session     LmsExamSession         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  examId      String // scalar
+  reviewedBy  String? // actor scalar
+  reviewedAt  DateTime?
+  flagSummary Json                @default("{}")
+  disposition LmsIncidentDisposition @default(pending)
+  action      LmsIncidentAction      @default(none)
+  remarks     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([examId, disposition])
+  @@index([sessionId])
+  @@map("incident_reports")
+  @@schema("app_quiklms")
+}
+
+model LmsQuizProctoringSession {
+  id                        String            @id @default(uuid())
+  orgId                  String
+  assessmentId              String // scalar (ObjectId OR master-course UUID)
+  courseId                  String // scalar
+  learnerId                 String // actor scalar
+  startedAt                 DateTime?
+  endedAt                   DateTime?
+  serverDeadline            DateTime?
+  status                    LmsQuizSessionStatus @default(in_progress)
+  proctoringFlags           Json              @default("{}") // incl. face_* counters
+  isReconnection            Boolean           @default(false)
+  disconnectedAt            DateTime?
+  reconnectedAt             DateTime?
+  selectedQuestionIndices   Int[]             @default([]) // empty = serve all
+  selectedAdditionalIndices Int[]             @default([])
+  questionManifest          Json? // [{ pool: 'main'|'additional', index }]
+
+  logs            LmsQuizProctoringLog[]
+  incidentReports LmsQuizIncidentReport[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, assessmentId, learnerId])
+  @@index([status, serverDeadline])
+  @@map("quiz_proctoring_sessions")
+  @@schema("app_quiklms")
+}
+
+model LmsQuizProctoringLog {
+  id        String                  @id @default(uuid())
+  orgId  String
+  sessionId String
+  session   LmsQuizProctoringSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  learnerId String // actor scalar
+  eventType LmsQuizProctoringEventType
+  timestamp DateTime
+  metadata  Json?
+  severity  LmsProctoringSeverity      @default(low)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sessionId, eventType])
+  @@index([sessionId, timestamp])
+  @@map("quiz_proctoring_logs")
+  @@schema("app_quiklms")
+}
+
+model LmsQuizIncidentReport {
+  id           String                @id @default(uuid())
+  orgId     String
+  sessionId    String
+  session      LmsQuizProctoringSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  assessmentId String // scalar
+  reviewedBy   String? // actor scalar
+  reviewedAt   DateTime?
+  flagSummary  Json                  @default("{}")
+  disposition  LmsIncidentDisposition   @default(pending)
+  action       LmsIncidentAction        @default(none)
+  remarks      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([assessmentId, disposition])
+  @@index([sessionId])
+  @@map("quiz_incident_reports")
+  @@schema("app_quiklms")
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// MESSAGING
+// ════════════════════════════════════════════════════════════════════════════
+
+model LmsConversation {
+  id              String           @id @default(uuid())
+  orgId        String
+  type            LmsConversationType @default(direct)
+  title           String?
+  groupIcon       String?
+  description     String?
+  lastMessageText String?
+  lastMessageAt   DateTime?
+  lastMessageBy   String? // actor scalar
+  messageCount    Int              @default(0)
+  blockedUserIds  String[]         @default([]) // actor id list (scalar array)
+  createdBy       String? // actor scalar
+
+  participants LmsConversationParticipant[]
+  messages     LmsMessage[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, lastMessageAt(sort: Desc)])
+  @@map("conversations")
+  @@schema("app_quiklms")
+}
+
+// Conversation.participants[] (conversation_participants)
+model LmsConversationParticipant {
+  id             String                      @id @default(uuid())
+  conversationId String
+  conversation   LmsConversation                @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String // actor scalar
+  joinedAt       DateTime                    @default(now())
+  lastReadAt     DateTime                    @default(now())
+  role           LmsConversationParticipantRole @default(member)
+  isArchived     Boolean                     @default(false)
+  isDeleted      Boolean                     @default(false)
+  deletedAt      DateTime?
+  isMuted        Boolean                     @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+  @@map("conversation_participants")
+  @@schema("app_quiklms")
+}
+
+model LmsMessage {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   LmsConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String // actor scalar
+  text           String
+  attachmentUrls String[]     @default([])
+  isEdited       Boolean      @default(false)
+  editedAt       DateTime?
+  isDeleted      Boolean      @default(false)
+  deletedBy      String? // actor scalar
+  deletedAt      DateTime?
+  isFlagged      Boolean      @default(false)
+  flagReason     String?
+  replyTo        String? // scalar self-ref
+  forwardedFrom  String? // scalar self-ref
+
+  reactions LmsMessageReaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([conversationId, createdAt(sort: Desc)])
+  @@index([senderId])
+  @@map("messages")
+  @@schema("app_quiklms")
+}
+
+// Message.reactions[] (message_reactions)
+model LmsMessageReaction {
+  id        String  @id @default(uuid())
+  messageId String
+  message   LmsMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String // actor scalar
+  emoji     String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
+  @@map("message_reactions")
+  @@schema("app_quiklms")
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ANALYTICS, AUDIT, PRIVACY
+// ════════════════════════════════════════════════════════════════════════════
+
+model LmsAnalyticsEvent {
+  id         String  @id @default(uuid())
+  orgId   String
+  userId     String? // actor scalar
+  eventType  String
+  eventData  Json? // per §8
+  sessionId  String?
+  deviceType String?
+  ipAddress  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, eventType, createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("analytics_events")
+  @@schema("app_quiklms")
+}
+
+model LmsAnalyticsCache {
+  id           String   @id @default(uuid())
+  orgId     String
+  metricKey    String
+  data         Json
+  calculatedAt DateTime
+  expiresAt    DateTime // TTL — purged by worker cron
+  filters      Json? // { dateFrom?, dateTo?, batchId?, teacherId? }
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, metricKey])
+  @@index([expiresAt])
+  @@map("analytics_cache")
+  @@schema("app_quiklms")
+}
+
+model LmsActivityLog {
+  id        String       @id @default(uuid())
+  orgId  String? // optional (super-admin global actions)
+  userId    String? // actor scalar
+  type      LmsActivityType
+  message   String
+  metadata  Json?
+  timestamp DateTime     @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, timestamp(sort: Desc)])
+  @@index([type, timestamp(sort: Desc)])
+  @@index([timestamp(sort: Desc)])
+  @@map("activity_logs")
+  @@schema("app_quiklms")
+}
+
+model LmsTenantLog {
+  id          String           @id @default(uuid())
+  orgId    String
+  actionType  LmsTenantActionType
+  description String
+  performedBy String // actor scalar
+  metadata    Json?
+  ipAddress   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, createdAt(sort: Desc)])
+  @@index([orgId, actionType, createdAt(sort: Desc)])
+  @@map("tenant_logs")
+  @@schema("app_quiklms")
+}
+
+model LmsPrivacyAuditLog {
+  id              String   @id @default(uuid())
+  orgId        String
+  userId          String // actor scalar
+  userRole        String
+  endpoint        String
+  method          String
+  fieldsStripped  String[] @default([])
+  recordsAffected Int      @default(0)
+  ipAddress       String?
+  userAgent       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("privacy_audit_logs")
+  @@schema("app_quiklms")
+}
+
+// ─── QuikLMS RBAC ───────────────────────────────────────────────────────────
+// The per-app RBAC shape every product app repeats (AppRole + RolePermission +
+// RoleNavigation + UserAppRole + UserPermissionExtra), namespaced `Lms*`.
+// QuikLMS was the only app missing it entirely: authorization was a hardcoded
+// `LmsUserRole` enum on LmsUser.role, so a tenant could not define a custom
+// role, grant or deny a single permission, or time-box an assignment — and
+// `assignAppRoles()` in packages/auth had no tables to write into, which is why
+// a central invitation carrying inviteAppIds could never seed an LMS role.
+//
+// Mirrors the HrmsAppRole family field-for-field, including `expiresAt` on the
+// assignment and GRANT/DENY on the per-user override. Keyed on LmsUser, whose
+// id IS the central auth.User id under the orgId-native fold — so these rows
+// resolve for the same person the platform knows.
+//
+// The coarse `LmsUser.role` enum is intentionally left in place: ~335 files read
+// it through `getAuthContext`. These tables are additive, and nothing reads them
+// yet. Adopting them at the call sites is a separate migration of behaviour.
+
+model LmsAppRole {
+  id          String   @id @default(cuid())
+  orgId       String
+  appId       String
+  name        String
+  description String?
+  isSystem    Boolean  @default(false)
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String?
+
+  permissions LmsRolePermission[]
+  navigations LmsRoleNavigation[]
+  members     LmsUserAppRole[]
+
+  @@unique([orgId, appId, name])
+  @@index([orgId, appId])
+  @@map("AppRole")
+  @@schema("app_quiklms")
+}
+
+model LmsRolePermission {
+  id       String @id @default(cuid())
+  roleId   String
+  resource String
+  action   String
+
+  role LmsAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, resource, action])
+  @@index([roleId])
+  @@map("RolePermission")
+  @@schema("app_quiklms")
+}
+
+model LmsRoleNavigation {
+  id     String @id @default(cuid())
+  roleId String
+  navKey String
+
+  role LmsAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, navKey])
+  @@index([roleId])
+  @@map("RoleNavigation")
+  @@schema("app_quiklms")
+}
+
+model LmsUserAppRole {
+  id         String    @id @default(cuid())
+  userId     String
+  orgId      String
+  roleId     String
+  assignedAt DateTime  @default(now())
+  assignedBy String?
+  expiresAt  DateTime?
+
+  role LmsAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user LmsUser    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId, roleId])
+  @@index([roleId])
+  @@index([userId, orgId])
+  @@index([expiresAt])
+  @@map("UserAppRole")
+  @@schema("app_quiklms")
+}
+
+enum LmsPermissionGrantKind {
+  GRANT
+  DENY
+
+  @@schema("app_quiklms")
+}
+
+model LmsUserPermissionExtra {
+  id        String                 @id @default(cuid())
+  orgId     String
+  userId    String
+  resource  String
+  action    String
+  kind      LmsPermissionGrantKind @default(GRANT)
+  grantedBy String?
+  createdAt DateTime               @default(now())
+
+  user LmsUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId, resource, action])
+  @@index([userId, orgId])
+  @@map("UserPermissionExtra")
+  @@schema("app_quiklms")
+}
+
+// ─── QuikLMS invitations ────────────────────────────────────────────────────
+// A local record of every invitation the LMS has sent, mirroring
+// app_quikhrms.Invitation. QuikLMS previously had NO such table: invitations
+// were fire-and-forget, so there was no list UI, no revoke, no expiry surface,
+// and no record that an invitation had ever been sent — a tenant admin could not
+// answer "did this teacher get invited, and when?".
+//
+// This is a SHADOW of the authoritative record, not the record itself. The
+// membership lifecycle lives on quikit.OrgMember (status / invitationToken /
+// invitedAt / acceptedAt) and the central accept endpoint is what activates it.
+// These rows exist so the LMS can render and audit that lifecycle without
+// querying the platform tables on every list render.
+//
+// DIVERGENCE FROM HRMS, deliberate: HrmsInvitation carries `centralInviteToken`
+// — the RAW central OrgMember.invitationToken — so a resend can rebuild the
+// accept link. We do not copy that. The raw token already lives on
+// quikit.OrgMember (it has to; the accept endpoint looks it up by value), so
+// duplicating it here would put a second live credential in a second table for
+// no gain. A resend re-reads it from OrgMember, which is the source of truth.
+// `token` holds only a SHA-256 hash — enough to correlate an emailed link with
+// its audit row, useless to anyone who reads this table.
+
+enum LmsInvitationStatus {
+  Pending
+  Accepted
+  Expired
+  Revoked
+
+  @@schema("app_quiklms")
+}
+
+model LmsInvitation {
+  id    String @id @default(cuid())
+  orgId String
+
+  // Invitee details, as sent.
+  email     String
+  firstName String?
+  lastName  String?
+  /// The LMS role the invite was issued for (LmsUserRole value).
+  role      String
+
+  // Token & lifecycle. `token` is a SHA-256 hash of the emailed central token —
+  // never the raw value. See the note above.
+  token     String              @unique
+  expiresAt DateTime
+  status    LmsInvitationStatus @default(Pending)
+
+  // Tracking
+  invitedBy  String? // central User.id of the admin who sent it
+  acceptedAt DateTime?
+  lmsUserId  String? // the LMS user row this invite provisioned
+
+  // Audit
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // soft delete == revoked
+
+  @@index([orgId, status])
+  @@index([orgId, email])
+  @@map("invitations")
+  @@schema("app_quiklms")
+}
 
 // ===========================================================================
 // QuikFinance (app_quikfinance) — merged from the standalone QuikFinance app
@@ -18338,6 +21556,10 @@ model AstAsset {
   invoiceFileType      String?
   invoiceFileSize      Int?
   assetStatus          AstAssetStatus   @default(Available)
+  // Platform User.id of whoever added this asset ("Added by"). Plain string, no
+  // FK — same convention as AstAssetRequest.requesterUserId; full history lives
+  // in AstAuditLog.
+  createdByUserId      String?
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
   assignments          AstAssignment[]
@@ -18374,6 +21596,8 @@ model AstRepair {
   returnedDate     String?
   status           AstRepairStatus  @default(Pending)
   notes            String?
+  // Platform User.id of whoever logged/sent this repair ("Sent to repair by").
+  createdByUserId  String?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
   replacements     AstReplacement[]
@@ -18448,6 +21672,9 @@ model AstAssignment {
   condition      String
   expectedReturn String?
   notes          String?
+  // Platform User.id of whoever performed this assignment ("Assigned by").
+  // Distinct from `userId`, which is the AstEmployee the asset is assigned TO.
+  assignedByUserId String?
   status         AstAssignmentStatus @default(Active)
   assignedAt     DateTime            @default(now())
   returnedAt     DateTime?
@@ -19352,7 +22579,8 @@ model QcUserNotificationSettings {
   userId              String
   defaultChannelLevel String    @default("all") // all | mentions | none
   dmsLevel            String    @default("all")
-  soundEnabled        Boolean   @default(true)
+  soundEnabled        Boolean   @default(true) // message-notification chime
+  callSoundsEnabled   Boolean   @default(true) // ringtone / ringback / call tones
   desktopEnabled      Boolean   @default(true) // master OS-popup switch
   emailEnabled        Boolean   @default(false)
   dndEnabled          Boolean   @default(false)
@@ -19404,6 +22632,34 @@ model QcUserUiPrefs {
   theme     String   @default("system") // system | light | dark
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@unique([orgId, userId])
+  @@schema("app_quikchat")
+}
+
+// Rich presence set-status (Teams-style). Stores ONLY the durable, user-set
+// status; the ephemeral `on_call` / `online` / `offline` states are derived by
+// the gateway (from socket + call lifecycle) and reconciled client-side — they
+// are NEVER written here (the gateway is write-free). String (not a Prisma enum)
+// to match every other Qc* table. Rides the pending `app_quikchat` migration;
+// local via `prisma db push`, prod-gated on that migration like the rest.
+model QcUserPresence {
+  id            String    @id @default(uuid())
+  orgId         String
+  userId        String
+  status        String    @default("available") // available | busy | dnd | brb | away | appear_offline
+  statusMessage String?
+  // Optional expiry for a timed status ("Busy for 30 min"). Absolute instant
+  // (computed client-side so end-of-day/week honour the user's timezone). Expiry
+  // is LAZY read-time: any read past this treats the status as `available`; there
+  // is no sweeper/background job (expiry needs no active event, only correct reads).
+  statusExpiresAt DateTime?
+  // Last-seen visibility, WhatsApp-style MUTUAL: a viewer sees this user's last
+  // seen only when BOTH sides have it true (see presence.service.ts
+  // #getEffectiveLastSeen). Default on; `appear_offline` overrides it outright.
+  shareLastSeen Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@unique([orgId, userId])
   @@schema("app_quikchat")

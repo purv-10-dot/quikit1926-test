@@ -5,7 +5,10 @@ import { buildOnHoldEmail } from "@/lib/email-templates/application-on-hold";
 // In-progress applications that should be paused + archived when a requisition
 // goes on hold or is cancelled. Already-terminal ones (Hired / Rejected /
 // Withdrawn / Declined) are left untouched.
-const ACTIVE_STATUSES = ["AppActive", "AppOnHold", "AppOffered"] as const;
+// Candidates in-progress enough to pause, but NOT those already at/through an
+// offer — telling someone mid-offer "your application is on hold" is wrong, so
+// AppOffered is intentionally excluded from the hold/cancel cascade.
+const ACTIVE_STATUSES = ["AppActive", "AppOnHold"] as const;
 
 /**
  * When a requisition is put ON HOLD or CANCELLED, cascade to every active

@@ -166,3 +166,117 @@ export async function postProgressEntry(
 
   return { ledgerId: ledger.id, cumulativeDoneQty: newDone };
 }
+
+export interface ActivityProgressPosting {
+  projectId: string;
+  scopeId: string; // CnActivityItem.id (leaf)
+  qty: number; // always positive
+  workType: "sub_contractor" | "self";
+  direction: 1 | -1;
+  dprId?: string;
+  dprLineId?: string;
+  workOrderId?: string;
+  overrideFlag?: boolean;
+  overrideReason?: string;
+}
+
+function decToNum(d: Prisma.Decimal | null): number {
+  return d ? Number(d.toString()) : 0;
+}
+
+/**
+ * FREE_SCOPE progress poster. Anchors on a CnActivityItem instead of a BOQ
+ * leaf: no BOQ lookup, no tender ceiling (activities carry no contract
+ * baseline). Cumulative is derived from the append-only ledger since activity
+ * items have no cached done-qty column.
+ */
+export async function postActivityProgressEntry(
+  tx: Prisma.TransactionClient,
+  ctx: TenantContext,
+  p: ActivityProgressPosting
+): Promise<{ ledgerId: string; cumulativeDoneQty: number }> {
+  if (p.qty <= 0) {
+    throw new ProgressLedgerError("INVALID_QTY", "Progress qty must be positive");
+  }
+
+  const activity = await tx.cnActivityItem.findFirst({
+    where: { id: p.scopeId, orgId: ctx.orgId, projectId: p.projectId },
+    select: { id: true, isGroup: true },
+  });
+  if (!activity) {
+    throw new ProgressLedgerError(
+      "ACTIVITY_NOT_FOUND",
+      `Activity ${p.scopeId} not found in project`,
+      404
+    );
+  }
+  if (activity.isGroup) {
+    throw new ProgressLedgerError(
+      "GROUP_NOT_ALLOWED",
+      `Cannot post progress to group activity ${p.scopeId}. Only leaves accept progress.`
+    );
+  }
+
+  const baseWhere = {
+    orgId: ctx.orgId,
+    projectId: p.projectId,
+    scopeType: "ACTIVITY",
+    scopeId: p.scopeId,
+  } as const;
+
+  // Signed cumulative (forward − reverse) for this work type and overall.
+  const [fwdType, revType, fwdAll, revAll] = await Promise.all([
+    tx.cnBOQProgressLedger.aggregate({ where: { ...baseWhere, workType: p.workType, direction: 1 }, _sum: { qty: true } }),
+    tx.cnBOQProgressLedger.aggregate({ where: { ...baseWhere, workType: p.workType, direction: -1 }, _sum: { qty: true } }),
+    tx.cnBOQProgressLedger.aggregate({ where: { ...baseWhere, direction: 1 }, _sum: { qty: true } }),
+    tx.cnBOQProgressLedger.aggregate({ where: { ...baseWhere, direction: -1 }, _sum: { qty: true } }),
+  ]);
+
+  const currentForType = decToNum(fwdType._sum.qty) - decToNum(revType._sum.qty);
+  const currentTotal = decToNum(fwdAll._sum.qty) - decToNum(revAll._sum.qty);
+  const delta = p.direction * p.qty;
+
+  if (currentForType + delta < 0) {
+    throw new ProgressLedgerError(
+      "REVERSAL_UNDERFLOW",
+      `Cannot reverse ${p.qty} from ${p.workType}: cumulative would go negative`
+    );
+  }
+
+  const ledger = await tx.cnBOQProgressLedger.create({
+    data: {
+      orgId: ctx.orgId,
+      projectId: p.projectId,
+      boqItemId: null,
+      boqNo: null,
+      category: null,
+      scopeType: "ACTIVITY",
+      scopeId: p.scopeId,
+      qty: p.qty,
+      direction: p.direction,
+      workType: p.workType,
+      workOrderId: p.workOrderId ?? null,
+      dprId: p.dprId ?? null,
+      dprLineId: p.dprLineId ?? null,
+      overrideFlag: p.overrideFlag ?? false,
+      overrideReason: p.overrideReason ?? null,
+      createdBy: ctx.userId,
+    },
+  });
+
+  await recordAudit(tx, ctx, {
+    entityType: "cn_activity_item",
+    entityId: p.scopeId,
+    action: p.direction === 1 ? "dpr_progress_applied" : "dpr_progress_reversed",
+    changes: {
+      scopeId: p.scopeId,
+      qty: p.qty,
+      workType: p.workType,
+      dprId: p.dprId,
+      beforeDone: currentTotal,
+      afterDone: currentTotal + delta,
+    },
+  });
+
+  return { ledgerId: ledger.id, cumulativeDoneQty: currentTotal + delta };
+}

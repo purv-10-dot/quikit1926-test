@@ -24,4 +24,4 @@ export const POST = withAuth(async (_req: NextRequest, { orgId, userId }, params
     const msg = e instanceof Error ? e.message : "Reminder failed";
     return validationError(msg);
   }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });

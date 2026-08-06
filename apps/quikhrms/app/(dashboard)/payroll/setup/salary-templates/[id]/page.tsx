@@ -5,6 +5,7 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { useParams } from "next/navigation";
 import { SalaryTemplateForm } from "../_form/template-form";
 import { SkeletonLine } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 
 export default function EditSalaryTemplatePage() {
   const api = useApiClient();
@@ -40,5 +41,11 @@ export default function EditSalaryTemplatePage() {
     </div>
   );
 
-  return <SalaryTemplateForm initial={data.data} />;
+  return (
+    <>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
+      <SalaryTemplateForm initial={data.data} />
+    </>
+  );
 }

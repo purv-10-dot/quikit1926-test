@@ -14,7 +14,7 @@
 import { prisma } from "@/lib/prisma";
 import { sendMail, renderTemplate, type MailAttachment } from "@/lib/services/mailer";
 
-export type TemplateVars = Record<string, string | number | boolean | null | undefined>;
+type TemplateVars = Record<string, string | number | boolean | null | undefined>;
 
 export interface ResolveAndSendInput {
   /** Registry event key, e.g. "leave.decision". */

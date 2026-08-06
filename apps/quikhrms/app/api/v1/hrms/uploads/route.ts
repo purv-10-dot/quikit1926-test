@@ -4,11 +4,28 @@ import { randomUUID } from "crypto";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, validationError, internalError } from "@/lib/api-response";
 import { putObject } from "@/lib/storage";
+import { contentMatchesClaim } from "@/lib/utils/file-signature";
 
 const MB = 1024 * 1024;
-const MAX_IMAGE_BYTES = 5 * MB;
+
+// Types whose real content we can verify by magic bytes. Others (video, plain
+// text/csv, spreadsheets) have no reliable signature — the MIME allowlist +
+// size limit still apply, but we don't sniff them.
+const SNIFFABLE = new Set([
+  "application/pdf", "image/png", "image/jpeg", "image/jpg", "image/webp",
+  "image/gif", "image/heic", "image/heif",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+]);
+// Vercel's serverless functions hard-reject any request body over ~4.5MB
+// BEFORE this route runs — the platform returns its own HTML error page
+// (not JSON), which the client then fails to parse. Image/doc limits stay
+// under that ceiling (with headroom for multipart overhead) so an oversized
+// file is always caught by OUR OWN check first, with a clear message,
+// instead of silently hitting the platform's hard limit.
+const MAX_IMAGE_BYTES = 4 * MB;
 const MAX_VIDEO_BYTES = 100 * MB;
-const MAX_DOC_BYTES = 10 * MB;
+const MAX_DOC_BYTES = 4 * MB;
 
 const ALLOWED_IMAGE = new Set([
   "image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif",
@@ -62,6 +79,10 @@ export const POST = withAuth(async (req: NextRequest, { orgId }) => {
     const key = `uploads/${orgId}/${id}${safeExt}`;
 
     const buf = Buffer.from(await file.arrayBuffer());
+    // Reject content that doesn't match its claimed type (e.g. .html renamed .pdf).
+    if (SNIFFABLE.has(file.type) && !contentMatchesClaim(buf, file.type)) {
+      return validationError("File content doesn't match its type. Upload a genuine image or document.");
+    }
     await putObject(key, buf, file.type);
     const proxyUrl = `/api/v1/hrms/uploads/proxy?key=${encodeURIComponent(key)}`;
 

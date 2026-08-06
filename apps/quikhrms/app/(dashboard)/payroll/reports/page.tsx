@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Select } from "@/components/hrms/ui/select";
 import { useApiClient, ApiError } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
+import { PageBackground } from "@/components/hrms/page-background";
 import { FileBarChart2, Download, AlertCircle, FileCheck2, Loader2 } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -50,6 +51,8 @@ export default function PayrollReportsPage() {
 
   return (
     <div className="space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center gap-3">
         <FileBarChart2 className="text-[#166534]" />
         <div>

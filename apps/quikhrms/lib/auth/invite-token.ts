@@ -10,12 +10,12 @@ export function generateInviteToken(): { raw: string; hash: string } {
   return { raw, hash: hashInviteToken(raw) };
 }
 
-export function hashInviteToken(raw: string): string {
+function hashInviteToken(raw: string): string {
   return crypto.createHash("sha256").update(raw).digest("hex");
 }
 
 /** Default validity window for an invitation. */
-export const INVITE_TTL_DAYS = 7;
+const INVITE_TTL_DAYS = 7;
 
 export function inviteExpiry(days = INVITE_TTL_DAYS): Date {
   return new Date(Date.now() + days * 24 * 60 * 60 * 1000);

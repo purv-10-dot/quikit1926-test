@@ -1,12 +1,49 @@
 import { prisma } from "@/lib/prisma";
 
+interface WfhGroupRules {
+  id: string;
+  name: string;
+  yearlyQuota: number;
+  maxPerWeek: number | null;
+  maxPerMonth: number | null;
+  maxConsecutiveDays: number | null;
+  advanceNoticeDays: number | null;
+  applicableAfterDays: number | null;
+  requiresApproval: boolean;
+  blockedDuringNotice: boolean;
+}
+
 export interface EffectiveQuota {
-  group: { id: string; name: string; yearlyQuota: number } | null;
+  group: WfhGroupRules | null;
   source: "explicit" | "department" | null;
 }
 
+// Fields selected for the effective group (quota + rules).
+const groupSelect = {
+  id: true, name: true, yearlyQuota: true, isActive: true, deletedAt: true,
+  maxPerWeek: true, maxPerMonth: true, maxConsecutiveDays: true,
+  advanceNoticeDays: true, applicableAfterDays: true,
+  requiresApproval: true, blockedDuringNotice: true,
+} as const;
+
+type RawGroup = {
+  id: string; name: string; yearlyQuota: number;
+  maxPerWeek: number | null; maxPerMonth: number | null; maxConsecutiveDays: number | null;
+  advanceNoticeDays: number | null; applicableAfterDays: number | null;
+  requiresApproval: boolean; blockedDuringNotice: boolean;
+};
+
+function toRules(g: RawGroup): WfhGroupRules {
+  return {
+    id: g.id, name: g.name, yearlyQuota: g.yearlyQuota,
+    maxPerWeek: g.maxPerWeek, maxPerMonth: g.maxPerMonth, maxConsecutiveDays: g.maxConsecutiveDays,
+    advanceNoticeDays: g.advanceNoticeDays, applicableAfterDays: g.applicableAfterDays,
+    requiresApproval: g.requiresApproval, blockedDuringNotice: g.blockedDuringNotice,
+  };
+}
+
 /**
- * Resolve an employee's effective WFH quota group.
+ * Resolve an employee's effective WFH quota group (+ its rules).
  * Priority: explicit assignment > department mapping > none.
  */
 export async function resolveEffectiveWfhQuotaGroup(
@@ -17,31 +54,24 @@ export async function resolveEffectiveWfhQuotaGroup(
     where: { id: employeeId, orgId, deletedAt: null },
     select: {
       departmentId: true,
-      wfhQuotaGroup: {
-        select: { id: true, name: true, yearlyQuota: true, isActive: true, deletedAt: true },
-      },
+      wfhQuotaGroup: { select: groupSelect },
     },
   });
   if (!employee) return { group: null, source: null };
 
-  if (employee.wfhQuotaGroup && employee.wfhQuotaGroup.isActive && !employee.wfhQuotaGroup.deletedAt) {
-    return {
-      group: { id: employee.wfhQuotaGroup.id, name: employee.wfhQuotaGroup.name, yearlyQuota: employee.wfhQuotaGroup.yearlyQuota },
-      source: "explicit",
-    };
+  const explicit = employee.wfhQuotaGroup;
+  if (explicit && explicit.isActive && !explicit.deletedAt) {
+    return { group: toRules(explicit), source: "explicit" };
   }
 
   if (!employee.departmentId) return { group: null, source: null };
 
   const deptGroup = await prisma.wfhQuotaGroup.findFirst({
     where: { orgId, departmentIds: { has: employee.departmentId } },
-    select: { id: true, name: true, yearlyQuota: true, isActive: true, deletedAt: true },
+    select: groupSelect,
   });
   if (!deptGroup || !deptGroup.isActive || deptGroup.deletedAt) {
     return { group: null, source: null };
   }
-  return {
-    group: { id: deptGroup.id, name: deptGroup.name, yearlyQuota: deptGroup.yearlyQuota },
-    source: "department",
-  };
+  return { group: toRules(deptGroup), source: "department" };
 }
