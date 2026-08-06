@@ -41,6 +41,8 @@ import { getColorByPercentage } from "@/lib/utils/colorLogic";
 import { dashboardKpiHiddenColumns } from "@/lib/utils/dashboardColumns";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import { resolveProgressQtd, resolveProgressOverall, resolvePace, computeKpiOverviewStats, kpiOverviewVisible } from "../kpi/components/kpiStats";
+import { FormulaTooltip } from "../kpi/components/FormulaTooltip";
+import { explainAvgKpi, explainOverall, explainQtd, explainQtr } from "../kpi/components/kpiFormulaTooltips";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { HiddenColsPill } from "@/components/table/HiddenColsPill";
 import { HiddenColsMenu } from "../kpi/components/HiddenColsMenu";
@@ -600,8 +602,6 @@ function KPICard({ kpi, currentWeek, weekCount = 13, numberFormat = "standard" }
   // pill instead of only showing the Overall (quarterly) ratio.
   const qtd = resolveProgressQtd(kpi, currentWeek, weekCount);
   const qtdGoal = qtd.goal;
-  const divisionType: "Cumulative" | "Standalone" =
-    kpi.divisionType === "Standalone" ? "Standalone" : "Cumulative";
   // Bar 1: QTR — achieved-to-date ÷ the full quarter's potential. Cumulative
   // divides by the quarterly goal; Standalone by `target × weeksPerQuarter`
   // (its flat target never accrues, so the quarterly goal is a per-week
@@ -640,42 +640,45 @@ function KPICard({ kpi, currentWeek, weekCount = 13, numberFormat = "standard" }
         <HistoryButton entityId={kpi.id} onClick={() => setHistoryOpen(true)} />
       </div>
       <p className="text-xs text-gray-500 font-medium truncate mb-2 pr-6" title={kpi.name}>{kpi.name}</p>
-      <div
-        className="flex items-baseline gap-1.5 mb-3"
-        title="QTD Achieved / Quarterly Goal"
-      >
-        <span className="text-lg font-bold text-gray-800">{fmtKpiVal(kpi, achieved)}</span>
-        <span className="text-xs text-gray-400">/ {fmtKpiVal(kpi, goal)}</span>
-        <span className={`text-[11px] font-semibold ${badge.text}`}>({pct.toFixed(0)}%)</span>
-      </div>
+      {/* Hovering the headline explains the calculation (formula + this KPI's
+          own numbers) instead of the old bare `title` label. Same for the two
+          bars below. See kpiFormulaTooltips.ts. */}
+      <FormulaTooltip explain={explainOverall(kpi, currentWeek, weekCount)} triggerClassName="block">
+        <div className="flex items-baseline gap-1.5 mb-3">
+          <span className="text-lg font-bold text-gray-800">{fmtKpiVal(kpi, achieved)}</span>
+          <span className="text-xs text-gray-400">/ {fmtKpiVal(kpi, goal)}</span>
+          <span className={`text-[11px] font-semibold ${badge.text}`}>({pct.toFixed(0)}%)</span>
+        </div>
+      </FormulaTooltip>
       {/* Bar 1 — QTR: achieved-to-date over the full quarter's potential.
           Cumulative divides by the Quarterly Goal; Standalone by
           (target × weeksPerQuarter), since its flat target never accrues.
           A burn-up either way — 100% means the whole quarter is banked.
           Color-coded the same way as Bar 2. */}
-      <div
-        className="flex items-center gap-2 mb-1.5"
-        title={divisionType === "Standalone" ? "Achieved to date / (Target × Weeks)" : "QTD Achieved / Quarterly Goal"}
-      >
-        <span className="text-[10px] font-medium text-gray-400 w-9 flex-shrink-0">QTR</span>
-        <span className={`text-xs font-semibold ${paceBadge.text}`}>{qtdGoalVsQuarterlyPct.toFixed(0)}%</span>
-        <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-          <div className={`h-2 rounded-full ${paceBadge.bar}`} style={{ width: `${Math.min(qtdGoalVsQuarterlyPct, 100)}%` }} />
+      <FormulaTooltip explain={explainQtr(kpi, currentWeek, weekCount)} triggerClassName="block mb-1.5">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-medium text-gray-400 w-9 flex-shrink-0">QTR</span>
+          <span className={`text-xs font-semibold ${paceBadge.text}`}>{qtdGoalVsQuarterlyPct.toFixed(0)}%</span>
+          <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+            <div className={`h-2 rounded-full ${paceBadge.bar}`} style={{ width: `${Math.min(qtdGoalVsQuarterlyPct, 100)}%` }} />
+          </div>
         </div>
-      </div>
+      </FormulaTooltip>
       {/* Bar 2 — QTD Achieved / QTD Goal: actual performance vs. where the
           KPI should be right now. Color-coded, same basis as the
           on-track/at-risk/behind buckets in the AvgKPICard pill above. */}
-      <div className="flex items-center gap-2" title="QTD Achieved / QTD Goal">
-        <span className="text-[10px] font-medium text-gray-400 w-9 flex-shrink-0">QTD</span>
-        <span className={`text-xs font-semibold ${qtdBadge.text}`}>{qtdAchievedVsQtdGoalPct.toFixed(0)}%</span>
-        <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-          {/* Bar width still clamps at 100% (container width). The color
-              band already signals over-achievement; the text shows the
-              true percentage. */}
-          <div className={`h-2 rounded-full ${qtdBadge.bar}`} style={{ width: `${Math.min(qtdAchievedVsQtdGoalPct, 100)}%` }} />
+      <FormulaTooltip explain={explainQtd(kpi, currentWeek, weekCount)} triggerClassName="block">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-medium text-gray-400 w-9 flex-shrink-0">QTD</span>
+          <span className={`text-xs font-semibold ${qtdBadge.text}`}>{qtdAchievedVsQtdGoalPct.toFixed(0)}%</span>
+          <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+            {/* Bar width still clamps at 100% (container width). The color
+                band already signals over-achievement; the text shows the
+                true percentage. */}
+            <div className={`h-2 rounded-full ${qtdBadge.bar}`} style={{ width: `${Math.min(qtdAchievedVsQtdGoalPct, 100)}%` }} />
+          </div>
         </div>
-      </div>
+      </FormulaTooltip>
       {historyOpen && <ChangeHistoryPanel kpi={kpi} onClose={() => setHistoryOpen(false)} />}
     </div>
   );
@@ -687,7 +690,8 @@ function AvgKPICard({ kpis, currentWeek, weekCount = 13 }: { kpis: KPIRow[]; cur
   // raw server-stamped `kpi.progressPercent` over-counted Standalone KPIs
   // (cumulative SUM ÷ goal) — see computeKpiOverviewStats /
   // docs/STANDALONE_QTD_ACHIEVED_FIX.md §4.
-  const { avg, onTrack, atRisk, behind, overAchieved, notStarted } = computeKpiOverviewStats(kpis, currentWeek, weekCount);
+  const stats = computeKpiOverviewStats(kpis, currentWeek, weekCount);
+  const { avg, onTrack, atRisk, behind, overAchieved, notStarted } = stats;
 
   const ringColor = avg >= 80 ? "#22c55e" : avg >= 50 ? "#f59e0b" : "#ef4444";
   const textColor = avg >= 80 ? "text-green-600" : avg >= 50 ? "text-amber-500" : "text-red-500";
@@ -698,15 +702,19 @@ function AvgKPICard({ kpis, currentWeek, weekCount = 13 }: { kpis: KPIRow[]; cur
 
   return (
     <div className={`flex items-center gap-3 px-4 py-1.5 rounded-full border ${border}`}>
-      {/* Mini donut */}
-      <svg width={28} height={28} viewBox="0 0 24 24" className="-rotate-90 flex-shrink-0">
-        <circle cx={12} cy={12} r={R} fill="none" stroke="#e5e7eb" strokeWidth={3} />
-        <circle cx={12} cy={12} r={R} fill="none" stroke={ringColor} strokeWidth={3}
-          strokeDasharray={`${dash} ${CIRC}`} strokeLinecap="round" />
-      </svg>
-      {/* Avg % */}
-      <span className={`text-sm font-bold ${textColor}`}>{avg}%</span>
-      <span className="text-xs text-gray-400">avg KPI</span>
+      {/* Donut + % + label share ONE tooltip explaining the weighted-average
+          formula with the live Σ achieved / Σ goal substitution. */}
+      <FormulaTooltip explain={explainAvgKpi(stats)} triggerClassName="flex items-center gap-3">
+        {/* Mini donut */}
+        <svg width={28} height={28} viewBox="0 0 24 24" className="-rotate-90 flex-shrink-0">
+          <circle cx={12} cy={12} r={R} fill="none" stroke="#e5e7eb" strokeWidth={3} />
+          <circle cx={12} cy={12} r={R} fill="none" stroke={ringColor} strokeWidth={3}
+            strokeDasharray={`${dash} ${CIRC}`} strokeLinecap="round" />
+        </svg>
+        {/* Avg % */}
+        <span className={`text-sm font-bold ${textColor}`}>{avg}%</span>
+        <span className="text-xs text-gray-400">avg KPI</span>
+      </FormulaTooltip>
       {/* Divider */}
       <span className="hidden sm:inline-block w-px h-4 bg-gray-300" />
       {/* Breakdown */}

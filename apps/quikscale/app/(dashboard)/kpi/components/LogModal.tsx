@@ -31,7 +31,7 @@ import {
 } from "./kpiModalHelpers";
 import { WeekRow } from "./WeekRow";
 import { StatsTab } from "./StatsTab";
-import { kpiOverallPercent } from "./kpiStats";
+import { kpiQtrPercent } from "./kpiStats";
 import { QuarterField } from "./QuarterField";
 import { User as UserIcon, Calendar, CalendarDays } from "lucide-react";
 
@@ -1580,15 +1580,15 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
     weeklyTargets: liveWeeklyTargets as unknown as typeof kpi.weeklyTargets,
     status: editForm.status,
   };
-  // Header badge % — Overall Quarter Progress (Achieved ÷ Quarterly Goal) via
-  // the same helper as StatsTab's Overall Progress panel, the KPI grids and the
-  // Dashboard card. Derived from `statsKpi` (not `kpi`) so an unsaved target
-  // edit updates the badge live, exactly as before.
+  // Header badge % — QTR progress (achieved-to-date ÷ the full quarter's
+  // potential) via the same helper as StatsTab's Overall Progress panel, the
+  // KPI grids and the Dashboard card's QTR bar. Derived from `statsKpi` (not
+  // `kpi`) so an unsaved target edit updates the badge live, exactly as before.
   //
   // It used to be `(kpi.qtdAchieved ?? 0) / liveFormTarget` — the raw server
   // column, which counts the in-progress week — so the badge read 27% while the
-  // Stats panel's own QTD tile read 162/236. See kpiStats.resolveProgressOverall.
-  const liveProgressPercent = kpiOverallPercent(statsKpi, headerQtdWeek, weekCount);
+  // Stats panel's own QTD tile read 162/236. See kpiStats.kpiQtrPercent.
+  const liveProgressPercent = kpiQtrPercent(statsKpi, headerQtdWeek, weekCount);
   statsKpi.progressPercent = liveProgressPercent;
 
   const colors = progressColor(liveProgressPercent);

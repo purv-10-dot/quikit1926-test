@@ -10,7 +10,7 @@ import {
   getFiscalYear, getFiscalQuarter, fiscalYearLabel,
 } from "@/lib/utils/fiscal";
 import { useCurrentWeek, useCurrentQuarter, useWeekDateRange, useQuarterWeekCount, useQtdReferenceWeek } from "@/lib/hooks/useCurrentWeek";
-import { kpiOverallPercent } from "../components/kpiStats";
+import { kpiQtrPercent } from "../components/kpiStats";
 import { useNumberFormat } from "@/lib/hooks/useFeatureFlags";
 import type { KPIRow } from "@/lib/types/kpi";
 import { TeamSection } from "./components/TeamSection";
@@ -506,7 +506,7 @@ function TeamKPIMoreActions({
   const tablePrefs = useTablePrefs("kpi");
   const weekCount = useQuarterWeekCount(year, quarter);
   // QTD reference week for the export's Progress column — same input KPITable
-  // feeds `resolveProgressOverall`, so the sheet matches the on-screen column.
+  // feeds `resolvePace`, so the sheet matches the on-screen column.
   const qtdWeek = useQtdReferenceWeek(year, quarter);
   const { years: fyYears } = useFiscalYears();
   const availableExportYears = fyYears.length ? fyYears : [year];
@@ -544,7 +544,7 @@ function TeamKPIMoreActions({
             // Overall Quarter Progress (Achieved ÷ Quarterly Goal) — recomputed
             // rather than read off the stale server `progressPercent` column so
             // the export matches the table + Dashboard card. See kpiStats.ts.
-            case "progress": return `${kpiOverallPercent(k, qtdWeek, weekCount).toFixed(1)}%`;
+            case "progress": return `${kpiQtrPercent(k, qtdWeek, weekCount).toFixed(1)}%`;
             case "description": return k.description ?? "";
             default: return "";
           }

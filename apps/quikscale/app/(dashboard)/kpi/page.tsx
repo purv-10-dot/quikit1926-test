@@ -28,7 +28,7 @@ import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreAct
 import { runExport } from "@/lib/export/xlsx";
 import { getKPIs } from "@/lib/services/kpiService";
 import { computeWeeklyGoal } from "@/lib/utils/kpiHelpers";
-import { kpiOverallPercent } from "./components/kpiStats";
+import { kpiQtrPercent } from "./components/kpiStats";
 import { GlobalExportModal, type GlobalExportSelection } from "@/components/export/GlobalExportModal";
 import { downloadExport } from "@/lib/exports/downloadExport";
 import { UnreadCountsProvider } from "@/components/audit/UnreadCountsProvider";
@@ -205,7 +205,7 @@ export default function IndividualKPIPage() {
   // Hidden columns — now driven through Manage Columns modal via TablePrefs
   const weekCount = useQuarterWeekCount(filters.year ?? FISCAL_YEAR, filters.quarter ?? FISCAL_QUARTER);
   // QTD reference week for the export's Progress column — same input KPITable
-  // feeds `resolveProgressOverall`, so the sheet matches the on-screen column.
+  // feeds `resolvePace`, so the sheet matches the on-screen column.
   const qtdWeek = useQtdReferenceWeek(filters.year ?? FISCAL_YEAR, filters.quarter ?? FISCAL_QUARTER);
   const allTableCols = [...ALL_STATIC_COLS, ...weeksArray(weekCount).map(w => `week${w}`)];
   const tablePrefs = useTablePrefs("kpi");
@@ -264,7 +264,7 @@ export default function IndividualKPIPage() {
             // Overall Quarter Progress (Achieved ÷ Quarterly Goal) — recomputed
             // rather than read off the stale server `progressPercent` column so
             // the export matches the table + Dashboard card. See kpiStats.ts.
-            case "progress": return `${kpiOverallPercent(k, qtdWeek, weekCount).toFixed(1)}%`;
+            case "progress": return `${kpiQtrPercent(k, qtdWeek, weekCount).toFixed(1)}%`;
             case "description": return k.description ?? "";
             default: return "";
           }

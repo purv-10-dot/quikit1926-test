@@ -11,7 +11,7 @@ import { ThemeApplier } from "@quikit/ui/theme-applier";
 import { FeatureDisabledToast, ImpersonationBanner } from "@quikit/ui";
 import { QuarterRequiredGuard } from "@/components/quarter-required-guard";
 import { QuikScaleTour } from "@/components/tour/quikscale-tour";
-import { SupportLauncher } from "@quikit/ui/support";
+import { QuikScaleSupportLauncher } from "@/components/support/support-launcher";
 import { Toaster } from "sonner";
 
 /**
@@ -63,8 +63,10 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* Floating support launcher — outside the scroll containers above so it
-          stays pinned to the viewport on every dashboard route. */}
-      <SupportLauncher appSlug="quikscale" />
+          stays pinned to the viewport on every dashboard route. QuikScale-local
+          (not @quikit/ui/support) because "Read the guide" routes to the
+          Knowledge Base at /help instead of opening an in-panel guide. */}
+      <QuikScaleSupportLauncher />
     </FilterProvider>
     </SessionGuard>
   );

@@ -63,7 +63,8 @@
       "Bash(psql 'postgresql://neondb_owner:npg_q5rxgspPJ4vn@ep-green-wildflower-aqyjilrc.c-8.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require' -t -c 'SELECT count\\(*\\) AS qsuserviewpref_table FROM information_schema.tables WHERE table_schema='\\\\''app_quikscale'\\\\'' AND table_name='\\\\''QsUserViewPref'\\\\'';')",
       "Bash(vercel link *)",
       "Bash(vercel deploy *)",
-      "Bash(curl -s -o /dev/null -w \"health: %{http_code}\\\\n\" https://quikit-quikscale.vercel.app/api/health)"
+      "Bash(curl -s -o /dev/null -w \"health: %{http_code}\\\\n\" https://quikit-quikscale.vercel.app/api/health)",
+      "Bash(echo \"---exit:$?---\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\user\\AppData\\Local\\Temp\\qs-doc-build\\sections"

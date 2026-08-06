@@ -18,7 +18,19 @@
 
 import type { KPIRow } from "@/lib/types/kpi";
 import { fmt, formatScaledKpiValue, getProgressBadgeColors } from "@/lib/utils/kpiHelpers";
-import { computeKPIStats, computeQtd, weeklyGoalTile, resolveProgressOverall } from "./kpiStats";
+import { computeKPIStats, computeQtd, weeklyGoalTile, resolvePace } from "./kpiStats";
+import { FormulaTooltip } from "./FormulaTooltip";
+import {
+  explainQtr,
+  explainWeeksReported,
+  explainAvgPerWeek,
+  explainBestWeek,
+  explainQuarterlyGoal,
+  explainQtdGoal,
+  explainQtdAchieved,
+  explainWeeklyGoal,
+  type FormulaExplain,
+} from "./kpiFormulaTooltips";
 import { useQtdReferenceWeek, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
 
 export function StatsTab({ kpi }: { kpi: KPIRow }) {
@@ -39,10 +51,10 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
     const base = fmt(v);
     return numberUnit && v != null ? `${base} ${numberUnit}` : base;
   };
-  // Goal priority mirrors the "Quarterly Goal" column shown on-screen
-  // (quarterlyGoal ?? target ?? qtdGoal) so Overall Progress here always
-  // agrees with the Dashboard KPICard and KPI table's Progress column —
-  // see kpiStats.ts resolveProgressOverall for the same fallback chain.
+  // The KPI's quarterly goal, using the same fallback chain as the "Quarterly
+  // Goal" column on the grids (quarterlyGoal ?? target ?? qtdGoal). Only used
+  // to detect a zero-target KPI now — the Overall Progress panel below divides
+  // by `resolvePace`'s goal instead. See kpiStats.ts `kpiQtrPercent`.
   const target = kpi.quarterlyGoal ?? kpi.target ?? kpi.qtdGoal ?? 0;
   // Standalone vs Cumulative — drives both the QTD tile math AND the Overall
   // Progress panel below. Defaults to Cumulative (schema default).
@@ -62,33 +74,37 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
   // totals when the reference week is unresolvable.
   const { qtdGoal, qtdAchieved } = computeQtd(kpi, qtdWeek, divisionType, weekCount);
 
-  // Overall Progress = Achieved ÷ Quarterly Goal, via the SAME
-  // `resolveProgressOverall` the Dashboard KPI Overview card headline and both
-  // KPI grids use — one helper, one definition of "progress", every surface.
+  // Overall Progress = achieved-to-date ÷ the full quarter's potential, via the
+  // SAME `resolvePace` that draws the Dashboard KPI Overview card's QTR bar and
+  // the Progress column on both KPI grids — one helper, one definition of
+  // "progress", every surface.
   //
-  // Cumulative used to read the server-stamped `kpi.qtdAchieved` here. That
-  // column (stamped by `recalcKPI` in api/kpi/[id]/weekly/batch/route.ts) sums
-  // EVERY entered week including the in-progress one, so this panel printed
-  // 27% (214 / 800) while the QTD Achieved tile a few pixels below it printed
-  // 162 / 236 — two numbers from the same panel disagreeing. `computeQtd`,
-  // which `resolveProgressOverall` wraps, stops at the last COMPLETED week.
+  // The panel prints BOTH numbers from this pair (`{achieved} of {goal}`), not
+  // the quarterly-goal pair, so the headline percentage always divides out of
+  // the two figures next to it. For a Standalone KPI those are the raw sum and
+  // `target × weekCount` (540 of 1,040 = 52%) rather than the per-week average
+  // against the per-week target (135 of 80 = 169%, which is what this panel
+  // used to print while the dashboard QTR bar said 52%). The 135 and the 80 are
+  // still on screen — as the "QTD Achieved" and "Quarterly Goal" tiles below.
   //
-  // Standalone is unchanged: it already routed through `computeQtd` (the
-  // documented per-week average), because the raw column is a cumulative SUM
-  // regardless of division type and would show 341% where 113% is correct.
-  const { achieved } = resolveProgressOverall(kpi, qtdWeek, weekCount);
+  // Cumulative is unaffected: `resolvePace` delegates to
+  // `resolveProgressOverall` for Cumulative KPIs, so those render exactly as
+  // before. Neither division reads the server-stamped `kpi.qtdAchieved` (it
+  // counts the in-progress week — see `recalcKPI` in
+  // api/kpi/[id]/weekly/batch/route.ts).
+  const { achieved, goal: qtrGoal } = resolvePace(kpi, qtdWeek, weekCount);
   // Badge-colors helper — runs the canonical `getColorByPercentage`
   // internally and maps the result to READABLE-on-white text tones plus
   // a human status label. Use it because the percentage label here sits
   // on a white panel (not a colored cell).
-  const pct = target > 0 ? (achieved / target) * 100 : 0;
+  const pct = qtrGoal > 0 ? (achieved / qtrGoal) * 100 : 0;
   const hasAnyWeeklyValue = (kpi.weeklyValues ?? []).some((wv) => wv.value != null);
   // Gate on `hasAnyWeeklyValue`, matching the grids and the dashboard card: a
   // KPI with no logged week renders the neutral gray state. (The old gate was
   // `kpi.qtdAchieved != null`, a server column that is 0 — not null — for
   // untouched KPIs, so they rendered as a red 0%.)
   const colors = hasAnyWeeklyValue
-    ? getProgressBadgeColors(achieved, target, hasAnyWeeklyValue, kpi.reverseColor ?? false)
+    ? getProgressBadgeColors(achieved, qtrGoal, hasAnyWeeklyValue, kpi.reverseColor ?? false)
     : { bar: "bg-gray-300", text: "text-gray-500", label: "—" };
 
   // Weekly Goal tile shows "<last completed week's value> / <that week's target>".
@@ -114,57 +130,72 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
         <h3 className="text-xs font-semibold text-gray-700 mb-3">
           Overall Progress
         </h3>
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-          <div className="flex items-end justify-between mb-3">
-            <div>
-              <div className={`text-3xl font-bold ${colors.text}`}>
-                {pct.toFixed(0)}%
+        {/* The whole panel is one hover target — it explains the SAME
+            `resolvePace` formula the grids' Progress column uses, so the two
+            surfaces read identically. */}
+        <FormulaTooltip explain={explainQtr(kpi, qtdWeek, weekCount)} triggerClassName="block">
+          <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+            <div className="flex items-end justify-between mb-3">
+              <div>
+                <div className={`text-3xl font-bold ${colors.text}`}>
+                  {pct.toFixed(0)}%
+                </div>
+                <div className="text-xs text-gray-500 mt-0.5">{colors.label}</div>
               </div>
-              <div className="text-xs text-gray-500 mt-0.5">{colors.label}</div>
+              <div className="text-right">
+                <div className="text-xs text-gray-500">Achieved</div>
+                <div className="text-lg font-semibold text-gray-800">
+                  {fmtStat(achieved)}
+                </div>
+                <div className="text-[10px] text-gray-400">
+                  of {fmtStat(qtrGoal)} target
+                </div>
+              </div>
             </div>
-            <div className="text-right">
-              <div className="text-xs text-gray-500">Achieved</div>
-              <div className="text-lg font-semibold text-gray-800">
-                {fmtStat(achieved)}
-              </div>
-              <div className="text-[10px] text-gray-400">
-                of {fmtStat(target)} target
-              </div>
+            <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
+              <div
+                className={`h-3 rounded-full transition-all ${colors.bar}`}
+                style={{ width: `${Math.min(pct, 100)}%` }}
+              />
             </div>
           </div>
-          <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
-            <div
-              className={`h-3 rounded-full transition-all ${colors.bar}`}
-              style={{ width: `${Math.min(pct, 100)}%` }}
-            />
-          </div>
-        </div>
+        </FormulaTooltip>
       </div>
 
       <div className="grid grid-cols-3 gap-3">
-        {[
-          { label: "Weeks Reported", value: String(filledWeeks.length), sub: undefined },
-          { label: "Avg / Week", value: fmtStat(avgPerWeek), sub: undefined },
+        {([
+          {
+            label: "Weeks Reported",
+            value: String(filledWeeks.length),
+            sub: undefined,
+            explain: explainWeeksReported(kpi, weekCount),
+          },
+          {
+            label: "Avg / Week",
+            value: fmtStat(avgPerWeek),
+            sub: undefined,
+            explain: explainAvgPerWeek(kpi, weekCount),
+          },
           {
             label: "Best Week",
             value: bestWeek ? `W${bestWeek}` : "—",
             // Sub-label surfaces the achieved value for the best-performing
             // week so the stat reads like "W1 — 4.45" instead of a bare label.
             sub: bestWeek ? fmtStat(bestValue) : undefined,
+            explain: explainBestWeek(kpi, weekCount),
           },
-        ].map((s) => (
-          <div
-            key={s.label}
-            className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-center"
-          >
-            <div className="text-lg font-semibold text-gray-800">
-              {s.value}
-              {s.sub != null && (
-                <span className="text-xs font-normal text-gray-500 ml-1.5">· {s.sub}</span>
-              )}
+        ] as Array<{ label: string; value: string; sub?: string; explain: FormulaExplain }>).map((s) => (
+          <FormulaTooltip key={s.label} explain={s.explain} triggerClassName="block">
+            <div className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-center">
+              <div className="text-lg font-semibold text-gray-800">
+                {s.value}
+                {s.sub != null && (
+                  <span className="text-xs font-normal text-gray-500 ml-1.5">· {s.sub}</span>
+                )}
+              </div>
+              <div className="text-[10px] text-gray-500 mt-0.5">{s.label}</div>
             </div>
-            <div className="text-[10px] text-gray-500 mt-0.5">{s.label}</div>
-          </div>
+          </FormulaTooltip>
         ))}
       </div>
 
@@ -173,10 +204,12 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
           {
             label: "Quarterly Goal",
             value: kpi.quarterlyGoal != null ? fmtStat(kpi.quarterlyGoal) : "—",
+            explain: explainQuarterlyGoal(kpi),
           },
           {
             label: "QTD Goal",
             value: qtdGoal != null ? fmtStat(qtdGoal) : "—",
+            explain: explainQtdGoal(kpi, qtdWeek, weekCount),
           },
           {
             label: "QTD Achieved",
@@ -185,19 +218,20 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
               qtdGoal != null
                 ? `${fmtStat(qtdAchieved ?? 0)} / ${fmtStat(qtdGoal)}`
                 : fmtStat(qtdAchieved ?? 0),
+            explain: explainQtdAchieved(kpi, qtdWeek, weekCount),
           },
           {
             label: "Weekly Goal",
             value: weeklyGoalDisplay,
+            explain: explainWeeklyGoal(kpi, qtdWeek, weekCount),
           },
         ].map((s) => (
-          <div
-            key={s.label}
-            className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-center"
-          >
-            <div className="text-lg font-semibold text-gray-800">{s.value}</div>
-            <div className="text-[10px] text-gray-500 mt-0.5">{s.label}</div>
-          </div>
+          <FormulaTooltip key={s.label} explain={s.explain} triggerClassName="block">
+            <div className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-center">
+              <div className="text-lg font-semibold text-gray-800">{s.value}</div>
+              <div className="text-[10px] text-gray-500 mt-0.5">{s.label}</div>
+            </div>
+          </FormulaTooltip>
         ))}
       </div>
     </div>
