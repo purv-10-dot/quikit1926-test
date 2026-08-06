@@ -64,7 +64,9 @@
       "Bash(vercel link *)",
       "Bash(vercel deploy *)",
       "Bash(curl -s -o /dev/null -w \"health: %{http_code}\\\\n\" https://quikit-quikscale.vercel.app/api/health)",
-      "Bash(echo \"---exit:$?---\")"
+      "Bash(echo \"---exit:$?---\")",
+      "Bash(grep -i \"lib/services/demoData.ts\\\\|lib\\\\\\\\\\\\\\\\services\\\\\\\\\\\\\\\\demoData.ts\")",
+      "Bash(vercel env *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\user\\AppData\\Local\\Temp\\qs-doc-build\\sections"
