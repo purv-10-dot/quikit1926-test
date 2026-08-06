@@ -32,6 +32,7 @@ import {
   applyDeliveredEvent,
   applyReadEvent,
   bumpChannelList,
+  dmChannelIdsWithMember,
   makeTempId,
   markChannelRead,
   mergeMessageEvent,
@@ -113,6 +114,11 @@ export function ChatWorkspace({
   // the public-channel option (DECISION 2). Server 403s any ungranted action.
   const perms = useMyPermissions();
   const [activeId, setActiveId] = useState<string | null>(null);
+  // The unread count for whichever channel was most recently opened, captured
+  // BEFORE markChannelRead zeroes it below — see pickChannel/selectChannel.
+  // Drives MessageList's unread divider; separate from `activeChannel.
+  // unreadCount`, which is already zero by the time this renders.
+  const [openedUnreadCount, setOpenedUnreadCount] = useState(0);
   const [connected, setConnected] = useState(true);
   const [newChatOpen, setNewChatOpen] = useState(false);
   const [newGroupOpen, setNewGroupOpen] = useState(false);
@@ -305,6 +311,80 @@ export function ChatWorkspace({
     [qc],
   );
 
+  /**
+   * Drop the cached DM last-seen for a user whose presence just changed, so the
+   * header re-reads it from the server.
+   *
+   * MUST go through the server route: `GET /api/channels/:id/last-seen` is the
+   * only place `getEffectiveLastSeen` runs, and therefore the only place
+   * `appear_offline` and the mutual `shareLastSeen` opt-in are applied. The
+   * gateway's offline event does carry a `lastSeen`, but it is RAW — it has passed
+   * through none of those rules — so rendering it (or the copy `applyPresence`
+   * parks in the presence store) would leak exactly what this feature withholds.
+   * Invalidate and refetch; never read the event's timestamp.
+   *
+   * Reads the channel list out of the query cache instead of closing over state:
+   * `qc` is stable, so this stays safe inside the socket effect whose deps are
+   * `[realtimeUrl, invalidateLastSeenFor]`. When the list isn't cached yet nothing
+   * is invalidated, which is harmless — the query's default `staleTime` of 0
+   * means any later subscription refetches anyway.
+   */
+  const invalidateLastSeenFor = useCallback(
+    (userId: string) => {
+      if (!userId || userId === currentUserId) return;
+      const list = qc.getQueryData<ChannelList>(["channels"]);
+      if (!list) return;
+      for (const channelId of dmChannelIdsWithMember(list, userId)) {
+        void qc.invalidateQueries({ queryKey: ["last-seen", channelId] });
+      }
+    },
+    [qc, currentUserId],
+  );
+
+  // Opens (or focuses) the call popup for an SFU/group call. The token is
+  // fetched by the call page itself from POST /api/calls/:id/token — this URL
+  // only ever carries non-secret routing hints (CALL-3 hardening).
+  const openGroupCallWindow = useCallback(
+    (callId: string, name: string, type: "audio" | "video") => {
+      const params = new URLSearchParams({
+        callId,
+        name,
+        myUserId: currentUserId,
+        type,
+        group: "1",
+      });
+      window.open(
+        `/call/${callId}?${params.toString()}`,
+        "quikchat-group-call",
+        "width=1000,height=700,popup=yes,menubar=no,toolbar=no,location=no,status=no",
+      );
+    },
+    [currentUserId],
+  );
+
+  // A channel member other than us started a group call (CALL-3 §3). We
+  // already open our own window when WE start one, so skip that case. This is
+  // a live-only nudge for members with the app open; a member who's offline or
+  // catches up later still finds the call via the rejoin banner (fetchActiveCall
+  // on mount) since they're already a QcCallParticipant from call creation.
+  const onGroupCallStarted = useCallback(
+    (p: { callId: string; channelId: string; initiatorId: string; type: "audio" | "video" }) => {
+      if (p.initiatorId === currentUserId) return;
+      const list = qc.getQueryData<ChannelList>(["channels"]);
+      const channel = list && [...list.priority, ...list.recent].find(
+        (c) => c.channelId === p.channelId,
+      );
+      const name = channel?.name ?? "a channel";
+      toast.info({
+        title: `Group call started in #${name}`,
+        body: "Click to join",
+        durationMs: 20_000,
+        onClick: () => openGroupCallWindow(p.callId, channel?.name ?? "Group call", p.type),
+      });
+    },
+    [qc, currentUserId, toast, openGroupCallWindow],
+  );
+
   // Latest event handlers + notifications, read through a ref by the socket's
   // stable wrappers. This keeps the socket effect's deps at `[realtimeUrl]` so
   // the socket is created ONCE per session: previously `notifications` (a
@@ -319,6 +399,7 @@ export function ChatWorkspace({
     onDelivered,
     onChannelUpdated,
     onChannelDeleted,
+    onGroupCallStarted,
     notifications,
   });
   handlersRef.current = {
@@ -328,6 +409,7 @@ export function ChatWorkspace({
     onDelivered,
     onChannelUpdated,
     onChannelDeleted,
+    onGroupCallStarted,
     notifications,
   };
 
@@ -357,10 +439,24 @@ export function ChatWorkspace({
     client.on("channel_deleted", (d) =>
       handlersRef.current.onChannelDeleted(d as { channelId: string }),
     );
-    client.on("presence", (d) => setPresence((s) => applyPresence(s, d as PresenceEvent)));
-    client.on("presence_status", (d) =>
-      setPresence((s) => applyStatus(s, d as PresenceStatusEvent)),
+    client.on("call_group_started", (d) =>
+      handlersRef.current.onGroupCallStarted(
+        d as { callId: string; channelId: string; initiatorId: string; type: "audio" | "video" },
+      ),
     );
+    client.on("presence", (d) => {
+      const evt = d as PresenceEvent;
+      setPresence((s) => applyPresence(s, evt));
+      invalidateLastSeenFor(evt.userId);
+    });
+    client.on("presence_status", (d) => {
+      const evt = d as PresenceStatusEvent;
+      setPresence((s) => applyStatus(s, evt));
+      // A durable status change moves last-seen too: `appear_offline` is the
+      // first rule in getEffectiveLastSeen, and it is set while ONLINE, so this
+      // event is the only signal that the answer changed.
+      invalidateLastSeenFor(evt.userId);
+    });
     client.on("presence_snapshot", (d) =>
       setPresence((s) => applySnapshot(s, d as PresenceSnapshot)),
     );
@@ -377,7 +473,7 @@ export function ChatWorkspace({
       clientRef.current = null;
       client.disconnect();
     };
-  }, [realtimeUrl]);
+  }, [realtimeUrl, invalidateLastSeenFor]);
 
   // Expire stale typing indicators (no explicit "stop" is ever sent).
   useEffect(() => {
@@ -407,8 +503,23 @@ export function ChatWorkspace({
     return () => clearTimeout(t);
   }, [presence]);
 
+  /**
+   * The channel's unread count as it stands RIGHT NOW, before anything below
+   * zeroes it — the snapshot the unread divider is built from. Must run before
+   * `markChannelRead`/`markChannelReadApi` in both callers below.
+   */
+  const captureOpenedUnread = useCallback(
+    (id: string) => {
+      const list = qc.getQueryData<ChannelList>(["channels"]);
+      const found = list && [...list.priority, ...list.recent].find((c) => c.channelId === id);
+      setOpenedUnreadCount(found?.unreadCount ?? 0);
+    },
+    [qc],
+  );
+
   const pickChannel = useCallback(
     (id: string) => {
+      captureOpenedUnread(id);
       setActiveId(id);
       qc.setQueryData<ChannelList>(["channels"], (old) => (old ? markChannelRead(old, id) : old));
       void markChannelReadApi(id);
@@ -416,7 +527,7 @@ export function ChatWorkspace({
       // read-by-channel; this keeps the notification badge in sync locally).
       void notifications.markChannelRead(id);
     },
-    [qc, notifications],
+    [qc, notifications, captureOpenedUnread],
   );
 
   /**
@@ -424,9 +535,15 @@ export function ChatWorkspace({
    * refetch the list, ensure the realtime room is joined (auto-join also fires
    * via `channel_created`, but join() is belt-and-suspenders for the actor),
    * select it, and clear its unread.
+   *
+   * Also the deep-link (`?channel=...`) and notification-click entry points —
+   * both call this, not `pickChannel` — so capturing here too is required, not
+   * belt-and-suspenders: without it, opening a channel either way would leave
+   * the unread divider silently absent.
    */
   const selectChannel = useCallback(
     (id: string) => {
+      captureOpenedUnread(id);
       setActiveId(id);
       void clientRef.current?.join(id);
       void qc.invalidateQueries({ queryKey: ["channels"] });
@@ -434,7 +551,7 @@ export function ChatWorkspace({
       void markChannelReadApi(id);
       void notifications.markChannelRead(id);
     },
-    [qc, notifications],
+    [qc, notifications, captureOpenedUnread],
   );
 
   // Let the notification bell / toasts / OS clicks jump to a channel.
@@ -760,7 +877,9 @@ export function ChatWorkspace({
         setCallTargetUserId(otherMember.id);
       }
     } else {
-      // Group channel: create call + SFU room, generate tokens for all members
+      // Group channel: create the call. Each participant (including us) mints
+      // its own LiveKit token from inside the call window — the token never
+      // travels through this response or the popup's URL (CALL-3 hardening).
       try {
         const res = await fetch("/api/calls/group", {
           method: "POST",
@@ -776,27 +895,8 @@ export function ChatWorkspace({
           };
           throw new Error(err.error ?? "Failed to start group call");
         }
-        const data = (await res.json()) as {
-          call: { id: string };
-          sfu: { roomId: string; tokens: Record<string, string>; livekitUrl?: string } | null;
-        };
-        // Open the call UI for the current user
-        const myToken = data.sfu?.tokens[currentUserId] ?? "";
-        const params = new URLSearchParams({
-          callId: data.call.id,
-          name: activeChannel.name ?? "Group call",
-          userId: currentUserId,
-          type: "audio",
-          sfuRoomId: data.sfu?.roomId ?? "",
-          sfuToken: myToken,
-          livekitUrl: data.sfu?.livekitUrl ?? "",
-        });
-        const url = `/call/${data.call.id}?${params.toString()}`;
-        window.open(
-          url,
-          "quikchat-group-call",
-          "width=1000,height=700,popup=yes,menubar=no,toolbar=no,location=no,status=no",
-        );
+        const data = (await res.json()) as { call: { id: string } };
+        openGroupCallWindow(data.call.id, activeChannel.name ?? "Group call", "audio");
         toast.success({ title: `Starting group call in #${activeChannel.name ?? "channel"}` });
       } catch (e) {
         toast.error({
@@ -805,7 +905,7 @@ export function ChatWorkspace({
         });
       }
     }
-  }, [activeChannel, currentUserId, toast]);
+  }, [activeChannel, currentUserId, openGroupCallWindow, toast]);
 
   const handleStartMeetingCall = useCallback(
     async (meetingId: string, channelId: string) => {
@@ -821,26 +921,8 @@ export function ChatWorkspace({
           };
           throw new Error(err.error ?? "Failed to start group call");
         }
-        const data = (await res.json()) as {
-          call: { id: string };
-          sfu: { roomId: string; tokens: Record<string, string>; livekitUrl?: string } | null;
-        };
-        const myToken = data.sfu?.tokens[currentUserId] ?? "";
-        const params = new URLSearchParams({
-          callId: data.call.id,
-          name: "Group call",
-          userId: currentUserId,
-          type: "video",
-          sfuRoomId: data.sfu?.roomId ?? "",
-          sfuToken: myToken,
-          livekitUrl: data.sfu?.livekitUrl ?? "",
-        });
-        const url = `/call/${data.call.id}?${params.toString()}`;
-        window.open(
-          url,
-          "quikchat-group-call",
-          "width=1000,height=700,popup=yes,menubar=no,toolbar=no,location=no,status=no",
-        );
+        const data = (await res.json()) as { call: { id: string } };
+        openGroupCallWindow(data.call.id, "Group call", "video");
         toast.success({ title: "Starting group call..." });
       } catch (e) {
         toast.error({
@@ -849,7 +931,7 @@ export function ChatWorkspace({
         });
       }
     },
-    [currentUserId, toast],
+    [openGroupCallWindow, toast],
   );
 
   useEffect(() => {
@@ -885,7 +967,9 @@ export function ChatWorkspace({
             currentUserId={currentUserId}
             messages={messagesQuery.data}
             loadingMessages={messagesQuery.isLoading}
+            messagesFetching={messagesQuery.isFetching}
             channels={channelsQuery.data}
+            openedUnreadCount={openedUnreadCount}
             online={presence.online}
             statusOf={statusOfUser}
             typing={typing}
@@ -956,10 +1040,21 @@ export function ChatWorkspace({
         {rejoinCall ? (
           <RejoinBanner
             activeCall={rejoinCall}
-            onRejoin={(_callId) => {
-              setCallTargetUserId(null);
+            onRejoin={() => {
               setRejoinCall(null);
-              toast.success({ title: "Reconnecting to call..." });
+              // A 1:1 mesh call (participantCount === 2) has no clean rejoin path
+              // yet — we'd need the other participant's id/name, which this
+              // summary doesn't carry. Group/SFU calls rejoin cleanly: the call
+              // page mints its own token from the callId alone.
+              if (rejoinCall.participantCount !== 2) {
+                openGroupCallWindow(rejoinCall.callId, rejoinCall.channelName, rejoinCall.type);
+                toast.success({ title: "Reconnecting to call..." });
+              } else {
+                toast.info({
+                  title: "Open the channel to rejoin",
+                  body: "1:1 call rejoin isn't available from here yet.",
+                });
+              }
             }}
             onDismiss={() => setRejoinCall(null)}
           />

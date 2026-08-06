@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { usePrioritiesPaginated, useDeletePriority, useBulkRestorePriority, type PriorityFilters } from "@/lib/hooks/usePriority";
 import { useInfiniteUsers } from "@/lib/hooks/useInfiniteUsers";
-import { useUserOption } from "@/lib/hooks/useUserOption";
+import { useUserOptions } from "@/lib/hooks/useUserOption";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import {
   getFiscalYear, getFiscalQuarter, fiscalYearLabel, weeksArray,
@@ -24,6 +24,13 @@ import { Flag } from "lucide-react";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
 import { runExport } from "@/lib/export/xlsx";
 import { notify } from "@/lib/utils/notify";
+import { STATUS_FILTER_OPTIONS, ALL_STATUS_LABEL, ITEM_STATUS_ORDER } from "@/lib/constants/status";
+
+/**
+ * Default status selection — every status, i.e. nothing filtered out. Mirrors
+ * the five options the old single-select `<select>` offered.
+ */
+const PRIORITY_ALL_STATUSES: string[] = [...ITEM_STATUS_ORDER];
 
 const FISCAL_YEAR = getFiscalYear();
 const FISCAL_QUARTER = getFiscalQuarter();
@@ -39,14 +46,25 @@ export default function PriorityPage() {
   const ctx = useFilterContext();
   const { year, setYear, quarter, setQuarter } = ctx;
   const [filterTeam, setFilterTeam] = useState<string>(ctx.filterTeam);
-  const [filterOwner, setFilterOwner] = useState<string>(ctx.filterOwner);
+  // Owner is MULTI-select and shared across KPI / Priority / WWW / Dashboard.
+  const [filterOwner, setFilterOwner] = useState<string[]>(ctx.filterOwners);
   const [showAddModal, setShowAddModal] = useState(false);
+
+  /** Keep the local selection and the shared cross-module filter in step. */
+  function applyOwnerFilter(next: string[]) {
+    setFilterOwner(next);
+    ctx.setFilterOwners(next);
+  }
 
   // Search + filter — search is debounced and persisted via the shared
   // tables slice (lib/store). `searchInput` is the controlled input value;
   // `search` is the debounced value the filter logic below reads from.
   const [searchInput, setSearchInput, search] = useDebouncedTableSearch("priority");
-  const [filterStatus, setFilterStatus] = useState("");
+  // Status is MULTI-select: an explicit set, defaulting to every status (i.e.
+  // nothing filtered out). Local to this page.
+  const [filterStatus, setFilterStatus] = useState<string[]>(PRIORITY_ALL_STATUSES);
+  // "Active" only when it actually narrows the list.
+  const statusNarrows = filterStatus.length !== PRIORITY_ALL_STATUSES.length;
   const [showFilter, setShowFilter] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
 
@@ -82,7 +100,7 @@ export default function PriorityPage() {
   // Resolve the applied owner by id so the picker shows their name even when
   // the owner isn't in the loaded 25-user page AND the filtered list is empty
   // (e.g. an owner filter inherited from My Dashboard with 0 matching rows).
-  const selectedOwnerOption = useUserOption(filterOwner);
+  const selectedOwnerOptions = useUserOptions(filterOwner);
   // Hidden cols come from the DB-backed user pref. Sort now lives in the
   // shared Redux tables slice (lib/store) — same pattern as KPI + WWW. The
   // priorityPrefs hook is kept for hiddenCols only.
@@ -100,9 +118,9 @@ export default function PriorityPage() {
     year, quarter, sort: prioritySort, includeDeleted: viewTrash,
     page, limit: pageSize,
     search: search.trim() || undefined,
-    owner: filterOwner || undefined,
+    owner: filterOwner.length ? filterOwner.join(",") : undefined,
     teamId: filterTeam || undefined,
-    status: filterStatus || undefined,
+    status: filterStatus.length ? filterStatus.join(",") : "__none__",
   };
   const { data: pageData, isLoading, error, refetch } = usePrioritiesPaginated(listFilters);
   const priorities = useMemo(() => pageData?.data ?? [], [pageData]);
@@ -176,7 +194,7 @@ export default function PriorityPage() {
   const realQuarter = useCurrentQuarter(year);
   const fiscalWeek = useCurrentWeek(year, realQuarter);
   const fiscalWeekRange = useWeekDateRange(year, realQuarter, fiscalWeek);
-  const activeFilterCount = (filterTeam ? 1 : 0) + (filterStatus ? 1 : 0) + (filterOwner ? 1 : 0);
+  const activeFilterCount = (filterTeam ? 1 : 0) + (statusNarrows ? 1 : 0) + (filterOwner.length ? 1 : 0);
 
   const handlePriorityExport = useCallback(async (sel: ExportSelection) => {
     const columns = priorityColumns
@@ -227,8 +245,8 @@ export default function PriorityPage() {
           columns: sel.columnKeys.join(","),
           year: sel.range.mode === "quarter" ? sel.range.year : year,
           quarters: sel.range.mode === "quarter" ? sel.range.quarters.join(",") : quarter,
-          status: filterStatus || undefined,
-          owner: filterOwner || undefined,
+          status: filterStatus.length ? filterStatus.join(",") : "__none__",
+          owner: filterOwner.length ? filterOwner.join(",") : undefined,
           teamId: filterTeam || undefined,
           includeDeleted: viewTrash || undefined,
         });
@@ -356,10 +374,11 @@ export default function PriorityPage() {
                 <div>
                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Owner</p>
                   <FilterPicker
-                    value={filterOwner}
-                    onChange={(v) => { setFilterOwner(v); ctx.setFilterOwner(v); }}
+                    multiple
+                    values={filterOwner}
+                    onChangeMultiple={applyOwnerFilter}
                     options={users.map(userToFilterOption)}
-                    selectedOption={selectedOwnerOption}
+                    selectedOptions={selectedOwnerOptions}
                     onSearchChange={setOwnerSearch}
                     onLoadMore={fetchMoreOwners}
                     hasMore={ownersHasMore}
@@ -370,22 +389,20 @@ export default function PriorityPage() {
                 </div>
                 <div>
                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Status</p>
-                  <select
-                    value={filterStatus}
-                    onChange={e => setFilterStatus(e.target.value)}
-                    className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white"
-                  >
-                    <option value="">All statuses</option>
-                    <option value="on-track">On Track</option>
-                    <option value="behind-schedule">Behind Schedule</option>
-                    <option value="not-yet-started">Not Yet Started</option>
-                    <option value="completed">Completed</option>
-                    <option value="not-applicable">Not Applicable</option>
-                  </select>
+                  <FilterPicker
+                    multiple
+                    values={filterStatus}
+                    onChangeMultiple={setFilterStatus}
+                    // Drop the "" sentinel — the picker renders its own
+                    // "All status" row, which selects every status.
+                    options={STATUS_FILTER_OPTIONS.filter(o => o.value !== "").map(o => ({ value: o.value, label: o.label }))}
+                    allLabel={ALL_STATUS_LABEL}
+                    allMeansEvery
+                  />
                 </div>
-                {(filterTeam || filterStatus || filterOwner) && (
+                {(filterTeam || statusNarrows || filterOwner.length > 0) && (
                   <button
-                    onClick={() => { setFilterTeam(""); setFilterStatus(""); setFilterOwner(""); ctx.setFilterOwner(""); }}
+                    onClick={() => { setFilterTeam(""); setFilterStatus(PRIORITY_ALL_STATUSES); applyOwnerFilter([]); }}
                     className="w-full text-xs text-gray-500 hover:text-gray-800 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
                   >
                     Clear filters

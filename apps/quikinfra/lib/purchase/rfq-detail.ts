@@ -20,6 +20,8 @@ export interface RfqVendor {
   phone?: string | null;
   assignedItemIds?: string[];
   quotedRates?: Array<{ lineId?: string; rate?: string | number }>;
+  /** This vendor's own T&C override — empty means "uses the RFQ default". */
+  termsAndConditions?: string | null;
 }
 
 export interface RfqDetail {
@@ -38,6 +40,8 @@ export interface RfqDetail {
   updatedAt?: string | null;
   updatedBy?: string | null;
   updatedByName?: string | null;
+  /** Per-RFQ T&C snapshot — what the vendor PDF actually carries. */
+  termsAndConditions?: string | null;
   lines?: RfqLine[];
   vendors?: RfqVendor[];
 }

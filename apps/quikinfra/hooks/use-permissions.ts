@@ -27,7 +27,11 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { menuKeyForUrl, buildMatrixFromModules } from "@/lib/rbac/menu-catalog";
+import {
+  menuKeyForUrl,
+  menuKeyForPath,
+  buildMatrixFromModules,
+} from "@/lib/rbac/menu-catalog";
 
 export interface MeResponse {
   userId: string;
@@ -193,6 +197,26 @@ export function usePermissions() {
     return row[action] !== false;
   }
 
+  /**
+   * Route-level gate for the CURRENT pathname — the direct-URL counterpart of
+   * `canViewMenu`. Hiding a sidebar link never stopped anyone typing the URL,
+   * and the dashboard pages have no server-side authorization (middleware only
+   * checks the session), so this is what turns a hidden page into a denied one.
+   *
+   * Resolves detail routes to their parent page (`/projects/boq/x` → `pm.boq`)
+   * and returns true for paths outside the catalog (`/dashboard`, `/approvals`,
+   * `/settings/**`) which carry their own gates.
+   */
+  function canViewPath(pathname: string | undefined): boolean {
+    if (isSuper) return true;
+    const key = menuKeyForPath(pathname);
+    if (!key) return true;
+    if (!effectiveMatrix) return true;
+    const row = effectiveMatrix[key];
+    if (!row) return false;
+    return row.view !== false;
+  }
+
   return {
     isLoading: query.isLoading,
     isError: query.isError,
@@ -208,6 +232,7 @@ export function usePermissions() {
     hasRole,
     hasModule,
     canViewMenu,
+    canViewPath,
     isMenuGranted,
     canMenuAction,
     isSuper,

@@ -51,7 +51,7 @@ interface UploadedDescriptor {
 }
 
 const FIELD_CLS =
-  "w-full px-3 py-2 text-sm rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-accent-400";
+  "w-full px-3 py-2 text-sm rounded-lg border border-[var(--color-border,#E2E8F0)] bg-[var(--color-bg-primary,#FFFFFF)] text-[var(--color-text-primary,#0F172A)] focus:outline-none focus:ring-2 focus:ring-accent-400";
 
 export function SupportRequestForm({
   apiBase,
@@ -148,13 +148,13 @@ export function SupportRequestForm({
           <span className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100 text-green-600">
             <Check className="h-6 w-6" />
           </span>
-          <p className="text-sm text-[var(--color-text-secondary)]">
+          <p className="text-sm text-[var(--color-text-secondary,#64748B)]">
             Thanks! Your{" "}
-            <strong className="text-[var(--color-text-primary)]">
+            <strong className="text-[var(--color-text-primary,#0F172A)]">
               {SUPPORT_REQUEST_TYPE_LABELS[sent.requestType]?.toLowerCase() ?? "request"}
             </strong>{" "}
             has been logged as{" "}
-            <strong className="text-[var(--color-text-primary)]">
+            <strong className="text-[var(--color-text-primary,#0F172A)]">
               {formatSupportTicketNo(sent.ticketNo)}
             </strong>
             . Our team will get back to you shortly.
@@ -163,7 +163,7 @@ export function SupportRequestForm({
             <button
               type="button"
               onClick={resetForm}
-              className="px-3 py-2 text-sm font-medium rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-[var(--color-neutral-50)]"
+              className="px-3 py-2 text-sm font-medium rounded-lg border border-[var(--color-border,#E2E8F0)] text-[var(--color-text-secondary,#64748B)] hover:bg-[var(--color-neutral-50,#F8FAFC)]"
             >
               Send another
             </button>
@@ -196,7 +196,7 @@ export function SupportRequestForm({
         <div>
           <label
             htmlFor="support-type"
-            className="block text-sm font-medium text-[var(--color-text-primary)] mb-1.5"
+            className="block text-sm font-medium text-[var(--color-text-primary,#0F172A)] mb-1.5"
           >
             Request type <span className="text-red-500">*</span>
           </label>
@@ -223,7 +223,7 @@ export function SupportRequestForm({
         <div>
           <label
             htmlFor="support-description"
-            className="block text-sm font-medium text-[var(--color-text-primary)] mb-1.5"
+            className="block text-sm font-medium text-[var(--color-text-primary,#0F172A)] mb-1.5"
           >
             Description <span className="text-red-500">*</span>
           </label>
@@ -246,7 +246,7 @@ export function SupportRequestForm({
             ) : (
               <span />
             )}
-            <span className="text-xs text-[var(--color-text-secondary)]">
+            <span className="text-xs text-[var(--color-text-secondary,#64748B)]">
               {description.length}/{SUPPORT_DESCRIPTION_MAX}
             </span>
           </div>
@@ -255,12 +255,12 @@ export function SupportRequestForm({
         <SupportAttachmentPicker files={files} onChange={setFiles} disabled={isSubmitting} />
       </div>
 
-      <div className="flex gap-2 justify-end px-5 py-3 border-t border-[var(--color-border)] bg-[var(--color-neutral-50)]">
+      <div className="flex gap-2 justify-end px-5 py-3 border-t border-[var(--color-border,#E2E8F0)] bg-[var(--color-neutral-50,#F8FAFC)]">
         <button
           type="button"
           onClick={onClose}
           disabled={isSubmitting}
-          className="px-3 py-2 text-sm font-medium rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-primary)] disabled:opacity-50"
+          className="px-3 py-2 text-sm font-medium rounded-lg border border-[var(--color-border,#E2E8F0)] text-[var(--color-text-secondary,#64748B)] hover:bg-[var(--color-bg-primary,#FFFFFF)] disabled:opacity-50"
         >
           Cancel
         </button>

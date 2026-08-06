@@ -80,4 +80,19 @@ describe("ChannelList", () => {
     expect(screen.getByText("Pinned")).toBeInTheDocument();
     expect(screen.getByText("Recent")).toBeInTheDocument();
   });
+
+  it("renders the Discover button in chromeless mode and calls onDiscover", () => {
+    const onDiscover = vi.fn();
+    render(
+      <ChannelList
+        data={{ priority: [], recent: [] }}
+        workspaceName="Acme"
+        chromeless
+        onPick={vi.fn()}
+        onDiscover={onDiscover}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Discover channels" }));
+    expect(onDiscover).toHaveBeenCalled();
+  });
 });

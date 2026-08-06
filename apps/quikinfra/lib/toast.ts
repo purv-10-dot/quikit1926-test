@@ -51,6 +51,32 @@ export function clearToasts() {
   emit();
 }
 
+/**
+ * Suppression scope for batch operations.
+ *
+ * `meta.silent` is fixed per mutation hook, but a bulk import drives the
+ * same create hook the single-record Add drawer uses — one toast per row
+ * is noise there and wanted here. This hands the switch to the *caller*:
+ * wrap the batch, then fire one summary toast when it finishes.
+ *
+ * Depth-counted so nested scopes don't unsuppress early, and released in
+ * a `finally` so a throwing batch can't leave the app permanently mute.
+ */
+let suppressDepth = 0;
+
+export function areToastsSuppressed(): boolean {
+  return suppressDepth > 0;
+}
+
+export async function withToastsSuppressed<T>(fn: () => Promise<T>): Promise<T> {
+  suppressDepth++;
+  try {
+    return await fn();
+  } finally {
+    suppressDepth--;
+  }
+}
+
 function push(input: ToastInput): string {
   const id =
     typeof crypto !== "undefined" && "randomUUID" in crypto

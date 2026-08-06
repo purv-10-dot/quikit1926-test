@@ -48,7 +48,7 @@ export function WhitebooksVendorSelect(props: {
     if (gstVerifyEnabled) {
       const g = String(v?.gstin ?? "").trim();
       if (!g) {
-        const label = v?.companyName || v?.name || "This vendor";
+        const label = v?.name || v?.companyName || "This vendor";
         toast.error(
           `${label} has no GSTIN saved under Masters → Vendors. Edit the vendor, enter the 15-character GSTIN, save — then select them here again. (Your .env email is only for Whitebooks; GSTIN always comes from the vendor record.)`,
         );

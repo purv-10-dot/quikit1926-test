@@ -803,7 +803,7 @@ export default function DailyHuddlePage() {
                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Status</p>
                   <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as "" | Status)}
                     className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
-                    <option value="">All statuses</option>
+                    <option value="">All status</option>
                     {STATUS_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </div>

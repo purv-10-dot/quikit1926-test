@@ -59,6 +59,9 @@ describe("GET /api/projects/rab", () => {
         contractor: { name: "Acme" },
       },
     ]);
+    // The handler fetches the page and the total in parallel — `total` comes
+    // from a separate count(), not from the row array's length.
+    db.cnRunningAccountBill.count.mockResolvedValue(1);
     const res = await GET(buildGET());
     expect(res.status).toBe(200);
     const body = await res.json();

@@ -16,6 +16,7 @@ import {
   buildApprovalDto,
   type ApprovalDto,
   type ApprovalInstanceFull,
+  collectApprovalUserIds,
 } from "@/lib/approvals/approval-dto";
 
 /**
@@ -71,20 +72,10 @@ export async function GET(
     });
   }
 
-  const approvalUserIds = instance
-    ? [
-        instance.requestedById,
-        ...instance.history.map((h) => h.actionById),
-        ...(instance.workflow.steps
-          .map((s) => s.approverUserId)
-          .filter(Boolean) as string[]),
-      ]
-    : [];
-
-  const userIds = Array.from(
-    new Set<string>([...auditUserIds, ...approvalUserIds]),
-  );
-  const nameById = await resolveUserNames(userIds);
+  const nameById = await resolveUserNames([
+    ...auditUserIds,
+    ...(instance ? collectApprovalUserIds(instance) : []),
+  ]);
 
   if (instance) {
     const callerCanActOnCurrentStep = canActOnCurrentStep(

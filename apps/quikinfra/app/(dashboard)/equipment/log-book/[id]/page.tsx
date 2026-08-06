@@ -28,6 +28,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEquipmentLog } from "@/hooks/use-equipment";
 import { useUsers } from "@/hooks/use-users";
 import { usePermissions, type MeResponse } from "@/hooks/use-permissions";
+import { RepairApprovalNotice } from "@/components/RepairApprovalNotice";
+import { MasterApprovalAction } from "@/components/MasterApprovalAction";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
 import { USER_TYPE_CATALOG } from "@/lib/rbac/user-types";
 import type {
@@ -220,21 +222,30 @@ export default function EquipmentLogDetailPage() {
                 );
               }
               return (
-                <ApprovalActionBar
-                  entityType="equipment-log"
-                  entityId={id}
-                  currentStatus={log.status}
-                  requiredPermission="construction.equipment_log.approve"
-                  actionEndpoint={`/api/equipment/logs/${id}/approve`}
-                  invalidateKeys={[
-                    ["equipment-logs"],
-                    ["equipment-log", id],
-                    ["equipment-logs-summary"],
-                  ]}
-                  // Workflow-aware gating — only the current step's actor sees
-                  // live buttons.
-                  hidden={!canAct}
-                />
+                <>
+                  <ApprovalActionBar
+                    entityType="equipment-log"
+                    entityId={id}
+                    currentStatus={log.status}
+                    requiredPermission="construction.equipment_log.approve"
+                    actionEndpoint={`/api/equipment/logs/${id}/approve`}
+                    invalidateKeys={[
+                      ["equipment-logs"],
+                      ["equipment-log", id],
+                      ["equipment-logs-summary"],
+                    ]}
+                    // Workflow-aware gating — only the current step's actor sees
+                    // live buttons.
+                    hidden={!canAct}
+                  />
+                  <MasterApprovalAction
+                    approval={log?.approval}
+                    me={me}
+                    entityLabel="equipment log"
+                    actionEndpoint={`/api/equipment/logs/${id}/approve`}
+                    invalidateKeys={[["equipment-logs"], ["equipment-log", id]]}
+                  />
+                </>
               );
             })()}
           </div>
@@ -242,6 +253,14 @@ export default function EquipmentLogDetailPage() {
       />
 
       <PageContainer>
+        <RepairApprovalNotice
+          repair={log?.approval?.repair}
+          entityLabel="equipment log"
+          actionEndpoint={`/api/equipment/logs/${id}/approve`}
+          invalidateKeys={[["equipment-logs"], ["equipment-log", id]]}
+          me={me}
+        />
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
             <Card title="Log Details">

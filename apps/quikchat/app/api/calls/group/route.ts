@@ -1,8 +1,8 @@
 import { withOrgAuth } from "@/lib/auth-shims";
 import { db as prisma } from "@quikit/database";
 import * as calling from "@/lib/server/calling/calling.service";
-import { selectSFUMode } from "@/lib/server/calling/sfu-provider";
 import { userCan, forbidden } from "@/lib/authz/permissions";
+import { publishFanout } from "@/lib/shared";
 
 export const dynamic = "force-dynamic";
 
@@ -13,9 +13,12 @@ interface GroupCallInput {
 }
 
 /**
- * POST /api/calls/group — create a group call with SFU room and tokens.
- * Creates a QcCall via the service layer (enforces one-call-per-user),
- * creates an SFU room, and generates access tokens for all channel members.
+ * POST /api/calls/group — create a group call.
+ * Creates a QcCall via the service layer (enforces one-call-per-user). Each
+ * participant mints their OWN LiveKit token afterward via
+ * POST /api/calls/:id/token — this route never returns another member's
+ * token, and never creates the SFU room itself (the token route does that
+ * idempotently on first fetch).
  */
 export const POST = withOrgAuth(async (req, ctx) => {
   const body = (await req.json()) as GroupCallInput;
@@ -66,27 +69,15 @@ export const POST = withOrgAuth(async (req, ctx) => {
     initialStatus: "active",
   });
 
-  // Set up SFU room
-  const { mode: sfuMode } = selectSFUMode();
-  const roomId = `channel-${channelId}`;
-  let sfuRoom: { roomId: string; name: string } | null = null;
-  const tokens: Record<string, string> = {};
-
-  try {
-    // Dynamically import the SFU provider
-    const { getSFUProvider } = await import("@/lib/server/calling/sfu-provider");
-    const provider = getSFUProvider();
-
-    sfuRoom = await provider.createRoom(roomId);
-
-    // Generate tokens for all members
-    for (const member of members) {
-      const token = await provider.generateToken(roomId, member.userId, member.userId);
-      tokens[member.userId] = token;
-    }
-  } catch (e) {
-    console.warn("SFU room creation failed, continuing without SFU:", e);
-  }
+  // Live "join" nudge for every other member with the channel open (CALL-3
+  // §3). Offline/missed members still find the call via GET /api/calls/active
+  // (they're already a QcCallParticipant from createCall above).
+  await publishFanout({
+    orgId: ctx.orgId,
+    channelId,
+    event: "call_group_started",
+    payload: { callId: call.id, channelId, initiatorId: ctx.userId, type },
+  });
 
   return Response.json({
     call: {
@@ -99,13 +90,6 @@ export const POST = withOrgAuth(async (req, ctx) => {
         state: p.state,
       })),
     },
-    sfu: sfuRoom
-      ? {
-          roomId: sfuRoom.roomId,
-          mode: sfuMode,
-          tokens,
-          livekitUrl: process.env.LIVEKIT_URL ?? null,
-        }
-      : null,
+    roomId: `call-${call.id}`,
   });
 }, { moduleKey: "calls" });

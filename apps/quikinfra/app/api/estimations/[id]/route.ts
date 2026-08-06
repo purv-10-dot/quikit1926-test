@@ -103,6 +103,26 @@ export async function GET(
   });
 }
 
+/**
+ * Statuses that freeze the row against content edits. Once the raiser
+ * submits, the confirmation dialog promises they cannot edit until an
+ * approver actions it — this is where that promise is enforced. Approved
+ * rows are the baseline downstream procurement reads, so they stay frozen
+ * for good. Workflow transitions never come through here; they run via
+ * /submit and /approve, which patch the status directly.
+ */
+const EDIT_LOCK_REASON: Record<string, string> = {
+  pending_approval:
+    "Estimation is awaiting approval — it cannot be edited until an approver actions it.",
+  submitted:
+    "Estimation is awaiting approval — it cannot be edited until an approver actions it.",
+  approved: "Estimation is approved and locked.",
+};
+
+function editLockReason(status: unknown): string | null {
+  return EDIT_LOCK_REASON[String(status ?? "").trim().toLowerCase()] ?? null;
+}
+
 async function handleUpdate(req: NextRequest, id: string) {
   const ctx = await getTenantContext();
   if (!ctx) {
@@ -118,6 +138,11 @@ async function handleUpdate(req: NextRequest, id: string) {
   }
   const guard = requireOwnership(existing, ctx, "estimation");
   if (guard) return guard;
+
+  const locked = editLockReason(existing.status);
+  if (locked) {
+    return NextResponse.json({ error: locked }, { status: 409 });
+  }
 
   const body = await req.json();
 
@@ -182,6 +207,13 @@ export async function DELETE(
   }
   const guard = requireOwnership(existing, ctx, "estimation");
   if (guard) return guard;
+
+  // Same freeze as the edit path — removing a row that is parked in the
+  // approval queue would orphan its CnApprovalInstance.
+  const locked = editLockReason(existing.status);
+  if (locked) {
+    return NextResponse.json({ error: locked }, { status: 409 });
+  }
 
   const ok = await deleteEstimation(ctx.orgId, params.id);
   if (!ok) {

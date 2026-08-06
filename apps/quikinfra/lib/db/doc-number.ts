@@ -108,7 +108,7 @@ export async function nextProjectScopedDocNumber(opts: {
     const n = extractTrailingSeq(r[config.field]);
     return n > max ? n : max;
   }, 0);
-  return `${prefix}${String(maxSeq + 1).padStart(3, "0")}`;
+  return `${prefix}${String(maxSeq + 1).padStart(4, "0")}`;
 }
 
 /**

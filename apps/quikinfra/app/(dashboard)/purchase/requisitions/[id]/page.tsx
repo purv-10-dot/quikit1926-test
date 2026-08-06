@@ -31,6 +31,11 @@ import { SelectInput } from "@/components/FormDrawer";
 import { usePurchaseRequisition, useSubmitPR } from "@/hooks/use-purchase";
 import { useLocations } from "@/hooks/use-masters";
 import { usePermissions, type MeResponse } from "@/hooks/use-permissions";
+import { RepairApprovalNotice } from "@/components/RepairApprovalNotice";
+import {
+  MasterApprovalAction,
+  MasterApprovedBadge,
+} from "@/components/MasterApprovalAction";
 import { USER_TYPE_CATALOG } from "@/lib/rbac/user-types";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
 
@@ -274,6 +279,7 @@ export default function PRDetailPage() {
         actions={
           <div className="flex items-center gap-2">
             <PRStatusChip pr={pr} />
+            <MasterApprovedBadge approval={pr.approval} />
             {pr.status === "draft" && pr.createdBy && me?.userId === pr.createdBy && (
               <PrimaryButton onClick={handleSubmit} disabled={submitMutation.isPending}>
                 <Send className="w-4 h-4" /> Submit for Approval
@@ -338,6 +344,17 @@ export default function PRDetailPage() {
                 />
               );
             })()}
+            <MasterApprovalAction
+              approval={pr.approval}
+              me={me}
+              entityLabel="PR"
+              actionEndpoint={`/api/purchase/requisitions/${id}/approve`}
+              invalidateKeys={[
+                ["purchase-requisitions"],
+                ["purchase-requisition", id],
+                ["material-issues"],
+              ]}
+            />
           </div>
         }
       />
@@ -345,6 +362,14 @@ export default function PRDetailPage() {
       <PageContainer>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
+            <RepairApprovalNotice
+              repair={pr.approval?.repair}
+              entityLabel="PR"
+              actionEndpoint={`/api/purchase/requisitions/${id}/approve`}
+              invalidateKeys={[["requisitions"], ["requisition", id]]}
+              me={me}
+            />
+
             {/* Header Info */}
             <div className="relative bg-white rounded-2xl border border-slate-200 shadow-soft p-5 overflow-hidden">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -353,7 +378,6 @@ export default function PRDetailPage() {
                 <InfoField label="Request Date" value={pr.requestDate} />
                 <InfoField label="Required Date" value={pr.requiredDate ?? "—"} />
                 <InfoField label="Purpose" value={pr.purpose ?? "—"} />
-                <InfoField label="Urgent" value={pr.isUrgent ? "Yes" : "No"} />
                 <InfoField label="Status" value={<PRStatusChip pr={pr} />} />
                 <InfoField
                   label="Estimated Total"
@@ -605,7 +629,20 @@ export default function PRDetailPage() {
                       entries.push({
                         step: s.stepOrder,
                         action: acted.action, // approve | reject | return
-                        actionBy: acted.actionByName || approverLabel,
+                        // A master approval — and each step it skipped — still
+                        // belongs to its configured approver. Naming only the
+                        // master approver loses who the step was actually
+                        // routed to, so both are shown.
+                        title: acted.isMasterSkip
+                          ? `Skipped — Step ${s.stepOrder}`
+                          : acted.isMasterApproval
+                            ? `Master Approval — Step ${s.stepOrder}`
+                            : undefined,
+                        actionBy: acted.isMasterSkip
+                          ? `${approverLabel} — skipped by ${acted.actionByName || "master approver"}`
+                          : acted.isMasterApproval
+                            ? `${acted.actionByName || "Master approver"} (Master Approver) — in place of ${approverLabel}`
+                            : acted.actionByName || approverLabel,
                         actionAt: formatDateTimeIST(acted.actionAt),
                         comments: acted.comments || undefined,
                       });
@@ -625,6 +662,23 @@ export default function PRDetailPage() {
                       actionAt: isCurrent ? "Awaiting action" : "Not yet reached",
                     });
                   });
+
+                  // Named fallback approver, shown while the request is still
+                  // open so the requester knows who can unblock it rather than
+                  // only discovering the path after it is used.
+                  if (
+                    approval.status === "pending_approval" &&
+                    approval.masterApprover
+                  ) {
+                    entries.push({
+                      step: 99,
+                      action: "upcoming",
+                      title: "Master Approver",
+                      actionBy: approval.masterApprover.name,
+                      actionAt: "Can approve from any step, without waiting",
+                    });
+                  }
+
                   return <ApprovalTimeline entries={entries} />;
                 })()
               )}

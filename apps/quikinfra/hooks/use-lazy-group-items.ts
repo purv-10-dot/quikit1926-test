@@ -7,6 +7,10 @@
  * `/api/masters/items?groupId=…&search=…&page=…` and appends the next page as
  * the user scrolls.
  *
+ * Passing `groupId: null` WITH a search term runs the same query unscoped —
+ * that powers the picker's cross-group material search on the groups step, so
+ * a user who doesn't know an item's group can still find it by typing.
+ *
  * Reloads page 1 whenever the group or (debounced) search changes; `loadMore`
  * appends the next page. A `seq` guard drops stale responses when the group /
  * search changes mid-flight.
@@ -64,9 +68,14 @@ export function useLazyGroupItems(params: {
     [groupId, search, pageSize],
   );
 
-  // (Re)load page 1 when group / search / enabled change.
+  // (Re)load page 1 when group / search / enabled change. An unscoped fetch
+  // (no groupId) is allowed only when there IS a search term — otherwise the
+  // request would pull the whole item master, which is what lazy mode exists
+  // to avoid.
+  const canFetch = Boolean(groupId) || search.trim().length > 0;
+
   useEffect(() => {
-    if (!enabled || !groupId) {
+    if (!enabled || !canFetch) {
       setItems([]);
       setTotal(0);
       setPage(1);
@@ -89,12 +98,12 @@ export function useLazyGroupItems(params: {
       .finally(() => {
         if (mySeq === seq.current) setLoading(false);
       });
-  }, [enabled, groupId, buildUrl]);
+  }, [enabled, canFetch, buildUrl]);
 
   const hasMore = items.length < total;
 
   const loadMore = useCallback(() => {
-    if (!enabled || !groupId || loading || !hasMore) return;
+    if (!enabled || !canFetch || loading || !hasMore) return;
     const next = page + 1;
     const mySeq = seq.current;
     setLoading(true);
@@ -108,7 +117,7 @@ export function useLazyGroupItems(params: {
       .finally(() => {
         if (mySeq === seq.current) setLoading(false);
       });
-  }, [enabled, groupId, loading, hasMore, page, buildUrl]);
+  }, [enabled, canFetch, loading, hasMore, page, buildUrl]);
 
   return { items, total, hasMore, loading, loadMore };
 }

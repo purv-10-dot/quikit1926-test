@@ -357,11 +357,15 @@ export default function EstimationPage() {
         const isDraft = status === "draft";
         const isPending = status === "pending_approval" || status === "submitted";
         const isApproved = status === "approved";
-        // Approved rows can't be edited/deleted — any silent change
-        // would break the audit trail the downstream procurement flow
-        // reads. Buttons stay visible (greyed) with a lock tooltip.
-        const baseLocked = isApproved;
-        const lockReason = "Locked — estimation is approved";
+        // Submitted and approved rows can't be edited/deleted — the
+        // raiser is told at submit time that the row is frozen until the
+        // approver acts, and any silent change afterwards would break the
+        // audit trail the downstream procurement flow reads. Buttons stay
+        // visible (greyed) with a lock tooltip.
+        const baseLocked = isPending || isApproved;
+        const lockReason = isPending
+          ? "Locked — awaiting approver action"
+          : "Locked — estimation is approved";
 
         return (
           <div className="flex items-center justify-end gap-0.5">

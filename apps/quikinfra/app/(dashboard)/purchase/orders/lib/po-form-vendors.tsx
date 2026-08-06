@@ -2,12 +2,13 @@
 
 import { ListChecks } from "lucide-react";
 import { WhitebooksVendorSelect } from "@/components/WhitebooksVendorSelect";
+import { VendorTermsCell } from "@/components/VendorTermsCell";
 import type { QuickCreateConfig } from "@/components/QuickCreateDrawer";
 import type { ItemPickerItem } from "@/components/ItemPickerModal";
 import type { PoFormConfigDeps } from "./po-form-deps";
 
 export function buildVendorsSection(deps: PoFormConfigDeps): QuickCreateConfig["secondaryLineItems"] {
-  const { vendorOptions, vendorById, setPickerCtx } = deps;
+  const { vendorOptions, vendorById, setPickerCtx, termsById, defaultPoTermsId } = deps;
   return {
       label: "Vendors",
       key: "vendors",
@@ -98,7 +99,7 @@ export function buildVendorsSection(deps: PoFormConfigDeps): QuickCreateConfig["
               ? vendorById.get(line.vendorId)
               : null;
             const vendorLabel =
-              vendor?.companyName || vendor?.name || "vendor";
+              vendor?.name || vendor?.companyName || "vendor";
 
             return (
               <button
@@ -129,6 +130,38 @@ export function buildVendorsSection(deps: PoFormConfigDeps): QuickCreateConfig["
                   {countLabel}
                 </span>
               </button>
+            );
+          },
+        },
+        {
+          // Per-vendor T&C override. Opening the editor lets the raiser
+          // write vendor-specific clauses (e.g. a different payment term
+          // for one supplier) without touching the shared master
+          // template or the other vendors in this submission. Each
+          // vendor row becomes its own PO, so this override lands on
+          // that PO only. Seeds from the org's default T&C template —
+          // there's no shared document-level text on the PO itself.
+          key: "termsAndConditions",
+          label: "Terms",
+          type: "custom" as const,
+          width: "wide" as const,
+          render: (line, update) => {
+            const vendor = line.vendorId ? vendorById.get(line.vendorId) : null;
+            const vendorLabel = vendor?.name || vendor?.companyName || "this vendor";
+            return (
+              <VendorTermsCell
+                line={line}
+                update={update}
+                defaultBody={
+                  defaultPoTermsId ? termsById.get(defaultPoTermsId)?.body ?? "" : ""
+                }
+                templates={Array.from(termsById.entries()).map(([id, t]) => ({
+                  id,
+                  title: t.title,
+                  body: t.body,
+                }))}
+                vendorLabel={vendorLabel}
+              />
             );
           },
         },

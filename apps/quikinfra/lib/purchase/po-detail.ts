@@ -66,5 +66,7 @@ export interface PoDetail {
   createdAt?: string | null;
   createdBy?: string | null;
   createdByName?: string | null;
+  /** Per-PO T&C snapshot — what the vendor PDF actually carries. */
+  termsAndConditions?: string | null;
   lines?: PoLine[];
 }

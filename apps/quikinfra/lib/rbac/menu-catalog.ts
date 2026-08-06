@@ -108,6 +108,13 @@ export const MENU_CATALOG: MenuItem[] = [
   // NOT in the sidebar — same reason as Banks above. Drop it until the
   // sidebar grows the link.
   { key: "pm.boq",        label: "BOQ",                  url: "/projects/boq",         module: "PROJECT MGMT", supports: allFour },
+  // Activity Scope is the manual-BOQ screen for FREE_SCOPE projects. It has its
+  // own `construction.activity_scope` resource rather than sharing BOQ's, so the
+  // two checkboxes move independently. Without a row here it had no checkbox at
+  // all: `menuKeyForUrl` is an exact-match lookup, so `canViewMenu` fell through
+  // to `true` and the page stayed visible — on its own keeping the PROJECT MGMT
+  // group in the sidebar.
+  { key: "pm.activity_scope", label: "Activity Scope",   url: "/projects/activities",  module: "PROJECT MGMT", supports: allFour },
   { key: "pm.wbs",        label: "WBS & Planning",       url: "/projects/wbs",         module: "PROJECT MGMT", supports: allFour },
   { key: "pm.estimation", label: "Material Estimation", url: "/projects/estimation",  module: "PROJECT MGMT", supports: allFour },
   { key: "pm.work_order", label: "Work Orders",          url: "/projects/work-orders", module: "PROJECT MGMT", supports: allFour },
@@ -204,6 +211,36 @@ export function menuKeyForUrl(url: string | undefined): string | undefined {
 }
 
 /**
+ * Resolve a live pathname to its catalog row, matching the LONGEST catalog URL
+ * that is a path-segment prefix of it. Unlike `menuKeyForUrl` (exact match,
+ * used for nav items whose href is always a catalog URL) this also resolves
+ * detail and nested routes — `/projects/boq/abc123` → `pm.boq`.
+ *
+ * Returns undefined for paths outside the catalog (`/dashboard`, `/approvals`,
+ * `/settings/**`), which carry their own gates.
+ *
+ * Longest-prefix matters: `/masters/item-groups` must not resolve to a shorter
+ * sibling. Segment boundaries matter too, so `/projects/boq-archive` does NOT
+ * resolve to `/projects/boq`.
+ */
+export function menuKeyForPath(pathname: string | undefined): string | undefined {
+  if (!pathname) return undefined;
+  const path = pathname.replace(/\/+$/, "") || "/";
+  let bestKey: string | undefined;
+  let bestLen = -1;
+  for (const item of MENU_CATALOG) {
+    const url = item.url;
+    if (!url) continue;
+    if (path !== url && !path.startsWith(`${url}/`)) continue;
+    if (url.length > bestLen) {
+      bestLen = url.length;
+      bestKey = item.key;
+    }
+  }
+  return bestKey;
+}
+
+/**
  * Map the `modulesAssigned` keys used on the user form (lowercase,
  * underscore-separated) to the `MenuModule` group headers in the catalog
  * (uppercase, space-separated). Keep this in sync with `ASSIGNABLE_MODULES`
@@ -231,15 +268,13 @@ export const MODULE_KEY_TO_MENU_MODULE: Record<string, MenuModule> = {
  * the row renders off because its display module looks unassigned — and
  * the next save then revokes the grant for real.
  *
- * Projects is the one such page. It sits under MASTERS in the sidebar and
- * in MENU_CATALOG, but `construction.project` belongs to the `project_mgmt`
- * resource list, not `masters`. Listing project_mgmt here is a UNION, not a
- * swap — Projects stays in scope for the masters module too, so nothing a
- * masters-only user could see before is taken away.
+ * Empty today: the one such page was Projects, whose `construction.project`
+ * resource used to live in `project_mgmt` while the page renders under
+ * MASTERS. That resource now sits in `masters` where it belongs, so the
+ * override is no longer needed — and keeping it would re-break the fix by
+ * putting Projects back in scope whenever project_mgmt is assigned.
  */
-const MENU_KEY_EXTRA_SCOPE_MODULES: Record<string, readonly string[]> = {
-  "master.project": ["project_mgmt"],
-};
+const MENU_KEY_EXTRA_SCOPE_MODULES: Record<string, readonly string[]> = {};
 
 /**
  * Module keys that put a page in scope: its own menu group plus any extra

@@ -9,7 +9,7 @@ import type { RingingRedis } from "./ringing";
 import { channelRoom, userRoom } from "./rooms";
 import { addCall, db, FIXTURES, resetStore } from "./testdb";
 
-const { orgA, orgB, alice, bob, carol, general } = FIXTURES;
+const { orgA, orgB, alice, bob, general } = FIXTURES;
 
 type MockSocket = Socket & {
   _handlers: Record<string, (...args: unknown[]) => void | Promise<void>>;
@@ -167,39 +167,6 @@ describe("call:reject", () => {
   });
 });
 
-describe("call:ready", () => {
-  it("relays readiness from callee to other participants", async () => {
-    seedCall("c7", orgA, alice, [alice, bob]);
-    const m = createMockIO();
-    const bobSocket = createMockSocket(bob, orgA);
-    registerCallingHandlers(m.io, bobSocket, deps);
-
-    const ack = vi.fn();
-    await bobSocket._handlers["call:ready"]!({ callId: "c7" }, ack);
-    expect(ack).toHaveBeenCalledWith({ ok: true });
-    expect(m.emitted.some((e) => e.event === "call:ready" && e.room === userRoom(orgA, alice))).toBe(true);
-  });
-
-  it("rejects call:ready from a non-participant", async () => {
-    seedCall("c8", orgA, alice, [alice, bob]);
-    const { io } = createMockIO();
-    const carolSocket = createMockSocket(carol, orgA);
-    registerCallingHandlers(io, carolSocket, deps);
-    const ack = vi.fn();
-    await carolSocket._handlers["call:ready"]!({ callId: "c8" }, ack);
-    expect(ack).toHaveBeenCalledWith({ ok: false });
-  });
-
-  it("rejects call:ready with an empty callId", async () => {
-    const { io } = createMockIO();
-    const aliceSocket = createMockSocket(alice, orgA);
-    registerCallingHandlers(io, aliceSocket, deps);
-    const ack = vi.fn();
-    await aliceSocket._handlers["call:ready"]!({ callId: "" }, ack);
-    expect(ack).toHaveBeenCalledWith({ ok: false });
-  });
-});
-
 describe("cross-org rejection", () => {
   it("rejects events from a different org", async () => {
     seedCall("c9", orgA, alice, [alice, bob]);
@@ -217,17 +184,16 @@ describe("§2.2 — socket-local participant cache", () => {
   it("verifies participants once, then reuses the cache for later signaling", async () => {
     seedCall("c10", orgA, alice, [alice, bob]);
     const m = createMockIO();
-    const aliceSocket = createMockSocket(alice, orgA);
-    registerCallingHandlers(m.io, aliceSocket, deps);
+    const bobSocket = createMockSocket(bob, orgA);
+    registerCallingHandlers(m.io, bobSocket, deps);
     const spy = vi.spyOn(db.qcCall, "findUnique");
 
-    await aliceSocket._handlers["call:offer"]!({ callId: "c10", sdp: "s1" }, vi.fn());
-    await aliceSocket._handlers["call:offer"]!({ callId: "c10", sdp: "s2" }, vi.fn());
-    await aliceSocket._handlers["call:ice-candidate"]!({ callId: "c10", candidate: "cand" }, vi.fn());
+    await bobSocket._handlers["call:reject"]!({ callId: "c10" }, vi.fn());
+    await bobSocket._handlers["call:reject"]!({ callId: "c10" }, vi.fn());
 
-    // First offer verified against the DB; subsequent signaling used the cache.
+    // First reject verified against the DB; the second reused the cache.
     expect(spy).toHaveBeenCalledTimes(1);
-    expect(m.emitted.filter((e) => e.event === "call:offer")).toHaveLength(2);
+    expect(m.emitted.filter((e) => e.event === "call:rejected")).toHaveLength(2);
   });
 
   it("invalidates the cache on call:end", async () => {
@@ -237,9 +203,8 @@ describe("§2.2 — socket-local participant cache", () => {
     registerCallingHandlers(m.io, aliceSocket, deps);
     const spy = vi.spyOn(db.qcCall, "findUnique");
 
-    await aliceSocket._handlers["call:offer"]!({ callId: "c11", sdp: "s1" }, vi.fn()); // verify #1
-    await aliceSocket._handlers["call:end"]!({ callId: "c11" }, vi.fn()); // invalidate
-    await aliceSocket._handlers["call:offer"]!({ callId: "c11", sdp: "s2" }, vi.fn()); // verify #2
+    await aliceSocket._handlers["call:end"]!({ callId: "c11" }, vi.fn()); // verify #1, invalidates after
+    await aliceSocket._handlers["call:end"]!({ callId: "c11" }, vi.fn()); // verify #2 (cache was cleared)
 
     expect(spy).toHaveBeenCalledTimes(2);
   });

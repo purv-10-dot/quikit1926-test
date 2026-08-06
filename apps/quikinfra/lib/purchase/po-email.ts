@@ -282,7 +282,7 @@ export async function buildPoPreview(
 
   const email = (po.vendorEmail || master?.email || "").trim() || null;
   const vendorName =
-    po.vendorName || master?.companyName || master?.name || "Vendor";
+    po.vendorName || master?.name || master?.companyName || "Vendor";
   const items: PoPreviewItem[] = lines.map((l) => ({
     itemName: l.itemName ?? l.itemId ?? "—",
     quantity: String(l.poQty ?? l.quantity ?? "—"),
@@ -374,7 +374,7 @@ export async function buildPoPreviewPdf(
     },
     vendor: {
       vendorName:
-        po.vendorName || master?.companyName || master?.name || "Vendor",
+        po.vendorName || master?.name || master?.companyName || "Vendor",
       email: po.vendorEmail || master?.email || null,
       gstin: po.vendorGSTIN || master?.gstin || null,
       address:
@@ -486,8 +486,8 @@ export async function sendPoEmailToVendor(
       vendor: {
         vendorName:
           po.vendorName ||
-          master?.companyName ||
           master?.name ||
+          master?.companyName ||
           "Vendor",
         email,
         gstin: po.vendorGSTIN || master?.gstin || null,
@@ -530,7 +530,7 @@ export async function sendPoEmailToVendor(
         overrideHtml ??
         emailBodyHtml(
           po,
-          po.vendorName || master?.companyName || master?.name || "Vendor",
+          po.vendorName || master?.name || master?.companyName || "Vendor",
         ),
       attachments: [
         { filename: `${safeNo}.pdf`, content: pdf, contentType: "application/pdf" },
@@ -583,7 +583,7 @@ export async function sendPoCancellationEmailToVendor(
   }
 
   const vendorName =
-    po.vendorName || master?.companyName || master?.name || "Sir/Madam";
+    po.vendorName || master?.name || master?.companyName || "Sir/Madam";
   const contact = po.contactPerson || "";
   const mobile = po.contactMobile || "";
 

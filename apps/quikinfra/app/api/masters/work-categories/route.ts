@@ -8,7 +8,7 @@ import {
   countWorkCategories,
   createWorkCategory,
 } from "@/lib/masters/work-categories-repository";
-import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 
 export async function GET(req: NextRequest) {
   const ctxOrResp = await requireMastersAction("construction.org_work_category", "view");
@@ -34,6 +34,7 @@ export async function GET(req: NextRequest) {
     searchParams,
     ["code", "name", "sortOrder", "status", "createdAt"],
     { field: "sortOrder", order: "asc" },
+    NEWEST_FIRST_TIEBREAK,
   );
   const result = await paginateDb(
     parsePagination(req),

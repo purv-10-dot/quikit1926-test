@@ -238,8 +238,8 @@ export function SupportStatusTab({
   return (
     <div>
       <div className="mb-6">
-        <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">Support Status</h2>
-        <p className="text-sm text-[var(--color-text-secondary)] mt-1">
+        <h2 className="text-lg font-semibold text-[var(--color-text-primary,#0F172A)]">Support Status</h2>
+        <p className="text-sm text-[var(--color-text-secondary,#64748B)] mt-1">
           Every support request you have raised, and the QuikIT team&apos;s latest response.
         </p>
       </div>

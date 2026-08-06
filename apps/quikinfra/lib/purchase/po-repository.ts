@@ -227,7 +227,7 @@ function enrichPO(row: PoRow, itemById: Map<string, ItemLookup>, uomById: Map<st
     projectName: project?.name ?? "",
     projectCode: project?.code ?? "SITE",
     vendorId: row.vendorId,
-    vendorName: vendor?.companyName || vendor?.name || "",
+    vendorName: vendor?.name || vendor?.companyName || "",
     vendorGSTIN: vendor?.gstin ?? "",
     vendorState: vendor?.state ?? "",
     vendorEmail: vendor?.email ?? "",
