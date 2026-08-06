@@ -27,6 +27,7 @@ const STANDARD_MODULES = [
   "settings",
   "telephony",
   "users",
+  "icp",
 ];
 
 interface Props {

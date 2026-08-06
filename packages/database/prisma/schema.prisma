@@ -8076,6 +8076,7 @@ model CrmAccount {
   opportunities         CrmOpportunity[]
   userAccess            CrmUserAccountAccess[]
   groupAccess           CrmSalesGroupAccount[]
+  icpProfiles           CrmIcpProfileAccount[]
 
   @@index([orgId])
   @@index([orgId, name])
@@ -9388,6 +9389,178 @@ enum CrmProductTaxonomyKind {
   @@schema("app_quikcrm")
 }
 
+/// ===== ICP (Ideal Customer Profile) =====
+///
+/// An org-level master describing the kind of customer the business wants to
+/// sell to. One ICP gathers the firmographic criteria (segment, revenue band,
+/// employee range, geography) plus what it is sold WITH (products/services) and
+/// what it is sold INTO (industries, verticals, technologies).
+///
+/// Deliberately NOT in scope (see the ICP module brief): scoring, lead matching,
+/// recommendations, automation. Nothing here computes a fit score — the account
+/// links are hand-curated examples, not the output of a matching engine.
+model CrmIcpProfile {
+  id          String  @id @default(cuid())
+  orgId       String
+  name        String
+  description String?
+  /// Free-form "who this is" summary shown on the ICP card. Distinct from
+  /// `description`, which explains why the profile exists.
+  personaNotes String?
+
+  /// Firmographics. Reuses CrmAccountSegment so an ICP and a CrmAccount speak
+  /// the same vocabulary (Enterprise / MidMarket / SMB) without a new enum.
+  segment            CrmAccountSegment?
+  employeeCountMin   Int?
+  employeeCountMax   Int?
+  annualRevenueMin   Decimal? @db.Decimal(18, 2)
+  annualRevenueMax   Decimal? @db.Decimal(18, 2)
+  revenueCurrency    String?  @default("INR")
+  /// ISO-3166 alpha-2 list, matching CrmAccount.countryCode so the two can be
+  /// compared by a human reading both screens.
+  countryCodes       String[] @default([])
+  /// Free-text region labels (APAC, EMEA, "North India") — intentionally not a
+  /// master table; geography vocabularies differ too much per org to seed.
+  regions            String[] @default([])
+
+  isActive        Boolean   @default(true)
+  deletedAt       DateTime?
+  createdByUserId String?
+  updatedByUserId String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  taxonomyLinks CrmIcpProfileTaxonomy[]
+  productLinks  CrmIcpProfileProduct[]
+  accountLinks  CrmIcpProfileAccount[]
+
+  @@unique([orgId, name])
+  @@index([orgId])
+  @@index([orgId, deletedAt])
+  @@index([orgId, isActive])
+  @@index([orgId, segment])
+  @@schema("app_quikcrm")
+}
+
+/// Org-scoped master list for the three ICP dimensions that had no table before
+/// this module: Industry, Vertical, Technology.
+///
+/// One polymorphic table with a `kind` discriminator, following the
+/// CrmProductTaxonomy precedent in this same schema, rather than three
+/// near-identical tables. `parentId` allows nesting (Industry →
+/// Sub-industry, Technology → specific product) without a second model.
+///
+/// Note on industries: CrmAccount already carries free-text `industry` and a
+/// coded `industryKey`. This table does NOT replace or migrate those — it is the
+/// ICP module's own curated vocabulary. Keeping `name` aligned with existing
+/// `industryKey` values is a deliberate convenience for humans comparing the two
+/// screens, not an enforced FK.
+model CrmIcpTaxonomy {
+  id        String             @id @default(cuid())
+  orgId     String
+  kind      CrmIcpTaxonomyKind
+  name      String
+  /// Optional stable code for orgs that already key industries elsewhere.
+  code      String?
+  parentId  String?
+  parent    CrmIcpTaxonomy?    @relation("IcpTaxonomyTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children  CrmIcpTaxonomy[]   @relation("IcpTaxonomyTree")
+  sortOrder Int                @default(0)
+  isActive  Boolean            @default(true)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  profileLinks CrmIcpProfileTaxonomy[]
+
+  @@unique([orgId, kind, name, parentId])
+  @@index([orgId])
+  @@index([orgId, kind])
+  @@index([orgId, kind, isActive])
+  @@index([orgId, parentId])
+  @@schema("app_quikcrm")
+}
+
+/// ICP ↔ taxonomy (industry / vertical / technology) link.
+///
+/// `kind` is denormalised from CrmIcpTaxonomy so a profile's industries can be
+/// counted or filtered without joining the master table. It is written from the
+/// taxonomy row at link time and must never diverge — the service layer is the
+/// only writer.
+model CrmIcpProfileTaxonomy {
+  id           String             @id @default(cuid())
+  orgId        String
+  icpProfileId String
+  taxonomyId   String
+  kind         CrmIcpTaxonomyKind
+  createdAt    DateTime           @default(now())
+
+  icpProfile CrmIcpProfile  @relation(fields: [icpProfileId], references: [id], onDelete: Cascade)
+  taxonomy   CrmIcpTaxonomy @relation(fields: [taxonomyId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, icpProfileId, taxonomyId])
+  @@index([orgId])
+  @@index([orgId, icpProfileId])
+  @@index([orgId, icpProfileId, kind])
+  @@index([taxonomyId])
+  @@schema("app_quikcrm")
+}
+
+/// ICP ↔ product/service link.
+///
+/// Services are NOT a separate entity in this schema: a service is a CrmProduct
+/// with `productType = Service` (it even has its own `sacCode` column). So this
+/// one join table covers both the "Products" and "Services" ICP dimensions, and
+/// the UI splits them by reading CrmProduct.productType.
+model CrmIcpProfileProduct {
+  id           String   @id @default(cuid())
+  orgId        String
+  icpProfileId String
+  productId    String
+  createdAt    DateTime @default(now())
+
+  icpProfile CrmIcpProfile @relation(fields: [icpProfileId], references: [id], onDelete: Cascade)
+  product    CrmProduct    @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, icpProfileId, productId])
+  @@index([orgId])
+  @@index([orgId, icpProfileId])
+  @@index([productId])
+  @@schema("app_quikcrm")
+}
+
+/// ICP ↔ example company link.
+///
+/// Hand-curated reference only: "ABC Pvt Ltd is an example of this profile".
+/// This is NOT lead/account matching and nothing derives it automatically —
+/// a user picks accounts explicitly. Reuses CrmAccount rather than introducing
+/// any parallel company master.
+model CrmIcpProfileAccount {
+  id           String   @id @default(cuid())
+  orgId        String
+  icpProfileId String
+  accountId    String
+  /// Why this company exemplifies the profile — optional curator's note.
+  note         String?
+  createdAt    DateTime @default(now())
+
+  icpProfile CrmIcpProfile @relation(fields: [icpProfileId], references: [id], onDelete: Cascade)
+  account    CrmAccount    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, icpProfileId, accountId])
+  @@index([orgId])
+  @@index([orgId, icpProfileId])
+  @@index([accountId])
+  @@schema("app_quikcrm")
+}
+
+enum CrmIcpTaxonomyKind {
+  Industry
+  Vertical
+  Technology
+
+  @@schema("app_quikcrm")
+}
+
 enum CrmStockMovementType {
   Receipt
   Issue
@@ -9552,6 +9725,7 @@ model CrmProduct {
   images         CrmProductImage[]
   inventory      CrmProductInventory[]
   stockMovements CrmStockMovement[]
+  icpProfiles    CrmIcpProfileProduct[]
 
   @@unique([orgId, sku])
   @@index([orgId])

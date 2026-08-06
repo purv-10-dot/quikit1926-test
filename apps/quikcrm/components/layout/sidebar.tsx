@@ -31,6 +31,7 @@ import {
   Mails,
   PenSquare,
   Target,
+  Crosshair,
   type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -110,6 +111,14 @@ const NAV_TOP: NavItem[] = [
   { href: "/opportunities", label: "Opportunities", icon: Briefcase },
   { href: "/documents", label: "Documents", icon: Files },
 ];
+
+/**
+ * ICP (Ideal Customer Profile) — org-level master, so it sits below the working
+ * records rather than among them. Gated on `icp.view` (see SidebarNav): unlike
+ * the NAV_TOP items, ICP was introduced after RBAC, so every role's grant is
+ * explicit and a role without it would only reach a 403 page.
+ */
+const ICP_ITEM: NavItem = { href: "/icp", label: "ICP", icon: Crosshair };
 
 const NAV_BOTTOM: NavItem[] = [
   { href: "/marketing/campaigns", label: "Campaigns", icon: Megaphone },
@@ -521,8 +530,9 @@ function SidebarNav({
   pathname: string;
   collapsed: boolean;
 }) {
-  const { isAdmin } = usePermissions();
+  const { isAdmin, can } = usePermissions();
   const hasActivityTarget = useHasActivityTarget();
+  const canViewIcp = can("icp", "view");
 
   // Append "My Activity Target" to the Activities group only when assigned.
   const activitiesGroup: NavGroupConfig = hasActivityTarget
@@ -561,6 +571,9 @@ function SidebarNav({
         pathname={pathname}
         collapsed={collapsed}
       />
+      {canViewIcp ? (
+        <NavLink item={ICP_ITEM} pathname={pathname} collapsed={collapsed} />
+      ) : null}
       {NAV_BOTTOM.map((item) => (
         <NavLink
           key={item.href}

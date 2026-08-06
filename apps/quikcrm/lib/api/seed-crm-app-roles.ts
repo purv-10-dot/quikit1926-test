@@ -45,10 +45,26 @@ const MAILBOX_GRANTS: Grant[] = [
   { resource: "mailbox", action: "delete" },
 ];
 
+/**
+ * ICP is org-level MASTER config (like price lists), not per-rep working data.
+ * Reps read it to know who they should be selling to; managers curate it. So
+ * `view` is granted broadly and write actions stop at sales-manager. Admins get
+ * everything automatically via the "all" spec.
+ */
+const ICP_VIEW_GRANT: Grant = { resource: "icp", action: "view" };
+
+const ICP_MANAGE_GRANTS: Grant[] = [
+  ICP_VIEW_GRANT,
+  { resource: "icp", action: "create" },
+  { resource: "icp", action: "edit" },
+  { resource: "icp", action: "delete" },
+];
+
 const SALES_USER_GRANTS: Grant[] = [
   { resource: "dashboard", action: "view" },
   ...grants(WORK_MODULES, WORK_ACTIONS),
   ...MAILBOX_GRANTS,
+  ICP_VIEW_GRANT,
 ];
 
 const SALES_MANAGER_GRANTS: Grant[] = [
@@ -61,6 +77,7 @@ const SALES_MANAGER_GRANTS: Grant[] = [
   { resource: "quotes", action: "create" },
   { resource: "quotes", action: "edit" },
   { resource: "documents", action: "view" },
+  ...ICP_MANAGE_GRANTS,
 ];
 
 const MARKETING_USER_GRANTS: Grant[] = [
@@ -74,6 +91,8 @@ const MARKETING_USER_GRANTS: Grant[] = [
   { resource: "activities", action: "view" },
   { resource: "activities", action: "create" },
   ...MAILBOX_GRANTS,
+  // Marketing typically OWNS the ideal-customer definition, so they curate it.
+  ...ICP_MANAGE_GRANTS,
 ];
 
 const FINANCE_USER_GRANTS: Grant[] = [
@@ -87,6 +106,7 @@ const FINANCE_USER_GRANTS: Grant[] = [
   { resource: "reports", action: "view" },
   { resource: "reports", action: "export" },
   ...MAILBOX_GRANTS,
+  ICP_VIEW_GRANT,
 ];
 
 interface RoleSpec {
@@ -219,6 +239,51 @@ async function backfillMailboxPermissions(orgId: string, appId: string): Promise
   await client.crmRolePermission.createMany({ data: missing, skipDuplicates: true });
 }
 
+/**
+ * Backfill the `icp` grants onto the seeded non-admin roles.
+ *
+ * Same reasoning as backfillMailboxPermissions: `seedRole` only writes grants
+ * when a role has NONE, so every org seeded before the ICP module shipped has
+ * roles with grants but no `icp` rows — their users would get a 403 on /icp.
+ * This adds ONLY the missing icp pairs for each role's intended level (manage
+ * for sales-manager/marketing-user, view-only for sales-user/finance-user) and
+ * leaves every other resource untouched, so admin customisation is preserved.
+ */
+async function backfillIcpPermissions(orgId: string, appId: string): Promise<void> {
+  const client = rbacDb();
+  if (!client) return;
+
+  // Per-role intent, so a backfill never over-grants a read-only role.
+  const wantByRole = new Map<string, Grant[]>([
+    ["sales-user", [ICP_VIEW_GRANT]],
+    ["sales-manager", ICP_MANAGE_GRANTS],
+    ["marketing-user", ICP_MANAGE_GRANTS],
+    ["finance-user", [ICP_VIEW_GRANT]],
+  ]);
+
+  const roles = await client.crmAppRole.findMany({
+    where: { orgId, appId, name: { in: [...wantByRole.keys()] } },
+    select: {
+      id: true,
+      name: true,
+      permissions: { where: { resource: "icp" }, select: { action: true } },
+    },
+  });
+
+  if (!Array.isArray(roles) || roles.length === 0) return;
+
+  const missing = roles.flatMap((role) => {
+    const want = wantByRole.get(role.name) ?? [];
+    const have = new Set((role.permissions ?? []).map((p) => p.action));
+    return want
+      .filter((g) => !have.has(g.action))
+      .map((g) => ({ roleId: role.id, resource: g.resource, action: g.action }));
+  });
+  if (missing.length === 0) return;
+
+  await client.crmRolePermission.createMany({ data: missing, skipDuplicates: true });
+}
+
 async function backfillAdminPermissions(orgId: string, appId: string): Promise<void> {
   const client = rbacDb();
   if (!client) return;
@@ -308,6 +373,7 @@ async function runSeed(orgId: string): Promise<SeedResult> {
   await Promise.all([
     backfillAdminPermissions(orgId, appId),
     backfillMailboxPermissions(orgId, appId),
+    backfillIcpPermissions(orgId, appId),
   ]);
 
   seededOrgs.set(orgId, now);
