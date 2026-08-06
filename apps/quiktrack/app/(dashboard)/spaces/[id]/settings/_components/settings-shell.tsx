@@ -29,6 +29,7 @@ const NAV: {
   { key: "workflows", label: "Workflows", href: (id) => `/spaces/${id}/settings/workflows`, perm: { resource: "Project", action: "update" } },
   { key: "board", label: "Board", href: (id) => `/spaces/${id}/settings/board`, perm: { resource: "Project", action: "update" } },
   { key: "repositories", label: "Repositories", href: (id) => `/spaces/${id}/settings/repositories`, perm: { resource: "ProjectMember", action: "update" } },
+  { key: "pats", label: "Personal Access Tokens", href: (id) => `/spaces/${id}/settings/pats`, perm: { resource: "Project", action: "update" } },
   // TODO: the following nav entries are coming soon — their pages are stubs.
   // Restore once their corresponding settings UIs are implemented.
   // { key: "access", label: "Access", href: (id) => `/spaces/${id}/settings/access` },

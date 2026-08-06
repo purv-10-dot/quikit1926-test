@@ -6150,6 +6150,7 @@ model QtProject {
   workflows        QtWorkflow[]
   workflowScheme   QtWorkflowScheme?
   boardColumns     QtBoardColumn[]
+  personalAccessTokens QtPersonalAccessToken[]
 
   @@unique([orgId, projectKey])
   @@index([orgId, status])
@@ -6175,6 +6176,30 @@ model QtProjectMember {
   @@unique([projectId, userId])
   @@index([projectId, role])
   @@index([userId])
+  @@schema("app_quiktrack")
+}
+
+/// Long-lived, opaque, project-scoped credential for the QuikTrack MCP Server
+/// (V0, docs/adr/0001, docs/adr/0002). tokenHash is the only stored form of
+/// the token — the raw value is shown once at creation and never persisted.
+/// expiresAt is mandatory (max 1 year from issuance); there is no
+/// non-expiring option.
+model QtPersonalAccessToken {
+  id          String    @id @default(cuid())
+  orgId       String
+  projectId   String
+  createdById String
+  /// User-supplied label (e.g. "Claude Code — laptop") — never the token itself.
+  name        String    @default("Unnamed token")
+  tokenHash   String
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  project     QtProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([tokenHash])
+  @@index([orgId, projectId])
   @@schema("app_quiktrack")
 }
 
@@ -6633,6 +6658,7 @@ model QtIssue {
   devBranches      QtDevBranch[]
   devCommits       QtDevCommit[]
   devPullRequests  QtDevPullRequest[]
+  remoteLinks      QtRemoteLink[]
 
   @@unique([projectId, key])
   @@index([orgId])
@@ -6692,6 +6718,8 @@ model QtIssueComment {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   editedAt  DateTime?
+  /// "user" | "agent" — was this authored by a person or an MCP-authenticated tool.
+  actorType String    @default("user")
   issue     QtIssue   @relation(fields: [issueId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
@@ -6724,6 +6752,25 @@ model QtIssueAttachment {
   @@schema("app_quiktrack")
 }
 
+/// External URL attached to an issue (e.g. a PR link) — distinct from
+/// QtIssueLink, which only links two QtIssue rows to each other.
+model QtRemoteLink {
+  id        String   @id @default(cuid())
+  orgId     String
+  projectId String
+  issueId   String
+  url       String
+  title     String
+  type      String
+  metadata  Json?
+  createdAt DateTime @default(now())
+  issue     QtIssue  @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, projectId])
+  @@index([issueId, createdAt])
+  @@schema("app_quiktrack")
+}
+
 model QtIssueHistory {
   id        String   @id @default(cuid())
   orgId     String
@@ -6734,6 +6781,8 @@ model QtIssueHistory {
   oldValue  String?
   newValue  String?
   createdAt DateTime @default(now())
+  /// "user" | "agent" — was this change made by a person or an MCP-authenticated tool.
+  actorType String   @default("user")
   issue     QtIssue  @relation(fields: [issueId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
@@ -6919,6 +6968,8 @@ model QtIssueTransitionLog {
   fromStatusId String?
   toStatusId   String
   actorId      String?
+  /// "user" | "agent" — was this transition triggered by a person or an MCP-authenticated tool.
+  actorType    String   @default("user")
   reason       String?
   createdAt    DateTime @default(now())
   issue        QtIssue  @relation(fields: [issueId], references: [id], onDelete: Cascade)

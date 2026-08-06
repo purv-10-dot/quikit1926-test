@@ -50,26 +50,8 @@ A starter `settings.json` for this repo:
 
 ```json
 {
-  "tools": {
-    "allowed": [
-      "Bash(npm run *)",
-      "Bash(git status)",
-      "Bash(git diff *)",
-      "Bash(git log *)",
-      "Bash(git branch *)",
-      "Bash(git checkout *)",
-      "Bash(git add *)",
-      "Bash(git commit *)",
-      "Bash(npx tsc *)",
-      "Bash(npx vitest *)",
-      "Read",
-      "Edit",
-      "Write",
-      "Grep",
-      "Glob"
-    ],
-    "blocked": [
-      "Bash(git push *)",
+  "permissions": {
+    "deny": [
       "Bash(git push origin main *)",
       "Bash(git push origin uat *)",
       "Bash(git push origin dev *)"
@@ -78,7 +60,9 @@ A starter `settings.json` for this repo:
 }
 ```
 
-The `blocked` list prevents your local Claude from pushing to `main`/`uat`/`dev`. Branch protection on the master monorepo will block this anyway, but local-blocking saves a confusing error.
+The `deny` list prevents your local Claude from pushing to `main`/`uat`/`dev`. Branch protection on the master monorepo will block this anyway, but local-blocking saves a confusing error.
+
+Real Claude Code settings live under `permissions.allow` / `permissions.deny` (glob-style tool patterns) — not `tools.allowed`/`tools.blocked`. See `apps/quiktrack/.claude/settings.json` for a working example scoped to that app.
 
 ## Effective prompting on this codebase
 
@@ -126,7 +110,7 @@ If Claude is making the same mistake repeatedly, paste the relevant rule directl
 ## What Claude is NOT good at (without help)
 
 - **Schema changes**: don't let Claude edit `packages/database/prisma/schema.prisma`. Always file a request via PR description and wait for the integration owner.
-- **Cross-app patterns**: Claude can't see other apps from your per-dev repo. If you ask "how does quikscale handle this?", it doesn't know. Use docs/exemplars/.
+- **Cross-app patterns**: if you're working in the full monorepo (not a per-dev repo), Claude *can* technically see other apps — but each app's `.claude/settings.json` denies reading sibling app directories to keep context scoped and prevent cross-app pattern-copying. If you ask "how does quikscale handle this?" from inside `apps/quiktrack`, it won't look — use docs/exemplars/ instead.
 - **Org isolation reasoning**: Claude follows the pattern when shown but doesn't always derive the rule from first principles. **Always review queries for the `orgId` filter yourself.**
 - **Branch protection**: Claude will try to push to main if you ask it to. Branch protection blocks it; the blocked-tools list in `settings.json` blocks it earlier. Belt + braces.
 
