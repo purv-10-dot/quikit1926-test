@@ -10,6 +10,7 @@ import { PageBackground } from "@/components/hrms/page-background";
 import { Modal } from "@/components/hrms/modal";
 import { FormActions, FormField, FormInput } from "@/components/hrms/form";
 import { NumberInput } from "@/components/hrms/ui/number-input";
+import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 
 interface ShiftItem {
   id: string;
@@ -30,6 +31,8 @@ export default function ShiftsPage() {
   const api = useApiClient();
   const router = useRouter();
   const qc = useQueryClient();
+  const { hasPermission } = useDashboardConfig();
+  const canManage = hasPermission("hrms.attendance.manage");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 10;
@@ -113,7 +116,8 @@ export default function ShiftsPage() {
       <CrudTable title="Shift Policies" data={pageItems} columns={columns} isLoading={isLoading}
         onAdd={openAdd} onEdit={openEdit} onDelete={(id) => deleteMut.mutate(id)}
         search={search} onSearchChange={(v) => { setSearch(v); setPage(1); }} searchPlaceholder="Search shifts..."
-        pagination={{ page, totalPages, total: filtered.length, limit: PAGE_SIZE, onPageChange: setPage }} />
+        pagination={{ page, totalPages, total: filtered.length, limit: PAGE_SIZE, onPageChange: setPage }}
+        canManage={canManage} />
 
       <Modal open={modal.open} onClose={() => setModal({ open: false, item: null })} title={modal.item ? "Edit Shift" : "Add Shift"}>
         <form

@@ -181,3 +181,4 @@ jobs:
             NEXT_PUBLIC_APP_URL=https://support.quikit.ai
             NEXTAUTH_URL=https://authn.quikit.ai
             NEXT_PUBLIC_QUIKASSET_URL=https://asset.quikit.ai
+            NEXT_PUBLIC_WEBSITE_URL=https://quikit.ai

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import {
   ChevronLeft, Plus, Pencil, Trash2, TrendingUp,
@@ -10,6 +10,7 @@ import SWTPreview from "./SWTPreview";
 import { useSWTEntries, useCreateSWTEntry, useUpdateSWTEntry, useDeleteSWTEntry } from "@/lib/hooks/useSwt";
 import { EmptyState, useConfirm } from "@quikit/ui";
 import { getFiscalYear, getFiscalQuarter } from "@/lib/utils/fiscal";
+import { useCurrentQuarter } from "@/lib/hooks/useCurrentWeek";
 import {
   SWT_TYPE_CONFIG, TREND_DIRECTION_CONFIG,
   TREND_CATEGORIES, TREND_CATEGORY_CONFIG,
@@ -39,9 +40,25 @@ const QUARTERS = ["Q1", "Q2", "Q3", "Q4"];
 
 export default function SWTPage() {
   const confirm = useConfirm();
-  const [quarter, setQuarter] = useState<string>(getFiscalQuarter());
-  const [year, setYear]       = useState(getFiscalYear());
+  const [quarter, setQuarterRaw] = useState<string>(getFiscalQuarter());
+  const [year, setYear]          = useState(getFiscalYear());
   const years = Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - 2 + i);
+
+  // Correct the calendar-derived default to the org's REAL current quarter
+  // (resolved from its actual QuarterSetting date ranges) until the user
+  // picks a quarter themselves. getFiscalQuarter() assumes an April-start
+  // fiscal year; an org with a different fiscalYearStart (schema default is
+  // January) otherwise lands on the wrong quarter and sees an empty list.
+  const userPickedQuarter = useRef(false);
+  const resolvedCurrentQuarter = useCurrentQuarter(year);
+  useEffect(() => {
+    if (userPickedQuarter.current || !resolvedCurrentQuarter) return;
+    setQuarterRaw(resolvedCurrentQuarter);
+  }, [resolvedCurrentQuarter]);
+  const setQuarter = useCallback((q: string) => {
+    userPickedQuarter.current = true;
+    setQuarterRaw(q);
+  }, []);
 
   const { data, isLoading } = useSWTEntries({ quarter, year });
   const entries = useMemo(() => (data as SWTEntryRow[] | undefined) ?? [], [data]);

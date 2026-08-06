@@ -17,7 +17,18 @@ const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
  *   - Authorization: Bearer <jwt>
  *   - Cookie "next-auth.session-token"
  *
- * Returns: { valid, userId, email, activeOrgId, orgRole, isSuperAdmin, orgActive }
+ * Returns: { valid, userId, email, activeOrgId, orgRole, isSuperAdmin, orgActive,
+ *            subscriptionActive, trialExpired, customPermissions, actingAs,
+ *            actingAgentId }
+ *
+ * `customPermissions` is the flat per-(user, org) permission list from
+ * `OrgMember.customPermissions` — R1 "Option B". Empty array when no org is
+ * selected or the member has no extras; never null, so callers can treat it as
+ * a list unconditionally.
+ *
+ * `actingAs` / `actingAgentId` describe the ACTOR behind the token (R2), for
+ * audit attribution. Defaults are `"user"` / `null`, which is exactly what a
+ * normal human session is.
  *
  * `orgActive` reflects the live status of the token's selected org: false
  * once a super-admin suspends it. Consumer-app middleware reads this to bounce
@@ -52,14 +63,28 @@ export async function GET(req: NextRequest) {
   let orgActive = true;
   let subscriptionActive = true;
   let trialExpired = false;
+  // Granular permissions (R1 / "Option B" in docs/12-auth-service-integration-response.md).
+  // Read LIVE from OrgMember.customPermissions rather than off the JWT: a
+  // revocation then takes effect on the caller's next protected navigation
+  // instead of waiting for re-login. Same reasoning as the org-status check
+  // above, and it costs no extra round-trip — the compound-unique
+  // (orgId, userId) lookup runs in parallel with the org query below.
+  let customPermissions: string[] = [];
   if (activeOrgId) {
-    const org = await db.org.findUnique({
-      where: { id: activeOrgId },
-      select: {
-        status: true,
-        subscription: { select: { status: true, trialEndsAt: true } },
-      },
-    });
+    const [org, membership] = await Promise.all([
+      db.org.findUnique({
+        where: { id: activeOrgId },
+        select: {
+          status: true,
+          subscription: { select: { status: true, trialEndsAt: true } },
+        },
+      }),
+      db.orgMember.findUnique({
+        where: { orgId_userId: { orgId: activeOrgId, userId: token.id as string } },
+        select: { customPermissions: true },
+      }),
+    ]);
+    customPermissions = membership?.customPermissions ?? [];
     orgActive = org?.status === "active";
 
     const sub = org?.subscription ?? null;
@@ -88,5 +113,13 @@ export async function GET(req: NextRequest) {
     orgActive,
     subscriptionActive,
     trialExpired,
+    customPermissions,
+    // Actor identity (R2). Minted onto the token by
+    // /api/auth/internal/issue-agent-jwt; a normal human session carries
+    // neither claim, so the defaults below describe it correctly. Consumers use
+    // this to record actorType in their audit logs and to distinguish an agent
+    // acting for a user from the user acting directly.
+    actingAs: (token.actingAs as string | undefined) ?? "user",
+    actingAgentId: (token.actingAgentId as string | undefined) ?? null,
   });
 }

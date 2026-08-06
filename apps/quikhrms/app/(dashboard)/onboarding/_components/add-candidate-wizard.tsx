@@ -97,7 +97,8 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
   const { data: roles } = useRoles();
   const { data: templatesData } = useSalaryTemplates();
   const { data: managers } = useQuery({ queryKey: ["employees-mgrs"], queryFn: () => api.get<RefItem[]>("/api/v1/hrms/employees?limit=200") });
-  const { data: onbTemplates } = useQuery({ queryKey: ["onboarding", "templates", "Onboarding"], queryFn: () => api.get<RefItem[]>("/api/v1/hrms/onboarding/templates?isActive=true&kind=Onboarding&limit=100") });
+  // This wizard is launched from Pre-Onboarding, so it uses Pre-Onboarding templates.
+  const { data: onbTemplates } = useQuery({ queryKey: ["onboarding", "templates", "PreOnboarding"], queryFn: () => api.get<RefItem[]>("/api/v1/hrms/onboarding/templates?isActive=true&kind=PreOnboarding&limit=100") });
 
   const deptOpts = ((depts?.data ?? []) as RefItem[]).map((d) => ({ value: d.id, label: d.name ?? "" }));
   const desigOpts = ((desigs?.data ?? []) as RefItem[]).map((d) => ({ value: d.id, label: d.title ?? d.name ?? "" }));
@@ -155,6 +156,8 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
       skillSet: form.skillSet.trim() || undefined,
       additionalInfo: form.additionalInfo.trim() || undefined,
       templateId: form.templateId || undefined,
+      // Added from the Pre-Onboarding screen → land the candidate in that phase.
+      phase: "PreOnboarding",
       educations: educations.filter((e) => Object.values(e).some((v) => v && String(v).trim())),
       pastExperiences: experiences.filter((e) => e.occupation || e.company || e.summary || e.duration),
       emergencyContacts: emergency.filter((e) => e.name && e.relationship && e.phone),
@@ -180,7 +183,7 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
     onError: (e) => toast.error("Couldn't add candidate", e instanceof Error ? e.message : "Please try again."),
   });
 
-  const missingRequired = () => {
+  const missingRequired = (saveDraft: boolean) => {
     if (!form.firstName.trim() || !form.lastName.trim() || !form.workEmail.trim()) return { step: 0, msg: "First name, last name and work email are required." };
     if (!isEmail(form.workEmail)) return { step: 0, msg: "Enter a valid work email address." };
     if (form.personalEmail.trim() && !isEmail(form.personalEmail)) return { step: 0, msg: "Enter a valid personal email address." };
@@ -199,13 +202,15 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
     }
     if (!form.reportingManagerId || !form.roleId || !form.salaryTemplateId || !(form.ctcLpa && form.ctcLpa > 0))
       return { step: 2, msg: "Reporting manager, role, salary template and CTC (LPA) are required." };
-    if (!form.templateId)
+    // Onboarding template is required only for a full submit — Save Draft can
+    // skip it (the server also skips the template requirement for drafts).
+    if (!saveDraft && !form.templateId)
       return { step: 2, msg: "An onboarding template is required. Pick one in the Employment step (or use Save Draft)." };
     return null;
   };
 
   const submit = (saveDraft: boolean) => {
-    const miss = missingRequired();
+    const miss = missingRequired(saveDraft);
     if (miss) { setStep(miss.step); toast.error("Missing required fields", miss.msg); return; }
     mut.mutate(buildPayload(saveDraft));
   };
@@ -367,7 +372,7 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
                   <F label="Source of Hire"><Select value={form.sourceOfHire} onChange={(v) => set("sourceOfHire", v)} options={SOURCES.map((s) => ({ value: s, label: s }))} /></F>
                   <F label="Previous Experience (months)"><NumberInput allowDecimal={false} min={0} value={form.previousExperience} onChange={(v) => set("previousExperience", v)} className={inputCls} /></F>
                   <F label="Date of Joining"><input type="date" className={inputCls} value={form.dateOfJoining} onChange={(e) => set("dateOfJoining", e.target.value)} /></F>
-                  <F label="Onboarding Template *"><Select value={form.templateId} onChange={(v) => set("templateId", v)} searchable placeholder="Select a template" options={onbOpts} /></F>
+                  <F label="Pre-Onboarding Template *"><Select value={form.templateId} onChange={(v) => set("templateId", v)} searchable placeholder="Select a template" options={onbOpts} /></F>
                   <F label="Highest Qualification"><input className={inputCls} placeholder="e.g. B.Tech" value={form.highestQualification} onChange={(e) => set("highestQualification", e.target.value)} /></F>
                   <F label="Skills (comma-separated)"><input className={inputCls} placeholder="React, SQL…" value={form.skillSet} onChange={(e) => set("skillSet", e.target.value)} /></F>
                 </Grid2>

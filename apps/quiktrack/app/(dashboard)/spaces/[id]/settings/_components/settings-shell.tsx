@@ -26,6 +26,7 @@ const NAV: {
   { key: "details", label: "Details", href: (id) => `/spaces/${id}/settings` },
   { key: "user-management", label: "Roles & Permissions", href: (id) => `/spaces/${id}/settings/user-management`, perm: { resource: "ProjectMember", action: "view" } },
   { key: "fields", label: "Fields", href: (id) => `/spaces/${id}/settings/fields`, perm: { resource: "ProjectMember", action: "update" } },
+  { key: "repositories", label: "Repositories", href: (id) => `/spaces/${id}/settings/repositories`, perm: { resource: "ProjectMember", action: "update" } },
   // TODO: the following nav entries are coming soon — their pages are stubs.
   // Restore once their corresponding settings UIs are implemented.
   // { key: "access", label: "Access", href: (id) => `/spaces/${id}/settings/access` },

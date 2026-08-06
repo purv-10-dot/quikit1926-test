@@ -8,7 +8,7 @@ vi.mock("@quikit/database", async () => await import("./testdb"));
 
 import { createGateway, type Gateway } from "./gateway";
 import { createMetrics } from "./metrics";
-import { FIXTURES } from "./testdb";
+import { addPresence, FIXTURES, resetStore } from "./testdb";
 
 const { orgA, orgB, alice, bob, carol, general, announcements } = FIXTURES;
 const SECRET = "test-realtime-secret";
@@ -38,7 +38,15 @@ function connectReady(token: string): Promise<Socket> {
   });
 }
 
-function connectWithSnapshot(token: string): Promise<{ socket: Socket; snapshot: string[] }> {
+interface SnapshotUser {
+  userId: string;
+  status?: string;
+  statusMessage?: string;
+}
+
+function connectWithSnapshot(
+  token: string,
+): Promise<{ socket: Socket; snapshot: string[]; users: SnapshotUser[] }> {
   return new Promise((resolve, reject) => {
     const s = ioClient(url, {
       auth: { token },
@@ -47,11 +55,12 @@ function connectWithSnapshot(token: string): Promise<{ socket: Socket; snapshot:
       forceNew: true,
     });
     openSockets.push(s);
-    let snapshot: string[] = [];
-    s.on("presence_snapshot", (p: { userIds: string[] }) => {
-      snapshot = p.userIds;
+    let users: SnapshotUser[] = [];
+    // New shape is `{ users:[{userId,status?}] }`; tolerate the legacy `{ userIds }`.
+    s.on("presence_snapshot", (p: { users?: SnapshotUser[]; userIds?: string[] }) => {
+      users = p.users ?? (p.userIds ?? []).map((userId) => ({ userId }));
     });
-    s.on("ready", () => resolve({ socket: s, snapshot }));
+    s.on("ready", () => resolve({ socket: s, snapshot: users.map((u) => u.userId), users }));
     s.on("connect_error", reject);
   });
 }
@@ -98,6 +107,8 @@ afterEach(async () => {
   for (const s of openSockets.splice(0)) s.disconnect();
   // Let server-side disconnect handlers (markOffline) settle.
   await delay(80);
+  // Clear any set-status rows a test seeded so presence doesn't leak forward.
+  resetStore();
 });
 
 afterAll(async () => {
@@ -124,6 +135,23 @@ describe("presence", () => {
     const noLeak = expectNoEvent(a, "presence");
     await connectReady(mintToken(carol, orgB)); // globex — shares nothing with acme
     await noLeak;
+  });
+
+  it("seeds the snapshot with each online user's durable set-status", async () => {
+    addPresence({ orgId: orgA, userId: alice, status: "busy", statusMessage: "focusing" });
+    await connectReady(mintToken(alice, orgA));
+    const { users } = await connectWithSnapshot(mintToken(bob, orgA));
+    const aliceEntry = users.find((u) => u.userId === alice);
+    expect(aliceEntry?.status).toBe("busy");
+    expect(aliceEntry?.statusMessage).toBe("focusing");
+  });
+
+  it("broadcasts a connecting user's durable set-status to observers (connect-time seed)", async () => {
+    const b = await connectReady(mintToken(bob, orgA)); // observer in #general
+    addPresence({ orgId: orgA, userId: alice, status: "dnd", statusMessage: null });
+    const got = waitForEvent<{ userId: string; status: string }>(b, "presence_status");
+    await connectReady(mintToken(alice, orgA));
+    expect(await got).toMatchObject({ userId: alice, status: "dnd" });
   });
 
   it("multi-tab: stays online until the LAST socket leaves, then broadcasts offline", async () => {

@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Save, BarChart3 } from "lucide-react";
+import { Save, BarChart3, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 
 const CONFIG_API = "/api/settings/activity-targets";
@@ -46,6 +47,13 @@ export function ActivityTargetsPageClient() {
   const [weeklyWorkingDays, setWeeklyWorkingDays] = useState("5");
   const [rows, setRows] = useState<Record<string, RowState>>({});
   const [users, setUsers] = useState<PickerUser[]>([]);
+
+  // Client-side search + filters for the Assign Targets table. Purely a view
+  // concern — filtering never touches `rows`, so hidden users keep their edits
+  // and are still saved.
+  const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
 
   const applyConfigToRows = useCallback((cfg: TargetConfig) => {
     const next: Record<string, RowState> = {};
@@ -97,6 +105,40 @@ export function ActivityTargetsPageClient() {
     () => Object.values(rows).filter((r) => r.enabled).length,
     [rows],
   );
+
+  const roleOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const u of users) if (u.role) set.add(u.role);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [users]);
+
+  const filteredUsers = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return users.filter((u) => {
+      const enabled = rows[u.id]?.enabled === true;
+      const statusLabel = enabled ? "Assigned" : "No Target Assigned";
+
+      if (roleFilter !== "all" && u.role !== roleFilter) return false;
+      if (statusFilter === "assigned" && !enabled) return false;
+      if (statusFilter === "unassigned" && enabled) return false;
+
+      if (!q) return true;
+      return (
+        u.name.toLowerCase().includes(q) ||
+        (u.email ?? "").toLowerCase().includes(q) ||
+        (u.role ?? "").toLowerCase().includes(q) ||
+        statusLabel.toLowerCase().includes(q)
+      );
+    });
+  }, [users, rows, search, roleFilter, statusFilter]);
+
+  const filtersActive = search.trim() !== "" || roleFilter !== "all" || statusFilter !== "all";
+
+  function clearFilters() {
+    setSearch("");
+    setRoleFilter("all");
+    setStatusFilter("all");
+  }
 
   function rowFor(userId: string): RowState {
     return rows[userId] ?? { enabled: false, target: "" };
@@ -236,6 +278,60 @@ export function ActivityTargetsPageClient() {
               <span className="font-medium text-crm-text">{assignedCount}</span> assigned.
             </p>
           </div>
+
+          {/* Search + filters */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[14rem] flex-1 sm:max-w-md">
+              <Search
+                className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-crm-muted"
+                size={14}
+              />
+              <Input
+                className="crm-input pl-8"
+                placeholder="Search by name, email, role or status…"
+                aria-label="Search salespeople"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+            <Select
+              className="w-auto"
+              aria-label="Filter by role"
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
+            >
+              <option value="all">All roles</option>
+              {roleOptions.map((role) => (
+                <option key={role} value={role}>
+                  {role}
+                </option>
+              ))}
+            </Select>
+            <Select
+              className="w-auto"
+              aria-label="Filter by target status"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="all">All statuses</option>
+              <option value="assigned">Assigned</option>
+              <option value="unassigned">No Target Assigned</option>
+            </Select>
+            {filtersActive && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-crm-border px-3 py-2 text-sm font-medium text-crm-text transition hover:bg-crm-panel"
+              >
+                <X size={14} />
+                Clear Filters
+              </button>
+            )}
+            <span className="text-xs text-crm-muted">
+              Showing {filteredUsers.length} of {users.length}
+            </span>
+          </div>
+
           <div className="overflow-x-auto">
             <Table>
               <THead>
@@ -247,7 +343,7 @@ export function ActivityTargetsPageClient() {
                 </TR>
               </THead>
               <TBody>
-                {users.map((u) => {
+                {filteredUsers.map((u) => {
                   const r = rowFor(u.id);
                   return (
                     <TR key={u.id}>
@@ -283,10 +379,12 @@ export function ActivityTargetsPageClient() {
                     </TR>
                   );
                 })}
-                {users.length === 0 && (
+                {filteredUsers.length === 0 && (
                   <TR>
                     <TD colSpan={4} className="text-center text-crm-muted">
-                      No active users found.
+                      {users.length === 0
+                        ? "No active users found."
+                        : "No salespeople match the current search or filters."}
                     </TD>
                   </TR>
                 )}

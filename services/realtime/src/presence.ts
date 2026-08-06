@@ -23,7 +23,19 @@ export interface PresenceRedis {
 }
 
 const key = (orgId: string, userId: string) => `presence:${orgId}:${userId}`;
-const lastSeenKey = (orgId: string, userId: string) => `presence:lastseen:${orgId}:${userId}`;
+
+/**
+ * Durable last-seen key (no TTL) — written by `markOffline` on the last-socket
+ * disconnect.
+ *
+ * SOURCE OF TRUTH for this format. `apps/quikchat` READS this key directly off
+ * the same Redis instance rather than asking the gateway for it — see
+ * `readLastSeen()` in `apps/quikchat/lib/server/presence-redis.ts`, which
+ * carries the reciprocal pointer back here. Rename this and you MUST grep
+ * `presence:lastseen` across the monorepo; the two packages share no code.
+ */
+export const lastSeenKey = (orgId: string, userId: string) =>
+  `presence:lastseen:${orgId}:${userId}`;
 
 /** Add a socket to the user's set. `firstSocket` ⇒ a 0→1 online transition. */
 export async function markOnline(

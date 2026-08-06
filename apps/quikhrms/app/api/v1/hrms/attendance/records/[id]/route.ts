@@ -7,6 +7,7 @@ import { getCallerEmployeeId, getCallerReporteeIds } from "@/lib/rbac/scope";
 import { fireWorkflow } from "@/lib/workflows/executor";
 import { attendanceDayStart } from "@/lib/attendance/day";
 import { regularizationBlockReason } from "@/lib/attendance/regularization-guards";
+import { notifyRegularizationApprovers, notifyRegularizationDecision } from "@/lib/services/attendance-notify";
 
 /** GET /api/v1/hrms/attendance/records/:id */
 export const GET = withAuth(async (_req: NextRequest, ctx, params) => {
@@ -131,6 +132,7 @@ export const PATCH = withAuth(async (req: NextRequest, ctx, params) => {
           reason: parsed.data.reason,
         },
       });
+      void notifyRegularizationApprovers(orgId, existing.employeeId, record.id, existing.date, parsed.data.reason);
       return successResponse(record);
     }
 
@@ -222,6 +224,10 @@ export const PATCH = withAuth(async (req: NextRequest, ctx, params) => {
           comment: parsed.data.comment,
         },
       });
+      void notifyRegularizationDecision(
+        orgId, existing.employeeId, record.id, existing.date,
+        parsed.data.status as "Approved" | "Rejected", userId, parsed.data.comment,
+      );
       return successResponse(record);
     }
 

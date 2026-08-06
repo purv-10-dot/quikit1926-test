@@ -21,6 +21,8 @@
 import { db } from "@quikit/database";
 import type { Server as IOServer, Socket } from "socket.io";
 import { logger } from "./logger";
+import { broadcastConnectivity } from "./presence-broadcast";
+import { listChannelIdsForMember } from "./queries";
 import { clearRinging, setRinging, type RingingRedis } from "./ringing";
 import { userRoom } from "./rooms";
 
@@ -91,6 +93,37 @@ async function resolveCallAuth(
 
 function invalidateCallAuth(socket: CallingSocket, callId: string): void {
   if (socket.data.callAuth) delete socket.data.callAuth[callId];
+}
+
+/**
+ * Derive the ephemeral `on_call` presence (or revert to plain `online`) for each
+ * participant and broadcast it to their shared-channel rooms. This is derived
+ * live in the gateway — NEVER persisted (invariant #1). Reverting to `online`
+ * (not to a stored status) is deliberate: the durable set-status lives on the
+ * client, which re-applies precedence and resurfaces busy/dnd/away on its own.
+ *
+ * Known v1 limitation: if a participant fully disconnects at the same moment a
+ * call ends, the revert can briefly show them `online` until the next presence
+ * event corrects it. `on_call` is a cosmetic nicety, so this is acceptable.
+ * Covers the 1:1 signaling path (call:invite/accepted/end); SFU group calls
+ * (/api/calls/group) don't ride these handlers and are out of scope for v1.
+ */
+async function broadcastCallPresence(
+  io: IOServer,
+  orgId: string,
+  participantIds: string[],
+  status: "on_call" | "online",
+): Promise<void> {
+  await Promise.all(
+    participantIds.map(async (uid) => {
+      try {
+        const channelIds = await listChannelIdsForMember(orgId, uid);
+        broadcastConnectivity(io, orgId, uid, channelIds, status);
+      } catch {
+        // best-effort — presence derivation must never break call signaling
+      }
+    }),
+  );
 }
 
 // ============================================================================
@@ -219,6 +252,9 @@ export function registerCallingHandlers(
           return;
         }
         await clearRinging(ringingRedis, callId);
+        // Call is now active → derive `on_call` for every participant (ephemeral).
+        const auth = await resolveCallAuth(socket, callId, orgId, userId);
+        if (auth) await broadcastCallPresence(io, orgId, auth.participantIds, "on_call");
         logger.info({ callId, userId }, "call accepted — cleared ringing record");
         ack?.({ ok: true });
       } catch (e) {
@@ -398,6 +434,8 @@ export function registerCallingHandlers(
           callId,
           fromUserId: userId,
         });
+        // Call is over → revert on_call to plain online for all participants.
+        await broadcastCallPresence(io, orgId, auth.participantIds, "online");
         ack?.({ ok: true });
       } catch (e) {
         logger.error({ error: e, socketId: socket.id }, "call:reject handler error");
@@ -428,6 +466,8 @@ export function registerCallingHandlers(
           if (pUserId === userId) continue;
           io.to(userRoom(orgId, pUserId)).emit("call:cancelled", { callId });
         }
+        // Call is over → revert on_call to plain online for all participants.
+        await broadcastCallPresence(io, orgId, auth.participantIds, "online");
         invalidateCallAuth(socket, callId); // §2.2 — call is over
         ack?.({ ok: true });
       } catch (e) {
@@ -456,6 +496,8 @@ export function registerCallingHandlers(
         if (pUserId === userId) continue;
         io.to(userRoom(orgId, pUserId)).emit("call:ended", { callId, fromUserId: userId });
       }
+      // Call is over → revert on_call to plain online for all participants.
+      await broadcastCallPresence(io, orgId, auth.participantIds, "online");
       invalidateCallAuth(socket, callId); // §2.2 — call is over
       ack?.({ ok: true });
     } catch (e) {

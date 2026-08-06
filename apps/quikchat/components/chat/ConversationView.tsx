@@ -15,12 +15,16 @@ import {
   deleteMessageApi,
   editMessageApi,
   fetchChannelDetail,
+  fetchChannelLastSeen,
   ingestDocument,
   fetchMembers,
   fetchPinned,
   forwardMessageApi,
+  pinChannel,
   removeMember,
   setMemberRole,
+  updateChannel,
+  deleteChannel,
   setMessagePinApi,
   toggleReactionApi,
 } from "@/lib/api";
@@ -44,6 +48,8 @@ import { type MessageRowActions } from "./MessageRow";
 import { ReplyBar } from "./ReplyBar";
 import { SchedulingModal } from "./SchedulingModal";
 import { TypingIndicator, type TypingUser } from "./TypingIndicator";
+import type { EffectiveStatus } from "@/lib/presence-store";
+import { mentionableMembers } from "@/lib/mentions";
 
 export interface ConversationViewProps {
   channel: ChannelListItem;
@@ -53,6 +59,8 @@ export interface ConversationViewProps {
   channels: ChannelList | undefined;
   /** User ids currently online (shared-channel presence). */
   online?: ReadonlySet<string>;
+  /** Effective presence status accessor (rich status dot). Falls back to online-only. */
+  statusOf?: (userId: string) => EffectiveStatus;
   /** Typing state across channels (this view reads its own channel). */
   typing?: TypingState;
   onSend: (content: string, mentions: MentionRefInput[], parentMessageId?: string) => void;
@@ -108,6 +116,7 @@ export function ConversationView({
   loadingMessages,
   channels,
   online,
+  statusOf,
   typing,
   onSend,
   onTyping,
@@ -132,6 +141,11 @@ export function ConversationView({
   const channelId = channel.channelId;
   // AI chat = a 1:1 with the assistant bot; calls and meetings don't apply.
   const isAiChat = channel.type === "ai";
+  // A group is a place you speak IN; a DM / AI chat is someone you speak TO.
+  const composerPlaceholder =
+    channel.type === "group"
+      ? `Message in ${channel.name ?? ""}`.trim()
+      : `Message ${channel.name ?? ""}`.trim();
   const [infoOpen, setInfoOpen] = useState(false);
   const [replyTarget, setReplyTarget] = useState<MessageDto | null>(null);
   const [forwardTarget, setForwardTarget] = useState<MessageDto | null>(null);
@@ -173,6 +187,20 @@ export function ConversationView({
 
   const refetchMembers = () => qc.invalidateQueries({ queryKey: ["members", channelId] });
 
+  // QC_010 pin/unpin. Per-user state with no fanout event, so the actor just
+  // refetches: ["channels"] moves the row between the Pinned + All sections, and
+  // ["channel-detail"] refreshes the drawer's own copy (it renders detail ?? channel).
+  const togglePin = async () => {
+    const next = !channel.isPriority;
+    try {
+      await pinChannel(channelId, next);
+      void qc.invalidateQueries({ queryKey: ["channels"] });
+      void qc.invalidateQueries({ queryKey: ["channel-detail", channelId] });
+    } catch {
+      toast.error({ title: next ? "Couldn't pin this chat" : "Couldn't unpin this chat" });
+    }
+  };
+
   const pinnedQuery = useQuery({
     queryKey: ["pinned", channelId],
     queryFn: () => fetchPinned(channelId),
@@ -181,6 +209,23 @@ export function ConversationView({
     queryKey: ["members", channelId],
     queryFn: () => fetchMembers(channelId),
     enabled: infoOpen,
+  });
+
+  // DM last-seen (header sub-line). Fetched ONLY for a real DM whose peer is
+  // currently offline: an online peer reads "Active now" regardless, and groups /
+  // AI chats have no single peer. The query re-enables on its own when presence
+  // flips the peer offline. Privacy is resolved server-side — this is just a
+  // string or null.
+  const dmPeerId =
+    channel.type === "dm"
+      ? channel.members.find((m) => m.id !== currentUserId)?.id
+      : undefined;
+  const dmPeerOnline = dmPeerId ? !!online?.has(dmPeerId) : false;
+  const lastSeenQuery = useQuery({
+    queryKey: ["last-seen", channelId],
+    queryFn: () => fetchChannelLastSeen(channelId),
+    enabled: !!dmPeerId && !dmPeerOnline,
+    staleTime: 60_000,
   });
   const detailQuery = useQuery({
     queryKey: ["channel-detail", channelId],
@@ -218,8 +263,19 @@ export function ConversationView({
     },
     onReply: (m) => setReplyTarget(m),
     onForward: (m) => setForwardTarget(m),
-    onJumpToParent: (id) =>
-      document.querySelector(`[data-message-id="${id}"]`)?.scrollIntoView({ behavior: "smooth" }),
+    onJumpToParent: (id) => {
+      const el = document.querySelector<HTMLElement>(`[data-message-id="${id}"]`);
+      // No-op when the parent isn't rendered (it's in an older, not-yet-loaded
+      // page). Paging-history-to-parent is out of scope for this fix.
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      // Brief highlight so it's visible WHERE you landed. Remove → force reflow →
+      // add so a repeat jump to the same row re-triggers the animation.
+      el.classList.remove("qc-row--flash");
+      void el.offsetWidth;
+      el.classList.add("qc-row--flash");
+      window.setTimeout(() => el.classList.remove("qc-row--flash"), 1500);
+    },
     onOpenMedia: (media) => {
       const idx = gallery.findIndex((g) => g.url === media.url);
       setLightboxIndex(idx >= 0 ? idx : 0);
@@ -270,10 +326,13 @@ export function ConversationView({
         <ConversationHeader
           channel={channel}
           online={online}
+          statusOf={statusOf}
           currentUserId={currentUserId}
+          lastSeen={lastSeenQuery.data?.lastSeen ?? null}
           onToggleInfo={() => setInfoOpen((v) => !v)}
           onSchedule={isAiChat ? undefined : () => setScheduleSeed(channel.members.map((m) => m.id))}
           onCall={isAiChat ? undefined : onCall}
+          onTogglePin={() => void togglePin()}
         />
         <PinnedBanner count={pinnedQuery.data?.length ?? 0} onOpen={() => setInfoOpen(true)} />
         {loadingMessages && !messages ? (
@@ -375,7 +434,15 @@ export function ConversationView({
           </div>
         ) : null}
         <Composer
-          members={channel.members.map((m) => ({ id: m.id, displayName: m.displayName }))}
+          // Remount per channel, same as MessageList above. TipTap's useEditor
+          // builds the editor (and `Placeholder.configure`) once per mount and
+          // never re-reads the prop, so without this the placeholder — and any
+          // half-typed text — stays frozen on whichever channel was open first.
+          key={channelId}
+          members={mentionableMembers(
+            channel.members.map((m) => ({ id: m.id, displayName: m.displayName })),
+            currentUserId,
+          )}
           onSend={(content, mentions) => {
             onSend(content, mentions, replyTarget?.id);
             setReplyTarget(null);
@@ -384,7 +451,7 @@ export function ConversationView({
           channelId={channelId}
           onSendMedia={onSendMedia}
           onAssist={onAssist}
-          placeholder={`Message ${channel.name ?? ""}`.trim()}
+          placeholder={composerPlaceholder}
         />
       </section>
 
@@ -404,8 +471,10 @@ export function ConversationView({
           pinned={pinnedQuery.data ?? []}
           currentUserId={currentUserId}
           onlineIds={online}
+          statusOf={statusOf}
           roleError={roleError}
           onCall={isAiChat ? undefined : onCall}
+          onTogglePin={() => void togglePin()}
           onBack={() => setInfoOpen(false)}
           onAddMembers={async (userIds) => {
             setRoleError(null);
@@ -425,6 +494,29 @@ export function ConversationView({
               void refetchMembers();
             } catch (e) {
               setRoleError(e instanceof Error ? e.message : "Could not change role");
+            }
+          }}
+          onUpdateDetails={async (patch) => {
+            setRoleError(null);
+            try {
+              await updateChannel(channelId, patch);
+              // Actor's own refresh; other members update live via `channel_updated`.
+              void qc.invalidateQueries({ queryKey: ["channel-detail", channelId] });
+              void qc.invalidateQueries({ queryKey: ["channels"] });
+            } catch (e) {
+              setRoleError(e instanceof Error ? e.message : "Could not update group");
+            }
+          }}
+          onDeleteGroup={async () => {
+            setRoleError(null);
+            try {
+              await deleteChannel(channelId);
+              // Close the drawer now; the `channel_deleted` echo (the actor is in
+              // the channel room too) removes it from the list + clears the view.
+              setInfoOpen(false);
+              void qc.invalidateQueries({ queryKey: ["channels"] });
+            } catch (e) {
+              setRoleError(e instanceof Error ? e.message : "Could not delete group");
             }
           }}
         />

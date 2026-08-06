@@ -37,6 +37,8 @@ export const PATCH = withOrgAuth<{ id: string }>(
     // with "Another sprint is already active" — that restriction has been
     // lifted; the Jira importer also writes whatever active set the source
     // reported.)
+    // Velocity is NOT captured here — Jira freezes it only at "Complete sprint"
+    // (see /api/sprints/[id]/complete). Starting a sprint just flips its status.
     const updated = await db.qtSprint.update({
       where: { id: params.id },
       data: { status: "ACTIVE", startedAt: new Date(), updatedBy: userId },

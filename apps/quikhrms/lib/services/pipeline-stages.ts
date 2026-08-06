@@ -1,4 +1,4 @@
-export type StageMailTemplate =
+type StageMailTemplate =
   | "interview"
   | "offer-branded"
   | "offer-default"
@@ -6,7 +6,7 @@ export type StageMailTemplate =
   | "joining-letter"
   | null;
 
-export function canStageHaveMail(stageName: string): boolean {
+function canStageHaveMail(stageName: string): boolean {
   return /interview|phonescreen|assessment|finalround|offer|hired|joining/i.test(stageName);
 }
 
@@ -16,7 +16,7 @@ export interface StageConfig {
   mailTemplate: StageMailTemplate;
 }
 
-export function inferDefaultTemplate(stageName: string): StageMailTemplate {
+function inferDefaultTemplate(stageName: string): StageMailTemplate {
   if (/interview|phonescreen|assessment|finalround/i.test(stageName)) return "interview";
   if (/offer/i.test(stageName)) return "offer-branded";
   if (/joining/i.test(stageName)) return "joining-letter";
@@ -59,7 +59,7 @@ export function getStageConfig(stages: unknown, name: string): StageConfig | nul
   return normalizeStages(stages).find((s) => s.name === name) ?? null;
 }
 
-export const REQUIRED_STAGES = ["Screening", "HRInterview", "Offer", "Hired"] as const;
+const REQUIRED_STAGES = ["Screening", "HRInterview", "Offer", "Hired"] as const;
 
 /** Ensure required stages exist — insert any missing at sensible positions. */
 export function ensureRequiredStages(stages: StageConfig[]): StageConfig[] {

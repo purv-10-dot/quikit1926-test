@@ -9,6 +9,7 @@ import { buildWfhNoticeEmail } from "@/lib/email-templates/wfh-notice";
 import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
 import { resolveEffectiveWfhQuotaGroup } from "@/lib/services/wfh-quota";
 import { APP_ID, rolePriority } from "@/lib/rbac/registry";
+import { resolveApprovalChainLevels } from "@/lib/services/approval-chain";
 
 /** Thrown inside the create transaction to signal a concurrent-safe guard failure. */
 class WfhGuardError extends Error {
@@ -120,7 +121,12 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
 
     // Yearly quota enforcement (effective group = explicit > department mapping)
     const effective = await resolveEffectiveWfhQuotaGroup(orgId, employeeId);
-    if (effective.group) {
+    // No WFH group (direct or via department) → no quota/rules to enforce, so
+    // block outright rather than letting the request through unrestricted.
+    if (!effective.group) {
+      return validationError("You're not assigned to a WFH group yet. Ask HR to add you to one before requesting WFH.");
+    }
+    {
       const yearStart = new Date(start.getFullYear(), 0, 1);
       const yearEnd = new Date(start.getFullYear() + 1, 0, 1);
       const usedRows = await prisma.wfhRequest.findMany({
@@ -197,87 +203,106 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       }
     }
 
-    // Resolve HR + SuperAdmin reference roles via UserAppRole join.
-    // Priorities now live in the static ROLE_PRIORITY map (registry.ts) since
-    // AppRole no longer carries a `priority` column.
-    const hrAdminPriority = rolePriority("admin");
-
-    const hrApprovers = await prisma.hrmsUserAppRole.findMany({
-      where: {
-        orgId: orgId,
-        role: { appId: APP_ID, name: { in: ["admin"] } },
-        userId: { not: employee.id },
-        employee: { orgId, deletedAt: null, status: "Active" },
-      },
-      select: {
-        userId: true,
-        role: { select: { name: true } },
-        employee: { select: { id: true, firstName: true, lastName: true, workEmail: true } },
-      },
-    });
-    // Prefer hr_admin over hr_manager via priority map.
-    hrApprovers.sort(
-      (a, b) => rolePriority(b.role.name) - rolePriority(a.role.name),
-    );
-    const hrApprover = hrApprovers[0]?.employee ?? null;
-
-    const superAdminLink = await prisma.hrmsUserAppRole.findFirst({
-      where: {
-        orgId: orgId,
-        role: { appId: APP_ID, name: "admin" },
-        userId: { not: employee.id },
-        employee: { orgId, deletedAt: null, status: "Active" },
-      },
-      select: { employee: { select: { id: true, firstName: true, lastName: true, workEmail: true } } },
-    });
-    const superAdminApprover = superAdminLink?.employee ?? null;
-
-    // Decide approval flow — admins follow the chain too (no auto-approve).
-    //  - Employee above HR Admin priority → SuperAdmin only
-    //  - No reporting manager → HR only
-    //  - Else → Manager → HR
-    const empPriority = rolePriority(employeeRoleName);
-    const isSuperAdminEmployee = employeeRoleName === "admin";
-    const isAboveHr = !isSuperAdminEmployee && empPriority > hrAdminPriority;
+    // Admins follow the chain too — WFH never auto-approves.
     const autoApprove = false;
 
     type FlowRow = { approverId: string; role: "Manager" | "HR" | "SuperAdmin"; approverName: string; approverEmail: string | null };
-    const flow: FlowRow[] = [];
+    let flow: FlowRow[] = [];
 
-    if (autoApprove) {
-      // Auto-approve path; no approvals required
-    } else if (isAboveHr) {
-      if (!superAdminApprover) return validationError("No Super Admin approver configured");
-      flow.push({
-        approverId: superAdminApprover.id,
-        role: "SuperAdmin",
-        approverName: `${superAdminApprover.firstName} ${superAdminApprover.lastName}`.trim(),
-        approverEmail: superAdminApprover.workEmail,
+    // ── Approver resolution ──────────────────────────────────────────────
+    // 1) Central Approval Chain (Settings → Approval Chains → "Work From Home")
+    //    wins when an active chain is configured for this org. Levels map to
+    //    the WfhApproverRole display enum (level 1 → Manager, rest → HR).
+    // 2) No central chain → legacy role/hierarchy fallback (reporting manager
+    //    then HR, or SuperAdmin for employees above HR-admin priority).
+    const centralWfh = await resolveApprovalChainLevels(orgId, "WFH", employee.id);
+    if (centralWfh.ok) {
+      const approverEmps = await prisma.employee.findMany({
+        where: { orgId, id: { in: centralWfh.levels.map((l) => l.approverId) } },
+        select: { id: true, firstName: true, lastName: true, workEmail: true },
       });
+      const byId = new Map(approverEmps.map((e) => [e.id, e]));
+      flow = centralWfh.levels.map((lv, idx) => {
+        const e = byId.get(lv.approverId);
+        return {
+          approverId: lv.approverId,
+          role: (idx === 0 ? "Manager" : "HR") as FlowRow["role"],
+          approverName: e ? `${e.firstName} ${e.lastName}`.trim() : "",
+          approverEmail: e?.workEmail ?? null,
+        };
+      });
+    } else if (centralWfh.reason !== "NOT_CONFIGURED") {
+      // Chain exists but is unresolvable (e.g. no active user for a level) —
+      // fail loudly rather than silently reverting to the legacy path.
+      return validationError(centralWfh.message);
     } else {
-      // Exclude a self-referential reportingManagerId so an employee who is
-      // (mis)configured as their own manager can't become their own approver.
-      if (employee.reportingManagerId && employee.reportingManagerId !== employee.id) {
-        const mgr = await prisma.employee.findFirst({
-          where: { id: employee.reportingManagerId, orgId, deletedAt: null },
-          select: { id: true, firstName: true, lastName: true, workEmail: true },
-        });
-        if (mgr) {
-          flow.push({
-            approverId: mgr.id,
-            role: "Manager",
-            approverName: `${mgr.firstName} ${mgr.lastName}`.trim(),
-            approverEmail: mgr.workEmail,
-          });
-        }
-      }
-      if (!hrApprover) return validationError("No HR approver configured");
-      flow.push({
-        approverId: hrApprover.id,
-        role: "HR",
-        approverName: `${hrApprover.firstName} ${hrApprover.lastName}`.trim(),
-        approverEmail: hrApprover.workEmail,
+      // Legacy fallback. Priorities live in the static ROLE_PRIORITY map.
+      const hrAdminPriority = rolePriority("admin");
+
+      const hrApprovers = await prisma.hrmsUserAppRole.findMany({
+        where: {
+          orgId: orgId,
+          role: { appId: APP_ID, name: { in: ["admin"] } },
+          userId: { not: employee.id },
+          employee: { orgId, deletedAt: null, status: "Active" },
+        },
+        select: {
+          userId: true,
+          role: { select: { name: true } },
+          employee: { select: { id: true, firstName: true, lastName: true, workEmail: true } },
+        },
       });
+      hrApprovers.sort((a, b) => rolePriority(b.role.name) - rolePriority(a.role.name));
+      const hrApprover = hrApprovers[0]?.employee ?? null;
+
+      const superAdminLink = await prisma.hrmsUserAppRole.findFirst({
+        where: {
+          orgId: orgId,
+          role: { appId: APP_ID, name: "admin" },
+          userId: { not: employee.id },
+          employee: { orgId, deletedAt: null, status: "Active" },
+        },
+        select: { employee: { select: { id: true, firstName: true, lastName: true, workEmail: true } } },
+      });
+      const superAdminApprover = superAdminLink?.employee ?? null;
+
+      const empPriority = rolePriority(employeeRoleName);
+      const isSuperAdminEmployee = employeeRoleName === "admin";
+      const isAboveHr = !isSuperAdminEmployee && empPriority > hrAdminPriority;
+
+      if (isAboveHr) {
+        if (!superAdminApprover) return validationError("No Super Admin approver configured");
+        flow.push({
+          approverId: superAdminApprover.id,
+          role: "SuperAdmin",
+          approverName: `${superAdminApprover.firstName} ${superAdminApprover.lastName}`.trim(),
+          approverEmail: superAdminApprover.workEmail,
+        });
+      } else {
+        // Exclude a self-referential reportingManagerId so an employee who is
+        // (mis)configured as their own manager can't become their own approver.
+        if (employee.reportingManagerId && employee.reportingManagerId !== employee.id) {
+          const mgr = await prisma.employee.findFirst({
+            where: { id: employee.reportingManagerId, orgId, deletedAt: null },
+            select: { id: true, firstName: true, lastName: true, workEmail: true },
+          });
+          if (mgr) {
+            flow.push({
+              approverId: mgr.id,
+              role: "Manager",
+              approverName: `${mgr.firstName} ${mgr.lastName}`.trim(),
+              approverEmail: mgr.workEmail,
+            });
+          }
+        }
+        if (!hrApprover) return validationError("No HR approver configured");
+        flow.push({
+          approverId: hrApprover.id,
+          role: "HR",
+          approverName: `${hrApprover.firstName} ${hrApprover.lastName}`.trim(),
+          approverEmail: hrApprover.workEmail,
+        });
+      }
     }
 
     // Atomic guard: re-check overlap AND yearly quota INSIDE the transaction

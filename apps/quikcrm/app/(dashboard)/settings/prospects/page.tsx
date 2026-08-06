@@ -4,18 +4,21 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db/prisma";
 import { PageHeader } from "@/components/shared/page-header";
 import { ProspectsTable, type ProspectRow } from "@/components/settings/prospects-table";
+import { prospectScopeWhere } from "@/lib/auth/prospect-acl";
 
 export const dynamic = "force-dynamic";
 
 /**
  * Settings → Prospects
  *
- * Lists every LinkedIn profile saved to the CRM via the Chrome extension's
+ * Lists LinkedIn profiles saved to the CRM via the Chrome extension's
  * "Save to CRM" button (stored in CrmProspect by POST /api/leads/from-linkedin).
- * Org-scoped, visible to all org members. From here a prospect can be converted
- * into a CrmLead (Convert to Lead → pre-filled lead form). Server-rendered —
- * reads the org's prospects directly, newest first; the client table owns
- * selection, the convert modal, and status display.
+ * Visibility is role-scoped by prospectScopeWhere: Administrators (incl.
+ * Organization Admins) see the whole org, every other role sees only what they
+ * personally saved. From here a prospect can be converted into a CrmLead
+ * (Convert to Lead → pre-filled lead form). Server-rendered — reads the
+ * in-scope prospects directly, newest first; the client table owns selection,
+ * the convert modal, and status display.
  */
 export default async function ProspectsPage() {
   const user = await requireUser();
@@ -24,7 +27,7 @@ export default async function ProspectsPage() {
   const defaultOwnerName = session?.user?.name ?? session?.user?.email ?? "";
 
   const rows = await prisma.crmProspect.findMany({
-    where: { orgId: user.orgId },
+    where: prospectScopeWhere(user),
     select: {
       id: true,
       name: true,

@@ -7,7 +7,7 @@ import { APP_ID } from "@/lib/rbac/registry";
  * realtime pub/sub). The query is `orgId`-scoped.
  */
 
-export interface OrgChartEmployee {
+interface OrgChartEmployee {
   id: string;
   employeeCode: string;
   firstName: string;

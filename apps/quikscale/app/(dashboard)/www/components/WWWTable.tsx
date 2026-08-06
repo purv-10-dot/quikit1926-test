@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import { ROLES, ROLE_HIERARCHY } from "@quikit/shared";
 import type { WWWItem } from "@/lib/types/www";
+import { WWW_TBD_LABEL } from "@/lib/constants/www";
 import { invalidateEntity } from "@/lib/hooks/dashboardInvalidation";
 import { WWWPanel } from "./WWWPanel";
 import { WWWChangeHistoryPanel } from "./WWWChangeHistoryPanel";
@@ -776,11 +777,16 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
                           boxShadow: lastFrozenKey === "when" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
                         }}>
                         <div className="flex items-center gap-1">
-                          <svg className="h-3 w-3 text-blue-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                          </svg>
-                          <span className={`text-xs ${item.when ? "text-blue-600" : "text-gray-400"}`}>
-                            {formatDate(item.when)}
+                          {/* TBD rows carry a placeholder `when`, so the date is
+                              meaningless — hide the calendar icon and print the
+                              TBD label instead. Colors unchanged (locked table). */}
+                          {!item.dueDateTBD && (
+                            <svg className="h-3 w-3 text-blue-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                          )}
+                          <span className={`text-xs ${item.dueDateTBD ? "text-gray-500 italic" : item.when ? "text-blue-600" : "text-gray-400"}`}>
+                            {item.dueDateTBD ? WWW_TBD_LABEL : formatDate(item.when)}
                           </span>
                         </div>
                       </td>

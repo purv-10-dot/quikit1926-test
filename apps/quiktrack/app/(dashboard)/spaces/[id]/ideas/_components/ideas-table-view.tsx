@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useApiData } from "@/lib/hooks/useApiData";
+import { showToast } from "@/lib/ui/toast";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import { IdeasTable, type Column } from "./ideas-table";
 import { IdeaDetailPanel } from "./idea-detail-panel";
@@ -366,30 +367,46 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
     }
   }
 
-  async function patchIdea(ideaId: string, body: Record<string, unknown>) {
+  // `rollback` restores the row(s) to their pre-edit snapshot when the server
+  // rejects the change (e.g. a >255-char title). We roll back to the snapshot
+  // instead of invalidating on failure so the cell doesn't flash the rejected
+  // value and then snap back after a refetch — it just reverts in place.
+  async function patchIdea(
+    ideaId: string,
+    body: Record<string, unknown>,
+    rollback?: (prev: IdeaRow[]) => IdeaRow[],
+  ) {
+    // Snapshot BEFORE the optimistic setRows the callers already applied — but
+    // since those run synchronously first, callers pass the captured previous
+    // rows via `rollback`. Here we just persist and revert on error.
     try {
       await patchIdeaRaw(ideaId, body);
+      await qc.invalidateQueries({ queryKey });
     } catch (err: unknown) {
       // eslint-disable-next-line no-console
       console.error("Idea save failed:", err);
-      if (typeof window !== "undefined") window.alert(err instanceof Error ? err.message : "Failed to save.");
+      showToast(err instanceof Error ? err.message : "Failed to save.", "error");
+      if (rollback) setRows(rollback);
+      else await qc.invalidateQueries({ queryKey });
     }
-    await qc.invalidateQueries({ queryKey });
   }
 
   function onEdit(ideaId: string, fieldId: string, value: IdeaFieldValue) {
+    const prev = rows;
     setRows((rs) => rs.map((r) => (r.id === ideaId ? { ...r, values: { ...r.values, [fieldId]: value } } : r)));
-    void patchIdea(ideaId, { values: { [fieldId]: value } });
+    void patchIdea(ideaId, { values: { [fieldId]: value } }, () => prev);
   }
 
   function onAssign(ideaId: string, userId: string | null) {
+    const prev = rows;
     setRows((rs) => rs.map((r) => (r.id === ideaId ? { ...r, assigneeId: userId } : r)));
-    void patchIdea(ideaId, { assigneeId: userId });
+    void patchIdea(ideaId, { assigneeId: userId }, () => prev);
   }
 
   function onEditTitle(ideaId: string, title: string) {
+    const prev = rows;
     setRows((rs) => rs.map((r) => (r.id === ideaId ? { ...r, title } : r)));
-    void patchIdea(ideaId, { title });
+    void patchIdea(ideaId, { title }, () => prev);
   }
 
   // Drag-and-drop reorder: move `fromId` to `toId`'s slot, renumber locally, then

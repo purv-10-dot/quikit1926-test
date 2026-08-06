@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { selectDriverName } from "./index";
 import { LocalDriver, fsPathFor, localUploadSecret } from "./local";
-import { isInlineType } from "./types";
+import { fileExtension, isAllowedUpload, isAllowedUploadType, isInlineType } from "./types";
 import { verifyToken, type DownloadTokenPayload, type UploadTokenPayload } from "./tokens";
 
 const tokenOf = (url: string) => url.split("/").pop()!;
@@ -18,6 +18,50 @@ describe("isInlineType", () => {
     expect(isInlineType("application/zip")).toBe(false);
     expect(isInlineType("application/vnd.ms-excel")).toBe(false);
     expect(isInlineType(undefined)).toBe(false);
+  });
+});
+
+describe("isAllowedUploadType — allowlist additions", () => {
+  it("accepts csv and markdown alongside the existing docs", () => {
+    expect(isAllowedUploadType("text/csv")).toBe(true);
+    expect(isAllowedUploadType("text/markdown")).toBe(true);
+    expect(isAllowedUploadType("application/pdf")).toBe(true);
+    expect(isAllowedUploadType("application/x-evil")).toBe(false);
+  });
+});
+
+describe("fileExtension", () => {
+  it("returns the lowercased extension incl. dot, or empty", () => {
+    expect(fileExtension("Script.PY")).toBe(".py");
+    expect(fileExtension("a.tar.gz")).toBe(".gz");
+    expect(fileExtension("Makefile")).toBe("");
+    expect(fileExtension(".env")).toBe(".env");
+  });
+});
+
+describe("isAllowedUpload — MIME + code-extension fallback", () => {
+  it("accepts an allowlisted MIME regardless of name", () => {
+    expect(isAllowedUpload("image/png", "photo.png")).toBe(true);
+    expect(isAllowedUpload("text/csv", "data.csv")).toBe(true);
+    expect(isAllowedUpload("text/markdown", "notes.md")).toBe(true);
+  });
+
+  it("admits a known-safe code extension when the MIME is empty or generic", () => {
+    expect(isAllowedUpload("", "script.py")).toBe(true); // empty MIME → extension
+    expect(isAllowedUpload("application/octet-stream", "app.ts")).toBe(true);
+    expect(isAllowedUpload("", "config.yaml")).toBe(true);
+  });
+
+  it("rejects active-content and unknown extensions even with empty MIME", () => {
+    expect(isAllowedUpload("", "index.html")).toBe(false); // excluded on purpose
+    expect(isAllowedUpload("", "logo.svg")).toBe(false); // excluded on purpose
+    expect(isAllowedUpload("", "virus.exe")).toBe(false);
+    expect(isAllowedUpload("application/octet-stream", "noext")).toBe(false);
+  });
+
+  it("does NOT let the extension rescue a real, disallowed MIME", () => {
+    // A non-generic, non-allowlisted MIME is rejected even if the name looks safe.
+    expect(isAllowedUpload("application/x-evil", "script.py")).toBe(false);
   });
 });
 

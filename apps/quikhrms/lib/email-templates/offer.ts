@@ -2,7 +2,6 @@ import {
   emailShell,
   hero,
   detailBlock,
-  checklist,
   timeline,
   btnPrimary,
   para,
@@ -30,17 +29,6 @@ export interface OfferEmailData {
   senderName?: string | null;
   senderPosition?: string | null;
 }
-
-const DOCUMENT_CHECKLIST: Array<{ text: string }> = [
-  { text: "Mark sheets (10th, 12th, Graduation/Post-Graduation)" },
-  { text: "PAN Card & Aadhaar Card" },
-  { text: "Passport-size Photographs" },
-  { text: "Bank Passbook / Cancelled Cheque" },
-  { text: "Experience Letter (if any)" },
-  { text: "Relieving Letter (if any)" },
-  { text: "Signed Offer Letter, NDA & NCA" },
-  { text: "Driving License" },
-];
 
 export function buildOfferEmail(data: OfferEmailData): { subject: string; html: string } {
   const designation = data.designation ?? data.jobTitle;
@@ -71,7 +59,6 @@ export function buildOfferEmail(data: OfferEmailData): { subject: string; html: 
     hero({ emoji: "🎉", title: "Congratulations!", subtitle, accent: "green" }) +
     para(`Dear <strong>${esc(data.candidateName)}</strong>,`) +
     detailBlock(rows, { heading: "Offer Summary", accent: "green" }) +
-    checklist(DOCUMENT_CHECKLIST, { heading: "Documents to Submit", accent: "green" }) +
     timeline(
       [
         { label: "Offer Sent" },

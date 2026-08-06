@@ -51,6 +51,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
     select: {
       who: true,
       when: true,
+      dueDateTBD: true,
       what: true,
       revisedDates: true,
       status: true,
@@ -87,6 +88,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
     return {
       whoName: i.who ? fullName(userMap.get(i.who)) : "",
       when: i.when ?? null,
+      dueDateTBD: i.dueDateTBD,
       what: i.what,
       revisedDate: lastRevised ? new Date(lastRevised).toISOString().slice(0, 10) : "",
       status: i.status,

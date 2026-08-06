@@ -9,11 +9,14 @@
 import { Prisma } from "@quikit/database";
 import { db } from "@/lib/db";
 import { isOrgAdmin } from "@/lib/api/visibility";
+import { parseMultiFilter } from "@/lib/api/multiFilter";
 
 export interface PriorityScopeParams {
   year?: number;
   quarter?: string;
+  /** Single value or comma-separated set (`on-track,completed`). */
   status?: string;
+  /** Single user id or comma-separated set (`u1,u2`) — multi-select owner. */
   owner?: string;
   teamId?: string;
   includeDeleted?: boolean;
@@ -28,15 +31,18 @@ export async function buildPriorityScopeWhere(
   where.deletedAt = params.includeDeleted ? { not: null } : null;
   if (params.year) where.year = params.year;
   if (params.quarter) where.quarter = params.quarter;
-  if (params.status) where.overallStatus = params.status;
+  // Multi-select: one value stays a scalar equality, several become an IN.
+  const statusFilter = parseMultiFilter(params.status);
+  if (statusFilter !== undefined) where.overallStatus = statusFilter;
 
   // Admins see all; non-admins are pinned to their own priorities. An explicit
   // owner/team filter only NARROWS within the admin scope.
   const admin = await isOrgAdmin(userId, orgId);
+  const ownerFilter = parseMultiFilter(params.owner);
   if (!admin) {
     where.owner = userId;
-  } else if (params.owner) {
-    where.owner = params.owner;
+  } else if (ownerFilter !== undefined) {
+    where.owner = ownerFilter;
   } else if (params.teamId) {
     const members = await db.orgMember.findMany({
       where: { orgId, teamId: params.teamId, status: "active" },

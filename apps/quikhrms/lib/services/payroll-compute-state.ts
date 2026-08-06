@@ -8,7 +8,7 @@ import { prisma } from "@/lib/prisma";
  * into PayRun. `computeStatus = null` means no compute has been run/queued, so
  * getPayrollComputeState() returns null (preserving the old "no row" semantics).
  */
-export type ComputeJobStatus = "queued" | "running" | "done" | "failed";
+type ComputeJobStatus = "queued" | "running" | "done" | "failed";
 
 export interface PayrollComputeState {
   status: ComputeJobStatus;
@@ -99,23 +99,4 @@ export async function getPayrollComputeState(
   // No compute has ever been queued/run for this PayRun → behave like "no row".
   if (!row || row.computeStatus === null) return null;
   return toState(row);
-}
-
-export async function clearPayrollComputeState(
-  orgId: string,
-  runId: string,
-): Promise<void> {
-  await prisma.payRun.updateMany({
-    where: { id: runId, orgId },
-    data: {
-      computeStatus: null,
-      computeStartedAt: null,
-      computeFinishedAt: null,
-      computeEmployeeCount: null,
-      computeTotalGross: null,
-      computeTotalNet: null,
-      computeTotalDeductions: null,
-      computeError: null,
-    },
-  });
 }

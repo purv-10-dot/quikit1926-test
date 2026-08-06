@@ -12,6 +12,7 @@ export default function CategoryMasterPage() {
   const [loading, setLoading] = useState(true)
   const [catLoading, setCatLoading] = useState(false)
 
+  
   // base category add/edit
   const [addingBase, setAddingBase] = useState(false)
   const [newBaseName, setNewBaseName] = useState("")

@@ -7,6 +7,7 @@ import { opspReviewSaveSchema } from "@/lib/schemas/opspReviewSchema";
 import { getScales } from "@/lib/utils/currency";
 import { resolveOpspOwnerOrSelf } from "@/lib/api/opspOwner";
 import { resolveReviewTarget } from "@/lib/utils/opspReviewTarget";
+import { userCan, forbidden } from "@/lib/api/permissions";
 
 // OPSP Review is permission-gated (not admin-only): anyone with OPSP.Review can
 // view; saving review entries requires update.
@@ -145,6 +146,14 @@ export const GET = reviewAuth.view(async ({ orgId, userId }, req) => {
         achievedPct: number | null;
         comment: string | null;
         autoPopulated?: boolean;
+        // True when this category exists in the lower-horizon source data
+        // (Quarterly Actions) for this specific period, whether or not it has
+        // an achieved value yet. Set by `populateCascadeData` — stays
+        // `undefined` (falsy) for the Quarter horizon and for any Yearly/3-5yr
+        // category never configured in Quarterly at all, which is exactly the
+        // signal the client uses to let those categories' Achieved be entered
+        // directly instead of waiting on a rollup that will never arrive.
+        hasLowerHorizonSource?: boolean;
         lastYearAchieved: number | null;
         // "auto"   — value came from a prior-year OPSPReviewEntry (drawer disables the field)
         // "manual" — value came from the current entry's lastYearSamePeriod (user-entered)
@@ -154,6 +163,23 @@ export const GET = reviewAuth.view(async ({ orgId, userId }, req) => {
 
       const sourceCategory = (row.category as string) || "";
       const meta = catMetaMap.get(row.category as string);
+      // A Cumulative category whose per-period cells (q1..q4 / m1..m3 / y1..yN)
+      // were never broken down (e.g. a manually-typed category — see
+      // GoalsSection's "breakdownProjected returns null for manual categories,
+      // leave the quarter cells alone" comment) has NO per-period target at
+      // all. `resolveReviewTarget` then falls back to the row's single
+      // `projected` (whole-period total) for EVERY period — fine on its own,
+      // but `aggregateByType`'s Cumulative aggregation SUMS across periods, so
+      // the same total gets counted once per period (e.g. a 70 target shown as
+      // 70+70+70+70=280 across 4 quarters). Standalone/CumulativeTillEnd don't
+      // need this: averaging recovers the original value, and "last filled"
+      // just takes one of them — only the SUM aggregation double(quadruple)-
+      // counts. Split the fallback evenly across periods so the sum recovers
+      // the original `projected` total, mirroring the same flat n-way split
+      // KPI targets already use when no per-week breakdown is configured
+      // (see `computeQtd`'s `flat = totalTarget / weeksPerQuarter`).
+      const categoryType = meta?.categoryType ?? "Cumulative";
+      const periodCount = periodKeys.length || 1;
       for (const pKey of periodKeys) {
         const entry = entryMap.get(`${idx}:${pKey}`);
         // Category-aware guard: review entries are keyed by rowIndex only, so a
@@ -173,13 +199,20 @@ export const GET = reviewAuth.view(async ({ orgId, userId }, req) => {
         // Both are stored as scaled strings (e.g. "10 K") — resolve with category meta.
         const planTarget = resolveStoredValue(row[pKey] as string, meta);
         const projected = resolveStoredValue(row.projected as string, meta);
+        // Cumulative-only: evenly split the whole-period `projected` fallback
+        // across periods so the SUM lands back on the original total instead
+        // of multiplying it by `periodCount` (see comment above the loop).
+        const projectedFallback =
+          categoryType === "Cumulative" && projected != null
+            ? projected / periodCount
+            : projected;
 
         periods[pKey] = {
           // Live OPSP target wins; the saved review snapshot is only a fallback
           // so a post-finalize edit isn't masked by a stale snapshot.
           target: resolveReviewTarget(
             planTarget,
-            projected,
+            projectedFallback,
             entry?.targetValue != null ? Number(entry.targetValue) : null,
           ),
           achieved: !isStaleEntry && entry?.achievedValue != null ? Number(entry.achievedValue) : null,
@@ -333,7 +366,7 @@ export const POST = reviewAuth.update(async ({ orgId, userId }, req) => {
       where: {
         orgId_userId_year_quarter: { orgId, userId: ownerId, year: yearNum, quarter },
       },
-      select: { id: true },
+      select: { id: true, status: true },
     });
 
     if (!opsp) {
@@ -341,6 +374,20 @@ export const POST = reviewAuth.update(async ({ orgId, userId }, req) => {
         { success: false, error: "No OPSP found for this period" },
         { status: 404 },
       );
+    }
+
+    // 1b. Once the review is SUBMITTED (`reviewed`), Review data locks for
+    // everyone except OPSP.History.EditFinalize holders — server-side mirror
+    // of the client `canEditReviewedData` predicate, so a direct API call
+    // can't bypass the UI lock. Unlike the OPSP Form's own finalize-lock
+    // (app/api/opsp/route.ts), EditFinalize DOES still grant access here —
+    // Review data (actuals) may legitimately need a correction post-submission,
+    // whereas the Form's plan data is meant to be immutable once reviewed.
+    if (opsp.status === "reviewed") {
+      const canEditAfterFinalize = await userCan(userId, orgId, "OPSP.History.EditFinalize", "update");
+      if (!canEditAfterFinalize) {
+        return forbidden("This OPSP's review has been submitted. Editing requires the 'Edit after Finalize' permission.");
+      }
     }
 
     // 2a. Snapshot pre-update state for the audit log. We flatten to
@@ -575,12 +622,18 @@ async function getQuarterCumulativeForCategory(
   category: string,
   sourceRows: Record<string, unknown>[],
   catMetaMap?: CatMetaMap,
-): Promise<{ target: number; achieved: number; gap: number; achievedPct: number; hasAchieved: boolean }> {
+): Promise<{ target: number; achieved: number; gap: number; achievedPct: number; hasAchieved: boolean; sourceFound: boolean }> {
   // Find the actionsQtr rowIndex matching this category
   const rowIdx = sourceRows.findIndex(
     (r) => (r.category as string)?.toLowerCase() === category.toLowerCase(),
   );
-  if (rowIdx < 0) return { target: 0, achieved: 0, gap: 0, achievedPct: 0, hasAchieved: false };
+  // `sourceFound: false` means this category was never configured in Quarterly
+  // Actions at all — distinct from "configured but no achieved value entered
+  // yet" (hasAchieved: false with sourceFound: true). The caller uses this to
+  // decide whether Achieved should stay a read-only rollup-in-waiting or be
+  // directly enterable (a category with no Quarterly counterpart has nothing
+  // to ever roll up from).
+  if (rowIdx < 0) return { target: 0, achieved: 0, gap: 0, achievedPct: 0, hasAchieved: false, sourceFound: false };
   const meta = catMetaMap?.get(category);
   const categoryType = meta?.categoryType ?? "Cumulative";
 
@@ -617,7 +670,7 @@ async function getQuarterCumulativeForCategory(
   const gap = rawGap < 0 ? 0 : parseFloat(rawGap.toFixed(4));
   const achievedPct = agg.target > 0 ? parseFloat(((agg.achieved / agg.target) * 100).toFixed(1)) : 0;
 
-  return { target: agg.target, achieved: agg.achieved, gap, achievedPct, hasAchieved: agg.hasAchieved };
+  return { target: agg.target, achieved: agg.achieved, gap, achievedPct, hasAchieved: agg.hasAchieved, sourceFound: true };
 }
 
 /**
@@ -631,7 +684,7 @@ async function populateCascadeData(
   orgId: string,
   userId: string,
   year: number,
-  rows: { rowIndex: number; category: string; categoryType: string; projected: string; periods: Record<string, { target: number | null; achieved: number | null; gap: number | null; achievedPct: number | null; comment: string | null; autoPopulated?: boolean; lastYearAchieved: number | null; lastYearSamePeriodSource: "auto" | "manual" | "none" }> }[],
+  rows: { rowIndex: number; category: string; categoryType: string; projected: string; periods: Record<string, { target: number | null; achieved: number | null; gap: number | null; achievedPct: number | null; comment: string | null; autoPopulated?: boolean; hasLowerHorizonSource?: boolean; lastYearAchieved: number | null; lastYearSamePeriodSource: "auto" | "manual" | "none" }> }[],
   horizon: string,
   targetYears: number,
   catMetaMap?: CatMetaMap,
@@ -679,14 +732,20 @@ async function populateCascadeData(
           catMetaMap,
         );
 
-        if (cum.hasAchieved) {
-          const period = row.periods[periodKeys[qi]];
-          if (period) {
-            period.achieved = cum.achieved;
-            period.gap = cum.gap;
-            period.achievedPct = cum.achievedPct;
-            period.autoPopulated = true;
-          }
+        // Record whether this category is even configured in this quarter's
+        // Actions AT ALL — independent of whether an achieved value has been
+        // entered yet. Unlike `autoPopulated` (only set when there's a real
+        // value to show), this must be set whenever a quarter OPSP exists for
+        // the period, so the client can tell "waiting on quarterly data" apart
+        // from "never tracked quarterly, enter it here instead".
+        const period = row.periods[periodKeys[qi]];
+        if (period) period.hasLowerHorizonSource = cum.sourceFound;
+
+        if (cum.hasAchieved && period) {
+          period.achieved = cum.achieved;
+          period.gap = cum.gap;
+          period.achievedPct = cum.achievedPct;
+          period.autoPopulated = true;
         }
       }
     }
@@ -723,7 +782,7 @@ async function populateCascadeData(
         const quartersInOrder = await Promise.all(
           quarters.map(async (q) => {
             const qOpsp = opspByQ.get(q);
-            if (!qOpsp) return { target: 0, achieved: null as number | null };
+            if (!qOpsp) return { target: 0, achieved: null as number | null, sourceFound: false };
             const sourceRows = extractSourceRows(
               { actionsQtr: qOpsp.actionsQtr, goalRows: null, targetRows: null },
               "quarter",
@@ -738,9 +797,17 @@ async function populateCascadeData(
             return {
               target: cum.target,
               achieved: cum.hasAchieved ? cum.achieved : null,
+              sourceFound: cum.sourceFound,
             };
           }),
         );
+
+        // Same "configured vs never tracked" distinction as the yearly branch
+        // — true when this category exists in Quarterly Actions for ANY of
+        // the year's 4 quarters, even if that quarter hasn't been reviewed yet.
+        const hasLowerHorizonSource = quartersInOrder.some((q) => q.sourceFound);
+        const yearPeriod = row.periods[periodKeys[yi]];
+        if (yearPeriod) yearPeriod.hasLowerHorizonSource = hasLowerHorizonSource;
 
         const agg = aggregateByType(row.categoryType, quartersInOrder);
 

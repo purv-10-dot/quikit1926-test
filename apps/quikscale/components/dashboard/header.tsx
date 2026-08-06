@@ -1,8 +1,9 @@
 "use client";
 
 import { useSession, signOut } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import { Menu, Settings, Building2 } from "lucide-react";
+import { useRouter, usePathname } from "next/navigation";
+import Link from "next/link";
+import { Menu, Settings, Building2, HelpCircle, Compass } from "lucide-react";
 import { AppSwitcher, UserMenu, globalSignOut } from "@quikit/ui";
 import { useOrgInfo } from "@/lib/hooks/useOrgInfo";
 
@@ -13,7 +14,9 @@ interface HeaderProps {
 export function Header({ onMenuClick }: HeaderProps) {
   const { data: session } = useSession();
   const router = useRouter();
+  const pathname = usePathname();
   const { org } = useOrgInfo();
+  const onHelp = pathname?.startsWith("/help") ?? false;
 
   const fullName = session?.user?.name || session?.user?.email?.split("@")[0] || "User";
   const email = session?.user?.email || "";
@@ -49,6 +52,17 @@ export function Header({ onMenuClick }: HeaderProps) {
     router.push("/settings");
   }
 
+  /**
+   * Replay the Scout onboarding tour. The tour component (mounted in the
+   * dashboard shell) listens for `qs:tour-start`, clears its completion flags
+   * on both the client and the server, and reopens at step 1. The tour's
+   * spotlights anchor to the dashboard chrome, so send the user home first.
+   */
+  function handleRestartTour() {
+    if (pathname !== "/dashboard") router.push("/dashboard");
+    window.dispatchEvent(new Event("qs:tour-start"));
+  }
+
   return (
     <header className="relative z-[100] bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
       {/* Left — mobile menu + welcome + active-org chip */}
@@ -77,19 +91,43 @@ export function Header({ onMenuClick }: HeaderProps) {
         )}
       </div>
 
-      {/* Right — app switcher + shared user menu */}
+      {/* Right — app switcher + shared user menu.
+          Support lives in the floating launcher (components/support/
+          support-launcher.tsx), mounted globally in dashboard-shell. */}
       <div className="flex items-center gap-2">
-        <AppSwitcher />
-        <UserMenu
-          user={{ name: fullName, email }}
-          isImpersonating={isImpersonating}
-          onSignOut={handleSignOut}
-          onExitImpersonation={handleExitImpersonation}
-          items={[
-            { label: "Settings", icon: Settings, onClick: handleSettings },
-          ]}
-          avatarClassName="bg-accent-600"
-        />
+        {/* Knowledge Base. Sits immediately left of the app switcher and is
+            available from every screen — it documents the product, not the
+            tenant's data, so it is not permission-gated. */}
+        <Link
+          href="/help"
+          data-tour="help"
+          aria-label="Knowledge Base"
+          aria-current={onHelp ? "page" : undefined}
+          title="Knowledge Base"
+          className={`p-2 rounded-lg transition-colors ${
+            onHelp
+              ? "bg-accent-50 text-accent-700"
+              : "text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+          }`}
+        >
+          <HelpCircle className="h-5 w-5" />
+        </Link>
+        <div data-tour="app-switcher">
+          <AppSwitcher />
+        </div>
+        <div data-tour="user-menu">
+          <UserMenu
+            user={{ name: fullName, email }}
+            isImpersonating={isImpersonating}
+            onSignOut={handleSignOut}
+            onExitImpersonation={handleExitImpersonation}
+            items={[
+              { label: "Settings", icon: Settings, onClick: handleSettings },
+              { label: "Take the tour again", icon: Compass, onClick: handleRestartTour },
+            ]}
+            avatarClassName="bg-accent-600"
+          />
+        </div>
       </div>
     </header>
   );

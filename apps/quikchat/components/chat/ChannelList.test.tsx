@@ -5,6 +5,7 @@ import { ChannelList } from "./ChannelList";
 
 const item = (over: Partial<ChannelListItem> & { channelId: string }): ChannelListItem => ({
   name: over.channelId,
+  description: null,
   avatarUrl: null,
   type: "group",
   visibility: "public",

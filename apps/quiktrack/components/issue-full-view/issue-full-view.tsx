@@ -17,6 +17,7 @@ import { DescriptionAttachments } from "@/components/description-attachments";
 import { IssueViewSkeleton } from "@/components/skeleton";
 import { IssueDetailsPanel } from "./issue-details-panel";
 import { IssueHeaderSections } from "./issue-header-sections";
+import { IssueDevelopment } from "./issue-development";
 import type { IssuePageData, IssueType } from "./types";
 import type { MentionItem } from "@/components/editor/mention";
 
@@ -188,6 +189,13 @@ export function IssueFullView({
           visible while the long left column scrolls. */}
       <div className="sticky top-0 self-start max-h-[calc(100vh-2rem)] overflow-y-auto pt-6">
         <IssueDetailsPanel issue={issue} members={members} onPatch={patch} />
+        {/* Development sits directly under Details (branches/commits/PRs +
+            action links), the same place the issue drawer puts it — it belongs
+            with the work item's metadata, not stranded mid-page in the content
+            column between Linked work items and Attachments. */}
+        <div className="mt-6">
+          <IssueDevelopment issueId={issue.id} issueKey={issue.key} />
+        </div>
       </div>
     </div>
   );

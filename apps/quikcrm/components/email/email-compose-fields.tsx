@@ -30,6 +30,26 @@ export interface OutboundAttachment {
   contentBase64: string;
 }
 
+/**
+ * Drop blanks and case-insensitive duplicates while keeping the first spelling
+ * and the original order. Records often carry the same address in more than one
+ * field (e.g. a Lead's email and secondaryEmail), which otherwise prefills the
+ * To field with the same recipient twice.
+ */
+export function dedupeAddresses(list: readonly (string | null | undefined)[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of list) {
+    const trimmed = (raw ?? "").trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(trimmed);
+  }
+  return out;
+}
+
 export function emptyCompose(prefill?: {
   to?: string[];
   cc?: string[];
@@ -37,9 +57,9 @@ export function emptyCompose(prefill?: {
   subject?: string;
 }): ComposeValue {
   return {
-    to: (prefill?.to ?? []).join(", "),
-    cc: (prefill?.cc ?? []).join(", "),
-    bcc: (prefill?.bcc ?? []).join(", "),
+    to: dedupeAddresses(prefill?.to ?? []).join(", "),
+    cc: dedupeAddresses(prefill?.cc ?? []).join(", "),
+    bcc: dedupeAddresses(prefill?.bcc ?? []).join(", "),
     subject: prefill?.subject ?? "",
     body: "",
     attachments: [],
@@ -47,10 +67,7 @@ export function emptyCompose(prefill?: {
 }
 
 export function parseAddresses(raw: string): string[] {
-  return raw
-    .split(/[,;]/)
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
+  return dedupeAddresses(raw.split(/[,;]/).map((s) => s.trim().toLowerCase()));
 }
 
 /** One send path for the whole app. Returns { ok, error }. */

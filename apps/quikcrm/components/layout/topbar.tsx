@@ -24,6 +24,7 @@ import {
   Users,
   Workflow,
   X,
+  LifeBuoy,
 } from "lucide-react";
 import Link from "next/link";
 import { AppSwitcher } from "@quikit/ui";
@@ -149,6 +150,20 @@ const SETTINGS_MENU = [
         icon: Bell,
         label: "Notifications",
         description: "Manage notification rules and recipients",
+      },
+    ],
+  },
+  {
+    section: "Help & Support",
+    items: [
+      {
+        href: "/settings/support",
+        icon: LifeBuoy,
+        label: "Support Status",
+        // No adminOnly — support status is per-user, so every member sees
+        // their own requests. Gating it would hide it from exactly the people
+        // who raise tickets.
+        description: "Track requests you have raised and our replies",
       },
     ],
   },

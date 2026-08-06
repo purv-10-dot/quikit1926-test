@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { hasAdminAccess } from "@/lib/api/permissions";
+import {
+  getActiveFieldsForProject,
+  getValuesForIssue,
+} from "@/lib/services/customFieldValues";
 
 /**
  * Aggregate read for the work-item view.
@@ -45,8 +49,16 @@ export const GET = withOrgAuth<{ id: string }>(
     }
 
     // Fan out the issue-scoped reads in parallel — they're independent.
-    const [subtasks, timeLogs, links, commentRows, historyRows, attachments] =
-      await Promise.all([
+    const [
+      subtasks,
+      timeLogs,
+      links,
+      commentRows,
+      historyRows,
+      attachments,
+      customFields,
+      customFieldValues,
+    ] = await Promise.all([
         db.qtIssue.findMany({
           where: { parentId: issueId, isDeleted: false },
           orderBy: { orderInColumn: "asc" },
@@ -112,6 +124,11 @@ export const GET = withOrgAuth<{ id: string }>(
             createdAt: true,
           },
         }),
+        // Custom fields active for this issue's project + the issue's stored
+        // values — embedded so the full-page detail panel renders them without
+        // a second round-trip, matching `/api/issues/[id]`.
+        getActiveFieldsForProject(orgId, issue.projectId),
+        getValuesForIssue(orgId, issueId),
       ]);
 
     // Comments + history each denormalise their author. Resolve the union of
@@ -145,7 +162,7 @@ export const GET = withOrgAuth<{ id: string }>(
     return NextResponse.json({
       success: true,
       data: {
-        issue: { ...issue, subtasks, timeLogs },
+        issue: { ...issue, subtasks, timeLogs, customFields, customFieldValues },
         links,
         comments,
         history,

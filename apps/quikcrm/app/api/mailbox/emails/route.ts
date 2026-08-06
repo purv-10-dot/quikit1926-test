@@ -7,7 +7,6 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { requireApiUser, isResponse, errorResponse } from "@/lib/auth/require";
-import { assertModule } from "@/lib/auth/permissions";
 import {
   callerConnection,
   listMailboxEmails,
@@ -21,9 +20,11 @@ const FOLDERS: MailboxFolder[] = ["inbox", "sent", "drafts", "all"];
 
 export async function GET(req: NextRequest) {
   try {
+    // Personal mailbox: authentication is the only gate. Every row below is
+    // filtered by the caller's own connection id, so there is nothing an
+    // org-level `mailbox` grant would additionally protect.
     const user = await requireApiUser();
     if (isResponse(user)) return user;
-    await assertModule(user, "mailbox", "view");
 
     const sp = new URL(req.url).searchParams;
     const folder = (sp.get("folder") ?? "inbox") as MailboxFolder;

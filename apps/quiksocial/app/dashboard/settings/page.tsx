@@ -26,7 +26,9 @@ import {
   Mail,
   ExternalLink,
   BarChart3,
+  LifeBuoy,
 } from "lucide-react";
+import { SupportStatusTab } from "@quikit/ui/support";
 import { BACKGROUND_IMAGES, bgSrc, bgLabel, DEFAULT_BG } from "@/lib/constants/background-images";
 import { SUPPORTED_TIMEZONES } from "@/lib/constants/timezones";
 
@@ -192,7 +194,15 @@ function SaveBtn({
 // Tabs
 // ---------------------------------------------------------------------------
 
-type TabId = "profile" | "workspace" | "team" | "ai" | "security" | "billing" | "whats-new";
+type TabId =
+  | "profile"
+  | "workspace"
+  | "team"
+  | "ai"
+  | "security"
+  | "billing"
+  | "support"
+  | "whats-new";
 
 const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
   { id: "profile", label: "Profile", icon: <User size={14} /> },
@@ -201,6 +211,7 @@ const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
   { id: "ai", label: "AI Preferences", icon: <Sparkles size={14} /> },
   { id: "security", label: "Security", icon: <Shield size={14} /> },
   { id: "billing", label: "Plans & Billing", icon: <CreditCard size={14} /> },
+  { id: "support", label: "Support Status", icon: <LifeBuoy size={14} /> },
   { id: "whats-new", label: "What's New", icon: <Megaphone size={14} /> },
 ];
 
@@ -1348,6 +1359,9 @@ export default function SettingsPage() {
       )}
       {activeTab === "billing" && (
         <BillingTab />
+      )}
+      {activeTab === "support" && (
+        <SupportStatusTab />
       )}
       {activeTab === "whats-new" && (
         <WhatsNewTab />

@@ -237,26 +237,48 @@ async function getProfileHistoryId(accessToken: string): Promise<string | undefi
   return p.historyId;
 }
 
-/** Incremental sync using the History API from a known historyId. */
+/**
+ * Incremental sync using the History API from a known historyId.
+ *
+ * Listens for BOTH `messageAdded` and `labelAdded`. Mail sent from the Gmail UI
+ * frequently does NOT produce a `messageAdded` event: the message already exists
+ * in the mailbox (Gmail auto-saves a draft while composing), so the send is
+ * recorded as the SENT label being applied to that existing id — a `labelAdded`
+ * event. Listening only for `messageAdded` therefore misses Gmail-sent mail
+ * entirely, which is why it never reached the CRM. We take the id from any
+ * labelAdded whose labelIds include SENT; normalize() re-reads the authoritative
+ * label set during hydrate, so a message that has since changed state is still
+ * classified correctly.
+ *
+ * `historyTypes` repeats as a multi-value query param (Gmail ANDs a single value
+ * but ORs repeats) — URLSearchParams.append, not set.
+ */
 async function historySync(accessToken: string, startHistoryId: string): Promise<SyncResult> {
   const ids = new Set<string>();
   let pageToken: string | undefined;
   let newHistoryId = startHistoryId;
 
   do {
-    const q = new URLSearchParams({
-      startHistoryId,
-      historyTypes: "messageAdded",
-    });
+    const q = new URLSearchParams({ startHistoryId });
+    q.append("historyTypes", "messageAdded");
+    q.append("historyTypes", "labelAdded");
     if (pageToken) q.set("pageToken", pageToken);
     const page = await providerFetch<{
-      history?: { messagesAdded?: { message: { id: string } }[] }[];
+      history?: {
+        messagesAdded?: { message: { id: string } }[];
+        labelsAdded?: { message: { id: string }; labelIds?: string[] }[];
+      }[];
       historyId?: string;
       nextPageToken?: string;
     }>(`${API}/history?${q.toString()}`, { headers: authHeader(accessToken) });
 
     for (const h of page.history ?? []) {
       for (const added of h.messagesAdded ?? []) ids.add(added.message.id);
+      // Only SENT matters here — ignore READ/STARRED/category churn, which would
+      // otherwise re-hydrate half the mailbox on every tick.
+      for (const labeled of h.labelsAdded ?? []) {
+        if (labeled.labelIds?.includes("SENT")) ids.add(labeled.message.id);
+      }
     }
     if (page.historyId) newHistoryId = page.historyId;
     pageToken = page.nextPageToken;

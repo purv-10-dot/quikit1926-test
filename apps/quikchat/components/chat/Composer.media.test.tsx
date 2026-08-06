@@ -15,6 +15,15 @@
 //   11. a normal message routes to onSend, not onAssist
 //   12. a caption typed alongside an attachment travels with the media on send
 //   13. paste strips rich formatting → plain text, newlines become hard breaks
+//   14. the placeholder follows the ACTIVE channel across switches, and its
+//       wording branches on channel.type: open a DM → "Message <DM name>";
+//       switch to a group → "Message in <group name>" (groups take the "in"
+//       form); switch to AI Chat → "Message <AI channel name>"; switch back →
+//       the first name again. Regression guard for the stale-placeholder bug
+//       AND for the group wording. TipTap reads
+//       `Placeholder.configure` once per editor creation, so this only holds
+//       while <Composer> stays keyed by channelId in ConversationView. Also
+//       assert the editor is empty after the switch (no text carried over).
 import { ToastProvider } from "@/components/ui";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

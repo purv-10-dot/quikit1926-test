@@ -4,8 +4,8 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { ADMIN_TIER_ROLES, HIDDEN_APP_SLUGS } from "@quikit/shared";
 
-/**
- * GET /api/apps/switcher
+ /**
+ * GET /api/apps/s witcher
  *
  * Returns the apps the current user can open from the in-app AppSwitcher (the
  * waffle grid in the header). Mirrors quikscale/quiktrack and the QuikIT

@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { Plus } from "lucide-react";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import { useApiData } from "@/lib/hooks/useApiData";
-import { PROJECT_TABS, enabledTabPaths } from "@/lib/projectTabs";
+import { PROJECT_TABS, enabledTabPaths, selectableTabs } from "@/lib/projectTabs";
 import { TAB_ICONS } from "./tab-icons";
 import { TabCustomizer } from "./tab-customizer";
 
@@ -50,7 +50,12 @@ export function ProjectTabBar({
   const activeTab =
     PROJECT_TABS.find((t) => pathname?.endsWith(`/${t.path}`))?.path ?? "board";
 
+  // Tabs valid for this project's template (drops discovery-only tabs like
+  // "Ideas" on a non-discovery space, even if a stale tabConfig still lists it).
+  const allowed = new Set(selectableTabs(templateKey).map((t) => t.path));
+
   const visibleTabs = enabledTabPaths(tabConfig ?? null)
+    .filter((path) => allowed.has(path))
     .map((path) => PROJECT_TABS.find((t) => t.path === path))
     .filter((t): t is (typeof PROJECT_TABS)[number] => Boolean(t))
     .filter((t) => !t.perm || perms.loading || perms.has(t.perm.resource, t.perm.action));
@@ -100,6 +105,7 @@ export function ProjectTabBar({
           {customizeOpen && (
             <TabCustomizer
               projectId={projectId}
+              templateKey={templateKey}
               tabConfig={tabConfig ?? null}
               onSaved={() => void refetchTabs()}
               onClose={() => setCustomizeOpen(false)}

@@ -39,7 +39,7 @@ export function computeGratuity(input: {
  *   amount = ((monthlyBasicDA / 30) × encashableDays)
  * Tax-exempt limit (Section 10(10AA)) for non-govt employees: ₹25 Lakh (cumulative across employers).
  */
-export async function computeLeaveEncashment(
+async function computeLeaveEncashment(
   orgId: string,
   employeeId: string,
   options?: { onlyEncashableTypes?: boolean },

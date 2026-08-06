@@ -20,7 +20,7 @@ import {
   FileText, BarChart3, Fuel, ArrowLeftRight,
   CalendarCheck, GitCompareArrows, HardHat, Hammer,
   Receipt, GanttChart, ListTodo, BadgeCheck, UserCog,
-  ShieldCheck, Workflow, Globe, Boxes, MapPin,
+  ShieldCheck, Workflow, Globe, Boxes, MapPin, LifeBuoy,
   CreditCard, Calculator, FileSpreadsheet,
   ChevronRight, Menu, X, Search,
   PanelLeftClose, PanelLeftOpen,
@@ -288,6 +288,10 @@ const CONSTRUCTION_NAV: NavItem[] = [
     children: [
       { label: "Users",     href: "/settings/users",     iconComponent: UserCog,     requiredPermission: "settings.users",     superAdminOnly: true, featureKey: "settings.users" },
       { label: "Workflows", href: "/settings/workflows", iconComponent: Workflow,    requiredPermission: "settings.workflows", superAdminOnly: true, featureKey: "settings.workflows" },
+      // No requiredPermission / superAdminOnly — support status is per-user, so
+      // every member sees their own requests. Its page lives outside the
+      // `(admin)` route group for the same reason (see settings/(admin)/layout.tsx).
+      { label: "Support Status", href: "/settings/support", iconComponent: LifeBuoy },
     ],
   },
 ];

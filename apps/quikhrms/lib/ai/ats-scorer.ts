@@ -17,7 +17,7 @@ export interface ATSScoreInput {
   candidateSkills?: string[];
 }
 
-export interface ATSScoreBreakdownItem {
+interface ATSScoreBreakdownItem {
   skill: string;
   weight: number;
   matched: boolean;

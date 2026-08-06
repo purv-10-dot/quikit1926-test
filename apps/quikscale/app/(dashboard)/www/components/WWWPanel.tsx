@@ -9,6 +9,7 @@ import { useWWWNotes } from "@/lib/hooks/useWWWNotes";
 import { validateWWWForm } from "@/lib/utils/wwwFormValidation";
 import { WWWNotesThread } from "./WWWNotesThread";
 import type { WWWItem } from "@/lib/types/www";
+import { WWW_TBD_LABEL } from "@/lib/constants/www";
 import { toDateInputValue } from "@/lib/utils/dateUtils";
 import { notify } from "@/lib/utils/notify";
 import { humanizeApiError } from "@/lib/utils/humanizeError";
@@ -94,7 +95,9 @@ function LogTab({ item, users }: { item: WWWItem; users: Array<{ id: string; fir
           </div>
           <div>
             <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Due Date</span>
-            <p className="text-xs text-gray-800 mt-0.5">{formatDate(item.when)}</p>
+            <p className="text-xs text-gray-800 mt-0.5">
+              {item.dueDateTBD ? WWW_TBD_LABEL : formatDate(item.when)}
+            </p>
           </div>
           <div>
             <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Original Due Date</span>
@@ -185,10 +188,12 @@ function EditTab({
   itemId,
   notesRequired,
   showNotesRequiredError,
+  setDueDateTBD,
 }: {
-  form: { whoIds: string[]; what: string; when: string; status: string; revisedDate: string; notes: string; category: string; originalDueDate: string };
+  form: { whoIds: string[]; what: string; when: string; dueDateTBD: boolean; status: string; revisedDate: string; notes: string; category: string; originalDueDate: string };
   set: (key: string, val: string) => void;
   setMulti: (key: "whoIds", val: string[]) => void;
+  setDueDateTBD: (checked: boolean) => void;
   errors: Record<string, string>;
   users: Array<{ id: string; firstName: string; lastName: string; email: string }>;
   mode: "create" | "edit";
@@ -243,9 +248,21 @@ function EditTab({
             type="date"
             value={form.when}
             onChange={e => set("when", e.target.value)}
-            disabled={whoWhenReadOnly}
+            disabled={whoWhenReadOnly || form.dueDateTBD}
             className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 disabled:bg-gray-50 disabled:text-gray-500 ${errors.when ? "border-red-400" : "border-gray-200"}`}
           />
+          {/* TBD opt-out — the date picker and this checkbox are mutually
+              exclusive; one of the two must be set (see validateWWWForm). */}
+          <label className={`flex items-center gap-1.5 mt-1.5 ${whoWhenReadOnly ? "cursor-default opacity-60" : "cursor-pointer"}`}>
+            <input
+              type="checkbox"
+              checked={form.dueDateTBD}
+              onChange={e => setDueDateTBD(e.target.checked)}
+              disabled={whoWhenReadOnly}
+              className="rounded border-gray-300 text-accent-600 focus:ring-accent-400"
+            />
+            <span className="text-[11px] text-gray-600">TBD (To Be Decided)</span>
+          </label>
           {errors.when && <p className="text-[10px] text-red-500 mt-0.5">{errors.when}</p>}
         </div>
       </div>
@@ -295,7 +312,9 @@ function EditTab({
               className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 disabled:bg-gray-50 disabled:text-gray-500"
             />
             <p className="text-[10px] text-gray-400 mt-0.5">
-              Must be on or after the When date ({form.when || "—"}).
+              {form.dueDateTBD
+                ? "The When date is To Be Decided — no minimum applies."
+                : `Must be on or after the When date (${form.when || "—"}).`}
             </p>
           </div>
         )}
@@ -373,8 +392,11 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
     : item?.who ? [item.who] : [];
   const [form, setForm] = useState({
     whoIds: initialWhoIds,
+    // A TBD item stores a placeholder date server-side; don't surface it in the
+    // picker or the user would see a date they never chose.
+    when: item?.dueDateTBD ? "" : toDateInputValue(item?.when),
+    dueDateTBD: item?.dueDateTBD ?? false,
     what: item?.what ?? "",
-    when: toDateInputValue(item?.when),
     status: item?.status ?? "not-yet-started",
     revisedDate: item?.revisedDates?.[item.revisedDates.length - 1]
       ? toDateInputValue(item.revisedDates[item.revisedDates.length - 1])
@@ -427,7 +449,8 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
       setForm({
         whoIds: ids,
         what: item.what,
-        when: toDateInputValue(item.when),
+        when: item.dueDateTBD ? "" : toDateInputValue(item.when),
+        dueDateTBD: item.dueDateTBD ?? false,
         status: item.status,
         revisedDate: item.revisedDates?.length
           ? toDateInputValue(item.revisedDates[item.revisedDates.length - 1])
@@ -449,9 +472,16 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
     setErrors(e => { const n = { ...e }; delete n[key]; return n; });
   }
 
+  // Checking TBD clears any picked date (the two are mutually exclusive) and
+  // drops the "when" error, since TBD satisfies the due-date requirement.
+  function setDueDateTBD(checked: boolean) {
+    setForm(f => ({ ...f, dueDateTBD: checked, when: checked ? "" : f.when }));
+    setErrors(e => { const n = { ...e }; delete n.when; return n; });
+  }
+
   function validate() {
     return validateWWWForm(
-      { whoIds: form.whoIds, what: form.what, when: form.when, revisedDate: form.revisedDate, notes: form.notes },
+      { whoIds: form.whoIds, what: form.what, when: form.when, dueDateTBD: form.dueDateTBD, revisedDate: form.revisedDate, notes: form.notes },
       // Notes-required is a form-field rule only on CREATE (the single textarea).
       // In edit mode notes live in the thread and are enforced separately below
       // (a NEW note must be added this session), so don't block on form.notes.
@@ -471,11 +501,14 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
         who: form.whoIds[0] ?? "",
         whoIds: form.whoIds,
         what: form.what.trim(),
-        when: form.when,
         status: form.status,
+        dueDateTBD: form.dueDateTBD,
         category: form.category || null,
         originalDueDate: form.originalDueDate || null,
       };
+      // Omit `when` entirely for TBD items — the server keeps the stored
+      // placeholder and the zod schema rejects an empty string.
+      if (!form.dueDateTBD) payload.when = form.when;
       // Notes are only set from this form on CREATE (it seeds the first thread
       // note server-side). In edit mode the thread owns notes — sending the
       // stale form value here would clobber the latest-note mirror.
@@ -529,7 +562,7 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
 
   const subtitle = mode === "create"
     ? "Create new record"
-    : [whoName, item ? `Due ${formatDate(item.when)}` : ""].filter(Boolean).join(" · ");
+    : [whoName, item ? `Due ${item.dueDateTBD ? WWW_TBD_LABEL : formatDate(item.when)}` : ""].filter(Boolean).join(" · ");
 
   return (
     <RightPanel
@@ -566,7 +599,7 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
       }
     >
       {tab === "edit" && (
-        <EditTab form={form} set={set} setMulti={setMulti} errors={errors} users={users} mode={mode} readOnly={readOnly} whoWhenReadOnly={whoWhenReadOnly} itemId={item?.id} notesRequired={notesRequired} showNotesRequiredError={showNotesRequiredError} />
+        <EditTab form={form} set={set} setMulti={setMulti} setDueDateTBD={setDueDateTBD} errors={errors} users={users} mode={mode} readOnly={readOnly} whoWhenReadOnly={whoWhenReadOnly} itemId={item?.id} notesRequired={notesRequired} showNotesRequiredError={showNotesRequiredError} />
       )}
       {tab === "log" && item && (
         <LogTab item={item} users={users} />

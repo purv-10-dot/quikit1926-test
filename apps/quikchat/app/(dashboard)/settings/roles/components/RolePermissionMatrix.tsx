@@ -78,7 +78,7 @@ function TristateCheckbox({
       checked={allOn}
       onChange={() => onChange(!allOn)}
       title={title}
-      className="h-4 w-4 rounded border-gray-300 accent-blue-600 cursor-pointer"
+      className="h-4 w-4 rounded border-gray-300 accent-[var(--qc-accent)] cursor-pointer"
     />
   );
 }
@@ -277,7 +277,7 @@ export function RolePermissionMatrix({
                   autoFocus
                   value={draftName}
                   onChange={(e) => setDraftName(e.target.value)}
-                  className="text-sm border border-gray-300 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  className="text-sm border border-gray-300 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-[var(--qc-accent)]"
                 />
                 <button onClick={commitRename} disabled={renameSaving} className="text-green-600 hover:text-green-700">
                   <Check className="h-4 w-4" />
@@ -332,7 +332,7 @@ export function RolePermissionMatrix({
                 <button
                   onClick={handleSave}
                   disabled={saving}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-[var(--qc-accent)] hover:bg-[var(--qc-accent-strong)] text-[var(--qc-accent-fg)] disabled:opacity-50"
                 >
                   {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} Save
                 </button>
@@ -411,7 +411,7 @@ export function RolePermissionMatrix({
                                 type="checkbox"
                                 checked={grants.has(`${leaf.resource}:${a}`)}
                                 onChange={() => toggleGrant(leaf.resource, a)}
-                                className="h-4 w-4 rounded border-gray-300 accent-blue-600 cursor-pointer"
+                                className="h-4 w-4 rounded border-gray-300 accent-[var(--qc-accent)] cursor-pointer"
                               />
                             </td>
                           );
