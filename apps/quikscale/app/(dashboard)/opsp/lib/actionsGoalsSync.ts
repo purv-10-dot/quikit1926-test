@@ -4,22 +4,27 @@
  * Extracted from the cascade effect in `hooks/useOPSPForm.ts` so the row-sync
  * rules are unit-testable and unambiguous.
  *
- * Semantics ("auto-fill, allow extra"):
- *   - GROW only: ensure every Goal has a matching Action row (capped at
+ * Semantics ("grow only, sync-clear only — no auto-fill"):
+ *   - GROW only: ensure every Goal has a matching (blank) Action row (capped at
  *     `maxRows`). Never SHRINK — the user may have added independent Action
  *     rows via "Add New", and removing/clearing a Goal must not delete them.
- *   - CHANGE-driven category auto-fill for the OVERLAPPING rows only: copy a
- *     Goal's category into its matching Action row ONLY when the user actually
- *     edited that Goal category (i.e. it differs from `prevGoalCats[i]`),
- *     resetting that row's projected + month cells so stale values don't strand
- *     against an out-of-date category. A row whose Goal category is UNCHANGED
- *     is left alone even if the Action category differs — so an Action row the
- *     user cleared downstream is never re-seeded from an unchanged Goal.
+ *   - Category auto-fill for the OVERLAPPING rows is LIMITED to synced-clear
+ *     only: if a Goal category that was previously mirrored into its Action
+ *     row gets cleared, the Action row is cleared too. A Goal category with NO
+ *     existing Action row at its index (whether the row was already empty, or
+ *     just grown to keep alignment) is NEVER auto-copied into Actions — that
+ *     Goal stays confined to the 1-Year tier permanently. The user must type
+ *     the category into Quarterly Actions themselves if they want it tracked
+ *     there. Once they do, that row is "occupied" like any other, and a later
+ *     Goal rename targeting it goes through the normal `classifyCascade`
+ *     confirmation flow (Replace/Append), same as any other occupied row —
+ *     no separate permanent-exclusion tracking is needed to get this for free,
+ *     since the condition is re-evaluated fresh from current row contents on
+ *     every reconcile call.
  *     Action rows beyond the Goals count keep their own categories.
  *
- * `prevGoalCats` is the category snapshot from the previous reconcile. Pass an
- * empty array on first run — every non-empty Goal category then reads as a
- * change and seeds its Action row (the original first-fill behavior).
+ * `prevGoalCats` is the category snapshot from the previous reconcile — used
+ * only by the synced-clear check.
  *
  * Returns the SAME `actionsQtr` reference when nothing changed (so the caller's
  * `setForm` can bail out of a re-render), or a new array when it did.
@@ -61,8 +66,10 @@ export function reconcileActionsWithGoals(
   }
 
   // 2) Index-aligned AUTO reflection for the overlapping (Goal-backed) rows:
-  //    only first-fill an EMPTY Action row, or CLEAR one that mirrored the old
-  //    Goal value. Overwriting an OCCUPIED Action row with a different category
+  //    ONLY clear an Action row that mirrored the old Goal value (synced-clear).
+  //    A Goal category with no existing Action row at its index is NEVER
+  //    auto-copied down — it stays goals-only permanently (see file doc
+  //    comment). Overwriting an OCCUPIED Action row with a different category
   //    is a "reflect" that needs confirmation — those indices are in
   //    `skipIndices` (gated rename) or blocked (duplicate) and handled by the
   //    caller, so they're skipped here and never silently clobbered.
@@ -74,14 +81,8 @@ export function reconcileActionsWithGoals(
     const actCat = trim(next[i].category);
     const wasGoalCat = trim(prevGoalCats[i]);
     if (goalCat === actCat) continue; // already reflected
-    // First-fill is DUPLICATE-SAFE: never fill a value already present at another
-    // Action row (idempotent every run, so an unchanged Goal whose value collides
-    // downstream can't be resurrected into a new duplicate on a later cascade).
-    const dupElsewhere =
-      goalCat !== "" && next.some((r, j) => j !== i && trim(r.category) === goalCat);
-    const isFirstFill = actCat === "" && goalCat !== "" && !dupElsewhere;
     const isSyncedClear = goalCat === "" && actCat !== "" && actCat === wasGoalCat;
-    if (isFirstFill || isSyncedClear) {
+    if (isSyncedClear) {
       if (next === actionsQtr) next = [...next]; // clone-on-first-write
       next[i] = {
         ...next[i],

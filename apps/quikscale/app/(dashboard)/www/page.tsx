@@ -3,15 +3,15 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useWWWItemsPaginated, useDeleteWWW, useBulkRestoreWWW, type WWWFilters } from "@/lib/hooks/useWWW";
 import { useInfiniteUsers } from "@/lib/hooks/useInfiniteUsers";
-import { useUserOption } from "@/lib/hooks/useUserOption";
+import { useUserOptions } from "@/lib/hooks/useUserOption";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { WWWTable } from "./components/WWWTable";
 import { WWWPanel } from "./components/WWWPanel";
 import { FilterPicker, userToFilterOption, EmptyState, type ExportSelection } from "@quikit/ui";
 import { useFilterContext } from "@/lib/context/FilterContext";
-import { STATUS_FILTER_OPTIONS } from "@/lib/constants/status";
+import { STATUS_FILTER_OPTIONS, ALL_STATUS_LABEL } from "@/lib/constants/status";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
-import { useSessionState } from "@/lib/hooks/useSessionState";
+import { useWWWStatusFilter, WWW_PAGE_DEFAULT_STATUSES } from "@/lib/hooks/useWWWStatusFilter";
 import { useTableSort, useDebouncedTableSearch } from "@/lib/store";
 import { AddButton } from "@quikit/ui";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
@@ -34,9 +34,22 @@ export default function WWWPage() {
   // Dashboard / KPI / Priority. The status filter is WWW-only but persists for
   // the browser-tab session (survives navigation + refresh).
   const ctx = useFilterContext();
-  const [filterWho, setFilterWho] = useState<string>(ctx.filterOwner);
+  // Who + Status are MULTI-select. Both are stored as arrays and sent to the
+  // API comma-joined (`buildWwwScopeWhere` splits them back into `{ in: [...] }`).
+  const [filterWho, setFilterWho] = useState<string[]>(ctx.filterOwners);
   const [filterTeam, setFilterTeam] = useState("");
-  const [filterStatus, setFilterStatus] = useSessionState<string>("qs:www:status", "");
+  // Shared with the Dashboard's WWW section — see useWWWStatusFilter.
+  const [filterStatus, setFilterStatus] = useWWWStatusFilter(WWW_PAGE_DEFAULT_STATUSES);
+
+  /**
+   * Mirror the Who selection into the cross-module owner filter (KPI / Priority
+   * / Dashboard all read it). That filter is multi-valued too, so the whole
+   * selection carries across verbatim.
+   */
+  function applyWhoFilter(next: string[]) {
+    setFilterWho(next);
+    ctx.setFilterOwners(next);
+  }
   const [showFilter, setShowFilter] = useState(false);
 
   // Teams list
@@ -59,7 +72,9 @@ export default function WWWPage() {
   // Resolve the applied "who" by id so the picker shows their name even when
   // that person isn't in the loaded 25-user page AND the filtered list is
   // empty (e.g. a filter inherited from My Dashboard with 0 matching rows).
-  const selectedWhoOption = useUserOption(filterWho);
+  // Resolve the applied "who" ids to names so the chips read correctly even
+  // when a selected person isn't in the loaded 25-user page.
+  const selectedWhoOptions = useUserOptions(filterWho);
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -93,13 +108,14 @@ export default function WWWPage() {
   // DB-level list: pagination + search + who/team/status filters all run in
   // the route now. `search` is the debounced value from the shared store.
   const listFilters: WWWFilters = {
-    status: filterStatus || undefined,
+    // Explicit set: empty means "match nothing" (mirrors the Dashboard).
+    status: filterStatus.length ? filterStatus.join(",") : "__none__",
     sort: wwwSort,
     includeDeleted: viewTrash,
     page,
     limit: pageSize,
     search: search.trim() || undefined,
-    who: filterWho || undefined,
+    who: filterWho.length ? filterWho.join(",") : undefined,
     teamId: filterTeam || undefined,
   };
   const { data: pageData, isLoading, error, refetch } = useWWWItemsPaginated(listFilters);
@@ -147,7 +163,10 @@ export default function WWWPage() {
   // Reset to page 1 whenever a filter/search/sort changes the result set.
   useEffect(() => { setPage(1); }, [filterWho, filterTeam, filterStatus, search, viewTrash, pageSize, wwwSort]);
 
-  const activeFilterCount = (filterTeam ? 1 : 0) + (filterStatus ? 1 : 0) + (filterWho ? 1 : 0);
+  // Status counts as "active" only when it actually narrows the list — with the
+  // full set selected nothing is filtered out.
+  const statusNarrows = filterStatus.length !== WWW_PAGE_DEFAULT_STATUSES.length;
+  const activeFilterCount = (filterTeam ? 1 : 0) + (statusNarrows ? 1 : 0) + (filterWho.length ? 1 : 0);
 
   const handleWwwExport = useCallback(async (sel: ExportSelection) => {
     const columns = wwwColumns
@@ -193,8 +212,9 @@ export default function WWWPage() {
           columns: sel.columnKeys.join(","),
           from: sel.range.mode === "date" ? sel.range.from : undefined,
           to: sel.range.mode === "date" ? sel.range.to : undefined,
-          status: filterStatus || undefined,
-          who: filterWho || undefined,
+          // Explicit set: empty means "match nothing" (mirrors the Dashboard).
+    status: filterStatus.length ? filterStatus.join(",") : "__none__",
+          who: filterWho.length ? filterWho.join(",") : undefined,
           teamId: filterTeam || undefined,
           includeDeleted: viewTrash || undefined,
         });
@@ -317,10 +337,11 @@ export default function WWWPage() {
                 <div>
                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Who</p>
                   <FilterPicker
-                    value={filterWho}
-                    onChange={(v) => { setFilterWho(v); ctx.setFilterOwner(v); }}
+                    multiple
+                    values={filterWho}
+                    onChangeMultiple={applyWhoFilter}
                     options={users.map(userToFilterOption)}
-                    selectedOption={selectedWhoOption}
+                    selectedOptions={selectedWhoOptions}
                     onSearchChange={setOwnerSearch}
                     onLoadMore={fetchMoreOwners}
                     hasMore={ownersHasMore}
@@ -331,19 +352,20 @@ export default function WWWPage() {
                 </div>
                 <div>
                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Status</p>
-                  <select
-                    value={filterStatus}
-                    onChange={e => setFilterStatus(e.target.value)}
-                    className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white"
-                  >
-                    {STATUS_FILTER_OPTIONS.map(o => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
+                  <FilterPicker
+                    multiple
+                    values={filterStatus}
+                    onChangeMultiple={setFilterStatus}
+                    // Drop the "" sentinel — the picker renders its own
+                    // "All status" row, which selects every status.
+                    options={STATUS_FILTER_OPTIONS.filter(o => o.value !== "").map(o => ({ value: o.value, label: o.label }))}
+                    allLabel={ALL_STATUS_LABEL}
+                    allMeansEvery
+                  />
                 </div>
-                {(filterTeam || filterStatus || filterWho) && (
+                {(filterTeam || statusNarrows || filterWho.length > 0) && (
                   <button
-                    onClick={() => { setFilterTeam(""); setFilterStatus(""); setFilterWho(""); ctx.setFilterOwner(""); }}
+                    onClick={() => { setFilterTeam(""); setFilterStatus(WWW_PAGE_DEFAULT_STATUSES); applyWhoFilter([]); }}
                     className="w-full text-xs text-gray-500 hover:text-gray-800 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
                   >
                     Clear filters

@@ -4,6 +4,7 @@ import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { isOrgAdmin, forbidden } from "@/lib/api/permissions";
 import { launchCampaignSchema } from "@/lib/schemas/habitSchema";
 import { validationError } from "@/lib/api/validationError";
+import { notifyHabitCampaign } from "@/lib/services/habitNotifications";
 import { annotateRounds } from "@/lib/utils/habitRounds";
 import { getCanAddPastQuarterHabit } from "@/lib/utils/featureFlags";
 import { getQuarterPeriodStatus } from "@/lib/utils/habitQuarterPeriod";
@@ -199,8 +200,28 @@ export const POST = withOrgAuth(
         deadline: input.deadline ? new Date(input.deadline) : null,
         notes: input.notes ?? null,
         isLegacy: false,
+        teamId: input.teamId ?? null,
+        // Required by the schema, so always non-empty here. Older campaigns may
+        // still hold an empty list, which the read paths treat as org-wide.
+        participantUserIds: input.participantUserIds,
       },
       select: ADMIN_FIELDS,
+    });
+
+    // Awaited so a serverless freeze after the response can't drop the sends
+    // (the WWW fire-and-forget bug). Swallowed so mail failure never fails
+    // creation.
+    await notifyHabitCampaign({
+      orgId,
+      campaignId: created.id,
+      event: "created",
+      actorUserId: userId,
+      quarter: created.quarter,
+      year: created.year,
+      deadline: created.deadline,
+      participantUserIds: input.participantUserIds,
+    }).catch((err) => {
+      console.error("[POST /api/habits] notifyHabitCampaign failed:", err);
     });
 
     return NextResponse.json({ success: true, data: created }, { status: 201 });
