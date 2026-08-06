@@ -384,7 +384,7 @@ export default function Topbar() {
                 </button>
                 <button
                   className="dropdown-item"
-                  onClick={() => signOut({ callbackUrl: "/login" })}
+                  onClick={() => signOut({ callbackUrl: "/" })}
                   type="button"
                 >
                   Sign out

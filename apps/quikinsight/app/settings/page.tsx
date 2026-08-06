@@ -37,7 +37,7 @@ export default function SettingsPage() {
   }, []);
 
   const connected = (connectors ?? []).filter((c) => c.connected);
-  const roleLabel = user?.role ?? "MEMBER";
+  const roleLabel = user?.membershipRole ?? "MEMBER";
 
   return (
     <div>
@@ -52,9 +52,9 @@ export default function SettingsPage() {
           <span style={{ color: "var(--text-secondary)" }}>Name</span><span>{user?.name || "—"}</span>
           <span style={{ color: "var(--text-secondary)" }}>Email</span><span>{user?.email || "—"}</span>
           <span style={{ color: "var(--text-secondary)" }}>Role</span><span>{roleLabel}</span>
-          {user?.teamName && (<><span style={{ color: "var(--text-secondary)" }}>Team</span><span>{user.teamName}</span></>)}
+
         </div>
-        <button className="btn btn-sm" style={{ marginTop: 16 }} onClick={() => signOut({ callbackUrl: "/login" })} type="button">
+        <button className="btn btn-sm" style={{ marginTop: 16 }} onClick={() => signOut({ callbackUrl: "/" })} type="button">
           Sign out
         </button>
       </div>

@@ -6,7 +6,7 @@
  */
 export const middleware = createMiddleware({
   loginRoute: "/login",
-  publicRoutes: ["/login", "/auth-handoff"],
+  publicRoutes: ["/", "/login", "/auth-handoff"],
 });
 
 export const config = {
