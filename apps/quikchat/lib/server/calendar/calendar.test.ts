@@ -52,23 +52,17 @@ describe("StubCalendarProvider", () => {
   const p = new StubCalendarProvider();
   const win = { orgId: "o1", from: "2026-06-20T00:00:00.000Z", to: "2026-06-20T23:59:59.999Z" };
 
-  it("free/busy is deterministic per (email, day)", async () => {
-    const a = await p.getFreeBusy({ ...win, userEmails: ["x@acme.com"] });
-    const b = await p.getFreeBusy({ ...win, userEmails: ["x@acme.com"] });
-    expect(a).toEqual(b);
-    expect(a["x@acme.com"]!.length).toBeGreaterThan(0);
-    // Each block is a valid start<end interval inside the day.
-    for (const blk of a["x@acme.com"]!) {
-      expect(Date.parse(blk.end)).toBeGreaterThan(Date.parse(blk.start));
-    }
-  });
-
-  it("different users get different busy blocks", async () => {
+  it("reports every email as unknown rather than fabricating busy blocks", async () => {
     const out = await p.getFreeBusy({ ...win, userEmails: ["a@acme.com", "b@acme.com"] });
-    expect(out["a@acme.com"]).not.toEqual(out["b@acme.com"]);
+    expect(out).toEqual({ "a@acme.com": "unknown", "b@acme.com": "unknown" });
   });
 
-  it("createMeeting returns a synthetic event + a Meet link when conferencing", async () => {
+  it("is honest for a single email too", async () => {
+    const out = await p.getFreeBusy({ ...win, userEmails: ["x@acme.com"] });
+    expect(out["x@acme.com"]).toBe("unknown");
+  });
+
+  it("createMeeting never invents an event id, join link, or html link", async () => {
     const r = await p.createMeeting({
       orgId: "o1",
       organizerId: "u1",
@@ -78,12 +72,10 @@ describe("StubCalendarProvider", () => {
       attendeeEmails: ["a@acme.com"],
       conferencing: true,
     });
-    expect(r.externalEventId).toMatch(/^stub-evt-/);
-    expect(r.joinUrl).toMatch(/^https:\/\/meet\.stub\//);
-    expect(r.htmlLink).toMatch(/^https:\/\/calendar\.stub\//);
+    expect(r).toEqual({ externalEventId: null, joinUrl: null, htmlLink: null });
   });
 
-  it("omits the join link when conferencing is off", async () => {
+  it("stays null when conferencing is off, too", async () => {
     const r = await p.createMeeting({
       orgId: "o1",
       organizerId: "u1",
