@@ -77,6 +77,7 @@ function renderComposer(props: Partial<React.ComponentProps<typeof Composer>> = 
       <Composer
         members={members}
         onSend={onSend}
+        currentUserId="u1"
         channelId="c1"
         onSendMedia={vi.fn()}
         {...props}

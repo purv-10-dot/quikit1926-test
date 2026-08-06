@@ -4,13 +4,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
-import { canActOnStep } from "@/lib/approvals/workflow-rbac";
+import {
+  claimAndRecord,
+  gateApprovalAction,
+  gateConflictResponse,
+  GATE_ACTIONS,
+  type GateAction,
+} from "@/lib/approvals/approval-gate";
+import type { ClaimResult } from "@/lib/approvals/claim-instance";
 import {
   findHireInVerificationRow,
   patchHireInVerificationWorkflowStatus,
 } from "@/lib/equipment/hire-rent-service";
 
-type Action = "approve" | "reject" | "return";
+type Action = GateAction;
 
 export async function POST(
   req: NextRequest,
@@ -36,7 +43,7 @@ export async function POST(
   const action = (body.action ?? "approve") as Action;
   const comments = String(body.comments ?? "").trim();
 
-  if (!["approve", "reject", "return"].includes(action)) {
+  if (!GATE_ACTIONS.includes(action)) {
     return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
   }
   if ((action === "reject" || action === "return") && !comments) {
@@ -67,102 +74,41 @@ export async function POST(
   if (!instance) {
     return NextResponse.json({ error: "Approval instance not found" }, { status: 404 });
   }
-  if (instance.status !== "pending_approval") {
-    return NextResponse.json(
-      { error: `Approval already ${instance.status} — no further actions allowed.` },
-      { status: 409 },
-    );
-  }
-
-  const currentStep = await db.cnApprovalWorkflowStep.findFirst({
-    where: {
-      workflowId: instance.workflowId,
-      stepOrder: instance.currentStepOrder,
-    },
+  // Authorisation, step resolution and the repair / master-approval branches
+  // live in the shared gate; this route keeps only the verification's own patch.
+  const gate = await gateApprovalAction({
+    ctx,
+    instance,
+    entityLabel: "verification",
+    action,
+    comments,
+    projectId: verification.projectId ?? null,
   });
-  if (!currentStep) {
-    return NextResponse.json(
-      {
-        error: `Workflow step ${instance.currentStepOrder} is missing — the workflow may have been edited while this verification was mid-flight.`,
-      },
-      { status: 500 },
-    );
+  if (gate.kind === "error") {
+    return NextResponse.json(gate.body, { status: gate.status });
   }
-
-  if (
-    !canActOnStep(
-      { userId: ctx.userId, roleKey: ctx.roleKey, projectIds: ctx.projectIds },
-      {
-        approverUserId: currentStep.approverUserId,
-        approverUserIds: currentStep.approverUserIds,
-        approverRoleId: currentStep.approverRoleId,
-      },
-      verification.projectId ?? null,
-    )
-  ) {
-    let expected = "an authorized approver";
-    if (currentStep.approverUserId) {
-      const pinned = await findCnUserById(currentStep.approverUserId);
-      expected = pinned?.fullName
-        ? `${pinned.fullName} (pinned approver)`
-        : "the pinned approver for this step";
-    } else if (currentStep.approverRoleId) {
-      expected =
-        `a user with role "${currentStep.approverRoleId}"` +
-        (verification.projectId ? " assigned to this project" : "");
-    }
-    return NextResponse.json(
-      {
-        error: `You are not authorized to ${action} this verification at step ${instance.currentStepOrder}. Expected: ${expected}.`,
-      },
-      { status: 403 },
-    );
-  }
-
-  const nextStep = await db.cnApprovalWorkflowStep.findFirst({
-    where: {
-      workflowId: instance.workflowId,
-      stepOrder: { gt: instance.currentStepOrder },
-    },
-    orderBy: { stepOrder: "asc" },
-  });
 
   let statusPatch: Parameters<typeof patchHireInVerificationWorkflowStatus>[2] | null = null;
+  let conflict: ClaimResult["conflict"] | undefined;
 
   await db.$transaction(async (tx) => {
-    await tx.cnApprovalHistory.create({
-      data: {
-        instanceId: instance.id,
-        stepOrder: instance.currentStepOrder,
-        action,
-        actionById: ctx.userId,
-        comments: comments || null,
-      },
-    });
+    const claim = await claimAndRecord(tx, ctx, instance, gate);
+    if (!claim.claimed) {
+      conflict = claim.conflict;
+      return;
+    }
 
-    if (action === "approve") {
-      if (!nextStep) {
-        await tx.cnApprovalInstance.update({
-          where: { id: instance.id },
-          data: { status: "approved", completedAt: new Date() },
-        });
+    if (gate.effectiveAction === "approve") {
+      if (gate.isFinalApprove) {
         statusPatch = {
           status: "approved",
           approvedAt: new Date(),
           approvedBy: ctx.userId,
           updatedBy: ctx.userId,
         };
-      } else {
-        await tx.cnApprovalInstance.update({
-          where: { id: instance.id },
-          data: { currentStepOrder: nextStep.stepOrder },
-        });
       }
-    } else if (action === "reject") {
-      await tx.cnApprovalInstance.update({
-        where: { id: instance.id },
-        data: { status: "rejected", completedAt: new Date() },
-      });
+      // Intermediate — the verification stays as it is.
+    } else if (gate.effectiveAction === "reject") {
       statusPatch = {
         status: "rejected",
         rejectedAt: new Date(),
@@ -171,10 +117,6 @@ export async function POST(
         updatedBy: ctx.userId,
       };
     } else {
-      await tx.cnApprovalInstance.update({
-        where: { id: instance.id },
-        data: { status: "returned", completedAt: new Date() },
-      });
       statusPatch = {
         status: "computed",
         approvalId: null,
@@ -185,6 +127,15 @@ export async function POST(
       };
     }
   });
+
+  // Lost the claim — someone else settled it first. Nothing was written, so
+  // return before the status patch below.
+  if (conflict) {
+    return NextResponse.json(
+      await gateConflictResponse(conflict, "verification"),
+      { status: 409 },
+    );
+  }
 
   const refreshed = statusPatch
     ? await patchHireInVerificationWorkflowStatus(ctx.orgId, verification.id, statusPatch)

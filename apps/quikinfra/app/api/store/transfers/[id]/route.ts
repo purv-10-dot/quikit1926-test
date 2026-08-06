@@ -15,6 +15,7 @@ import {
   APPROVAL_INSTANCE_INCLUDE,
   buildApprovalDto,
   type ApprovalDto,
+  collectApprovalUserIds,
 } from "@/lib/approvals/approval-dto";
 
 /**
@@ -68,16 +69,7 @@ export async function GET(
       include: APPROVAL_INSTANCE_INCLUDE,
     });
     if (instance) {
-      const userIds = Array.from(
-        new Set<string>([
-          instance.requestedById,
-          ...instance.history.map((h) => h.actionById),
-          ...(instance.workflow.steps
-            .map((s) => s.approverUserId)
-            .filter(Boolean) as string[]),
-        ]),
-      );
-      const nameById = await resolveUserNames(userIds);
+      const nameById = await resolveUserNames(collectApprovalUserIds(instance));
       const callerCanActOnCurrentStep = canActOnCurrentStep(
         {
           userId: ctx.userId,

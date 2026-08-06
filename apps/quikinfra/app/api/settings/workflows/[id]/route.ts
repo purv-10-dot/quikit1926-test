@@ -59,6 +59,15 @@ export const PATCH = auth.manage<{ id: string }>(async (
   const updated = await updateWorkflow(authCtx.orgId, params.id, {
     name: body.name,
     entityType: body.entityType,
+    // Conditional spread: a body that omits the key must leave the existing
+    // master approver alone, while an explicit "" or null clears it.
+    ...("masterApproverUserId" in body
+      ? {
+          masterApproverUserId: body.masterApproverUserId
+            ? String(body.masterApproverUserId)
+            : null,
+        }
+      : {}),
     isActive,
     steps,
     updatedBy: authCtx.userId,

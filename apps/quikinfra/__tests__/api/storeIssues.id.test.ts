@@ -252,9 +252,13 @@ describe("POST /api/store/issues/[id]/approve", () => {
     db.cnApprovalInstance.findFirst.mockResolvedValue({
       id: "inst1", orgId: TEST_TENANT, workflowId: "wf1", status: "pending_approval", currentStepOrder: 1,
     });
-    db.cnApprovalWorkflowStep.findFirst
-      .mockResolvedValueOnce({ stepOrder: 1, approverUserId: null, approverRoleId: "SITE_ADMIN" })
-      .mockResolvedValueOnce(over.nextStep ?? null); // null → final step
+    db.cnApprovalWorkflowStep.findMany.mockResolvedValue(
+      [
+        { stepOrder: 1, approverUserId: null, approverUserIds: [], approverRoleId: "SITE_ADMIN" },
+        ...(over.nextStep ? [{ ...over.nextStep, approverUserIds: [] }] : []),
+      ] as never,
+    );
+    db.cnApprovalInstance.updateMany.mockResolvedValue({ count: 1 } as never);
     db.cnUOM.findMany.mockResolvedValue(over.uoms ?? [{ id: "uom_kg", code: "KG" }]);
     db.cnStockBalance.findUnique.mockResolvedValue(
       over.balance === undefined ? { quantity: 100, avgRate: 10 } : over.balance,

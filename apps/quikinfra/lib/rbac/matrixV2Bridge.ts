@@ -84,6 +84,11 @@ export const MENU_TO_RESOURCE: Readonly<Record<string, string>> = {
   "equip.fixed_assets":"construction.equipment_fixed_assets",
   // Project Mgmt
   "pm.boq":        "construction.boq",
+  // Activity Scope = manual BOQ for FREE_SCOPE projects. Its OWN resource, so
+  // its checkbox is independent of BOQ's (sharing one would tie them together —
+  // matrixToRevokes only revokes a shared resource when every page on it is
+  // denied, so neither could be turned off alone).
+  "pm.activity_scope": "construction.activity_scope",
   "pm.wbs":        "construction.wbs",
   "pm.estimation": "construction.estimation",
   "pm.work_order": "construction.wo",
@@ -199,6 +204,65 @@ function bridgedResourceActions(): ReadonlyArray<{ resource: string; action: str
   );
 }
 
+/** `${resource}:${v2Action}` for every pair the matrix can express. */
+let _managedPairSet: Set<string> | null = null;
+/** Resources with at least one manageable pair. */
+let _managedResources: Set<string> | null = null;
+
+function managedPairSet(): Set<string> {
+  if (!_managedPairSet) {
+    _managedPairSet = new Set(
+      bridgedResourceActions().map((p) => `${p.resource}:${p.action}`),
+    );
+  }
+  return _managedPairSet;
+}
+
+function managedResources(): Set<string> {
+  if (!_managedResources) {
+    _managedResources = new Set(
+      bridgedResourceActions().map((p) => p.resource),
+    );
+  }
+  return _managedResources;
+}
+
+/**
+ * Can this menu row's column actually be granted or revoked?
+ *
+ * Two things have to line up: the PAGE must support the column (a read-only
+ * page has no add/edit/delete) and the page's RESOURCE must really carry the
+ * v2 action behind that column (`construction.quality_safety` has no
+ * `delete`; `construction.stock` is view-only). When either is missing there
+ * is no permission to hand out — the cell is inert.
+ *
+ * The Permissions UI uses this to render such cells as unsupported ("—")
+ * instead of a checkbox that silently reverts on the next reload.
+ */
+export function isMatrixCellManaged(menuKey: string, action: MatrixAction): boolean {
+  const resource = MENU_TO_RESOURCE[menuKey];
+  if (!resource) return false;
+  if (MENU_SUPPORTS[menuKey]?.[action] === false) return false;
+  return managedPairSet().has(`${resource}:${MATRIX_TO_V2_ACTION[action]}`);
+}
+
+/**
+ * True when the row's resource carries NO matrix-manageable pair at all —
+ * e.g. Approvals → `construction.workflows`, which only has the settings-tier
+ * `manage` action. Those rows fall back to the legacy assume-allow display so
+ * the page doesn't silently vanish from the sidebar; ticking them is inert
+ * either way.
+ */
+export function isMatrixRowManaged(menuKey: string): boolean {
+  const resource = MENU_TO_RESOURCE[menuKey];
+  if (!resource) return false;
+  return managedResources().has(resource);
+}
+
+function isRowUnmanaged(menuKey: string): boolean {
+  return !isMatrixRowManaged(menuKey);
+}
+
 /**
  * Walk a matrix JSON and produce the list of (resource, action) pairs
  * that should be REVOKED (i.e. cells with `false`). Cells with `true`
@@ -250,9 +314,19 @@ export function matrixToRevokes(matrix: PermissionMatrix | null | undefined): Re
  * shape the Permissions UI expects. Walks every menu in MENU_CATALOG and
  * sets the matching cells to `false` when a revoke exists.
  *
- * Cells NOT in the revoke set are written as `true` so the UI shows the
- * "ticked" state for them. This matches the legacy behavior where the
- * matrix was assumed-allow if absent.
+ * A MANAGEABLE cell not in the revoke set is written as `true` — the legacy
+ * assume-allow semantic. A cell the matrix cannot express is written as
+ * `false`, NOT `true`: `matrixToRevokes` can never emit a revoke for it, so
+ * assume-allow made it permanently ticked. That is what produced the "I
+ * granted 2-3 pages, saved, and the rest came back selected" report — after
+ * saving a two-page selection, Stock Register, Diesel Log, Gantt View, the
+ * Quality & Safety rows, Fleet Dashboard, Hire & Rent, Fixed Assets and
+ * Reports all reported themselves as granted on their phantom
+ * add/edit/delete columns (see `isMatrixCellManaged`).
+ *
+ * Rows whose resource has no manageable pair at all (Approvals →
+ * construction.workflows, `manage` only) keep the legacy assume-allow so the
+ * page doesn't disappear from the sidebar; see `isRowUnmanaged`.
  */
 export function revokesToMatrix(
   revokes: ReadonlyArray<{ resource: string; action: string }>,
@@ -262,15 +336,104 @@ export function revokesToMatrix(
   for (const item of MENU_CATALOG) {
     const resource = MENU_TO_RESOURCE[item.key];
     if (!resource) continue; // menus not bridged into v2 (e.g. quality.home)
+    const unmanagedRow = isRowUnmanaged(item.key);
     const row: Partial<Record<MatrixAction, boolean>> = {};
     for (const matrixAction of ["add", "edit", "delete", "view"] as MatrixAction[]) {
+      if (unmanagedRow) {
+        row[matrixAction] = MENU_SUPPORTS[item.key]?.[matrixAction] !== false;
+        continue;
+      }
+      if (!isMatrixCellManaged(item.key, matrixAction)) {
+        row[matrixAction] = false;
+        continue;
+      }
       const v2 = MATRIX_TO_V2_ACTION[matrixAction];
-      const revoked = revokeSet.has(`${resource}:${v2}`);
-      row[matrixAction] = !revoked;
+      row[matrixAction] = !revokeSet.has(`${resource}:${v2}`);
     }
     matrix[item.key] = row;
   }
   return matrix;
+}
+
+/**
+ * Does the user's effective v2 permission set allow `action` on `menuKey`?
+ *
+ * `ctx.permissions` is already fully resolved — role grants ∪ per-user grants
+ * − per-user revokes — so it is the authoritative answer whenever the row can
+ * be expressed in v2 terms. Returns `null` when it cannot be, meaning "no
+ * opinion, fall back to the legacy matrix":
+ *
+ *   - the menu row isn't bridged to a resource at all, or
+ *   - the row's resource carries no matrix-manageable action (Approvals →
+ *     `construction.workflows`, which only has the settings-tier `manage`).
+ *
+ * Cells the page doesn't support, or whose resource genuinely has no such v2
+ * action, are a hard `false` — there is no permission to hold.
+ */
+export function permissionAllowsMatrixAction(
+  permissions: ReadonlySet<string>,
+  menuKey: string,
+  action: MatrixAction,
+): boolean | null {
+  const resource = MENU_TO_RESOURCE[menuKey];
+  if (!resource) return null;
+  if (isRowUnmanaged(menuKey)) return null;
+  if (MENU_SUPPORTS[menuKey]?.[action] === false) return false;
+  if (!isMatrixCellManaged(menuKey, action)) return false;
+  return permissions.has(`${resource}.${MATRIX_TO_V2_ACTION[action]}`);
+}
+
+/**
+ * Build the display matrix straight from the user's effective permission set.
+ *
+ * Replaces `buildMatrixFromModules` as the fallback for users with no saved
+ * matrix. The module-based version answered only "is this module assigned?"
+ * and then granted the FULL add/edit/delete/view set, so a role holding just
+ * view+create still rendered Add, Edit and Delete. Deriving each cell from the
+ * real `resource.action` grant keeps the UI in step with what the route guards
+ * enforce.
+ *
+ * Rows that can't be expressed in v2 (see `permissionAllowsMatrixAction`)
+ * keep the legacy assume-allow so pages with no permission representation
+ * don't silently vanish from the sidebar.
+ */
+export function buildMatrixFromPermissions(
+  permissions: ReadonlySet<string>,
+): PermissionMatrix {
+  const matrix: PermissionMatrix = {};
+  for (const item of MENU_CATALOG) {
+    const row: Partial<Record<MatrixAction, boolean>> = {};
+    for (const action of ["add", "edit", "delete", "view"] as MatrixAction[]) {
+      const decided = permissionAllowsMatrixAction(permissions, item.key, action);
+      row[action] = decided ?? MENU_SUPPORTS[item.key]?.[action] !== false;
+    }
+    matrix[item.key] = row;
+  }
+  return matrix;
+}
+
+/**
+ * Cell-wise AND of two matrices — deny wins. Layers the revoke-derived matrix
+ * on top of the permission-derived one so a cell denied by either side stays
+ * denied. Rows present in only one side are carried through as-is.
+ */
+export function intersectMatrices(
+  a: PermissionMatrix,
+  b: PermissionMatrix,
+): PermissionMatrix {
+  const out: PermissionMatrix = {};
+  for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
+    const rowA = a[key];
+    const rowB = b[key];
+    if (!rowA) { out[key] = { ...rowB }; continue; }
+    if (!rowB) { out[key] = { ...rowA }; continue; }
+    const row: Partial<Record<MatrixAction, boolean>> = {};
+    for (const action of ["add", "edit", "delete", "view"] as MatrixAction[]) {
+      row[action] = rowA[action] !== false && rowB[action] !== false;
+    }
+    out[key] = row;
+  }
+  return out;
 }
 
 /**

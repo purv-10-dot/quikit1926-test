@@ -1,5 +1,6 @@
 import { GcsDriver } from "@/lib/server/storage/gcs";
 import { uploadTokenSecret, verifyToken, type UploadTokenPayload } from "@/lib/server/storage/tokens";
+import { logger } from "@/lib/shared/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +37,30 @@ export async function PUT(req: Request, { params }: Ctx): Promise<Response> {
   }
   try {
     await new GcsDriver().write(payload.objectPath, buf, payload.contentType);
-  } catch {
+  } catch (err: unknown) {
+    // Explicit fields ONLY — never the whole `err`. A GaxiosError (what
+    // @google-cloud/storage throws for any HTTP-level failure) carries own
+    // enumerable `config.headers.authorization` (a live OAuth token) and
+    // `config.body` (these uploaded bytes); pino's error serializer copies every
+    // own enumerable property, and the logger's redact paths are rooted at the log
+    // object so they never reach inside `err`. name/message/code/status are what
+    // actually separate a bad key (ERR_OSSL_UNSUPPORTED) from a missing permission
+    // (403) from a wrong bucket (404) from a network blip (ENOTFOUND) — which is
+    // all this log line exists to tell us. Deliberately no `stack`: errName +
+    // errCode already says whether it came from bucket() construction or save().
+    const g = err as { code?: unknown; status?: unknown } | null | undefined;
+    logger.error(
+      {
+        errName: err instanceof Error ? err.name : typeof err,
+        errMessage: err instanceof Error ? err.message : "unknown error",
+        errCode: typeof g?.code === "string" || typeof g?.code === "number" ? g.code : undefined,
+        errStatus: typeof g?.status === "number" ? g.status : undefined,
+        objectPath: payload.objectPath,
+        orgId: payload.orgId,
+        userId: payload.userId,
+      },
+      "GCS upload write failed",
+    );
     return Response.json({ error: "Write failed" }, { status: 400 });
   }
   return Response.json({ ok: true, objectPath: payload.objectPath });

@@ -225,9 +225,10 @@ describe("POST /api/purchase/rfqs/[id]/approve", () => {
       status: "pending_approval",
       currentStepOrder: 1,
     });
-    db.cnApprovalWorkflowStep.findFirst
-      .mockResolvedValueOnce({ stepOrder: 1, approverUserId: null, approverRoleId: "SITE_ADMIN" })
-      .mockResolvedValueOnce(null);
+    db.cnApprovalWorkflowStep.findMany.mockResolvedValue([
+      { stepOrder: 1, approverUserId: null, approverUserIds: [], approverRoleId: "SITE_ADMIN" },
+    ] as never); // single step → final
+    db.cnApprovalInstance.updateMany.mockResolvedValue({ count: 1 } as never);
     db.$transaction.mockImplementation(async (cb: any) => cb(db));
     db.cnApprovalInstance.findUnique.mockResolvedValue({
       id: "inst1",
@@ -278,11 +279,22 @@ describe("GET /api/purchase/rfqs/[id]/preview/pdf", () => {
     expect((await PREVIEW_PDF(req("GET", undefined, "/preview/pdf?vendorId=v1"), params)).status).toBe(401);
   });
 
-  it("returns 400 when vendorId is missing", async () => {
+  it("returns 404 when the RFQ has no vendor to preview", async () => {
+    // vendorId is optional — when omitted the route derives it from the RFQ's
+    // own vendor rows. With no vendors there is nothing to render, which the
+    // route reports as 404 (not 400: the request itself is well-formed).
     setContext(makeAdminCtx());
+    db.cnRfq.findFirst.mockResolvedValue({
+      id: ID,
+      orgId: TEST_TENANT,
+      rfqNumber: "RFQ-SITE-26-0001",
+      status: "draft",
+      vendors: [],
+      lines: [],
+    });
     const res = await PREVIEW_PDF(req("GET", undefined, "/preview/pdf"), params);
-    expect(res.status).toBe(400);
-    expect((await res.json()).error).toMatch(/vendorid is required/i);
+    expect(res.status).toBe(404);
+    expect((await res.json()).error).toMatch(/no vendor to preview/i);
   });
 
   it("returns 404 when the RFQ does not exist", async () => {

@@ -20,6 +20,8 @@ import { ApprovalActionBar } from "@/components/ApprovalActionBar";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { USER_TYPE_CATALOG } from "@/lib/rbac/user-types";
 import { usePermissions, type MeResponse } from "@/hooks/use-permissions";
+import { RepairApprovalNotice } from "@/components/RepairApprovalNotice";
+import { MasterApprovalAction } from "@/components/MasterApprovalAction";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
 
 import type {
@@ -150,11 +152,26 @@ export default function GRNDetailPage() {
               // sees live buttons.
               hidden={!canActOnCurrentStep(me, grn)}
             />
+            <MasterApprovalAction
+              approval={grn?.approval}
+              me={me}
+              entityLabel="GRN"
+              actionEndpoint={`/api/purchase/grn/${id}/approve`}
+              invalidateKeys={[["grns"], ["grn", id]]}
+            />
           </div>
         }
       />
 
       <PageContainer>
+        <RepairApprovalNotice
+          repair={grn?.approval?.repair}
+          entityLabel="GRN"
+          actionEndpoint={`/api/purchase/grn/${id}/approve`}
+          invalidateKeys={[["grns"], ["grn", id]]}
+          me={me}
+        />
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main column */}
           <div className="lg:col-span-2 space-y-6">
@@ -292,6 +309,9 @@ export default function GRNDetailPage() {
                         <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase w-24">
                           Quality
                         </th>
+                        <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase w-28">
+                          Condition
+                        </th>
                         <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase">
                           Batch
                         </th>
@@ -329,6 +349,9 @@ export default function GRNDetailPage() {
                             ) : (
                               "—"
                             )}
+                          </td>
+                          <td className="px-3 py-2.5 text-xs text-gray-600">
+                            {line.condition ?? "—"}
                           </td>
                           <td className="px-3 py-2.5 text-xs text-gray-500">
                             {line.batchNo ?? "—"}

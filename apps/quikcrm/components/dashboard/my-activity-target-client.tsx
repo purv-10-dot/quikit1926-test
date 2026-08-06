@@ -23,6 +23,15 @@ interface RecentRow {
   subject: string;
   occurredAtIso: string;
 }
+interface TypeProgress {
+  activityTypeId: string;
+  code: string;
+  label: string;
+  dailyTarget: number;
+  actual: number;
+  remaining: number;
+  completionPct: number;
+}
 interface MyTarget {
   assigned: true;
   dailyTarget: number;
@@ -34,6 +43,8 @@ interface MyTarget {
   status: Status;
   breakdown: Breakdown;
   recentToday: RecentRow[];
+  /** Per-activity-type progress; empty when no type targets are assigned. */
+  typeProgress: TypeProgress[];
 }
 type MyTargetResult = { assigned: false } | MyTarget;
 
@@ -171,6 +182,52 @@ export function MyActivityTargetClient() {
           </div>
         </CardBody>
       </Card>
+
+      {/* Per-activity-type progress ("Calls: 12 / 20") */}
+      {(data.typeProgress ?? []).length > 0 && (
+        <Card className="crm-card">
+          <CardBody className="p-5">
+            <h2 className="mb-3 text-sm font-semibold text-crm-text">
+              Activity Type Targets — Today
+            </h2>
+            <ul className="space-y-3">
+              {data.typeProgress.map((t) => {
+                // Semantic attainment colors (data state) — hardcoded per CLAUDE.md.
+                const bar =
+                  t.completionPct >= 100
+                    ? "bg-green-500"
+                    : t.completionPct >= 80
+                      ? "bg-yellow-500"
+                      : "bg-red-500";
+                const text =
+                  t.completionPct >= 100
+                    ? "text-green-700"
+                    : t.completionPct >= 80
+                      ? "text-yellow-700"
+                      : "text-red-700";
+                return (
+                  <li key={t.activityTypeId}>
+                    <div className="mb-1 flex items-center justify-between text-sm">
+                      <span className="font-medium text-crm-text">{t.label}</span>
+                      <span className="tabular-nums text-crm-muted">
+                        <span className="font-semibold text-crm-text">{t.actual}</span> /{" "}
+                        {t.dailyTarget}
+                        <span className={`ml-2 font-semibold ${text}`}>{t.completionPct}%</span>
+                      </span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className={`h-full rounded-full transition-all ${bar}`}
+                        style={{ width: `${Math.min(100, t.completionPct)}%` }}
+                      />
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </CardBody>
+        </Card>
+      )}
 
       {/* Today's breakdown + recent */}
       <div className="grid gap-4 lg:grid-cols-2">

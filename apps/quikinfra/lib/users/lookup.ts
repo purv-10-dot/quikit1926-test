@@ -10,7 +10,7 @@
  * runtime breakage by routing every actor-name lookup through these.
  */
 
-import { db as dbCentral } from "@quikit/database";
+import { db } from "@/lib/db";
 
 export interface CnUserShape {
   id: string;
@@ -37,7 +37,7 @@ function compose(u: {
  * doesn't exist.
  */
 export async function findCnUserById(userId: string): Promise<CnUserShape | null> {
-  const u = await dbCentral.user.findUnique({
+  const u = await db.user.findUnique({
     where: { id: userId },
     select: { id: true, email: true, firstName: true, lastName: true },
   });
@@ -50,7 +50,7 @@ export async function findCnUserById(userId: string): Promise<CnUserShape | null
  */
 export async function findCnUsersByIds(ids: string[]): Promise<CnUserShape[]> {
   if (ids.length === 0) return [];
-  const users = await dbCentral.user.findMany({
+  const users = await db.user.findMany({
     where: { id: { in: ids } },
     select: { id: true, email: true, firstName: true, lastName: true },
   });
@@ -76,7 +76,7 @@ export async function findCnUsersByRoleKey(
   // Look up the v2 role row for this org, then find every user assigned
   // to it. roleKey matches CnAppRole.name (lowercase: admin / ho_user /
   // site_admin / user).
-  const roles = await dbCentral.cnAppRole.findMany({
+  const roles = await db.cnAppRole.findMany({
     where: { orgId, name: roleKey },
     select: {
       id: true,
@@ -115,7 +115,7 @@ export async function findCnUsersByRoleKey(
 
   if (opts.onlyActive) {
     // Filter to active OrgMembers only.
-    const memberships = await dbCentral.orgMember.findMany({
+    const memberships = await db.orgMember.findMany({
       where: {
         orgId,
         userId: { in: Array.from(userIds) },

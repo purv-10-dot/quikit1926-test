@@ -23,6 +23,9 @@ function buildPOST(body: unknown): NextRequest {
 beforeEach(() => {
   resetMockDb();
   setContext(null);
+  // listItemGroups attaches per-group active-item counts via cnItem.groupBy.
+  // Default to "no items" so list tests only mock what they assert on.
+  db.cnItem.groupBy.mockResolvedValue([]);
 });
 
 // ═══════════════════════════════════════════════

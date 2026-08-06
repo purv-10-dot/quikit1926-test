@@ -12,7 +12,7 @@
  * Mirrors apps/quikscale/lib/api/preventAdminLockout.ts.
  */
 
-import { db } from "@quikit/database";
+import { db } from "@/lib/db";
 import { getQuikInfraAppId } from "./userCan";
 
 export class AdminLockoutError extends Error {

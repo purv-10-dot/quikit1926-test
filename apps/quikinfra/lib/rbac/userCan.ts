@@ -13,7 +13,7 @@
  */
 
 import { cache } from "react";
-import { db } from "@quikit/database";
+import { db } from "@/lib/db";
 import { isValidPermissionPair, type Action } from "./permissionsRegistry";
 
 export const QUIKINFRA_APP_SLUG = "quikinfra";

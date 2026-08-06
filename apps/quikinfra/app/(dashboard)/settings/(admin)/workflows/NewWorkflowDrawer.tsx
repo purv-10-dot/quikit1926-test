@@ -1,21 +1,34 @@
 "use client";
 
 /**
- * New Workflow Drawer — mirrors EditWorkflowDrawer but for creation.
- * Kept structurally identical so the New and Edit forms look the same:
- * per-step role select + role-filtered user picker.
+ * Workflow Drawer — handles both creation and editing. Passing `prefill`
+ * (plus `moduleMode`) seeds the form from an existing workflow and switches
+ * the title to "Edit …" and the submit label to "Save Changes", so New and
+ * Edit share one form: per-step role select + role-filtered user picker.
  */
 
 import { toErrorMessage } from "@/lib/api/errors";
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Trash2, Layers, AlertTriangle, X } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  Layers,
+  AlertTriangle,
+  AlertOctagon,
+  Info,
+  X,
+} from "lucide-react";
 import {
   FormDrawer, FormSection, FormRow, Field,
   TextInput, SelectInput,
 } from "@/components/FormDrawer";
 import { useCreateWorkflow, useDeleteWorkflow, useUpdateWorkflow, useUsers } from "@/hooks/use-approvals";
 import { useProjects } from "@/hooks/use-masters";
-import { getClientSelectableUserTypes, USER_TYPES } from "@/lib/rbac/user-types";
+import {
+  getClientSelectableUserTypes,
+  USER_TYPES,
+  USER_TYPE_CATALOG,
+} from "@/lib/rbac/user-types";
 
 const ENTITY_TYPE_OPTIONS = [
   { value: "purchase_requisitions", label: "Purchase Requisitions" },
@@ -72,6 +85,8 @@ interface ModuleMode {
   prefill?: {
     name: string;
     isActive: boolean;
+    /** Existing fallback approver, if the workflow has one. */
+    masterApproverUserId?: string | null;
     steps: Array<{ stepOrder: string; approverRole: string; approverUserIds: string[] }>;
   };
   /** Optional list of existing workflow ids in this module that should
@@ -86,6 +101,11 @@ interface ModuleMode {
   /** Friendly label for the project the save will be scoped to. Shown
    *  in the drawer banner so the admin can't mix up scopes. */
   projectLabel?: string;
+  /** Requests currently mid-approval on the workflow being edited, bucketed by
+   *  the step they are waiting at. Drives two warnings: a general "work is in
+   *  flight" note, and a live alert when the current step count would strand
+   *  requests parked beyond it. */
+  pendingByStep?: Array<{ stepOrder: number; count: number; atRisk: number }>;
 }
 
 interface Props {
@@ -140,6 +160,7 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
   }, [allUsers]);
 
   const [name, setName] = useState("");
+  const [masterApproverUserId, setMasterApproverUserId] = useState("");
   const [entityType, setEntityType] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [steps, setSteps] = useState<StepRow[]>([
@@ -151,6 +172,7 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
     if (!open) return;
     if (moduleMode?.prefill) {
       setName(moduleMode.prefill.name);
+      setMasterApproverUserId(moduleMode.prefill.masterApproverUserId ?? "");
       setIsActive(moduleMode.prefill.isActive);
       const prefillSteps =
         moduleMode.prefill.steps.length > 0
@@ -162,6 +184,7 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
       setSteps(prefillSteps);
     } else {
       setName("");
+      setMasterApproverUserId("");
       setIsActive(true);
       setSteps([{ stepOrder: "1", approverRole: "", approverUserIds: [] }]);
     }
@@ -193,6 +216,67 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
     setSteps((prev) =>
       resequence(prev.map((s, i) => (i === idx ? { ...s, ...patch } : s))),
     );
+
+  // Removing a step resequences the rest, so the saved workflow always runs
+  // 1..N. A request waiting beyond N therefore has no step to sit on once this
+  // saves — that, not "which row did you click delete on", is the real risk.
+  const pendingByStep = moduleMode?.pendingByStep ?? [];
+  const pendingTotal = pendingByStep.reduce((sum, p) => sum + p.count, 0);
+
+  // Only requests without a step snapshot are affected by an edit here — the
+  // rest carry their own chain and cannot be changed or stranded.
+  const atRiskByStep = pendingByStep.filter((p) => p.atRisk > 0);
+  const atRiskTotal = atRiskByStep.reduce((sum, p) => sum + p.atRisk, 0);
+  const strandedRequests = atRiskByStep
+    .filter((p) => p.stepOrder > steps.length)
+    .map((p) => ({ stepOrder: p.stepOrder, count: p.atRisk }));
+  const strandedTotal = strandedRequests.reduce((sum, p) => sum + p.count, 0);
+  /** At-risk buckets carrying their at-risk counts, not their row totals. */
+  // Every user in the org, labelled with their role so two people with similar
+  // names stay distinguishable. No role filter — a plain USER may be master
+  // approver of an ADMIN-stepped workflow.
+  //
+  // Users who have never signed in are listed but not selectable: they cannot
+  // act on an approval, so naming one recreates the dead-end this field exists
+  // to remove. Showing them greyed out with the reason beats hiding them, which
+  // just reads as "the list is incomplete".
+  const masterApproverOptions = useMemo(
+    () =>
+      allUsers
+        .filter((u) => !u.status || u.status === "active")
+        .map((u) => {
+          const canSignIn = Boolean(u.acceptedAt || u.lastLoginAt);
+          const roleLabel =
+            USER_TYPE_CATALOG.find((t) => t.key === u.userType)?.label ??
+            u.userType;
+          return {
+            value: u.id,
+            label: u.fullName || u.email,
+            hint: canSignIn
+              ? roleLabel
+              : `${roleLabel} · invite not accepted — cannot approve yet`,
+            disabled: !canSignIn,
+          };
+        })
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [allUsers],
+  );
+
+  const strandedSource = atRiskByStep.map((p) => ({
+    stepOrder: p.stepOrder,
+    count: p.atRisk,
+  }));
+
+  /** "step 2" · "step 2 (3 requests)" · "step 1 (2 requests) and step 3" */
+  const formatStepList = (
+    buckets: Array<{ stepOrder: number; count: number }>,
+  ): string => {
+    const parts = buckets.map(
+      (p) => `step ${p.stepOrder}` + (p.count > 1 ? ` (${p.count} requests)` : ""),
+    );
+    if (parts.length <= 1) return parts[0] ?? "";
+    return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+  };
 
   const handleSubmit = async () => {
     setError("");
@@ -241,6 +325,7 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
               name: name.trim(),
               entityType: et.type,
               projectId: moduleMode.projectId ?? null,
+              masterApproverUserId: masterApproverUserId || null,
               isActive,
               steps: stepPayload,
             });
@@ -249,6 +334,7 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
               name: name.trim(),
               entityType: et.type,
               projectId: moduleMode.projectId ?? null,
+              masterApproverUserId: masterApproverUserId || null,
               isActive,
               steps: stepPayload,
             });
@@ -264,6 +350,7 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
         await createMutation.mutateAsync({
           name: name.trim(),
           entityType,
+          masterApproverUserId: masterApproverUserId || null,
           isActive,
           steps: stepPayload,
         });
@@ -286,12 +373,16 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
           : "New Approval Workflow"
       }
       subtitle={
+        // The title already names the module/page, so the subtitle carries only
+        // the scope. Repeating the page name here (and again in the strip below)
+        // read as a duplicate.
         moduleMode
-          ? `Single workflow applied to every page in ${moduleMode.moduleLabel}` +
-            (moduleMode.projectId
-              ? ` for project ${moduleMode.projectLabel ?? "(selected)"}`
-              : " (Default — applies to every project unless overridden)") +
-            "."
+          ? (moduleMode.projectId
+              ? `Project — ${moduleMode.projectLabel ?? "(selected)"}`
+              : "Default — applies to every project unless overridden") +
+            (moduleMode.entityTypes.length > 1
+              ? ` · ${moduleMode.entityTypes.length} pages`
+              : "")
           : "Configure multi-level approval routing"
       }
       width="2xl"
@@ -309,25 +400,15 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
         </div>
       )}
 
-      {/* Covered pages strip — shown only in module mode so the admin
-          can see at a glance which document types this single workflow
-          definition will end up applied to. The save button below
-          creates one workflow row per chip. */}
-      {moduleMode && (
+      {/* Covered pages strip — only when this one definition fans out across
+          several pages, where the chip list is the only place that shows which.
+          For the single-page case the title and subtitle already say it, so the
+          strip would just repeat the page name a third time. */}
+      {moduleMode && moduleMode.entityTypes.length > 1 && (
         <div className="bg-accent-50 border border-accent-200 rounded-lg px-4 py-3 mb-4">
-          <div className="flex items-center gap-2 text-xs font-semibold text-accent-800 mb-1">
+          <div className="flex items-center gap-2 text-xs font-semibold text-accent-800 mb-2">
             <Layers className="w-3.5 h-3.5" />
-            Applies to {moduleMode.entityTypes.length}{" "}
-            page{moduleMode.entityTypes.length === 1 ? "" : "s"} in{" "}
-            {moduleMode.moduleLabel}
-          </div>
-          <div className="text-[11px] text-accent-700 mb-2">
-            Scope:{" "}
-            <span className="font-semibold">
-              {moduleMode.projectId
-                ? `Project — ${moduleMode.projectLabel ?? "Selected project"}`
-                : "Default (every project)"}
-            </span>
+            One workflow, saved to each of these pages
           </div>
           <div className="flex flex-wrap gap-1.5">
             {moduleMode.entityTypes.map((et) => (
@@ -338,6 +419,83 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
                 {et.label}
               </span>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Two levels. The amber note is informational: work is in flight, edit
+          carefully. The red one is live and specific — the current step count
+          would leave named requests on a step that no longer exists. */}
+      {pendingTotal > 0 && strandedRequests.length === 0 && (
+        <div
+          className={
+            atRiskTotal > 0
+              ? "mb-4 flex gap-3 rounded-lg border-l-4 border-amber-400 bg-amber-50 p-4 ring-1 ring-amber-200/60"
+              : "mb-4 flex gap-3 rounded-lg border-l-4 border-slate-300 bg-slate-50 p-4 ring-1 ring-slate-200/60"
+          }
+        >
+          {atRiskTotal > 0 ? (
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+          ) : (
+            <Info className="mt-0.5 h-5 w-5 shrink-0 text-slate-400" />
+          )}
+          <div>
+            <p
+              className={
+                atRiskTotal > 0
+                  ? "text-sm font-semibold text-amber-900"
+                  : "text-sm font-semibold text-slate-800"
+              }
+            >
+              {pendingTotal} request{pendingTotal === 1 ? "" : "s"}{" "}
+              {pendingTotal === 1 ? "is" : "are"} already moving through this
+              approval chain
+            </p>
+            {atRiskTotal > 0 ? (
+              <p className="mt-1 text-xs leading-relaxed text-amber-800">
+                {atRiskTotal} of them {atRiskTotal === 1 ? "is" : "are"} waiting at{" "}
+                {formatStepList(strandedSource)} and{" "}
+                <span className="font-semibold">
+                  still follow this workflow live
+                </span>
+                . Editing the steps here breaks the chain they were raised under —
+                swap a person and the new person becomes their approver; delete a
+                step and the request is left with no approver at all, and only an
+                admin can close it.
+              </p>
+            ) : (
+              <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                Waiting at {formatStepList(pendingByStep)}. They keep the steps
+                they were submitted with, so your changes here apply to{" "}
+                <span className="font-semibold">new requests only</span> — nothing
+                in flight is affected.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {strandedRequests.length > 0 && (
+        <div className="mb-4 flex gap-3 rounded-lg border-l-4 border-red-500 bg-red-50 p-4 ring-1 ring-red-200/60">
+          <AlertOctagon className="mt-0.5 h-5 w-5 shrink-0 text-red-500" />
+          <div>
+            <p className="text-sm font-semibold text-red-900">
+              Saving now will leave {strandedTotal} request
+              {strandedTotal === 1 ? "" : "s"} with no approver
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-red-800">
+              {strandedTotal === 1 ? "A request is" : "Requests are"} waiting at{" "}
+              {formatStepList(strandedRequests)}, but this workflow will only have{" "}
+              {steps.length} step{steps.length === 1 ? "" : "s"} after you save.
+              That step disappears, so no approver will be able to act on{" "}
+              {strandedTotal === 1 ? "it" : "them"} — it will sit as Pending until
+              an admin closes it from the request page.
+            </p>
+            <p className="mt-2 text-xs font-semibold text-red-900">
+              Add the step back, or get{" "}
+              {strandedTotal === 1 ? "that request" : "those requests"} approved
+              first.
+            </p>
           </div>
         </div>
       )}
@@ -362,6 +520,20 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
             </Field>
           </FormRow>
         )}
+
+        <Field label="Master Approver">
+          <SelectInput
+            value={masterApproverUserId}
+            onChange={setMasterApproverUserId}
+            options={masterApproverOptions}
+            placeholder="None — no master approver"
+            searchable
+          />
+          <p className="mt-1 text-[11px] leading-relaxed text-gray-500">
+            Can approve the entire request from any step, without waiting. Leave
+            blank for none.
+          </p>
+        </Field>
       </FormSection>
 
       <FormSection title="Approval Steps">
