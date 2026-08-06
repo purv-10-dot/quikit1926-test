@@ -179,6 +179,7 @@ export function EditRuleDialog({
   toName,
   resolutions,
   statuses,
+  members,
   onSubmit,
   onDelete,
   onClose,
@@ -191,6 +192,8 @@ export function EditRuleDialog({
   resolutions: { id: string; name: string }[];
   /** Project statuses (for status-based rule config, e.g. subtask status). */
   statuses: { id: string; name: string; category: string }[];
+  /** Project members (for the field-value rule's Assignee/Reporter dropdowns). */
+  members: { userId: string; name: string }[];
   onSubmit: (rule: EditorRule) => void;
   onDelete?: () => void;
   onClose: () => void;
@@ -288,7 +291,11 @@ export function EditRuleDialog({
         ) : meta.customForm === "restrict_from_all" ? (
           <RestrictFromAllForm value={structured} onChange={setStructured} />
         ) : meta.customForm === "restrict_field_value" ? (
-          <RestrictFieldValueForm value={structured} onChange={setStructured} />
+          <RestrictFieldValueForm
+            value={structured}
+            onChange={setStructured}
+            options={{ members, statuses: statuses.map((s) => ({ id: s.id, name: s.name })), resolutions }}
+          />
         ) : meta.customForm === "restrict_been_through_status" ? (
           <BeenThroughStatusForm value={structured} onChange={setStructured} statuses={statuses} />
         ) : meta.customForm === "restrict_previous_updater" ? (

@@ -28,6 +28,21 @@ async function fetchResolutions(projectId: string): Promise<{ id: string; name: 
   return j.data as { id: string; name: string }[];
 }
 
+/** Project members → { userId, name } for the field-value rule's user dropdowns. */
+async function fetchMembers(projectId: string): Promise<{ userId: string; name: string }[]> {
+  const r = await fetch(`/api/projects/${projectId}/members`);
+  const j = await r.json();
+  if (!r.ok || !j.success) return [];
+  type Row = {
+    userId: string;
+    user: { firstName?: string | null; lastName?: string | null; email?: string | null } | null;
+  };
+  return (j.data as Row[]).map((m) => {
+    const name = [m.user?.firstName, m.user?.lastName].filter(Boolean).join(" ").trim();
+    return { userId: m.userId, name: name || m.user?.email || m.userId };
+  });
+}
+
 async function fetchReadModel(wfId: string): Promise<WorkflowReadModel> {
   const r = await fetch(`/api/workflows/${wfId}`);
   const j = await r.json();
@@ -127,6 +142,10 @@ function EditorBody({
   const resolutions = useQuery({
     queryKey: ["quiktrack", "resolutions", projectId],
     queryFn: () => fetchResolutions(projectId),
+  });
+  const members = useQuery({
+    queryKey: ["quiktrack", "members", projectId],
+    queryFn: () => fetchMembers(projectId),
   });
 
 
@@ -544,6 +563,7 @@ function EditorBody({
           toName={statusMeta.get(selectedTransition.toStatusId)?.name ?? selectedTransition.toStatusId}
           resolutions={resolutions.data ?? []}
           statuses={pool.map((s) => ({ id: s.id, name: s.name, category: s.category }))}
+          members={members.data ?? []}
           onSubmit={(rule) => {
             if (rulePick.index != null) ed.updateRule(selectedTransition.id, rulePick.index, rule);
             else ed.addRule(selectedTransition.id, rule);

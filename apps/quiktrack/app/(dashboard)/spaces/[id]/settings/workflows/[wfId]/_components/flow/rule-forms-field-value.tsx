@@ -2,13 +2,27 @@
 
 import { PortalDropdown, type DropdownOption } from "./portal-dropdown";
 import { DatePickerInput } from "./date-picker-input";
-import { FIELD_OPTIONS, fieldKind } from "./restrict-options";
+import {
+  FIELD_OPTIONS,
+  fieldKind,
+  REFERENCE_FIELDS,
+  PRIORITY_OPTIONS,
+  TYPE_OPTIONS,
+} from "./restrict-options";
+
+/** People/statuses/resolutions the value dropdown resolves reference fields to. */
+export interface FieldValueOptions {
+  members: { userId: string; name: string }[];
+  statuses: { id: string; name: string }[];
+  resolutions: { id: string; name: string }[];
+}
 
 /* ── "Restrict to when a field is a specific value" config form ──────────── */
 // The "Review its value as", "Check if it" operators, and the value input all
 // depend on the chosen field's KIND (text / number / date).
 
 const TEXT_VALUE_AS: DropdownOption[] = [{ value: "text", label: "Text" }];
+const SELECTION_VALUE_AS: DropdownOption[] = [{ value: "selection", label: "A selection" }];
 const NUMBER_VALUE_AS: DropdownOption[] = [{ value: "number", label: "A number" }];
 const DATE_VALUE_AS: DropdownOption[] = [
   { value: "datetime", label: "Date with time" },
@@ -40,34 +54,54 @@ export function isRestrictFieldValueValid(config: Record<string, unknown>): bool
   return String(config.value ?? "").trim().length > 0;
 }
 
-/** Config for a field kind: which "value as" + operators the form offers. */
-function controlsFor(kind: "text" | "number" | "date") {
+/**
+ * The "value as" + operators + default the form offers for a field. Reference
+ * fields (Assignee, Priority, Status…) show "A selection"; free-text fields show
+ * "Text"; numbers "A number"; dates the date pair.
+ */
+function controlsFor(field: string, kind: "text" | "number" | "date") {
   if (kind === "number") return { valueAs: NUMBER_VALUE_AS, ops: EQ_OPS, defaultValueAs: "number" };
   if (kind === "date") return { valueAs: DATE_VALUE_AS, ops: DATE_OPS, defaultValueAs: "datetime" };
+  if (REFERENCE_FIELDS[field]) return { valueAs: SELECTION_VALUE_AS, ops: EQ_OPS, defaultValueAs: "selection" };
   return { valueAs: TEXT_VALUE_AS, ops: EQ_OPS, defaultValueAs: "text" };
+}
+
+/** Resolve the dropdown options for a reference field (users/statuses/etc.). */
+function referenceOptions(field: string, opts: FieldValueOptions): DropdownOption[] | null {
+  const ref = REFERENCE_FIELDS[field];
+  if (!ref) return null;
+  if (ref === "users") return opts.members.map((m) => ({ value: m.userId, label: m.name }));
+  if (ref === "statuses") return opts.statuses.map((s) => ({ value: s.id, label: s.name }));
+  if (ref === "resolutions") return opts.resolutions.map((r) => ({ value: r.id, label: r.name }));
+  if (ref === "priority") return PRIORITY_OPTIONS;
+  if (ref === "type") return TYPE_OPTIONS;
+  return null;
 }
 
 export function RestrictFieldValueForm({
   value,
   onChange,
+  options,
 }: {
   value: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
+  options: FieldValueOptions;
 }) {
   const field = String(value.field ?? "");
   const kind = fieldKind(field);
   const op = String(value.op ?? "");
   const val = String(value.value ?? "");
   const set = (patch: Record<string, unknown>) => onChange({ ...value, ...patch });
+  const refOpts = referenceOptions(field, options);
 
   // Selecting a field resets the downstream controls to that kind's defaults.
   const pickField = (next: string) => {
     const k = fieldKind(next);
-    const c = k ? controlsFor(k) : null;
+    const c = k ? controlsFor(next, k) : null;
     onChange({ field: next, valueAs: c?.defaultValueAs ?? "text", op: "", value: "", time: undefined });
   };
 
-  const c = kind ? controlsFor(kind) : null;
+  const c = kind ? controlsFor(field, kind) : null;
   const valueAs = String(value.valueAs ?? c?.defaultValueAs ?? "text");
   const withTime = kind === "date" && valueAs === "datetime";
 
@@ -107,7 +141,14 @@ export function RestrictFieldValueForm({
 
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-700">This value</label>
-            {kind === "number" ? (
+            {refOpts ? (
+              <PortalDropdown
+                placeholder={REFERENCE_FIELDS[field] === "users" ? "Select people" : "Select a value"}
+                options={refOpts}
+                selected={val ? [val] : []}
+                onChange={(next) => set({ value: next[0] ?? "" })}
+              />
+            ) : kind === "number" ? (
               <input
                 type="number"
                 value={val}

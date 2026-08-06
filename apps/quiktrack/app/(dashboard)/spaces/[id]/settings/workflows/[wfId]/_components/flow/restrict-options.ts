@@ -106,3 +106,36 @@ export function fieldOption(field: string): FieldOption | undefined {
 export function fieldKind(field: string): FieldKind | null {
   return fieldOption(field)?.kind ?? null;
 }
+
+/**
+ * Text fields whose stored value is a REFERENCE the user should pick from a
+ * dropdown (not free-type an id): assignee/reporter (users), status/resolution
+ * (project rows), priority/type (enums). Summary/Description stay free text.
+ * The map value names the option source the config form resolves.
+ */
+export const REFERENCE_FIELDS: Record<string, "users" | "statuses" | "resolutions" | "priority" | "type"> = {
+  assignee: "users",
+  reporter: "users",
+  status: "statuses",
+  resolution: "resolutions",
+  priority: "priority",
+  type: "type",
+};
+
+/** Issue priority enum — mirrors lib/validation/issue.ts issuePriorityEnum. */
+export const PRIORITY_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "HIGHEST", label: "Highest" },
+  { value: "HIGH", label: "High" },
+  { value: "MEDIUM", label: "Medium" },
+  { value: "LOW", label: "Low" },
+  { value: "LOWEST", label: "Lowest" },
+];
+
+/** Issue type enum — mirrors lib/validation/issue.ts issueTypeEnum. */
+export const TYPE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "EPIC", label: "Epic" },
+  { value: "STORY", label: "Story" },
+  { value: "TASK", label: "Task" },
+  { value: "BUG", label: "Bug" },
+  { value: "SUBTASK", label: "Subtask" },
+];
