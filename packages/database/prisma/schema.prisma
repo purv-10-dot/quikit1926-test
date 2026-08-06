@@ -282,6 +282,7 @@ model Org {
   featureFlags             FeatureFlag[]
   invoices                 Invoice[]
   notifications            Notification[]
+  supportTickets           SupportTicket[]
   sessionEvents            SessionEvent[]
   teams                    Team[]
   userTeams                UserTeam[]
@@ -2351,6 +2352,124 @@ model PlatformAlert {
   @@index([resolvedAt])
   @@index([severity, lastSeenAt])
   @@index([rule, subjectKey, resolvedAt])
+  @@schema("public")
+}
+
+/// Platform support ticket — raised by an app user (QuikScale today, any app
+/// tomorrow via `appSlug`) and triaged by the QuikIT super-admin team.
+///
+/// Deliberately NOT the QuikSupport `Hd*` domain: that is a per-org helpdesk
+/// PRODUCT (the org's own agents serving the org's own customers, gated behind
+/// OrgAppAccess licensing). These tickets go org-user → QuikIT vendor, need
+/// cross-org super-admin visibility, and must work for orgs that never license
+/// QuikSupport. Hence `public`, alongside BroadcastAnnouncement/PlatformAlert.
+///
+/// `requestType`/`status`/`priority` are Strings, not enums — the house style
+/// for this schema (see Notification.type, AuditLog.action). Value space and
+/// legal transitions live in `@quikit/shared` (SUPPORT_* constants).
+model SupportTicket {
+  id       String @id @default(cuid())
+  /// Race-free human id, rendered `TKT-000042` via formatSupportTicketNo().
+  /// Backed by a Postgres sequence created in the migration.
+  ticketNo Int    @unique @default(dbgenerated("nextval('\"public\".\"SupportTicket_ticketNo_seq\"')"))
+
+  /// Raising org. FK to quikit.Org — the org-wise admin filter and the
+  /// isolation predicate on every user-facing query.
+  orgId String
+  /// Raising user (auth.User.id). No FK, matching Notification.userId and
+  /// AuditLog.actorId; names are stitched in via a batched findMany.
+  userId String
+  /// Which app the ticket was raised from — quikit.App.id. No FK (the App
+  /// registry is in another schema and rows are never hard-deleted), so a
+  /// retired app still resolves historical tickets.
+  appId String
+  /// Denormalized App.slug ("quikscale"). Kept alongside appId so the
+  /// app-wise filter and the admin table need no join. Same style as
+  /// BroadcastAnnouncement.targetAppSlugs.
+  appSlug String
+  /// Snapshot of the raiser's OrgMember.role at submit time ("admin",
+  /// "member", …). Snapshot, not a live lookup: triage needs to know what the
+  /// user could see WHEN they hit the problem, and roles change later.
+  roleName String?
+
+  subject     String
+  description String @db.Text
+  requestType String
+  priority    String @default("medium")
+  status      String @default("open")
+
+  /// Latest super-admin remark, denormalized so the user's Support Status
+  /// table renders in a single query. Full history lives in messages[].
+  adminResponse String?   @db.Text
+  respondedById String?
+  respondedAt   DateTime?
+
+  resolvedAt DateTime?
+  closedAt   DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  org         Org                       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  messages    SupportTicketMessage[]
+  attachments SupportTicketAttachment[]
+
+  @@index([orgId])
+  @@index([orgId, userId, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
+  @@index([appSlug, status])
+  @@index([appId])
+  @@index([orgId, status])
+  @@schema("public")
+}
+
+/// Reply thread + status history for a SupportTicket. A message carrying
+/// statusFrom/statusTo IS the status-history record — no fourth table needed.
+model SupportTicketMessage {
+  id         String  @id @default(cuid())
+  ticketId   String
+  authorId   String
+  /// "user" | "super_admin"
+  authorRole String
+  body       String  @db.Text
+  statusFrom String?
+  statusTo   String?
+
+  createdAt DateTime      @default(now())
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+  @@schema("public")
+}
+
+/// Screenshots / files attached to a SupportTicket at submit time.
+///
+/// The row stores the GCS OBJECT KEY, never a URL: bucket objects are private
+/// and signed URLs expire in minutes, so a persisted URL would be dead on
+/// arrival. Readers mint a fresh signed GET through the app's
+/// `/api/support/uploads/view/<key>` route.
+///
+/// `orgId` is denormalized off the parent ticket so the view route can check
+/// tenant ownership from the KEY ALONE, without a ticket join — the key layout
+/// is `support/<orgId>/<yyyy-mm>/<random>.<ext>`, and the route compares the
+/// segment against the caller's org before signing anything.
+model SupportTicketAttachment {
+  id       String @id @default(cuid())
+  ticketId String
+  orgId    String
+  /// Original client-side filename, shown in the UI. Never used to build the
+  /// object key — that is randomised so a hostile name cannot traverse paths.
+  fileName  String
+  /// Path within the bucket. Unique: the random basename makes collisions
+  /// vanishingly unlikely, and the constraint turns "impossible" into "checked".
+  objectKey String @unique
+  mimeType  String
+  sizeBytes Int
+
+  createdAt DateTime      @default(now())
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+  @@index([orgId])
   @@schema("public")
 }
 

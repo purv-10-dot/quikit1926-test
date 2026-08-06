@@ -1,8 +1,16 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Check, Search } from "lucide-react";
+import { SpaceIcon } from "@/components/space-icon";
 
-interface ProjectOption { id: string; name: string }
+interface ProjectOption {
+  id: string;
+  name: string;
+  /** Project icon key / legacy emoji — same field the sidebar renders. */
+  icon?: string | null;
+  /** Fallback tile color when the project has no icon. */
+  color?: string | null;
+}
 interface Props {
   projects: ProjectOption[];
   value: string;
@@ -55,6 +63,15 @@ export function ProjectPicker({
           "border-gray-300 bg-white hover:border-gray-400"
         }`}
       >
+        {selected && (
+          <SpaceIcon
+            icon={selected.icon}
+            name={selected.name}
+            color={selected.color}
+            size={18}
+            radius={4}
+          />
+        )}
         <span className={selected ? "text-gray-900 truncate flex-1" : "text-gray-400 flex-1"}>
           {selected ? selected.name : placeholder}
         </span>
@@ -89,6 +106,13 @@ export function ProjectPicker({
                     onClick={() => { onChange(p.id); setOpen(false); }}
                     className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-gray-50 ${active ? "bg-blue-50" : ""}`}
                   >
+                    <SpaceIcon
+                      icon={p.icon}
+                      name={p.name}
+                      color={p.color}
+                      size={18}
+                      radius={4}
+                    />
                     <span className="text-gray-800 truncate flex-1">{p.name}</span>
                     {active && <Check className="h-3.5 w-3.5 text-blue-600 shrink-0" />}
                   </button>

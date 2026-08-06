@@ -18,9 +18,11 @@
     "./styles": "./styles/globals.css",
     "./theme-applier": "./components/theme-applier.tsx",
     "./app-access-denied-popup": "./components/app-access-denied-popup.tsx",
+    "./support": "./components/support/index.ts",
     "./tailwind-config": "./tailwind.config.ts"
   },
   "dependencies": {
+    "@quikit/shared": "*",
     "@tiptap/extension-color": "^2.27.2",
     "@tiptap/extension-link": "^2.27.2",
     "@tiptap/extension-text-style": "^2.27.2",

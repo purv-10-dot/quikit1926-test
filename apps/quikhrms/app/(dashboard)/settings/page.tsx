@@ -95,6 +95,19 @@ const CATEGORIES: CategoryDef[] = [
       { label: "Email Templates", href: "/settings/email-templates", icon: <Mail size={14} />, perms: ["hrms.settings.write"] },
     ],
   },
+  {
+    key: "help-support",
+    title: "Help & Support",
+    description: "Track the support requests you have raised with the QuikIT team",
+    accent: "blue",
+    icon: <LifeBuoy size={18} />,
+    items: [
+      // No `perms` on purpose — support status is per-user, so every employee
+      // sees their OWN requests here. Gating it would hide it from exactly the
+      // people who raise tickets.
+      { label: "Support Status", href: "/settings/support", icon: <LifeBuoy size={14} /> },
+    ],
+  },
 ];
 
 const ACCENT: Record<CategoryDef["accent"], { circle: string; pill: string; button: string }> = {

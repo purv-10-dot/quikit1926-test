@@ -1,13 +1,27 @@
-import { Settings, Building2, CreditCard, Calendar, Palette } from "lucide-react";
+"use client";
+
+import { useState } from "react";
+import { Building2, CreditCard, Calendar, Palette, LifeBuoy } from "lucide-react";
+import { SupportStatusTab } from "@quikit/ui/support";
 
 const TABS = [
   { id: "general",  label: "General",  icon: Building2 },
   { id: "branding", label: "Branding", icon: Palette },
   { id: "billing",  label: "Billing",  icon: CreditCard },
   { id: "calendar", label: "Calendar", icon: Calendar },
-];
+  { id: "support",  label: "Support Status", icon: LifeBuoy },
+] as const;
+
+type TabId = (typeof TABS)[number]["id"];
 
 export default function SettingsPage() {
+  // The org-settings panels below are still the original static mock and all
+  // render together, exactly as before. The tab rail was previously inert
+  // (hardcoded `i === 0` active, no onClick); it is stateful now because
+  // Support Status is a real panel that has to be reachable.
+  const [activeTab, setActiveTab] = useState<TabId>("general");
+  const showOrgPanels = activeTab !== "support";
+
   return (
     <div className="space-y-6">
       {/* Page header */}
@@ -27,11 +41,13 @@ export default function SettingsPage() {
         {/* Tab sidebar */}
         <aside className="w-44 shrink-0">
           <nav className="flex flex-col gap-0.5">
-            {TABS.map(({ id, label, icon: Icon }, i) => (
+            {TABS.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
+                type="button"
+                onClick={() => setActiveTab(id)}
                 className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-left transition-colors ${
-                  i === 0
+                  activeTab === id
                     ? "bg-[var(--color-secondary-light)] text-[var(--color-secondary)]"
                     : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)]"
                 }`}
@@ -43,8 +59,10 @@ export default function SettingsPage() {
           </nav>
         </aside>
 
-        {/* General settings panel */}
+        {/* Org settings panels (static mock, unchanged) */}
         <div className="flex-1 space-y-5">
+          {showOrgPanels && (
+          <>
           <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-6 space-y-5">
             <h2 className="text-base font-semibold text-[var(--color-text-primary)]">General</h2>
 
@@ -141,6 +159,14 @@ export default function SettingsPage() {
               </div>
             </div>
           </div>
+          </>
+          )}
+
+          {activeTab === "support" && (
+            <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-6">
+              <SupportStatusTab />
+            </div>
+          )}
         </div>
       </div>
     </div>

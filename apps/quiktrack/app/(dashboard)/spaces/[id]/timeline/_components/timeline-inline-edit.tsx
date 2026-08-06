@@ -4,6 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown, User as UserIcon } from "lucide-react";
 import { avatarColor, fullName, initials, type Member } from "./timeline-meta";
+import {
+  anchorFromRect,
+  useAnchoredPanel,
+  type PanelAnchor,
+} from "@/lib/hooks/useAnchoredPanel";
 import { categoryColor, type TimelineStatus } from "./timeline-view-settings";
 
 /**
@@ -14,14 +19,14 @@ import { categoryColor, type TimelineStatus } from "./timeline-view-settings";
  * positioned dropdown would be cut off at the row boundary.
  */
 
-interface MenuPos {
-  top: number;
-  left: number;
-}
-
-function anchorBelow(el: HTMLElement): MenuPos {
-  const r = el.getBoundingClientRect();
-  return { top: r.bottom + 4, left: r.left };
+/**
+ * Capture both placements from the trigger. `useAnchoredPanel` then measures
+ * the rendered menu and flips it above the row when there isn't room below —
+ * without that, a status menu on one of the last rows opened downwards and its
+ * lower options were cut off by the window.
+ */
+function anchorBelow(el: HTMLElement): PanelAnchor {
+  return anchorFromRect(el.getBoundingClientRect());
 }
 
 /** Close on outside click or any scroll (the fixed menu can't follow scroll). */
@@ -51,8 +56,10 @@ export function StatusEditor({
   disabled?: boolean;
   onSelect: (statusId: string) => void;
 }) {
-  const [pos, setPos] = useState<MenuPos | null>(null);
+  const [pos, setPos] = useState<PanelAnchor | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuStyle = useAnchoredPanel(menuRef, pos, { width: 176 });
   useDismiss(pos !== null, () => setPos(null));
 
   const current = statuses.find((s) => s.id === value);
@@ -81,8 +88,9 @@ export function StatusEditor({
       {pos &&
         createPortal(
           <div
+            ref={menuRef}
             data-timeline-menu
-            style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 100 }}
+            style={{ ...menuStyle, zIndex: 100 }}
             className="max-h-60 w-44 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg"
           >
             {statuses.map((s) => {
@@ -123,9 +131,11 @@ export function AssigneeEditor({
   disabled?: boolean;
   onSelect: (assigneeId: string | null) => void;
 }) {
-  const [pos, setPos] = useState<MenuPos | null>(null);
+  const [pos, setPos] = useState<PanelAnchor | null>(null);
   const [query, setQuery] = useState("");
   const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuStyle = useAnchoredPanel(menuRef, pos, { width: 208 });
   useDismiss(pos !== null, () => setPos(null));
 
   const current = value ? members.find((m) => m.userId === value) ?? null : null;
@@ -165,8 +175,9 @@ export function AssigneeEditor({
       {pos &&
         createPortal(
           <div
+            ref={menuRef}
             data-timeline-menu
-            style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 100 }}
+            style={{ ...menuStyle, zIndex: 100 }}
             className="w-52 rounded-md border border-gray-200 bg-white py-1 shadow-lg"
           >
             <div className="px-2 pb-1">

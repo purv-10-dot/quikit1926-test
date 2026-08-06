@@ -2,8 +2,22 @@ import { redirect } from "next/navigation";
 import { getTenantContext } from "@/lib/auth/context";
 
 /**
- * Settings subtree guard. Anyone with a "manage" grant on the settings-
- * tier resources can reach these pages:
+ * Guard for the ADMIN half of /settings.
+ *
+ * This used to sit at `settings/layout.tsx` and therefore gated every page
+ * under /settings. That became wrong once Settings → Support Status landed:
+ * support status is inherently per-user (each member sees only their own
+ * requests), so gating it behind `*.manage` hid it from exactly the people who
+ * raise tickets.
+ *
+ * The fix is the `(admin)` route group — a Next.js grouping that does NOT
+ * appear in the URL, so `/settings`, `/settings/users`, `/settings/roles` and
+ * `/settings/workflows` are unchanged. `settings/support/` sits OUTSIDE the
+ * group and is therefore ungated. The permission check below is untouched;
+ * only its scope narrowed.
+ *
+ * Anyone with a "manage" grant on the settings-tier resources can reach these
+ * pages:
  *
  *   construction.users.manage      ← invite / list users
  *   construction.workflows.manage  ← approval workflows

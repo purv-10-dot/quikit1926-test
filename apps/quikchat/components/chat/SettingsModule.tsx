@@ -8,6 +8,7 @@ import {
   Check,
   Headphones,
   Info,
+  LifeBuoy,
   Palette,
   Phone,
   Search,
@@ -23,6 +24,7 @@ import { DevicesSettings } from "@/components/settings/DevicesSettings";
 import { NotificationSettingsPanel } from "@/components/notifications/NotificationSettingsModal";
 import { ThemeToggle } from "@/components/settings/ThemeToggle";
 import { RolesTab } from "@/app/(dashboard)/settings/roles/components/RolesTab";
+import { SupportStatusTab } from "@quikit/ui/support";
 import { useMyPermissions } from "@/lib/authz/useMyPermissions";
 import { STORAGE_KEY, THEMES } from "./ColorThemePicker";
 
@@ -34,7 +36,8 @@ type SettingsCat =
   | "devices"
   | "calls"
   | "privacy"
-  | "roles";
+  | "roles"
+  | "support";
 
 const CATEGORIES: { key: SettingsCat; label: string; icon: ReactNode }[] = [
   { key: "general", label: "General", icon: <Settings size={17} /> },
@@ -44,6 +47,9 @@ const CATEGORIES: { key: SettingsCat; label: string; icon: ReactNode }[] = [
   { key: "privacy", label: "Privacy", icon: <Info size={17} /> },
   { key: "devices", label: "Devices", icon: <Headphones size={17} /> },
   { key: "calls", label: "Calls", icon: <Phone size={17} /> },
+  // Per-user, so it sits in the always-visible list rather than the
+  // admin-only tail below — every member sees their own support requests.
+  { key: "support", label: "Support Status", icon: <LifeBuoy size={17} /> },
 ];
 
 // Admin-only section. Appended to the nav only when the caller is a QuikChat
@@ -257,7 +263,11 @@ export function SettingsModule({ currentUserId, displayName, avatarUrl }: Settin
         <header className="qc-set-head">
           <h1 className="qc-set-htitle">{activeLabel}</h1>
         </header>
-        {cat === "roles" ? (
+        {cat === "support" ? (
+          <div className="qc-set-scroll">
+            <SupportStatusTab />
+          </div>
+        ) : cat === "roles" ? (
           // Full-bleed: RolesTab brings its own two-pane chrome. `.qc-set-embed`
           // clamps its `h-screen` root to the content area (see theme.css) so it
           // doesn't overflow the panel — reused verbatim, no restyle.
