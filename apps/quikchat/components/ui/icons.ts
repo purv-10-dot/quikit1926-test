@@ -81,6 +81,7 @@ export {
   ChevronDown,
   ChevronLeft,
   BadgeCheck,
+  EyeOff,
   Type,
   Palette,
   Shield,

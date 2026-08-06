@@ -1796,6 +1796,16 @@ body {
   opacity: 0.45;
   cursor: default;
 }
+.qc-act-head__confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.qc-act-head__confirm-text {
+  font-size: 13px;
+  color: var(--qc-text-2);
+  white-space: nowrap;
+}
 .qc-act-search {
   position: relative;
   display: flex;
