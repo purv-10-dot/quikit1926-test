@@ -10,7 +10,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
     if (!form) return notFound("Review form not found");
     return successResponse(form);
   } catch (error) { console.error("GET /review-forms/:id error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.performance.appraise"] });
 
 export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
   try {
@@ -26,7 +26,7 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
     });
     return successResponse(form);
   } catch (error) { console.error("PATCH /review-forms/:id error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.performance.appraise"] });
 
 export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }, params) => {
   try {
@@ -35,4 +35,4 @@ export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }, para
     await prisma.reviewForm.update({ where: { id: params.id }, data: { deletedAt: new Date(), updatedBy: userId } });
     return successResponse({ deleted: true });
   } catch (error) { console.error("DELETE /review-forms/:id error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.performance.appraise"] });

@@ -78,6 +78,7 @@ export const POST = auth.create(async ({ orgId, userId: actorId, userEmail }, re
           assignedAt: new Date(assignedDate),
           expectedReturn: expectedReturn || null,
           notes: notes || null,
+          assignedByUserId: actorId,
         },
         include: {
           asset: { include: { baseCategory: true, category: true } },

@@ -87,10 +87,11 @@ interface SignInComponentProps {
    *  step pointing here (the central auth app passes its /register URL).
    *  Omitted by other apps → no Sign up link (unchanged). */
   signUpUrl?: string;
-  /** Destination for the brand-panel "Back" button. Defaults to "/" (the
-   *  current in-app behavior). The central auth app overrides this to point
-   *  at the external marketing/landing site; other apps leave it unset so
-   *  their Back button keeps returning to their own root. */
+  /** Destination for the ← button in the brand panel. Defaults to the current
+   *  origin's "/". The central auth app has no landing page of its own, so it
+   *  passes the marketing site's absolute URL — an absolute value always uses
+   *  a full browser navigation (cross-origin, so the router can't handle it).
+   *  Never `router.back()`: the user may have deep-linked straight to /login. */
   backUrl?: string;
 }
 
@@ -626,7 +627,16 @@ export const SignInComponent = ({
       }
       fireConfetti();
       setModalStatus("success");
-      const target = invitationLauncherUrl || callbackUrl || redirectPath;
+      // `redirectUrl` is the server's answer to "which app was this invitation
+      // actually for?" — set only when the invitation names exactly one app, in
+      // which case it points at the auth host's /api/post-login bridge so the
+      // invitee lands INSIDE that app with a session on its own host. It takes
+      // precedence over `invitationLauncherUrl`, which is the correct fallback
+      // only for multi-app (or app-less) invitations, where the launcher grid
+      // genuinely is the destination. Sending a QuikSkill invitee to the
+      // launcher was the "sets password → dumped on the QuikIT launcher" bug.
+      const target =
+        json.data?.redirectUrl || invitationLauncherUrl || callbackUrl || redirectPath;
       setTimeout(() => {
         if (hardNavigate) window.location.assign(target);
         else router.push(target);
@@ -823,6 +833,15 @@ export const SignInComponent = ({
     setConfirmPassword("");
   };
 
+  /** ← button in the brand panel. Absolute `backUrl` values are cross-origin
+   *  (the marketing site), so they always need a real browser navigation. */
+  const goBackHome = () => {
+    const target = backUrl || "/";
+    const isAbsolute = /^https?:\/\//i.test(target);
+    if (isAbsolute || hardNavigate) window.location.assign(target);
+    else router.push(target);
+  };
+
   /* ─── Step progress (forgot-password flow only) ─── */
   const fpStepIndex =
     authStep === "forgot-email" ? 1 :
@@ -890,13 +909,7 @@ export const SignInComponent = ({
         <aside className="auth-side">
           <div className="auth-side-head fade-in-up d1">
             <button type="button" className="auth-back" aria-label="Back to home"
-              onClick={() => {
-                // Absolute (cross-origin) targets must go through a full
-                // browser navigation — router.push only handles in-app paths.
-                const isAbsolute = /^https?:\/\//i.test(backUrl);
-                if (isAbsolute || hardNavigate) window.location.assign(backUrl);
-                else router.push(backUrl);
-              }}>
+              onClick={goBackHome}>
               <ArrowLeft size={18} />
             </button>
             <div className="auth-brand-content">

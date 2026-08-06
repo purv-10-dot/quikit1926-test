@@ -64,6 +64,12 @@ function getTransport(): Transporter | null {
     requireTLS: port !== 465,
     auth: { user, pass },
     tls: { ciphers: "TLSv1.2", rejectUnauthorized: false },
+    // Without these, nodemailer's defaults (2min connect / 10min socket) let a
+    // slow/unresponsive Office365 hang far past any serverless function's
+    // duration limit — a stuck send should fail fast instead of riding that out.
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 20_000,
   });
   return cached;
 }

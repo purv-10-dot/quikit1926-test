@@ -96,17 +96,21 @@ function SummaryCell({ idea, onOpen, onEditTitle, showKey = true, showType = tru
   }
   function cancel() { setEditing(false); setDraft(idea.title); }
   if (editing) {
-    // Inline edit like JPD: bordered input with floating ✓ / ✕ actions.
+    // Inline edit like JPD: bordered input with ✓ / ✕ actions placed AFTER the
+    // input (not overlaying it), so the end of a long title stays visible.
     return (
-      <div className="relative flex items-center" onClick={(e) => e.stopPropagation()}>
+      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
         <input
           autoFocus
           value={draft}
+          // Put the caret at the END of the title on focus (JPD/Jira behavior);
+          // autoFocus alone leaves it at the start.
+          onFocus={(e) => { const n = e.target.value.length; e.target.setSelectionRange(n, n); }}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") cancel(); }}
-          className="w-full rounded border border-blue-400 px-1.5 py-1 text-sm font-medium shadow-sm outline-none"
+          className="min-w-0 flex-1 rounded border border-blue-400 px-1.5 py-1 text-sm font-medium shadow-sm outline-none"
         />
-        <span className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-0.5 rounded border border-gray-200 bg-white shadow-sm">
+        <span className="flex shrink-0 items-center gap-0.5 rounded border border-gray-200 bg-white shadow-sm">
           <button type="button" aria-label="Save" onMouseDown={(e) => { e.preventDefault(); commit(); }} className="rounded-l p-1 text-gray-500 hover:bg-gray-100 hover:text-green-600">
             <Check className="h-4 w-4" />
           </button>
@@ -510,7 +514,7 @@ export function IdeasTable({
                   onDragLeave={canDragCol ? () => { if (colOverKey === col.key) setColOverKey(null); } : undefined}
                   onDrop={canDragCol ? (e) => { e.preventDefault(); if (colDragKey && colDragKey !== col.key) onReorderColumns!(colDragKey, col.key); setColDragKey(null); setColOverKey(null); } : undefined}
                   className={`group/col relative border-b border-r border-gray-200 px-3 py-2 text-left font-medium text-gray-500 ${
-                    isSummary ? `sticky left-[52px] z-20 bg-gray-50 ${FZ_SHADOW}` : "cursor-grab active:cursor-grabbing"
+                    isSummary ? `qt-ideas-freeze sticky left-[52px] z-20 bg-gray-50 ${FZ_SHADOW}` : "cursor-grab active:cursor-grabbing"
                   } ${colDragKey === col.key ? "opacity-40" : ""} ${colOverKey === col.key ? "border-l-2 border-l-blue-500" : ""}`}
                 >
                   <span className={`flex items-center gap-1.5 whitespace-nowrap ${sortByKey?.[col.key] ? "text-blue-600" : ""}`}>
@@ -635,7 +639,7 @@ export function IdeasTable({
                 if (dragId && dragId !== idea.id) onReorder(dragId, idea.id);
                 setDragId(null); setOverId(null);
               }}
-              className={`group ${
+              className={`group qt-ideas-row ${
                 idea.id === dragId ? "opacity-40" : ""
               } ${
                 idea.id === overId ? "[box-shadow:inset_0_2px_0_0_#3b82f6]" : ""
@@ -647,7 +651,7 @@ export function IdeasTable({
             >
               <td
                 style={{ background: stickyTintBg, boxShadow: isBar && color ? `inset 3px 0 0 0 ${color}` : undefined }}
-                className={`sticky left-0 z-10 bg-white border-b border-gray-200 px-2 py-2 align-middle group-hover:bg-blue-50`}
+                className={`qt-ideas-sticky sticky left-0 z-10 bg-white border-b border-gray-200 px-2 py-2 align-middle group-hover:bg-blue-50`}
               >
                 <div className="flex items-center gap-0.5">
                   {rowNumbers && <span className="w-4 shrink-0 text-right text-[11px] tabular-nums text-gray-400">{rowIndex + 1}</span>}
@@ -671,7 +675,7 @@ export function IdeasTable({
                     key={col.key}
                     style={isSummary ? { background: stickyTintBg } : { backgroundColor: tint }}
                     className={`${cell} group/cell ${
-                      isSummary ? `sticky left-[52px] z-10 bg-white ${FZ_SHADOW} group-hover:bg-blue-50` : "group-hover:bg-blue-50/40"
+                      isSummary ? `qt-ideas-sticky qt-ideas-freeze sticky left-[52px] z-10 bg-white ${FZ_SHADOW} group-hover:bg-blue-50` : "group-hover:bg-blue-50/40"
                     }`}
                   >
                     {isSummary ? (

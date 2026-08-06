@@ -45,10 +45,6 @@ const FLAGS: Record<OneTimeKind, OneTimeStatutoryFlags> = {
   Deduction:        { taxable: false, considerForEPF: false, considerForESI: false, considerForPT: false },
 };
 
-export function defaultsForKind(kind: OneTimeKind): OneTimeStatutoryFlags {
-  return FLAGS[kind];
-}
-
 /**
  * Tenant-aware version. Looks up per-tenant overrides in
  * OneTimeStatutoryDefault; falls back to the hardcoded FLAGS table for any
@@ -74,16 +70,3 @@ export const KIND_ORDER: OneTimeKind[] = [
 ];
 
 export const HARDCODED_DEFAULTS = FLAGS;
-
-// Human-readable summary used on the UI form to show HR what the flags will be.
-// e.g. "Taxable · ESI · PT" (omits stat that doesn't apply for clarity).
-export function summaryForKind(kind: OneTimeKind): string {
-  if (kind === "Deduction") return "Statutory flags do not apply for deductions";
-  const f = FLAGS[kind];
-  const parts: string[] = [];
-  if (f.taxable) parts.push("Taxable");
-  if (f.considerForEPF) parts.push("EPF");
-  if (f.considerForESI) parts.push("ESI");
-  if (f.considerForPT) parts.push("PT");
-  return parts.length ? parts.join(" · ") : "Not subject to any statutory contribution";
-}

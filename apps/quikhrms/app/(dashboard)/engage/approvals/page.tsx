@@ -1,14 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
 import { useDialog } from "@/components/hrms/dialog";
 import { EmptyState } from "@/components/hrms/empty-state";
+import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 import { ShieldCheck, Check, X, MessageSquare, Megaphone, Heart, ThumbsUp } from "lucide-react";
 import { clsx } from "clsx";
+import { TabSwitcher } from "@/components/hrms/tab-switcher";
 
 type Tab = "announcement" | "post" | "recognition" | "feedback";
 
@@ -27,16 +31,23 @@ interface BaseItem {
   rejectionReason: string | null;
 }
 
+// Announcements store plain URL strings; posts can store either plain URLs or
+// { type, url, ... } objects (see createSocialPostSchema) — normalizeAttachment
+// below flattens both into one shape for rendering.
+type RawAttachment = string | { type?: "image" | "video"; url: string; fileName?: string; mimeType?: string };
+
 interface AnnouncementItem extends BaseItem {
   title: string;
   content: string;
   author: EmployeeMini;
+  attachments: RawAttachment[] | null;
 }
 
 interface PostItem extends BaseItem {
   content: string;
   type: string;
   employee: EmployeeMini;
+  attachments: RawAttachment[] | null;
 }
 
 interface RecognitionItem extends BaseItem {
@@ -67,6 +78,40 @@ function fullName(e: EmployeeMini) {
   return `${e.firstName} ${e.lastName}`.trim();
 }
 
+const VIDEO_EXT = /\.(mp4|webm|mov|m4v)(\?|$)/i;
+
+function normalizeAttachment(a: RawAttachment): { type: "image" | "video"; url: string; fileName?: string } {
+  if (typeof a === "string") return { type: VIDEO_EXT.test(a) ? "video" : "image", url: a };
+  return { type: a.type ?? (VIDEO_EXT.test(a.url) ? "video" : "image"), url: a.url, fileName: a.fileName };
+}
+
+/** Thumbnail grid for a pending item's attachments — click opens the original in a new tab. */
+function AttachmentGrid({ attachments }: { attachments: RawAttachment[] | null | undefined }) {
+  if (!attachments || attachments.length === 0) return null;
+  const items = attachments.map(normalizeAttachment);
+  return (
+    <div className="flex flex-wrap gap-2 mt-2">
+      {items.map((a, i) => (
+        <a
+          key={i}
+          href={a.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={a.fileName ?? `View ${a.type}`}
+          className="relative w-20 h-20 rounded-lg overflow-hidden ring-1 ring-gray-200 bg-gray-100 hover:ring-green-400 transition shrink-0"
+        >
+          {a.type === "image" ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={a.url} alt={a.fileName ?? "attachment"} className="w-full h-full object-cover" />
+          ) : (
+            <video src={a.url} className="w-full h-full object-cover bg-black" />
+          )}
+        </a>
+      ))}
+    </div>
+  );
+}
+
 export default function EngagementApprovalsPage() {
   const api = useApiClient();
   const qc = useQueryClient();
@@ -77,9 +122,36 @@ export default function EngagementApprovalsPage() {
   const tabParam = (searchParams.get("tab") as Tab) ?? "announcement";
   const [tab, setTab] = useState<Tab>(tabParam);
   const [statusFilter, setStatusFilter] = useState<"Pending" | "Approved" | "Rejected">("Pending");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
+
+  // Announcements / Posts / Recognition are gated by hrms.engage.approve;
+  // Feedback moderation is a separate grant (hrms.feedback.approve).
+  const { hasPermission, navKeys, permissions } = useDashboardConfig();
+  const canEngage = hasPermission("hrms.engage.approve");
+  const canFeedback = hasPermission("hrms.feedback.approve");
+
+  // Per-approval navigation allow-list (mirrors the sidebar). Default-allow — a
+  // role with no configured navKeys (or super-admin) sees every approval type
+  // its permissions allow. Legacy "engage.approvals" key grants all four.
+  const isSuper = permissions.includes("*");
+  const navSet = new Set(navKeys);
+  const navConfigured = !isSuper && navSet.size > 0;
+  const legacyAll = navSet.has("engage.approvals");
+  const navAllowed = (key: string) => !navConfigured || legacyAll || navSet.has(key);
+
+  const tabAllowed = (t: Tab) => (t === "feedback" ? canFeedback : canEngage) && navAllowed(`engage.approvals.${t}`);
+  const visibleTabs = TABS.filter((t) => tabAllowed(t.value));
+
+  // Snap to the first permitted tab if the current one isn't allowed.
+  useEffect(() => {
+    if (!tabAllowed(tab) && visibleTabs.length > 0) setTab(visibleTabs[0].value);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, canEngage, canFeedback]);
 
   const switchTab = (t: Tab) => {
     setTab(t);
+    setPage(1);
     const params = new URLSearchParams(searchParams.toString());
     params.set("tab", t);
     router.replace(`/engage/approvals?${params.toString()}`);
@@ -94,6 +166,8 @@ export default function EngagementApprovalsPage() {
     staleTime: 30_000,
   });
   const items = data?.data ?? [];
+  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  const pageItems = items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const actMut = useMutation({
     mutationFn: ({ id, action, reason }: { id: string; action: "approve" | "reject"; reason?: string }) =>
@@ -117,8 +191,20 @@ export default function EngagementApprovalsPage() {
     actMut.mutate({ id, action: "reject", reason: reason || undefined });
   };
 
+  if (visibleTabs.length === 0) {
+    return (
+      <EmptyState
+        variant="folder"
+        title="You don't have approval access"
+        description="Content and feedback moderation is restricted. Contact your administrator if you need access."
+      />
+    );
+  }
+
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <ShieldCheck className="text-[#22c55e]" />
@@ -130,31 +216,19 @@ export default function EngagementApprovalsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-gray-200 mb-4">
-        <div className="flex gap-4 overflow-x-auto">
-          {TABS.map((t) => (
-            <button
-              key={t.value}
-              onClick={() => switchTab(t.value)}
-              className={clsx(
-                "inline-flex items-center gap-1.5 px-1 py-3 text-[13px] font-semibold border-b-2 transition -mb-px whitespace-nowrap",
-                tab === t.value
-                  ? "border-[#22c55e] text-[#22c55e] font-semibold"
-                  : "border-transparent text-gray-500 hover:text-gray-700",
-              )}
-            >
-              {t.icon} {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <TabSwitcher
+        className="mb-4"
+        value={tab}
+        onChange={(v) => switchTab(v as Tab)}
+        tabs={visibleTabs.map((t) => ({ value: t.value, label: t.label, icon: t.icon }))}
+      />
 
       {/* Status filter */}
       <div className="flex items-center gap-2 mb-4">
         {(["Pending", "Approved", "Rejected"] as const).map((s) => (
           <button
             key={s}
-            onClick={() => setStatusFilter(s)}
+            onClick={() => { setStatusFilter(s); setPage(1); }}
             className={clsx(
               "px-3 py-1 text-[11px] rounded-full font-semibold border transition",
               statusFilter === s
@@ -182,7 +256,7 @@ export default function EngagementApprovalsPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {items.map((item, i) => (
+          {pageItems.map((item, i) => (
             <ItemCard
               key={item.id}
               type={tab}
@@ -194,6 +268,7 @@ export default function EngagementApprovalsPage() {
               idx={i}
             />
           ))}
+          <Pagination page={page} totalPages={totalPages} total={items.length} limit={PAGE_SIZE} onPageChange={setPage} className="border-t-0 px-0" />
         </div>
       )}
     </div>
@@ -232,6 +307,7 @@ function ItemCard({
             <>
               <h3 className="text-[13px] font-semibold text-gray-900 mb-1">{(item as AnnouncementItem).title}</h3>
               <p className="text-xs text-gray-700 line-clamp-4 whitespace-pre-wrap">{(item as AnnouncementItem).content}</p>
+              <AttachmentGrid attachments={(item as AnnouncementItem).attachments} />
               <p className="text-xs text-gray-500 mt-2">
                 By {fullName((item as AnnouncementItem).author)} · {new Date(item.createdAt).toLocaleString("en-IN")}
               </p>
@@ -240,6 +316,7 @@ function ItemCard({
           {type === "post" && (
             <>
               <p className="text-xs text-gray-700 line-clamp-4 whitespace-pre-wrap">{(item as PostItem).content}</p>
+              <AttachmentGrid attachments={(item as PostItem).attachments} />
               <p className="text-xs text-gray-500 mt-2">
                 By {fullName((item as PostItem).employee)} · {(item as PostItem).type} · {new Date(item.createdAt).toLocaleString("en-IN")}
               </p>

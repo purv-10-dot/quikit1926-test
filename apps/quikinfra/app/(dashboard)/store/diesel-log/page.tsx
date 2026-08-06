@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { PageHeader, PageContainer } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { useDieselLogs } from "@/hooks/use-store";
 import { QuickCreateDrawer } from "@/components/QuickCreateDrawer";
@@ -190,12 +190,13 @@ export default function DieselLogPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Diesel / Fuel Log Book"
         subtitle="Machine-wise fuel consumption tracking"
         breadcrumbs={[{ label: "Store", href: "/store" }, { label: "Diesel Log" }]}
       />
-      <PageContainer>
+      <PageContainer fill>
         <DataTable
           id="store-diesel-log"
           columns={columns}
@@ -216,6 +217,7 @@ export default function DieselLogPage() {
           addLabel="Log Entry"
         />
       </PageContainer>
+      </PageFrame>
       <QuickCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} config={config} />
     </>
   );

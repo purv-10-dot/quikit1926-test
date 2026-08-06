@@ -12,6 +12,7 @@ vi.mock("../../../packages/auth/src/nextauth", () => ({ authOptions: {} }));
 
 import * as channels from "./channels.service";
 import { ensureAssistantBot } from "./assistant.service";
+import { __getPublishedForTest, __resetPublishedForTest } from "@/lib/shared";
 
 let orgAId = "";
 let orgBId = "";
@@ -335,5 +336,115 @@ describe("AI chat (type='ai')", () => {
     // Recreatable singleton — a fresh channel with a new id.
     const again = track(await channels.findOrCreateAiChat(ctxDave()));
     expect(again.channelId).not.toBe(ai.channelId);
+  });
+});
+
+describe("group admin: updateChannel (QC_008)", () => {
+  it("admin renames + sets description and publishes channel_updated", async () => {
+    const group = track(
+      await channels.create(ctxAlice(), {
+        type: "group",
+        visibility: "private",
+        name: "before",
+        memberIds: [daveId],
+      }),
+    );
+    __resetPublishedForTest();
+    const updated = await channels.updateChannel(ctxAlice(), group.channelId, {
+      name: "after",
+      description: "  the team room  ",
+    });
+    expect(updated.name).toBe("after");
+    expect(updated.description).toBe("the team room");
+
+    const published = __getPublishedForTest();
+    const evt = published.find((e) => e.event === "channel_updated");
+    expect(evt).toBeTruthy();
+    expect(evt!.channelId).toBe(group.channelId);
+    expect(evt!.payload).toMatchObject({ channelId: group.channelId, name: "after" });
+    // Rename also emits a system activity message.
+    expect(published.some((e) => e.event === "system")).toBe(true);
+  });
+
+  it("rejects an empty name", async () => {
+    const group = track(
+      await channels.create(ctxAlice(), { type: "group", visibility: "private", name: "keep" }),
+    );
+    await expect(
+      channels.updateChannel(ctxAlice(), group.channelId, { name: "   " }),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("non-admin member cannot edit (403)", async () => {
+    const group = track(
+      await channels.create(ctxAlice(), {
+        type: "group",
+        visibility: "private",
+        name: "rbac-edit",
+        memberIds: [daveId],
+      }),
+    );
+    await expect(
+      channels.updateChannel(ctxDave(), group.channelId, { name: "hijack" }),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("cannot edit a dm (group-only, 400)", async () => {
+    const dm = track(await channels.create(ctxAlice(), { type: "dm", memberIds: [daveId] }));
+    await expect(
+      channels.updateChannel(ctxAlice(), dm.channelId, { name: "nope" }),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+});
+
+describe("group admin: deleteChannel (QC_008)", () => {
+  it("admin deletes the group + messages + memberships and publishes channel_deleted", async () => {
+    const group = track(
+      await channels.create(ctxAlice(), {
+        type: "group",
+        visibility: "private",
+        name: "doomed",
+        memberIds: [daveId],
+      }),
+    );
+    await prisma.qcMessage.create({
+      data: { orgId: orgAId, channelId: group.channelId, senderId: aliceId, content: "bye" },
+    });
+    __resetPublishedForTest();
+    const res = await channels.deleteChannel(ctxAlice(), group.channelId);
+    expect(res.deleted).toBe(true);
+    expect(await prisma.qcChannel.count({ where: { id: group.channelId } })).toBe(0);
+    expect(await prisma.qcMessage.count({ where: { channelId: group.channelId } })).toBe(0);
+    expect(await prisma.qcChannelMember.count({ where: { channelId: group.channelId } })).toBe(0);
+
+    const evt = __getPublishedForTest().find((e) => e.event === "channel_deleted");
+    expect(evt).toBeTruthy();
+    expect(evt!.payload).toMatchObject({ channelId: group.channelId });
+    expect((evt!.payload as { memberIds: string[] }).memberIds).toEqual(
+      expect.arrayContaining([aliceId, daveId]),
+    );
+  });
+
+  it("non-admin member cannot delete (403)", async () => {
+    const group = track(
+      await channels.create(ctxAlice(), {
+        type: "group",
+        visibility: "private",
+        name: "rbac-delete",
+        memberIds: [daveId],
+      }),
+    );
+    await expect(channels.deleteChannel(ctxDave(), group.channelId)).rejects.toMatchObject({
+      status: 403,
+    });
+    // Still intact.
+    expect(await prisma.qcChannel.count({ where: { id: group.channelId } })).toBe(1);
+  });
+
+  it("cannot delete a dm via this path (group-only, 400)", async () => {
+    const dm = track(await channels.create(ctxAlice(), { type: "dm", memberIds: [daveId] }));
+    await expect(channels.deleteChannel(ctxAlice(), dm.channelId)).rejects.toMatchObject({
+      status: 400,
+    });
   });
 });

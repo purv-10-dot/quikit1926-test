@@ -47,6 +47,19 @@ export interface DefaultActivityType {
   code: string;
   label: string;
   category?: string;
+  /**
+   * Seed value for CrmActivityType.config. Only set where a default type needs
+   * non-default behavior — currently `countsSources`, which tells the Activity
+   * Type-wise target tracker which record sources count toward this type.
+   *
+   * Omitted (the common case) means activities-only: CrmActivity rows whose
+   * `type` matches this type's code. "call" additionally counts CrmCallLog rows
+   * and "task" additionally counts completed CrmTask rows, because those two
+   * sources carry no activity-type code but DO count toward the overall target.
+   * Keeping this in config (rather than in tracker code) means an admin-created
+   * type needs no code change, and an admin can retune the mapping as data.
+   */
+  config?: Record<string, unknown>;
   fields: DefaultActivityFieldDef[];
 }
 
@@ -59,11 +72,35 @@ export const DEFAULT_ACTIVITY_TYPES: readonly DefaultActivityType[] = [
     code: "call",
     label: "Call",
     category: "Communication",
+    // Telephony call logs have no activity-type code but count toward targets.
+    config: { countsSources: ["activity", "call"] },
+    // NOTE ON ORDERING: fields are APPENDED, never inserted mid-array. The
+    // self-healing backfill (ensure-defaults) derives sortOrder from array
+    // index; inserting would renumber only NEW rows on already-seeded orgs and
+    // collide with existing sortOrders. `contact_name` and `phone_number` are
+    // rendered by a dedicated picker ABOVE the generic field list in the Call
+    // form (log-activity-form.tsx), so their trailing position here does not
+    // affect their on-screen placement — they still show first. Phone is a
+    // Text field (the Phone field type is unsupported for activities and would
+    // be rejected by writeActivityFieldValues); international numbers are fine
+    // as free text.
     fields: [
       { key: "direction", label: "Direction", fieldType: "Select", requirement: "Required", options: ["Incoming", "Outgoing"] },
       { key: "duration_minutes", label: "Duration (minutes)", fieldType: "Number", requirement: "Optional" },
       { key: "outcome", label: "Outcome", fieldType: "Select", requirement: "Optional", options: ["Connected", "No Answer", "Busy", "Left Voicemail", "Wrong Number", "Callback Requested"] },
       { key: "call_date_time", label: "Call Date & Time", fieldType: "Date", requirement: "Optional", helpText: "Date of the call." },
+      // Person called + their number. Rendered via the Call contact picker
+      // (custom JSX) so they appear at the TOP of the Call form; selecting a
+      // related contact auto-fills phone_number, which stays editable.
+      { key: "contact_name", label: "Contact Name", fieldType: "Text", requirement: "Optional", helpText: "Person called." },
+      { key: "phone_number", label: "Phone Number", fieldType: "Text", requirement: "Optional", helpText: "Auto-filled from the selected contact; editable. Supports international numbers." },
+      // Telephony metadata — useful when the call was placed/logged via the
+      // dialer. All optional and free-form so manual logging isn't burdened.
+      { key: "call_status", label: "Call Status", fieldType: "Select", requirement: "Optional", options: ["Completed", "Missed", "Busy", "No Answer"] },
+      { key: "dialed_number", label: "Dialed Number", fieldType: "Text", requirement: "Optional", helpText: "The number actually dialed (may differ from the contact's)." },
+      { key: "recording_url", label: "Recording URL", fieldType: "Text", requirement: "Optional", helpText: "Link to the call recording." },
+      { key: "telephony_provider", label: "Telephony Provider", fieldType: "Text", requirement: "Optional" },
+      { key: "call_id", label: "Call ID", fieldType: "Text", requirement: "Optional", helpText: "Provider call/session reference." },
     ],
   },
   {
@@ -93,6 +130,8 @@ export const DEFAULT_ACTIVITY_TYPES: readonly DefaultActivityType[] = [
     code: "task",
     label: "Task",
     category: "Productivity",
+    // Completed CrmTask rows have no activity-type code but count toward targets.
+    config: { countsSources: ["activity", "task"] },
     fields: [
       { key: "due_date", label: "Due Date", fieldType: "Date", requirement: "Optional" },
       { key: "priority", label: "Priority", fieldType: "Select", requirement: "Optional", options: ["Low", "Medium", "High", "Urgent"] },

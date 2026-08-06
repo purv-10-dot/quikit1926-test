@@ -105,20 +105,6 @@ export function useCreateEquipmentLog() {
   });
 }
 
-export function usePatchEquipmentLog() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, ...data }: { id: string } & Record<string, unknown>) =>
-      mutateApi(`/api/equipment/logs/${id}`, "PATCH", data),
-    onSuccess: async (_data, variables) => {
-      await refreshListQueries(qc, "equipment-logs");
-      await refreshListQueries(qc, "equipment-logs-summary");
-      await refreshListQueries(qc, "fleet-dashboard");
-      await qc.invalidateQueries({ queryKey: ["equipment-log", variables.id] });
-    },
-    meta: entityMeta("update", "Equipment log"),
-  });
-}
 
 export interface JobCardSummary {
   overdue: number;
@@ -522,19 +508,6 @@ export function useCreateHireInVerification() {
   });
 }
 
-export function usePatchHireInVerification() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, ...data }: { id: string } & Record<string, unknown>) =>
-      mutateApi(`/api/equipment/hire-in-verifications/${id}`, "PATCH", data),
-    onSuccess: async (_data, variables) => {
-      await refreshListQueries(qc, "hire-in-verifications");
-      await refreshListQueries(qc, "hire-rent-summary");
-      await qc.invalidateQueries({ queryKey: ["hire-in-verification", variables.id] });
-    },
-    meta: entityMeta("update", "Hire-in verification"),
-  });
-}
 
 export function useCreateRentOutBill() {
   const qc = useQueryClient();

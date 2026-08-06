@@ -4,6 +4,7 @@ import {
   revokesToMatrix,
   managedPairs,
   siblingMenuKeys,
+  isMatrixCellManaged,
   MENU_TO_RESOURCE,
   type PermissionMatrix,
 } from "@/lib/rbac/matrixV2Bridge";
@@ -78,13 +79,23 @@ describe("matrixToRevokes", () => {
 });
 
 describe("revokesToMatrix", () => {
-  it("an empty revoke set yields an all-true matrix for every bridged menu", () => {
+  it("an empty revoke set grants every cell the matrix can actually manage", () => {
     const matrix = revokesToMatrix([]);
+    expect(Object.keys(matrix).length).toBeGreaterThan(0);
     for (const [key, row] of Object.entries(matrix)) {
       expect(MENU_TO_RESOURCE[key]).toBeDefined();
-      expect(row).toEqual({ add: true, edit: true, delete: true, view: true });
+      for (const action of ["add", "edit", "delete", "view"] as const) {
+        // Cells the matrix can't express (read-only page, or an action the
+        // resource doesn't carry) must read false — assume-allow on those made
+        // them permanently ticked. `system.approvals` is the one row with no
+        // manageable pair at all and keeps the legacy display.
+        const expected =
+          key === "system.approvals"
+            ? action === "view"
+            : isMatrixCellManaged(key, action);
+        expect([key, action, row[action]]).toEqual([key, action, expected]);
+      }
     }
-    expect(Object.keys(matrix).length).toBeGreaterThan(0);
   });
 
   it("sets only the revoked cells to false, leaving the rest true", () => {
@@ -126,65 +137,63 @@ describe("round-trip: matrixToRevokes → revokesToMatrix", () => {
   });
 });
 
-// Regression: shared-resource pages (every MASTERS page → construction.masters)
-// could not be unchecked individually. Unchecking one page left its siblings
-// granted, so matrixToRevokes wrote NO revoke and the cell reverted to checked
-// on reload. The UI now toggles the whole cluster together (siblingMenuKeys);
-// these tests pin the bridge behaviour that fix relies on.
-describe("shared-resource clusters (masters)", () => {
-  it("siblingMenuKeys groups every masters page, incl. Labour + Workmen", () => {
-    const sibs = siblingMenuKeys("master.vendor");
-    // Vendors shares construction.masters with the other operational masters.
-    expect(sibs).toContain("master.item");
-    expect(sibs).toContain("master.contractor");
-    expect(sibs).toContain("master.asset");
-    // Newly bridged rows — previously unmanaged, always reverted.
-    expect(sibs).toContain("master.labour");
-    expect(sibs).toContain("master.workman");
-    // Projects has its OWN resource — must NOT be pulled into the cluster.
-    expect(sibs).not.toContain("master.project");
+// Per-page split (Phase 4): every MASTERS page now owns its OWN resource, so
+// pages are independently grant/revoke-able. Unchecking one page revokes only
+// that page's resource and never touches its neighbours.
+describe("per-page masters resources", () => {
+  it("each masters page maps to its own resource (Labour/Workmen included)", () => {
+    expect(MENU_TO_RESOURCE["master.vendor"]).toBe("construction.master_vendor");
+    expect(MENU_TO_RESOURCE["master.item"]).toBe("construction.master_item");
+    expect(MENU_TO_RESOURCE["master.labour"]).toBe("construction.master_labour");
+    expect(MENU_TO_RESOURCE["master.workman"]).toBe("construction.master_workman");
+    // Projects keeps its own resource; not part of the masters cluster.
+    expect(MENU_TO_RESOURCE["master.project"]).toBe("construction.project");
   });
 
-  it("Labour + Workmen are now bridged to construction.masters", () => {
-    expect(MENU_TO_RESOURCE["master.labour"]).toBe("construction.masters");
-    expect(MENU_TO_RESOURCE["master.workman"]).toBe("construction.masters");
+  it("organization pages map to their own construction.org_* resources", () => {
+    expect(MENU_TO_RESOURCE["org.company"]).toBe("construction.org_company");
+    expect(MENU_TO_RESOURCE["org.gst"]).toBe("construction.org_gst");
+    expect(MENU_TO_RESOURCE["org.terms"]).toBe("construction.org_terms");
+  });
+
+  it("a masters page is now its OWN only sibling (independent)", () => {
+    expect(siblingMenuKeys("master.vendor")).toEqual(["master.vendor"]);
+    expect(siblingMenuKeys("master.labour")).toEqual(["master.labour"]);
   });
 
   it("an unbridged key is its own only sibling", () => {
     expect(siblingMenuKeys("totally.unknown")).toEqual(["totally.unknown"]);
   });
 
-  it("unchecking ONE masters page while siblings stay checked writes no revoke", () => {
-    // The old bug: only Vendors unchecked → construction.masters still granted
-    // via the other pages → no revoke → reverts on reload.
+  it("unchecking ONE masters page revokes ONLY that page, not its neighbours", () => {
     const matrix: PermissionMatrix = {
       "master.vendor":     { add: false, edit: false, delete: false, view: false },
       "master.item":       { add: true,  edit: true,  delete: true,  view: true },
       "master.contractor": { add: true,  edit: true,  delete: true,  view: true },
     };
-    expect(matrixToRevokes(matrix)).toEqual([]);
+    const revokes = matrixToRevokes(matrix);
+    // Vendor's own resource is revoked…
+    expect(revokes).toContainEqual({ resource: "construction.master_vendor", action: "view" });
+    expect(revokes).toContainEqual({ resource: "construction.master_vendor", action: "create" });
+    expect(revokes).toContainEqual({ resource: "construction.master_vendor", action: "edit" });
+    expect(revokes).toContainEqual({ resource: "construction.master_vendor", action: "delete" });
+    // …and Items / Contractors are left completely untouched.
+    expect(revokes.some((r) => r.resource === "construction.master_item")).toBe(false);
+    expect(revokes.some((r) => r.resource === "construction.master_contractor")).toBe(false);
   });
 
-  it("unchecking the WHOLE masters cluster persists (round-trips false)", () => {
-    // What the lockstep toggle produces: every masters page denied together.
-    const masters = siblingMenuKeys("master.vendor");
-    const matrix: PermissionMatrix = {};
-    for (const k of masters) {
-      matrix[k] = { add: false, edit: false, delete: false, view: false };
-    }
-    const revokes = matrixToRevokes(matrix);
-    // The shared resource is now revoked for every supported action.
-    expect(revokes).toContainEqual({ resource: "construction.masters", action: "view" });
-    expect(revokes).toContainEqual({ resource: "construction.masters", action: "create" });
-    expect(revokes).toContainEqual({ resource: "construction.masters", action: "edit" });
-    expect(revokes).toContainEqual({ resource: "construction.masters", action: "delete" });
-    // …and it round-trips back to unchecked instead of reverting to checked.
-    const rebuilt = revokesToMatrix(revokes);
+  it("unchecking one page persists (round-trips false) without affecting others", () => {
+    const matrix: PermissionMatrix = {
+      "master.vendor": { add: false, edit: false, delete: false, view: false },
+      "master.item":   { add: true,  edit: true,  delete: true,  view: true },
+    };
+    const rebuilt = revokesToMatrix(matrixToRevokes(matrix));
     expect(rebuilt["master.vendor"]).toEqual({
       add: false, edit: false, delete: false, view: false,
     });
-    expect(rebuilt["master.labour"]).toEqual({
-      add: false, edit: false, delete: false, view: false,
+    // Items stays fully granted.
+    expect(rebuilt["master.item"]).toEqual({
+      add: true, edit: true, delete: true, view: true,
     });
   });
 });
@@ -212,10 +221,10 @@ describe("managedPairs", () => {
     }
   });
 
-  it("includes extra actions like construction.masters import/export", () => {
+  it("includes extra actions like construction.master_item import/export", () => {
     const pairs = managedPairs();
-    expect(pairs).toContainEqual({ resource: "construction.masters", action: "import" });
-    expect(pairs).toContainEqual({ resource: "construction.masters", action: "export" });
+    expect(pairs).toContainEqual({ resource: "construction.master_item", action: "import" });
+    expect(pairs).toContainEqual({ resource: "construction.master_item", action: "export" });
     // Settings-tier `manage` is never matrix-managed.
     expect(pairs).not.toContainEqual({ resource: "construction.workflows", action: "manage" });
   });

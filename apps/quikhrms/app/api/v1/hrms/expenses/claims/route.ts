@@ -7,6 +7,7 @@ import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
 import { createAuditLog } from "@/lib/utils/audit";
 import { resolveScope, employeeScopeFilter, getCallerEmployeeId } from "@/lib/rbac/scope";
 import { forbidden } from "@/lib/api-response";
+import { urlBelongsToTenant } from "@/lib/storage";
 import type { Prisma } from "@quikit/database";
 
 export const GET = withAuth(async (req: NextRequest, ctx) => {
@@ -91,6 +92,11 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     }
     if (policy.requiresReceipt && Number(rest.totalAmount) > Number(policy.receiptThreshold) && !rest.receiptUrl) {
       return validationError(`Receipt required for amounts above ${policy.receiptThreshold}`);
+    }
+    // A receipt must be a file uploaded to THIS tenant's storage — never an
+    // arbitrary external URL (blocks SSRF + passing off someone else's file).
+    if (rest.receiptUrl && !urlBelongsToTenant(rest.receiptUrl, orgId)) {
+      return validationError("Receipt must be an uploaded file, not an external link.");
     }
 
     const claim = await prisma.expenseClaim.create({

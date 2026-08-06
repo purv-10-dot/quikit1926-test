@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ArrowLeft, Database, Users, ListChecks } from "lucide-react";
+import { ArrowLeft, Database, Users, ListChecks, Github, LifeBuoy } from "lucide-react";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 
 const NAV: {
@@ -15,6 +15,11 @@ const NAV: {
   { key: "user-management", label: "Roles & Permissions", href: "/settings/user-management", icon: Users, adminOnly: true },
   { key: "work-items-fields", label: "Fields", href: "/settings/work-items/fields", icon: ListChecks, adminOnly: true },
   { key: "migration", label: "Migration", href: "/settings/migration", icon: Database, adminOnly: true },
+  { key: "integrations-github", label: "GitHub", href: "/settings/integrations/github", icon: Github, adminOnly: true },
+  // Deliberately NOT adminOnly — the only entry here that isn't. Support status
+  // is per-user: every member sees their own requests, so hiding it behind the
+  // admin flag would hide it from exactly the people who raise tickets.
+  { key: "support", label: "Support Status", href: "/settings/support", icon: LifeBuoy },
   // "General Settings" lives in the header ⚙ popover (see settings-popover.tsx)
   // — keeping it out of this sidebar prevents duplication.
 ];

@@ -61,7 +61,7 @@ describe("PUT /api/masters/uom/[id]", () => {
 
   it("returns 403 when the permission matrix denies edit", async () => {
     setContext(
-      makeUserCtx(["construction.masters.edit"], {
+      makeUserCtx(["construction.org_uom.edit"], {
         permissionMatrix: { "org.uom": { edit: false } },
       }),
     );
@@ -95,7 +95,7 @@ describe("PUT /api/masters/uom/[id]", () => {
 describe("DELETE /api/masters/uom/[id]", () => {
   it("returns 403 when the permission matrix denies delete", async () => {
     setContext(
-      makeUserCtx(["construction.masters.delete"], {
+      makeUserCtx(["construction.org_uom.delete"], {
         permissionMatrix: { "org.uom": { delete: false } },
       }),
     );

@@ -1,6 +1,6 @@
 import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { NextRequest, NextResponse } from "next/server";
-import { getTenantContext, hasMatrixAction } from "@/lib/auth/context";
+import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import {
   findVendorById,
@@ -31,7 +31,7 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const ctxOrResp = await requireMastersAction("view");
+  const ctxOrResp = await requireMastersAction("construction.master_vendor", "view");
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
 
@@ -41,8 +41,9 @@ export async function GET(
 }
 
 async function handleUpdate(req: NextRequest, id: string) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requireMastersAction("construction.master_vendor", "edit");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "master.vendor", "edit")) {
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for master.vendor`, 403);
   }
@@ -160,7 +161,7 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const ctxOrResp = await requireMastersAction("delete");
+  const ctxOrResp = await requireMastersAction("construction.master_vendor", "delete");
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "master.vendor", "delete")) {

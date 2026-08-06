@@ -5,12 +5,14 @@ import { db } from "@/lib/db";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { generateDocNumber } from "@/lib/db/doc-number";
-import { parsePagination, parseSort } from "@/lib/http/pagination";
+import { resolveUserNames } from "@/lib/users/resolve-names";
+import { parsePagination, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 
 /**
  * Stock Reconciliation — list + create.
  *
- * Persists to `cn_stock_reconciliations` + `cn_stock_reconciliation_lines`.
+ * Persists to `cn_stock_reconciliations`; lines live inline in the JSONB
+ * `materials` column (single-table pattern, same as issues/transfers).
  * The earlier stub stored rows in a request-scoped JS array, so creates
  * never reached Postgres and the approval flow had nothing to act on.
  *
@@ -18,9 +20,10 @@ import { parsePagination, parseSort } from "@/lib/http/pagination";
  *   { projectId, locationId, reconciliationDate, conductedBy (text),
  *     lines: [{ itemId, systemQty, physicalQty, varianceReason }] }
  *
- * Schema requires `conductedById` (user FK). The form posts a free-text
- * "Conducted By" name; we store the calling user's id as the FK and
- * leave the text on the line-item remarks if useful elsewhere later.
+ * `conductedById` is always the calling user (the FK the approval flow and
+ * audit trail read). The free-text "Conducted By" name the form posts is
+ * stored separately in `conductedByName` — the person who ran the physical
+ * count is often not a system user.
  *
  * Each line needs `uomId` (REQUIRED). We look up each item's uom in
  * one batched query before insert.
@@ -66,6 +69,7 @@ export async function GET(req: NextRequest) {
     searchParams,
     ["reconciliationNumber", "reconciliationDate", "status", "createdAt"],
     { field: "reconciliationDate", order: "desc" },
+    NEWEST_FIRST_TIEBREAK,
   );
   const p = parsePagination(req);
   const rows = await db.cnStockReconciliation.findMany({
@@ -78,12 +82,13 @@ export async function GET(req: NextRequest) {
       locationId: true,
       reconciliationDate: true,
       conductedById: true,
+      conductedByName: true,
       approvedById: true,
       status: true,
       createdAt: true,
       updatedAt: true,
+      lineCount: true,
       project: { select: { name: true } },
-      _count: { select: { lines: true } },
     },
     ...(p.paginated ? { take: p.take, skip: p.skip } : {}),
   });
@@ -104,6 +109,20 @@ export async function GET(req: NextRequest) {
     for (const l of locs) locById.set(l.id, l.name);
   }
 
+  // Rows created before `conductedByName` existed carry only the FK, so fall
+  // back to that user's display name rather than showing an empty column.
+  const conductorIds = Array.from(
+    new Set(
+      rows
+        .filter((r) => !r.conductedByName)
+        .map((r) => r.conductedById)
+        .filter((v: unknown): v is string => !!v),
+    ),
+  );
+  const conductorNameById = conductorIds.length
+    ? await resolveUserNames(conductorIds)
+    : new Map<string, string>();
+
   const data = rows.map((r) => ({
     id: r.id,
     reconciliationNumber: r.reconciliationNumber,
@@ -113,9 +132,12 @@ export async function GET(req: NextRequest) {
     locationName: locById.get(r.locationId) ?? "",
     reconciliationDate: r.reconciliationDate?.toISOString().slice(0, 10) ?? "",
     conductedById: r.conductedById,
+    conductedByName:
+      r.conductedByName ??
+      (r.conductedById ? conductorNameById.get(r.conductedById) ?? "" : ""),
     approvedById: r.approvedById,
     status: r.status,
-    lineCount: r._count?.lines ?? 0,
+    lineCount: r.lineCount ?? 0,
     createdAt: r.createdAt?.toISOString() ?? "",
     updatedAt: r.updatedAt?.toISOString() ?? "",
   }));
@@ -200,7 +222,7 @@ export async function POST(req: NextRequest) {
           physicalQty,
           varianceQty: physicalQty - systemQty,
           uomId: uomByItemId.get(l.itemId) ?? "",
-          reason: l.varianceReason ?? l.reason ?? null,
+          reason: l.varianceReason ?? l.reason ?? "",
         };
       })
       .filter((l) => l.uomId); // drop lines whose item lookup failed
@@ -213,14 +235,15 @@ export async function POST(req: NextRequest) {
         locationId: body.locationId,
         reconciliationDate: new Date(body.reconciliationDate),
         conductedById: ctx.userId,
+        conductedByName: String(body.conductedBy ?? "").trim() || null,
         status: body.status === "submitted" ? "submitted" : "draft",
         createdBy: ctx.userId,
         updatedBy: ctx.userId,
-        lines: linesData.length ? { create: linesData } : undefined,
+        lineCount: linesData.length,
+        materials: linesData,
       },
       include: {
         project: { select: { name: true } },
-        lines: true,
       },
     });
 
@@ -233,8 +256,9 @@ export async function POST(req: NextRequest) {
         locationId: created.locationId,
         reconciliationDate: created.reconciliationDate.toISOString().slice(0, 10),
         conductedById: created.conductedById,
+        conductedByName: created.conductedByName,
         status: created.status,
-        lineCount: created.lines.length,
+        lineCount: created.lineCount,
         createdAt: created.createdAt.toISOString(),
       },
       { status: 201 },

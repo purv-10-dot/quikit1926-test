@@ -8,6 +8,8 @@ import { useDialog } from "@/components/hrms/dialog";
 import { useToast } from "@/components/hrms/toast";
 import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/select";
+import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 import { clsx } from "clsx";
 import * as XLSX from "xlsx";
 import { UserPlus, Mail, RotateCw, Ban, Send, Upload, FileSpreadsheet, Download, X, Trash2, Search } from "lucide-react";
@@ -103,6 +105,8 @@ export default function UsersPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   // ── Existing-member typeahead (Add New User modal) ──
   // When the admin picks someone who's already a central QuikIT member, we
@@ -366,12 +370,28 @@ export default function UsersPage() {
     return [r.name, r.email, r.role, r.status].filter(Boolean).some((v) => v.toLowerCase().includes(q));
   }), [rows, statusFilter, q]);
 
+  const totalPages = Math.max(1, Math.ceil(visibleRows.length / PAGE_SIZE));
+  // Jump back to page 1 whenever the search/filter changes the result set —
+  // otherwise a search typed while on page 3 can land on an empty page even
+  // though matches exist.
+  useEffect(() => { setPage(1); }, [q, statusFilter]);
+  // Belt-and-suspenders: also clamp if `page` is ever left past the last page
+  // for any other reason (e.g. rows refetch and shrink).
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+  const pageRows = useMemo(
+    () => visibleRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [visibleRows, page],
+  );
+
   const anyLoading = usersLoading || invitableLoading || isLoading;
 
   const toggleSelect = (id: string) =>
     setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  // Only invitation rows are bulk-deletable.
-  const selectableIds = visibleRows.filter((r) => r.kind === "invitation").map((r) => r.invitation!.id);
+  // Only invitation rows are bulk-deletable — scoped to the current PAGE, so
+  // "select all" matches what's actually visible (standard pager UX).
+  const selectableIds = pageRows.filter((r) => r.kind === "invitation").map((r) => r.invitation!.id);
   const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
   const someSelected = selectableIds.some((id) => selected.has(id));
   const toggleSelectAll = () =>
@@ -390,6 +410,8 @@ export default function UsersPage() {
 
   return (
     <div className="w-full">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
           <h1 className="text-base font-semibold text-gray-900">Users & Invitations</h1>
@@ -408,26 +430,27 @@ export default function UsersPage() {
         </div>
       </div>
 
-      <div className="mb-3 relative max-w-sm">
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by name, email, role or status…"
-          className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-3 text-xs outline-none transition placeholder:text-gray-400 focus:border-green-500 focus:ring-2 focus:ring-green-500/20"
-          style={{ paddingLeft: "2.25rem" }}
-        />
-      </div>
-
       {/* One unified list — everyone (users, not-yet-invited, invitations),
           filterable by status. */}
-      <div className="mb-3 max-w-[200px]">
-        <Select
-          value={statusFilter}
-          onChange={(v) => setStatusFilter(v)}
-          options={[{ value: "", label: "All statuses" }, ...statusOptions.map((s) => ({ value: s, label: s }))]}
-        />
+      <div className="mb-3 flex items-center gap-2 flex-wrap">
+        <div className="relative max-w-sm flex-1 min-w-[200px]">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by name, email, role or status…"
+            className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-3 text-xs outline-none transition placeholder:text-gray-400 focus:border-green-500 focus:ring-2 focus:ring-green-500/20"
+            style={{ paddingLeft: "2.25rem" }}
+          />
+        </div>
+        <div className="w-[200px] shrink-0">
+          <Select
+            value={statusFilter}
+            onChange={(v) => setStatusFilter(v)}
+            options={[{ value: "", label: "All statuses" }, ...statusOptions.map((s) => ({ value: s, label: s }))]}
+          />
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
@@ -457,7 +480,7 @@ export default function UsersPage() {
             ) : visibleRows.length === 0 ? (
               <tr><td colSpan={7} className="px-4 py-10 text-center text-gray-400">{rows.length === 0 ? "No users yet." : "No users match your filter."}</td></tr>
             ) : (
-              visibleRows.map((r) => {
+              pageRows.map((r) => {
                 const inv = r.invitation;
                 const isSel = inv ? selected.has(inv.id) : false;
                 const busy = r.kind === "invitable" && inviteEmployeeMut.isPending && inviteEmployeeMut.variables === r.employeeId;
@@ -544,6 +567,14 @@ export default function UsersPage() {
             )}
           </tbody>
         </table>
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          total={visibleRows.length}
+          limit={PAGE_SIZE}
+          onPageChange={setPage}
+          className="border-t border-gray-100 px-4 py-2.5"
+        />
       </div>
 
       <Modal

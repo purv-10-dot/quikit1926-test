@@ -59,6 +59,46 @@ export function isAllowedImageType(mime: string): boolean {
   return ALLOWED_IMAGE_TYPES.has(mime);
 }
 
+/**
+ * Non-image files the rich text editor may attach. Executables / HTML are
+ * intentionally excluded — attachments are served as forced downloads via
+ * signed GCS URLs, never rendered inline. CSV can arrive under several MIME
+ * types depending on the OS, so a few aliases map to the same extension.
+ */
+const ALLOWED_FILE_TYPES = new Map<string, string>([
+  ["application/pdf", "pdf"],
+  ["text/csv", "csv"],
+  ["application/csv", "csv"],
+  ["text/plain", "txt"],
+  ["application/vnd.ms-excel", "xls"],
+  ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"],
+  ["application/msword", "doc"],
+  ["application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx"],
+  ["application/vnd.ms-powerpoint", "ppt"],
+  ["application/vnd.openxmlformats-officedocument.presentationml.presentation", "pptx"],
+  ["application/zip", "zip"],
+  ["application/x-zip-compressed", "zip"],
+]);
+
+export const MAX_FILE_BYTES = 25 * 1024 * 1024; // 25 MB
+
+/** Human-readable list for error messages / the file-picker `accept`. */
+export const ALLOWED_FILE_LABEL = "PDF, CSV, TXT, Word, Excel, PowerPoint, ZIP, or an image";
+
+export function isAllowedFileType(mime: string): boolean {
+  return ALLOWED_FILE_TYPES.has(mime);
+}
+
+/**
+ * Doc-scoped attachment key that keeps the original filename for a friendly
+ * download. Not tied to an issue, so it works everywhere the editor is used
+ * (issues, docs, ideas, comments).
+ */
+export function buildDocFileKey(orgId: string, projectId: string, fileName: string): string {
+  const safe = fileName.replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 180) || "file";
+  return `tenants/${orgId}/quiktrack/docs/${projectId}/files/${randomUUID()}-${safe}`;
+}
+
 function extFromMime(mime: string): string {
   switch (mime) {
     case "image/png":

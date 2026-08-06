@@ -11,4 +11,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }) => {
     console.error("GET /analytics/headcount error:", error);
     return internalError();
   }
+}, {
+  requiredPermissions: ["hrms.dashboard.admin", "hrms.dashboard.hr"],
+  anyPermission: true,
 });

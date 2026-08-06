@@ -52,4 +52,4 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
     console.error("GET /offboarding/clearance/[employeeId] error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.offboarding.read"] });

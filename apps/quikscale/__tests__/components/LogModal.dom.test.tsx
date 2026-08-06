@@ -46,8 +46,13 @@ vi.mock("@/lib/hooks/useFeatureFlags", () => ({
   usePastWeekFlags: () => pastWeekFlagsState,
 }));
 
+// LogModal reads five hooks from this module — a partial mock throws
+// "No <name> export is defined on the mock", so keep all five listed.
 vi.mock("@/lib/hooks/useCurrentWeek", () => ({
   useCurrentWeek: () => 4,
+  useQtdReferenceWeek: () => 4,
+  useQuarterWeekCount: () => 13,
+  useQuarterPosition: () => "current",
   useWeekLabels: () => Array.from({ length: 13 }, (_, i) => `W${i + 1}-label`),
 }));
 

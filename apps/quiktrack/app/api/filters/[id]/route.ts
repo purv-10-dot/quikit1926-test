@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
+import { parseCustomFilters, customFiltersToWhere } from "@/lib/customFields/filterQuery";
 
 /**
  * GET /api/filters/:id?search=&limit=&offset=
@@ -15,6 +16,7 @@ import { withOrgAuth } from "@/lib/api/withOrgAuth";
  */
 
 export type FilterId =
+  | "search"
   | "my-open"
   | "reported-by-me"
   | "all"
@@ -26,6 +28,7 @@ export type FilterId =
   | "updated-recently";
 
 const FILTER_TITLES: Record<FilterId, string> = {
+  search: "All work",
   "my-open": "My open work items",
   "reported-by-me": "Reported by me",
   all: "All work items",
@@ -149,28 +152,123 @@ export const GET = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { 
     where.AND = where.AND ? [...(Array.isArray(where.AND) ? where.AND : [where.AND]), text] : text;
   }
 
-  const [items, total] = await Promise.all([
+  // Custom-field value filters — each becomes an AND'd `fieldValues.some` clause
+  // (same helper the Backlog/Board use). The UI only offers these once a project
+  // is chosen, since field definitions are project-scoped.
+  const customFilterWhere = customFiltersToWhere(
+    parseCustomFilters(url.searchParams.get("customFilters")),
+  );
+  if (customFilterWhere.length > 0) {
+    where.AND = where.AND
+      ? [...(Array.isArray(where.AND) ? where.AND : [where.AND]), ...customFilterWhere]
+      : customFilterWhere;
+  }
+
+  const issueSelect = {
+    id: true,
+    key: true,
+    title: true,
+    type: true,
+    priority: true,
+    assigneeId: true,
+    reporterId: true,
+    statusId: true,
+    parentId: true,
+    epicId: true,
+    sprintId: true,
+    startDate: true,
+    dueDate: true,
+    storyPoints: true,
+    eta: true,
+    createdAt: true,
+    updatedAt: true,
+    project: { select: { id: true, name: true, projectKey: true } },
+    status: { select: { id: true, name: true, color: true, category: true } },
+  } as const;
+
+  const sortKey: "createdAt" | "updatedAt" =
+    "createdAt" in orderBy ? "createdAt" : "updatedAt";
+
+  // Discovery ideas live in a separate model (QtIdea) with no type/priority and
+  // their own status. Include them alongside issues UNLESS the active filters
+  // are issue-specific (a type filter, a priority-bearing type, or explicit
+  // statusCategory that ideas can't match). Ideas map to type "IDEA".
+  const ideasEligible = oType.length === 0;
+  const ideaWhere: Prisma.QtIdeaWhereInput = { orgId, isDeleted: false, archivedFlag: false };
+  if (oProjectId) ideaWhere.projectId = oProjectId;
+  if (oAssignee === "me") ideaWhere.assigneeId = userId;
+  else if (oAssignee === "unassigned") ideaWhere.assigneeId = null;
+  else if (oAssignee && oAssignee !== "any") ideaWhere.assigneeId = oAssignee;
+  if (oReporter === "me") ideaWhere.OR = [{ reporterId: userId }, { createdBy: userId }];
+  else if (oReporter && oReporter !== "any") ideaWhere.reporterId = oReporter;
+  if (search) {
+    const s = [
+      { title: { contains: search, mode: "insensitive" as const } },
+      { key: { contains: search, mode: "insensitive" as const } },
+    ];
+    ideaWhere.AND = ideaWhere.OR ? [{ OR: s }] : undefined;
+    if (!ideaWhere.AND) ideaWhere.OR = s;
+  }
+  // A slug that pins a DONE/not-DONE issue category, or a resolution toggle,
+  // doesn't translate to idea statuses — exclude ideas so the list stays honest.
+  const restrictsToIssueStatus =
+    oStatusCat.length > 0 ||
+    oResolution === "done" ||
+    (!oResolution && (id === "done" || id === "open" || id === "my-open" || id === "resolved-recently"));
+
+  // Fetch issues (paginated in SQL) and, when eligible, the ideas to merge in.
+  // Ideas are merged in memory then the combined list is re-sorted + sliced, so
+  // we over-fetch issues to `offset+limit` and cap ideas to a sane ceiling.
+  // Custom-field filters target QtIssueFieldValue; ideas use a different value
+  // relation, so when custom filters are active we don't merge ideas (they'd
+  // otherwise appear unfiltered).
+  const includeIdeas =
+    ideasEligible && !restrictsToIssueStatus && customFilterWhere.length === 0;
+  const [issueRows, issueCount, ideaRows, ideaCount] = await Promise.all([
     db.qtIssue.findMany({
       where,
       orderBy,
-      skip: offset,
-      take: limit,
-      select: {
-        id: true,
-        key: true,
-        title: true,
-        type: true,
-        priority: true,
-        assigneeId: true,
-        reporterId: true,
-        createdAt: true,
-        updatedAt: true,
-        project: { select: { id: true, name: true, projectKey: true } },
-        status: { select: { id: true, name: true, color: true, category: true } },
-      },
+      take: includeIdeas ? offset + limit : limit,
+      skip: includeIdeas ? 0 : offset,
+      select: issueSelect,
     }),
     db.qtIssue.count({ where }),
+    includeIdeas
+      ? db.qtIdea.findMany({
+          where: ideaWhere,
+          orderBy,
+          take: offset + limit,
+          select: {
+            id: true,
+            key: true,
+            title: true,
+            assigneeId: true,
+            reporterId: true,
+            createdAt: true,
+            updatedAt: true,
+            project: { select: { id: true, name: true, projectKey: true } },
+            status: { select: { id: true, name: true, color: true, category: true } },
+          },
+        })
+      : Promise.resolve([]),
+    includeIdeas ? db.qtIdea.count({ where: ideaWhere }) : Promise.resolve(0),
   ]);
+
+  // Normalize both sources to the same row shape (ideas → type "IDEA").
+  const normalizedIssues = issueRows.map((i) => ({ ...i }));
+  const normalizedIdeas = ideaRows.map((i) => ({
+    ...i,
+    type: "IDEA",
+    priority: "NONE",
+  }));
+
+  const merged = [...normalizedIssues, ...normalizedIdeas].sort((a, b) => {
+    const av = a[sortKey] instanceof Date ? (a[sortKey] as Date).getTime() : 0;
+    const bv = b[sortKey] instanceof Date ? (b[sortKey] as Date).getTime() : 0;
+    return bv - av; // both orderings above are desc
+  });
+  const items = includeIdeas ? merged.slice(offset, offset + limit) : merged;
+  const total = issueCount + ideaCount;
 
   // Resolve user display info for assignees + reporters in a single query.
   const userIds = Array.from(

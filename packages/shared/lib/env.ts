@@ -45,6 +45,9 @@ export function requireProdEnv(name: string, devFallback?: string): string {
     case "NEXT_PUBLIC_AUTH_URL":
       v = process.env.NEXT_PUBLIC_AUTH_URL;
       break;
+    case "NEXT_PUBLIC_WEBSITE_URL":
+      v = process.env.NEXT_PUBLIC_WEBSITE_URL;
+      break;
     case "NEXT_PUBLIC_QUIKIT_URL":
       v = process.env.NEXT_PUBLIC_QUIKIT_URL;
       break;
@@ -53,9 +56,6 @@ export function requireProdEnv(name: string, devFallback?: string): string {
       break;
     case "NEXT_PUBLIC_LOGIN_URL":
       v = process.env.NEXT_PUBLIC_LOGIN_URL;
-      break;
-    case "NEXT_PUBLIC_LANDING_URL":
-      v = process.env.NEXT_PUBLIC_LANDING_URL;
       break;
     case "NEXT_PUBLIC_SUPER_ADMIN_URL":
       v = process.env.NEXT_PUBLIC_SUPER_ADMIN_URL;

@@ -66,12 +66,19 @@ describe("GET /api/store/good-returns", () => {
 
   it("lists good returns scoped to the org and returns {data,total}", async () => {
     setContext(makeAdminCtx());
-    db.$queryRaw.mockResolvedValue([rawRow(), rawRow({ id: "gr2", returnNumber: "GR-20260115-0002" })]);
+    // listGoodReturns issues TWO raw queries in parallel — the page of rows
+    // and a COUNT(*) — so each needs its own resolution.
+    db.$queryRaw
+      .mockResolvedValueOnce([
+        rawRow(),
+        rawRow({ id: "gr2", returnNumber: "GR-20260115-0002" }),
+      ])
+      .mockResolvedValueOnce([{ count: 2 }]);
     const res = await GET(buildGET());
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.total).toBe(2);
-    expect(db.$queryRaw.mock.calls[0]).toContain(TEST_TENANT);
+    expect(JSON.stringify(db.$queryRaw.mock.calls[0])).toContain(TEST_TENANT);
   });
 });
 

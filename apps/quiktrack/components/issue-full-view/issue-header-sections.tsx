@@ -1,8 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
+  BookOpen,
+  Bug,
+  Check,
+  CheckSquare,
   ChevronDown,
   ChevronRight,
   Edit3,
@@ -11,6 +15,7 @@ import {
 } from "lucide-react";
 import { RichTextEditor } from "@/components/rich-text-editor-lazy";
 import { sanitizeRichText } from "@/lib/sanitize";
+import { RichTextView } from "@/components/rich-text-view";
 import { uploadProjectImage } from "@/lib/upload-image";
 import type { MentionItem } from "@/components/editor/mention";
 import { SubtaskGrid } from "./subtask-grid";
@@ -18,12 +23,26 @@ import { AddEpicButton } from "./add-epic-button";
 import { ChildWorkItems } from "./child-work-items";
 import type { IssuePageData, IssueType } from "./types";
 
+// Matches the edit modal's TYPE_META icons so the breadcrumb + change-type menu
+// show distinct, consistent glyphs (checkbox / book / bug) — not one generic icon.
 const TYPE_ICON_FOR_HEADER: Record<IssueType, { Icon: React.ElementType; color: string }> = {
-  TASK: { Icon: ListTree, color: "text-blue-500" },
-  BUG: { Icon: ListTree, color: "text-red-500" },
-  STORY: { Icon: ListTree, color: "text-green-600" },
+  TASK: { Icon: CheckSquare, color: "text-blue-500" },
+  BUG: { Icon: Bug, color: "text-red-500" },
+  STORY: { Icon: BookOpen, color: "text-green-600" },
   EPIC: { Icon: Zap, color: "text-purple-500" },
   SUBTASK: { Icon: ListTree, color: "text-blue-500" },
+};
+
+// The flat work types the breadcrumb switcher offers — mirrors the edit modal.
+// EPIC and SUBTASK are excluded: converting to/from them from a quick menu would
+// orphan children or break the parent/child tree.
+const WORK_TYPE_OPTIONS: IssueType[] = ["TASK", "STORY", "BUG"];
+const WORK_TYPE_LABEL: Record<IssueType, string> = {
+  TASK: "Task",
+  STORY: "Story",
+  BUG: "Bug",
+  EPIC: "Epic",
+  SUBTASK: "Subtask",
 };
 
 interface Props {
@@ -53,10 +72,24 @@ export function IssueHeaderSections({
   const [descOpen, setDescOpen] = useState(false);
   const [descEditing, setDescEditing] = useState(false);
   const [descDraft, setDescDraft] = useState("");
+  const [typeMenuOpen, setTypeMenuOpen] = useState(false);
+  const typeMenuRef = useRef<HTMLDivElement>(null);
   // Auto-open Description when there's content.
   useEffect(() => {
     if (issue.description) setDescOpen(true);
   }, [issue.description]);
+  // Close the work-type menu on outside click.
+  useEffect(() => {
+    if (!typeMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (typeMenuRef.current && !typeMenuRef.current.contains(e.target as Node)) {
+        setTypeMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [typeMenuOpen]);
+  const canSwitchType = WORK_TYPE_OPTIONS.includes(issue.type);
 
   return (
     <>
@@ -113,10 +146,68 @@ export function IssueHeaderSections({
           </>
         ) : null}
         <span className="text-gray-300">/</span>
-        <span className="inline-flex items-center gap-1 text-gray-700">
-          <T.Icon className={`h-3.5 w-3.5 ${T.color}`} />
-          {issue.key}
-        </span>
+        {canSwitchType ? (
+          <div className="relative inline-flex items-center gap-1" ref={typeMenuRef}>
+            <button
+              type="button"
+              onClick={() => setTypeMenuOpen((v) => !v)}
+              className="inline-flex items-center gap-1 h-6 px-1 -mx-0.5 rounded hover:bg-gray-100"
+              title="Change work type"
+              aria-label="Change work type"
+            >
+              <T.Icon className={`h-3.5 w-3.5 ${T.color}`} />
+              <ChevronDown className="h-3 w-3 text-gray-400" />
+            </button>
+            <Link
+              href={`/browse/${issue.key}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-gray-700 hover:text-gray-800 hover:underline"
+              title="Open in new tab"
+            >
+              {issue.key}
+            </Link>
+            {typeMenuOpen && (
+              <div className="absolute left-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1">
+                <div className="px-3 py-1.5 text-[11px] font-semibold text-gray-500">
+                  Change work type
+                </div>
+                {WORK_TYPE_OPTIONS.map((t) => {
+                  const meta = TYPE_ICON_FOR_HEADER[t];
+                  const active = t === issue.type;
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => {
+                        setTypeMenuOpen(false);
+                        if (t !== issue.type) void onPatch({ type: t });
+                      }}
+                      className={`flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left hover:bg-gray-50 ${
+                        active ? "text-blue-700 font-medium" : "text-gray-700"
+                      }`}
+                    >
+                      <meta.Icon className={`h-3.5 w-3.5 ${meta.color}`} />
+                      {WORK_TYPE_LABEL[t]}
+                      {active && <Check className="h-3.5 w-3.5 ml-auto text-blue-600" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : (
+          <Link
+            href={`/browse/${issue.key}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-gray-800 hover:underline inline-flex items-center gap-1 text-gray-700"
+            title="Open in new tab"
+          >
+            <T.Icon className={`h-3.5 w-3.5 ${T.color}`} />
+            {issue.key}
+          </Link>
+        )}
       </div>
 
       {/* Title */}
@@ -179,8 +270,11 @@ export function IssueHeaderSections({
                   setDescEditing(true);
                 }}
                 className="qt-rich-content text-sm text-gray-800 rounded p-2 -mx-2 cursor-text hover:bg-gray-50"
-                dangerouslySetInnerHTML={{ __html: sanitizeRichText(issue.description) }}
-              />
+              >
+                {/* Read-only render via the SAME TipTap extensions as the editor,
+                    so file attachments render as identical inline cards. */}
+                <RichTextView html={sanitizeRichText(issue.description)} />
+              </div>
             ) : (
               <button
                 type="button"

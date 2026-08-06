@@ -10,7 +10,14 @@ import { recordAudit } from "@/lib/workflow/audit";
 import { postGRNInward, StockError } from "@/lib/stock";
 import { GRNStatus } from "@/lib/purchase/enums";
 import { db } from "@/lib/db";
-import { canActOnStep } from "@/lib/approvals/workflow-rbac";
+import {
+  claimAndRecord,
+  gateApprovalAction,
+  gateConflictResponse,
+  GATE_ACTIONS,
+  type GateAction,
+} from "@/lib/approvals/approval-gate";
+import type { ClaimResult } from "@/lib/approvals/claim-instance";
 
 /**
  * GRN Approval — multi-step workflow-driven.
@@ -35,7 +42,7 @@ import { canActOnStep } from "@/lib/approvals/workflow-rbac";
  *   6. Commit the guard with the final status + body so retries replay
  */
 
-type Action = "approve" | "reject" | "return";
+type Action = GateAction;
 
 export async function POST(
   req: NextRequest,
@@ -53,16 +60,15 @@ export async function POST(
   if (guard.cached) return guard.cachedResponse!;
   if (guard.conflict) return guard.conflictResponse!;
 
-  let body: { action?: string; comments?: string } = {};
-  try {
-    body = await req.json();
-  } catch {
-    /* empty body — defaults to "approve" */
-  }
+  // Read the payload off the guard, NOT `req.json()`. `idempotencyGuard`
+  // already consumed the stream to hash it, so a second read throws and the
+  // action silently fell back to "approve" — a reject landed as an approval,
+  // stock included.
+  const body = (guard.parsedBody ?? {}) as { action?: string; comments?: string };
   const action = (body.action ?? "approve") as Action;
   const comments = String(body.comments ?? "").trim();
 
-  if (!["approve", "reject", "return"].includes(action)) {
+  if (!GATE_ACTIONS.includes(action)) {
     const errBody = { error: `Unknown action: ${action}`, code: "INVALID_ACTION" };
     await guard.commit(400, errBody);
     return NextResponse.json(errBody, { status: 400 });
@@ -112,72 +118,25 @@ export async function POST(
       await guard.commit(404, errBody);
       return NextResponse.json(errBody, { status: 404 });
     }
-    if (instance.status !== "pending_approval") {
-      const errBody = {
-        error: `Approval already ${instance.status} — no further actions allowed.`,
-        code: "APPROVAL_CLOSED",
-      };
-      await guard.commit(409, errBody);
-      return NextResponse.json(errBody, { status: 409 });
-    }
-
     // ─── Workflow-step authorization ─────────────────────────────────
-    const currentStep = await db.cnApprovalWorkflowStep.findFirst({
-      where: {
-        workflowId: instance.workflowId,
-        stepOrder: instance.currentStepOrder,
-      },
+    // Authorisation, step resolution and the repair / master-approval branches
+    // live in the shared gate; this route keeps only the stock posting and the
+    // GRN's own status transition. Errors still go through the idempotency
+    // guard so a replay returns the same response.
+    const gate = await gateApprovalAction({
+      ctx,
+      instance,
+      entityLabel: "GRN",
+      action,
+      comments,
+      projectId: grn.projectId ?? null,
     });
-    if (!currentStep) {
-      const errBody = {
-        error: `Workflow step ${instance.currentStepOrder} is missing — the workflow may have been edited while this GRN was mid-flight.`,
-        code: "STEP_MISSING",
-      };
-      await guard.commit(500, errBody);
-      return NextResponse.json(errBody, { status: 500 });
+    if (gate.kind === "error") {
+      await guard.commit(gate.status, gate.body);
+      return NextResponse.json(gate.body, { status: gate.status });
     }
 
-    if (
-      !canActOnStep(
-        { userId: ctx.userId, roleKey: ctx.roleKey, projectIds: ctx.projectIds },
-        {
-          approverUserId: currentStep.approverUserId,
-          approverUserIds: Array.isArray(currentStep.approverUserIds)
-            ? currentStep.approverUserIds
-            : null,
-          approverRoleId: currentStep.approverRoleId,
-        },
-        grn.projectId ?? null,
-      )
-    ) {
-      let expected = "an authorized approver";
-      if (currentStep.approverUserId) {
-        const pinned = await findCnUserById(currentStep.approverUserId);
-        expected = pinned?.fullName
-          ? `${pinned.fullName} (pinned approver)`
-          : "the pinned approver for this step";
-      } else if (currentStep.approverRoleId) {
-        expected =
-          `a user with role "${currentStep.approverRoleId}"` +
-          (grn.projectId ? ` assigned to this project` : "");
-      }
-      const errBody = {
-        error: `You are not authorized to ${action} this GRN at step ${instance.currentStepOrder}. Expected: ${expected}.`,
-        code: "NOT_AUTHORIZED",
-      };
-      await guard.commit(403, errBody);
-      return NextResponse.json(errBody, { status: 403 });
-    }
-
-    const nextStep = await db.cnApprovalWorkflowStep.findFirst({
-      where: {
-        workflowId: instance.workflowId,
-        stepOrder: { gt: instance.currentStepOrder },
-      },
-      orderBy: { stepOrder: "asc" },
-    });
-
-    const isFinalApprove = action === "approve" && !nextStep;
+    const isFinalApprove = gate.isFinalApprove;
 
     // Status-transition check only when we'd actually flip the GRN to
     // APPROVED (final step). Intermediate steps stay at pending_approval.
@@ -205,23 +164,17 @@ export async function POST(
     let postings: Array<{ ledgerId: string; itemId: string; balanceAfter: number }> = [];
     let finalGrnStatus = grn.status;
 
-    await db.$transaction(async (tx) => {
-      await tx.cnApprovalHistory.create({
-        data: {
-          instanceId: instance.id,
-          stepOrder: instance.currentStepOrder,
-          action,
-          actionById: ctx.userId,
-          comments: comments || null,
-        },
-      });
+    let conflict: ClaimResult["conflict"] | undefined;
 
-      if (action === "approve") {
-        if (!nextStep) {
-          await tx.cnApprovalInstance.update({
-            where: { id: instance.id },
-            data: { status: "approved", completedAt: new Date() },
-          });
+    await db.$transaction(async (tx) => {
+      const claim = await claimAndRecord(tx, ctx, instance, gate);
+      if (!claim.claimed) {
+        conflict = claim.conflict;
+        return;
+      }
+
+      if (gate.effectiveAction === "approve") {
+        if (gate.isFinalApprove) {
           // Credit inward stock — single source of truth for GRN-driven
           // stock postings. Skipped on intermediate approvals.
           postings = await postGRNInward(tx, ctx, {
@@ -247,26 +200,18 @@ export async function POST(
             },
           });
         } else {
-          // Intermediate step — advance only.
-          await tx.cnApprovalInstance.update({
-            where: { id: instance.id },
-            data: { currentStepOrder: nextStep.stepOrder },
-          });
+          // Intermediate step — the gate already advanced the instance.
           await recordAudit(tx, ctx, {
             entityType: "grn",
             entityId: grn.id,
             action: "approve",
             changes: {
               stepFrom: instance.currentStepOrder,
-              stepTo: nextStep.stepOrder,
+              stepTo: gate.nextStepOrder,
             },
           });
         }
-      } else if (action === "reject") {
-        await tx.cnApprovalInstance.update({
-          where: { id: instance.id },
-          data: { status: "rejected", completedAt: new Date() },
-        });
+      } else if (gate.effectiveAction === "reject") {
         const updated = await tx.cnGoodsReceiptNote.update({
           where: { id: grn.id },
           data: { status: "rejected", updatedBy: ctx.userId },
@@ -279,10 +224,6 @@ export async function POST(
           changes: { from: grn.status, to: "rejected", reason: comments },
         });
       } else {
-        await tx.cnApprovalInstance.update({
-          where: { id: instance.id },
-          data: { status: "returned", completedAt: new Date() },
-        });
         const updated = await tx.cnGoodsReceiptNote.update({
           where: { id: grn.id },
           data: { status: "draft", approvalId: null, updatedBy: ctx.userId },
@@ -296,6 +237,14 @@ export async function POST(
         });
       }
     });
+
+    // Lost the claim — someone else settled this GRN first. Nothing was
+    // written, so no stock was posted by this request.
+    if (conflict) {
+      const errBody = await gateConflictResponse(conflict, "GRN");
+      await guard.commit(409, errBody);
+      return NextResponse.json(errBody, { status: 409 });
+    }
 
     const refreshedInstance = await db.cnApprovalInstance.findUnique({
       where: { id: instance.id },

@@ -27,6 +27,7 @@ import {
   BarChart3,
   Megaphone,
   LayoutDashboard,
+  LifeBuoy,
 } from "lucide-react";
 import { AppSwitcher, UserMenu, globalSignOut } from "@quikit/ui";
 import { motion, AnimatePresence } from "framer-motion";
@@ -39,6 +40,7 @@ const NAV_ITEMS = [
   { label: "Pricing & Plans", href: "/pricing", icon: CreditCard },
   { label: "Users", href: "/platform-users", icon: Users },
   { label: "Broadcasts", href: "/broadcasts", icon: Megaphone },
+  { label: "Support Status", href: "/support-tickets", icon: LifeBuoy },
   { label: "Audit Log", href: "/audit", icon: FileText },
 ];
 

@@ -111,4 +111,4 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
     console.error("POST /shifts/assignments error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.attendance.manage"] });

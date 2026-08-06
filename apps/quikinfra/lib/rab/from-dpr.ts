@@ -115,6 +115,9 @@ export async function aggregateFromDpr(
   const byItem = new Map<string, ItemAgg>();
   for (const dpr of dprs) {
     for (const wi of dpr.workItems ?? []) {
+      // FREE_SCOPE work items carry no boqItemId, so there is no BOQ leaf to
+      // aggregate against — step 3 below would drop them anyway.
+      if (!wi.boqItemId) continue;
       const qty = Number(wi.todayQty?.toString() ?? "0");
       if (qty <= 0) continue;
       const agg = byItem.get(wi.boqItemId) ?? {

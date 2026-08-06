@@ -1,7 +1,7 @@
 import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { requireMastersAction } from "@/lib/auth/requireMastersAction";
-import { getTenantContext, hasMatrixAction } from "@/lib/auth/context";
+import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import {
   findTermsConditionById,
@@ -22,7 +22,7 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const ctxOrResp = await requireMastersAction("view");
+  const ctxOrResp = await requireMastersAction("construction.org_terms", "view");
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
 
@@ -32,8 +32,9 @@ export async function GET(
 }
 
 async function handleUpdate(req: NextRequest, id: string) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requireMastersAction("construction.org_terms", "edit");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "org.terms", "edit")) {
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for org.terms`, 403);
   }
@@ -78,7 +79,7 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const ctxOrResp = await requireMastersAction("delete");
+  const ctxOrResp = await requireMastersAction("construction.org_terms", "delete");
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "org.terms", "delete")) {

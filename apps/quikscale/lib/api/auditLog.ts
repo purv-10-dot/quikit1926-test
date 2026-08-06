@@ -43,7 +43,8 @@ export type AuditEntityType =
   | "ClientMember"
   | "Client"
   | "Review"
-  | "Impersonation";
+  | "Impersonation"
+  | "DemoData";
 
 export interface AuditLogInput {
   orgId: string;

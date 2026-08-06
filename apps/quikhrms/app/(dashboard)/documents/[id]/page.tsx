@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Modal } from "@/components/hrms/modal";
+import { PageBackground } from "@/components/hrms/page-background";
 import { Select } from "@/components/hrms/ui/select";
 import { FileText, ArrowLeft, Check, X, Share2, Download, Calendar } from "lucide-react";
 import { clsx } from "clsx";
@@ -66,6 +67,8 @@ export default function DocumentDetailPage({ params }: { params: { id: string } 
 
   return (
     <div className="max-w-5xl">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <button
         type="button"
         onClick={() => router.back()}

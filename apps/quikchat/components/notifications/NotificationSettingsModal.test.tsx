@@ -31,6 +31,7 @@ function settings(over: Partial<NotificationSettingsDto> = {}): NotificationSett
     defaultChannelLevel: "all",
     dmsLevel: "all",
     soundEnabled: true,
+    callSoundsEnabled: true,
     desktopEnabled: false,
     emailEnabled: false,
     dndEnabled: false,
@@ -102,6 +103,29 @@ describe("settings form", () => {
     await screen.findByTestId("notification-settings");
     fireEvent.click(screen.getByRole("switch", { name: "Sound" }));
     expect(api.patchNotificationSettings).toHaveBeenCalledWith({ soundEnabled: false });
+  });
+
+  // Call sounds are an independent toggle — muting message chimes must not mute
+  // ringtones, and vice versa.
+  it("toggling Call sounds PATCHes callSoundsEnabled alone", async () => {
+    renderModal();
+    await screen.findByTestId("notification-settings");
+    fireEvent.click(screen.getByRole("switch", { name: "Call sounds" }));
+    expect(api.patchNotificationSettings).toHaveBeenCalledWith({ callSoundsEnabled: false });
+    expect(api.patchNotificationSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("Sound and Call sounds render as separate switches", async () => {
+    api.fetchNotificationSettings.mockResolvedValue(
+      settings({ soundEnabled: true, callSoundsEnabled: false }),
+    );
+    renderModal();
+    await screen.findByTestId("notification-settings");
+    expect(screen.getByRole("switch", { name: "Sound" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("switch", { name: "Call sounds" })).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
   });
 
   it("enabling DND seeds both quiet-hour times", async () => {

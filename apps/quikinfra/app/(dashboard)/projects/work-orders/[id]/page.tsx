@@ -44,6 +44,8 @@ import {
 } from "@/hooks/use-projects";
 import { useWorkCategories, useLabourCategories } from "@/hooks/use-masters";
 import { usePermissions } from "@/hooks/use-permissions";
+import { RepairApprovalNotice } from "@/components/RepairApprovalNotice";
+import { MasterApprovalAction } from "@/components/MasterApprovalAction";
 import { useWorkflowConfirm } from "@/hooks/use-workflow-confirm";
 import { isLabourWorkType, labourLineAmount, labourLineFromWoItem } from "@/lib/projects/labour-scope";
 
@@ -119,7 +121,7 @@ export default function WorkOrderDetailPage() {
   const { data: wo, isLoading } = useWorkOrder(id);
   const updateMutation = useUpdateWorkOrder();
 
-  const { permissionMatrix, isSuper } = usePermissions();
+  const { permissionMatrix, isSuper, me } = usePermissions();
   const matrixRow = permissionMatrix?.[MENU_KEY];
   const canEdit = isSuper || !matrixRow || matrixRow.edit !== false;
   const canDelete = isSuper || !matrixRow || matrixRow.delete !== false;
@@ -136,7 +138,9 @@ export default function WorkOrderDetailPage() {
   const workflow = useWorkflowConfirm({
     submitUrl: `/api/projects/work-orders/${id}/submit`,
     approveUrl: `/api/projects/work-orders/${id}/approve`,
-    invalidateKeys: [["work-order", id], ["work-orders"]],
+    // "dashboard" too: approving is what flips a WO to `approved`, which is
+    // what the dashboard's Active Work Orders tile counts.
+    invalidateKeys: [["work-order", id], ["work-orders"], ["dashboard"]],
   });
 
   const boqItems: BoqScopeItem[] = useMemo(
@@ -144,6 +148,7 @@ export default function WorkOrderDetailPage() {
     [wo],
   );
   const isLabourOnly = isLabourWorkType(wo?.workType);
+  const isFreeScope = boqItems.some((it) => it.scopeType === "ACTIVITY");
   const { data: workCategoriesResult } = useWorkCategories();
   const workCategoryNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -298,6 +303,13 @@ export default function WorkOrderDetailPage() {
                 </button>
               </>
             )}
+            <MasterApprovalAction
+              approval={wo?.approval}
+              me={me}
+              entityLabel="work order"
+              actionEndpoint={`/api/projects/work-orders/${id}/approve`}
+              invalidateKeys={[["work-orders"], ["work-order", id]]}
+            />
             {isPending && !canApprove && (
               <span className={`${HEADER_PILL} ${PILL_TONE.amber}`}>
                 Awaiting approver
@@ -317,6 +329,14 @@ export default function WorkOrderDetailPage() {
             page: main content stack on the left, Approval Timeline +
             Audit pinned in a right sidebar. Collapses to a single
             column under lg. */}
+        <RepairApprovalNotice
+          repair={wo?.approval?.repair}
+          entityLabel="work order"
+          actionEndpoint={`/api/projects/work-orders/${id}/approve`}
+          invalidateKeys={[["work-orders"], ["work-order", id]]}
+          me={me}
+        />
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
             {/* ── Overview card ────────────────────────────────────
@@ -338,8 +358,15 @@ export default function WorkOrderDetailPage() {
                 {/* Left: stat grid */}
                 <dl className="lg:col-span-8 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5 px-6 py-5 text-sm">
                   <OverviewStat label="Project">
-                    <span className="font-medium text-gray-900 truncate">
-                      {wo.projectName ?? "—"}
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <span className="font-medium text-gray-900 truncate">
+                        {wo.projectName ?? "—"}
+                      </span>
+                      {isFreeScope && (
+                        <span className="shrink-0 whitespace-nowrap rounded bg-accent-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-accent-700 border border-accent-200">
+                          Free-Scope
+                        </span>
+                      )}
                     </span>
                   </OverviewStat>
 
@@ -463,7 +490,7 @@ export default function WorkOrderDetailPage() {
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-gray-900">
-                  {isLabourOnly ? "Work Order Details" : "BOQ Scope"}
+                  {isLabourOnly ? "Work Order Details" : isFreeScope ? "Activity Scope" : "BOQ Scope"}
                 </h2>
                 <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500 bg-gray-50 border border-gray-200 px-2 py-0.5 rounded-full">
                   {boqItems.length} item{boqItems.length === 1 ? "" : "s"}

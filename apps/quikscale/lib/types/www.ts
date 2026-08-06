@@ -6,6 +6,12 @@ export type WWWItem = {
   whoIds: string[];
   what: string;
   when: string;
+  /**
+   * True when the due date is "To Be Decided". `when` still carries a
+   * placeholder date (the creation date) so existing consumers keep working —
+   * read this flag before rendering `when`.
+   */
+  dueDateTBD?: boolean;
   status: string;
   notes?: string | null;
   category?: string | null;

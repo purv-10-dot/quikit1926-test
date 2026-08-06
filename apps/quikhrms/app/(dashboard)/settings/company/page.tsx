@@ -6,10 +6,11 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient, ApiError } from "@/lib/hooks/use-api";
 import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
-import { Building2, Save, Upload, X, Globe, Mail, Phone, MapPin, Landmark, ImageIcon, Trash2, RefreshCw, CheckCircle2 } from "lucide-react";
+import { Building2, Save, Upload, Globe, Mail, Phone, MapPin, Landmark, Trash2, RefreshCw, RotateCcw, CheckCircle2 } from "lucide-react";
 import { clsx } from "clsx";
 import { withBasePath } from "@/lib/utils/base-path";
 import { SkeletonLine } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 import { useToast } from "@/components/hrms/toast";
 import { PAN_PATTERN, TAN_PATTERN, GSTIN_PATTERN, CIN_PATTERN, ID_TITLES } from "@/lib/validations/identifiers";
 
@@ -57,6 +58,8 @@ const MONTHS = [
 export default function CompanySettingsPage() {
   return (
     <Suspense fallback={<div className="p-4 space-y-2"><SkeletonLine w="40%" h={16} /><SkeletonLine w="70%" h={12} /><SkeletonLine w="60%" h={12} /></div>}>
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <CompanySettingsPageInner />
     </Suspense>
   );
@@ -81,15 +84,22 @@ function CompanySettingsPageInner() {
     queryFn: () => api.get<CompanySettings>("/api/v1/hrms/settings/company"),
   });
 
+  const normalizeFromServer = (d: CompanySettings): CompanySettings => ({
+    ...d,
+    workWeek: d.workWeek ?? DAYS.slice(0, 5),
+    workHoursPerDay: typeof d.workHoursPerDay === "string" ? parseFloat(d.workHoursPerDay) : d.workHoursPerDay,
+  });
+
   useEffect(() => {
-    if (data?.data) {
-      setForm({
-        ...data.data,
-        workWeek: data.data.workWeek ?? DAYS.slice(0, 5),
-        workHoursPerDay: typeof data.data.workHoursPerDay === "string" ? parseFloat(data.data.workHoursPerDay) : data.data.workHoursPerDay,
-      });
-    }
+    if (data?.data) setForm(normalizeFromServer(data.data));
   }, [data]);
+
+  const handleDiscard = () => {
+    if (data?.data) setForm(normalizeFromServer(data.data));
+    setSaveErr(null);
+    setFieldErrors({});
+    setSaved(false);
+  };
 
   const saveMut = useMutation({
     mutationFn: (body: Partial<CompanySettings>) => api.put("/api/v1/hrms/settings/company", body),
@@ -162,11 +172,9 @@ function CompanySettingsPageInner() {
 
   return (
     <div className="w-full">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <Building2 className="text-[#22c55e]" />
-          <h1 className="text-base font-semibold text-gray-900">Company Settings</h1>
-        </div>
+      <div className="mb-4">
+        <h1 className="text-lg font-semibold text-gray-900">Company Settings</h1>
+        <p className="text-xs text-gray-500 mt-0.5">Manage your organization&apos;s information and preferences</p>
       </div>
 
       {saved && (
@@ -241,30 +249,26 @@ function CompanySettingsPageInner() {
         }}
         className="space-y-4"
       >
-        {/* Brand */}
-        <Section title="Brand" icon={<Building2 size={16} />}>
+        {/* Company Information */}
+        <Section title="Company Information" description="Basic details about your organization" icon={<Building2 size={16} />}>
           <div className="flex items-start gap-4">
-            <div className="shrink-0 w-44">
+            <div className="shrink-0 w-56">
               <label className="block text-xs font-medium text-gray-600 mb-2">Company Logo</label>
               <input ref={logoInputRef} type="file" className="hidden" accept="image/png,image/jpeg,image/webp"
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) logoUploadMut.mutate(f); e.target.value = ""; }} />
 
               {form.logo ? (
-                <div className="flex flex-col items-center">
-                  <div className="relative">
-                    <div className="w-36 h-36 rounded-full bg-gradient-to-br from-gray-50 to-white border border-gray-200 shadow-sm overflow-hidden p-1 ring-4 ring-[#dcfce7]/60">
-                      <div className="w-full h-full rounded-full overflow-hidden bg-white">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={withBasePath(form.logo)} alt="Logo" className="w-full h-full object-cover" />
-                      </div>
-                    </div>
+                <div>
+                  <div className="relative w-full h-28 rounded-xl border border-gray-200 bg-gray-50 overflow-hidden flex items-center justify-center">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={withBasePath(form.logo)} alt="Logo" className="w-full h-full object-contain p-2" />
                     {logoUploadMut.isPending && (
-                      <div className="absolute inset-0 rounded-full bg-white/70 backdrop-blur-sm flex items-center justify-center">
+                      <div className="absolute inset-0 bg-white/70 backdrop-blur-sm flex items-center justify-center">
                         <RefreshCw size={18} className="text-[#22c55e] animate-spin" />
                       </div>
                     )}
                   </div>
-                  <div className="mt-3 flex items-center gap-2 w-full">
+                  <div className="mt-2 flex items-center gap-2">
                     <button type="button" onClick={() => logoInputRef.current?.click()} disabled={logoUploadMut.isPending}
                       className="flex-1 inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-xs font-semibold shadow-sm transition disabled:opacity-60">
                       <RefreshCw size={12} /> Replace
@@ -278,10 +282,10 @@ function CompanySettingsPageInner() {
                 </div>
               ) : (
                 <button type="button" onClick={() => logoInputRef.current?.click()} disabled={logoUploadMut.isPending}
-                  className="group w-36 h-36 mx-auto rounded-full border-2 border-dashed border-gray-300 bg-gradient-to-br from-gray-50 to-white flex flex-col items-center justify-center gap-1 text-gray-400 hover:border-[#22c55e] hover:from-[#dcfce7] hover:to-[#dcfce7] hover:text-[#22c55e] transition disabled:opacity-60">
-                  {logoUploadMut.isPending ? <RefreshCw size={22} className="animate-spin" /> : <ImageIcon size={22} />}
+                  className="group w-full h-28 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 flex flex-col items-center justify-center gap-1 text-gray-400 hover:border-[#22c55e] hover:bg-[#dcfce7]/40 hover:text-[#16a34a] transition disabled:opacity-60">
+                  {logoUploadMut.isPending ? <RefreshCw size={20} className="animate-spin" /> : <Upload size={20} />}
                   <span className="text-xs font-medium">{logoUploadMut.isPending ? "Uploading..." : "Upload logo"}</span>
-                  <span className="text-[10px] text-gray-400 px-2 text-center">PNG · JPG · WEBP · 10MB</span>
+                  <span className="text-[10px] text-gray-400">PNG, JPG, WEBP (Max 4MB)</span>
                 </button>
               )}
               {uploadError && (
@@ -310,21 +314,24 @@ function CompanySettingsPageInner() {
         </Section>
 
         {/* Address */}
-        <Section title="Registered Address" icon={<MapPin size={16} />}>
-          <div className="grid grid-cols-2 xl:grid-cols-3 gap-3">
-            <Field label="Address Line 1" required className="col-span-2">
+        <Section title="Registered Address" description="Your registered office address" icon={<MapPin size={16} />}>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Field label="Address Line 1" required>
               <input type="text" value={form.addressLine1 ?? ""} onChange={(e) => setForm({ ...form, addressLine1: e.target.value })} required className={inputCls} />
             </Field>
-            <Field label="Address Line 2" className="col-span-2">
+            <Field label="Address Line 2">
               <input type="text" value={form.addressLine2 ?? ""} onChange={(e) => setForm({ ...form, addressLine2: e.target.value })} className={inputCls} />
             </Field>
             <Field label="City" required>
               <input type="text" required value={form.city ?? ""} onChange={(e) => setForm({ ...form, city: e.target.value })} className={inputCls} />
             </Field>
+            <Field label="Postal Code">
+              <input type="text" value={form.postalCode ?? ""} onChange={(e) => setForm({ ...form, postalCode: e.target.value })} className={inputCls} />
+            </Field>
             <Field label="State / Province" required>
               <input type="text" required value={form.state ?? ""} onChange={(e) => setForm({ ...form, state: e.target.value })} className={inputCls} />
             </Field>
-            <Field label="Country">
+            <Field label="Country" required>
               <Select
                 value={form.country ?? "India"}
                 onChange={(v) => setForm({ ...form, country: v })}
@@ -332,15 +339,12 @@ function CompanySettingsPageInner() {
                 options={COUNTRIES.map((c) => ({ value: c, label: c }))}
               />
             </Field>
-            <Field label="Postal Code">
-              <input type="text" value={form.postalCode ?? ""} onChange={(e) => setForm({ ...form, postalCode: e.target.value })} className={inputCls} />
-            </Field>
           </div>
         </Section>
 
         {/* Statutory */}
-        <Section title="Statutory" icon={<Landmark size={16} />}>
-          <div className="grid grid-cols-2 xl:grid-cols-3 gap-3">
+        <Section title="Statutory Information" description="Tax and statutory details" icon={<Landmark size={16} />}>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Field label="GSTIN" required>
               <input
                 type="text"
@@ -378,9 +382,6 @@ function CompanySettingsPageInner() {
                 className={clsx(inputCls, "font-mono tracking-wider")}
               />
             </Field>
-          </div>
-
-          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
             <Field label="TAN" required>
               <input
                 type="text"
@@ -394,11 +395,13 @@ function CompanySettingsPageInner() {
                 className={clsx(inputCls, "font-mono tracking-wider")}
               />
             </Field>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                TDS circle / AO code <span className="text-red-500">*</span>
-              </label>
-              <div className="grid grid-cols-4 gap-2">
+          </div>
+
+          <div className="mt-3">
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              TDS Circle / AO Code <span className="text-red-500">*</span>
+            </label>
+            <div className="grid grid-cols-4 gap-2 max-w-md">
               <input
                 placeholder="AAA" maxLength={3} required
                 value={form.tdsCircleCodeArea ?? ""}
@@ -423,14 +426,13 @@ function CompanySettingsPageInner() {
                 onChange={(e) => setForm({ ...form, tdsCircleSubNumber: e.target.value })}
                 className={clsx(inputCls, "font-mono tracking-wider")}
               />
-              </div>
             </div>
           </div>
         </Section>
 
         {/* Locale & Work */}
-        <Section title="Locale & Work Week" icon={<Globe size={16} />}>
-          <div className="grid grid-cols-2 xl:grid-cols-3 gap-3 mb-4">
+        <Section title="Locale & Work Settings" description="Define your work preferences" icon={<Globe size={16} />}>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
             <Field label="Timezone">
               <Select
                 value={form.timezone ?? "Asia/Kolkata"}
@@ -458,6 +460,9 @@ function CompanySettingsPageInner() {
               <NumberInput step="0.5" min={1} max={24} value={typeof form.workHoursPerDay === "string" ? Number(form.workHoursPerDay) || null : (form.workHoursPerDay ?? 8)}
                 onChange={(v) => setForm({ ...form, workHoursPerDay: v ?? 8 })} className={inputCls} />
             </Field>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
             <Field label="Candidate Re-apply Cooling Period" required>
               <Select
                 value={String(form.candidateCoolingMonths ?? 0)}
@@ -470,26 +475,29 @@ function CompanySettingsPageInner() {
                 ]}
               />
             </Field>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Working Days</label>
-            <div className="flex flex-wrap gap-2">
-              {DAYS.map((d) => {
-                const active = form.workWeek?.includes(d);
-                return (
-                  <button type="button" key={d} onClick={() => toggleDay(d)}
-                    className={clsx("px-3 py-1.5 rounded-lg text-xs font-medium border transition",
-                      active ? "bg-green-600 text-white border-[#22c55e]" : "bg-white text-gray-700 border-gray-300 hover:border-[#86efac]")}>
-                    {d.slice(0, 3)}
-                  </button>
-                );
-              })}
+            <div className="md:col-span-2">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Working Days</label>
+              <div className="flex flex-wrap gap-2">
+                {DAYS.map((d) => {
+                  const active = form.workWeek?.includes(d);
+                  return (
+                    <button type="button" key={d} onClick={() => toggleDay(d)}
+                      className={clsx("px-3 py-1.5 rounded-lg text-xs font-medium border transition",
+                        active ? "bg-green-600 text-white border-[#22c55e]" : "bg-white text-gray-700 border-gray-300 hover:border-[#86efac]")}>
+                      {d.slice(0, 3)}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </Section>
 
-        <div className="flex justify-end pt-2">
+        <div className="flex justify-between items-center pt-2">
+          <button type="button" onClick={handleDiscard} disabled={saveMut.isPending}
+            className="flex items-center gap-2 bg-white text-gray-600 border border-gray-300 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-50 disabled:opacity-50">
+            <RotateCcw size={13} /> Discard Changes
+          </button>
           <button type="submit" disabled={saveMut.isPending}
             className="flex items-center gap-2 bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-50">
             <Save size={13} /> {saveMut.isPending ? "Saving..." : "Save Settings"}
@@ -502,13 +510,20 @@ function CompanySettingsPageInner() {
 
 const inputCls = "w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]";
 
-function Section({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
+function Section({
+  title, description, icon, children,
+}: { title: string; description?: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-      <h2 className="flex items-center gap-2 text-[13px] font-semibold text-gray-900 mb-4">
-        <span className="text-[#22c55e]">{icon}</span>
-        {title}
-      </h2>
+      <div className="flex items-start gap-3 mb-4">
+        <span className="shrink-0 w-9 h-9 rounded-xl bg-[#dcfce7] text-[#16a34a] flex items-center justify-center">
+          {icon}
+        </span>
+        <div>
+          <h2 className="text-[13px] font-semibold text-gray-900">{title}</h2>
+          {description && <p className="text-[11px] text-gray-500 mt-0.5">{description}</p>}
+        </div>
+      </div>
       {children}
     </div>
   );

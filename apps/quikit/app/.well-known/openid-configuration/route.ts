@@ -15,7 +15,6 @@ import type { NextRequest } from "next/server";
  */
 
 
-
 export async function GET(request: NextRequest) {
   // Prefer NEXTAUTH_URL as the canonical issuer; fall back to request origin
   // for local dev. The `iss` claim in id_tokens uses the same value

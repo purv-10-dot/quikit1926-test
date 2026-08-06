@@ -11,11 +11,14 @@ import { useDialog } from "@/components/hrms/dialog";
 import { Plus, GitBranch, Trash2, X, Pencil, ArrowRight, User, Shield, Settings as SettingsIcon, ChevronDown } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonCards } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 
 type ApprovalModule =
   | "Leave" | "Expense" | "Asset" | "Onboarding" | "Offboarding"
   | "Attendance" | "Document" | "Engagement" | "Feedback"
-  | "Reimbursement" | "ProofOfInvestment" | "SalaryRevision" | "OneTimeEarning" | "Requisition";
+  | "Reimbursement" | "ProofOfInvestment" | "SalaryRevision" | "OneTimeEarning" | "Requisition"
+  | "WFH" | "Payroll";
 type ApproverKind = "ROLE" | "USER";
 
 interface Level {
@@ -47,17 +50,21 @@ interface EmployeeRef {
   workEmail: string;
 }
 
+// Modules whose approval is driven by a central chain. Leave + Requisition use
+// the strict chain engine; Engagement + Feedback use content-moderation.
+// Expense, WFH, Offboarding (resignation) and Payroll consume their active
+// chain when one exists, falling back to their legacy per-module behaviour
+// otherwise (so an org that hasn't configured a chain keeps working).
 const MODULES: ApprovalModule[] = [
-  "Leave", "Expense", "Onboarding", "Offboarding",
-  "Attendance", "Document", "Engagement", "Feedback",
-  "Reimbursement", "ProofOfInvestment", "SalaryRevision", "OneTimeEarning", "Requisition",
+  "Leave", "Requisition", "Engagement", "Feedback",
+  "Expense", "WFH", "Offboarding", "Payroll",
 ];
 
 const MODULE_ICON: Record<ApprovalModule, string> = {
   Leave: "🌴", Expense: "💰", Asset: "💻", Onboarding: "👋", Offboarding: "👋",
   Attendance: "🕐", Document: "📄", Engagement: "🎉", Feedback: "💬",
   Reimbursement: "🧾", ProofOfInvestment: "🛡️", SalaryRevision: "📈", OneTimeEarning: "🎁",
-  Requisition: "📋",
+  Requisition: "📋", WFH: "🏠", Payroll: "💵",
 };
 
 // Human-readable labels for the Select / display.
@@ -76,6 +83,8 @@ const MODULE_LABEL: Record<ApprovalModule, string> = {
   SalaryRevision: "Salary Revision",
   OneTimeEarning: "One-Time Earning / Deduction",
   Requisition: "Requisition",
+  WFH: "Work From Home",
+  Payroll: "Payroll",
 };
 
 interface FormState {
@@ -101,6 +110,8 @@ export default function ApprovalChainsPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [moduleFilter, setModuleFilter] = useState<string>("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [advancedIdx, setAdvancedIdx] = useState<Set<number>>(new Set());
 
@@ -206,10 +217,14 @@ export default function ApprovalChainsPage() {
   };
 
   const chains = data?.data ?? [];
+  const totalPages = Math.max(1, Math.ceil(chains.length / PAGE_SIZE));
+  const pageItems = chains.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const validForm = form.levels.every((l) => (l.kind === "ROLE" ? !!l.roleId : !!l.userId));
 
   return (
     <div className="space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       {/* Header */}
       <div className="flex items-center justify-between bg-white rounded-lg border border-gray-200 px-4 py-4">
         <div className="flex items-center gap-3">
@@ -224,7 +239,7 @@ export default function ApprovalChainsPage() {
         <div className="flex items-center gap-2">
           <Select
             value={moduleFilter}
-            onChange={(v) => setModuleFilter(v)}
+            onChange={(v) => { setModuleFilter(v); setPage(1); }}
             placeholder="All modules"
             options={[{ value: "", label: "All modules" }, ...MODULES.map((m) => ({ value: m, label: `${MODULE_ICON[m]}  ${m}` }))]}
             className="w-44"
@@ -250,8 +265,9 @@ export default function ApprovalChainsPage() {
           </button>
         </div>
       ) : (
+        <>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {chains.map((c) => (
+          {pageItems.map((c) => (
             <div
               key={c.id}
               className={clsx(
@@ -339,6 +355,8 @@ export default function ApprovalChainsPage() {
             </div>
           ))}
         </div>
+        <Pagination page={page} totalPages={totalPages} total={chains.length} limit={PAGE_SIZE} onPageChange={setPage} className="border-t-0 px-0" />
+        </>
       )}
 
       {/* Create / Edit Modal */}

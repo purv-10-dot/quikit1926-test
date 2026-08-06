@@ -3,7 +3,7 @@
 import Link from "next/link";
 import dynamic from "next/dynamic";
 
-export { COLORS, INR, INR_LAKH } from "./_shared-constants";
+export { INR, INR_LAKH } from "./_shared-constants";
 
 // Lazy-load recharts so the heavy chart bundle (~60KB gzipped) is only fetched
 // when a tab actually renders a Donut.

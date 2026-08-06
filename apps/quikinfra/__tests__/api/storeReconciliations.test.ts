@@ -34,6 +34,9 @@ beforeEach(() => {
   db.cnUOM.findMany.mockResolvedValue([]);
   db.cnLocation.findMany.mockResolvedValue([]);
   db.cnStockReconciliation.findMany.mockResolvedValue([]);
+  // resolveUserNames → findCnUsersByIds → db.user.findMany, used by the list
+  // route to name the conductor on rows that predate `conductedByName`.
+  db.user.findMany.mockResolvedValue([]);
 });
 
 // ═══════════════════════════════════════════════
@@ -65,7 +68,7 @@ describe("GET /api/store/reconciliations", () => {
         createdAt: new Date(),
         updatedAt: new Date(),
         project: { name: "Acme Tower" },
-        _count: { lines: 2 },
+        lineCount: 2,
       },
     ]);
     const res = await GET(buildGET());
@@ -74,6 +77,48 @@ describe("GET /api/store/reconciliations", () => {
     expect(body.data[0].reconciliationNumber).toBe("REC-001");
     expect(body.data[0].lineCount).toBe(2);
     expect(db.cnStockReconciliation.findMany.mock.calls[0][0].where.orgId).toBe(TEST_TENANT);
+  });
+
+  /** One list row, with `conductedByName` overridable per test. */
+  function reconRow(over: Record<string, unknown> = {}) {
+    return {
+      id: "r1",
+      reconciliationNumber: "REC-001",
+      projectId: "proj1",
+      locationId: "loc1",
+      reconciliationDate: new Date("2026-01-15"),
+      conductedById: TEST_USER,
+      conductedByName: null,
+      approvedById: null,
+      status: "draft",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      project: { name: "Acme Tower" },
+      lineCount: 2,
+      ...over,
+    };
+  }
+
+  it("returns the stored Conducted By name for the list column", async () => {
+    setContext(makeAdminCtx());
+    db.cnStockReconciliation.findMany.mockResolvedValue([
+      reconRow({ conductedByName: "Ramesh (contractor)" }),
+    ]);
+    const body = await (await GET(buildGET())).json();
+    // The column reads `conductedByName`; the route used to omit it entirely.
+    expect(body.data[0].conductedByName).toBe("Ramesh (contractor)");
+    // No name lookup needed when the row carries its own text.
+    expect(db.user.findMany).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the FK user's name for rows created before the column existed", async () => {
+    setContext(makeAdminCtx());
+    db.cnStockReconciliation.findMany.mockResolvedValue([reconRow()]);
+    db.user.findMany.mockResolvedValue([
+      { id: TEST_USER, firstName: "Admin", lastName: "User", email: "admin@test.io" },
+    ]);
+    const body = await (await GET(buildGET())).json();
+    expect(body.data[0].conductedByName).not.toBe("");
   });
 });
 
@@ -133,7 +178,7 @@ describe("POST /api/store/reconciliations", () => {
       conductedById: TEST_USER,
       status: "draft",
       project: { name: "Acme Tower" },
-      lines: [{ id: "l1" }],
+      lineCount: 1,
       createdAt: new Date(),
     });
     const res = await POST(buildPOST(VALID_BODY));
@@ -143,6 +188,52 @@ describe("POST /api/store/reconciliations", () => {
     const data = db.cnStockReconciliation.create.mock.calls[0][0].data;
     expect(data.orgId).toBe(TEST_TENANT);
     expect(data.conductedById).toBe(TEST_USER);
+    // Lines persist inline as a JSONB materials array, not a relational create.
+    expect(Array.isArray(data.materials)).toBe(true);
+    expect(data.lineCount).toBe(1);
+    expect(data.lines).toBeUndefined();
+  });
+
+  it("persists the free-typed Conducted By name and echoes it back", async () => {
+    setContext(makeAdminCtx());
+    db.cnItem.findMany.mockResolvedValue([{ id: "i1", uomId: "u1" }]);
+    db.cnStockReconciliation.create.mockImplementation(async (args: any) => ({
+      id: "r1",
+      reconciliationNumber: "REC-001",
+      projectId: "proj1",
+      locationId: "loc1",
+      reconciliationDate: new Date("2026-01-15"),
+      conductedById: args.data.conductedById,
+      conductedByName: args.data.conductedByName,
+      status: "draft",
+      project: { name: "Acme Tower" },
+      lineCount: 1,
+      createdAt: new Date(),
+    }));
+
+    const res = await POST(
+      buildPOST({ ...VALID_BODY, conductedBy: "Ramesh (contractor)" }),
+    );
+    expect(res.status).toBe(201);
+    // The typed name must reach the DB — it used to be dropped entirely, so
+    // the list column had nothing to render.
+    const data = db.cnStockReconciliation.create.mock.calls[0][0].data;
+    expect(data.conductedByName).toBe("Ramesh (contractor)");
+    expect(data.conductedById).toBe(TEST_USER); // FK stays the creator
+    expect((await res.json()).conductedByName).toBe("Ramesh (contractor)");
+  });
+
+  it("stores conductedByName as null when the field is blank", async () => {
+    setContext(makeAdminCtx());
+    db.cnItem.findMany.mockResolvedValue([{ id: "i1", uomId: "u1" }]);
+    db.cnStockReconciliation.create.mockResolvedValue({
+      id: "r1", reconciliationNumber: "REC-001", projectId: "proj1",
+      locationId: "loc1", reconciliationDate: new Date("2026-01-15"),
+      conductedById: TEST_USER, conductedByName: null, status: "draft",
+      project: { name: "Acme Tower" }, lineCount: 1, createdAt: new Date(),
+    });
+    await POST(buildPOST({ ...VALID_BODY, conductedBy: "   " }));
+    expect(db.cnStockReconciliation.create.mock.calls[0][0].data.conductedByName).toBeNull();
   });
 
   it("maps a Prisma P2002 unique violation to 409", async () => {

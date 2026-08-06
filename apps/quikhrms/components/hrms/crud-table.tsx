@@ -4,11 +4,12 @@ import { useState } from "react";
 import { Plus, Pencil, Trash2, Search, X } from "lucide-react";
 import { EmptyState } from "@/components/hrms/empty-state";
 import { Skeleton } from "@/components/hrms/skeleton";
+import { Pagination, type PaginationProps } from "@/components/hrms/pagination";
 
 export interface Column<T> {
   key: string;
   label: string;
-  render?: (item: T) => React.ReactNode;
+  render?: (item: T, index: number) => React.ReactNode;
 }
 
 interface CrudTableProps<T extends { id: string }> {
@@ -24,6 +25,15 @@ interface CrudTableProps<T extends { id: string }> {
   onSearchChange: (v: string) => void;
   /** Optional extra action buttons rendered before Edit in each row's action cell. */
   extraActions?: (item: T) => React.ReactNode;
+  /** Optional server-side pager rendered under the table. */
+  pagination?: PaginationProps;
+  /**
+   * Whether the caller may Add/Edit/Delete — defaults to true so every
+   * existing caller keeps working unchanged. Pass the page's write-permission
+   * check (e.g. `hasPermission("hrms.org.write")`) to hide these actions for a
+   * view-only user instead of letting them click through to a backend 403.
+   */
+  canManage?: boolean;
 }
 
 export function CrudTable<T extends { id: string }>({
@@ -38,6 +48,8 @@ export function CrudTable<T extends { id: string }>({
   search,
   onSearchChange,
   extraActions,
+  pagination,
+  canManage = true,
 }: CrudTableProps<T>) {
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
@@ -45,9 +57,11 @@ export function CrudTable<T extends { id: string }>({
     <div>
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <h1 className="text-base font-semibold text-gray-900">{title}</h1>
-        <button onClick={onAdd} className="btn btn-primary">
-          <Plus size={13} /> Add new
-        </button>
+        {canManage && (
+          <button onClick={onAdd} className="btn btn-primary">
+            <Plus size={13} /> Add new
+          </button>
+        )}
       </div>
 
       <div className="surface-card overflow-hidden">
@@ -59,7 +73,7 @@ export function CrudTable<T extends { id: string }>({
               placeholder={searchPlaceholder}
               value={search}
               onChange={(e) => onSearchChange(e.target.value)}
-              className="w-full ds-control pl-9"
+              className="w-full ds-control !pl-9"
             />
           </div>
         </div>
@@ -97,8 +111,8 @@ export function CrudTable<T extends { id: string }>({
             <EmptyState
               variant="search"
               title="No items found"
-              description={search ? `No results for "${search}". Try a different search or add a new entry.` : `No ${title.toLowerCase()} yet. Click Add new to get started.`}
-              action={<button onClick={onAdd} className="btn btn-primary"><Plus size={13} /> Add new</button>}
+              description={search ? `No results for "${search}". Try a different search or add a new entry.` : canManage ? `No ${title.toLowerCase()} yet. Click Add new to get started.` : `No ${title.toLowerCase()} yet.`}
+              action={canManage ? <button onClick={onAdd} className="btn btn-primary"><Plus size={13} /> Add new</button> : undefined}
               className="border-0 shadow-none"
             />
           </div>
@@ -122,41 +136,45 @@ export function CrudTable<T extends { id: string }>({
                   {columns.map((col) => (
                     <td key={col.key}>
                       {col.render
-                        ? col.render(item)
+                        ? col.render(item, i)
                         : String((item as Record<string, unknown>)[col.key] ?? "—")}
                     </td>
                   ))}
                   <td className="text-right">
                     <div className="flex items-center justify-end gap-1">
                       {extraActions?.(item)}
-                      <button
-                        onClick={() => onEdit(item)}
-                        className="w-8 h-8 inline-flex items-center justify-center text-gray-400 hover:text-[#22c55e] rounded-lg hover:bg-green-50"
-                      >
-                        <Pencil size={12} />
-                      </button>
-                      {deleteId === item.id ? (
-                        <div className="flex items-center gap-1">
+                      {canManage && (
+                        <>
                           <button
-                            onClick={() => { onDelete(item.id); setDeleteId(null); }}
-                            className="btn btn-danger btn-sm"
+                            onClick={() => onEdit(item)}
+                            className="w-8 h-8 inline-flex items-center justify-center text-gray-400 hover:text-[#22c55e] rounded-lg hover:bg-green-50"
                           >
-                            Confirm
+                            <Pencil size={12} />
                           </button>
-                          <button
-                            onClick={() => setDeleteId(null)}
-                            className="p-1 text-gray-400 hover:text-gray-600"
-                          >
-                            <X size={14} />
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => setDeleteId(item.id)}
-                          className="w-8 h-8 inline-flex items-center justify-center text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50"
-                        >
-                          <Trash2 size={12} />
-                        </button>
+                          {deleteId === item.id ? (
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => { onDelete(item.id); setDeleteId(null); }}
+                                className="btn btn-danger btn-sm"
+                              >
+                                Confirm
+                              </button>
+                              <button
+                                onClick={() => setDeleteId(null)}
+                                className="p-1 text-gray-400 hover:text-gray-600"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setDeleteId(item.id)}
+                              className="w-8 h-8 inline-flex items-center justify-center text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
                   </td>
@@ -165,6 +183,8 @@ export function CrudTable<T extends { id: string }>({
             </tbody>
           </table>
         )}
+
+        {pagination && !isLoading && data.length > 0 && <Pagination {...pagination} />}
       </div>
     </div>
   );

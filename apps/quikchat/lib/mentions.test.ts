@@ -1,6 +1,46 @@
 import type { Mention } from "@/lib/shared";
 import { describe, expect, it } from "vitest";
-import { computeMentions, findMentionQuery, segmentContent } from "./mentions";
+import {
+  computeMentions,
+  findMentionQuery,
+  mentionableMembers,
+  segmentContent,
+} from "./mentions";
+
+describe("mentionableMembers (QC_015 — cannot mention yourself)", () => {
+  const members = [
+    { id: "u-me", displayName: "Alice" },
+    { id: "u-bob", displayName: "Bob" },
+    { id: "u-cara", displayName: "Cara" },
+  ];
+
+  it("excludes the current user, keeps everyone else", () => {
+    expect(mentionableMembers(members, "u-me")).toEqual([
+      { id: "u-bob", displayName: "Bob" },
+      { id: "u-cara", displayName: "Cara" },
+    ]);
+  });
+
+  it("returns the list unchanged when currentUserId is undefined", () => {
+    expect(mentionableMembers(members, undefined)).toEqual(members);
+  });
+
+  it("is empty-safe and non-mutating", () => {
+    const input = [...members];
+    expect(mentionableMembers([], "u-me")).toEqual([]);
+    mentionableMembers(input, "u-bob");
+    expect(input).toEqual(members); // original untouched
+  });
+
+  it("filtered members produce no self-mention in computeMentions", () => {
+    // Typing your own name against the filtered candidate list yields no ref.
+    const filtered = mentionableMembers(members, "u-me");
+    expect(computeMentions("hey @Alice", filtered)).toEqual([]);
+    expect(computeMentions("hey @Bob", filtered)).toEqual([
+      { userId: "u-bob", offsetStart: 4, offsetEnd: 8 },
+    ]);
+  });
+});
 
 describe("segmentContent", () => {
   it("splits text around a valid mention", () => {

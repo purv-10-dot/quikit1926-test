@@ -11,8 +11,12 @@ import {
   User, Mail, FileText, Clock, Briefcase, MapPin, Phone, IndianRupee, Globe,
   Star, ThumbsUp, AlertTriangle, Check, X, ExternalLink, Inbox, ChevronDown,
   Ban, Archive, ArchiveRestore, RotateCcw, ShieldX, Rocket, MessageSquare, BellRing,
+  Download, Link2, ClipboardList,
 } from "lucide-react";
+import { withBasePath } from "@/lib/utils/base-path";
 import { SkeletonLine } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
+import { TabSwitcher } from "@/components/hrms/tab-switcher";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -21,6 +25,12 @@ interface Application {
   currentStage: string | null;
   status: string;
   requisition: { id: string; title: string; requisitionNumber: string } | null;
+  screeningAnswers?: {
+    answers?: Record<string, string>;
+    technical?: { question: string; answer: string }[];
+    comments?: string;
+    submittedAt?: string;
+  } | null;
 }
 interface Candidate {
   id: string;
@@ -85,9 +95,11 @@ export default function CandidateDetailPage() {
 
   return (
     <div className="w-full px-5 py-4 space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       {/* Header card */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 px-5 pt-5">
-        <div className="flex items-start justify-between gap-4 flex-wrap pb-4">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-14 h-14 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-lg font-bold shrink-0">
               {isLoading ? "" : initials}
@@ -117,23 +129,14 @@ export default function CandidateDetailPage() {
             </a>
           )}
         </div>
-
-        {/* Tabs */}
-        <div className="flex items-center gap-1 border-t border-gray-100 -mx-5 px-5 overflow-x-auto">
-          {TABS.map((t) => {
-            const active = tab === t.key;
-            return (
-              <button key={t.key} onClick={() => setTab(t.key)}
-                className={clsx(
-                  "inline-flex items-center gap-1.5 px-3 py-3 text-[13px] font-semibold border-b-2 -mb-px transition whitespace-nowrap",
-                  active ? "border-green-600 text-green-700" : "border-transparent text-gray-500 hover:text-gray-800",
-                )}>
-                {t.icon} {t.label}
-              </button>
-            );
-          })}
-        </div>
       </div>
+
+      {/* Tabs */}
+      <TabSwitcher
+        value={tab}
+        onChange={(v) => setTab(v as TabKey)}
+        tabs={TABS.map((t) => ({ value: t.key, label: t.label, icon: t.icon }))}
+      />
 
       {/* Tab content */}
       {tab === "overview" && <OverviewTab candidate={c} loading={isLoading} />}
@@ -151,6 +154,13 @@ function expLabel(months: number | null) {
   if (months == null) return "—";
   return `${Math.floor(months / 12)}y ${months % 12}m`;
 }
+
+const SCREENING_LABELS: Record<string, string> = {
+  name: "Name", contact: "Number", email: "Email", techStack: "Tech stack",
+  experience: "EXP", location: "Location", reasonForChange: "Reason for job change",
+  noticePeriod: "Notice period", currentSalary: "Current salary",
+  expectedSalary: "Expected salary", communication: "Communication",
+};
 
 function Row({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
   return (
@@ -231,6 +241,55 @@ function OverviewTab({ candidate: c, loading }: { candidate: Candidate | undefin
           </div>
         )}
       </div>
+
+      {c.applications
+        .filter((a) => a.screeningAnswers && (
+          Object.values(a.screeningAnswers.answers ?? {}).some(Boolean) ||
+          (a.screeningAnswers.technical ?? []).some((t) => t.answer) ||
+          !!a.screeningAnswers.comments
+        ))
+        .map((a) => {
+          const sa = a.screeningAnswers!;
+          const entries = Object.entries(sa.answers ?? {}).filter(([, v]) => v);
+          const tech = (sa.technical ?? []).filter((t) => t.answer);
+          return (
+            <div key={a.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+              <div className="flex items-center gap-2 text-green-700 mb-3">
+                <FileText size={16} />
+                <h3 className="text-[13px] font-semibold">Screening — {a.requisition?.title ?? "—"}</h3>
+              </div>
+              {entries.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-2.5 mb-3">
+                  {entries.map(([k, v]) => (
+                    <div key={k}>
+                      <p className="text-[11px] text-gray-400">{SCREENING_LABELS[k] ?? k}</p>
+                      <p className="text-xs text-gray-800 break-words">{v}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {tech.length > 0 && (
+                <div className="mb-3 pt-3 border-t border-gray-50">
+                  <p className="text-[11px] font-semibold text-gray-500 mb-1.5">Technical Questions</p>
+                  <div className="space-y-2">
+                    {tech.map((t, i) => (
+                      <div key={i}>
+                        <p className="text-xs font-medium text-gray-700">{t.question}</p>
+                        <p className="text-xs text-gray-600 break-words">{t.answer}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {sa.comments && (
+                <div className="pt-3 border-t border-gray-50">
+                  <p className="text-[11px] font-semibold text-gray-500 mb-1">Comments</p>
+                  <p className="text-xs text-gray-700 whitespace-pre-wrap break-words">{sa.comments}</p>
+                </div>
+              )}
+            </div>
+          );
+        })}
     </div>
   );
 }
@@ -267,6 +326,13 @@ function Stars({ rating }: { rating: number }) {
   );
 }
 
+interface InterviewLite {
+  id: string;
+  type: string;
+  round: number;
+  stageName?: string | null;
+}
+
 function FeedbackTab({ appId }: { appId: string | null }) {
   const api = useApiClient();
   const { data, isLoading } = useQuery({
@@ -274,14 +340,26 @@ function FeedbackTab({ appId }: { appId: string | null }) {
     queryKey: ["feedback-history", appId],
     queryFn: () => api.get<{ history: FeedbackItem[] }>(`/api/v1/hrms/recruit/applications/${appId}/feedback-history`),
   });
+  // All interviews for this application — used to surface Take-Home submissions
+  // (which the reviewer needs to see BEFORE scoring, so they can't rely on the
+  // scored-only feedback history above).
+  const ivq = useQuery({
+    enabled: !!appId,
+    queryKey: ["app-interviews", appId],
+    queryFn: () => api.get<InterviewLite[]>(`/api/v1/hrms/recruit/interviews?applicationId=${appId}&limit=100`),
+  });
   const history = data?.data?.history ?? [];
+  const takeHomes = (ivq.data?.data ?? []).filter((i) => i.type === "TakeHome");
 
   if (!appId) return <EmptyState icon={<MessageSquare size={28} />} title="No application" sub="This candidate has no application to show feedback for." />;
-  if (isLoading) return <CardSkeleton />;
-  if (history.length === 0) return <EmptyState icon={<MessageSquare size={28} />} title="No feedback yet" sub="Interview scorecards will appear here once submitted." />;
+  if (isLoading || ivq.isLoading) return <CardSkeleton />;
+  if (history.length === 0 && takeHomes.length === 0) return <EmptyState icon={<MessageSquare size={28} />} title="No feedback yet" sub="Interview scorecards will appear here once submitted." />;
 
   return (
     <div className="space-y-4">
+      {takeHomes.map((iv) => (
+        <TakeHomeSubmissionCard key={iv.id} interviewId={iv.id} stageName={(iv.stageName ?? `Round ${iv.round}`).replace(/([A-Z])/g, " $1").trim()} />
+      ))}
       {history.map((f) => {
         const reco = f.recommendation ? RECO_META[f.recommendation] : null;
         return (
@@ -315,6 +393,69 @@ function FeedbackTab({ appId }: { appId: string | null }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+interface TakeHomeDetail {
+  id: string;
+  instructions: string | null;
+  hasAttachment: boolean;
+  dueDate: string | null;
+  submission: { url: string | null; fileName: string | null; note: string | null; submittedAt: string } | null;
+}
+
+function TakeHomeSubmissionCard({ interviewId, stageName }: { interviewId: string; stageName: string }) {
+  const api = useApiClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ["take-home", interviewId],
+    queryFn: () => api.get<TakeHomeDetail>(`/api/v1/hrms/recruit/interviews/${interviewId}/take-home`),
+  });
+  const th = data?.data;
+  const sub = th?.submission ?? null;
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+      <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+        <div className="flex items-center gap-2">
+          <ClipboardList size={16} className="text-blue-600" />
+          <h4 className="text-[13px] font-semibold text-gray-900">{stageName} · Take-Home Task</h4>
+        </div>
+        {sub
+          ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-100 text-green-700"><Check size={11} /> Submitted</span>
+          : <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700"><Clock size={11} /> Not submitted yet</span>}
+      </div>
+
+      {isLoading ? (
+        <SkeletonLine w="60%" h={12} />
+      ) : !th ? (
+        <p className="text-xs text-gray-400">Couldn&apos;t load this take-home task.</p>
+      ) : (
+        <div className="space-y-2">
+          {th.dueDate && (
+            <p className="text-[11px] text-gray-500">Due {new Date(`${th.dueDate}T00:00:00`).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</p>
+          )}
+          {sub ? (
+            <div className="rounded-lg border border-gray-100 bg-gray-50/60 p-3 space-y-1.5">
+              {sub.url && (
+                <a
+                  href={sub.url.startsWith("http") ? sub.url : withBasePath(sub.url)}
+                  target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 hover:underline"
+                >
+                  {sub.fileName ? <Download size={13} /> : <Link2 size={13} />}
+                  {sub.fileName ?? sub.url}
+                  <ExternalLink size={11} />
+                </a>
+              )}
+              {sub.note && <p className="text-xs text-gray-700 whitespace-pre-wrap">{sub.note}</p>}
+              <p className="text-[11px] text-gray-400">Submitted {new Date(sub.submittedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</p>
+            </div>
+          ) : (
+            <p className="text-xs text-gray-500">Waiting for the candidate to submit their work. Score this round using the normal feedback flow once submitted.</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

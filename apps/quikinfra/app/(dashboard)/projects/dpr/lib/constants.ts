@@ -25,21 +25,6 @@ export const MANPOWER_TRADES = [
   { key: "operator", label: "Operator" },
 ] as const;
 
-export const newWorkItem = (): WorkItem => ({
-  boqItemId: "",
-  boqNo: "",
-  description: "",
-  unit: "",
-  totalTarget: 0,
-  prevQty: 0,
-  balanceQty: 0,
-  contractorWO: "",
-  todayQty: "",
-  location: "",
-  remarks: "",
-  images: [],
-  imageKeys: [],
-});
 
 export const newMaterial = (): MaterialRow => ({
   itemId: "",

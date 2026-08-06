@@ -93,16 +93,22 @@ export function statusDotColor(status: string | null | undefined): string {
 
 // ── Option arrays (various shapes for different UI patterns) ────────────────
 
-/** Filter dropdown — includes "All statuses" sentinel at the top */
+/**
+ * Label for the "no status filter applied" option. Single source of truth so
+ * the wording stays identical across every status filter in the app.
+ */
+export const ALL_STATUS_LABEL = "All status";
+
+/** Filter dropdown — includes the all-status sentinel at the top */
 export const STATUS_FILTER_OPTIONS: { value: ItemStatus | ""; label: string }[] = [
-  { value: "",                label: "All statuses"    },
+  { value: "",                label: ALL_STATUS_LABEL  },
   ...ITEM_STATUS_ORDER.map((s) => ({ value: s, label: STATUS_META[s].label })),
 ];
 
 /** For backwards-compat: alias used in some older imports */
 export const STATUS_OPTIONS = STATUS_FILTER_OPTIONS;
 
-/** Edit form select — no "All statuses", just the 5 statuses (for <Select> component) */
+/** Edit form select — no all-status sentinel, just the 5 statuses (for <Select> component) */
 export const STATUS_SELECT_OPTIONS: { value: string; label: string }[] =
   ITEM_STATUS_ORDER.map((s) => ({ value: s, label: STATUS_META[s].label }));
 
@@ -141,7 +147,7 @@ export const KPI_STATUS_META: Record<KPIStatus, { label: string; bg: string; tex
 };
 
 export const KPI_STATUS_OPTIONS: { value: KPIStatus | ""; label: string }[] = [
-  { value: "",          label: "All statuses" },
+  { value: "",          label: ALL_STATUS_LABEL },
   { value: "active",    label: "Active"       },
   { value: "paused",    label: "Paused"       },
   { value: "completed", label: "Completed"    },

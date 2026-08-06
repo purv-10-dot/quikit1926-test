@@ -20,7 +20,7 @@ import {
  * resolved server-side so the detail page renders human names instead
  * of cuids.
  */
-/** A reconciliation line as stored in the JSON `lines` column. */
+/** A reconciliation line as stored in the JSONB `materials` column. */
 interface ReconLine {
   id?: string | null;
   itemId?: string | null;
@@ -42,7 +42,6 @@ export async function GET(
     where: { id: params.id, orgId: ctx.orgId },
     include: {
       project: { select: { id: true, name: true, code: true } },
-      lines: true,
     },
   });
   if (!row) {
@@ -62,17 +61,21 @@ export async function GET(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
+  const reconLines: ReconLine[] = Array.isArray(row.materials)
+    ? (row.materials as unknown as ReconLine[])
+    : [];
+
   // Batch-fetch line dependencies — item + uom — in two queries.
   const itemIds = Array.from(
     new Set(
-      (row.lines as unknown as ReconLine[])
+      (reconLines)
         .map((l) => l.itemId)
         .filter((v): v is string => typeof v === "string" && v.length > 0),
     ),
   );
   const uomIds = Array.from(
     new Set(
-      (row.lines as unknown as ReconLine[])
+      (reconLines)
         .map((l) => l.uomId)
         .filter((v): v is string => typeof v === "string" && v.length > 0),
     ),
@@ -144,7 +147,7 @@ export async function GET(
     approval = buildApprovalDto(instance, nameById, callerCanActOnCurrentStep);
   }
 
-  const lines = (row.lines as unknown as ReconLine[]).map((l, idx) => {
+  const lines = (reconLines).map((l, idx) => {
     const item = itemById.get(l.itemId ?? "");
     const uom = uomById.get(l.uomId ?? "");
     const systemQty = Number(l.systemQty?.toString?.() ?? l.systemQty ?? 0);
@@ -178,8 +181,11 @@ export async function GET(
     reconciliationDate:
       row.reconciliationDate?.toISOString?.().slice(0, 10) ?? "",
     conductedById: row.conductedById,
+    // The typed name wins; rows created before that column existed fall back
+    // to the display name of the user recorded on the FK.
     conductedByName:
-      (row.conductedById && nameById.get(row.conductedById)) ?? null,
+      row.conductedByName ??
+      ((row.conductedById && nameById.get(row.conductedById)) ?? null),
     approvedById: row.approvedById,
     approvedByName:
       (row.approvedById && nameById.get(row.approvedById)) ?? null,

@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, validationError, internalError } from "@/lib/api-response";
-import { createAnnouncementSchema } from "@/lib/validations/engage";
+import { createAnnouncementSchema, visibilityToDb } from "@/lib/validations/engage";
 import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { fireWorkflow } from "@/lib/workflows/executor";
@@ -50,7 +50,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       data: {
         orgId, authorId, title: data.title, content: data.content,
         attachments: data.attachments ? JSON.parse(JSON.stringify(data.attachments)) : undefined,
-        visibility: data.visibility,
+        visibility: visibilityToDb(data.visibility),
         targetDepartments: data.targetDepartments ? JSON.parse(JSON.stringify(data.targetDepartments)) : undefined,
         targetLocations: data.targetLocations ? JSON.parse(JSON.stringify(data.targetLocations)) : undefined,
         isPinned: data.isPinned,

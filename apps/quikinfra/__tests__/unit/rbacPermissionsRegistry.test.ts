@@ -142,7 +142,7 @@ describe("modulesFromPermissions", () => {
     const perms = new Set<string>([
       "construction.po.view",
       "construction.boq.view",
-      "construction.masters.edit",
+      "construction.master_vendor.edit",
     ]);
     const mods = modulesFromPermissions(perms);
     expect(mods).toContain("purchase");

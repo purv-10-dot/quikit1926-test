@@ -8,10 +8,10 @@ import {
   countMachinery,
   createMachinery,
 } from "@/lib/masters/machinery-repository";
-import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 
 export async function GET(req: NextRequest) {
-  const ctxOrResp = await requireMastersAction("view");
+  const ctxOrResp = await requireMastersAction("construction.master_machinery", "view");
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
   const { searchParams } = new URL(req.url);
@@ -32,6 +32,7 @@ export async function GET(req: NextRequest) {
     searchParams,
     ["code", "name", "type", "make", "registrationNo", "fuelType", "status", "createdAt"],
     { field: "createdAt", order: "desc" },
+    NEWEST_FIRST_TIEBREAK,
   );
   const result = await paginateDb(
     parsePagination(req),
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const ctxOrResp = await requireMastersAction("create");
+  const ctxOrResp = await requireMastersAction("construction.master_machinery", "create");
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "master.machinery", "add")) {

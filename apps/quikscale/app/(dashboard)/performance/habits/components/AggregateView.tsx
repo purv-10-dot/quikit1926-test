@@ -17,7 +17,11 @@ import {
   useCloseHabitCampaign,
   useDeleteHabitCampaign,
   useMyHabitResponse,
+  useUpdateHabitCampaign,
 } from "@/lib/hooks/useHabits";
+import { toDateInputValue } from "@/lib/utils/dateUtils";
+import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
+import { notify } from "@/lib/utils/notify";
 import { MyResponseModal } from "./MyResponseModal";
 import { useConfirm } from "@quikit/ui";
 import type { CampaignAggregate, HabitAggregate } from "@/lib/schemas/habitSchema";
@@ -174,6 +178,8 @@ export function AggregateView({ campaignId, onDeleted }: Props) {
               status={campaign.status}
               deadlineLabel={deadlineLabel}
               respondents={aggregate.respondentCount}
+              campaignId={campaign.id}
+              deadlineISO={campaign.deadline ?? null}
             />
 
             <div className="mt-4 flex items-center gap-2 flex-wrap">
@@ -392,18 +398,27 @@ function BarColumn({ habit, idx, hasData }: { habit: HabitAggregate; idx: number
  * Small meta strip rendered under the hero score. Surfaces respondent count
  * and the most relevant lifecycle date (deadline / closed-on) so the hero
  * column carries weight even when no action buttons are shown (closed state).
+ *
+ * The deadline is editable in place for draft + active campaigns (this view is
+ * already admin-gated at the page level, and the PUT route re-checks). A closed
+ * campaign's date is historical, so it stays read-only.
  */
 function ScoreContext({
   status,
   statusLabel,
   deadlineLabel,
   respondents,
+  campaignId,
+  deadlineISO,
 }: {
   status: "draft" | "active" | "closed";
   statusLabel: string;
   deadlineLabel: string | null;
   respondents: number;
+  campaignId: string;
+  deadlineISO: string | null;
 }) {
+  const canEditDeadline = status !== "closed";
   return (
     <div className="mt-3 flex items-center gap-1.5 flex-wrap text-[11px] text-gray-500">
       <span
@@ -425,12 +440,126 @@ function ScoreContext({
       <span className="tabular-nums">
         {respondents} {respondents === 1 ? "respondent" : "respondents"}
       </span>
-      {deadlineLabel && (
-        <span className="text-gray-400">
-          · {status === "closed" ? "Closed" : "Due"} {deadlineLabel}
-        </span>
+      {canEditDeadline ? (
+        <DeadlineEditor
+          campaignId={campaignId}
+          deadlineISO={deadlineISO}
+          deadlineLabel={deadlineLabel}
+        />
+      ) : (
+        deadlineLabel && <span className="text-gray-400">· Closed {deadlineLabel}</span>
       )}
     </div>
+  );
+}
+
+/**
+ * Inline "Due <date>" with an edit affordance.
+ *
+ * Reading state shows the formatted date plus a pencil; editing swaps in a
+ * native date picker with Save / Cancel. Saving an EMPTY value clears the
+ * deadline (the API's `deadline` is nullable), which is the only way to remove
+ * one once set.
+ *
+ * The API takes a full ISO datetime while `<input type="date">` yields
+ * `YYYY-MM-DD`, so the value is widened on save and narrowed on load — the same
+ * conversion LaunchAssessmentModal does when creating a campaign.
+ *
+ * Past dates are gated by the org's `add_past_week_data` config flag — the same
+ * toggle KPI and Priority already honour for their past-week edits. When it's
+ * off the picker's `min` is today, so a past deadline can't be chosen. The PUT
+ * route re-checks, so this is UX, not the enforcement point.
+ */
+export function DeadlineEditor({
+  campaignId,
+  deadlineISO,
+  deadlineLabel,
+}: {
+  campaignId: string;
+  deadlineISO: string | null;
+  deadlineLabel: string | null;
+}) {
+  const update = useUpdateHabitCampaign(campaignId);
+  const { canAddPastWeek, loaded: flagsLoaded } = usePastWeekFlags();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(() => toDateInputValue(deadlineISO));
+
+  // Only clamp once the flags have actually resolved — otherwise the default
+  // `false` would briefly lock the picker for orgs that DO allow past dates.
+  const minDate = flagsLoaded && !canAddPastWeek ? toDateInputValue(new Date().toISOString()) : undefined;
+
+  function startEditing() {
+    // Re-seed from the server value so a cancelled edit never leaks forward.
+    setValue(toDateInputValue(deadlineISO));
+    setEditing(true);
+  }
+
+  async function save() {
+    try {
+      await update.mutateAsync({
+        deadline: value ? new Date(value).toISOString() : null,
+      });
+      setEditing(false);
+    } catch (err) {
+      notify.error(err, {
+        context: "deadline",
+        fallback: "Couldn't update the deadline. Please try again.",
+      });
+    }
+  }
+
+  if (!editing) {
+    return (
+      <span className="inline-flex items-center gap-1 text-gray-400">
+        {deadlineLabel ? <>· Due {deadlineLabel}</> : <>· No deadline</>}
+        <button
+          type="button"
+          onClick={startEditing}
+          title={deadlineLabel ? "Edit deadline" : "Set deadline"}
+          aria-label={deadlineLabel ? "Edit deadline" : "Set deadline"}
+          className="p-0.5 rounded hover:bg-gray-100 hover:text-gray-600 transition-colors"
+        >
+          <Pencil className="h-3 w-3" />
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="text-gray-400">·</span>
+      <input
+        type="date"
+        autoFocus
+        value={value}
+        min={minDate}
+        title={minDate ? "Past dates are disabled — enable “Add Past Week Data” in Settings → Configurations" : undefined}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") void save();
+          if (e.key === "Escape") setEditing(false);
+        }}
+        disabled={update.isPending}
+        aria-label="Deadline"
+        className="px-1.5 py-0.5 text-[11px] border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent-400 disabled:bg-gray-50"
+      />
+      <button
+        type="button"
+        onClick={() => void save()}
+        disabled={update.isPending}
+        className="px-1.5 py-0.5 text-[10px] font-semibold text-white bg-accent-600 hover:bg-accent-700 rounded disabled:opacity-50 transition-colors"
+      >
+        {update.isPending ? "Saving…" : "Save"}
+      </button>
+      <button
+        type="button"
+        onClick={() => setEditing(false)}
+        disabled={update.isPending}
+        className="px-1.5 py-0.5 text-[10px] font-medium text-gray-600 hover:text-gray-900 disabled:opacity-50 transition-colors"
+      >
+        Cancel
+      </button>
+    </span>
   );
 }
 

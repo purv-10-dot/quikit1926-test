@@ -44,6 +44,9 @@ export type Asset = {
   baseCategory?: BaseCategory | null;
   category?: Category | null;
   replacementsReceived?: AssetReplacement[] | null;
+  /** Platform User.id of who added the asset; `addedByName` is the resolved name. */
+  createdByUserId?: string | null;
+  addedByName?: string | null;
   createdAt?: string;
   updatedAt?: string;
 };

@@ -34,4 +34,15 @@ describe("messagePreview", () => {
   it("text passes content through", () => {
     expect(messagePreview(mk({ content: "yo" }))).toEqual({ kind: "text", text: "yo" });
   });
+  it("flattens markdown in the text preview (QC_012)", () => {
+    expect(messagePreview(mk({ content: "**Hello** *world* `code`" }))).toEqual({
+      kind: "text",
+      text: "Hello world code",
+    });
+  });
+  it("flattens markdown in a media caption", () => {
+    expect(messagePreview(mk({ type: "Media", content: "**shot** of the __UI__" })).text).toBe(
+      "shot of the UI",
+    );
+  });
 });

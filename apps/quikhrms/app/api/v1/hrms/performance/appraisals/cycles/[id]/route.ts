@@ -17,7 +17,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
     if (!cycle) return notFound("Cycle not found");
     return successResponse(cycle);
   } catch (error) { console.error("GET /appraisals/cycles/:id error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.performance.appraise"] });
 
 export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
   try {
@@ -41,7 +41,7 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
     });
     return successResponse(cycle);
   } catch (error) { console.error("PATCH /appraisals/cycles/:id error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.performance.appraise"] });
 
 export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }, params) => {
   try {
@@ -50,4 +50,4 @@ export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }, para
     await prisma.appraisalCycle.update({ where: { id: params.id }, data: { deletedAt: new Date(), updatedBy: userId } });
     return successResponse({ deleted: true });
   } catch (error) { console.error("DELETE /appraisals/cycles/:id error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.performance.appraise"] });

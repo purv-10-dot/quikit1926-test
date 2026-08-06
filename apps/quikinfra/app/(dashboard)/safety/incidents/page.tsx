@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { QuickCreateDrawer } from "@/components/QuickCreateDrawer";
 import { useMenuActions } from "@/hooks/use-permissions";
@@ -109,13 +109,14 @@ export default function IncidentsPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Incident Register"
         subtitle="Safety incident reporting and CAPA tracking"
         breadcrumbs={[{ label: "Safety", href: "/safety" }, { label: "Incidents" }]}
       />
       <TabBar tabs={STATUS_TABS} activeTab={activeTab} onTabChange={setActiveTab} />
-      <PageContainer>
+      <PageContainer fill>
         <DataTable
           id="safety-incidents"
           columns={columns}
@@ -124,6 +125,7 @@ export default function IncidentsPage() {
           addLabel="Report Incident"
         />
       </PageContainer>
+      </PageFrame>
       <QuickCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} config={config} />
     </>
   );

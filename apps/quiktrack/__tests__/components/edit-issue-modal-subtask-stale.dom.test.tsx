@@ -17,6 +17,9 @@ vi.mock("@/components/issue-activity", () => ({
 vi.mock("@/components/issue-attachments", () => ({
   IssueAttachments: () => <div data-testid="attachments-stub" />,
 }));
+vi.mock("@/components/issue-full-view/issue-development", () => ({
+  IssueDevelopment: () => <div data-testid="development-stub" />,
+}));
 vi.mock("@/lib/hooks/useMyProjectPermissions", () => ({
   useMyProjectPermissions: () => ({ loading: false, has: () => true }),
 }));

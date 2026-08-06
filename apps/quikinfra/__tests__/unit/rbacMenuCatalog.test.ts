@@ -14,6 +14,8 @@ import {
   mergeModulesWithMatrix,
   groupByModule,
 } from "@/lib/rbac/menu-catalog";
+import { MENU_TO_RESOURCE } from "@/lib/rbac/matrixV2Bridge";
+import { MODULE_TO_RESOURCES } from "@/lib/rbac/permissionsRegistry";
 
 describe("catalog structure", () => {
   it("every catalog item declares a module that exists in MENU_MODULES", () => {
@@ -144,5 +146,68 @@ describe("groupByModule", () => {
 describe("MODULE_KEY_TO_MENU_MODULE", () => {
   it("does not map SYSTEM (not user-assignable)", () => {
     expect(Object.values(MODULE_KEY_TO_MENU_MODULE)).not.toContain("SYSTEM");
+  });
+});
+
+describe("display scope follows the resource's module, not the menu group", () => {
+  // Regression: Projects renders under MASTERS but `construction.project`
+  // lives in MODULE_TO_RESOURCES.project_mgmt. `modulesAssigned` is derived
+  // from the resource side, so scoping the row by its menu group wiped a
+  // just-saved tick on reload (and the next save revoked it for real).
+  it("every catalog page's menu group agrees with its resource's module (or is overridden)", () => {
+    for (const item of MENU_CATALOG) {
+      const resource = MENU_TO_RESOURCE[item.key];
+      if (!resource) continue;
+      const owner = Object.entries(MODULE_TO_RESOURCES).find(([, list]) =>
+        list.includes(resource),
+      )?.[0];
+      if (!owner) continue;
+      const displayModule = MODULE_KEY_TO_MENU_MODULE[owner];
+      // Either the groups line up, or buildModuleScopedMatrix keeps the row
+      // in scope for the owning module — assert the latter behaviourally.
+      if (displayModule !== item.module) {
+        const scoped = buildModuleScopedMatrix([owner], {
+          [item.key]: { add: true, edit: true, delete: true, view: true },
+        });
+        expect(scoped[item.key]?.view).toBe(true);
+      }
+    }
+  });
+
+  it("drops a saved Projects grant when only project_mgmt is assigned", () => {
+    // `construction.project` belongs to `masters` (the module of the page that
+    // uses it). Assigning project_mgmt alone must not put Projects in scope —
+    // the old union kept construction.project alive for project_mgmt, which is
+    // what made PROJECT MGMT impossible to switch off.
+    const saved = buildDefaultMatrix(false);
+    saved["master.project"] = { add: true, edit: true, delete: true, view: true };
+    const scoped = buildModuleScopedMatrix(["project_mgmt"], saved);
+    expect(scoped["master.project"]?.view).toBe(false);
+    expect(scoped["master.item"]?.view).toBe(false);
+  });
+
+  it("keeps a saved Projects grant when masters is assigned", () => {
+    const saved = buildDefaultMatrix(false);
+    saved["master.project"] = { add: true, edit: true, delete: true, view: true };
+    const scoped = buildModuleScopedMatrix(["masters"], saved);
+    expect(scoped["master.project"]).toEqual({
+      add: true,
+      edit: true,
+      delete: true,
+      view: true,
+    });
+  });
+
+  it("scopes Projects to masters only", () => {
+    // masters is both the page's menu group and its resource's module.
+    expect(buildMatrixFromModules(["masters"])["master.project"]?.view).toBe(true);
+    // project_mgmt no longer owns construction.project, so it grants nothing here.
+    expect(buildMatrixFromModules(["project_mgmt"])["master.project"]?.view).toBe(
+      false,
+    );
+    // an unrelated module grants neither.
+    expect(buildMatrixFromModules(["store"])["master.project"]?.view).toBe(false);
+    // …and masters does not leak PROJECT MGMT pages.
+    expect(buildMatrixFromModules(["masters"])["pm.boq"]?.view).toBe(false);
   });
 });

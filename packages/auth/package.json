@@ -22,6 +22,8 @@
     "./session-cookies": "./session-cookies.ts",
     "./oauth-prefill-store": "./oauth-prefill-store.ts",
     "./assign-app-roles": "./assign-app-roles.ts",
+    "./accept-invitation": "./accept-invitation.ts",
+    "./invite-redirect": "./invite-redirect.ts",
     "./app-access": "./app-access.ts"
   },
   "scripts": {

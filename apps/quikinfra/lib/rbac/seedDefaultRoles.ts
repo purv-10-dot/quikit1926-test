@@ -18,9 +18,9 @@
  * Mirrors apps/quikscale/lib/api/seedAdminAppRole.ts.
  */
 
-import { db } from "@quikit/database";
+import { db } from "@/lib/db";
 import { PERMISSIONS, ROLES, type ConstructionRole } from "@/lib/permissions";
-import { parsePermissionKey } from "./permissionsRegistry";
+import { parsePermissionKey, allPermissionPairs } from "./permissionsRegistry";
 import { getQuikInfraAppId } from "./userCan";
 
 // In-process cache. Prevents the seed from running on every request.
@@ -69,6 +69,102 @@ const ROLES_TO_SEED: ConstructionRole[] = [
   ROLES.USER,
 ];
 
+// Per-page resources introduced by the per-page-permissions split (Phase 1).
+// Phase 2 grants these to the same roles that already hold the umbrella
+// resource, so no role loses access at the Phase-4 cutover (routes still gate
+// on the umbrella until then). Plain strings — additive DB grants, not yet
+// referenced by any PERMISSIONS.* constant. Keep in sync with the leaves in
+// permissionsRegistry.ts and MENU_TO_RESOURCE in matrixV2Bridge.ts.
+const MASTER_PAGE_RESOURCES = [
+  "construction.master_item",
+  "construction.master_item_group",
+  "construction.master_vendor",
+  "construction.master_contractor",
+  "construction.master_customer",
+  "construction.master_location",
+  "construction.master_machinery",
+  "construction.master_asset",
+  "construction.master_cost_center",
+  "construction.master_labour",
+  "construction.master_workman",
+];
+const ORG_PAGE_RESOURCES = [
+  "construction.org_company",
+  "construction.org_department",
+  "construction.org_gst",
+  "construction.org_tds",
+  "construction.org_uom",
+  "construction.org_work_category",
+  "construction.org_terms",
+];
+const PAGE_SPLIT_RESOURCES = new Set<string>([
+  ...MASTER_PAGE_RESOURCES,
+  ...ORG_PAGE_RESOURCES,
+]);
+
+// Umbrella resources retired by the per-page split (Phase 5). The legacy
+// ROLE_PERMISSIONS lists in lib/permissions.ts still reference them (e.g.
+// PERMISSIONS.MASTERS_VIEW), so strip them out of every seeded role's grants —
+// roles now hold only the per-page construction.master_* / construction.org_*
+// resources. Removing the DB rows themselves is the Phase-5 cleanup SQL.
+const UMBRELLA_RESOURCES = new Set<string>([
+  "construction.masters",
+  "construction.organization",
+]);
+
+function stripUmbrella(
+  pairs: Array<{ resource: string; action: string }>,
+): Array<{ resource: string; action: string }> {
+  return pairs.filter((p) => !UMBRELLA_RESOURCES.has(p.resource));
+}
+
+/**
+ * Grants for the new per-page resources, mirroring each role's CURRENT
+ * effective access to the umbrella resources so cutover is loss-free:
+ *   - Admin: the full action set of every new resource (read from the tree —
+ *     picks up master_item's import/export and master_labour's approve).
+ *   - HO / Site Admin / User: today they can VIEW every Masters and
+ *     Organization page through `construction.masters.view` (Organization
+ *     routes gate on masters), so grant `view` on each new resource. HO also
+ *     held `construction.masters.export`, mirrored onto master_item.
+ * Sub-admins (app-level "admin", not central) inherit these via the seeded
+ * admin role's rolePermissions, so they need no separate wiring.
+ */
+function newPageGrants(role: ConstructionRole): Array<{ resource: string; action: string }> {
+  if (role === ROLES.ADMIN) {
+    return allPermissionPairs()
+      .filter((p) => PAGE_SPLIT_RESOURCES.has(p.resource))
+      .map((p) => ({ resource: p.resource, action: p.action }));
+  }
+  const grants: Array<{ resource: string; action: string }> = [];
+  for (const resource of PAGE_SPLIT_RESOURCES) {
+    grants.push({ resource, action: "view" });
+  }
+  if (role === ROLES.HO_USER) {
+    grants.push({ resource: "construction.master_item", action: "export" });
+  }
+  return grants;
+}
+
+/**
+ * Activity Scope is the manual-BOQ screen for FREE_SCOPE projects. It was split
+ * out of `construction.boq` into its own `construction.activity_scope` resource
+ * so its Permissions checkbox moves independently of BOQ's. No legacy
+ * `PERMISSIONS.*` constant exists for it, so mirror whatever the role already
+ * holds on `construction.boq` — cutover stays loss-free, and a role that can't
+ * see BOQ can't see Activity Scope either.
+ *
+ * `import` has no Activity Scope equivalent (rows are hand-entered, never
+ * imported from Excel), so it is dropped.
+ */
+function activityScopeGrants(
+  pairs: Array<{ resource: string; action: string }>,
+): Array<{ resource: string; action: string }> {
+  return pairs
+    .filter((p) => p.resource === "construction.boq" && p.action !== "import")
+    .map((p) => ({ resource: "construction.activity_scope", action: p.action }));
+}
+
 /** Map ROLE_PERMISSIONS["admin"] etc. into (resource, action) pairs. */
 function roleGrants(role: ConstructionRole): Array<{ resource: string; action: string }> {
   // Re-import the runtime map. ROLE_PERMISSIONS isn't exported from permissions.ts —
@@ -76,9 +172,9 @@ function roleGrants(role: ConstructionRole): Array<{ resource: string; action: s
   // To keep this file the single source of seeding truth, we mirror the map.
   const ALL = Object.values(PERMISSIONS);
 
-  if (role === ROLES.ADMIN) return splitKeys(ALL);
+  if (role === ROLES.ADMIN) return [...stripUmbrella(splitKeys(ALL)), ...newPageGrants(role)];
 
-  if (role === ROLES.HO_USER) return splitKeys([
+  if (role === ROLES.HO_USER) return [...stripUmbrella(splitKeys([
     PERMISSIONS.DASHBOARD_VIEW,
     PERMISSIONS.ORGANIZATION_VIEW,
     PERMISSIONS.MASTERS_VIEW,
@@ -99,7 +195,7 @@ function roleGrants(role: ConstructionRole): Array<{ resource: string; action: s
     PERMISSIONS.QUALITY_SAFETY_VIEW,
     PERMISSIONS.FINANCE_VIEW,
     PERMISSIONS.MASTERS_EXPORT,
-  ]);
+  ])), ...newPageGrants(role)];
 
   // Site Admin / Project Manager — a manager role. It gets FULL operational
   // actions (view + create + edit + delete + approve/import/lock/receive/
@@ -107,7 +203,7 @@ function roleGrants(role: ConstructionRole): Array<{ resource: string; action: s
   // Store, Project Mgmt, Quality & Safety. So assigning one of those modules
   // means the user can actually operate it, not just view it. Masters/Project
   // stay view-only here (creating the project master itself is org-admin work).
-  if (role === ROLES.SITE_ADMIN) return splitKeys([
+  if (role === ROLES.SITE_ADMIN) return [...stripUmbrella(splitKeys([
     PERMISSIONS.DASHBOARD_VIEW,
     PERMISSIONS.MASTERS_VIEW,
     // Purchase
@@ -140,9 +236,9 @@ function roleGrants(role: ConstructionRole): Array<{ resource: string; action: s
     PERMISSIONS.RAB_VIEW, PERMISSIONS.RAB_CREATE, PERMISSIONS.RAB_EDIT, PERMISSIONS.RAB_DELETE, PERMISSIONS.RAB_APPROVE,
     // Quality & Safety
     PERMISSIONS.QUALITY_SAFETY_VIEW, PERMISSIONS.QUALITY_SAFETY_CREATE, PERMISSIONS.QUALITY_SAFETY_EDIT,
-  ]);
+  ])), ...newPageGrants(role)];
 
-  if (role === ROLES.USER) return splitKeys([
+  if (role === ROLES.USER) return [...stripUmbrella(splitKeys([
     PERMISSIONS.DASHBOARD_VIEW,
     PERMISSIONS.ORGANIZATION_VIEW,
     PERMISSIONS.MASTERS_VIEW,
@@ -161,7 +257,7 @@ function roleGrants(role: ConstructionRole): Array<{ resource: string; action: s
     PERMISSIONS.EQUIPMENT_MAINT_VIEW, PERMISSIONS.EQUIPMENT_MAINT_CREATE,
     PERMISSIONS.EQUIPMENT_DEPLOY_VIEW, PERMISSIONS.EQUIPMENT_DEPLOY_CREATE,
     PERMISSIONS.QUALITY_SAFETY_VIEW,
-  ]);
+  ])), ...newPageGrants(role)];
 
   // Silence the dead-branch warning; ALL is only used by admin path.
   void ALL;
@@ -228,7 +324,8 @@ export async function seedDefaultRoles(orgId: string): Promise<SeedResult | null
       select: { resource: true, action: true },
     });
     const haveSet = new Set(have.map((p) => `${p.resource}::${p.action}`));
-    const want = roleGrants(role);
+    const base = roleGrants(role);
+    const want = [...base, ...activityScopeGrants(base)];
     const missing = want.filter((p) => !haveSet.has(`${p.resource}::${p.action}`));
     if (missing.length > 0) {
       await db.cnRolePermissionV2.createMany({

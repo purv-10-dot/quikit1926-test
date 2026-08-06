@@ -1,17 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   MoreHorizontal,
   User,
   Network,
   AlertTriangle,
   Zap,
+  ExternalLink,
+  Trash2,
 } from "lucide-react";
 import type { BoardIssue, BoardStatus, EpicLite } from "./board-meta";
 import { typeMeta, priorityMeta } from "./board-meta";
 import { SubtaskCard } from "./subtask-card";
 import type { ColumnInlineCreateMember } from "./column-inline-create";
+import { PopoverPanel } from "../../grouped-kanban/_components/cells/popover-panel";
+import { showToast } from "@/lib/ui/toast";
 
 function memberInitials(m: ColumnInlineCreateMember | undefined): string {
   const u = m?.user;
@@ -63,6 +67,33 @@ export function TaskCard({
   const [isExpanded, setIsExpanded] = useState(false);
   const [subtasks, setSubtasks] = useState<BoardIssue[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const menuBtnRef = useRef<HTMLButtonElement | null>(null);
+
+  async function confirmDelete() {
+    if (deleting) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/issues/${task.id}`, { method: "DELETE" }).then(
+        (r) => r.json(),
+      );
+      if (res?.success) {
+        setConfirmOpen(false);
+        // The board listens for this event and refetches, dropping the card.
+        window.dispatchEvent(
+          new CustomEvent("quiktrack:issue-deleted", { detail: { id: task.id } }),
+        );
+      } else {
+        showToast(res?.error ?? "Failed to delete work item", "error");
+      }
+    } catch (error: unknown) {
+      showToast(error instanceof Error ? error.message : "Failed to delete work item", "error");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   const fetchSubtasks = useCallback(async () => {
     if (!task.id) return;
@@ -129,9 +160,18 @@ export function TaskCard({
             {task.title || "Untitled"}
           </h3>
           <button
+            ref={menuBtnRef}
             type="button"
-            onClick={(e) => e.stopPropagation()}
-            className="flex-shrink-0 p-0.5 rounded hover:bg-gray-100 transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              setMenuOpen((v) => !v);
+            }}
+            className={`flex-shrink-0 p-0.5 rounded transition-colors ${
+              menuOpen ? "bg-gray-200" : "hover:bg-gray-100"
+            }`}
+            aria-label="More"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
           >
             <MoreHorizontal className="w-3.5 h-3.5 text-gray-500" />
           </button>
@@ -195,6 +235,16 @@ export function TaskCard({
                 <Network className="h-3.5 w-3.5 text-gray-500" />
               </button>
             )}
+            {/* Story-point estimate — small blue pill, shown only when set
+                (epics/subtasks aren't point-estimated). Open the card to edit. */}
+            {task.storyPoints != null && task.type !== "EPIC" && task.type !== "SUBTASK" && (
+              <span
+                className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-blue-100 px-1.5 text-[10px] font-semibold tabular-nums text-blue-700"
+                title={`${task.storyPoints} story point${task.storyPoints === 1 ? "" : "s"}`}
+              >
+                {task.storyPoints}
+              </span>
+            )}
             <P.Icon className={`h-3.5 w-3.5 ${P.color}`} />
             {task.assigneeId ? (
               <span
@@ -215,6 +265,87 @@ export function TaskCard({
           </div>
         </div>
       </div>
+
+      {/* Row actions menu — portaled so it never clips against the card/column
+          overflow. Open opens the work item; Delete confirms then removes it. */}
+      <PopoverPanel
+        anchorRef={menuBtnRef}
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        align="right"
+        width={176}
+        estimatedHeight={84}
+      >
+        <div role="menu" className="py-1">
+          <button
+            type="button"
+            role="menuitem"
+            onClick={(e) => {
+              e.stopPropagation();
+              setMenuOpen(false);
+              onOpen?.(task.id);
+            }}
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            <ExternalLink className="h-4 w-4 shrink-0 text-gray-400" />
+            Open
+          </button>
+          <div className="my-1 border-t border-gray-100" />
+          <button
+            type="button"
+            role="menuitem"
+            onClick={(e) => {
+              e.stopPropagation();
+              setMenuOpen(false);
+              setConfirmOpen(true);
+            }}
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+          >
+            <Trash2 className="h-4 w-4 shrink-0" />
+            Delete
+          </button>
+        </div>
+      </PopoverPanel>
+
+      {confirmOpen && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!deleting) setConfirmOpen(false);
+          }}
+        >
+          <div
+            className="w-[380px] rounded-lg bg-white p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-semibold text-gray-900">Delete work item?</h3>
+            <p className="mt-2 text-sm text-gray-600">
+              <span className="font-medium">{task.key}</span>{" "}
+              {task.title || "Untitled"} will be permanently deleted. This can’t be
+              undone.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmOpen(false)}
+                disabled={deleting}
+                className="h-8 rounded-md border border-gray-300 px-3 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDelete}
+                disabled={deleting}
+                className="h-8 rounded-md bg-red-600 px-3 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {deleting ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isExpanded && (
         <SubtaskTree

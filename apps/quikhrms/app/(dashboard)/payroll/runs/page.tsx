@@ -8,6 +8,8 @@ import { Modal } from "@/components/hrms/modal";
 import { Play, Plus, Calendar } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonTable } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
+import { Pagination } from "@/components/hrms/pagination";
 
 interface PayRun {
   id: string;
@@ -42,6 +44,8 @@ export default function PayRunsPage() {
   const [month, setMonth] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const { data, isLoading } = useQuery({
     queryKey: ["payroll", "runs"],
     queryFn: () => api.get<PayRun[]>("/api/v1/hrms/payroll/runs"),
@@ -57,9 +61,13 @@ export default function PayRunsPage() {
     return true;
   });
   const hasFilter = !!(month || dateFrom || dateTo);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div className="w-full px-5 py-4 space-y-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-start gap-3">
           <Play size={28} className="text-[#22c55e] mt-1.5" />
@@ -77,18 +85,18 @@ export default function PayRunsPage() {
         <div className="flex items-end gap-3 flex-wrap bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
           <div>
             <label className="block text-[11px] font-semibold text-gray-600 mb-1">Month</label>
-            <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="border border-[var(--border)] rounded-lg px-3 py-2 text-sm" />
+            <input type="month" value={month} onChange={(e) => { setMonth(e.target.value); setPage(1); }} className="border border-[var(--border)] rounded-lg px-3 py-2 text-sm" />
           </div>
           <div>
             <label className="block text-[11px] font-semibold text-gray-600 mb-1">From</label>
-            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="border border-[var(--border)] rounded-lg px-3 py-2 text-sm" />
+            <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} className="border border-[var(--border)] rounded-lg px-3 py-2 text-sm" />
           </div>
           <div>
             <label className="block text-[11px] font-semibold text-gray-600 mb-1">To</label>
-            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="border border-[var(--border)] rounded-lg px-3 py-2 text-sm" />
+            <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} className="border border-[var(--border)] rounded-lg px-3 py-2 text-sm" />
           </div>
           {hasFilter && (
-            <button onClick={() => { setMonth(""); setDateFrom(""); setDateTo(""); }} className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-50">
+            <button onClick={() => { setMonth(""); setDateFrom(""); setDateTo(""); setPage(1); }} className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-50">
               Reset
             </button>
           )}
@@ -111,6 +119,7 @@ export default function PayRunsPage() {
             </button>
           </div>
         ) : (
+          <>
           <table className="w-full text-xs">
             <thead>
               <tr className="text-table-head font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">
@@ -129,7 +138,7 @@ export default function PayRunsPage() {
                   <td colSpan={7} className="py-8 text-center text-xs text-gray-500">No pay runs match the selected period.</td>
                 </tr>
               )}
-              {filtered.map((r, i) => (
+              {pageItems.map((r, i) => (
                 <tr key={r.id} className="row-stagger border-b border-gray-50 hover:bg-gray-50" style={{ ["--i" as never]: Math.min(i, 10) }}>
                   <td className="py-3 px-3">
                     <Link href={`/payroll/runs/${r.id}`} className="text-[13px] text-[#22c55e] font-medium hover:underline">
@@ -151,6 +160,8 @@ export default function PayRunsPage() {
               ))}
             </tbody>
           </table>
+          <Pagination page={page} totalPages={totalPages} total={filtered.length} limit={PAGE_SIZE} onPageChange={setPage} />
+          </>
         )}
       </div>
 

@@ -18,7 +18,21 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
   try {
     const { orgId } = ctx;
     const { searchParams } = new URL(req.url);
-    const limit = Math.min(Number(searchParams.get("limit") ?? 300), 1000);
+    // NaN-safe: a non-numeric ?limit falls back to 300; always clamped to [1,1000].
+    const rawLimit = Number(searchParams.get("limit"));
+    const limit = Number.isFinite(rawLimit) && rawLimit > 0
+      ? Math.min(Math.max(1, Math.floor(rawLimit)), 1000)
+      : 300;
+
+    // Optional effectiveDate range — applied server-side so results aren't
+    // capped to only the newest N rows before filtering.
+    const from = searchParams.get("from");
+    const to = searchParams.get("to");
+    let toEnd: Date | undefined;
+    if (to) { toEnd = new Date(to); toEnd.setHours(23, 59, 59, 999); }
+    const dateFilter = (from || to)
+      ? { effectiveDate: { ...(from && { gte: new Date(from) }), ...(toEnd && { lte: toEnd }) } }
+      : {};
 
     const scope = resolveScope(ctx, {
       all: "hrms.employee.read",
@@ -33,7 +47,7 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
     const allowedIds = intersectEmployeeIds(scopeFilter.employeeIds, hierarchy);
 
     const history = await prisma.employmentHistory.findMany({
-      where: { orgId, ...(allowedIds && { employeeId: { in: allowedIds } }) },
+      where: { orgId, ...(allowedIds && { employeeId: { in: allowedIds } }), ...dateFilter },
       orderBy: { effectiveDate: "desc" },
       take: limit,
     });
@@ -58,4 +72,4 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
     console.error("GET /employees/history error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.employee.read", "hrms.employee.read_team"], anyPermission: true });

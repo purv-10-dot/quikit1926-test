@@ -7,6 +7,7 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
 import { Download, Mail } from "lucide-react";
 import { SkeletonLine } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 import { withBasePath } from "@/lib/utils/base-path";
 
 interface PayslipLine {
@@ -133,6 +134,8 @@ export default function PayslipDetailPage() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-4 pb-10">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           {p.status === "Released" && (

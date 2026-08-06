@@ -17,6 +17,7 @@ import { Send } from "lucide-react";
 import { toErrorMessage } from "@/lib/api/errors";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
+  PageFrame,
   PageHeader, PageContainer, TabBar,
 } from "@/components/PageShell";
 import { DataTable } from "@/components/DataTable";
@@ -223,14 +224,14 @@ export default function PurchaseOrdersPage() {
   }));
   // Match the RFQ drawer's vendor label format exactly so the picker
   // reads the same in both flows. `||` (not `??`) treats an empty
-  // `companyName` as "missing" and falls through to the contact name
-  // — matters for vendors created without a registered company.
+  // `name` (Vendor / Contact Name) as "missing" and falls through to
+  // the company name — matters for vendors saved without a contact name.
   // Only active vendors are selectable (inactive/deleted/blacklisted excluded).
   const vendorOptions = (vendorsData?.data ?? [])
     .filter((v) => v.status === "active" && !(v as { isBlacklisted?: boolean }).isBlacklisted)
     .map((v) => ({
       value: v.id,
-      label: v.companyName || v.name || v.id,
+      label: v.name || v.companyName || v.id,
     }));
   const sourceRfqOptions = useMemo(
     () =>
@@ -408,6 +409,7 @@ export default function PurchaseOrdersPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Purchase Orders"
         subtitle="Order materials from vendors against approved RFQs and Indents"
@@ -416,7 +418,7 @@ export default function PurchaseOrdersPage() {
 
       <TabBar tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
 
-      <PageContainer>
+      <PageContainer fill>
         <DataTable
           id="purchase-orders"
           columns={columns}
@@ -435,6 +437,7 @@ export default function PurchaseOrdersPage() {
           onSortChange={(k, d) => setSort({ by: k, order: d })}
         />
       </PageContainer>
+      </PageFrame>
 
       <QuickCreateDrawer
         open={drawerOpen}

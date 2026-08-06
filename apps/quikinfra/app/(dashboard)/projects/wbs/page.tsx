@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { PageHeader, PageContainer, EmptyState } from "@/components/PageShell";
 import { Field, TextInput, NumberInput, SelectInput } from "@/components/FormDrawer";
+import { validateDateRange } from "@/lib/validators";
 import { useProjects } from "@/hooks/use-masters";
 import { useCreateWbsTask, useDeleteWbsTask, useWbsTasks } from "@/hooks/use-wbs";
 import { WbsEditTaskModal } from "@/components/WbsEditTaskModal";
@@ -91,7 +92,10 @@ function nextWbsCode(tasks: WbsTask[], parentId: string | null): string {
 
 export default function WbsPlanningPage() {
   const { data: projects } = useProjects();
-  const projectOptions = (projects?.data ?? []).map((p) => ({ value: p.id, label: p.name }));
+  const projectOptions = (projects?.data ?? []).map((p) => ({
+    value: p.id,
+    label: `${p.name}${(p as { executionMode?: string }).executionMode === "FREE_SCOPE" ? " · Free-Scope" : ""}`,
+  }));
 
   const [selectedProject, setSelectedProject] = useState("");
   const [view, setView] = useState<"grid" | "gantt">("gantt");
@@ -139,7 +143,16 @@ export default function WbsPlanningPage() {
     setPredecessors([]);
   };
 
-  const canAdd = !!selectedProject && name.trim().length > 0 && (autoAssign || wbsCode.trim().length > 0);
+  // Mirrors the server rule in createWbsTask — end may equal start (a
+  // zero-duration task) but never precede it.
+  const dateRangeError = validateDateRange(startDate, endDate, "End date");
+  const endDateError = dateRangeError.valid ? undefined : dateRangeError.error;
+
+  const canAdd =
+    !!selectedProject &&
+    name.trim().length > 0 &&
+    (autoAssign || wbsCode.trim().length > 0) &&
+    !endDateError;
 
   const handleAdd = async () => {
     if (!canAdd) return;
@@ -323,12 +336,18 @@ export default function WbsPlanningPage() {
                   className="w-full h-9 px-2.5 text-sm border border-slate-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400"
                 />
               </Field>
-              <Field label="End Date">
+              <Field label="End Date" error={endDateError}>
                 <input
                   type="date"
                   value={endDate}
+                  min={startDate || undefined}
                   onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full h-9 px-2.5 text-sm border border-slate-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400"
+                  aria-invalid={!!endDateError}
+                  className={`w-full h-9 px-2.5 text-sm border rounded-md bg-white focus:outline-none focus:ring-2 ${
+                    endDateError
+                      ? "border-rose-300 focus:ring-rose-200 focus:border-rose-400"
+                      : "border-slate-300 focus:ring-accent-200 focus:border-accent-400"
+                  }`}
                 />
               </Field>
 

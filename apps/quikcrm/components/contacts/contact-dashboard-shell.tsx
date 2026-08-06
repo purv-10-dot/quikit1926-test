@@ -19,7 +19,6 @@ import {
 } from "@/components/contacts/contact-modal";
 import type { ContactFormValue } from "@/components/contacts/contact-form";
 import { TaskEditModal, type TaskFormSeed } from "@/components/tasks/task-edit-modal";
-import { LogActivityModal } from "@/components/activities/log-activity-modal";
 import {
   CreateOpportunityModal,
   type CreateOpportunityResult,
@@ -118,7 +117,6 @@ export function ContactDashboardShell(props: ContactDashboardShellProps) {
   const [cmdOpen, setCmdOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [taskOpen, setTaskOpen] = useState(false);
-  const [logActivityOpen, setLogActivityOpen] = useState(false);
   const [oppOpen, setOppOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -131,6 +129,17 @@ export function ContactDashboardShell(props: ContactDashboardShellProps) {
   useCommandPaletteShortcut(() => setCmdOpen(true));
 
   const fullName = `${contact.firstName} ${contact.lastName ?? ""}`.trim();
+
+  // Log activity is now a dedicated page (/activities/log). Navigate there with
+  // the contact pre-linked instead of opening a modal.
+  const goLogActivity = useCallback(() => {
+    const qs = new URLSearchParams({
+      relatedKind: "Contact",
+      relatedObjectId: contact.id,
+      label: fullName,
+    });
+    router.push(`/activities/log?${qs.toString()}`);
+  }, [router, contact.id, fullName]);
   const isDeleted = Boolean(contact.deletedAt);
   const linkedAccount = Boolean(account?.id && account?.name);
 
@@ -179,7 +188,7 @@ export function ContactDashboardShell(props: ContactDashboardShellProps) {
           setEditOpen(true);
         },
         onTask: () => setTaskOpen(true),
-        onLogActivity: () => setLogActivityOpen(true),
+        onLogActivity: goLogActivity,
         onAddNote: () => {
           setActiveTab("notes");
           window.setTimeout(() => document.getElementById("contact-note")?.focus(), 120);
@@ -210,6 +219,7 @@ export function ContactDashboardShell(props: ContactDashboardShellProps) {
       contact.email,
       contact.phone,
       isDeleted,
+      goLogActivity,
       linkedAccount,
       loadPickers,
       permissions,
@@ -368,7 +378,7 @@ export function ContactDashboardShell(props: ContactDashboardShellProps) {
           setEditOpen(true);
         }}
         onTask={() => setTaskOpen(true)}
-        onLogActivity={() => setLogActivityOpen(true)}
+        onLogActivity={goLogActivity}
         onNewOpportunity={() => setOppOpen(true)}
         canEdit={permissions.contactsEdit}
         canLogActivity={permissions.activitiesCreate}
@@ -403,7 +413,7 @@ export function ContactDashboardShell(props: ContactDashboardShellProps) {
         permissions={{ contactsEdit: permissions.contactsEdit }}
         activeTab={activeTab}
         onTabChange={setActiveTab}
-        onLogActivity={() => setLogActivityOpen(true)}
+        onLogActivity={goLogActivity}
         onRefresh={() => router.refresh()}
         canCreateNote={permissions.contactsEdit && !isDeleted}
       />
@@ -435,21 +445,6 @@ export function ContactDashboardShell(props: ContactDashboardShellProps) {
         }}
         seed={taskSeed}
         locked={{ relatedKind: true }}
-      />
-
-      <LogActivityModal
-        open={logActivityOpen}
-        onClose={() => setLogActivityOpen(false)}
-        onSuccess={() => {
-          setLogActivityOpen(false);
-          router.refresh();
-        }}
-        canViewLeads={permissions.canViewLeads}
-        initialRelated={{
-          kind: "Contact",
-          id: contact.id,
-          label: fullName,
-        }}
       />
 
       {linkedAccount && account && (

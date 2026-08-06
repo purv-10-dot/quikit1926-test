@@ -59,7 +59,7 @@ describe("PUT /api/masters/work-categories/[id]", () => {
 
   it("returns 403 when the permission matrix denies edit", async () => {
     setContext(
-      makeUserCtx(["construction.masters.edit"], {
+      makeUserCtx(["construction.org_work_category.edit"], {
         permissionMatrix: { "org.work_category": { edit: false } },
       }),
     );
@@ -91,7 +91,7 @@ describe("PUT /api/masters/work-categories/[id]", () => {
 describe("DELETE /api/masters/work-categories/[id]", () => {
   it("returns 403 when the permission matrix denies delete", async () => {
     setContext(
-      makeUserCtx(["construction.masters.delete"], {
+      makeUserCtx(["construction.org_work_category.delete"], {
         permissionMatrix: { "org.work_category": { delete: false } },
       }),
     );

@@ -19,10 +19,11 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { appBaseUrl } from "@/lib/utils/app-url";
 
-export type IndexOperation = "create" | "update" | "delete";
+type IndexOperation = "create" | "update" | "delete";
 
-export interface IndexDoc {
+interface IndexDoc {
   entityType: string;
   entityId: string;
   orgId: string;
@@ -39,7 +40,7 @@ export interface IndexDoc {
  * index (enforced by the builders, which only read allow-listed columns). Sagar
  * / the runtime projection layer should mirror this exactly.
  */
-export const SEARCH_INDEX_POLICY = {
+const SEARCH_INDEX_POLICY = {
   Employee: {
     indexableText: ["firstName", "lastName", "displayName", "employeeCode", "jobTitle", "designation", "department", "team"],
     neverIndex: ["salary", "ctc", "panNumber", "aadhaarNumber", "bankAccounts", "personalEmail", "personalPhone", "currentAddress", "permanentAddress", "dateOfBirth", "bloodGroup", "maritalStatus"],
@@ -66,7 +67,7 @@ export const SEARCH_INDEX_POLICY = {
  * Document TYPES whose bodies must never be indexed (they contain §13 data).
  * A policy/handbook doc is fine; a payslip or ID scan is not.
  */
-export const EXCLUDED_DOCUMENT_TYPES = [
+const EXCLUDED_DOCUMENT_TYPES = [
   "Payslip", "SalaryLetter", "SalarySlip", "IdProof", "PAN", "Aadhaar",
   "BankProof", "PassbookProof", "OfferLetter", "TaxProof", "Form16",
 ];
@@ -90,7 +91,7 @@ async function postIndexEvent(operation: IndexOperation, doc: IndexDoc): Promise
 
 // ── Employee (reference entity — the other entities follow this pattern) ──
 
-const deepLinkBase = () => process.env.NEXT_PUBLIC_QUIKHRMS_URL ?? process.env.APP_URL ?? "";
+const deepLinkBase = () => appBaseUrl();
 
 /**
  * Re-fetch the §13-safe Employee projection and emit a create/update index

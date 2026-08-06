@@ -42,22 +42,17 @@ export function getFiscalYear(date: Date): string {
   return `${startYear}-${String((startYear + 1) % 100).padStart(2, "0")}`;
 }
 
-export function fiscalYearStart(fy: string): Date {
+function fiscalYearStart(fy: string): Date {
   const [startYearStr] = fy.split("-");
   return new Date(Number(startYearStr), 3, 1);
 }
 
-export function fiscalYearEnd(fy: string): Date {
-  const [startYearStr] = fy.split("-");
-  return new Date(Number(startYearStr) + 1, 2, 31);
-}
-
-export function monthsElapsedInFY(date: Date): number {
+function monthsElapsedInFY(date: Date): number {
   const month = date.getMonth();
   return month >= 3 ? month - 3 : month + 9;
 }
 
-export function computeTaxOnSlabs(taxableIncome: number, regime: Regime): number {
+function computeTaxOnSlabs(taxableIncome: number, regime: Regime): number {
   const slabs = regime === "NewRegime" ? NEW_REGIME_SLABS : OLD_REGIME_SLABS;
   let tax = 0;
   let prev = 0;
@@ -70,12 +65,12 @@ export function computeTaxOnSlabs(taxableIncome: number, regime: Regime): number
   return tax;
 }
 
-export function computeRebate87A(taxableIncome: number, baseTax: number, regime: Regime): number {
+function computeRebate87A(taxableIncome: number, baseTax: number, regime: Regime): number {
   const ceiling = regime === "NewRegime" ? REBATE_CEILING_NEW : REBATE_CEILING_OLD;
   return taxableIncome <= ceiling ? baseTax : 0;
 }
 
-export function computeSurcharge(annualTax: number, taxableIncome: number): number {
+function computeSurcharge(annualTax: number, taxableIncome: number): number {
   if (taxableIncome > 50000000) return annualTax * 0.37;
   if (taxableIncome > 20000000) return annualTax * 0.25;
   if (taxableIncome > 10000000) return annualTax * 0.15;
@@ -418,50 +413,6 @@ export async function getEmployeeFYHistory(
   }
 
   return { grossSoFar, tdsPaidSoFar, fy };
-}
-
-/**
- * Project annual gross + compute monthly TDS to deduct this period.
- * Spreads remaining (annualTax - tdsPaidSoFar) over remaining months in FY.
- */
-export async function calculateMonthlyTds(params: {
-  orgId: string;
-  employeeId: string;
-  currentMonthGross: number;
-  periodStart: Date;
-  regime: Regime;
-}): Promise<{
-  monthlyTds: number;
-  projectedAnnualGross: number;
-  annualTax: number;
-  remainingMonths: number;
-  regime: Regime;
-}> {
-  const { orgId, employeeId, currentMonthGross, periodStart, regime } = params;
-
-  const { grossSoFar, tdsPaidSoFar, fy } = await getEmployeeFYHistory(orgId, employeeId, periodStart);
-  const deductions = await getEmployeeDeductions(orgId, employeeId, fy);
-
-  const elapsed = monthsElapsedInFY(periodStart);
-  const remainingMonths = Math.max(1, 12 - elapsed);
-  const projectedAnnualGross = grossSoFar + currentMonthGross * remainingMonths;
-
-  const breakup = computeAnnualTax({
-    annualGrossSalary: projectedAnnualGross,
-    regime,
-    deductions,
-  });
-
-  const remainingTax = Math.max(0, breakup.totalTaxLiability - tdsPaidSoFar);
-  const monthlyTds = Math.ceil(remainingTax / remainingMonths);
-
-  return {
-    monthlyTds,
-    projectedAnnualGross,
-    annualTax: breakup.totalTaxLiability,
-    remainingMonths,
-    regime,
-  };
 }
 
 function round2(n: number): number {

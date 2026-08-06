@@ -83,20 +83,6 @@ export async function rateLimit(
   };
 }
 
-/**
- * Compose multiple limits — fail if ANY of them block. Used to enforce
- * IP-and-user composite limits like "5 logins/min per IP AND per email".
- */
-export async function rateLimitAll(
-  checks: Array<{ scope: string; identifier: string; max: number; windowSec: number }>,
-): Promise<RateLimitResult | null> {
-  for (const c of checks) {
-    const r = await rateLimit(c.scope, c.identifier, c.max, c.windowSec);
-    if (!r.allowed) return r;
-  }
-  return null;
-}
-
 /** Standard 429 response shape with Retry-After + X-RateLimit headers. */
 export function rateLimitedResponse(result: RateLimitResult): NextResponse {
   return NextResponse.json(
@@ -131,17 +117,6 @@ export async function rateLimitOrResponse(
 ): Promise<NextResponse | null> {
   const r = await rateLimit(scope, identifier, max, windowSec);
   return r.allowed ? null : rateLimitedResponse(r);
-}
-
-/**
- * Variant that fails on any of several composite checks (IP + email, etc.).
- * Returns 429 if ANY check is over its limit.
- */
-export async function rateLimitAllOrResponse(
-  checks: Array<{ scope: string; identifier: string; max: number; windowSec: number }>,
-): Promise<NextResponse | null> {
-  const blocked = await rateLimitAll(checks);
-  return blocked ? rateLimitedResponse(blocked) : null;
 }
 
 /** Best-effort client IP extraction; falls back to "unknown". */

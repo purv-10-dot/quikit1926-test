@@ -300,6 +300,30 @@ export function DocEditor({
     return j.data.url as string;
   }
 
+  /**
+   * File attachment upload (non-image) — same endpoint as images, but returns
+   * the full metadata the editor's file-attachment card needs. Enables the
+   * paperclip "Attach file" button in the doc editor.
+   */
+  async function uploadFileToS3(
+    file: File,
+  ): Promise<{ url: string; fileName: string; mimeType: string; size: number }> {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("projectId", projectId);
+    const res = await fetch(`/api/docs/upload`, { method: "POST", body: fd });
+    const j = await res.json().catch(() => null);
+    if (!res.ok || !j?.success) {
+      throw new Error(j?.error || `Upload failed (${res.status})`);
+    }
+    return {
+      url: j.data.url as string,
+      fileName: j.data.fileName as string,
+      mimeType: j.data.mimeType as string,
+      size: j.data.size as number,
+    };
+  }
+
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
       <div
@@ -455,6 +479,7 @@ export function DocEditor({
                 scheduleSave();
               }}
               uploadImage={uploadImageToS3}
+              uploadFile={uploadFileToS3}
               placeholder="Did you know you can add all kinds of cool things to this doc, like a table of contents, date, or roadmap. Type / to open a list."
               slotBetween={
                 <div className="px-10 pt-6 pb-4">

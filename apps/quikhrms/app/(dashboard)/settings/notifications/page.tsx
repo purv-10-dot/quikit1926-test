@@ -5,6 +5,7 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { clsx } from "clsx";
 import { Bell, CheckCheck, Info, AlertTriangle, CheckCircle, XCircle, ArrowRight } from "lucide-react";
 import { SkeletonCards } from "@/components/hrms/skeleton";
+import { PageBackground } from "@/components/hrms/page-background";
 
 interface NotificationItem {
   id: string;
@@ -43,6 +44,8 @@ export default function NotificationsPage() {
 
   return (
     <div className="max-w-2xl mx-auto">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <h1 className="text-base font-semibold text-gray-900">Notifications</h1>

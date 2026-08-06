@@ -14,7 +14,9 @@ import {
   type InvitePreview,
   type OrgContext,
   type PublicUser,
+  type UpdateChannelInput,
 } from "@/lib/shared";
+import { getStorage } from "@/lib/server/storage";
 import { displayNameOf, loadPublicUsers, toMessageDto, type MessageRow } from "./helpers";
 import { ensureAssistantBot } from "./assistant.service";
 import * as notifications from "./notifications.service";
@@ -92,6 +94,53 @@ async function getChannelOr404(ctx: OrgContext, channelId: string): Promise<Chan
   const channel = await prisma.qcChannel.findFirst({ where: { id: channelId, orgId: ctx.orgId } });
   if (!channel) throw new HttpError(404, "Channel not found");
   return channel;
+}
+
+// ============================================================================
+// Group avatar — stored as an objectPath, resolved to a short-lived signed URL
+// on read (mirrors message media / injectMediaUrl). We pass an image
+// content-type so the storage driver serves it INLINE (isInlineType → inline).
+// ============================================================================
+
+function imageMimeFromPath(objectPath: string): string {
+  const ext = objectPath.slice(objectPath.lastIndexOf(".")).toLowerCase();
+  switch (ext) {
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".gif":
+      return "image/gif";
+    case ".webp":
+      return "image/webp";
+    case ".svg":
+      return "image/svg+xml";
+    default:
+      return "image/png";
+  }
+}
+
+/** Mint a fresh signed URL for a stored avatar objectPath (best-effort). */
+async function signAvatar(objectPath: string): Promise<string | null> {
+  try {
+    return await getStorage().createDownloadUrl(objectPath, {
+      contentType: imageMimeFromPath(objectPath),
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve a group channel's stored avatar objectPath to a signed URL. DM/AI
+ * items carry a derived member avatar (already a URL) and are left untouched.
+ * A failed mint drops the avatar to null → the UI falls back to the group glyph.
+ */
+async function resolveGroupAvatar(
+  item: ChannelListItem,
+  channel: ChannelRow,
+): Promise<ChannelListItem> {
+  if (channel.type !== "group" || !channel.avatarUrl) return item;
+  return { ...item, avatarUrl: await signAvatar(channel.avatarUrl) };
 }
 
 // ============================================================================
@@ -546,14 +595,9 @@ export async function listForUser(ctx: OrgContext): Promise<ChannelList> {
     const unreadCount = (messagesByChannel.get(channel.id) ?? []).filter(
       (m) => m.senderId !== ctx.userId && (!cutoff || m.createdAt > cutoff),
     ).length;
-    const item = toListItem(
+    const item = await resolveGroupAvatar(
+      toListItem(channel, membership, channelMembers, userMap, ctx.userId, last, unreadCount),
       channel,
-      membership,
-      channelMembers,
-      userMap,
-      ctx.userId,
-      last,
-      unreadCount,
     );
     if (membership.isPinned) priority.push(item);
     else recent.push(item);
@@ -579,7 +623,10 @@ export async function findById(ctx: OrgContext, channelId: string): Promise<Chan
     where: { orgId: ctx.orgId, channelId },
     orderBy: { createdAt: "desc" },
   });
-  return toListItem(channel, membership, members, userMap, ctx.userId, last, 0);
+  return resolveGroupAvatar(
+    toListItem(channel, membership, members, userMap, ctx.userId, last, 0),
+    channel,
+  );
 }
 
 function toListItem(
@@ -623,6 +670,7 @@ function toListItem(
   return {
     channelId: channel.id,
     name,
+    description: channel.description,
     avatarUrl,
     type: channel.type as ChannelListItem["type"],
     visibility: channel.visibility as ChannelListItem["visibility"],
@@ -809,6 +857,108 @@ export async function updateMemberRole(
   }
   await prisma.qcChannelMember.update({ where: { id: target.id }, data: { role } });
   return { role };
+}
+
+// ============================================================================
+// Group admin: edit details + delete-for-everyone (QC_008)
+// ============================================================================
+
+/**
+ * Edit group details (name / description / avatar). Admin/moderator-gated,
+ * GROUP-ONLY (dm/ai names + avatars are derived, never stored). Only the
+ * provided fields change. `avatarUrl` is the uploaded object's storage path;
+ * we persist the path but publish a signed URL so members render it directly.
+ * Publishes `channel_updated` for live in-place updates.
+ */
+export async function updateChannel(
+  ctx: OrgContext,
+  channelId: string,
+  patch: UpdateChannelInput,
+): Promise<ChannelListItem> {
+  const channel = await getChannelOr404(ctx, channelId);
+  if (channel.type !== "group") throw new HttpError(400, "Only group details can be edited");
+  await requireChannelAdminOrModerator(ctx, channelId, "update");
+
+  const data: { name?: string; description?: string | null; avatarUrl?: string } = {};
+  if (patch.name !== undefined) {
+    const name = patch.name.trim();
+    if (!name) throw new HttpError(400, "Group name cannot be empty");
+    if (name.length > 100) throw new HttpError(400, "Group name is too long (max 100)");
+    data.name = name;
+  }
+  if (patch.description !== undefined) {
+    const desc = patch.description.trim();
+    if (desc.length > 500) throw new HttpError(400, "Description is too long (max 500)");
+    data.description = desc || null;
+  }
+  if (patch.avatarUrl !== undefined) {
+    if (typeof patch.avatarUrl !== "string" || !patch.avatarUrl) {
+      throw new HttpError(400, "avatarUrl must be a non-empty object path");
+    }
+    data.avatarUrl = patch.avatarUrl;
+  }
+  if (Object.keys(data).length === 0) throw new HttpError(400, "No changes provided");
+
+  const renamed = data.name !== undefined && data.name !== channel.name;
+  await prisma.qcChannel.update({ where: { id: channelId }, data });
+
+  const avatarSigned = data.avatarUrl ? await signAvatar(data.avatarUrl) : undefined;
+  await publishFanout({
+    orgId: ctx.orgId,
+    channelId,
+    event: "channel_updated",
+    payload: {
+      channelId,
+      ...(data.name !== undefined ? { name: data.name } : {}),
+      ...(data.description !== undefined ? { description: data.description } : {}),
+      ...(avatarSigned ? { avatarUrl: avatarSigned } : {}),
+    },
+  });
+  if (renamed) {
+    await emitSystemMessage(
+      ctx,
+      channelId,
+      `${await displayNameOf(ctx.userId)} renamed the group to "${data.name}"`,
+    );
+  }
+  return findById(ctx, channelId);
+}
+
+/**
+ * Delete-for-everyone (Teams-style). Admin/moderator-gated, GROUP-ONLY (dm/ai
+ * are never deleted this way — a dm/ai is torn down via `leave`). Removes the
+ * channel + its messages + all memberships + any invites in one transaction
+ * (messages/members first — the channel FK is Restrict), then publishes
+ * `channel_deleted` with the member ids so every client removes it live.
+ */
+export async function deleteChannel(
+  ctx: OrgContext,
+  channelId: string,
+): Promise<{ deleted: true }> {
+  const channel = await getChannelOr404(ctx, channelId);
+  if (channel.type !== "group") throw new HttpError(400, "Only group channels can be deleted");
+  await requireChannelAdminOrModerator(ctx, channelId, "delete");
+
+  const members = await prisma.qcChannelMember.findMany({
+    where: { orgId: ctx.orgId, channelId },
+    select: { userId: true },
+  });
+  const memberIds = members.map((m) => m.userId);
+
+  await prisma.$transaction([
+    prisma.qcMessage.deleteMany({ where: { orgId: ctx.orgId, channelId } }),
+    prisma.qcChannelMember.deleteMany({ where: { orgId: ctx.orgId, channelId } }),
+    prisma.qcInvite.deleteMany({ where: { orgId: ctx.orgId, channelId } }),
+    prisma.qcChannel.deleteMany({ where: { id: channelId, orgId: ctx.orgId } }),
+  ]);
+
+  await publishFanout({
+    orgId: ctx.orgId,
+    channelId,
+    event: "channel_deleted",
+    payload: { channelId, memberIds },
+  });
+  return { deleted: true };
 }
 
 /**

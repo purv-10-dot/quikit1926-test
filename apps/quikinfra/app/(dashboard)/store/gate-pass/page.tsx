@@ -7,7 +7,7 @@ import {
   ArrowRight, ArrowLeft, Truck, Send, Check, X as XIcon,
   CheckCircle2, Eye,
 } from "lucide-react";
-import { PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { WorkflowConfirmDialog } from "@/components/WorkflowConfirmDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -797,13 +797,14 @@ export default function GatePassPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Gate Pass Management"
         subtitle="Track inward and outward movement of materials"
         breadcrumbs={[{ label: "Store", href: "/store" }, { label: "Gate Pass" }]}
       />
       <TabBar tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
-      <PageContainer>
+      <PageContainer fill>
         <DataTable
           id="store-gate-pass"
           columns={columns}
@@ -825,6 +826,7 @@ export default function GatePassPage() {
           historyEntityType="gate_pass"
         />
       </PageContainer>
+      </PageFrame>
       <QuickCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} config={config} />
 
       <WorkflowConfirmDialog

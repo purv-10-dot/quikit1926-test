@@ -35,6 +35,14 @@ export {
   PhoneMissed,
   Voicemail,
   Headphones,
+  // Settings → Support Status.
+  LifeBuoy,
+  // Voice typing (dictation). A waveform, deliberately NOT `Mic` — the mic
+  // button stages a voice-note attachment, this one types text into the editor,
+  // and one icon for both outcomes would be genuinely ambiguous.
+  AudioLines,
+  Play,
+  Pause,
   CornerUpRight,
   Reply,
   Forward,
@@ -75,5 +83,6 @@ export {
   BadgeCheck,
   Type,
   Palette,
+  Shield,
   type LucideIcon,
 } from "lucide-react";

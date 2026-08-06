@@ -9,6 +9,7 @@ import { FileText, Download, AlertCircle, FolderLock, Plus, Pencil, Trash2 } fro
 import { clsx } from "clsx";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { Modal } from "@/components/hrms/modal";
+import { PageBackground } from "@/components/hrms/page-background";
 import { Select } from "@/components/hrms/ui/select";
 import { FormField, FormInput, FormTextarea, FormActions } from "@/components/hrms/form";
 import { DocumentSourcePicker } from "@/components/hrms/document-source-picker";
@@ -53,6 +54,7 @@ interface DocItem {
   status: string;
   expiryDate: string | null;
   createdAt: string;
+  metadata: { notifyDaysBefore?: number } | null;
   _count: { acknowledgments: number; shares: number };
 }
 
@@ -65,6 +67,7 @@ const CATEGORIES = [
   { value: "RelievingLetter", label: "Relieving Letter" },
   { value: "Contract", label: "Contract" },
   { value: "NDA", label: "NDA" },
+  { value: "Insurance", label: "Insurance" },
   { value: "Other", label: "Other" },
 ];
 
@@ -79,7 +82,7 @@ export default function MyVaultPage() {
   const [deleteDoc, setDeleteDoc] = useState<DocItem | null>(null);
   const [form, setForm] = useState({
     title: "", description: "", category: "IdProof",
-    fileUrl: "", fileType: "", fileSize: 0, expiryDate: "",
+    fileUrl: "", fileType: "", fileSize: 0, expiryDate: "", notifyDaysBefore: 30,
   });
 
   const { data: mine, isLoading } = useQuery({
@@ -104,7 +107,7 @@ export default function MyVaultPage() {
       toast.success("Document uploaded");
       await qc.refetchQueries({ queryKey: ["documents"] });
       setShowUpload(false);
-      setForm({ title: "", description: "", category: "IdProof", fileUrl: "", fileType: "", fileSize: 0, expiryDate: "" });
+      setForm({ title: "", description: "", category: "IdProof", fileUrl: "", fileType: "", fileSize: 0, expiryDate: "", notifyDaysBefore: 30 });
     },
   });
 
@@ -135,6 +138,7 @@ export default function MyVaultPage() {
       fileType: d.fileType,
       fileSize: 0,
       expiryDate: d.expiryDate ? d.expiryDate.slice(0, 10) : "",
+      notifyDaysBefore: d.metadata?.notifyDaysBefore ?? 30,
     });
     setEditDoc(d);
   };
@@ -143,7 +147,7 @@ export default function MyVaultPage() {
   // shared with the edit modal, so without this reset a previously
   // viewed/edited document's data would carry over into a new upload.
   const openUpload = () => {
-    setForm({ title: "", description: "", category: "IdProof", fileUrl: "", fileType: "", fileSize: 0, expiryDate: "" });
+    setForm({ title: "", description: "", category: "IdProof", fileUrl: "", fileType: "", fileSize: 0, expiryDate: "", notifyDaysBefore: 30 });
     setShowUpload(true);
   };
 
@@ -166,6 +170,7 @@ export default function MyVaultPage() {
       fileSize: form.fileSize,
       status: "Active",
       expiryDate: form.expiryDate || undefined,
+      metadata: form.category === "Insurance" && form.expiryDate ? { notifyDaysBefore: form.notifyDaysBefore } : undefined,
     });
   };
 
@@ -176,6 +181,8 @@ export default function MyVaultPage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div className="flex items-start gap-3">
           <FolderLock size={28} className="text-[#166534] mt-1.5" />
@@ -288,6 +295,11 @@ export default function MyVaultPage() {
           <FormField label="Expiry Date">
             <FormInput type="date" min={todayInput()} value={form.expiryDate} onChange={(e) => setForm({ ...form, expiryDate: e.target.value })} />
           </FormField>
+          {form.category === "Insurance" && form.expiryDate && (
+            <FormField label="Notify how many days before expiry?">
+              <FormInput type="number" min={1} value={form.notifyDaysBefore} onChange={(e) => setForm({ ...form, notifyDaysBefore: Number(e.target.value) || 30 })} />
+            </FormField>
+          )}
           <FormActions>
             <button type="button" onClick={() => setShowUpload(false)} className="btn btn-ghost">Cancel</button>
             <button type="submit" disabled={createMut.isPending} className="btn btn-primary">
@@ -311,6 +323,7 @@ export default function MyVaultPage() {
                   fileUrl: form.fileUrl,
                   fileType: form.fileType || "application/octet-stream",
                   expiryDate: form.expiryDate || undefined,
+                  metadata: form.category === "Insurance" && form.expiryDate ? { notifyDaysBefore: form.notifyDaysBefore } : undefined,
                 },
               });
             }}
@@ -336,6 +349,11 @@ export default function MyVaultPage() {
             <FormField label="Expiry Date">
               <FormInput type="date" min={todayInput()} value={form.expiryDate} onChange={(e) => setForm({ ...form, expiryDate: e.target.value })} />
             </FormField>
+            {form.category === "Insurance" && form.expiryDate && (
+              <FormField label="Notify how many days before expiry?">
+                <FormInput type="number" min={1} value={form.notifyDaysBefore} onChange={(e) => setForm({ ...form, notifyDaysBefore: Number(e.target.value) || 30 })} />
+              </FormField>
+            )}
             <FormActions>
               <button type="button" onClick={() => setEditDoc(null)} className="btn btn-ghost">Cancel</button>
               <button type="submit" disabled={updateMut.isPending} className="btn btn-primary">

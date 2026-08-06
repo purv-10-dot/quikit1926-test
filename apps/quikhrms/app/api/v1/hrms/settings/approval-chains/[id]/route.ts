@@ -16,7 +16,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
     console.error("GET /settings/approval-chains/[id] error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.settings.write", "hrms.settings.read"], anyPermission: true });
 
 export const PUT = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
   try {
@@ -30,7 +30,22 @@ export const PUT = withAuth(async (req: NextRequest, { orgId, userId }, params) 
     const existing = await prisma.approvalChain.findFirst({ where: { id, orgId, deletedAt: null } });
     if (!existing) return notFound("Approval chain not found");
 
-    const { levels, ...rest } = parsed.data;
+    const { levels, module, ...rest } = parsed.data;
+
+    // Same org-membership validation as POST: every USER/ROLE approver referenced
+    // in the levels must belong to this org (block cross-tenant / bogus ids).
+    if (levels && levels.length) {
+      const levelUserIds = [...new Set(levels.filter((l) => l.kind === "USER" && l.userId).map((l) => l.userId as string))];
+      const levelRoleIds = [...new Set(levels.filter((l) => l.kind === "ROLE" && l.roleId).map((l) => l.roleId as string))];
+      if (levelUserIds.length) {
+        const n = await prisma.employee.count({ where: { orgId, deletedAt: null, id: { in: levelUserIds } } });
+        if (n !== levelUserIds.length) return validationError("One or more approvers aren't valid employees in your organisation.");
+      }
+      if (levelRoleIds.length) {
+        const n = await prisma.hrmsAppRole.count({ where: { orgId, id: { in: levelRoleIds } } });
+        if (n !== levelRoleIds.length) return validationError("One or more approver roles are invalid.");
+      }
+    }
 
     // Only one active chain per module. Activating this chain deactivates any
     // other active chain for the same module.
@@ -39,6 +54,8 @@ export const PUT = withAuth(async (req: NextRequest, { orgId, userId }, params) 
         where: { id },
         data: {
           ...rest,
+          // Cast: client enum may lag the DB enum (WFH/Payroll added via raw SQL).
+          ...(module && { module: module as never }),
           ...(levels && { levels: JSON.parse(JSON.stringify(levels)) }),
           updatedBy: userId,
         },

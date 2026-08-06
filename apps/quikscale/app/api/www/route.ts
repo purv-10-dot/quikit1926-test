@@ -146,7 +146,13 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
   const body = await req.json();
   const parsed = createWWWSchema.safeParse(body);
   if (!parsed.success) return validationError(parsed);
-  const { who, whoIds, what, when, status, notes, category, originalDueDate } = parsed.data;
+  const { who, whoIds, what, when, status, notes, category, originalDueDate, dueDateTBD } = parsed.data;
+
+  // TBD rows still persist a `when` so the column can stay NOT NULL and every
+  // existing sort / index / reader keeps working untouched. The creation date
+  // is the placeholder; `dueDateTBD` is what the UI actually branches on.
+  // Zod's refine guarantees `when` is present whenever dueDateTBD is false.
+  const resolvedWhen = dueDateTBD ? new Date() : new Date(when!);
 
   // Org-configurable: when `www_notes_required` is on, Notes is mandatory.
   // Enforced server-side (defense-in-depth) so the client toggle can't be bypassed.
@@ -166,7 +172,7 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
   // ── Duplicate guard ── reject (409) before creating anything when an existing
   // active item is an EXACT repeat: same assignee AND same calendar day AND same
   // "What?" text. A different "What?" for the same person/day is allowed.
-  const duplicate = await findWWWDuplicate(db, orgId, { whoIds: resolvedIds, what, when });
+  const duplicate = await findWWWDuplicate(db, orgId, { whoIds: resolvedIds, what, when: resolvedWhen });
   if (duplicate) {
     return NextResponse.json(
       { success: false, error: await wwwDuplicateMessage(db, duplicate) },
@@ -180,7 +186,8 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
   const commonData = {
     orgId,
     what,
-    when: new Date(when),
+    when: resolvedWhen,
+    dueDateTBD: dueDateTBD ?? false,
     status: status ?? "not-yet-started",
     notes: notes ?? null,
     category: category ?? null,
@@ -268,18 +275,28 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
   );
 
   // One notification per assignee, scoped to their own row.
-  for (const item of createdItems) {
-    notifyWWWAssignment({
-      orgId,
-      itemId: item.id,
-      what: item.what,
-      when: item.when,
-      creatorUserId: userId,
-      ownerUserIds: [item.who],
-    }).catch((err) => {
-      console.error("[POST /api/www] notifyWWWAssignment failed:", err);
-    });
-  }
+  //
+  // AWAITED deliberately. These used to be fire-and-forget: the handler
+  // returned its response while the SMTP sends were still in flight, so on a
+  // serverless runtime the container could freeze/terminate the moment the
+  // response was flushed and silently drop the pending sends. With several
+  // assignees the first send (already past its TLS handshake) usually landed
+  // and the rest vanished — the "only one assignee gets the email" bug.
+  // Per-call `.catch` keeps a failed mailbox from failing item creation.
+  await Promise.all(
+    createdItems.map((item) =>
+      notifyWWWAssignment({
+        orgId,
+        itemId: item.id,
+        what: item.what,
+        when: item.when,
+        creatorUserId: userId,
+        ownerUserIds: [item.who],
+      }).catch((err) => {
+        console.error("[POST /api/www] notifyWWWAssignment failed:", err);
+      }),
+    ),
+  );
 
   return NextResponse.json(
     {

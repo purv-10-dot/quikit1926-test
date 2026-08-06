@@ -2,6 +2,7 @@
 
 import { Dispatch, SetStateAction, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Modal } from "@/components/hrms/modal";
@@ -18,6 +19,7 @@ import { Select } from "@/components/hrms/select";
 import { FileUploadInput } from "@/components/hrms/file-upload-input";
 import { SkeletonTable, SkeletonLine } from "@/components/hrms/skeleton";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
+import { PageBackground } from "@/components/hrms/page-background";
 
 // CTC fields are captured in LPA (lakhs per annum) — cap to a realistic ceiling
 // so 5–6 digit nonsense values can't be entered.
@@ -100,17 +102,18 @@ const statusColors: Record<string, string> = {
 
 export default function CandidatesPage() {
   const api = useApiClient();
+  const router = useRouter();
   const qc = useQueryClient();
   const toast = useToast();
   const [search, setSearch] = useState("");
-  const [viewScope, setViewScope] = useState<"active" | "blacklisted" | "archived">("active");
+  const [viewScope, setViewScope] = useState<"active" | "pool" | "blacklisted" | "archived">("active");
   // Default the Active view to candidates currently in the pipeline; the user
   // can switch to "All statuses" (or any other) from the filter.
   const [statusFilter, setStatusFilter] = useState("InPipeline");
   const [sourceFilter, setSourceFilter] = useState("");
   const [expFilter, setExpFilter] = useState(""); // "min-max" (e.g. "2-5", "10-")
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 20;
+  const PAGE_SIZE = 10;
   const [showCreate, setShowCreate] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [blacklistTarget, setBlacklistTarget] = useState<CandidateItem | null>(null);
@@ -140,7 +143,7 @@ export default function CandidatesPage() {
   const isIndiaLocation = /\bindia\b|bengaluru|bangalore|mumbai|delhi|chennai|hyderabad|pune|kolkata|noida|gurgaon|gurugram|ahmedabad|indore|bhopal|jaipur|lucknow|kanpur|surat|kochi/i
     .test(form.location);
 
-  const validate = (requireReq = true) => {
+  const validate = () => {
     const e: typeof errors = {};
     if (!form.firstName.trim()) e.firstName = "First name is required";
     else if (!/^[a-zA-Z. ]{2,}$/.test(form.firstName.trim())) e.firstName = "Letters only, min 2";
@@ -173,9 +176,8 @@ export default function CandidatesPage() {
     else if (form.expectedCTC != null && form.expectedCTC > MAX_CTC_LPA) e.expectedCTC = `Enter a realistic value in LPA (max ${MAX_CTC_LPA})`;
 
     if (form.linkedinUrl && !/^https?:\/\//.test(form.linkedinUrl)) e.linkedinUrl = "Must start with http(s)://";
-    if (form.resumeUrl && !/^(https?:\/\/|\/)/.test(form.resumeUrl)) e.resumeUrl = "Invalid resume link";
-
-    if (requireReq && !form.requisitionId) e.requisitionId = "Select a requisition for this candidate";
+    if (!form.resumeUrl) e.resumeUrl = "Resume is required";
+    else if (!/^(https?:\/\/|\/)/.test(form.resumeUrl)) e.resumeUrl = "Invalid resume link";
 
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -193,9 +195,17 @@ export default function CandidatesPage() {
       } else {
         if (viewScope === "blacklisted") { qs.set("blacklisted", "1"); qs.set("includeArchived", "1"); }
         else if (viewScope === "archived") qs.set("archived", "1");
-        // Active view defaults to candidates still in the pipeline — hides Hired
-        // and Rejected. An explicit status filter (e.g. "Rejected") overrides this.
-        else if (!statusFilter) { qs.set("excludeStatus", "Hired,CandRejected"); qs.set("excludeStage", "Hired"); }
+        // Candidate Pool — sourced but never linked to a requisition.
+        else if (viewScope === "pool") qs.set("noApplication", "1");
+        else {
+          // Active tab is exclusively for candidates linked to at least one
+          // requisition — never-applied (Candidate Pool) candidates belong only
+          // in the Pool tab, regardless of which status filter is selected here.
+          qs.set("hasApplication", "1");
+          // Active view defaults to candidates still in the pipeline — hides Hired
+          // and Rejected. An explicit status filter (e.g. "Rejected") overrides this.
+          if (!statusFilter) { qs.set("excludeStatus", "Hired,CandRejected"); qs.set("excludeStage", "Hired"); }
+        }
         // Candidate-level status (single value per candidate — unaffected by how
         // many pipelines/applications they're in).
         if (statusFilter && viewScope === "active") qs.set("status", statusFilter);
@@ -321,6 +331,9 @@ export default function CandidatesPage() {
         const appRes = await api.post<{ warning?: string }>("/api/v1/hrms/recruit/applications", {
           candidateId: created.data.id,
           requisitionId: body.requisitionId,
+          // Skip straight to Phone Screening — linking a candidate to a JR at
+          // creation time means they're already past initial screening.
+          currentStage: "PhoneScreen",
         });
         warning = appRes.data?.warning;
       }
@@ -468,6 +481,8 @@ export default function CandidatesPage() {
 
   return (
     <div className="w-full px-5 py-4">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <h1 className="text-page-title text-gray-900">Candidates</h1>
         <div className="flex items-center gap-2">
@@ -488,6 +503,7 @@ export default function CandidatesPage() {
           <div className="inline-flex items-center bg-gray-100 rounded-md p-0.5">
             {([
               { k: "active", label: "Active", icon: <User size={13} /> },
+              { k: "pool", label: "Candidate Pool", icon: <UsersIcon size={13} /> },
               { k: "blacklisted", label: "Blacklisted", icon: <Ban size={13} /> },
               { k: "archived", label: "Archived", icon: <Archive size={13} /> },
             ] as const).map((v) => (
@@ -584,7 +600,7 @@ export default function CandidatesPage() {
                 const blUntil = c.blacklistedUntil ? new Date(c.blacklistedUntil) : null;
                 const blExpired = blUntil ? blUntil.getTime() < Date.now() : false;
                 return (
-                <tr key={c.id} className={clsx("row-stagger border-b border-gray-100 hover:bg-gray-50",
+                <tr key={c.id} onClick={() => router.push(`/recruit/candidates/${c.id}`)} className={clsx("row-stagger border-b border-gray-100 hover:bg-gray-50 cursor-pointer",
                   c.isBlacklisted && !blExpired && "bg-red-50/40",
                   c.isArchived && "opacity-70")} style={{ ["--i" as never]: Math.min(i, 10) }}>
                   <td className="px-4 py-3">
@@ -645,7 +661,7 @@ export default function CandidatesPage() {
                   <td className="px-4 py-3">
                     <StatusCell status={c.status} stage={c.applications[0]?.currentStage ?? null} />
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     <div className="flex justify-end">
                       <div className="inline-flex items-center rounded-xl ring-1 ring-gray-200 bg-white divide-x divide-gray-100 overflow-hidden">
                         <ActionBtn icon={<Clock size={15} />} label="Timeline" color="text-green-600" onClick={() => setTimelineTarget(c)} title="View timeline" />
@@ -730,7 +746,7 @@ export default function CandidatesPage() {
           editMode={!!editId}
           submitting={editId ? updateMut.isPending : createMut.isPending}
           onCancel={() => { setShowCreate(false); setEditId(null); }}
-          onSubmit={() => { if (validate(!editId)) (editId ? updateMut : createMut).mutate(form); }}
+          onSubmit={() => { if (validate()) (editId ? updateMut : createMut).mutate(form); }}
         />
       </Modal>
 
@@ -1415,7 +1431,7 @@ const WIZARD_STEPS = [
   { id: "personal",       num: 1, title: "Personal Details",     subtitle: "Basic contact information",  icon: <User size={16} /> },
   { id: "professional",   num: 2, title: "Professional Details", subtitle: "Work experience & skills",   icon: <Briefcase size={16} /> },
   { id: "links",          num: 3, title: "Links & Resume",       subtitle: "Links to profiles & resume", icon: <Link2 size={16} /> },
-  { id: "requisition",    num: 4, title: "Apply to Requisition", subtitle: "Select job to apply",        icon: <Building2 size={16} /> },
+  { id: "requisition",    num: 4, title: "Apply to Requisition", subtitle: "Optional — can apply later",  icon: <Building2 size={16} /> },
 ] as const;
 
 function CandidateWizard({ form, setForm, errors, isIndiaLocation, openReqs, submitting, editMode, onCancel, onSubmit }: WizardProps) {
@@ -1429,7 +1445,7 @@ function CandidateWizard({ form, setForm, errors, isIndiaLocation, openReqs, sub
     const map: Record<string, number> = {
       firstName: 0, lastName: 0, email: 0, phone: 0,
       totalExperience: 1, noticePeriod: 1, currentCTC: 1, expectedCTC: 1,
-      linkedinUrl: 2, resumeUrl: 2, requisitionId: 3,
+      linkedinUrl: 2, resumeUrl: 2,
     };
     const idxs = Object.keys(errors).map((k) => map[k]).filter((n) => n !== undefined) as number[];
     if (idxs.length) setStep(Math.min(...idxs));
@@ -1437,7 +1453,7 @@ function CandidateWizard({ form, setForm, errors, isIndiaLocation, openReqs, sub
 
   const canPersonal = !!(form.firstName.trim() && form.lastName.trim() && form.email.trim() && form.phone.trim());
   const canAdvance = step === 0 ? canPersonal : true;
-  const canSave = canPersonal && (editMode || !!form.requisitionId);
+  const canSave = canPersonal;
   const next = () => setStep((s) => Math.min(s + 1, steps.length - 1));
   const back = () => setStep((s) => Math.max(s - 1, 0));
 
@@ -1543,13 +1559,13 @@ function CandidateWizard({ form, setForm, errors, isIndiaLocation, openReqs, sub
 
         {step === 3 && (
           <section>
-            <SectionHeader icon={<Building2 size={18} />} title="Apply to Requisition" subtitle="Choose a job requisition to apply this candidate." />
+            <SectionHeader icon={<Building2 size={18} />} title="Apply to Requisition" subtitle="Optional — choose a job requisition now, or skip and this candidate goes to the Candidate Pool for later." />
             <div className="mt-3">
               <RequisitionPicker value={form.requisitionId} onChange={(v) => setForm({ ...form, requisitionId: v })} requisitions={openReqs} error={!!errors.requisitionId} />
               {errors.requisitionId
                 ? <p className="mt-1.5 text-[11px] text-red-600">{errors.requisitionId}</p>
                 : form.requisitionId
-                  ? <p className="mt-1.5 text-[11px] text-green-700">Candidate will enter pipeline at first stage.</p>
+                  ? <p className="mt-1.5 text-[11px] text-green-700">Candidate will go straight to Phone Screening.</p>
                   : <p className="mt-1.5 text-[11px] text-gray-400">No open requisitions? Create one under Recruit &rarr; Requisitions.</p>}
             </div>
           </section>

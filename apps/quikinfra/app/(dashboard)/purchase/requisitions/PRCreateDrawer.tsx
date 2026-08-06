@@ -10,7 +10,8 @@ import { SelectInput, RIGHT_DRAWER_BACKDROP, RIGHT_DRAWER_FRAME, RIGHT_DRAWER_PA
 import { BOQCascadingPicker, type BoqRow } from "@/components/BOQCascadingPicker";
 import { useCreatePR, usePurchaseRequisitions } from "@/hooks/use-purchase";
 import { useProjects, useItemGroups, useUOMs, useLocations, useWorkCategories } from "@/hooks/use-masters";
-import { useEstimations, useBOQ } from "@/hooks/use-projects";
+import { useEstimations, useBOQ, useActivities } from "@/hooks/use-projects";
+import { ActivityScopePicker, type ActivityLeafOption } from "@/components/ActivityScopePicker";
 import { usePermissions } from "@/hooks/use-permissions";
 
 interface PRLine {
@@ -48,10 +49,9 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
   const [purpose, setPurpose] = useState("");
   const [workCategoryId, setWorkCategoryId] = useState("");
   const [deliveryLocationId, setDeliveryLocationId] = useState("");
-  const [isUrgent, setIsUrgent] = useState(false);
-  const [urgencyJustification, setUrgencyJustification] = useState("");
   const [lines, setLines] = useState<PRLine[]>([newLine()]);
   const [selectedBoq, setSelectedBoq] = useState<BoqRow | null>(null);
+  const [selectedActivity, setSelectedActivity] = useState<ActivityLeafOption | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -66,6 +66,20 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
   const { data: estimationsData } = useEstimations(projectId || null);
   // BOQ tree for the picked project — drives the cascading BOQ picker.
   const { data: boqData } = useBOQ(projectId || null);
+  const selectedProject = (projectsData?.data ?? []).find((p) => p.id === projectId);
+  const isFreeScope = selectedProject?.executionMode === "FREE_SCOPE";
+  const { data: activitiesResp } = useActivities(
+    projectId && isFreeScope ? projectId : null,
+  );
+  const activityItems: ActivityLeafOption[] = (activitiesResp?.data ?? []).map((a) => ({
+    id: a.id,
+    activityCode: a.activityCode,
+    description: a.description,
+    uomId: a.uomId,
+    uomCode: a.uomCode,
+    tenderQty: a.tenderQty,
+    path: a.path,
+  }));
   // Existing PRs for this project — used to flag "Raised" vs "Not Raised"
   // per material in the estimation reference.
   const { data: existingPRsData } = usePurchaseRequisitions({ projectId: projectId || undefined });
@@ -209,6 +223,47 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
   }, [estimationsData, selectedBoq]);
 
 
+  /**
+   * Live on-hand quantity for a picked material, from the stock ledger.
+   *
+   * The items master cannot answer this: `currentStock` in
+   * lib/masters/items-repository.ts is a hardcoded "0" placeholder, because
+   * stock is held per (project, location) in CnStockBalance rather than on
+   * the item row. Reading it off the picked item therefore always yielded 0.
+   *
+   * Scope is deliberately project-wide (no locationId) — a requisition asks
+   * "do we already hold this material anywhere on this project?", not
+   * "is it sitting in one particular bin".
+   */
+  const fetchStockForLine = async (
+    idx: number,
+    itemId: string,
+    projId: string,
+  ) => {
+    if (!itemId) return;
+    const params = new URLSearchParams({ itemId });
+    if (projId) params.set("projectId", projId);
+    try {
+      const res = await fetch(`/api/store/stock-balance?${params.toString()}`);
+      if (!res.ok) return;
+      const json = await res.json();
+      const qty = Number(json?.quantity ?? 0);
+      if (!Number.isFinite(qty)) return;
+      setLines((prev) =>
+        prev.map((l, i) =>
+          // Re-check itemId: a slow response for a material the user has
+          // since swapped out must not overwrite the current one.
+          i === idx && l.itemId === itemId
+            ? { ...l, availableStock: String(qty) }
+            : l,
+        ),
+      );
+    } catch {
+      // Network or permission failure — leave the field as-is rather than
+      // flipping a real figure back to 0.
+    }
+  };
+
   // Reset form when drawer opens
   useEffect(() => {
     if (open) {
@@ -217,18 +272,28 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
       setPurpose("");
       setWorkCategoryId("");
       setDeliveryLocationId("");
-      setIsUrgent(false);
-      setUrgencyJustification("");
       setLines([newLine()]);
       setSelectedBoq(null);
+      setSelectedActivity(null);
       setError("");
     }
   }, [open]);
 
   // Clear the BOQ selection when the user switches projects — a BOQ row
   // from the previous project would no longer exist in `boqRows`.
+  //
+  // Already-picked lines deliberately survive a project switch, but their
+  // stock figures do not: balances are project-scoped, so re-query each one.
   useEffect(() => {
     setSelectedBoq(null);
+    setSelectedActivity(null);
+    setLines((prev) => {
+      prev.forEach((l, i) => {
+        if (l.itemId) void fetchStockForLine(i, l.itemId, projectId);
+      });
+      return prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
   const addLine = () => setLines(prev => [...prev, newLine()]);
@@ -348,7 +413,6 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
         return;
       }
     }
-    if (isUrgent && !urgencyJustification.trim()) { setError("Urgency justification is required"); return; }
 
     // Pull the row indices the user actually filled in so the error
     // messages line up with the visible row numbers (filtering would
@@ -391,9 +455,11 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
         requiredDate,
         purpose,
         workCategoryId: workCategoryId || undefined,
+        scopeType: selectedActivity ? "ACTIVITY" : undefined,
+        scopeId: selectedActivity?.id || undefined,
         deliveryLocationId: deliveryLocationId || undefined,
-        isUrgent,
-        urgencyJustification: isUrgent ? urgencyJustification : "",
+        isUrgent: false,
+        urgencyJustification: "",
         footerNote: "",
         lines: validLines.map(l => ({
           itemId: l.itemId,
@@ -442,7 +508,7 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
                   onChange={setProjectId}
                   disabled={projects.length === 0}
                   placeholder={projects.length === 0 ? "No projects assigned — ask admin" : "Select project..."}
-                  options={projects.map((p) => ({ value: p.id, label: `${p.code} — ${p.name}` }))}
+                  options={projects.map((p) => ({ value: p.id, label: `${p.code} — ${p.name}${(p as { executionMode?: string }).executionMode === "FREE_SCOPE" ? " · Free-Scope" : ""}` }))}
                 />
                 {allowedProjectIds && allowedProjectIds.length > 0 && projects.length < allProjects.length && (
                   <p className="text-[11px] text-gray-400 mt-1">
@@ -473,6 +539,19 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
                 })()}
               </div>
             </div>
+            {isFreeScope && (
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Activity Scope <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <ActivityScopePicker
+                  items={activityItems}
+                  value={selectedActivity?.id ?? null}
+                  onSelect={setSelectedActivity}
+                  placeholder="Tag an activity (optional)"
+                />
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Work Category</label>
@@ -506,22 +585,6 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
               <label className="block text-xs font-medium text-gray-700 mb-1">Purpose / Reason</label>
               <input type="text" value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="e.g. Foundation work phase 2"
                 className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500" />
-            </div>
-
-            {/* Urgent */}
-            <div className={`p-3 rounded-lg border ${isUrgent ? "bg-amber-50 border-amber-200" : "bg-white border-gray-200"}`}>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={isUrgent} onChange={e => setIsUrgent(e.target.checked)}
-                  className="w-4 h-4 rounded border-gray-300 text-accent-600 focus:ring-accent-500" />
-                <span className="text-sm font-medium text-gray-700">Mark as URGENT</span>
-              </label>
-              {isUrgent && (
-                <div className="mt-2">
-                  <input type="text" value={urgencyJustification} onChange={e => setUrgencyJustification(e.target.value)}
-                    placeholder="Justification for urgency (required)"
-                    className="w-full px-3 py-2 rounded-lg border border-amber-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500" />
-                </div>
-              )}
             </div>
           </div>
 
@@ -792,7 +855,10 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
                               lazy
                               value={line.itemId}
                               selectedLabel={line.itemName}
-                              onChange={(v) => updateLine(i, "itemId", v)}
+                              onChange={(v) => {
+                                updateLine(i, "itemId", v);
+                                void fetchStockForLine(i, v, projectId);
+                              }}
                               onSelect={(item) => {
                                 if (!item) return;
                                 const it = item as {
@@ -800,7 +866,6 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
                                   uomId?: string;
                                   uomCode?: string;
                                   standardRate?: string | number | null;
-                                  currentStock?: string;
                                 };
                                 updateLine(i, "uomId", it.uomId ?? "");
                                 updateLine(i, "itemName", it.name ?? "");
@@ -810,7 +875,6 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
                                   "estimatedRate",
                                   it.standardRate != null ? String(it.standardRate) : "",
                                 );
-                                updateLine(i, "availableStock", it.currentStock ?? "0");
                               }}
                               items={[]}
                               groups={itemGroups.map((g) => ({ id: g.id, name: g.name, status: g.status, itemCount: g.itemCount }))}

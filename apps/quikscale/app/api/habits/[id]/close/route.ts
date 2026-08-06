@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { isOrgAdmin, forbidden } from "@/lib/api/permissions";
+import { notifyHabitCampaign } from "@/lib/services/habitNotifications";
 
 /**
  * POST /api/habits/[id]/close  (admin only — system admin role)
@@ -14,7 +15,10 @@ export const POST = withOrgAuth<{ id: string }>(
     if (!(await isOrgAdmin(userId, orgId))) return forbidden();
     const existing = await db.habitAssessment.findFirst({
       where: { id: params.id, orgId },
-      select: { id: true, status: true, isLegacy: true, closedAt: true },
+      select: {
+        id: true, status: true, isLegacy: true, closedAt: true,
+        quarter: true, year: true, deadline: true, participantUserIds: true,
+      },
     });
     if (!existing) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
@@ -39,6 +43,19 @@ export const POST = withOrgAuth<{ id: string }>(
       where: { id: params.id },
       data: { status: "closed", closedAt: new Date() },
     });
+    await notifyHabitCampaign({
+      orgId,
+      campaignId: updated.id,
+      event: "closed",
+      actorUserId: userId,
+      quarter: existing.quarter,
+      year: existing.year,
+      deadline: existing.deadline,
+      participantUserIds: existing.participantUserIds ?? [],
+    }).catch((err) => {
+      console.error("[POST /api/habits/[id]/close] notifyHabitCampaign failed:", err);
+    });
+
     return NextResponse.json({ success: true, data: updated });
   },
   { moduleKey: "habits", fallbackErrorMessage: "Failed to close habit campaign" },

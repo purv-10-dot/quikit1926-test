@@ -12,6 +12,7 @@ import {
   Briefcase, Clock, CheckCircle2, UserCheck, Globe, TrendingUp, ArrowUpRight, Wallet,
 } from "lucide-react";
 import { Select } from "@/components/hrms/ui/select";
+import { PageBackground } from "@/components/hrms/page-background";
 import { Widget, type WidgetConfig } from "../_components/widget-renderer";
 
 const WIDGET_CATALOG: { type: string; title: string }[] = [
@@ -193,6 +194,8 @@ export default function DashboardDetailPage() {
 
   return (
     <div className="w-full max-w-[1400px] mx-auto px-5 py-4 pb-24">
+      {/* Subtle HR-themed page background (scoped to this page only). */}
+      <PageBackground src="/images/pre-onboarding-bg.png" />
       {isLoading || !d ? (
         <>
           {/* Hero skeleton */}

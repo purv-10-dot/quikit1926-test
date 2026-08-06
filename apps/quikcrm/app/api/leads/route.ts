@@ -9,6 +9,7 @@ import { onLeadCreated } from "@/lib/services/automation/triggers";
 import { publishLeadEvent } from "@/lib/services/leads/realtime";
 import { recordLeadChange } from "@/lib/services/leads/change-log";
 import { createDefaultTaskForLead } from "@/lib/services/leads/auto-task";
+import { relinkStandaloneEmailsForRecord } from "@/lib/services/email/relink";
 import { listLeadFields } from "@/lib/services/fields/repo";
 import { validateDynamicFields } from "@/lib/services/fields/validate";
 import { findDuplicateLead } from "@/lib/services/leads/duplicate";
@@ -277,6 +278,15 @@ export async function POST(req: NextRequest) {
     void Promise.resolve(createDefaultTaskForLead(lead)).catch((err: unknown) =>
       console.error("[auto-task] dispatch failed", err),
     );
+    // Retroactively link any standalone emails already sent to this address
+    // (e.g. Log Activity → Email with Link=None before the lead existed) so they
+    // show on the Lead's Emails tab + timeline without waiting for a sync.
+    void relinkStandaloneEmailsForRecord({
+      orgId: user.orgId,
+      kind: "Lead",
+      recordId: lead.id,
+      emails: [lead.email, lead.secondaryEmail],
+    }).catch((err: unknown) => console.error("[email:relink] lead create failed", err));
     void Promise.resolve(
       publishLeadEvent(user.orgId, {
         type: "created",

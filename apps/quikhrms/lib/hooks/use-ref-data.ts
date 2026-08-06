@@ -18,7 +18,7 @@ export interface RefDesignation { id: string; title: string }
 export interface RefLocation { id: string; name: string; city?: string | null; state?: string | null }
 export interface RefRole { id: string; code: string; name: string; description?: string | null }
 export type SalaryAmountType = "Fixed" | "PercentOfBasic" | "PercentOfCTC" | "PercentOfGross" | "Formula";
-export type SalaryComponentType = "Earning" | "Deduction" | "Reimbursement" | "Benefit" | "StatutoryContribution";
+type SalaryComponentType = "Earning" | "Deduction" | "Reimbursement" | "Benefit" | "StatutoryContribution";
 
 export interface RefSalaryTemplateComponent {
   componentId: string;

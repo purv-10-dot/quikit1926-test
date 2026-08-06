@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/api/requireAdmin";
 import { getQuikAssetAppId } from "@/lib/api/permissions";
+import { removedUserIds } from "@/lib/api/removal";
 
 // GET /api/org/users/search?q=<prefix>&limit=10
 // Returns active org members matching the query, with a `hasQuikAssetAccess`
@@ -45,13 +46,19 @@ export async function GET(req: NextRequest) {
       getQuikAssetAppId(),
     ]);
 
-    const users = memberships.map((m) => m.user).filter(Boolean) as Array<{
+    const allUsers = memberships.map((m) => m.user).filter(Boolean) as Array<{
       id: string;
       email: string;
       firstName: string;
       lastName: string;
       avatar: string | null;
     }>;
+
+    // Drop soft-removed users (removed from QuikAsset) — same rule the merged
+    // list GET applies via removedUserIds. Without this a removed user still
+    // surfaces here flagged "has access" (their UserAppAccess row is retained).
+    const removed = await removedUserIds(orgId, allUsers.map((u) => u.id));
+    const users = allUsers.filter((u) => !removed.has(u.id));
 
     const accessByUserId = new Set<string>();
     if (appId && users.length > 0) {

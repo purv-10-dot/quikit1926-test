@@ -34,7 +34,9 @@ export interface CreateEstimationInput {
   createdBy: string;
   projectId: string;
   projectName?: string | null;
-  boqItemId: string;
+  boqItemId?: string | null; // null in FREE_SCOPE mode
+  scopeType?: string | null; // "BOQ" | "ACTIVITY"
+  scopeId?: string | null; // CnActivityItem.id when scopeType = ACTIVITY
   boqNo?: string | null;
   boqDescription?: string | null;
   boqQuantity?: number | string | null;
@@ -78,7 +80,9 @@ interface EstimationRow {
   orgId: string;
   projectId: string;
   projectName?: string | null;
-  boqItemId: string;
+  boqItemId?: string | null;
+  scopeType?: string | null;
+  scopeId?: string | null;
   boqNo?: string | null;
   boqDescription?: string | null;
   boqQuantity?: Numericish;
@@ -140,7 +144,9 @@ function mapRow(row: EstimationRow | null) {
     orgId: row.orgId,
     projectId: row.projectId,
     projectName: row.projectName ?? null,
-    boqItemId: row.boqItemId,
+    boqItemId: row.boqItemId ?? null,
+    scopeType: row.scopeType ?? null,
+    scopeId: row.scopeId ?? null,
     boqNo: row.boqNo ?? null,
     boqDescription: row.boqDescription ?? null,
     boqQuantity: row.boqQuantity != null ? Number(row.boqQuantity) : null,
@@ -195,7 +201,7 @@ export async function listEstimations(
     ? await db.$queryRaw<EstimationRow[]>`
         SELECT
           id, "orgId", "projectId", "projectName",
-          "boqItemId", "boqNo", "boqDescription", "boqQuantity", "boqUnit",
+          "boqItemId", "scopeType", "scopeId", "boqNo", "boqDescription", "boqQuantity", "boqUnit",
           phase, status, "totalQty", "totalCost", "materialCount", materials,
           "approvalId", "rejectionReason", "returnReason",
           "submittedAt", "submittedBy", "approvedAt", "approvedBy",
@@ -208,7 +214,7 @@ export async function listEstimations(
     : await db.$queryRaw<EstimationRow[]>`
         SELECT
           id, "orgId", "projectId", "projectName",
-          "boqItemId", "boqNo", "boqDescription", "boqQuantity", "boqUnit",
+          "boqItemId", "scopeType", "scopeId", "boqNo", "boqDescription", "boqQuantity", "boqUnit",
           phase, status, "totalQty", "totalCost", "materialCount", materials,
           "approvalId", "rejectionReason", "returnReason",
           "submittedAt", "submittedBy", "approvedAt", "approvedBy",
@@ -312,7 +318,7 @@ export async function listEstimationsPaged(
     db.$queryRaw<EstimationRow[]>`
       SELECT
         id, "orgId", "projectId", "projectName",
-        "boqItemId", "boqNo", "boqDescription", "boqQuantity", "boqUnit",
+        "boqItemId", "scopeType", "scopeId", "boqNo", "boqDescription", "boqQuantity", "boqUnit",
         phase, status, "totalQty", "totalCost", "materialCount", materials,
         "approvalId", "rejectionReason", "returnReason",
         "submittedAt", "submittedBy", "approvedAt", "approvedBy",
@@ -343,7 +349,7 @@ export async function findEstimationById(
   const rows = await db.$queryRaw<EstimationRow[]>`
     SELECT
       id, "orgId", "projectId", "projectName",
-      "boqItemId", "boqNo", "boqDescription", "boqQuantity", "boqUnit",
+      "boqItemId", "scopeType", "scopeId", "boqNo", "boqDescription", "boqQuantity", "boqUnit",
       phase, status, "totalQty", "totalCost", "materialCount", materials,
       "approvalId", "rejectionReason", "returnReason",
       "submittedAt", "submittedBy", "approvedAt", "approvedBy",
@@ -367,13 +373,13 @@ export async function createEstimation(
   await db.$executeRaw`
     INSERT INTO app_quikinfra."Material_estimations" (
       id, "orgId", "projectId", "projectName",
-      "boqItemId", "boqNo", "boqDescription", "boqQuantity", "boqUnit",
+      "boqItemId", "scopeType", "scopeId", "boqNo", "boqDescription", "boqQuantity", "boqUnit",
       phase, status, "totalQty", "totalCost", "materialCount", materials,
       "createdAt", "updatedAt", "createdBy", "updatedBy"
     ) VALUES (
       ${id}, ${input.orgId}, ${input.projectId},
       ${input.projectName ?? null},
-      ${input.boqItemId}, ${input.boqNo ?? null},
+      ${input.boqItemId ?? null}, ${input.scopeType ?? null}, ${input.scopeId ?? null}, ${input.boqNo ?? null},
       ${input.boqDescription ?? null},
       ${input.boqQuantity != null ? String(input.boqQuantity) : null}::numeric,
       ${input.boqUnit ?? null},

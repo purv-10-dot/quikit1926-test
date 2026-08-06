@@ -122,6 +122,13 @@ export async function GET() {
 - Constants (ROLES, ROLE_HIERARCHY, etc.): Import from `@quikit/shared`
 - Auth guards: Import factories from `@quikit/auth/*`, wrap in thin `lib/api/` files
 - Database: Import `db` from `@quikit/database` or local `@/lib/db` re-export
+- AI: Import from `@quikit/ai-sdk` — see the AI Integration rule below
+
+## AI Integration
+
+Any AI feature in any app MUST go through `@quikit/ai-sdk` — never call an LLM provider SDK (`@anthropic-ai/sdk`, `@google/generative-ai`, `@openrouter/sdk`, etc.) directly. See [`docs/14-ai-integration-guide.md`](docs/14-ai-integration-guide.md) for the two integration models, requirements, and usage.
+
+Calling a provider SDK directly bypasses central audit, cost tracking and per-tenant budgets, prompt-injection sanitisation, PII stripping, provider fallback, and one place to change models — and every app then drifts. Existing direct calls (quikhrms, quikvc) are migration tickets, not precedents.
 
 ## Provider Order (all apps)
 

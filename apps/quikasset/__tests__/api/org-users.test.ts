@@ -617,4 +617,71 @@ describe("POST /api/org/users", () => {
     };
     expect(call.where.orgId_userId.orgId).toBe("org-A");
   });
+
+  // ─── soft-removed member is re-addable (dead-end fix) ───
+  // Soft-delete only records an AstUserRemoval marker; the OrgMember, access,
+  // role and employee are all retained. Re-adding via manual email must clear
+  // the marker and restore — NOT 409 with "pick them from the dropdown" (the
+  // dropdown excludes removed users, so that was a dead end).
+  it("re-adds a soft-removed member via manual email — clears the marker, no duplicate membership, no temp password", async () => {
+    asAdmin();
+    vi.mocked(ensureUserOnRole).mockClear();
+    mockDb.user.findUnique.mockResolvedValue({ id: "u1" } as never); // existing platform user
+    mockDb.orgMember.findUnique.mockResolvedValue(membershipRow() as never); // already a member
+    // findUnique fires twice, in order: requireAdmin checks the caller (admin →
+    // not removed), then Path B checks the target (u1 → removed).
+    mockDb.astUserRemoval.findUnique
+      .mockResolvedValueOnce(null as never) // caller (admin) not removed
+      .mockResolvedValueOnce({ id: "rm1" } as never); // target u1 is soft-removed
+    mockDb.astUserRemoval.deleteMany.mockResolvedValue({ count: 1 } as never);
+    // Retained employee → skips the required-fields gate AND short-circuits
+    // ensureLinkedEmployee (already linked to u1).
+    mockDb.astEmployee.findFirst.mockResolvedValue({
+      id: "emp-1", userId: "u1", employeeId: "EMP-1",
+      contact: null, department: null, designation: null, joiningDate: null, status: "Active",
+    } as never);
+    mockDb.app.findUnique.mockResolvedValue({ id: "app" } as never);
+    mockDb.userAppAccess.findFirst.mockResolvedValue({ id: "acc" } as never); // access retained
+    mockDb.astUserAppRole.count.mockResolvedValue(1 as never); // org already has an admin
+
+    const res = await POST(
+      makeReq("/api/org/users", {
+        method: "POST",
+        body: { firstName: "Al", lastName: "Ice", email: "a@x.com" },
+      }),
+    );
+    const json = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(json.success).toBe(true);
+    // The removal marker is cleared → user reappears in lists and access is re-enabled.
+    expect(mockDb.astUserRemoval.deleteMany).toHaveBeenCalledWith({
+      where: { orgId: "org1", userId: "u1" },
+    });
+    expect(mockDb.orgMember.create).not.toHaveBeenCalled(); // membership already exists
+    expect(mockDb.userAppAccess.create).not.toHaveBeenCalled(); // access retained
+    expect(ensureUserOnRole).toHaveBeenCalledWith("u1", "org1", "member-role", "admin");
+    // Existing user keeps their credentials — no onboarding temp password.
+    expect(json.data.tempPassword).toBeUndefined();
+    expect(json.meta.newUserCreated).toBe(false);
+  });
+
+  it("still 409s a genuinely-active member (not soft-removed)", async () => {
+    asAdmin();
+    mockDb.user.findUnique.mockResolvedValue({ id: "u1" } as never);
+    mockDb.orgMember.findUnique.mockResolvedValue(membershipRow() as never);
+    mockDb.astUserRemoval.findUnique.mockResolvedValue(null as never); // neither caller nor u1 removed
+    mockDb.astEmployee.findFirst.mockResolvedValue({ id: "emp-1" } as never); // skip required-fields gate
+
+    const res = await POST(
+      makeReq("/api/org/users", {
+        method: "POST",
+        body: { firstName: "Al", lastName: "Ice", email: "a@x.com" },
+      }),
+    );
+
+    expect(res.status).toBe(409);
+    expect(mockDb.astUserRemoval.deleteMany).not.toHaveBeenCalled();
+    expect(mockDb.orgMember.create).not.toHaveBeenCalled();
+  });
 });

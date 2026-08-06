@@ -36,11 +36,14 @@ export function buildInterviewInviteEmail(data: InterviewInviteData): { subject:
     ? `${esc(data.type)} — ${esc(data.location)}`
     : esc(data.type);
 
+  // A bare number ("16") reads wrong — show the unit.
+  const durationText = /^\d+$/.test((data.duration ?? "").trim()) ? `${data.duration.trim()} minutes` : data.duration;
+
   const rows: Array<[string, string] | null> = [
     ["Position", esc(data.jobTitle || designation)],
     ["Date", esc(data.interviewDate)],
     ["Time", `${esc(data.interviewTime)} (IST)`],
-    ["Duration", esc(data.duration)],
+    ["Duration", esc(durationText)],
     ["Mode", modeValue],
     data.roundName ? ["Round", esc(data.roundName)] : null,
   ];
@@ -54,7 +57,14 @@ export function buildInterviewInviteEmail(data: InterviewInviteData): { subject:
     }) +
     para(`Hello <strong>${esc(data.candidateName)}</strong>,`) +
     detailBlock(filtered, { heading: "Interview Details", accent: "blue" }) +
-    alert("info", "Please join 5 minutes before the scheduled interview.", "Important") +
+    // Wording depends on mode: online interviews "join" a link; in-person ones "arrive" at the venue.
+    alert(
+      "info",
+      data.meetingLink
+        ? "Please join 5 minutes before the scheduled interview using the link above."
+        : "Please arrive at the venue 10 minutes before the scheduled interview.",
+      "Important",
+    ) +
     // Button links straight to the meeting, so label it accordingly — "Confirm
     // Interview" was misleading (it joins the call, it doesn't record a confirmation).
     (data.meetingLink ? btnPrimary("Join Now", esc(data.meetingLink), "blue") : "");

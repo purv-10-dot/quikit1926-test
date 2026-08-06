@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 
-export interface DashboardBirthday {
+interface DashboardBirthday {
   id: string;
   firstName: string;
   lastName: string;
@@ -11,7 +11,7 @@ export interface DashboardBirthday {
   daysUntil: number;
 }
 
-export interface DashboardAnniversary {
+interface DashboardAnniversary {
   id: string;
   firstName: string;
   lastName: string;
@@ -21,7 +21,7 @@ export interface DashboardAnniversary {
   years: number;
 }
 
-export interface DashboardUpcomingHoliday {
+interface DashboardUpcomingHoliday {
   id: string;
   name: string;
   date: string;
@@ -30,21 +30,21 @@ export interface DashboardUpcomingHoliday {
   calendar: { id: string; name: string } | null;
 }
 
-export interface DashboardMonthHoliday {
+interface DashboardMonthHoliday {
   id: string;
   name: string;
   date: string;
   type: string;
 }
 
-export interface DashboardAvailabilityRow {
+interface DashboardAvailabilityRow {
   category: "Sick" | "Parental" | "WFH" | "Holiday";
   label: string;
   count: number;
   avatars: { id: string; firstName: string; lastName: string; profilePhoto: string | null }[];
 }
 
-export interface DashboardJobOpening {
+interface DashboardJobOpening {
   id: string;
   title: string;
   requisitionNumber: string;

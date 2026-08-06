@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Check, User as UserIcon } from "lucide-react";
 import {
   PRIORITY_META,
@@ -13,27 +14,71 @@ import {
 
 const PRIORITY_VALUES: Priority[] = ["HIGHEST", "HIGH", "MEDIUM", "LOW", "LOWEST"];
 
-/** Close-on-outside-click + ESC for any popover body. */
-function usePopoverDismiss(
-  open: boolean,
-  ref: React.RefObject<HTMLElement>,
-  onClose: () => void,
-) {
+/**
+ * Dropdown panel rendered in a portal, fixed at the trigger's position — so it
+ * escapes any scrolling/overflow container (e.g. the wide filter/list tables)
+ * instead of being clipped. Closes on outside-click, Escape, scroll, or resize.
+ */
+function PopoverPanel({
+  triggerRef,
+  onClose,
+  className,
+  children,
+}: {
+  triggerRef: React.RefObject<HTMLElement>;
+  onClose: () => void;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const t = triggerRef.current;
+    if (!t) return;
+    const r = t.getBoundingClientRect();
+    setPos({ left: r.left, top: r.bottom + 4 });
+  }, [triggerRef]);
+
   useEffect(() => {
-    if (!open) return;
     function onDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+      const target = e.target as Node;
+      if (panelRef.current?.contains(target)) return;
+      if (triggerRef.current?.contains(target)) return;
+      onClose();
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
     }
+    // Any scroll/resize invalidates the fixed position → just close.
+    function onReposition() {
+      onClose();
+    }
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", onReposition, true);
+    window.addEventListener("resize", onReposition);
     return () => {
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", onReposition, true);
+      window.removeEventListener("resize", onReposition);
     };
-  }, [open, ref, onClose]);
+  }, [triggerRef, onClose]);
+
+  if (typeof document === "undefined" || !pos) return null;
+  return createPortal(
+    <div
+      ref={panelRef}
+      // Very high z-index so the dropdown floats OVER the table (and any modal
+      // the table lives in) rather than being covered by it.
+      style={{ position: "fixed", left: pos.left, top: pos.top, zIndex: 9999 }}
+      className={className}
+    >
+      {children}
+    </div>,
+    document.body,
+  );
 }
 
 // ── Status ───────────────────────────────────────────────────────────────────
@@ -48,12 +93,12 @@ export function StatusEditor({
   onChange: (statusId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  usePopoverDismiss(open, ref, () => setOpen(false));
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         className="inline-flex items-center rounded px-2 py-0.5 text-[11px] font-medium hover:ring-1 hover:ring-gray-300"
@@ -62,7 +107,11 @@ export function StatusEditor({
         {value?.name ?? "—"}
       </button>
       {open && (
-        <div className="absolute left-0 top-full z-30 mt-1 w-48 rounded border border-gray-200 bg-white py-1 shadow-lg">
+        <PopoverPanel
+          triggerRef={triggerRef}
+          onClose={() => setOpen(false)}
+          className="w-48 rounded border border-gray-200 bg-white py-1 shadow-lg"
+        >
           {statuses.map((s) => (
             <button
               key={s.id}
@@ -79,7 +128,7 @@ export function StatusEditor({
               {value?.id === s.id && <Check className="h-3 w-3 text-gray-500" />}
             </button>
           ))}
-        </div>
+        </PopoverPanel>
       )}
     </div>
   );
@@ -95,14 +144,14 @@ export function PriorityEditor({
   onChange: (next: Priority | null) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  usePopoverDismiss(open, ref, () => setOpen(false));
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   const meta = value ? PRIORITY_META[value] : null;
 
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         className={`text-xs font-medium ${meta?.color ?? "text-gray-400"} hover:underline`}
@@ -110,7 +159,11 @@ export function PriorityEditor({
         {meta?.label ?? "—"}
       </button>
       {open && (
-        <div className="absolute left-0 top-full z-30 mt-1 w-36 rounded border border-gray-200 bg-white py-1 shadow-lg">
+        <PopoverPanel
+          triggerRef={triggerRef}
+          onClose={() => setOpen(false)}
+          className="w-36 rounded border border-gray-200 bg-white py-1 shadow-lg"
+        >
           {PRIORITY_VALUES.map((p) => (
             <button
               key={p}
@@ -122,7 +175,7 @@ export function PriorityEditor({
               {value === p && <Check className="h-3 w-3 text-gray-500" />}
             </button>
           ))}
-        </div>
+        </PopoverPanel>
       )}
     </div>
   );
@@ -141,8 +194,7 @@ export function AssigneeEditor({
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const ref = useRef<HTMLDivElement>(null);
-  usePopoverDismiss(open, ref, () => setOpen(false));
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   const filtered = members
     .filter((m): m is typeof m & { user: UserLite } => Boolean(m.user))
@@ -158,8 +210,9 @@ export function AssigneeEditor({
     : "";
 
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         className="flex items-center gap-2 min-w-0 rounded px-1 py-0.5 hover:bg-gray-100"
@@ -182,7 +235,11 @@ export function AssigneeEditor({
         </span>
       </button>
       {open && (
-        <div className="absolute left-0 top-full z-30 mt-1 w-64 rounded border border-gray-200 bg-white shadow-lg">
+        <PopoverPanel
+          triggerRef={triggerRef}
+          onClose={() => setOpen(false)}
+          className="w-64 rounded border border-gray-200 bg-white shadow-lg"
+        >
           <input
             autoFocus
             type="text"
@@ -231,7 +288,7 @@ export function AssigneeEditor({
               <p className="px-2 py-2 text-xs text-gray-400">No matches</p>
             )}
           </div>
-        </div>
+        </PopoverPanel>
       )}
     </div>
   );

@@ -229,6 +229,111 @@ export const SUBSCRIPTION_STATUS = {
 export type SubscriptionStatus =
   (typeof SUBSCRIPTION_STATUS)[keyof typeof SUBSCRIPTION_STATUS];
 
+/* ─── Platform support tickets ───────────────────────────────────────────────
+   Shared by QuikScale (raises tickets), QuikIT super-admin (triages them) and
+   the Zod schemas on both sides. `public.SupportTicket` stores these as plain
+   String columns — matching Notification.type / AuditLog.action /
+   BroadcastAnnouncement.severity — so adding a value here is a code change,
+   not a Postgres enum migration. */
+
+export const SUPPORT_REQUEST_TYPES = [
+  "bug",
+  "feature",
+  "enhancement",
+  "general",
+] as const;
+export type SupportRequestType = (typeof SUPPORT_REQUEST_TYPES)[number];
+
+export const SUPPORT_REQUEST_TYPE_LABELS: Record<SupportRequestType, string> = {
+  bug: "Bug",
+  feature: "Feature Request",
+  enhancement: "Enhancement",
+  general: "General Support",
+};
+
+export const SUPPORT_TICKET_STATUSES = [
+  "open",
+  "in_progress",
+  "resolved",
+  "closed",
+  "reopened",
+] as const;
+export type SupportTicketStatus = (typeof SUPPORT_TICKET_STATUSES)[number];
+
+export const SUPPORT_TICKET_STATUS_LABELS: Record<SupportTicketStatus, string> = {
+  open: "Open",
+  in_progress: "In Progress",
+  resolved: "Resolved",
+  closed: "Closed",
+  reopened: "Reopened",
+};
+
+/** Field limits, mirrored by the Zod schema AND the form's maxLength attrs.
+    Kept here rather than in `supportSchema.ts` so the client form can read them
+    without pulling zod into every app's browser bundle. */
+export const SUPPORT_SUBJECT_MAX = 160;
+export const SUPPORT_DESCRIPTION_MAX = 5000;
+
+/* Attachment limits. Client-safe (no storage/GCS import) so the file picker
+   can enforce them before uploading anything; the server re-checks all three
+   in `@quikit/shared/supportAttachments` — the client copy is a courtesy, not
+   the boundary. */
+export const SUPPORT_ATTACHMENT_MAX_COUNT = 5;
+export const SUPPORT_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024; // 10 MB
+
+/** Screenshots and PDFs only. Support attachments exist to show us a broken
+    screen — this is deliberately narrower than QuikInfra's document allowlist
+    (no Office docs, no CAD, no archives), because a support form that accepts
+    zips is a malware vector aimed at our own staff. */
+export const SUPPORT_ATTACHMENT_ALLOWED_MIME_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+  "image/heic",
+  "image/heif",
+  "application/pdf",
+] as const;
+
+/** `accept` attribute for the file input. */
+export const SUPPORT_ATTACHMENT_ACCEPT = SUPPORT_ATTACHMENT_ALLOWED_MIME_TYPES.join(",");
+
+export const SUPPORT_TICKET_PRIORITIES = ["low", "medium", "high", "urgent"] as const;
+export type SupportTicketPriority = (typeof SUPPORT_TICKET_PRIORITIES)[number];
+
+export const SUPPORT_TICKET_PRIORITY_LABELS: Record<SupportTicketPriority, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  urgent: "Urgent",
+};
+
+/**
+ * Legal status transitions, enforced server-side in the super-admin PATCH
+ * handler. The client `<select>` is a convenience, never the gate.
+ * A ticket can always be set to its current status (a response-only edit).
+ */
+export const SUPPORT_STATUS_TRANSITIONS: Record<SupportTicketStatus, SupportTicketStatus[]> = {
+  open: ["in_progress", "resolved", "closed"],
+  in_progress: ["resolved", "closed", "open"],
+  resolved: ["closed", "reopened", "in_progress"],
+  closed: ["reopened"],
+  reopened: ["in_progress", "resolved", "closed"],
+};
+
+export function canTransitionSupportStatus(
+  from: SupportTicketStatus,
+  to: SupportTicketStatus,
+): boolean {
+  if (from === to) return true;
+  return SUPPORT_STATUS_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
+/** Human-facing ticket id — `TKT-000042`. */
+export function formatSupportTicketNo(ticketNo: number): string {
+  return `TKT-${String(ticketNo).padStart(6, "0")}`;
+}
+
 export const PATHS = {
   HOME: "/",
   LOGIN: "/login",

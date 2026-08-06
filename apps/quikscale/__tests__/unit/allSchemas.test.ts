@@ -204,4 +204,27 @@ describe("wwwSchema", () => {
     expect(updateWWWSchema.safeParse({ what: "Updated task" }).success).toBe(true);
     expect(updateWWWSchema.safeParse({}).success).toBe(true);
   });
+
+  /* ── TBD due date ── either a date OR the dueDateTBD flag is required ── */
+
+  it("accepts dueDateTBD with no when", () => {
+    const { when: _omitted, ...noWhen } = base;
+    expect(createWWWSchema.safeParse({ ...noWhen, dueDateTBD: true }).success).toBe(true);
+  });
+  it("rejects when neither a date nor dueDateTBD is supplied", () => {
+    const { when: _omitted, ...noWhen } = base;
+    expect(createWWWSchema.safeParse(noWhen).success).toBe(false);
+    expect(createWWWSchema.safeParse({ ...noWhen, dueDateTBD: false }).success).toBe(false);
+  });
+  it("defaults dueDateTBD to false", () => {
+    const r = createWWWSchema.safeParse(base);
+    if (r.success) expect(r.data.dueDateTBD).toBe(false);
+  });
+  it("accepts dueDateTBD alongside a date (TBD wins server-side)", () => {
+    expect(createWWWSchema.safeParse({ ...base, dueDateTBD: true }).success).toBe(true);
+  });
+  it("accepts dueDateTBD on update", () => {
+    expect(updateWWWSchema.safeParse({ dueDateTBD: true }).success).toBe(true);
+    expect(updateWWWSchema.safeParse({ dueDateTBD: "yes" }).success).toBe(false);
+  });
 });

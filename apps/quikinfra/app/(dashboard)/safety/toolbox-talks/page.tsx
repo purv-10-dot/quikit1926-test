@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { PageHeader, PageContainer } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { QuickCreateDrawer } from "@/components/QuickCreateDrawer";
 import { useMenuActions } from "@/hooks/use-permissions";
@@ -60,12 +60,13 @@ export default function ToolboxTalksPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Toolbox Talks"
         subtitle="Daily safety briefings and toolbox talk records"
         breadcrumbs={[{ label: "Safety", href: "/safety" }, { label: "Toolbox Talks" }]}
       />
-      <PageContainer>
+      <PageContainer fill>
         <DataTable
           id="safety-toolbox-talks"
           columns={columns}
@@ -74,6 +75,7 @@ export default function ToolboxTalksPage() {
           addLabel="Record Talk"
         />
       </PageContainer>
+      </PageFrame>
       <QuickCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} config={config} />
     </>
   );

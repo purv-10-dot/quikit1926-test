@@ -59,7 +59,7 @@ describe("PUT /api/masters/departments/[id]", () => {
   });
 
   // The department update handler gates on the permission matrix
-  // (org.department/edit) rather than the construction.masters.edit key.
+  // (org.department/edit) rather than the construction.org_department.edit key.
   it("returns 403 when the permission matrix denies edit", async () => {
     setContext(
       makeUserCtx([], { permissionMatrix: { "org.department": { edit: false } } }),
@@ -91,7 +91,7 @@ describe("PUT /api/masters/departments/[id]", () => {
 });
 
 describe("DELETE /api/masters/departments/[id]", () => {
-  it("returns 403 when the user lacks construction.masters.delete", async () => {
+  it("returns 403 when the user lacks construction.org_department.delete", async () => {
     setContext(makeUserCtx([]));
     expect((await DELETE(req("DELETE"), params)).status).toBe(403);
   });

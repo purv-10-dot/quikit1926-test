@@ -39,7 +39,7 @@ import {
   Check,
   X as XIcon,
 } from "lucide-react";
-import { PageHeader, PageContainer } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer } from "@/components/PageShell";
 import { Pager } from "@/components/Pager";
 import { FilterPopoverButton } from "@/components/FilterPopoverButton";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -138,6 +138,15 @@ export default function WorkOrdersPage() {
   const { data: projectsResult } = useProjects();
   const projectOptions = useMemo(
     () => (projectsResult?.data ?? []) as Array<{ id: string; name?: string }>,
+    [projectsResult],
+  );
+  const freeScopeProjectIds = useMemo(
+    () =>
+      new Set(
+        ((projectsResult?.data ?? []) as Array<{ id: string; executionMode?: string }>)
+          .filter((p) => p.executionMode === "FREE_SCOPE")
+          .map((p) => p.id),
+      ),
     [projectsResult],
   );
   const { data: contractorsResult } = useContractors();
@@ -266,6 +275,7 @@ export default function WorkOrdersPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Work Orders"
         subtitle="Assign BOQ scope to contractors with negotiated rates"
@@ -286,7 +296,7 @@ export default function WorkOrdersPage() {
         }
       />
 
-      <PageContainer>
+      <PageContainer fill>
         {/* ── KPI cards ── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
           <KPICard
@@ -318,8 +328,8 @@ export default function WorkOrdersPage() {
         </div>
 
         {/* ── Action strip ── */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-soft overflow-hidden">
-          <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
+        <div className="flex min-h-0 flex-1 flex-col bg-white rounded-2xl border border-slate-200 shadow-soft overflow-hidden">
+          <div className="shrink-0 flex items-center gap-3 px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
             <div className="flex items-center gap-2 flex-1 max-w-sm">
               <div className="relative w-full">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -397,7 +407,7 @@ export default function WorkOrdersPage() {
           </div>
 
           {/* ── Table ── */}
-          <div className="overflow-x-auto">
+          <div className="min-h-0 flex-1 overflow-auto">
             <table className="w-full">
               <thead className="bg-gradient-to-b from-slate-50 to-slate-100/70 border-b border-slate-200">
                 <tr className="text-[11px] uppercase font-bold text-slate-600 tracking-wider">
@@ -436,6 +446,7 @@ export default function WorkOrdersPage() {
                     <WorkOrderRow
                       key={row.id}
                       row={row}
+                      isFreeScope={freeScopeProjectIds.has(String(row.projectId ?? ""))}
                       canEdit={canEdit}
                       canDelete={canDelete}
                       canSubmit={canSubmit}
@@ -454,17 +465,19 @@ export default function WorkOrdersPage() {
               </tbody>
             </table>
           </div>
+          {total > 0 && (
+            <Pager
+              variant="footer"
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
+          )}
         </div>
-        {total > 0 && (
-          <Pager
-            page={page}
-            pageSize={pageSize}
-            total={total}
-            onPageChange={setPage}
-            onPageSizeChange={setPageSize}
-          />
-        )}
       </PageContainer>
+      </PageFrame>
 
       <ConfirmDialog
         open={!!deleteTarget}
@@ -622,6 +635,7 @@ function KPICard({
 
 function WorkOrderRow({
   row,
+  isFreeScope,
   canEdit,
   canDelete,
   canSubmit,
@@ -634,6 +648,7 @@ function WorkOrderRow({
   onReject,
 }: {
   row: WorkOrderRow;
+  isFreeScope?: boolean;
   canEdit: boolean;
   canDelete: boolean;
   canSubmit: boolean;
@@ -682,8 +697,13 @@ function WorkOrderRow({
 
       {/* Project & Type */}
       <td className="px-4 py-3">
-        <div className="text-sm font-semibold text-slate-900">
-          {row.projectName ?? "—"}
+        <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
+          <span>{row.projectName ?? "—"}</span>
+          {isFreeScope && (
+            <span className="inline-block text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-accent-100 text-accent-700 border border-accent-200">
+              Free-Scope
+            </span>
+          )}
         </div>
         <div className="flex gap-1.5 mt-1">
           <span className="inline-block text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-accent-50 text-accent-700 border border-accent-200">
@@ -734,7 +754,7 @@ function WorkOrderRow({
       {/* Status */}
       <td className="px-4 py-3">
         <span
-          className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${statusColor}`}
+          className={`inline-block whitespace-nowrap text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${statusColor}`}
         >
           {(row.status ?? "draft").replace(/_/g, " ")}
         </span>
@@ -824,7 +844,7 @@ function WorkOrderRow({
             </>
           )}
           {isPending && !canApprove && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200">
+            <span className="inline-flex items-center gap-1 whitespace-nowrap px-2 py-0.5 rounded-md text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200">
               Awaiting approver
             </span>
           )}

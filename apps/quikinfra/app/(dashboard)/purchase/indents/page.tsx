@@ -17,9 +17,10 @@ import { toErrorMessage } from "@/lib/api/errors";
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Eye, Send, AlertCircle } from "lucide-react";
+import { Eye, Send, AlertCircle, AlertTriangle } from "lucide-react";
+import type { ApprovalRepairInfo } from "@/lib/approvals/approval-info";
 import { toast } from "@/lib/toast";
-import { PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
+import { PageFrame, PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { useSubmitIndent } from "@/hooks/use-approvals";
@@ -62,6 +63,8 @@ type IndentItemNode = {
 interface IndentRow {
   id: string; indentNumber?: string; status?: string; lineCount?: number;
   sourceMrId?: string; sourceMrNumber?: string;
+  /** Set when the workflow was edited after submission — see ApprovalRepairInfo. */
+  approvalRepair?: ApprovalRepairInfo | null;
   [key: string]: unknown;
 }
 
@@ -364,7 +367,24 @@ export default function IndentsPage() {
         "rejected",
       ],
       sortable: true,
-      render: (row) => <StatusChip status={row.status ?? ""} />,
+      render: (row) => (
+        <div className="flex items-center gap-1.5">
+          <StatusChip status={row.status ?? ""} />
+          {row.approvalRepair?.orphaned && (
+            <span
+              title={
+                `Approval workflow was changed after submission — waiting at step ` +
+                `${row.approvalRepair.missingStepOrder}, which no longer exists. ` +
+                `Open the indent for details.`
+              }
+              className="inline-flex items-center rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800"
+            >
+              <AlertTriangle className="mr-0.5 h-3 w-3" />
+              Workflow changed
+            </span>
+          )}
+        </div>
+      ),
     },
     {
       key: "_actions",
@@ -400,6 +420,7 @@ export default function IndentsPage() {
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title="Purchase Indents"
         subtitle="Consolidate approved material requirements for ordering"
@@ -409,7 +430,7 @@ export default function IndentsPage() {
         ]}
       />
       <TabBar tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
-      <PageContainer>
+      <PageContainer fill>
         {approvedPrs.length === 0 && (
           <div className="mb-4 flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600" />
@@ -451,6 +472,7 @@ export default function IndentsPage() {
           onSortChange={(k, d) => setSort({ by: k, order: d })}
         />
       </PageContainer>
+      </PageFrame>
       <QuickCreateDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}

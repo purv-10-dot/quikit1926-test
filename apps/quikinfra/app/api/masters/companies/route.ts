@@ -4,7 +4,7 @@ import {
   countCompanies,
   createCompany,
 } from "@/lib/masters/companies-repository";
-import { paginateDb, parseSort } from "@/lib/http/pagination";
+import { paginateDb, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 import {
   withListRoute,
   withMutationRoute,
@@ -31,6 +31,7 @@ export async function GET(req: NextRequest) {
       searchParams,
       ["name", "legalName", "gstin", "pan", "city", "state", "status", "createdAt"],
       { field: "createdAt", order: "desc" },
+      NEWEST_FIRST_TIEBREAK,
     );
     return paginateDb(
       pagination,
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest) {
     {
       entityLabel: "company",
       successStatus: 201,
-      requirePermission: "construction.masters.create",
+      requirePermission: "construction.org_company.create",
       requireMatrix: { menuKey: "org.company", action: "add" },
       parseBody: (raw) => {
         const body = (raw ?? {}) as Record<string, unknown>;

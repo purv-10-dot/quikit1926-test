@@ -4,10 +4,10 @@ import { requireMastersAction } from "@/lib/auth/requireMastersAction";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { listUOMs, countUOMs, createUOM } from "@/lib/masters/uoms-repository";
-import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 
 export async function GET(req: NextRequest) {
-  const ctxOrResp = await requireMastersAction("view");
+  const ctxOrResp = await requireMastersAction("construction.org_uom", "view");
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
 
@@ -30,6 +30,7 @@ export async function GET(req: NextRequest) {
     searchParams,
     ["code", "name", "status", "createdAt"],
     { field: "code", order: "asc" },
+    NEWEST_FIRST_TIEBREAK,
   );
   const result = await paginateDb(
     parsePagination(req),
@@ -40,7 +41,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const ctxOrResp = await requireMastersAction("create");
+  const ctxOrResp = await requireMastersAction("construction.org_uom", "create");
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "org.uom", "add")) {

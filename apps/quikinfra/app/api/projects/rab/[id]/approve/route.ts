@@ -5,7 +5,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
-import { canActOnStep } from "@/lib/approvals/workflow-rbac";
+import {
+  claimAndRecord,
+  gateApprovalAction,
+  gateConflictResponse,
+  GATE_ACTIONS,
+  type GateAction,
+} from "@/lib/approvals/approval-gate";
+import type { ClaimResult } from "@/lib/approvals/claim-instance";
 import { boqService, BOQError } from "@/lib/boq";
 import { recordAudit } from "@/lib/workflow/audit";
 import { idempotencyGuard } from "@/lib/workflow/idempotency";
@@ -32,7 +39,7 @@ import { logger } from "@/lib/observability/logger";
  * un-billed balance, so double-billing is impossible even on replay.
  */
 
-type Action = "approve" | "reject" | "return";
+type Action = GateAction;
 
 export async function POST(
   req: NextRequest,
@@ -61,7 +68,7 @@ export async function POST(
   const action = (body.action ?? "approve") as Action;
   const comments = String(body.comments ?? "").trim();
 
-  if (!["approve", "reject", "return"].includes(action)) {
+  if (!GATE_ACTIONS.includes(action)) {
     return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
   }
   if ((action === "reject" || action === "return") && !comments) {
@@ -111,61 +118,24 @@ export async function POST(
       await guard.commit(404, b);
       return NextResponse.json(b, { status: 404 });
     }
-    if (instance.status !== "pending_approval") {
-      const b = {
-        error: `Approval already ${instance.status} — no further actions allowed.`,
-      };
-      await guard.commit(409, b);
-      return NextResponse.json(b, { status: 409 });
-    }
-
-    const currentStep = await db.cnApprovalWorkflowStep.findFirst({
-      where: { workflowId: instance.workflowId, stepOrder: instance.currentStepOrder },
+    // Authorisation, step resolution and the repair / master-approval branches
+    // live in the shared gate; this route keeps only the BOQ billing posts and
+    // the RAB's own status. Errors still go through the idempotency guard so a
+    // replay returns the same response.
+    const gate = await gateApprovalAction({
+      ctx,
+      instance,
+      entityLabel: "RAB",
+      action,
+      comments,
+      projectId: rab.projectId ?? null,
     });
-    if (!currentStep) {
-      const b = {
-        error: `Workflow step ${instance.currentStepOrder} is missing — the workflow may have been edited while this RAB was mid-flight.`,
-      };
-      await guard.commit(500, b);
-      return NextResponse.json(b, { status: 500 });
+    if (gate.kind === "error") {
+      await guard.commit(gate.status, gate.body);
+      return NextResponse.json(gate.body, { status: gate.status });
     }
 
-    if (
-      !canActOnStep(
-        { userId: ctx.userId, roleKey: ctx.roleKey, projectIds: ctx.projectIds },
-        {
-          approverUserId: currentStep.approverUserId,
-          approverRoleId: currentStep.approverRoleId,
-        },
-        rab.projectId ?? null,
-      )
-    ) {
-      let expected = "an authorized approver";
-      if (currentStep.approverUserId) {
-        const pinned = await findCnUserById(currentStep.approverUserId);
-        expected = pinned?.fullName
-          ? `${pinned.fullName} (pinned approver)`
-          : "the pinned approver for this step";
-      } else if (currentStep.approverRoleId) {
-        expected =
-          `a user with role "${currentStep.approverRoleId}"` +
-          (rab.projectId ? ` assigned to this project` : "");
-      }
-      const b = {
-        error: `You are not authorized to ${action} this RAB at step ${instance.currentStepOrder}. Expected: ${expected}.`,
-      };
-      await guard.commit(403, b);
-      return NextResponse.json(b, { status: 403 });
-    }
-
-    const nextStep = await db.cnApprovalWorkflowStep.findFirst({
-      where: {
-        workflowId: instance.workflowId,
-        stepOrder: { gt: instance.currentStepOrder },
-      },
-      orderBy: { stepOrder: "asc" },
-    });
-    const isFinalApprove = action === "approve" && !nextStep;
+    const isFinalApprove = gate.isFinalApprove;
 
     // Pre-resolve boqItemId → boqNo once (the billing service keys on boqNo),
     // only when we're about to post on final approve.
@@ -173,7 +143,7 @@ export async function POST(
     if (isFinalApprove) {
       const boqItemIds = (rab.lines ?? [])
         .map((l) => l.boqItemId)
-        .filter(Boolean);
+        .filter((v): v is string => !!v);
       if (boqItemIds.length) {
         const boqRows = await db.cnBOQItemV2.findMany({
           where: { id: { in: boqItemIds }, orgId: ctx.orgId, projectId: rab.projectId },
@@ -187,32 +157,24 @@ export async function POST(
     let finalStatus: string = String(rab.status ?? "");
     const updates: Array<{ boqNo: string; qty: number }> = [];
 
+    let conflict: ClaimResult["conflict"] | undefined;
+
     await db.$transaction(async (tx) => {
-      await tx.cnApprovalHistory.create({
-        data: {
-          instanceId: instance.id,
-          stepOrder: instance.currentStepOrder,
-          action,
-          actionById: ctx.userId,
-          comments: comments || null,
-        },
-      });
+      const claim = await claimAndRecord(tx, ctx, instance, gate);
+      if (!claim.claimed) {
+        conflict = claim.conflict;
+        return;
+      }
 
-      if (action === "approve") {
-        if (!nextStep) {
-          // Final step → flip to approved AND post billedQty per line, in
-          // this same transaction. The billing ledger clamps to the
-          // un-billed balance, so a replay (or overlapping bill) can never
-          // over-post.
-          await tx.cnApprovalInstance.update({
-            where: { id: instance.id },
-            data: { status: "approved", completedAt: new Date() },
-          });
-
+      if (gate.effectiveAction === "approve") {
+        if (gate.isFinalApprove) {
+          // Final step → post billedQty per line in this same transaction. The
+          // billing ledger clamps to the un-billed balance, so a replay (or
+          // overlapping bill) can never over-post.
           for (const line of rab.lines ?? []) {
             const qty = Number(line.currentQty?.toString() ?? "0");
             if (qty <= 0) continue;
-            const boqNo = boqNoById.get(line.boqItemId);
+            const boqNo = line.boqItemId ? boqNoById.get(line.boqItemId) : null;
             if (!boqNo) continue;
 
             await boqService.applyRABBillingTxn(tx, ctx, rab.projectId, boqNo, qty, {
@@ -236,19 +198,10 @@ export async function POST(
 
           rabStatusUpdate = { status: "approved", updatedBy: ctx.userId };
           finalStatus = "approved";
-        } else {
-          // Intermediate approve — advance to the next step, RAB stays
-          // submitted, no ledger change.
-          await tx.cnApprovalInstance.update({
-            where: { id: instance.id },
-            data: { currentStepOrder: nextStep.stepOrder },
-          });
         }
-      } else if (action === "reject") {
-        await tx.cnApprovalInstance.update({
-          where: { id: instance.id },
-          data: { status: "rejected", completedAt: new Date() },
-        });
+        // Intermediate approve — the gate advanced the instance; the RAB stays
+        // submitted and no ledger row is written.
+      } else if (gate.effectiveAction === "reject") {
         await recordAudit(tx, ctx, {
           entityType: "rab",
           entityId: rab.id,
@@ -260,10 +213,6 @@ export async function POST(
       } else {
         // "return" — back to draft for the raiser to edit; clearing
         // approvalId means the next submit creates a fresh instance.
-        await tx.cnApprovalInstance.update({
-          where: { id: instance.id },
-          data: { status: "returned", completedAt: new Date() },
-        });
         await recordAudit(tx, ctx, {
           entityType: "rab",
           entityId: rab.id,
@@ -274,6 +223,14 @@ export async function POST(
         finalStatus = "draft";
       }
     });
+
+    // Lost the claim — someone else settled this RAB first. Nothing was
+    // written, so no billing was posted by this request.
+    if (conflict) {
+      const b = await gateConflictResponse(conflict, "RAB");
+      await guard.commit(409, b);
+      return NextResponse.json(b, { status: 409 });
+    }
 
     if (rabStatusUpdate) {
       await db.cnRunningAccountBill.update({

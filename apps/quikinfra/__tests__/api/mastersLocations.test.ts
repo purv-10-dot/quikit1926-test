@@ -94,7 +94,7 @@ describe("POST /api/masters/locations — auth", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns 403 when the user lacks construction.masters.create", async () => {
+  it("returns 403 when the user lacks construction.master_location.create", async () => {
     setContext(makeUserCtx([]));
     const res = await POST(buildPOST({ name: "Warehouse", type: "warehouse" }));
     expect(res.status).toBe(403);
@@ -102,7 +102,7 @@ describe("POST /api/masters/locations — auth", () => {
 
   it("returns 403 when the permission matrix denies add", async () => {
     setContext(
-      makeUserCtx(["construction.masters.create"], {
+      makeUserCtx(["construction.master_location.create"], {
         permissionMatrix: { "master.location": { add: false } },
       }),
     );
@@ -152,6 +152,30 @@ describe("POST /api/masters/locations — happy path", () => {
     expect(data.orgId).toBe(TEST_TENANT);
     expect(data.createdBy).toBe(TEST_USER);
     expect(data.name).toBe("Warehouse");
+  });
+
+  // Items are optional: a client creates the site first and stocks it later.
+  // The form no longer demands a material, so the route must persist an empty
+  // item list rather than depending on the UI to always send one.
+  it("creates a location with NO items and stores an empty item list", async () => {
+    db.cnLocation.count.mockResolvedValue(0);
+    db.cnLocation.create.mockResolvedValue({
+      id: "l2",
+      orgId: TEST_TENANT,
+      code: "LOC-002",
+      name: "Site B",
+      type: "site",
+      status: "active",
+      itemIds: [],
+      createdBy: TEST_USER,
+      updatedBy: TEST_USER,
+    });
+
+    const res = await POST(buildPOST({ name: "Site B", type: "site" }));
+    expect(res.status).toBe(201);
+
+    const data = db.cnLocation.create.mock.calls[0][0].data;
+    expect(data.itemIds).toEqual([]);
   });
 
   it("maps a Prisma P2002 unique violation to 409", async () => {

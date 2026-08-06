@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import DashboardLayout from "@/components/layout/dashboard-layout";
 import { BrandCreationProvider } from "@/components/providers/BrandCreationContext";
 import { SessionGuard } from "@/components/session-guard";
+import { SupportLauncher } from "@quikit/ui/support";
 
 // Every page under /dashboard reads the session, hits MongoDB, or talks to
 // internal API routes. Marking the segment dynamic prevents Next.js from
@@ -32,6 +33,9 @@ export default async function Layout({
     <SessionGuard>
       <BrandCreationProvider>
         <DashboardLayout>{children}</DashboardLayout>
+        {/* Floating support launcher — a sibling of the layout so it stays
+            pinned to the viewport on every dashboard route. */}
+        <SupportLauncher appSlug="quiksocial" />
       </BrandCreationProvider>
     </SessionGuard>
   );

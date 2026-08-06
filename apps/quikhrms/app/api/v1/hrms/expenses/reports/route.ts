@@ -1,18 +1,39 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, internalError } from "@/lib/api-response";
+import { successResponse, forbidden, internalError } from "@/lib/api-response";
+import { resolveScope, employeeScopeFilter } from "@/lib/rbac/scope";
 import { Prisma } from "@quikit/database";
 
-export const GET = withAuth(async (req: NextRequest, { orgId }) => {
+export const GET = withAuth(async (req: NextRequest, ctx) => {
   try {
+    const { orgId } = ctx;
     const { searchParams } = new URL(req.url);
     const from = searchParams.get("from");
     const to = searchParams.get("to");
     const groupBy = searchParams.get("groupBy") ?? "category";
 
+    // Aggregates must never span beyond the caller's read-scope — a self/team
+    // reader must not see org-wide totals.
+    const scope = resolveScope(ctx, {
+      all: "hrms.expense.read",
+      team: "hrms.expense.read_team",
+      self: "hrms.expense.read_self",
+    });
+    const sf = await employeeScopeFilter(ctx, scope);
+    if (!sf.allow) return forbidden("No expense read permission");
+    const empIds = sf.employeeIds; // undefined ⇒ unrestricted
+    if (empIds && empIds.length === 0) {
+      return successResponse({
+        groupBy,
+        totals: { claims: 0, totalAmount: 0, avgAmount: 0 },
+        byCategory: [], byStatus: [], byMonth: [],
+      });
+    }
+
     const where: Prisma.ExpenseClaimWhereInput = {
       orgId, deletedAt: null,
+      ...(empIds && { employeeId: { in: empIds } }),
       ...(from || to ? {
         expenseDate: {
           ...(from && { gte: new Date(from) }),
@@ -36,6 +57,7 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
         WHERE "orgId" = ${orgId}
           AND "deletedAt" IS NULL
           AND "expenseDate" IS NOT NULL
+          ${empIds ? Prisma.sql`AND "employeeId" IN (${Prisma.join(empIds)})` : Prisma.empty}
           ${from ? Prisma.sql`AND "expenseDate" >= ${new Date(from)}` : Prisma.empty}
           ${to ? Prisma.sql`AND "expenseDate" <= ${new Date(to)}` : Prisma.empty}
         GROUP BY month

@@ -24,6 +24,13 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     const includeArchived = searchParams.get("includeArchived") === "1";
     const onlyArchived = searchParams.get("archived") === "1";
     const onlyBlacklisted = searchParams.get("blacklisted") === "1";
+    // Candidate Pool — sourced candidates never linked to (or no longer linked
+    // to) any requisition. Distinct from `source` (LinkedIn/Referral/etc, the
+    // channel a candidate came from).
+    const noApplication = searchParams.get("noApplication") === "1";
+    // Opposite of noApplication — used by the Active tab so sourced-only
+    // (no JR yet) candidates never leak in regardless of the status filter.
+    const hasApplication = searchParams.get("hasApplication") === "1";
     // Global search — span Active + Blacklisted + Archived (not tab-dependent).
     const searchAll = searchParams.get("searchAll") === "1";
 
@@ -38,6 +45,8 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
       ...(status && { status: status as Prisma.CandidateWhereInput["status"] }),
       ...(excludeStatus.length && { status: { notIn: excludeStatus as CandidateStatus[] } }),
       ...(excludeStage.length && { applications: { none: { deletedAt: null, currentStage: { in: excludeStage } } } }),
+      ...(noApplication && { applications: { none: { deletedAt: null } } }),
+      ...(hasApplication && { applications: { some: { deletedAt: null } } }),
       ...(source && { source: source as Prisma.CandidateWhereInput["source"] }),
       ...((expMin || expMax) && {
         totalExperience: {
@@ -119,7 +128,7 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
 
     return successResponse(candidates, paginationMeta(page, limit, total));
   } catch (error) { console.error("GET /recruit/candidates error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.read"] });
 
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
   try {
@@ -159,4 +168,4 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
 
     return successResponse(candidate, undefined, 201);
   } catch (error) { console.error("POST /recruit/candidates error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });

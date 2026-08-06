@@ -76,11 +76,33 @@ describe("seedDefaultRoles — fresh org", () => {
     db.cnRolePermissionV2.findMany.mockImplementation(async () => {
       // Return the full admin grant set so the admin "missing" diff is empty;
       // for the smaller roles a superset is also fine (filter keeps it empty).
+      // Admin's grants = the umbrella PERMISSIONS keys PLUS the per-page-split
+      // resources (construction.master_* / construction.org_*), so the mock
+      // must include both or the new per-page grants read as "missing".
       const { PERMISSIONS } = await import("@/lib/permissions");
-      const { parsePermissionKey } = await import("@/lib/rbac/permissionsRegistry");
-      return Object.values(PERMISSIONS)
+      const { parsePermissionKey, allPermissionPairs } = await import(
+        "@/lib/rbac/permissionsRegistry"
+      );
+      const umbrella = Object.values(PERMISSIONS)
         .map((k) => parsePermissionKey(k as string))
         .filter(Boolean) as Array<{ resource: string; action: string }>;
+      const perPage = allPermissionPairs()
+        .filter(
+          (p) =>
+            p.resource.startsWith("construction.master_") ||
+            p.resource.startsWith("construction.org_"),
+        )
+        .map((p) => ({ resource: p.resource, action: p.action }));
+      // Activity Scope has no legacy PERMISSIONS constant — the seeder mirrors
+      // each role's construction.boq grants onto construction.activity_scope
+      // (minus `import`, which the hand-entered scope tree has no use for).
+      const activityScope = umbrella
+        .filter((p) => p.resource === "construction.boq" && p.action !== "import")
+        .map((p) => ({
+          resource: "construction.activity_scope",
+          action: p.action,
+        }));
+      return [...umbrella, ...perPage, ...activityScope];
     });
     db.cnRolePermissionV2.createMany.mockResolvedValue({ count: 0 });
 

@@ -101,6 +101,13 @@ interface SpaceItem {
   icon?: string;
   color?: string;
   projectKey?: string;
+  /**
+   * A discovery (JPD-style) idea space drives the nested "All ideas" row.
+   * `templateKey` is the reliable discriminator (the create form always sends
+   * "discovery"); `projectType` can be overridden, so we check both.
+   */
+  projectType?: string;
+  templateKey?: string;
 }
 
 export function Sidebar() {
@@ -124,10 +131,23 @@ export function Sidebar() {
   const moreBtnRef = useRef<HTMLButtonElement>(null);
   const recentRowRef = useRef<HTMLDivElement>(null);
   const [recentSpaces, setRecentSpaces] = useState<SpaceItem[]>([]);
+  // Discovery spaces expand in-place to reveal their nested "All ideas" view
+  // (JPD-style). Track which ones are open; the active space auto-expands once.
+  const [openSpaceIds, setOpenSpaceIds] = useState<Set<string>>(new Set());
+  const toggleSpaceOpen = (id: string) =>
+    setOpenSpaceIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   useEffect(() => {
     let alive = true;
-    fetch("/api/projects")
+    // Sort by most-recently-updated so the "Recent" list actually reflects
+    // recent activity (the API defaults to name-asc, which buried spaces like
+    // late-alphabet discovery projects past the top-8 slice).
+    fetch("/api/projects?sort=updatedAt&order=desc")
       .then((r) => r.json())
       .then((j) => {
         if (!alive || !j?.success) return;
@@ -138,6 +158,8 @@ export function Sidebar() {
             icon: p.icon,
             color: p.color,
             projectKey: p.projectKey,
+            projectType: p.projectType,
+            templateKey: p.templateKey,
           })),
         );
       })
@@ -158,6 +180,15 @@ export function Sidebar() {
     return m ? m[1] : null;
   })();
 
+  // Auto-expand the space you're currently in so its nested view is visible.
+  // Runs once per active space; the user can still collapse it manually after.
+  useEffect(() => {
+    if (!activeSpaceId) return;
+    setOpenSpaceIds((prev) =>
+      prev.has(activeSpaceId) ? prev : new Set(prev).add(activeSpaceId),
+    );
+  }, [activeSpaceId]);
+
   const orderedRecentSpaces = (() => {
     if (!activeSpaceId) return recentSpaces;
     const idx = recentSpaces.findIndex((s) => s.id === activeSpaceId);
@@ -171,7 +202,7 @@ export function Sidebar() {
   return (
     <aside
       data-tour="sidebar"
-      className="qt-sidebar w-[232px] shrink-0 border-r border-gray-200 bg-white flex flex-col h-full overflow-y-auto"
+      className="qt-sidebar w-[232px] shrink-0 border-r border-gray-200 bg-white flex flex-col h-full overflow-y-auto overscroll-contain"
     >
       <nav className="flex-1 py-2">
         <div className="px-2 space-y-0.5">
@@ -257,18 +288,79 @@ export function Sidebar() {
                   <div className="space-y-0.5">
                     {orderedRecentSpaces.slice(0, 5).map((s) => {
                       const isCurrent = s.id === activeSpaceId;
+                      const isDiscovery =
+                        s.templateKey === "discovery" || s.projectType === "discovery";
+                      // Discovery spaces land on Ideas, not Backlog.
+                      const spaceHref = `/spaces/${s.id}/${isDiscovery ? "ideas" : "backlog"}`;
+                      const rowClass = `qt-nav-row flex items-center gap-2 px-3 h-8 text-sm rounded ${isCurrent
+                          ? "qt-nav-row--active bg-blue-50 text-blue-700 font-medium"
+                          : "text-gray-700 hover:bg-gray-100"
+                        }`;
+
+                      // Non-discovery spaces stay a single flat link.
+                      if (!isDiscovery) {
+                        return (
+                          <Link key={`recent-${s.id}`} href={spaceHref} className={rowClass}>
+                            <SpaceIcon icon={s.icon} name={s.name} color={s.color} size={20} radius={6} />
+                            <span className="flex-1 truncate">{s.name}</span>
+                          </Link>
+                        );
+                      }
+
+                      // Discovery spaces expand to reveal a nested "All ideas" row.
+                      const open = openSpaceIds.has(s.id);
+                      const ideasHref = `/spaces/${s.id}/ideas`;
+                      const ideasActive = pathname === ideasHref;
+                      // The child "All ideas" row owns the highlight while you're on
+                      // the ideas view; the parent only highlights for the space's
+                      // other views (settings, etc.).
+                      const parentActive = isCurrent && !ideasActive;
+                      const parentRowClass = `qt-nav-row group flex items-center gap-2 px-3 h-8 text-sm rounded ${parentActive
+                          ? "qt-nav-row--active bg-blue-50 text-blue-700 font-medium"
+                          : "text-gray-700 hover:bg-gray-100"
+                        }`;
                       return (
-                        <Link
-                          key={`recent-${s.id}`}
-                          href={`/spaces/${s.id}/backlog`}
-                          className={`qt-nav-row flex items-center gap-2 px-3 h-8 text-sm rounded ${isCurrent
-                              ? "qt-nav-row--active bg-blue-50 text-blue-700 font-medium"
-                              : "text-gray-700 hover:bg-gray-100"
-                            }`}
-                        >
-                          <SpaceIcon icon={s.icon} name={s.name} color={s.color} size={20} radius={6} />
-                          <span className="flex-1 truncate">{s.name}</span>
-                        </Link>
+                        <div key={`recent-${s.id}`}>
+                          <div className={parentRowClass}>
+                            {/* Left slot: the space icon by default; on hover (or
+                                when expanded) the expand/collapse chevron takes
+                                its place — JPD-style. */}
+                            <button
+                              type="button"
+                              onClick={() => toggleSpaceOpen(s.id)}
+                              className="relative h-5 w-5 shrink-0"
+                              aria-label={open ? "Collapse" : "Expand"}
+                            >
+                              <span
+                                className={`absolute inset-0 flex items-center justify-center transition-opacity ${open ? "opacity-0" : "opacity-100 group-hover:opacity-0"}`}
+                              >
+                                <SpaceIcon icon={s.icon} name={s.name} color={s.color} size={20} radius={6} />
+                              </span>
+                              <span
+                                className={`absolute inset-0 flex items-center justify-center rounded hover:bg-gray-200 transition-opacity ${open ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                              >
+                                <ChevronRight
+                                  className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-90" : ""}`}
+                                />
+                              </span>
+                            </button>
+                            <Link href={spaceHref} className="flex items-center flex-1 min-w-0">
+                              <span className="flex-1 truncate">{s.name}</span>
+                            </Link>
+                          </div>
+                          {open && (
+                            <Link
+                              href={ideasHref}
+                              className={`qt-nav-row flex items-center gap-2 pl-9 pr-3 h-7 text-sm rounded ${ideasActive
+                                  ? "qt-nav-row--active bg-blue-50 text-blue-700 font-medium"
+                                  : "text-gray-600 hover:bg-gray-100"
+                                }`}
+                            >
+                              <span aria-hidden>👋</span>
+                              <span className="flex-1 truncate">All ideas</span>
+                            </Link>
+                          )}
+                        </div>
                       );
                     })}
                   </div>

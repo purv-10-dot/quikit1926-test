@@ -5,7 +5,6 @@ import { Plus, Pencil, Trash2, Check, X, Loader2, FolderOpen, Tag, AlertTriangle
 import { cn } from "@/lib/utils"
 import type { BaseCategory, Category } from "@/types/asset"
 
-
 export default function CategoryMasterPage() {
   const [baseCats, setBaseCats] = useState<BaseCategory[]>([])
   const [categories, setCategories] = useState<Category[]>([])
@@ -13,6 +12,7 @@ export default function CategoryMasterPage() {
   const [loading, setLoading] = useState(true)
   const [catLoading, setCatLoading] = useState(false)
 
+  
   // base category add/edit
   const [addingBase, setAddingBase] = useState(false)
   const [newBaseName, setNewBaseName] = useState("")

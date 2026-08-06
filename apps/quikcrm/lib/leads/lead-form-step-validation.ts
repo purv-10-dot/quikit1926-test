@@ -76,16 +76,18 @@ export function validateLeadFormStep(
       break;
     }
     case 2: {
-      if (!input.firstName.trim()) errs.firstName = "First name is required";
-      if (!input.lastName.trim()) errs.lastName = "Last name is required";
-      if (!input.email.trim()) errs.email = "Email is required";
-      else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email.trim())) {
+      // First name, last name, email, and mobile are optional — a lead can be
+      // created with the Contact Information section left blank. Format checks
+      // still apply, but only when a value is actually entered.
+      if (input.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email.trim())) {
         errs.email = "Invalid email format";
       }
       if (input.secondaryEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.secondaryEmail.trim())) {
         errs.secondaryEmail = "Invalid email format";
       }
-      if (input.mobile.number.length !== 10) errs.mobile = "Mobile must be exactly 10 digits";
+      if (input.mobile.number && input.mobile.number.length !== 10) {
+        errs.mobile = "Mobile must be exactly 10 digits";
+      }
       if (input.phone.number && input.phone.number.length !== 10) {
         errs.phone = "Phone must be exactly 10 digits";
       }

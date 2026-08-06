@@ -23,6 +23,9 @@ function buildPOST(body: unknown): NextRequest {
 beforeEach(() => {
   resetMockDb();
   setContext(null);
+  // listItemGroups attaches per-group active-item counts via cnItem.groupBy.
+  // Default to "no items" so list tests only mock what they assert on.
+  db.cnItem.groupBy.mockResolvedValue([]);
 });
 
 // ═══════════════════════════════════════════════
@@ -94,7 +97,7 @@ describe("POST /api/masters/item-groups — auth", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns 403 when the user lacks construction.masters.create", async () => {
+  it("returns 403 when the user lacks construction.master_item_group.create", async () => {
     setContext(makeUserCtx([]));
     const res = await POST(buildPOST({ name: "Cement" }));
     expect(res.status).toBe(403);
@@ -102,7 +105,7 @@ describe("POST /api/masters/item-groups — auth", () => {
 
   it("returns 403 when the permission matrix denies add", async () => {
     setContext(
-      makeUserCtx(["construction.masters.create"], {
+      makeUserCtx(["construction.master_item_group.create"], {
         permissionMatrix: { "master.item_group": { add: false } },
       }),
     );

@@ -10,7 +10,7 @@ const TRANSITIONS: Record<PayRunStatus, PayRunStatus[]> = {
   Cancelled: [],
 };
 
-export function canTransition(from: PayRunStatus, to: PayRunStatus): boolean {
+function canTransition(from: PayRunStatus, to: PayRunStatus): boolean {
   return TRANSITIONS[from]?.includes(to) ?? false;
 }
 

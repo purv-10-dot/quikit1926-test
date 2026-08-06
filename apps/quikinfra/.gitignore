@@ -33,6 +33,9 @@ node_modules/.prisma/
 # `public/uploads/`. Tenant content, not source.
 public/uploads/
 
+# Tests
+__tests__/
+
 # Test artifacts
 tests/.artifacts/
 playwright-report/

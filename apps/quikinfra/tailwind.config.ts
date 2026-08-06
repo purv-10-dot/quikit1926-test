@@ -8,6 +8,11 @@ const config: Config = {
     './lib/**/*.{js,ts,jsx,tsx}',
     '../../packages/app-shell/src/**/*.{js,ts,jsx,tsx}',
     '../../packages/data-grid/src/**/*.{js,ts,jsx,tsx}',
+    // Required for any @quikit/ui component rendered here (Contact Support,
+    // DataTable, …). Without it Tailwind never emits the utilities those
+    // components use — `w-[380px]`, `z-[201]`, `bg-[var(--color-bg-primary)]` —
+    // and they render unstyled: no width, no background, no rounding.
+    '../../packages/ui/**/*.{js,ts,jsx,tsx}',
   ],
   theme: {
     extend: {
@@ -66,11 +71,12 @@ const config: Config = {
           700: '#334155',
           800: '#1e293b',
         },
-        // Themeable accent scale. Each shade reads a --accent-* CSS variable,
-        // but the FALLBACK is QuikInfra's own construction orange — so when no
-        // user has picked a colour (the default), `accent-*` renders the exact
-        // brand palette and the design is unchanged. AccentThemeApplier only
-        // sets the variables when a user has explicitly chosen a colour.
+        // Accent scale. Each shade reads a --accent-* CSS variable with a
+        // FALLBACK to QuikInfra's own construction orange. QuikInfra never sets
+        // those variables (it has no colour picker and does NOT apply the
+        // per-user accent shared across apps), so `accent-*` always renders the
+        // brand orange — the app stays on-brand regardless of a colour chosen
+        // in another QuikIT app.
         // (accent-300 = #FFAF55, the golden top of the primary-button gradient.)
         accent: {
           50:  'var(--accent-50, #fff7ed)',

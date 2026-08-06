@@ -44,23 +44,9 @@ function getBucketRef(): Bucket {
   return getClient().bucket(getBucket());
 }
 
-export function getBucket(): string {
+function getBucket(): string {
   if (!bucket) throw new Error("GCS_BUCKET is not set");
   return bucket;
-}
-
-const ALLOWED_IMAGE_TYPES = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/gif",
-  "image/webp",
-  "image/svg+xml",
-]);
-
-export const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8 MB
-
-export function isAllowedImageType(mime: string): boolean {
-  return ALLOWED_IMAGE_TYPES.has(mime);
 }
 
 /**
@@ -96,35 +82,23 @@ export async function getObject(key: string): Promise<{
 }
 
 /**
- * 15-minute signed (V4) GET URL — long enough for a page render + caching.
- * When `downloadFileName` is set, the URL forces the browser to download
- * (GCS returns `Content-Disposition: attachment; filename="..."`).
- */
-export async function getPresignedGetUrl(
-  key: string,
-  expiresIn = 900,
-  downloadFileName?: string,
-): Promise<string> {
-  const [url] = await getBucketRef()
-    .file(key)
-    .getSignedUrl({
-      version: "v4",
-      action: "read",
-      expires: Date.now() + expiresIn * 1000,
-      ...(downloadFileName
-        ? { responseDisposition: `attachment; filename="${downloadFileName.replace(/"/g, "")}"` }
-        : {}),
-    });
-  return url;
-}
-
-/**
  * Validate that a key the client claims to own actually belongs to the
  * caller's tenant. Defense-in-depth — the prefix is part of the URL and
  * therefore not trustworthy on its own.
  */
 export function keyBelongsToTenant(key: string, orgId: string): boolean {
   return key.includes(`/${orgId}/`) || key.startsWith(`tenants/${orgId}/`);
+}
+
+/**
+ * True when a stored file URL resolves to an object key inside the caller's
+ * tenant. Accepts the internal upload-proxy URL and canonical GCS URLs; any
+ * arbitrary external URL (or one pointing at another tenant's key) returns
+ * false. Use this to reject SSRF / cross-tenant file references at write time.
+ */
+export function urlBelongsToTenant(url: string, orgId: string): boolean {
+  const key = extractKeyFromUrl(url);
+  return !!key && keyBelongsToTenant(key, orgId);
 }
 
 /**

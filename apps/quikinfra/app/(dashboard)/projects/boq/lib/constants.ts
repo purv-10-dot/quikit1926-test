@@ -9,9 +9,6 @@ import type {
   ImportMode,
   UniversalField,
   UniversalGroup,
-  SFLineItem,
-  SFChild,
-  SFParent,
 } from "./types";
 
 export const UNIVERSAL_FIELD_LABELS: Record<UniversalField, string> = {
@@ -55,7 +52,6 @@ export const FIELD_GROUP: Record<Exclude<UniversalField, "IGNORE">, UniversalGro
   amt_billed: "Amounts",
 };
 
-export const GROUP_ORDER: UniversalGroup[] = ["Identity", "Quantities", "Amounts"];
 
 export const GROUP_DOT_COLOR: Record<UniversalGroup, string> = {
   Identity: "bg-orange-500",
@@ -71,7 +67,6 @@ export const MODE_LABEL: Record<ImportMode, string> = {
   STRICT_TEMPLATE: "QuikInfra Template",
   GENERIC_SOR: "Generic SOR BOQ",
   ALPHABETIC_SOR: "Alphabetic SOR",
-  SELF_FILL: "Self Fill",
   UNIVERSAL: "Custom Mapping",
 };
 
@@ -80,43 +75,11 @@ export const MODE_HINT: Record<ImportMode, string> = {
   STRICT_TEMPLATE: "6 columns: BOQ No · SOR No · Description · Unit · Rate · Op. Undone Qty",
   GENERIC_SOR: "9 columns: S.No · SOR Item · Sub Item · Item Name · Description · Unit · Qty · Rate · Amount",
   ALPHABETIC_SOR: "Alphabetic numbering — I/NO. · SOR Numbers · Description · Total Qty · Unit (A.1 · A.2.2.1 · a. · b.)",
-  SELF_FILL: "Build BOQ inline — parent → child → line items, no Excel needed.",
   UNIVERSAL: "Any format — you pick which column is which. No fixed structure required.",
 };
-
-export const CATEGORY_OPTIONS = ["Civil Building", "Electrical", "Road Works"] as const;
 
 // A 403 from any BOQ upload/import endpoint means the user's role lacks the
 // `construction.boq.import` permission — surface a clear message instead of
 // the generic "Forbidden" the auth layer returns.
 export const NO_IMPORT_PERMISSION_MSG =
   "You don't have permission to import the BOQ. Please contact your administrator.";
-
-export const newId = () => Math.random().toString(36).slice(2, 10);
-
-export const makeLineItem = (): SFLineItem => ({
-  id: newId(),
-  boqNoOverride: "",
-  displayName: "",
-  unit: "",
-  tenderQty: "",
-  rate: "",
-});
-
-export const makeChild = (): SFChild => ({
-  id: newId(),
-  boqNoOverride: "",
-  mode: "leaf",
-  displayName: "",
-  unit: "",
-  tenderQty: "",
-  rate: "",
-  lineItems: [],
-});
-
-export const makeParent = (): SFParent => ({
-  id: newId(),
-  boqNoOverride: "",
-  displayName: "",
-  children: [makeChild()],
-});

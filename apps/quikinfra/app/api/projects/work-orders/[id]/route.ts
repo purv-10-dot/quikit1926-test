@@ -11,21 +11,30 @@ import {
   APPROVAL_INSTANCE_INCLUDE,
   buildApprovalDto,
   type ApprovalDto,
+  collectApprovalUserIds,
 } from "@/lib/approvals/approval-dto";
 
 function enrichWO(
   row: Prisma.CnWorkOrderGetPayload<{ include: { lines: true } }>,
   project?: { name?: string | null } | null,
   contractor?: { name?: string | null } | null,
+  activityCodeById?: Map<string, string>,
 ) {
-  const lines = (row.lines ?? []).map((l) => ({
+  const lines = (row.lines ?? []).map((l) => {
+    // Activity lines store boqItemId = null — show the activity's code instead.
+    const code =
+      l.scopeType === "ACTIVITY" && l.scopeId
+        ? activityCodeById?.get(l.scopeId) ?? l.boqItemId ?? ""
+        : l.boqItemId ?? "";
+    return {
     id: l.id,
     lineType: l.lineType ?? "boq",
-    boqNo: l.boqItemId ?? "",
-    boqItemId: l.boqItemId ?? "",
+    boqNo: code,
+    boqItemId: code,
+    scopeType: l.scopeType ?? null,
+    scopeId: l.scopeId ?? null,
     description: l.description ?? "",
-    uomId: l.uomId ?? "",
-    uomCode: l.uomId ?? "",
+    uomCode: l.uomCode ?? "",
     quantity: l.quantity?.toString?.() ?? "0",
     rate: l.negotiatedRate?.toString?.() ?? "0",
     amount: l.amount?.toString?.() ?? "0",
@@ -34,7 +43,8 @@ function enrichWO(
     workCategoryId: l.workCategoryId ?? "",
     labourCategoryId: (l as { labourCategoryId?: string | null }).labourCategoryId ?? "",
     labourCount: (l as { labourCount?: { toString?: () => string } | null }).labourCount?.toString?.() ?? "",
-  }));
+    };
+  });
   return {
     id: row.id,
     woNumber: row.woNumber,
@@ -66,6 +76,25 @@ function enrichWO(
   };
 }
 
+async function activityCodesFor(
+  orgId: string,
+  row: { lines?: Array<{ scopeType?: string | null; scopeId?: string | null }> },
+): Promise<Map<string, string>> {
+  const ids = [
+    ...new Set(
+      (row.lines ?? [])
+        .filter((l) => l.scopeType === "ACTIVITY" && l.scopeId)
+        .map((l) => l.scopeId as string),
+    ),
+  ];
+  if (!ids.length) return new Map();
+  const acts = await db.cnActivityItem.findMany({
+    where: { orgId, id: { in: ids } },
+    select: { id: true, activityCode: true },
+  });
+  return new Map(acts.map((a) => [a.id, a.activityCode]));
+}
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } }
@@ -95,16 +124,7 @@ export async function GET(
       include: APPROVAL_INSTANCE_INCLUDE,
     });
     if (instance) {
-      const userIds = Array.from(
-        new Set<string>([
-          instance.requestedById,
-          ...instance.history.map((h) => h.actionById),
-          ...(instance.workflow.steps
-            .map((s) => s.approverUserId)
-            .filter(Boolean) as string[]),
-        ]),
-      );
-      const nameById = await resolveUserNames(userIds);
+      const nameById = await resolveUserNames(collectApprovalUserIds(instance));
       const callerCanActOnCurrentStep = canActOnCurrentStep(
         {
           userId: ctx.userId,
@@ -141,8 +161,9 @@ export async function GET(
   const progressPct =
     scopeQty > 0 ? Math.min(100, Math.round((doneQty / scopeQty) * 100)) : 0;
 
+  const activityCodeById = await activityCodesFor(ctx.orgId, row);
   return NextResponse.json({
-    ...enrichWO(row, row.project, row.contractor),
+    ...enrichWO(row, row.project, row.contractor, activityCodeById),
     progressPct,
     approval,
     createdByName: auditNames.get(row.createdBy) ?? row.createdBy,
@@ -243,7 +264,7 @@ async function handleUpdate(req: NextRequest, id: string) {
             boqItemId: String(it.boqNo ?? it.boqItemId ?? ""),
             description: String(it.description ?? ""),
             quantity: String(Number(it.quantity) || 0),
-            uomId: String(it.uomCode ?? it.uomId ?? ""),
+            uomCode: String(it.uomCode ?? it.uomId ?? ""),
             negotiatedRate: String(Number(it.rate) || 0),
             amount: String(Number(it.amount) || 0),
             lineDate: it.lineDate ? new Date(it.lineDate) : null,
@@ -268,7 +289,8 @@ async function handleUpdate(req: NextRequest, id: string) {
   if (!next) {
     return NextResponse.json({ error: "Work order not found" }, { status: 404 });
   }
-  return NextResponse.json(enrichWO(next, next.project, next.contractor));
+  const activityCodeById = await activityCodesFor(next.orgId, next);
+  return NextResponse.json(enrichWO(next, next.project, next.contractor, activityCodeById));
 }
 
 export async function PUT(

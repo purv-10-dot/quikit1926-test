@@ -158,6 +158,17 @@ function logTelephonyDebug(message: string, extra?: Record<string, unknown>): vo
   console.log(`[india-voice][debug] ${message}`, extra ?? "");
 }
 
+/**
+ * UNMASKED diagnostic log — only emitted in non-production. Phone numbers are
+ * printed in the clear so an operator can confirm exactly which agent/customer/
+ * DID the provider was asked to dial when a call "succeeds" but never rings.
+ * Never runs in production (guarded by NODE_ENV) so masked logs stay the norm.
+ */
+function logResolvedValues(fields: Record<string, unknown>): void {
+  if (env().NODE_ENV === "production") return;
+  console.log("[india-voice][resolved][DEV-UNMASKED]", fields);
+}
+
 /** Last 10 digits — used to match provider member_num formats (e.g. 08120833324 vs 8120833324). */
 function last10Digits(num: string): string {
   const d = digitsOnly(num);
@@ -368,10 +379,54 @@ export async function clickToCall(to: string, partyA?: string): Promise<ClickToC
     err.statusCode = 400;
     throw err;
   }
-  const callingPartyA = digitsOnly(partyA || e.RP_DIGITAL_CALLING_PARTY_A || e.RP_DIGITAL_DESKPHONE!);
+
+  // calling_party_a is the AGENT leg — the provider rings this number FIRST and,
+  // only after the agent answers, dials calling_party_b (the customer). If it is
+  // empty/invalid the provider still creates a campaign (returns campid) but the
+  // agent leg never rings, which is exactly the "success but no ring" symptom.
+  //
+  // Previously this fell back to RP_DIGITAL_DESKPHONE (the outbound DID) when no
+  // agent number was supplied. The DID cannot ring as an agent, so that silent
+  // fallback produced a valid campid with a dead agent leg. We now require an
+  // explicit agent number and fail closed with a 400 instead of dialing the DID.
+  const rawPartyA = (partyA || e.RP_DIGITAL_CALLING_PARTY_A || "").trim();
+  if (!rawPartyA) {
+    const err = new Error(
+      "No agent phone number (calling_party_a) provided. Save your phone number in Settings → Profile before dialing — the provider rings the agent leg first and cannot ring the outbound DID.",
+    ) as Error & { statusCode?: number };
+    err.statusCode = 400;
+    throw err;
+  }
+  const callingPartyA = digitsOnly(rawPartyA);
+  if (callingPartyA.length < 10) {
+    const err = new Error(
+      "Agent phone number (calling_party_a) must have at least 10 digits — it is the number the provider rings first, so it must be a reachable phone, not an extension.",
+    ) as Error & { statusCode?: number };
+    err.statusCode = 400;
+    throw err;
+  }
+
+  // Provider requires the DID as its LAST 10 DIGITS. RP_DIGITAL_DESKPHONE is
+  // stored country-code-prefixed (e.g. "917935486393"); sending it raw yields
+  // {"type":"error","message":"Invalid Deskphone for this Account."}. The
+  // provider prepends 91 itself and echoes the full number back on success.
+  // Confirmed live 2026-07-16: deskphone=7935486393 → success campid; the
+  // 12-digit form → "Invalid Deskphone for this Account.".
+  const deskphone = last10Digits(e.RP_DIGITAL_DESKPHONE!);
 
   // addmember_v2 does not flip working status — agent may still be On Break.
-  await ensureAgentAvailable(callingPartyA);
+  // The provider silently accepts click_to_call_v2 (returns a campid) even when
+  // the agent is not Ready, then never rings the agent leg. Fail closed here so
+  // an offline/break agent surfaces as a clear error instead of a dead call.
+  const statusResult = await ensureAgentAvailable(callingPartyA);
+  if (!statusResult.ok && !statusResult.skipped) {
+    const detail = statusResult.message ? ` (${statusResult.message})` : "";
+    const err = new Error(
+      `Agent could not be set to Ready on IndiaVoice${detail}. The provider will not ring the agent leg until working status is Ready. Confirm calling_party_a is a registered member.`,
+    ) as Error & { statusCode?: number };
+    err.statusCode = 400;
+    throw err;
+  }
 
   // Provider expects the /api_v3/ namespace. Confirmed live against
   // https://indiavoice.rpdigitalphone.com on 2026-05-01: /api/click_to_call_v2
@@ -382,7 +437,7 @@ export async function clickToCall(to: string, partyA?: string): Promise<ClickToC
   const url = new URL("/api_v3/click_to_call_v2", e.RP_DIGITAL_BASE_URL);
   url.searchParams.set("calling_party_a", callingPartyA);
   url.searchParams.set("calling_party_b", target);
-  url.searchParams.set("deskphone", e.RP_DIGITAL_DESKPHONE!);
+  url.searchParams.set("deskphone", deskphone);
   url.searchParams.set("call_from_did", e.RP_DIGITAL_CALL_FROM_DID);
   url.searchParams.set("waittime", String(e.RP_DIGITAL_WAITTIME));
   url.searchParams.set("CallLimit", e.RP_DIGITAL_CALL_LIMIT);
@@ -390,6 +445,42 @@ export async function clickToCall(to: string, partyA?: string): Promise<ClickToC
 
   const headers: Record<string, string> = { Accept: "application/json" };
   applyAuth(url, headers);
+
+  // Step 1/8 diagnostics: unmasked in dev so the operator sees exactly what the
+  // provider was asked to dial (original → normalized → digits → last-10).
+  logResolvedValues({
+    calling_party_a: {
+      original: partyA ?? e.RP_DIGITAL_CALLING_PARTY_A ?? null,
+      raw: rawPartyA,
+      digitsOnly: digitsOnly(rawPartyA),
+      sent: callingPartyA,
+    },
+    calling_party_b: { original: to, digitsOnly: target, sent: target },
+    deskphone: {
+      original: e.RP_DIGITAL_DESKPHONE ?? null,
+      digitsOnly: digitsOnly(e.RP_DIGITAL_DESKPHONE!),
+      last10: deskphone,
+      sent: deskphone,
+    },
+    uid: e.RP_DIGITAL_UID,
+    CallLimit: e.RP_DIGITAL_CALL_LIMIT,
+    call_from_did: e.RP_DIGITAL_CALL_FROM_DID,
+    waittime: e.RP_DIGITAL_WAITTIME,
+    authMethod: authMethod(),
+    agentReady: statusResult.ok || statusResult.skipped,
+  });
+
+  logTelephonyDebug("click_to_call_v2 request", {
+    partyA: maskForLog(callingPartyA),
+    partyB: maskForLog(target),
+    deskphoneRaw: maskForLog(e.RP_DIGITAL_DESKPHONE!),
+    deskphoneSent: maskForLog(deskphone),
+    call_from_did: e.RP_DIGITAL_CALL_FROM_DID,
+    waittime: e.RP_DIGITAL_WAITTIME,
+    CallLimit: e.RP_DIGITAL_CALL_LIMIT,
+    uid: e.RP_DIGITAL_UID,
+    authMethod: authMethod(),
+  });
 
   // redactUrl strips `authcode`/`password`; maskForLog further redacts any
   // remaining digit run >=7 (i.e. the phone numbers in calling_party_a/_b).
@@ -420,6 +511,24 @@ export async function clickToCall(to: string, partyA?: string): Promise<ClickToC
   });
   console.log(`[india-voice] Click2Call response HTTP ${res.status}`);
   const json: ProviderResponse = res.data ?? {};
+  logTelephonyDebug("click_to_call_v2 response", {
+    httpStatus: res.status,
+    type: json.type,
+    campid: json.campid,
+    message: json.message,
+  });
+  // Unmasked in dev: the provider ECHOES the deskphone it accepted — comparing
+  // it to what we sent confirms the DID was recognized. campid alone means the
+  // campaign was queued, NOT that the agent leg started ringing.
+  logResolvedValues({
+    providerResponse: {
+      httpStatus: res.status,
+      type: json.type,
+      campid: json.campid ?? null,
+      deskphoneEcho: json.deskphone ?? null,
+      message: json.message ?? null,
+    },
+  });
 
   if (res.status >= 400 || json.type === "error") {
     let message = json.message || `Provider error (${res.status})`;

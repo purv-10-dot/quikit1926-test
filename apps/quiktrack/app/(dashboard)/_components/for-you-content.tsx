@@ -27,6 +27,7 @@ interface SpaceCard {
   updatedAt?: string;
 }
 
+
 const TOP_N = 5;
 console.log("TOP_N", TOP_N);
 const TABS: { key: Tab; label: string; count?: number }[] = [

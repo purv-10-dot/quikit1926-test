@@ -30,4 +30,4 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }) => {
     console.error("GET pending reviews", e);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.recruit.read"] });
