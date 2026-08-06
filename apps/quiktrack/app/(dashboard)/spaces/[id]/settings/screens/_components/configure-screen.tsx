@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Loader2, Pencil, Plus } from "lucide-react";
-import { SCREEN_FIELDS, screenFieldLabel } from "@/lib/services/screens/field-registry";
+import { SCREEN_FIELDS, customFieldKey } from "@/lib/services/screens/field-registry";
+import { PortalDropdown } from "../../workflows/[wfId]/_components/flow/portal-dropdown";
 import { ScreenFieldList } from "./screen-field-list";
 
 interface ScreenDetail {
@@ -15,6 +16,7 @@ interface ScreenDetail {
   tabs: { id: string; name: string; fieldKeys: string[] }[];
 }
 interface Tab { name: string; fieldKeys: string[] }
+interface FieldOpt { key: string; label: string }
 
 const QKEY = (id: string) => ["quiktrack", "screen", id];
 
@@ -25,10 +27,25 @@ async function fetchScreen(screenId: string): Promise<ScreenDetail> {
   return j.data as ScreenDetail;
 }
 
+/** Active custom fields for this space → namespaced screen field options. */
+async function fetchCustomFields(projectId: string): Promise<FieldOpt[]> {
+  const r = await fetch(`/api/projects/${projectId}/custom-fields`);
+  const j = await r.json();
+  if (!r.ok || !j.success) return [];
+  return (j.data as { key: string; name: string }[]).map((f) => ({
+    key: customFieldKey(f.key),
+    label: f.name,
+  }));
+}
+
 /** Configure Screen — tabs + ordered fields, matching Jira's screen editor. */
 export function ConfigureScreen({ projectId, screenId }: { projectId: string; screenId: string }) {
   const qc = useQueryClient();
   const { data, isLoading, error } = useQuery({ queryKey: QKEY(screenId), queryFn: () => fetchScreen(screenId) });
+  const customFields = useQuery({
+    queryKey: ["quiktrack", "custom-fields", projectId],
+    queryFn: () => fetchCustomFields(projectId),
+  });
 
   const [name, setName] = useState("");
   const [tabs, setTabs] = useState<Tab[]>([]);
@@ -37,7 +54,6 @@ export function ConfigureScreen({ projectId, screenId }: { projectId: string; sc
   const [tabDraft, setTabDraft] = useState("");
   const [addingTab, setAddingTab] = useState(false);
   const [newTab, setNewTab] = useState("");
-  const [addField, setAddField] = useState("");
 
   useEffect(() => {
     if (!data) return;
@@ -61,9 +77,16 @@ export function ConfigureScreen({ projectId, screenId }: { projectId: string; sc
   /** Apply a tab-list change locally and persist it. */
   const commit = (next: Tab[]) => { setTabs(next); save.mutate(next); };
 
+  // All selectable fields: built-ins + this space's active custom fields.
+  const allFields: FieldOpt[] = useMemo(
+    () => [...SCREEN_FIELDS.map((f) => ({ key: f.key, label: f.label })), ...(customFields.data ?? [])],
+    [customFields.data],
+  );
+  const labelOf = (key: string) => allFields.find((f) => f.key === key)?.label ?? key;
+
   const tab = tabs[activeTab];
   const usedKeys = new Set(tabs.flatMap((t) => t.fieldKeys));
-  const available = SCREEN_FIELDS.filter((f) => !usedKeys.has(f.key));
+  const available = allFields.filter((f) => !usedKeys.has(f.key));
 
   const setTabFields = (fieldKeys: string[]) =>
     commit(tabs.map((t, i) => (i === activeTab ? { ...t, fieldKeys } : t)));
@@ -139,25 +162,23 @@ export function ConfigureScreen({ projectId, screenId }: { projectId: string; sc
         <ScreenFieldList
           fieldKeys={tab.fieldKeys}
           onChange={setTabFields}
-          labelOf={screenFieldLabel}
+          labelOf={labelOf}
         />
       )}
 
       {/* Add a field */}
       <div className="mt-4 flex items-center gap-3">
-        <select
-          value={addField}
-          onChange={(e) => {
-            const key = e.target.value;
-            if (key && tab) { setTabFields([...tab.fieldKeys, key]); setAddField(""); }
-          }}
-          className="rounded border border-gray-300 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none"
-        >
-          <option value="">Select Field …</option>
-          {available.map((f) => (
-            <option key={f.key} value={f.key}>{f.label}</option>
-          ))}
-        </select>
+        <div className="w-56">
+          <PortalDropdown
+            placeholder="Select Field …"
+            options={available.map((f) => ({ value: f.key, label: f.label }))}
+            selected={[]}
+            onChange={(next) => {
+              const key = next[0];
+              if (key && tab) setTabFields([...tab.fieldKeys, key]);
+            }}
+          />
+        </div>
         <span className="text-xs text-gray-500">Select a field to add it to the screen.</span>
         {save.isPending && <span className="ml-auto inline-flex items-center gap-1 text-xs text-gray-400"><Loader2 className="h-3 w-3 animate-spin" /> Saving…</span>}
       </div>

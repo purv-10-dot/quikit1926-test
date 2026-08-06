@@ -65,10 +65,24 @@ const addComment: PostFunctionHandler = {
     config.text ? [] : ["text is required for add_comment"],
 };
 
+/**
+ * show_screen — Jira "Show a screen" (Request input bucket). Stored as a
+ * post-function so it lives on the transition, but it does NOT mutate the issue:
+ * the "screen" is a client-side prompt shown before the move, so at runtime this
+ * is a no-op. It exists in the registry so publish validation accepts it and can
+ * require a chosen screen. config: { screenId }
+ */
+const showScreen: PostFunctionHandler = {
+  run: async () => ({}),
+  validateConfig: (config) =>
+    config.screenId ? [] : ["Select a screen for the show_screen rule"],
+};
+
 export const POSTFUNCTION_REGISTRY: Record<string, PostFunctionHandler> = {
   set_resolution: setResolution,
   clear_resolution: clearResolution,
   assign,
   set_field: setField,
   add_comment: addComment,
+  show_screen: showScreen,
 };

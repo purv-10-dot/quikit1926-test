@@ -26,8 +26,18 @@ export const SCREEN_FIELDS: ScreenFieldMeta[] = [
 
 const BY_KEY = new Map(SCREEN_FIELDS.map((f) => [f.key, f] as const));
 
+/** Custom-field keys are namespaced so they can never collide with a built-in. */
+export const CUSTOM_FIELD_PREFIX = "cf:";
+export function isCustomFieldKey(key: string): boolean {
+  return key.startsWith(CUSTOM_FIELD_PREFIX);
+}
+export function customFieldKey(cfKey: string): string {
+  return `${CUSTOM_FIELD_PREFIX}${cfKey}`;
+}
+
+/** True for a built-in OR a namespaced custom-field key (real fields we persist). */
 export function isScreenField(key: string): boolean {
-  return BY_KEY.has(key);
+  return BY_KEY.has(key) || isCustomFieldKey(key);
 }
 
 export function screenFieldLabel(key: string): string {
