@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Trash2, Plus, ChevronDown, ChevronRight, Zap, X, MoreHorizontal } from "lucide-react";
 import type { EditorDraft, EditorRule, EditorTransition, StatusMeta } from "../editor-types";
-import { metaFor } from "./rule-catalog";
+import { metaFor, type BucketId } from "./rule-catalog";
+import { ruleSummary } from "./rule-summary";
 
 function pillClass(category?: string): string {
   if (category === "IN_PROGRESS") return "bg-blue-100 text-blue-800";
@@ -57,7 +58,7 @@ export function TransitionPanel({
   statusMeta: Map<string, StatusMeta>;
   onRename: (name: string) => void;
   onUpdatePath: (patch: { fromStatusIds?: string[]; toStatusId?: string }) => void;
-  onOpenAddRule: (kind: EditorRule["kind"]) => void;
+  onOpenAddRule: (bucket: BucketId) => void;
   onEditRule: (index: number) => void;
   onRemoveRule: (index: number) => void;
   /** ALL = each condition its own group (AND); ANY = all in one group (OR). */
@@ -71,11 +72,15 @@ export function TransitionPanel({
   const isInitial = transition.type === "INITIAL";
   const isGlobal = transition.type === "GLOBAL";
 
-  const byKind = (kind: EditorRule["kind"]) =>
-    transition.rules.map((rule, index) => ({ rule, index })).filter((r) => r.rule.kind === kind);
-  const conditions = byKind("CONDITION");
-  const validators = byKind("VALIDATOR");
-  const postFns = byKind("POSTFUNCTION");
+  // Group by UI bucket (a rule's bucket = its catalog `bucket`, else its kind).
+  // This routes show_screen (a POSTFUNCTION) into the Request-input bucket.
+  const bucketOf = (rule: EditorRule): BucketId => (metaFor(rule.type)?.bucket ?? rule.kind) as BucketId;
+  const inBucket = (bucket: BucketId) =>
+    transition.rules.map((rule, index) => ({ rule, index })).filter((r) => bucketOf(r.rule) === bucket);
+  const conditions = inBucket("CONDITION");
+  const requestInput = inBucket("REQUEST_INPUT");
+  const validators = inBucket("VALIDATOR");
+  const postFns = inBucket("POSTFUNCTION");
 
   const targetName = nameOf(transition.toStatusId);
 
@@ -150,10 +155,14 @@ export function TransitionPanel({
             <RuleBucket
               title="Request input"
               subtitle="Request input from the user"
-              count={0}
-              onAdd={() => onOpenAddRule("VALIDATOR")}
+              count={requestInput.length}
+              onAdd={() => onOpenAddRule("REQUEST_INPUT")}
               addLabel="Add request input rule"
-            />
+            >
+              {requestInput.map(({ rule, index }) => (
+                <RuleCard key={index} rule={rule} onEdit={() => onEditRule(index)} onRemove={() => onRemoveRule(index)} />
+              ))}
+            </RuleBucket>
 
             <RuleBucket
               title="Validate details"
@@ -172,6 +181,7 @@ export function TransitionPanel({
               subtitle={`Perform actions and move issue to "${targetName}"`}
               count={postFns.length}
               onAdd={() => onOpenAddRule("POSTFUNCTION")}
+              addLabel="Add perform actions rule"
             >
               {postFns.map(({ rule, index }) => (
                 <RuleCard key={index} rule={rule} onEdit={() => onEditRule(index)} onRemove={() => onRemoveRule(index)} />
@@ -280,6 +290,7 @@ function RuleBucket({
 
 function RuleCard({ rule, onEdit, onRemove }: { rule: EditorRule; onEdit: () => void; onRemove: () => void }) {
   const meta = metaFor(rule.type);
+  const summary = ruleSummary(rule);
   const [menuOpen, setMenuOpen] = useState(false);
   const ref = useClickOutside(menuOpen, () => setMenuOpen(false));
   return (
@@ -305,7 +316,7 @@ function RuleCard({ rule, onEdit, onRemove }: { rule: EditorRule; onEdit: () => 
           )}
         </div>
       </div>
-      {meta && <p className="mt-1 pl-7 text-[11px] text-gray-500">{meta.description}</p>}
+      {(summary || meta) && <p className="mt-1 pl-7 text-[11px] text-gray-500">{summary || meta?.description}</p>}
     </div>
   );
 }

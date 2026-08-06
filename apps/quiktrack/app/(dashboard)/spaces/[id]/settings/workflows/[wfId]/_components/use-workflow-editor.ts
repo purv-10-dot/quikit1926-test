@@ -183,9 +183,14 @@ export function useWorkflowEditor(wfId: string, initial: EditorDraft, hasPending
     (transitionId: string, rule: EditorRule) =>
       mutate((d) => ({
         ...d,
-        transitions: d.transitions.map((t) =>
-          t.id === transitionId ? { ...t, rules: [...t.rules, rule] } : t,
-        ),
+        transitions: d.transitions.map((t) => {
+          if (t.id !== transitionId) return t;
+          // Only one "Show a screen" rule is allowed per transition.
+          if (rule.type === "show_screen" && t.rules.some((r) => r.type === "show_screen")) {
+            return t;
+          }
+          return { ...t, rules: [...t.rules, rule] };
+        }),
       })),
     [mutate],
   );

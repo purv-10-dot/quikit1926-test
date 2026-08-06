@@ -14,6 +14,7 @@ export { listAvailableTransitionsForIssue } from "./available-transitions";
 export {
   executeTransition,
   postFunctionPatchToPrisma,
+  screenInputsToPrisma,
   ConditionsFailedError,
   ValidationFailedError,
 } from "./execute-transition";

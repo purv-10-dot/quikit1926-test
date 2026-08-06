@@ -19,7 +19,7 @@ import {
   type WorkflowReadModel,
 } from "./editor-types";
 import { AddRuleDialog, EditRuleDialog } from "./flow/rule-dialogs";
-import { metaFor, type RuleTypeMeta } from "./flow/rule-catalog";
+import { metaFor, type RuleTypeMeta, type BucketId } from "./flow/rule-catalog";
 
 async function fetchResolutions(projectId: string): Promise<{ id: string; name: string }[]> {
   const r = await fetch(`/api/projects/${projectId}/resolutions`);
@@ -142,7 +142,8 @@ function EditorBody({
   const [editStatusOpen, setEditStatusOpen] = useState(false);
   const [replaceStatusOpen, setReplaceStatusOpen] = useState(false);
   // Rule dialogs on the Transition panel: pick a rule type (add) or edit one.
-  const [addRuleOpen, setAddRuleOpen] = useState(false);
+  // Holds the rail bucket the Add-rule catalog should open on, or null (closed).
+  const [addRuleBucket, setAddRuleBucket] = useState<BucketId | null>(null);
   // The rule being configured — either a fresh pick (add) or an existing index (edit).
   const [rulePick, setRulePick] = useState<{ meta: RuleTypeMeta; index: number | null } | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
@@ -246,7 +247,7 @@ function EditorBody({
                 selectedTransition?.id ?? ed.draft.transitions[0]?.id ?? null;
               if (target) {
                 setSelection({ kind: "transition", transitionId: target });
-                setAddRuleOpen(true);
+                setAddRuleBucket("CONDITION");
               }
             }}
             disabled={ed.draft.transitions.length < 1}
@@ -477,7 +478,7 @@ function EditorBody({
             statusMeta={statusMeta}
             onRename={(name) => ed.updateTransition(selectedTransition.id, { name })}
             onUpdatePath={(patch) => ed.updateTransition(selectedTransition.id, patch)}
-            onOpenAddRule={() => setAddRuleOpen(true)}
+            onOpenAddRule={(bucket) => setAddRuleBucket(bucket)}
             onEditRule={(index) => {
               const r = selectedTransition.rules[index];
               const m = metaFor(r.type);
@@ -565,10 +566,11 @@ function EditorBody({
         />
       )}
       {/* Add-rule catalog → pick a type → opens the Edit-rule config. */}
-      {addRuleOpen && selectedTransition && (
+      {addRuleBucket && selectedTransition && (
         <AddRuleDialog
-          onPick={(meta) => { setAddRuleOpen(false); setRulePick({ meta, index: null }); }}
-          onClose={() => setAddRuleOpen(false)}
+          initialBucket={addRuleBucket}
+          onPick={(meta) => { setAddRuleBucket(null); setRulePick({ meta, index: null }); }}
+          onClose={() => setAddRuleBucket(null)}
         />
       )}
       {rulePick && selectedTransition && (

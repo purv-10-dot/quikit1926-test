@@ -10,6 +10,7 @@ import {
 import {
   executeTransition,
   postFunctionPatchToPrisma,
+  screenInputsToPrisma,
   TransitionNotAllowedError,
   ConditionsFailedError,
   ValidationFailedError,
@@ -94,6 +95,7 @@ export const PATCH = withOrgAuth<{ id: string }>(
           },
           toStatusId: parsed.data.statusId as string,
           userId,
+          inputs: parsed.data.inputs ?? {},
         });
         workflowPatch = res.patch ?? {};
         workflowComments = res.comments ?? [];
@@ -124,6 +126,8 @@ export const PATCH = withOrgAuth<{ id: string }>(
           sprintId: parsed.data.sprintId === undefined ? undefined : parsed.data.sprintId,
           parentId: parsed.data.parentId === undefined ? undefined : parsed.data.parentId,
           orderInColumn: parsed.data.orderInColumn,
+          // "Show a screen" inputs persist first; post-functions run after and win.
+          ...screenInputsToPrisma(parsed.data.inputs ?? {}),
           // Apply post-function effects (writable scalar columns only).
           ...postFunctionPatchToPrisma(workflowPatch),
           updatedBy: userId,

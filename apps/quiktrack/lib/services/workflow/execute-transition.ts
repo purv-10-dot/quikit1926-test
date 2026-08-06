@@ -14,6 +14,8 @@
  */
 import { db } from "@/lib/db";
 import { userCanInProject } from "@/lib/api/permissions";
+import { requiredKeysForScreen } from "../screens/screen-required";
+import { isCustomFieldKey } from "../screens/field-registry";
 import { findTransition } from "./graph";
 import { resolveWorkflowGraph } from "./resolve-workflow";
 import { TransitionNotAllowedError } from "./types";
@@ -76,6 +78,54 @@ export function postFunctionPatchToPrisma(patch: PostFunctionPatch): Record<stri
   if ("dueDate" in patch) out.dueDate = patch.dueDate ? new Date(patch.dueDate) : null;
   if ("startDate" in patch) out.startDate = patch.startDate ? new Date(patch.startDate) : null;
   return out;
+}
+
+/** Screen field key → issue snapshot key (built-ins only). */
+const SCREEN_KEY_TO_SNAPSHOT: Record<string, string> = {
+  summary: "title", type: "type", status: "statusId", priority: "priority",
+  assignee: "assigneeId", reporter: "reporterId", resolution: "resolutionId",
+  description: "description", storyPoints: "storyPoints", eta: "eta",
+  dueDate: "dueDate", startDate: "startDate",
+};
+
+/**
+ * Map "Show a screen" inputs (built-in fields only) to a Prisma issue-update
+ * fragment, so values entered in the transition screen persist on the move.
+ * Custom-field (cf:*) inputs are not written here (they satisfy the required
+ * gate but their value persistence is a later pass). `statusId` is skipped —
+ * the move sets it. Numbers/dates are coerced.
+ */
+export function screenInputsToPrisma(inputs: Record<string, unknown>): Record<string, unknown> {
+  const NUMERIC = new Set(["storyPoints", "eta"]);
+  const DATE = new Set(["dueDate", "startDate"]);
+  const out: Record<string, unknown> = {};
+  for (const [key, raw] of Object.entries(inputs)) {
+    const col = SCREEN_KEY_TO_SNAPSHOT[key];
+    if (!col || col === "statusId" || col === "type") continue;
+    if (raw === "" || raw === undefined) continue;
+    if (NUMERIC.has(key)) { const n = Number(raw); if (!Number.isNaN(n)) out[col] = n; }
+    else if (DATE.has(key)) { out[col] = raw ? new Date(String(raw)) : null; }
+    else out[col] = raw === null ? null : String(raw);
+  }
+  return out;
+}
+
+/**
+ * A required screen field is "empty" when neither the submitted inputs nor the
+ * issue currently holds a value. Custom-field keys (cf:*) only come from inputs.
+ */
+function screenFieldIsEmpty(
+  key: string,
+  inputs: Record<string, unknown>,
+  issue: RuleIssueSnapshot,
+): boolean {
+  const notEmpty = (v: unknown) => !(v === null || v === undefined || v === "");
+  if (key in inputs) return !notEmpty(inputs[key]);
+  if (isCustomFieldKey(key)) return true; // no input for a required custom field
+  const snapKey = SCREEN_KEY_TO_SNAPSHOT[key];
+  if (!snapKey) return false; // unknown built-in → don't block
+  if (snapKey in inputs) return !notEmpty(inputs[snapKey]);
+  return !notEmpty((issue as unknown as Record<string, unknown>)[snapKey]);
 }
 
 const toRuleSpec = (r: GraphRule): RuleSpec => ({
@@ -182,6 +232,18 @@ export async function executeTransition(params: {
   // 3. validators (execution) — abort before any write.
   const failures = await runValidators(ctx, validators);
   if (failures.length > 0) throw new ValidationFailedError(failures);
+
+  // 3b. "Show a screen" gate — the move can't complete until the screen's
+  //     required fields have a value (from the submitted inputs or the issue).
+  const screenRule = transition.rules.find((r) => r.type === "show_screen");
+  const screenId = screenRule ? String(screenRule.config.screenId ?? "") : "";
+  if (screenId) {
+    const requiredKeys = await requiredKeysForScreen(issue.orgId, screenId);
+    const screenFailures = requiredKeys
+      .filter((key) => screenFieldIsEmpty(key, inputs, issue))
+      .map((key) => ({ field: key, message: `${key} is required on this transition's screen.` }));
+    if (screenFailures.length > 0) throw new ValidationFailedError(screenFailures);
+  }
 
   // 4. post-functions — collect the patch + side effects (caller applies both
   //    in the same DB transaction as the status write).

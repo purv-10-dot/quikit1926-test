@@ -86,11 +86,14 @@ function ModalShell({
 export function AddRuleDialog({
   onPick,
   onClose,
+  initialBucket = "CONDITION",
 }: {
   onPick: (meta: RuleTypeMeta) => void;
   onClose: () => void;
+  /** Rail bucket to open on (the + button's bucket). Defaults to Restrict. */
+  initialBucket?: BucketId;
 }) {
-  const [bucket, setBucket] = useState<BucketId>("CONDITION");
+  const [bucket, setBucket] = useState<BucketId>(initialBucket);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
 
