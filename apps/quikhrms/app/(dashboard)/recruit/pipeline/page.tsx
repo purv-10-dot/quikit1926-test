@@ -2327,8 +2327,11 @@ export default function PipelinePage() {
                       // need the dedicated Send Offer / Onboard flow) — leaving
                       // them selectable just leads to a dead end. Excluding
                       // them here caps this dropdown at the last real interview
-                      // stage, matching what's actually achievable.
-                      .filter((s) => s !== "Hired" && !/^offer$/i.test(s))
+                      // stage, matching what's actually achievable. Screening
+                      // is excluded too — it's kept only as the pipeline
+                      // board's "Source" column (for Candidate Pool display),
+                      // never a stage a candidate should be moved back into.
+                      .filter((s) => s !== "Hired" && s !== "Screening" && !/^offer$/i.test(s))
                       .map((s) => ({
                         value: s,
                         label: s.replace(/([A-Z])/g, " $1").trim(),
