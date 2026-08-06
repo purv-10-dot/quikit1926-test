@@ -21,6 +21,7 @@ import {
   Sparkles,
   LogOut,
   Mail,
+  Home,
 } from "lucide-react";
 import { useApiClient } from "@/lib/hooks/use-api";
 import type {
@@ -39,6 +40,7 @@ const ITEM_THEME: Record<HrmsSetupItemKey, { icon: React.ReactNode; bg: string; 
   holidays: { icon: <CalendarDays size={18} />, bg: "bg-blue-50 dark:bg-blue-500/10", text: "text-blue-600 dark:text-blue-400" },
   onboardingTemplate: { icon: <ClipboardList size={18} />, bg: "bg-rose-50 dark:bg-rose-500/10", text: "text-rose-600 dark:text-rose-400" },
   emailTemplates: { icon: <Mail size={18} />, bg: "bg-sky-50 dark:bg-sky-500/10", text: "text-sky-600 dark:text-sky-400" },
+  wfhQuota: { icon: <Home size={18} />, bg: "bg-indigo-50 dark:bg-indigo-500/10", text: "text-indigo-600 dark:text-indigo-400" },
 };
 
 interface Me {

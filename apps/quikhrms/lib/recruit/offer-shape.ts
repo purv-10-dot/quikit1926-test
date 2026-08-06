@@ -14,6 +14,9 @@ export interface OfferMeta {
   /** @deprecated single-doc — kept so old offers still render/attach. */
   supportingDoc?: { key: string; name?: string } | null;
   supportingDocs?: { key: string; name?: string }[];
+  /** CC recipients typed in the Send Offer wizard — persisted so a later
+   *  "Resend" (which has no wizard UI of its own) reuses the same list. */
+  cc?: string[];
 }
 
 // Wizard input fields (from create/update offer payloads) used to build OfferMeta.

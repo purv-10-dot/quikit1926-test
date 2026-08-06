@@ -11134,6 +11134,8 @@ model Employee {
   appRoles            HrmsUserAppRole[]
   permissionOverrides HrmsUserPermissionExtra[]
 
+  insurancePolicyMemberships InsurancePolicyMember[]
+
   @@unique([orgId, employeeCode])
   // One Employee per central user per tenant — stops the first-login race from
   // creating duplicate records. authUserId is nullable (manual employees), and
@@ -13383,6 +13385,7 @@ enum DocumentCategory {
   ExperienceLetter
   RelievingLetter
   NDA
+  Insurance
   Other
 
   @@schema("app_quikhrms")
@@ -13438,10 +13441,11 @@ model Document {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  parentDocument  Document?                @relation("DocumentVersions", fields: [parentDocumentId], references: [id])
-  versions        Document[]               @relation("DocumentVersions")
-  acknowledgments DocumentAcknowledgment[]
-  shares          DocumentShare[]
+  parentDocument   Document?                @relation("DocumentVersions", fields: [parentDocumentId], references: [id])
+  versions         Document[]               @relation("DocumentVersions")
+  acknowledgments  DocumentAcknowledgment[]
+  shares           DocumentShare[]
+  insuranceMembers InsurancePolicyMember[]
 
   @@index([orgId])
   @@index([orgId, deletedAt])
@@ -13454,6 +13458,33 @@ model Document {
 
 // (DocumentTemplate model removed with the Document Templates feature — 2026-06-04.
 //  The DocumentCategory enum is retained — it's shared with the Document model.)
+
+// Employees enrolled under a company-wide/group Insurance policy (a Document
+// row with category = Insurance). The policy document itself carries no
+// employeeId — coverage membership is tracked here instead, added/removed
+// one employee at a time from the policy's detail page.
+model InsurancePolicyMember {
+  id         String @id @default(cuid())
+  orgId      String
+  documentId String
+  employeeId String
+
+  // Optional per-employee sum-insured amount for this policy (shown in the
+  // Coverage column + summed for the policy's "Total Coverage" stat).
+  coverageAmount Decimal? @db.Decimal(15, 2)
+
+  addedBy   String?
+  createdAt DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@unique([documentId, employeeId])
+  @@index([orgId])
+  @@index([orgId, documentId])
+  @@index([orgId, employeeId])
+  @@schema("app_quikhrms")
+}
 
 model DocumentAcknowledgment {
   id         String @id @default(cuid())

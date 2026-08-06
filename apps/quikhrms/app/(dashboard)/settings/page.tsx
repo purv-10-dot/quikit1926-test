@@ -11,14 +11,19 @@ import {
   ShieldCheck, CalendarClock,
   LifeBuoy, ExternalLink,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { useApiClient } from "@/lib/hooks/use-api";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 import { PageBackground } from "@/components/hrms/page-background";
+import type { HrmsSetupProgress, HrmsSettingsChecklist } from "@/lib/services/hrms-setup";
 
 interface Item {
   label: string;
   href: string;
   icon: React.ReactNode;
   perms?: string[];
+  /** Key into HrmsSettingsChecklist — shows a "Setup" badge until this specific item is configured. */
+  checklistKey?: keyof HrmsSettingsChecklist;
 }
 
 interface CategoryDef {
@@ -39,9 +44,9 @@ const CATEGORIES: CategoryDef[] = [
     icon: <Building2 size={18} />,
     items: [
       { label: "Company Profile", href: "/settings/company", icon: <Building2 size={14} />, perms: ["hrms.settings.read", "hrms.settings.write"] },
-      { label: "Departments", href: "/settings/departments", icon: <Network size={14} />, perms: ["hrms.org.read", "hrms.org.write"] },
+      { label: "Departments", href: "/settings/departments", icon: <Network size={14} />, perms: ["hrms.org.read", "hrms.org.write"], checklistKey: "departments" },
       { label: "Designations", href: "/settings/designations", icon: <Briefcase size={14} />, perms: ["hrms.org.read", "hrms.org.write"] },
-      { label: "Work Locations", href: "/settings/locations", icon: <MapPin size={14} />, perms: ["hrms.org.read", "hrms.org.write"] },
+      { label: "Work Locations", href: "/settings/locations", icon: <MapPin size={14} />, perms: ["hrms.org.read", "hrms.org.write"], checklistKey: "workLocations" },
       // "Teams", "Grades" and "Legal Entities" hidden from Settings — nothing
       // else was removed, the pages/APIs/data models are all untouched, so any
       // of them can be brought back by re-adding its one line here.
@@ -69,10 +74,10 @@ const CATEGORIES: CategoryDef[] = [
     icon: <Sliders size={18} />,
     items: [
       { label: "Holiday Calendar", href: "/settings/holiday-calendar", icon: <CalendarDays size={14} />, perms: ["hrms.settings.write"] },
-      { label: "Approval Chains", href: "/settings/approval-chains", icon: <Link2 size={14} />, perms: ["hrms.settings.write"] },
+      { label: "Approval Chains", href: "/settings/approval-chains", icon: <Link2 size={14} />, perms: ["hrms.settings.write"], checklistKey: "approvalChains" },
       { label: "Hiring Pipelines", href: "/settings/pipelines", icon: <GitBranch size={14} />, perms: ["hrms.recruit.write"] },
       { label: "Candidate Documents", href: "/settings/candidate-documents", icon: <FileText size={14} />, perms: ["hrms.recruit.write"] },
-      { label: "Leave Policies", href: "/leaves/policies", icon: <CalendarClock size={14} />, perms: ["hrms.leave.manage"] },
+      { label: "Leave Policies", href: "/leaves/policies", icon: <CalendarClock size={14} />, perms: ["hrms.leave.manage"], checklistKey: "leavePolicies" },
       { label: "Expense Policies", href: "/expenses/policies", icon: <Receipt size={14} />, perms: ["hrms.expense.manage"] },
       { label: "Shifts", href: "/shifts", icon: <Clock size={14} />, perms: ["hrms.attendance.manage"] },
       { label: "WFH Quota", href: "/settings/wfh-quota", icon: <Home size={14} />, perms: ["hrms.attendance.manage", "hrms.employee.write"] },
@@ -105,6 +110,7 @@ const ACCENT: Record<CategoryDef["accent"], { circle: string; pill: string; butt
 };
 
 export default function SettingsPage() {
+  const api = useApiClient();
   const { hasAnyPermission, permissions } = useDashboardConfig();
   const isSuper = permissions.includes("*");
   const allow = (p?: string[]) => !p || p.length === 0 || isSuper || hasAnyPermission(p);
@@ -121,6 +127,18 @@ export default function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [permissions, activeKey],
   );
+
+  // Same query key as SetupGate — shares its cache instead of double-fetching.
+  // Only needed to badge settings rows that have a checklistKey, so skip it
+  // entirely when none of those rows are visible to this user.
+  const showSetupBadges = visibleCategories.some((c) => c.items.some((i) => i.checklistKey));
+  const { data: setupData } = useQuery({
+    queryKey: ["hrms", "setup", "status"],
+    queryFn: () => api.get<HrmsSetupProgress>("/api/v1/hrms/setup/status"),
+    enabled: showSetupBadges,
+    staleTime: 60_000,
+  });
+  const settingsChecklist = setupData?.data?.settingsChecklist;
 
   return (
     <div className="flex flex-col lg:flex-row gap-4 items-start">
@@ -235,7 +253,11 @@ export default function SettingsPage() {
 
                 <div className="flex-1">
                   {c.items.map((i) => (
-                    <SettingRow key={i.href} item={i} />
+                    <SettingRow
+                      key={i.href}
+                      item={i}
+                      needsSetup={!!i.checklistKey && settingsChecklist ? !settingsChecklist[i.checklistKey] : false}
+                    />
                   ))}
                 </div>
               </div>
@@ -247,7 +269,7 @@ export default function SettingsPage() {
   );
 }
 
-function SettingRow({ item }: { item: Item }) {
+function SettingRow({ item, needsSetup }: { item: Item; needsSetup: boolean }) {
   return (
     <Link
       href={item.href}
@@ -255,6 +277,11 @@ function SettingRow({ item }: { item: Item }) {
     >
       <span className="text-gray-400 group-hover:text-[#22c55e] transition shrink-0">{item.icon}</span>
       <span className="truncate flex-1 min-w-0">{item.label}</span>
+      {needsSetup && (
+        <span className="text-[9.5px] font-semibold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 shrink-0">
+          Setup
+        </span>
+      )}
       <ChevronRight size={13} className="text-gray-300 group-hover:text-[#22c55e] opacity-0 group-hover:opacity-100 transition shrink-0" />
     </Link>
   );
