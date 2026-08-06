@@ -2,6 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Search, Check, User } from "lucide-react";
+import {
+  anchorFromRect,
+  useAnchoredPanel,
+  type PanelAnchor,
+} from "@/lib/hooks/useAnchoredPanel";
 
 /** Minimal user shape for the assignee picker (from /api/projects/[id]/members). */
 export interface MemberLite {
@@ -66,9 +71,10 @@ export function AssigneeCell({
   onAssign: (userId: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
+  const [anchor, setAnchor] = useState<PanelAnchor | null>(null);
   const [q, setQ] = useState("");
   const ref = useRef<HTMLDivElement>(null);
+  const panelStyle = useAnchoredPanel(ref, anchor, { width: 264 });
 
   useEffect(() => {
     if (!open) return;
@@ -94,7 +100,7 @@ export function AssigneeCell({
           e.stopPropagation();
           if (open) { setOpen(false); return; }
           const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-          setAnchor({ x: r.left, y: r.bottom + 4 });
+          setAnchor(anchorFromRect(r));
           setQ("");
           setOpen(true);
         }}
@@ -118,7 +124,7 @@ export function AssigneeCell({
       {open && anchor && (
         <div
           ref={ref}
-          style={{ position: "fixed", left: anchor.x, top: anchor.y, width: 264 }}
+          style={panelStyle}
           className="z-50 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xl"
           onClick={(e) => e.stopPropagation()}
         >
