@@ -165,6 +165,43 @@ export function ValidateParentStatusForm({
   );
 }
 
+/* ── "Show a screen" (Request input) ─────────────────────────────────────── */
+// Placeholder: QuikTrack has no "screens" feature yet, so the picker is empty.
+// The rule + bucket exist so the UI matches Jira; wire real screen options here
+// once the screens data source is available. config: { screenId }
+
+export function isShowScreenValid(config: Record<string, unknown>): boolean {
+  return String(config.screenId ?? "").trim().length > 0;
+}
+
+export function ShowScreenForm({
+  value,
+  onChange,
+  screens = [],
+}: {
+  value: Record<string, unknown>;
+  onChange: (next: Record<string, unknown>) => void;
+  screens?: { id: string; name: string }[];
+}) {
+  const selected = String(value.screenId ?? "");
+  return (
+    <div>
+      <label className="mb-1 block text-xs font-medium text-gray-700">Select a screen</label>
+      <PortalDropdown
+        placeholder="Choose a screen to display"
+        options={screens.map((s) => ({ value: s.id, label: s.name }))}
+        selected={selected ? [selected] : []}
+        onChange={(next) => onChange({ ...value, screenId: next[0] ?? "" })}
+      />
+      {screens.length === 0 && (
+        <p className="mt-1.5 text-[11px] text-gray-400">
+          No screens are configured yet.
+        </p>
+      )}
+    </div>
+  );
+}
+
 /* ── "Validate that people have a specific permission" ───────────────────── */
 
 export function isValidatePermissionValid(config: Record<string, unknown>): boolean {

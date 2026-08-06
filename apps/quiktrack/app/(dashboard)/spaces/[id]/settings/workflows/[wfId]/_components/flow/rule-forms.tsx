@@ -163,8 +163,10 @@ export {
   ValidateBeenThroughForm,
   ValidateParentStatusForm,
   ValidatePermissionForm,
+  ShowScreenForm,
   isValidateFieldValid,
   isValidateBeenThroughValid,
   isValidateParentValid,
   isValidatePermissionValid,
+  isShowScreenValid,
 } from "./rule-forms-validate";

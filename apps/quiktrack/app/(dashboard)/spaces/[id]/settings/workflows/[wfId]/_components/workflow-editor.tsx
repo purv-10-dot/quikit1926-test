@@ -228,9 +228,14 @@ function EditorBody({
             icon={Zap}
             label="Add Rule"
             onClick={() => {
-              // "Add Rule" selects the first transition so its rule accordions open.
-              const first = ed.draft.transitions[0];
-              if (first) setSelection({ kind: "transition", transitionId: first.id });
+              // Open the Add-rule catalog directly. Needs a target transition —
+              // reuse the selected one, else default to the first transition.
+              const target =
+                selectedTransition?.id ?? ed.draft.transitions[0]?.id ?? null;
+              if (target) {
+                setSelection({ kind: "transition", transitionId: target });
+                setAddRuleOpen(true);
+              }
             }}
             disabled={ed.draft.transitions.length < 1}
           />

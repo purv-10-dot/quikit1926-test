@@ -19,8 +19,17 @@ export interface RuleField {
   required?: boolean;
 }
 
+/**
+ * Rail bucket ids. A superset of RuleKind: "REQUEST_INPUT" is a UI-only bucket
+ * (Jira's "Request input") whose rules are stored as POSTFUNCTIONs — the engine
+ * still has just 3 kinds, but the catalog rail shows 4 buckets.
+ */
+export type BucketId = RuleKind | "REQUEST_INPUT";
+
 export interface RuleTypeMeta {
   kind: RuleKind;
+  /** Rail bucket this rule appears under. Defaults to `kind` when omitted. */
+  bucket?: BucketId;
   type: string;
   label: string;
   description: string;
@@ -36,16 +45,22 @@ export interface RuleTypeMeta {
     | "validate_field"
     | "validate_been_through"
     | "validate_parent_status"
-    | "validate_permission";
+    | "validate_permission"
+    | "show_screen";
 }
 
 /** Jira's 4 rule buckets shown in the Add-rule modal's left rail. */
-export const RULE_BUCKETS: Array<{ id: RuleKind; label: string; blurb: string }> = [
+export const RULE_BUCKETS: Array<{ id: BucketId; label: string; blurb: string }> = [
   {
     id: "CONDITION",
     label: "Restrict transition",
     blurb:
       "Hide the transition when certain conditions aren't met. Your team won't be able to use the transition or see it in the work item's status dropdown.",
+  },
+  {
+    id: "REQUEST_INPUT",
+    label: "Request input",
+    blurb: "Request input from the user before the work item moves.",
   },
   {
     id: "VALIDATOR",
@@ -141,6 +156,16 @@ export const RULE_TYPE_META: RuleTypeMeta[] = [
     description: "Ensure people have a specific permission when moving a work item using a particular transition.",
     fields: [],
     customForm: "validate_permission",
+  },
+  // ── REQUEST_INPUT → Request input (stored as a POSTFUNCTION) ─────────────
+  {
+    kind: "POSTFUNCTION",
+    bucket: "REQUEST_INPUT",
+    type: "show_screen",
+    label: "Show a screen",
+    description: "Allow people to update fields in a screen before they move a work item.",
+    fields: [],
+    customForm: "show_screen",
   },
   // ── POSTFUNCTION → Perform actions ──────────────────────────────────────
   {

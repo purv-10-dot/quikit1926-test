@@ -2,13 +2,14 @@
 
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Search, Lock, ListChecks, ArrowRight, Zap } from "lucide-react";
+import { X, Search, Lock, ListChecks, ArrowRight, Zap, FolderInput } from "lucide-react";
 import type { EditorRule, RuleKind } from "../editor-types";
 import {
   RULE_BUCKETS,
   RULE_TYPE_META,
   metaFor,
   type RuleTypeMeta,
+  type BucketId,
 } from "./rule-catalog";
 import {
   RestrictWhoMovesForm,
@@ -21,6 +22,7 @@ import {
   ValidateBeenThroughForm,
   ValidateParentStatusForm,
   ValidatePermissionForm,
+  ShowScreenForm,
   isRestrictWhoMovesValid,
   isRestrictFromAllValid,
   isRestrictFieldValueValid,
@@ -30,10 +32,12 @@ import {
   isValidateBeenThroughValid,
   isValidateParentValid,
   isValidatePermissionValid,
+  isShowScreenValid,
 } from "./rule-forms";
 
-function BucketIcon({ kind }: { kind: RuleKind }) {
+function BucketIcon({ kind }: { kind: BucketId }) {
   if (kind === "CONDITION") return <Lock className="h-4 w-4" />;
+  if (kind === "REQUEST_INPUT") return <FolderInput className="h-4 w-4" />;
   if (kind === "VALIDATOR") return <ListChecks className="h-4 w-4" />;
   return <Zap className="h-4 w-4" />;
 }
@@ -80,14 +84,14 @@ export function AddRuleDialog({
   onPick: (meta: RuleTypeMeta) => void;
   onClose: () => void;
 }) {
-  const [bucket, setBucket] = useState<RuleKind>("CONDITION");
+  const [bucket, setBucket] = useState<BucketId>("CONDITION");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
 
   const q = query.trim().toLowerCase();
   const list = useMemo(
     () =>
-      RULE_TYPE_META.filter((m) => m.kind === bucket).filter(
+      RULE_TYPE_META.filter((m) => (m.bucket ?? m.kind) === bucket).filter(
         (m) => !q || m.label.toLowerCase().includes(q) || m.description.toLowerCase().includes(q),
       ),
     [bucket, q],
@@ -159,7 +163,7 @@ export function AddRuleDialog({
                 }`}
               >
                 <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded bg-gray-100 text-gray-500">
-                  <BucketIcon kind={m.kind} />
+                  <BucketIcon kind={m.bucket ?? m.kind} />
                 </span>
                 <span>
                   <span className="block text-sm font-medium text-gray-900">{m.label}</span>
@@ -231,6 +235,7 @@ export function EditRuleDialog({
     validate_been_through: isValidateBeenThroughValid,
     validate_parent_status: isValidateParentValid,
     validate_permission: isValidatePermissionValid,
+    show_screen: isShowScreenValid,
   };
   const valid = meta.customForm
     ? (CUSTOM_VALID[meta.customForm]?.(structured) ?? true)
@@ -322,6 +327,8 @@ export function EditRuleDialog({
           <ValidateParentStatusForm value={structured} onChange={setStructured} statuses={statuses} />
         ) : meta.customForm === "validate_permission" ? (
           <ValidatePermissionForm value={structured} onChange={setStructured} />
+        ) : meta.customForm === "show_screen" ? (
+          <ShowScreenForm value={structured} onChange={setStructured} />
         ) : meta.fields.length === 0 ? (
           <p className="text-sm text-gray-500">{meta.description}</p>
         ) : (
