@@ -18,6 +18,15 @@ import {
   resolveDailyTarget,
   resolveWeeklyTarget,
 } from "@/lib/services/workspace/activity-target-config";
+import {
+  getUserActivityTypeTargets,
+  hasAnyTypeTarget,
+} from "@/lib/services/workspace/activity-type-target-config";
+import {
+  countTypeSourcesForUser,
+  buildTypeProgress,
+  type TypeProgressRow,
+} from "./activity-type-count";
 
 export interface MyActivityRecentRow {
   id: string;
@@ -37,6 +46,11 @@ export interface MyActivityTargetDto {
   status: ActivityTargetStatus;
   breakdown: ActivityBreakdown;
   recentToday: MyActivityRecentRow[];
+  /**
+   * Per-activity-type daily progress ("Calls: 12 / 20"). Empty when no type
+   * targets are assigned to this user.
+   */
+  typeProgress: TypeProgressRow[];
 }
 
 export type MyActivityTargetResult = { assigned: false } | MyActivityTargetDto;
@@ -74,19 +88,29 @@ export async function getMyActivityTarget(
   userId: string,
   tz: string,
 ): Promise<MyActivityTargetResult> {
-  const config = await getActivityTargetConfig(orgId);
-
-  // Opt-in: no target assigned → the page/menu should not show.
-  if (!isTargetAssigned(config, userId)) return { assigned: false };
-
-  const win = activityWindow(tz);
-  const [breakdown, recentToday] = await Promise.all([
-    countActivityBreakdownForUser(orgId, userId, win),
-    recentActivitiesToday(orgId, userId, win.todayFrom, win.todayTo),
+  const [config, typeTargets] = await Promise.all([
+    getActivityTargetConfig(orgId),
+    getUserActivityTypeTargets(orgId, userId),
   ]);
 
-  const dailyTarget = resolveDailyTarget(config, userId);
-  const weeklyTarget = resolveWeeklyTarget(config, userId);
+  // Opt-in: the page shows when the user has an overall target OR at least one
+  // activity-type target. Neither → the page/menu should not show.
+  const overallAssigned = isTargetAssigned(config, userId);
+  if (!overallAssigned && !hasAnyTypeTarget(typeTargets)) return { assigned: false };
+
+  const win = activityWindow(tz);
+  const [breakdown, recentToday, typeCounts] = await Promise.all([
+    countActivityBreakdownForUser(orgId, userId, win),
+    recentActivitiesToday(orgId, userId, win.todayFrom, win.todayTo),
+    hasAnyTypeTarget(typeTargets)
+      ? countTypeSourcesForUser(orgId, userId, win.todayFrom, win.todayTo)
+      : null,
+  ]);
+
+  // Tracked only via type targets → no overall target to report (0), so the
+  // overall tiles stay honest rather than borrowing the org default.
+  const dailyTarget = overallAssigned ? resolveDailyTarget(config, userId) : 0;
+  const weeklyTarget = overallAssigned ? resolveWeeklyTarget(config, userId) : 0;
   const daily = computeAttainment(dailyTarget, breakdown.total);
 
   return {
@@ -100,5 +124,6 @@ export async function getMyActivityTarget(
     status: daily.status,
     breakdown,
     recentToday,
+    typeProgress: typeCounts ? buildTypeProgress(typeTargets, typeCounts) : [],
   };
 }

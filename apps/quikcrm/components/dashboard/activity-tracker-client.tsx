@@ -12,6 +12,16 @@ const TRACKER_API = "/api/dashboard/activity-target-tracker";
 
 type Status = "green" | "yellow" | "red";
 
+interface TypeProgress {
+  activityTypeId: string;
+  code: string;
+  label: string;
+  dailyTarget: number;
+  actual: number;
+  remaining: number;
+  completionPct: number;
+}
+
 interface TrackerRow {
   userId: string;
   name: string;
@@ -23,6 +33,8 @@ interface TrackerRow {
   weeklyTarget: number;
   weeklyActivities: number;
   status: Status;
+  /** Per-activity-type progress; empty when no type targets are assigned. */
+  typeProgress: TypeProgress[];
 }
 
 interface TrackerDto {
@@ -62,6 +74,39 @@ function StatusBadge({ status }: { status: Status }) {
     <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_BADGE[status]}`}>
       {STATUS_LABEL[status]}
     </span>
+  );
+}
+
+/**
+ * Per-activity-type progress chips — "Calls: 12 / 20". Type labels come from
+ * the org's activity types, so a new type appears here with no code change.
+ * Colors are semantic (attainment state), hardcoded per CLAUDE.md.
+ */
+function TypeProgressChips({ rows }: { rows: TypeProgress[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-1.5">
+      {rows.map((t) => {
+        const tone =
+          t.completionPct >= 100
+            ? "border-green-200 bg-green-50 text-green-700"
+            : t.completionPct >= 80
+              ? "border-yellow-200 bg-yellow-50 text-yellow-700"
+              : "border-red-200 bg-red-50 text-red-700";
+        return (
+          <span
+            key={t.activityTypeId}
+            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${tone}`}
+            title={`${t.label}: ${t.actual} of ${t.dailyTarget} (${t.completionPct}%) · ${t.remaining} remaining`}
+          >
+            {t.label}:
+            <span className="tabular-nums font-semibold">
+              {t.actual} / {t.dailyTarget}
+            </span>
+          </span>
+        );
+      })}
+    </div>
   );
 }
 
@@ -296,6 +341,7 @@ export function ActivityTrackerClient() {
                       <TD>
                         <span className="font-medium text-crm-text">{r.name}</span>
                         {r.email && <span className="block text-xs text-crm-muted">{r.email}</span>}
+                        <TypeProgressChips rows={r.typeProgress ?? []} />
                       </TD>
                       <TD>{r.dailyTarget}</TD>
                       <TD className="font-medium">{r.todayActivities}</TD>
