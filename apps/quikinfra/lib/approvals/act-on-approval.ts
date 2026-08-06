@@ -32,7 +32,7 @@
 
 import { Prisma } from "@quikit/database";
 import { db } from "@/lib/db";
-import { findCnUsersByIds } from "@/lib/users/lookup";
+import { findCnUserById, findCnUsersByIds } from "@/lib/users/lookup";
 import type { TenantContext } from "@/lib/auth/context";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
 import { resolveEffectiveStep } from "@/lib/approvals/step-resolution";
@@ -40,8 +40,21 @@ import {
   completeRepairedApproval,
   repointNote,
 } from "@/lib/approvals/complete-repaired-approval";
+import { masterApproveRequest } from "@/lib/approvals/master-approve";
+import {
+  claimInstanceForAdvance,
+  claimInstanceForSettlement,
+  conflictMessage,
+  describeSettledInstance,
+  type ClaimResult,
+} from "@/lib/approvals/claim-instance";
 
-export type ApprovalAction = "approve" | "reject" | "return" | "complete";
+export type ApprovalAction =
+  | "approve"
+  | "reject"
+  | "return"
+  | "complete"
+  | "master_approve";
 
 export type ApprovalPhase =
   | "intermediate-approve"
@@ -105,7 +118,11 @@ export async function actOnApproval(
 ): Promise<ActOnApprovalOutcome> {
   const { ctx, entity, entityLabel, action, comments } = input;
 
-  if (!["approve", "reject", "return", "complete"].includes(action)) {
+  if (
+    !["approve", "reject", "return", "complete", "master_approve"].includes(
+      action,
+    )
+  ) {
     return {
       kind: "error",
       status: 400,
@@ -141,17 +158,33 @@ export async function actOnApproval(
     };
   }
   if (instance.status !== "pending_approval") {
+    // Name whoever settled it — the step's own approver needs to see that the
+    // master approver closed the request, not a bare "already approved".
+    const settled = await describeSettledInstance(db, instance.id);
+    const winner = settled.byUserId
+      ? await findCnUserById(settled.byUserId)
+      : null;
     return {
       kind: "error",
       status: 409,
       body: {
-        error: `Approval already ${instance.status} — no further actions allowed.`,
+        error: conflictMessage(settled, winner?.fullName ?? null, entityLabel),
       },
     };
   }
 
   if (action === "complete") {
     return await completeRepairedApproval({
+      ctx,
+      instance,
+      entityLabel,
+      reason: comments,
+      applyEntityPatch: input.applyEntityPatch,
+    });
+  }
+
+  if (action === "master_approve") {
+    return await masterApproveRequest({
       ctx,
       instance,
       entityLabel,
@@ -242,7 +275,34 @@ export async function actOnApproval(
     phase = "return";
   }
 
+  // Claim the row first. Two people entitled to the same step — a pool member
+  // and the master approver, say — could both pass the status read above; the
+  // conditional UPDATE lets exactly one of them proceed, so the entity patch
+  // and its side effects run once.
+  let conflict: ClaimResult["conflict"] | undefined;
+
   await db.$transaction(async (tx) => {
+    const claim =
+      phase === "intermediate-approve"
+        ? await claimInstanceForAdvance(tx, instance.id, nextStep!.stepOrder)
+        : await claimInstanceForSettlement(tx, instance.id, {
+            status:
+              phase === "final-approve"
+                ? "approved"
+                : phase === "reject"
+                  ? "rejected"
+                  : "returned",
+            completedAt: new Date(),
+            // Land the instance on the step actually actioned — a repointed
+            // instance would otherwise keep a currentStepOrder that no workflow
+            // step matches, and every later read re-derives the fallback.
+            currentStepOrder: actingStepOrder,
+          });
+    if (!claim.claimed) {
+      conflict = claim.conflict;
+      return;
+    }
+
     await tx.cnApprovalHistory.create({
       data: {
         instanceId: instance.id,
@@ -265,46 +325,21 @@ export async function actOnApproval(
       },
     });
 
-    if (phase === "intermediate-approve") {
-      await tx.cnApprovalInstance.update({
-        where: { id: instance.id },
-        data: { currentStepOrder: nextStep!.stepOrder },
-      });
-    } else if (phase === "final-approve") {
-      await tx.cnApprovalInstance.update({
-        where: { id: instance.id },
-        data: {
-          status: "approved",
-          completedAt: new Date(),
-          // Land the instance on the step actually actioned — a repointed
-          // instance would otherwise keep a currentStepOrder that no
-          // workflow step matches, and every later read re-derives the
-          // fallback for nothing.
-          currentStepOrder: actingStepOrder,
-        },
-      });
-    } else if (phase === "reject") {
-      await tx.cnApprovalInstance.update({
-        where: { id: instance.id },
-        data: {
-          status: "rejected",
-          completedAt: new Date(),
-          currentStepOrder: actingStepOrder,
-        },
-      });
-    } else {
-      await tx.cnApprovalInstance.update({
-        where: { id: instance.id },
-        data: {
-          status: "returned",
-          completedAt: new Date(),
-          currentStepOrder: actingStepOrder,
-        },
-      });
-    }
-
     await input.applyEntityPatch(tx, { phase, comments });
   });
+
+  if (conflict) {
+    const winner = conflict.byUserId
+      ? await findCnUserById(conflict.byUserId)
+      : null;
+    return {
+      kind: "error",
+      status: 409,
+      body: {
+        error: conflictMessage(conflict, winner?.fullName ?? null, entityLabel),
+      },
+    };
+  }
 
   const totalSteps = resolved.totalSteps;
 

@@ -83,6 +83,9 @@ export function RepairApprovalNotice({
     },
     onError: (err: unknown) => {
       setError(toErrorMessage(err, "Failed to complete approval"));
+      // Usually means someone else settled it first. Refetch so the page stops
+      // offering an action on a closed request.
+      invalidateKeys.forEach((key) => qc.invalidateQueries({ queryKey: key }));
     },
   });
 

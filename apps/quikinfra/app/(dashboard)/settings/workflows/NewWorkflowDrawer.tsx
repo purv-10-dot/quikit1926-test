@@ -24,7 +24,11 @@ import {
 } from "@/components/FormDrawer";
 import { useCreateWorkflow, useDeleteWorkflow, useUpdateWorkflow, useUsers } from "@/hooks/use-approvals";
 import { useProjects } from "@/hooks/use-masters";
-import { getClientSelectableUserTypes, USER_TYPES } from "@/lib/rbac/user-types";
+import {
+  getClientSelectableUserTypes,
+  USER_TYPES,
+  USER_TYPE_CATALOG,
+} from "@/lib/rbac/user-types";
 
 const ENTITY_TYPE_OPTIONS = [
   { value: "purchase_requisitions", label: "Purchase Requisitions" },
@@ -81,6 +85,8 @@ interface ModuleMode {
   prefill?: {
     name: string;
     isActive: boolean;
+    /** Existing fallback approver, if the workflow has one. */
+    masterApproverUserId?: string | null;
     steps: Array<{ stepOrder: string; approverRole: string; approverUserIds: string[] }>;
   };
   /** Optional list of existing workflow ids in this module that should
@@ -154,6 +160,7 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
   }, [allUsers]);
 
   const [name, setName] = useState("");
+  const [masterApproverUserId, setMasterApproverUserId] = useState("");
   const [entityType, setEntityType] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [steps, setSteps] = useState<StepRow[]>([
@@ -165,6 +172,7 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
     if (!open) return;
     if (moduleMode?.prefill) {
       setName(moduleMode.prefill.name);
+      setMasterApproverUserId(moduleMode.prefill.masterApproverUserId ?? "");
       setIsActive(moduleMode.prefill.isActive);
       const prefillSteps =
         moduleMode.prefill.steps.length > 0
@@ -176,6 +184,7 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
       setSteps(prefillSteps);
     } else {
       setName("");
+      setMasterApproverUserId("");
       setIsActive(true);
       setSteps([{ stepOrder: "1", approverRole: "", approverUserIds: [] }]);
     }
@@ -223,6 +232,36 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
     .map((p) => ({ stepOrder: p.stepOrder, count: p.atRisk }));
   const strandedTotal = strandedRequests.reduce((sum, p) => sum + p.count, 0);
   /** At-risk buckets carrying their at-risk counts, not their row totals. */
+  // Every user in the org, labelled with their role so two people with similar
+  // names stay distinguishable. No role filter — a plain USER may be master
+  // approver of an ADMIN-stepped workflow.
+  //
+  // Users who have never signed in are listed but not selectable: they cannot
+  // act on an approval, so naming one recreates the dead-end this field exists
+  // to remove. Showing them greyed out with the reason beats hiding them, which
+  // just reads as "the list is incomplete".
+  const masterApproverOptions = useMemo(
+    () =>
+      allUsers
+        .filter((u) => !u.status || u.status === "active")
+        .map((u) => {
+          const canSignIn = Boolean(u.acceptedAt || u.lastLoginAt);
+          const roleLabel =
+            USER_TYPE_CATALOG.find((t) => t.key === u.userType)?.label ??
+            u.userType;
+          return {
+            value: u.id,
+            label: u.fullName || u.email,
+            hint: canSignIn
+              ? roleLabel
+              : `${roleLabel} · invite not accepted — cannot approve yet`,
+            disabled: !canSignIn,
+          };
+        })
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [allUsers],
+  );
+
   const strandedSource = atRiskByStep.map((p) => ({
     stepOrder: p.stepOrder,
     count: p.atRisk,
@@ -286,6 +325,7 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
               name: name.trim(),
               entityType: et.type,
               projectId: moduleMode.projectId ?? null,
+              masterApproverUserId: masterApproverUserId || null,
               isActive,
               steps: stepPayload,
             });
@@ -294,6 +334,7 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
               name: name.trim(),
               entityType: et.type,
               projectId: moduleMode.projectId ?? null,
+              masterApproverUserId: masterApproverUserId || null,
               isActive,
               steps: stepPayload,
             });
@@ -309,6 +350,7 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
         await createMutation.mutateAsync({
           name: name.trim(),
           entityType,
+          masterApproverUserId: masterApproverUserId || null,
           isActive,
           steps: stepPayload,
         });
@@ -478,6 +520,20 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
             </Field>
           </FormRow>
         )}
+
+        <Field label="Master Approver">
+          <SelectInput
+            value={masterApproverUserId}
+            onChange={setMasterApproverUserId}
+            options={masterApproverOptions}
+            placeholder="None — no master approver"
+            searchable
+          />
+          <p className="mt-1 text-[11px] leading-relaxed text-gray-500">
+            Can approve the entire request from any step, without waiting. Leave
+            blank for none.
+          </p>
+        </Field>
       </FormSection>
 
       <FormSection title="Approval Steps">

@@ -35,6 +35,8 @@ import { LineItemsPanel } from "./components/LineItemsPanel";
 
 
 import { ApprovalActionBar } from "@/components/ApprovalActionBar";
+import { MasterApprovalAction } from "@/components/MasterApprovalAction";
+import { RepairApprovalNotice } from "@/components/RepairApprovalNotice";
 import type { SourceDocType } from "@/components/SourceDocPeekModal";
 const SourceDocPeekModal = dynamic(
   () => import("@/components/SourceDocPeekModal").then((m) => m.SourceDocPeekModal),
@@ -123,6 +125,13 @@ export default function PODetailPage() {
               // check so only the current-step actor sees live buttons.
               hidden={!canActOnCurrentStep(me, po)}
             />
+            <MasterApprovalAction
+              approval={po?.approval}
+              me={me}
+              entityLabel="PO"
+              actionEndpoint={`/api/purchase/orders/${id}/approve`}
+              invalidateKeys={[["purchase-orders"], ["purchase-order", id]]}
+            />
           </div>
         }
       />
@@ -154,6 +163,14 @@ export default function PODetailPage() {
       )}
 
       <PageContainer>
+        <RepairApprovalNotice
+          repair={po?.approval?.repair}
+          entityLabel="PO"
+          actionEndpoint={`/api/purchase/orders/${id}/approve`}
+          invalidateKeys={[["purchase-orders"], ["purchase-order", id]]}
+          me={me}
+        />
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
             {/* PO Header */}

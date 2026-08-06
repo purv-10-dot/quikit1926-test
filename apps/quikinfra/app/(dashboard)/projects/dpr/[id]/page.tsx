@@ -39,6 +39,11 @@ import { groupWorkItemsByBoq } from "@/lib/projects/boq-work-groups";
 import { useContractors } from "@/hooks/use-masters";
 import { usePermissions } from "@/hooks/use-permissions";
 import { RepairApprovalNotice } from "@/components/RepairApprovalNotice";
+import {
+  MasterApprovalAction,
+  MasterApprovedBadge,
+  canMasterApprove,
+} from "@/components/MasterApprovalAction";
 import { useWorkflowConfirm } from "@/hooks/use-workflow-confirm";
 import { DPRWeatherMetrics } from "@/components/DPRWeatherMetrics";
 import { parseStoredWeatherDetail } from "@/lib/weather/dpr-weather";
@@ -286,15 +291,69 @@ export default function DPRDetailPage() {
     [materials, stockByItem],
   );
 
+  // stepOrder → the approver the step is configured to, so a master approval
+  // can name both itself and the person it acted in place of.
+  const dprStepApproverByOrder = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const s of dpr?.approval?.workflow?.steps ?? []) {
+      const label =
+        (s as ApprovalStep).approverUserName ??
+        (s as ApprovalStep).approverRoleId ??
+        "Any approver";
+      map.set((s as ApprovalStep).stepOrder, label);
+    }
+    return map;
+  }, [dpr?.approval?.workflow?.steps]);
+
   // ApprovalTimeline expects { step, action, actionBy, actionAt, comments }.
-  const approvalEntries =
-    dpr?.approval?.history?.map((h: ApprovalHistoryEntry) => ({
-      step: h.stepOrder ?? 0,
-      action: h.action,
-      actionBy: h.actionByName ?? "User",
-      actionAt: h.actionAt ? formatDateTimeIST(h.actionAt) : "",
-      comments: h.comments ?? undefined,
-    })) ?? [];
+  const approvalEntries: Array<{
+    step: number;
+    action: string;
+    actionBy: string;
+    actionAt: string;
+    comments?: string;
+    title?: string;
+  }> =
+    dpr?.approval?.history?.map((h: ApprovalHistoryEntry) => {
+      // A master approval — and each step it skipped — still belongs to its
+      // configured approver. Naming only the master approver loses who the step
+      // was actually routed to, so both are shown.
+      const stepApprover =
+        dprStepApproverByOrder.get(h.stepOrder ?? 0) ?? "the step approver";
+      const actor = h.actionByName ?? "User";
+      return {
+        step: h.stepOrder ?? 0,
+        action: h.action,
+        title: h.isMasterSkip
+          ? `Skipped — Step ${h.stepOrder ?? 0}`
+          : h.isMasterApproval
+            ? `Master Approval — Step ${h.stepOrder ?? 0}`
+            : undefined,
+        actionBy: h.isMasterSkip
+          ? `${stepApprover} — skipped by ${actor}`
+          : h.isMasterApproval
+            ? `${actor} (Master Approver) — in place of ${stepApprover}`
+            : actor,
+        actionAt: h.actionAt ? formatDateTimeIST(h.actionAt) : "",
+        comments: h.comments ?? undefined,
+      };
+    }) ?? [];
+
+  // Named fallback approver, shown while the request is still open so the
+  // requester knows who can unblock it rather than only discovering the path
+  // after it is used.
+  if (
+    dpr?.approval?.status === "pending_approval" &&
+    dpr?.approval?.masterApprover
+  ) {
+    approvalEntries.push({
+      step: 99,
+      action: "upcoming",
+      title: "Master Approver",
+      actionBy: dpr.approval.masterApprover.name,
+      actionAt: "Can approve from any step, without waiting",
+    });
+  }
 
   if (isLoading) return <PageSkeleton />;
   if (!dpr) {
@@ -408,7 +467,14 @@ export default function DPRDetailPage() {
                 </button>
               </>
             )}
-            {isPending && !canApprove && (
+            <MasterApprovalAction
+              approval={dpr.approval}
+              me={me}
+              entityLabel="DPR"
+              actionEndpoint={`/api/projects/dpr/${id}/approve`}
+              invalidateKeys={[["dprs"], ["dpr", id]]}
+            />
+            {isPending && !canApprove && !canMasterApprove(dpr.approval, me) && (
               <span className={`${HEADER_PILL} ${PILL_TONE.amber}`}>
                 Awaiting approver
               </span>
@@ -418,6 +484,7 @@ export default function DPRDetailPage() {
                 <Check className="w-4 h-4" /> Locked — approved
               </span>
             )}
+            <MasterApprovedBadge approval={dpr.approval} />
           </div>
         }
       />

@@ -21,6 +21,8 @@ import {
 } from "@/components/PageShell";
 import { ApprovalActionBar } from "@/components/ApprovalActionBar";
 import { usePermissions, type MeResponse } from "@/hooks/use-permissions";
+import { RepairApprovalNotice } from "@/components/RepairApprovalNotice";
+import { MasterApprovalAction } from "@/components/MasterApprovalAction";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
 import { USER_TYPE_CATALOG } from "@/lib/rbac/user-types";
 
@@ -196,11 +198,26 @@ export default function RFQDetailPage() {
               // sees live buttons.
               hidden={!canActOnCurrentStep(me, rfq)}
             />
+            <MasterApprovalAction
+              approval={rfq?.approval}
+              me={me}
+              entityLabel="RFQ"
+              actionEndpoint={`/api/purchase/rfqs/${id}/approve`}
+              invalidateKeys={[["rfqs"], ["rfq", id]]}
+            />
           </div>
         }
       />
 
       <PageContainer>
+        <RepairApprovalNotice
+          repair={rfq?.approval?.repair}
+          entityLabel="RFQ"
+          actionEndpoint={`/api/purchase/rfqs/${id}/approve`}
+          invalidateKeys={[["rfqs"], ["rfq", id]]}
+          me={me}
+        />
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
             {/* Header Info */}

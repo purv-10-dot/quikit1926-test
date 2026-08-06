@@ -4889,6 +4889,12 @@ model CnApprovalWorkflow {
   projectId  String?
   name       String
   entityType String // purchase_requisitions | purchase_indents | purchase_order | grn | work_order | dpr | stock_reconciliation | good_return
+  /// Single fallback approver for the whole workflow. When set, this user can
+  /// approve a request from any step without waiting — the escape hatch for a
+  /// listed approver being on leave or simply never acting. Null = none, and the
+  /// workflow behaves exactly as before. Any active user qualifies regardless of
+  /// role; they may not approve a request they raised themselves.
+  masterApproverUserId String?
   isActive   Boolean  @default(true)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt

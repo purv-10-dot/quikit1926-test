@@ -28,6 +28,12 @@ import { db } from "@/lib/db";
 import type { TenantContext } from "@/lib/auth/context";
 import { userTypeFromRoleKey } from "@/lib/approvals/workflow-rbac";
 import { assessInstanceRepair } from "@/lib/approvals/step-resolution";
+import { findCnUserById } from "@/lib/users/lookup";
+import {
+  claimInstanceForSettlement,
+  conflictMessage,
+  type ClaimResult,
+} from "@/lib/approvals/claim-instance";
 
 /**
  * Minimum length of the reason an admin must supply. A reason too short to say
@@ -209,7 +215,21 @@ export async function completeRepairedApproval(
   const { closingStep, totalSteps, reason } = check;
   const now = new Date();
 
+  // Claim the row before writing anything, so two admins clicking together
+  // can't both post the entity's final-approve side effects.
+  let conflict: ClaimResult["conflict"] | undefined;
+
   await db.$transaction(async (tx) => {
+    const claim = await claimInstanceForSettlement(tx, instance.id, {
+      status: "approved",
+      completedAt: now,
+      currentStepOrder: closingStep,
+    });
+    if (!claim.claimed) {
+      conflict = claim.conflict;
+      return;
+    }
+
     await tx.cnApprovalHistory.create({
       data: {
         instanceId: instance.id,
@@ -224,19 +244,24 @@ export async function completeRepairedApproval(
         }),
       },
     });
-    await tx.cnApprovalInstance.update({
-      where: { id: instance.id },
-      data: {
-        status: "approved",
-        completedAt: now,
-        currentStepOrder: closingStep,
-      },
-    });
     await input.applyEntityPatch(tx, {
       phase: "final-approve",
       comments: reason,
     });
   });
+
+  if (conflict) {
+    const winner = conflict.byUserId
+      ? await findCnUserById(conflict.byUserId)
+      : null;
+    return {
+      kind: "error",
+      status: 409,
+      body: {
+        error: conflictMessage(conflict, winner?.fullName ?? null, entityLabel),
+      },
+    };
+  }
 
   return {
     kind: "ok",

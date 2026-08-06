@@ -38,6 +38,8 @@ export interface CreateWorkflowInput {
   projectId?: string | null;
   name: string;
   entityType: string;
+  /** Optional fallback approver who can act on any step. Null / omitted = none. */
+  masterApproverUserId?: string | null;
   isActive?: boolean;
   steps?: WorkflowStepInput[];
   createdBy: string;
@@ -89,6 +91,7 @@ function enrichWorkflow(
     projectId: row.projectId ?? null,
     name: row.name,
     entityType: row.entityType,
+    masterApproverUserId: row.masterApproverUserId ?? null,
     isActive: !!row.isActive,
     steps,
     pendingByStep,
@@ -148,11 +151,11 @@ export async function listWorkflows(opts: ListWorkflowsOptions): Promise<any[]> 
     });
 
     const atRiskByKey = new Map<string, number>();
-    for (const g of groupedAtRisk) {
+    for (const g of Array.isArray(groupedAtRisk) ? groupedAtRisk : []) {
       atRiskByKey.set(`${g.workflowId}::${g.currentStepOrder}`, g._count._all);
     }
 
-    for (const g of grouped) {
+    for (const g of Array.isArray(grouped) ? grouped : []) {
       const list = pendingByWorkflow.get(g.workflowId) ?? [];
       list.push({
         stepOrder: g.currentStepOrder,
@@ -191,6 +194,7 @@ export async function createWorkflow(
       projectId: input.projectId ?? null,
       name: input.name,
       entityType: input.entityType,
+      masterApproverUserId: input.masterApproverUserId || null,
       isActive: input.isActive ?? true,
       createdBy: input.createdBy,
       updatedBy: input.createdBy,
@@ -226,6 +230,11 @@ export async function createWorkflow(
 export interface UpdateWorkflowInput {
   name?: string;
   entityType?: string;
+  /**
+   * `undefined` leaves the existing master approver untouched — a partial PATCH
+   * must not silently clear it. `null` or `""` explicitly removes it.
+   */
+  masterApproverUserId?: string | null;
   isActive?: boolean;
   // `null` re-scopes to Default; a string moves the row to that project.
   // Most callers leave this undefined — the project assignment is fixed
@@ -255,6 +264,9 @@ export async function updateWorkflow(
   const headerData: Record<string, unknown> = { updatedBy: patch.updatedBy };
   if (patch.name !== undefined) headerData.name = patch.name;
   if (patch.entityType !== undefined) headerData.entityType = patch.entityType;
+  if (patch.masterApproverUserId !== undefined) {
+    headerData.masterApproverUserId = patch.masterApproverUserId || null;
+  }
   if (patch.isActive !== undefined) headerData.isActive = patch.isActive;
   if (patch.projectId !== undefined) headerData.projectId = patch.projectId;
 

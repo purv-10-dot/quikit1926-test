@@ -14,6 +14,10 @@ import {
   classifyRepair,
   parseStepsSnapshot,
 } from "@/lib/approvals/step-resolution";
+import {
+  MASTER_APPROVAL_MARKER,
+  MASTER_APPROVAL_SKIP_MARKER,
+} from "@/lib/approvals/master-approve";
 
 /** The include every detail route uses when loading its approval instance. */
 export const APPROVAL_INSTANCE_INCLUDE = {
@@ -45,6 +49,9 @@ export function collectApprovalUserIds(
   const ids = new Set<string>();
   ids.add(instance.requestedById);
   for (const h of instance.history) ids.add(h.actionById);
+  if (instance.workflow.masterApproverUserId) {
+    ids.add(instance.workflow.masterApproverUserId);
+  }
 
   const addStep = (s: {
     approverUserId?: string | null;
@@ -84,12 +91,28 @@ export function buildApprovalDto(
       ? classifyRepair(steps, instance.history, instance.currentStepOrder)
       : null;
 
+  // Surfaced whether or not it has been used: while a request is pending the
+  // requester needs to know who can unblock it, and once used the timeline
+  // needs the name to attribute the approval.
+  const masterApproverUserId = instance.workflow.masterApproverUserId ?? null;
+
+  const masterApprovalRow =
+    instance.history.find((h) =>
+      h.comments?.startsWith(MASTER_APPROVAL_MARKER),
+    ) ?? null;
+
   return {
     id: instance.id,
     status: instance.status,
     currentStepOrder: instance.currentStepOrder,
     canActOnCurrentStep,
     repair,
+    masterApprover: masterApproverUserId
+      ? {
+          userId: masterApproverUserId,
+          name: nameById.get(masterApproverUserId) ?? "User",
+        }
+      : null,
     completedAt: instance.completedAt?.toISOString?.() ?? null,
     requestedAt: instance.requestedAt.toISOString(),
     requestedById: instance.requestedById,
@@ -122,6 +145,26 @@ export function buildApprovalDto(
       actionByName: nameById.get(h.actionById) ?? "User",
       actionAt: h.actionAt.toISOString(),
       comments: h.comments,
+      /** The master approver's own closing row. */
+      isMasterApproval: Boolean(
+        h.comments?.startsWith(MASTER_APPROVAL_MARKER),
+      ),
+      /**
+       * A step the master approval skipped. The row carries the master
+       * approver's id (they caused it) but the timeline must still name the
+       * step's own approver, or it reads as though that person acted.
+       */
+      isMasterSkip: Boolean(
+        h.comments?.startsWith(MASTER_APPROVAL_SKIP_MARKER),
+      ),
     })),
+    /** Set once a master approval has closed the request. */
+    masterApprovedBy: masterApprovalRow
+      ? {
+          name: nameById.get(masterApprovalRow.actionById) ?? "User",
+          at: masterApprovalRow.actionAt.toISOString(),
+          stepOrder: masterApprovalRow.stepOrder,
+        }
+      : null,
   };
 }

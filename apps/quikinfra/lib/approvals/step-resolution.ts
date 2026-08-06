@@ -93,14 +93,20 @@ export function parseStepsSnapshot(
 
 /** Build the snapshot payload to persist on a new instance. */
 export function buildStepsSnapshot(
-  steps: Array<{
-    stepOrder: number;
-    approverRoleId: string | null;
-    approverUserId: string | null;
-    approverUserIds: string[];
-  }>,
+  steps:
+    | Array<{
+        stepOrder: number;
+        approverRoleId: string | null;
+        approverUserId: string | null;
+        approverUserIds: string[];
+      }>
+    | null
+    | undefined,
 ): WorkflowStepRow[] {
-  return [...steps]
+  // Tolerates a null/undefined result: a workflow with no steps is a real state
+  // the caller must handle (it surfaces as "no steps configured"), and throwing
+  // here would turn it into a 500 instead.
+  return (Array.isArray(steps) ? [...steps] : [])
     .sort((a, b) => a.stepOrder - b.stepOrder)
     .map((s) => ({
       stepOrder: s.stepOrder,
@@ -211,7 +217,11 @@ export async function assessInstanceRepair(
     }),
   ]);
 
-  return classifyRepair(steps, history, instance.currentStepOrder);
+  return classifyRepair(
+    steps,
+    Array.isArray(history) ? history : [],
+    instance.currentStepOrder,
+  );
 }
 
 /**
@@ -220,20 +230,23 @@ export async function assessInstanceRepair(
  * without a second round-trip.
  */
 export function classifyRepair(
-  steps: Array<{ stepOrder: number }>,
-  history: Array<{ stepOrder: number; action: string }>,
+  steps: Array<{ stepOrder: number }> | null | undefined,
+  history: Array<{ stepOrder: number; action: string }> | null | undefined,
   currentStepOrder: number,
 ): RepairAssessment {
-  const stepOrders = steps.map((s) => s.stepOrder).sort((a, b) => a - b);
+  const rows = Array.isArray(history) ? history : [];
+  const stepOrders = (Array.isArray(steps) ? steps : [])
+    .map((s) => s.stepOrder)
+    .sort((a, b) => a - b);
   const orphaned = !stepOrders.includes(currentStepOrder);
   const approvedSteps = new Set(
-    history.filter((h) => h.action === "approve").map((h) => h.stepOrder),
+    rows.filter((h) => h.action === "approve").map((h) => h.stepOrder),
   );
 
   const allStepsApproved =
     stepOrders.length > 0 && stepOrders.every((o) => approvedSteps.has(o));
 
-  const orphanedHistorySteps = [...new Set(history.map((h) => h.stepOrder))]
+  const orphanedHistorySteps = [...new Set(rows.map((h) => h.stepOrder))]
     .filter((o) => !stepOrders.includes(o))
     .sort((a, b) => a - b);
 

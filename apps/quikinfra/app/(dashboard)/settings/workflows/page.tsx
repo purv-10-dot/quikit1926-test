@@ -144,6 +144,7 @@ interface DrawerState {
   prefill?: {
     name: string;
     isActive: boolean;
+    masterApproverUserId?: string | null;
     // Mirrors NewWorkflowDrawer.ModuleMode.prefill.steps — the per-step
     // approver pool. Legacy single `approverUserId` rows are widened into
     // a one-element array when this prefill is built (see handleConfigure).
@@ -164,6 +165,7 @@ interface WorkflowRow {
   id: string; name?: string; isActive?: boolean;
   projectId?: string | null; entityType?: string;
   steps?: WorkflowStep[];
+  masterApproverUserId?: string | null;
   pendingByStep?: Array<{ stepOrder: number; count: number; atRisk: number }>;
 }
 interface ProjectLite {
@@ -308,6 +310,7 @@ export default function WorkflowsPage() {
       prefill: {
         name: existing?.name ?? "",
         isActive: existing?.isActive ?? true,
+        masterApproverUserId: existing?.masterApproverUserId ?? null,
         // Hydrate the approver pool — prefer the new array column, fall
         // back to the legacy single id so workflows saved before the
         // multi-approver migration still round-trip into the drawer.

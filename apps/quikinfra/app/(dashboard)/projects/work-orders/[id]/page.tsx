@@ -44,6 +44,8 @@ import {
 } from "@/hooks/use-projects";
 import { useWorkCategories, useLabourCategories } from "@/hooks/use-masters";
 import { usePermissions } from "@/hooks/use-permissions";
+import { RepairApprovalNotice } from "@/components/RepairApprovalNotice";
+import { MasterApprovalAction } from "@/components/MasterApprovalAction";
 import { useWorkflowConfirm } from "@/hooks/use-workflow-confirm";
 import { isLabourWorkType, labourLineAmount, labourLineFromWoItem } from "@/lib/projects/labour-scope";
 
@@ -119,7 +121,7 @@ export default function WorkOrderDetailPage() {
   const { data: wo, isLoading } = useWorkOrder(id);
   const updateMutation = useUpdateWorkOrder();
 
-  const { permissionMatrix, isSuper } = usePermissions();
+  const { permissionMatrix, isSuper, me } = usePermissions();
   const matrixRow = permissionMatrix?.[MENU_KEY];
   const canEdit = isSuper || !matrixRow || matrixRow.edit !== false;
   const canDelete = isSuper || !matrixRow || matrixRow.delete !== false;
@@ -301,6 +303,13 @@ export default function WorkOrderDetailPage() {
                 </button>
               </>
             )}
+            <MasterApprovalAction
+              approval={wo?.approval}
+              me={me}
+              entityLabel="work order"
+              actionEndpoint={`/api/projects/work-orders/${id}/approve`}
+              invalidateKeys={[["work-orders"], ["work-order", id]]}
+            />
             {isPending && !canApprove && (
               <span className={`${HEADER_PILL} ${PILL_TONE.amber}`}>
                 Awaiting approver
@@ -320,6 +329,14 @@ export default function WorkOrderDetailPage() {
             page: main content stack on the left, Approval Timeline +
             Audit pinned in a right sidebar. Collapses to a single
             column under lg. */}
+        <RepairApprovalNotice
+          repair={wo?.approval?.repair}
+          entityLabel="work order"
+          actionEndpoint={`/api/projects/work-orders/${id}/approve`}
+          invalidateKeys={[["work-orders"], ["work-order", id]]}
+          me={me}
+        />
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
             {/* ── Overview card ────────────────────────────────────

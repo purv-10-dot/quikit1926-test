@@ -19,6 +19,13 @@ export interface ApprovalHistoryEntry {
   actionByName?: string | null;
   actionAt?: string | null;
   comments?: string | null;
+  /** The master approver's own closing row. */
+  isMasterApproval?: boolean;
+  /**
+   * A step the master approval skipped. Carries the master approver's id, so
+   * the timeline must name the step's configured approver instead.
+   */
+  isMasterSkip?: boolean;
 }
 
 /**
@@ -38,11 +45,31 @@ export interface ApprovalRepairInfo {
   completable: boolean;
 }
 
+/**
+ * The workflow's named fallback approver, when one is configured. Present
+ * regardless of whether it has been used: while pending it tells the requester
+ * who can unblock the request, and after use it attributes the approval.
+ */
+export interface MasterApproverInfo {
+  userId: string;
+  name: string;
+}
+
+/** Set once a master approval has closed the request. */
+export interface MasterApprovedByInfo {
+  name: string;
+  at: string;
+  stepOrder: number;
+}
+
 export interface ApprovalInfo {
   status?: string | null;
   currentStepOrder?: number | null;
+  requestedById?: string | null;
   /** Null unless the instance is pending. */
   repair?: ApprovalRepairInfo | null;
+  masterApprover?: MasterApproverInfo | null;
+  masterApprovedBy?: MasterApprovedByInfo | null;
   /** Server-computed: whether the current user can act on the current step. */
   canActOnCurrentStep?: boolean | null;
   requestedByName?: string | null;

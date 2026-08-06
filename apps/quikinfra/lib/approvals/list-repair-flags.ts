@@ -32,7 +32,7 @@ export async function loadRepairFlags(
       stepsSnapshot: true,
     },
   });
-  if (instances.length === 0) return new Map();
+  if (!Array.isArray(instances) || instances.length === 0) return new Map();
 
   const snapshotById = new Map(
     instances.map((i) => [i.id, parseStepsSnapshot(i.stepsSnapshot)] as const),
@@ -53,7 +53,7 @@ export async function loadRepairFlags(
         })
       : [];
   const liveByWorkflow = new Map<string, Array<{ stepOrder: number }>>();
-  for (const s of liveSteps) {
+  for (const s of Array.isArray(liveSteps) ? liveSteps : []) {
     const list = liveByWorkflow.get(s.workflowId) ?? [];
     list.push({ stepOrder: s.stepOrder });
     liveByWorkflow.set(s.workflowId, list);
@@ -67,7 +67,7 @@ export async function loadRepairFlags(
     string,
     Array<{ stepOrder: number; action: string }>
   >();
-  for (const h of history) {
+  for (const h of Array.isArray(history) ? history : []) {
     const list = historyByInstance.get(h.instanceId) ?? [];
     list.push({ stepOrder: h.stepOrder, action: h.action });
     historyByInstance.set(h.instanceId, list);

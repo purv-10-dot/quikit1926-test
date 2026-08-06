@@ -20,6 +20,10 @@ import {
 } from "@/components/PageShell";
 import { ApprovalActionBar } from "@/components/ApprovalActionBar";
 import { RepairApprovalNotice } from "@/components/RepairApprovalNotice";
+import {
+  MasterApprovalAction,
+  MasterApprovedBadge,
+} from "@/components/MasterApprovalAction";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ProcurementCells } from "@/components/ProcurementCells";
 import dynamic from "next/dynamic";
@@ -172,6 +176,7 @@ export default function IndentDetailPage() {
         actions={
           <div className="flex items-center gap-2">
             <StatusChip status={indent.status ?? ""} />
+            <MasterApprovedBadge approval={indent.approval} />
             {indent.status === "draft" && (
               <PrimaryButton onClick={handleSubmit} disabled={submitMutation.isPending}>
                 <Send className="w-4 h-4" /> Submit for Approval
@@ -197,6 +202,13 @@ export default function IndentDetailPage() {
               // (whose backing role lacks `purchase.indent.approve_l1`)
               // can still approve when it's their turn.
               hidden={!canActOnCurrentStep(me, indent)}
+            />
+            <MasterApprovalAction
+              approval={indent.approval}
+              me={me}
+              entityLabel="indent"
+              actionEndpoint={`/api/purchase/indents/${id}/approve`}
+              invalidateKeys={[["indents"], ["indent", id]]}
             />
           </div>
         }
@@ -397,7 +409,20 @@ export default function IndentDetailPage() {
                       entries.push({
                         step: s.stepOrder,
                         action: acted.action, // approve | reject | return
-                        actionBy: acted.actionByName || approverLabel,
+                        // A master approval — and each step it skipped — still
+                        // belongs to its configured approver. Naming only the
+                        // master approver loses who the step was actually
+                        // routed to, so both are shown.
+                        title: acted.isMasterSkip
+                          ? `Skipped — Step ${s.stepOrder}`
+                          : acted.isMasterApproval
+                            ? `Master Approval — Step ${s.stepOrder}`
+                            : undefined,
+                        actionBy: acted.isMasterSkip
+                          ? `${approverLabel} — skipped by ${acted.actionByName || "master approver"}`
+                          : acted.isMasterApproval
+                            ? `${acted.actionByName || "Master approver"} (Master Approver) — in place of ${approverLabel}`
+                            : acted.actionByName || approverLabel,
                         actionAt: formatDateTimeIST(acted.actionAt),
                         comments: acted.comments || undefined,
                       });
@@ -439,6 +464,22 @@ export default function IndentDetailPage() {
                       });
                     },
                   );
+
+                  // Named fallback approver, shown while the request is still
+                  // open so the requester knows who can unblock it rather than
+                  // only discovering the path after it is used.
+                  if (
+                    approval.status === "pending_approval" &&
+                    approval.masterApprover
+                  ) {
+                    entries.push({
+                      step: 99,
+                      action: "upcoming",
+                      title: "Master Approver",
+                      actionBy: approval.masterApprover.name,
+                      actionAt: "Can approve from any step, without waiting",
+                    });
+                  }
 
                   return <ApprovalTimeline entries={entries} />;
                 })()

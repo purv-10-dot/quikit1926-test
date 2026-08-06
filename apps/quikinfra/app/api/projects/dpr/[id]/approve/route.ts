@@ -11,6 +11,18 @@ import {
   repointNote,
   validateRepairCompletion,
 } from "@/lib/approvals/complete-repaired-approval";
+import {
+  masterApprovalComment,
+  masterApprovalSkipComment,
+  validateMasterApproval,
+} from "@/lib/approvals/master-approve";
+import {
+  claimInstanceForAdvance,
+  claimInstanceForSettlement,
+  conflictMessage,
+  describeSettledInstance,
+  type ClaimResult,
+} from "@/lib/approvals/claim-instance";
 import { boqService, BOQError } from "@/lib/boq";
 import { recordAudit } from "@/lib/workflow/audit";
 import { postDPRConsumptionOutward, StockError } from "@/lib/stock/ledger-service";
@@ -29,7 +41,7 @@ import { postDPRConsumptionOutward, StockError } from "@/lib/stock/ledger-servic
  * Body: { action: "approve" | "reject" | "return", comments? }
  */
 
-type Action = "approve" | "reject" | "return" | "complete";
+type Action = "approve" | "reject" | "return" | "complete" | "master_approve";
 
 export async function POST(
   req: NextRequest,
@@ -52,7 +64,11 @@ export async function POST(
   const action = (body.action ?? "approve") as Action;
   const comments = String(body.comments ?? "").trim();
 
-  if (!["approve", "reject", "return", "complete"].includes(action)) {
+  if (
+    !["approve", "reject", "return", "complete", "master_approve"].includes(
+      action,
+    )
+  ) {
     return NextResponse.json(
       { error: `Unknown action: ${action}` },
       { status: 400 },
@@ -117,10 +133,14 @@ export async function POST(
     );
   }
   if (instance.status !== "pending_approval") {
+    // Name whoever settled it — the step's own approver needs to see that the
+    // master approver closed the request, not a bare "already approved".
+    const settled = await describeSettledInstance(db, instance.id);
+    const winner = settled.byUserId
+      ? await findCnUserById(settled.byUserId)
+      : null;
     return NextResponse.json(
-      {
-        error: `Approval already ${instance.status} — no further actions allowed.`,
-      },
+      { error: conflictMessage(settled, winner?.fullName ?? null, "DPR") },
       { status: 409 },
     );
   }
@@ -165,8 +185,35 @@ export async function POST(
     };
   }
 
+  // Master approval outranks the chain: it closes the DPR from whatever step it
+  // sits on and skips the rest. Authorised here, then routed through the normal
+  // final-approve path below so BOQ progress and material consumption still
+  // post exactly once.
+  let master: {
+    actingStepOrder: number;
+    skippedStepOrders: number[];
+    reason: string;
+  } | null = null;
+  if (action === "master_approve") {
+    const check = await validateMasterApproval({
+      ctx,
+      instance,
+      entityLabel: "DPR",
+      reason: comments,
+    });
+    if (check.kind === "error") {
+      return NextResponse.json(check.body, { status: check.status });
+    }
+    master = {
+      actingStepOrder: check.actingStepOrder,
+      skippedStepOrders: check.skippedStepOrders,
+      reason: check.reason,
+    };
+  }
+
   if (
     !repair &&
+    !master &&
     !canActOnStep(
       { userId: ctx.userId, roleKey: ctx.roleKey, projectIds: ctx.projectIds },
       {
@@ -196,15 +243,18 @@ export async function POST(
   }
 
   // The step the history row is written against.
-  const actingStepOrder = repair?.closingStep ?? resolved.effectiveStepOrder;
+  const actingStepOrder =
+    repair?.closingStep ?? master?.actingStepOrder ?? resolved.effectiveStepOrder;
 
-  // A repair is terminal by definition — its chain has no unapproved step left.
-  const nextStep = repair
-    ? null
-    : (resolved.steps.find((s) => s.stepOrder > actingStepOrder) ?? null);
+  // Both a repair and a master approval are terminal: the repair's chain has no
+  // unapproved step left, and a master approval deliberately skips the rest.
+  const nextStep =
+    repair || master
+      ? null
+      : (resolved.steps.find((s) => s.stepOrder > actingStepOrder) ?? null);
 
-  // A repair takes the approve branches: same side effects, different authority.
-  const effectiveAction: Action = repair ? "approve" : action;
+  // Both take the approve branches: same side effects, different authority.
+  const effectiveAction: Action = repair || master ? "approve" : action;
 
   // ── Pre-resolve BOQ ids → boqNos so the txn doesn't do extra reads. ──
   // Only used when approving AND this is the final step.
@@ -249,8 +299,39 @@ export async function POST(
   const appliedUpdates: Array<{ boqNo: string; qty: number; workType: string }> = [];
   let materialsConsumed = 0;
 
+  // Settled step order for the terminal branches — after a master approval the
+  // instance lands on the last step in the chain, so the request reads as fully
+  // walked rather than parked mid-way.
+  const settledStepOrder =
+    master && master.skippedStepOrders.length > 0
+      ? master.skippedStepOrders[master.skippedStepOrders.length - 1]
+      : actingStepOrder;
+
+  // Claimed before any write. The step's own approver and the master approver
+  // can both be entitled to act right now; without this both transactions
+  // commit and the BOQ progress + material consumption post twice.
+  let conflict: ClaimResult["conflict"] | undefined;
+
   try {
     await db.$transaction(async (tx) => {
+      const claim =
+        effectiveAction === "approve" && nextStep
+          ? await claimInstanceForAdvance(tx, instance.id, nextStep.stepOrder)
+          : await claimInstanceForSettlement(tx, instance.id, {
+              status:
+                effectiveAction === "approve"
+                  ? "approved"
+                  : effectiveAction === "reject"
+                    ? "rejected"
+                    : "returned",
+              completedAt: new Date(),
+              currentStepOrder: settledStepOrder,
+            });
+      if (!claim.claimed) {
+        conflict = claim.conflict;
+        return;
+      }
+
       await tx.cnApprovalHistory.create({
         data: {
           instanceId: instance.id,
@@ -263,29 +344,39 @@ export async function POST(
                 totalSteps: repair.totalSteps,
                 reason: repair.reason,
               })
-            : resolved.repointed
-              ? repointNote({
-                  parkedStepOrder: instance.currentStepOrder,
-                  actedStepOrder: actingStepOrder,
-                  comments,
+            : master
+              ? masterApprovalComment({
+                  actingStepOrder,
+                  skippedStepOrders: master.skippedStepOrders,
+                  reason: master.reason,
                 })
-              : comments || null,
+              : resolved.repointed
+                ? repointNote({
+                    parkedStepOrder: instance.currentStepOrder,
+                    actedStepOrder: actingStepOrder,
+                    comments,
+                  })
+                : comments || null,
         },
       });
+
+      // One row per skipped step so the timeline has no silent gaps.
+      if (master && master.skippedStepOrders.length > 0) {
+        await tx.cnApprovalHistory.createMany({
+          data: master.skippedStepOrders.map((stepOrder) => ({
+            instanceId: instance.id,
+            stepOrder,
+            action: "approve",
+            actionById: ctx.userId,
+            comments: masterApprovalSkipComment(actingStepOrder),
+          })),
+        });
+      }
 
       if (effectiveAction === "approve") {
         if (!nextStep) {
           // Final step → flip DPR to approved AND post BOQ progress
           // entries inside this same transaction.
-          await tx.cnApprovalInstance.update({
-            where: { id: instance.id },
-            data: {
-              status: "approved",
-              completedAt: new Date(),
-              currentStepOrder: actingStepOrder,
-            },
-          });
-
           for (const line of dpr.workItems ?? []) {
             const todayQty = parseFloat(String(line.todayQty ?? "0"));
             if (todayQty <= 0) continue;
@@ -379,26 +470,21 @@ export async function POST(
                     parkedOnRemovedStep: instance.currentStepOrder,
                   }
                 : {}),
+              ...(master
+                ? {
+                    completedViaMasterApproval: true,
+                    actingStepOrder,
+                    skippedSteps: master.skippedStepOrders,
+                  }
+                : {}),
             },
           });
 
           dprStatusUpdate = { status: "approved", updatedBy: ctx.userId };
         } else {
-          await tx.cnApprovalInstance.update({
-            where: { id: instance.id },
-            data: { currentStepOrder: nextStep.stepOrder },
-          });
           // Mid-flow — DPR stays "submitted" / "pending_approval".
         }
       } else if (effectiveAction === "reject") {
-        await tx.cnApprovalInstance.update({
-          where: { id: instance.id },
-          data: {
-            status: "rejected",
-            completedAt: new Date(),
-            currentStepOrder: actingStepOrder,
-          },
-        });
         await recordAudit(tx, ctx, {
           entityType: "dpr",
           entityId: dpr.id,
@@ -409,14 +495,6 @@ export async function POST(
       } else {
         // "return" — back to draft for the raiser to edit; clearing
         // approvalId means the next submit creates a fresh instance.
-        await tx.cnApprovalInstance.update({
-          where: { id: instance.id },
-          data: {
-            status: "returned",
-            completedAt: new Date(),
-            currentStepOrder: actingStepOrder,
-          },
-        });
         await recordAudit(tx, ctx, {
           entityType: "dpr",
           entityId: dpr.id,
@@ -444,6 +522,18 @@ export async function POST(
       );
     }
     throw err;
+  }
+
+  // Lost the claim — someone else settled this DPR first. Nothing was written,
+  // so no BOQ progress or stock movement was posted by this request.
+  if (conflict) {
+    const winner = conflict.byUserId
+      ? await findCnUserById(conflict.byUserId)
+      : null;
+    return NextResponse.json(
+      { error: conflictMessage(conflict, winner?.fullName ?? null, "DPR") },
+      { status: 409 },
+    );
   }
 
   if (dprStatusUpdate) {
