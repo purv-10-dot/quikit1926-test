@@ -42,6 +42,12 @@ const validBody = {
 beforeEach(() => {
   resetMockDb();
   setSession(null);
+  // POST fans out one row per assignee inside `db.$transaction([...])`. The deep
+  // mock returns undefined for it by default, which made the handler 500 before
+  // it ever reached its own logic. Resolve the batch like the real client does.
+  mockDb.$transaction.mockImplementation((ops: unknown) =>
+    Array.isArray(ops) ? Promise.all(ops) : Promise.resolve(undefined),
+  );
 });
 
 // ═══════════════════════════════════════════════
@@ -182,6 +188,12 @@ describe("POST /api/www — happy path", () => {
       firstName: "Test",
       lastName: "User",
     } as any);
+    // The handler hydrates the full assignee list with `findMany` (not
+    // `findUnique`) before shaping the response; without this it read
+    // `undefined.find(...)` and 500'd.
+    mockDb.user.findMany.mockResolvedValue([
+      { id: USER, firstName: "Test", lastName: "User", email: "test@test.com" },
+    ] as any);
     mockDb.auditLog.create.mockResolvedValue({} as any);
 
     const res = await POST(buildPOST(validBody), { params: {} } as any);

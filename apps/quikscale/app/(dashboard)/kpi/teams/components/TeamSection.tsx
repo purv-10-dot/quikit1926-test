@@ -5,6 +5,10 @@ import type { KPIRow } from "@/lib/types/kpi";
 import type { Team } from "@/lib/hooks/useTeams";
 import { useCanManageTeamKPI } from "@/lib/hooks/useCanManageTeamKPI";
 import { progressColor, fmtCompactBy, type NumberFormat } from "@/lib/utils/kpiHelpers";
+import { useQtdReferenceWeek, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
+import { kpiQtrPercent } from "../../components/kpiStats";
+import { FormulaTooltip } from "../../components/FormulaTooltip";
+import { explainTeamAvg } from "../../components/kpiFormulaTooltips";
 import { KPITable } from "../../components/KPITable";
 import { KPIModal } from "../../components/KPIModal";
 import { TEAM_HIDDEN_COLS } from "../../hooks/useTableColumns";
@@ -39,17 +43,31 @@ export function TeamSection({ team, kpis, year, quarter, onRefresh, defaultExpan
 
   const canManage = useCanManageTeamKPI(team.id);
 
-  // Client-side summary — count, average progress, and goal totals
+  // Weeks in this quarter (Custom Quarter Settings) + the QTD reference week —
+  // the same pair KPITable feeds into its Progress column, so the header
+  // average below is the mean of the exact percentages rendered on the rows.
+  const weekCount = useQuarterWeekCount(year, quarter);
+  const qtdWeek = useQtdReferenceWeek(year, quarter);
+
+  // Client-side summary — count, average progress, and goal totals.
+  //
+  // `avgProgress` averages `kpiQtrPercent` (achieved-to-date ÷ the full
+  // quarter's potential) — the EXACT percentage KPITable renders on each row
+  // below, so the header bar is the mean of the visible numbers. It is NOT the
+  // server-stamped `k.progressPercent`: that DB column is derived from the raw
+  // `qtdAchieved` aggregate, which counts the in-progress week, so the header
+  // used to read a few points higher than its own rows. See kpiStats.ts
+  // `kpiQtrPercent`.
   const summary = useMemo(() => {
     const count = kpis.length;
     if (count === 0) return { count: 0, avgProgress: 0, totalGoal: 0, totalAchieved: 0 };
     const avgProgress = Math.round(
-      kpis.reduce((sum, k) => sum + (k.progressPercent || 0), 0) / count
+      kpis.reduce((sum, k) => sum + kpiQtrPercent(k, qtdWeek, weekCount), 0) / count
     );
     const totalGoal = kpis.reduce((sum, k) => sum + (k.qtdGoal ?? 0), 0);
     const totalAchieved = kpis.reduce((sum, k) => sum + (k.qtdAchieved ?? 0), 0);
     return { count, avgProgress, totalGoal, totalAchieved };
-  }, [kpis]);
+  }, [kpis, qtdWeek, weekCount]);
 
   const progColors = progressColor(summary.avgProgress);
   const accent = team.color || "#0066cc";
@@ -83,9 +101,17 @@ export function TeamSection({ team, kpis, year, quarter, onRefresh, defaultExpan
         {/* PROGRESS CLUSTER — fixed width, only when there are KPIs */}
         {summary.count > 0 && (
           <div className="flex items-center gap-3 flex-shrink-0 w-[420px] max-w-[42%]">
-            <span className={`text-xs font-semibold w-11 text-right flex-shrink-0 ${progColors.text}`}>
-              {summary.avgProgress}%
-            </span>
+            {/* Unlike the dashboard pill (a weighted total ratio) this header is
+                a PLAIN mean of the rows' Quarterly Progress — the tooltip says
+                so explicitly. See explainTeamAvg. */}
+            <FormulaTooltip
+              explain={explainTeamAvg(summary.count, summary.avgProgress)}
+              triggerClassName="flex-shrink-0"
+            >
+              <span className={`text-xs font-semibold w-11 text-right ${progColors.text}`}>
+                {summary.avgProgress}%
+              </span>
+            </FormulaTooltip>
             <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
               <div
                 className={`h-1.5 rounded-full transition-all ${progColors.bar}`}

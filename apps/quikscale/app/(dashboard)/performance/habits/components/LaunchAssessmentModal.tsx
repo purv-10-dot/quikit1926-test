@@ -3,6 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, Lock, X } from "lucide-react";
 import { useCreateHabitCampaign } from "@/lib/hooks/useHabits";
+import { FilterPicker, userToFilterOption } from "@quikit/ui";
+import { useInfiniteUsers } from "@/lib/hooks/useInfiniteUsers";
+import { useUserOptions } from "@/lib/hooks/useUserOption";
+import { useTeams } from "@/lib/hooks/useTeams";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 import { useQuarterStartDates } from "@/lib/hooks/useQuarterStartDates";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
@@ -72,6 +76,32 @@ export function LaunchAssessmentModal({ onClose, onCreated, existingRows = [] }:
   const [deadline, setDeadline] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+
+  // Team + Owner scope. Mirrors the Priority page: the owner list is every
+  // member until a team is picked, after which it narrows to that team's
+  // members (`useInfiniteUsers` does the filtering server-side).
+  const [teamId, setTeamId] = useState<string>("");
+  const [ownerIds, setOwnerIds] = useState<string[]>([]);
+  const [ownerSearch, setOwnerSearch] = useState("");
+  const { data: teams = [] } = useTeams();
+  const {
+    users: ownerUsers,
+    isLoading: ownersLoading,
+    hasNextPage: ownersHasMore,
+    isFetchingNextPage: ownersLoadingMore,
+    fetchNextPage: fetchMoreOwners,
+  } = useInfiniteUsers(teamId || undefined, ownerSearch);
+  const selectedOwnerOptions = useUserOptions(ownerIds);
+
+  /**
+   * Changing the team clears the owner selection — the previously picked
+   * people may not belong to the new team, and silently keeping them would
+   * notify users outside the chosen scope.
+   */
+  function handleTeamChange(next: string) {
+    setTeamId(next);
+    setOwnerIds([]);
+  }
 
   const userTouched = useRef(false);
   const hydrated = useRef(false);
@@ -146,7 +176,9 @@ export function LaunchAssessmentModal({ onClose, onCreated, existingRows = [] }:
   }
 
   const selectedInfo = quarter ? periodFor(year, quarter) : null;
-  const canCreate = !!quarter && !!selectedInfo?.selectable;
+  // Owners are mandatory — an assessment must name who is being asked to fill
+  // it. The server enforces the same rule (launchCampaignSchema).
+  const canCreate = !!quarter && !!selectedInfo?.selectable && ownerIds.length > 0;
   const noneSelectable = ALL_QUARTERS.every((q) => !periodFor(year, q).selectable);
 
   async function handleSave() {
@@ -158,6 +190,10 @@ export function LaunchAssessmentModal({ onClose, onCreated, existingRows = [] }:
         year,
         deadline: deadline ? new Date(deadline).toISOString() : undefined,
         notes: notes || null,
+        teamId: teamId || null,
+        // Empty = org-wide, which is what the API and participation panel
+        // already treat as the default.
+        participantUserIds: ownerIds,
       })) as { id: string };
       onCreated?.(result.id);
       onClose();
@@ -286,6 +322,47 @@ export function LaunchAssessmentModal({ onClose, onCreated, existingRows = [] }:
               />
             </div>
           </div>
+
+          {/* Team + Owner scope. Leaving both empty keeps the assessment
+              org-wide (every active member), which is the original behaviour. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[10px] font-semibold uppercase tracking-widest text-gray-500 mb-2">
+                Team <span className="text-gray-400 normal-case">(optional)</span>
+              </label>
+              <FilterPicker
+                value={teamId}
+                onChange={handleTeamChange}
+                options={teams.map((t) => ({ value: t.id, label: t.name }))}
+                allLabel="All teams"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold uppercase tracking-widest text-gray-500 mb-2">
+                Owners <span className="text-red-500">*</span>
+              </label>
+              <FilterPicker
+                multiple
+                values={ownerIds}
+                onChangeMultiple={setOwnerIds}
+                options={ownerUsers.map(userToFilterOption)}
+                selectedOptions={selectedOwnerOptions}
+                onSearchChange={setOwnerSearch}
+                onLoadMore={fetchMoreOwners}
+                hasMore={ownersHasMore}
+                loadingMore={ownersLoadingMore}
+                loading={ownersLoading}
+                allLabel="All people"
+              />
+            </div>
+          </div>
+          <p
+            className={`-mt-2 text-[11px] ${ownerIds.length > 0 ? "text-gray-400" : "text-red-500"}`}
+          >
+            {ownerIds.length > 0
+              ? `${ownerIds.length} ${ownerIds.length === 1 ? "person" : "people"} will be asked to fill this assessment and notified by email.`
+              : "Select at least one owner — they'll be asked to fill this assessment and notified by email."}
+          </p>
 
           <div>
             <label className="block text-[10px] font-semibold uppercase tracking-widest text-gray-500 mb-2">
