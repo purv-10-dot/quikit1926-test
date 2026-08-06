@@ -1,0 +1,128 @@
+import { prisma } from "@/lib/db/prisma";
+import { listCustomFields } from "@/lib/services/fields/repo";
+import { isValidFieldKey } from "@/types/field-definition";
+
+/**
+ * Resolve the pickable VALUES for a lead-filter field, so the advanced-filter
+ * value box can render a searchable checkbox list instead of a bare text input.
+ *
+ * This is the "value population" half of the advanced-filter feature — the UI
+ * shell (searchable multi-select) already exists in components/filters/
+ * condition-row.tsx; it just had nothing to populate custom fields with. The
+ * client fetches this LAZILY, per field, when a condition targets that field
+ * (there are 200+ custom fields, so eager fetching is a non-starter).
+ *
+ * Resolution priority (first match wins):
+ *   1. stage / status / substatus            → the tenant's pipeline config
+ *   2. custom field WITH configured options   → those options (clean + complete,
+ *                                               incl. values no lead has used yet)
+ *   3. custom field, enum-ish, low-cardinality → capped DB-distinct on the data
+ *   4. everything else                        → { source: "none" } → the client
+ *                                               keeps its free-text / number / date input
+ *
+ * Why capped DB-distinct: CredFlow has ZERO Select/MultiSelect fields — every
+ * enum is a Text field with no configured options — so the ONLY value source for
+ * their enums is the data itself. But a distinct over a free-text field (notes,
+ * ad_name, prospect_id) is thousands of rows: useless as a picker and heavy to
+ * query. PICKER_MAX gates that: at most PICKER_MAX+1 rows are fetched, and if the
+ * field has more than PICKER_MAX distinct values it is treated as free-text.
+ */
+
+/**
+ * Max distinct values offered as a checkbox picker. Above this the list is too
+ * long to be useful and the client falls back to a free-text `contains` input.
+ * Chosen from CredFlow's real data: enum fields cluster at <=41 distinct, the
+ * next field jumps to 62 — so ~50 is a clean, natural cutoff.
+ */
+export const PICKER_MAX = 50;
+
+export type FieldValueOption = { value: string; label: string };
+
+export type FieldValuesResult =
+  | { source: "pipeline" | "options" | "distinct"; values: FieldValueOption[] }
+  | { source: "none"; values: null; reason: "free_text" | "unknown_field" };
+
+function toOpts(values: string[]): FieldValueOption[] {
+  return values.map((v) => ({ value: v, label: v }));
+}
+
+/** Read the tenant's configured pipeline stages / statuses / substatuses. */
+async function readPipeline(
+  tenantId: string,
+): Promise<{ stages: string[]; statuses: string[]; substatuses: string[] }> {
+  const ws = await prisma.crmOrgWorkspaceSettings.findUnique({ where: { tenantId } });
+  const settings = (ws?.settings as Record<string, unknown> | null) ?? {};
+  const cfg =
+    (settings.leadPipelineConfig as
+      | { stages?: string[]; statuses?: string[]; substatuses?: string[] }
+      | undefined) ?? {};
+  return {
+    stages: Array.isArray(cfg.stages) ? cfg.stages : [],
+    statuses: Array.isArray(cfg.statuses) ? cfg.statuses : [],
+    substatuses: Array.isArray(cfg.substatuses) ? cfg.substatuses : [],
+  };
+}
+
+/**
+ * DISTINCT non-empty values for a custom (dynamicFields) key, frequency-ordered,
+ * capped at PICKER_MAX+1 so "too many" is detectable without a separate COUNT.
+ *
+ * SAFETY: the JSON key is passed as a BOUND PARAMETER (never string-interpolated),
+ * and the caller has already validated it (isValidFieldKey + it exists in the
+ * org's field defs). Live leads only (deletedAt IS NULL), tenant-scoped.
+ */
+async function distinctDynamicValues(tenantId: string, key: string): Promise<string[]> {
+  const rows = await prisma.$queryRaw<{ v: string | null; n: number }[]>`
+    SELECT "dynamicFields" ->> ${key} AS v, count(*)::int AS n
+    FROM app_quikcrm."CrmLead"
+    WHERE "tenantId" = ${tenantId}
+      AND "deletedAt" IS NULL
+      AND nullif("dynamicFields" ->> ${key}, '') IS NOT NULL
+    GROUP BY 1
+    ORDER BY n DESC
+    LIMIT ${PICKER_MAX + 1}
+  `;
+  return rows.map((r) => r.v).filter((v): v is string => v != null);
+}
+
+/** Custom-field types that can sensibly offer a value list. Number/Date drive
+ *  their own inputs (spinner / date picker) and never a distinct-value picker. */
+const PICKABLE_CUSTOM_TYPES = new Set(["Select", "MultiSelect", "Text", "Email", "Phone"]);
+
+export async function resolveFieldValues(
+  tenantId: string,
+  fieldKey: string,
+): Promise<FieldValuesResult> {
+  // 1) Standard pipeline-backed fields.
+  if (fieldKey === "stage" || fieldKey === "status" || fieldKey === "substatus") {
+    const p = await readPipeline(tenantId);
+    const values = fieldKey === "stage" ? p.stages : fieldKey === "status" ? p.statuses : p.substatuses;
+    if (values.length === 0) return { source: "none", values: null, reason: "free_text" };
+    return { source: "pipeline", values: toOpts(values) };
+  }
+
+  // Custom (dynamicFields) fields — resolve against the org's LIVE defs so an
+  // unknown/removed key can't reach the raw query.
+  if (!isValidFieldKey(fieldKey)) return { source: "none", values: null, reason: "unknown_field" };
+  const customs = await listCustomFields(tenantId);
+  const def = customs.find((d) => d.key === fieldKey);
+  if (!def) return { source: "none", values: null, reason: "unknown_field" };
+
+  // 2) Configured options win — clean and complete (includes values no lead has
+  //    used yet). CredFlow has none of these today, but it's the right priority.
+  if (def.options && def.options.length > 0) {
+    return { source: "options", values: toOpts(def.options) };
+  }
+
+  // 3) Only enum-ish types get a data-distinct picker.
+  if (!PICKABLE_CUSTOM_TYPES.has(def.fieldType)) {
+    return { source: "none", values: null, reason: "free_text" };
+  }
+
+  // 4) Capped DB-distinct. Empty or too-many → free-text.
+  const values = await distinctDynamicValues(tenantId, fieldKey);
+  if (values.length === 0 || values.length > PICKER_MAX) {
+    return { source: "none", values: null, reason: "free_text" };
+  }
+  return { source: "distinct", values: toOpts(values) };
+}

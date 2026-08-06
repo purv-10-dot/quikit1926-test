@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [{ "name": "next" }],
+    "paths": {
+      "@/*": ["./*"],
+      "@/lib/*": ["./lib/*"],
+      "@/components/*": ["./components/*"],
+      "@/types/*": ["./types/*"],
+      "@quikit/database": ["./packages/database"],
+      "@quikit/ui": ["./packages/ui"],
+      "@quikit/ui/*": ["./packages/ui/*"],
+      "@quikit/shared": ["./packages/shared"],
+      "@quikit/shared/*": ["./packages/shared/*"]
+    }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules", "packages/database/prisma", "copypaste_code", "e2e", "e2e_old", "src_backup_old", "**/*_backup_old", "**/*_old"]
+}
