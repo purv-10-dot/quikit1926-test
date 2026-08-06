@@ -61,6 +61,14 @@ export interface RulePrimitives {
    * Used by the "validate parent work items are in a specific status" rule.
    */
   parentStatusId: () => Promise<string | null>;
+  /** The project lead / space owner's user id, or null. Used by the assign action. */
+  projectLeadId: () => Promise<string | null>;
+  /**
+   * A field value read from this work item's PARENT (by snapshot key), or null
+   * when there's no parent / no value. Used by the copy-field action's
+   * "parent work item" source.
+   */
+  parentFieldValue: (key: string) => Promise<string | null>;
 }
 
 export interface RuleContext {
@@ -113,17 +121,27 @@ export interface ValidatorHandler {
   validateConfig?: (config: Record<string, unknown>) => string[];
 }
 
+/** Fields a post-function may write on the issue. A safe subset of scalar
+ * columns the transition routes apply. */
+export type PostFunctionPatch = Partial<
+  Pick<
+    RuleIssueSnapshot,
+    | "assigneeId" | "resolutionId" | "priority" | "reporterId"
+    | "title" | "description" | "storyPoints" | "eta" | "dueDate" | "startDate"
+  >
+>;
+
 /** Post-functions return a partial patch + optional side effects to apply in-txn. */
 export interface PostFunctionResult {
   /** Fields to write on the issue (e.g. { resolutionId, assigneeId }). */
-  patch?: Partial<Pick<RuleIssueSnapshot, "assigneeId" | "resolutionId" | "priority">>;
+  patch?: PostFunctionPatch;
   /** Comment bodies to append to the issue (add_comment post-function). */
   comments?: string[];
 }
 
 /** The aggregated effects of all post-functions on a transition. */
 export interface PostFunctionEffects {
-  patch: Partial<Pick<RuleIssueSnapshot, "assigneeId" | "resolutionId" | "priority">>;
+  patch: PostFunctionPatch;
   comments: string[];
 }
 

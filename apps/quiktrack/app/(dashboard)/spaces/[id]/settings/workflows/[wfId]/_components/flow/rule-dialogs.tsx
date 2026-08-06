@@ -23,6 +23,9 @@ import {
   ValidateParentStatusForm,
   ValidatePermissionForm,
   ShowScreenForm,
+  AssignForm,
+  CopyFieldForm,
+  UpdateFieldForm,
   isRestrictWhoMovesValid,
   isRestrictFromAllValid,
   isRestrictFieldValueValid,
@@ -33,6 +36,9 @@ import {
   isValidateParentValid,
   isValidatePermissionValid,
   isShowScreenValid,
+  isAssignValid,
+  isCopyFieldValid,
+  isUpdateFieldValid,
 } from "./rule-forms";
 
 function BucketIcon({ kind }: { kind: BucketId }) {
@@ -239,6 +245,9 @@ export function EditRuleDialog({
     validate_parent_status: isValidateParentValid,
     validate_permission: isValidatePermissionValid,
     show_screen: isShowScreenValid,
+    assign: isAssignValid,
+    copy_field: isCopyFieldValid,
+    update_field: isUpdateFieldValid,
   };
   const valid = meta.customForm
     ? (CUSTOM_VALID[meta.customForm]?.(structured) ?? true)
@@ -332,6 +341,12 @@ export function EditRuleDialog({
           <ValidatePermissionForm value={structured} onChange={setStructured} />
         ) : meta.customForm === "show_screen" ? (
           <ShowScreenForm value={structured} onChange={setStructured} screens={screens} />
+        ) : meta.customForm === "assign" ? (
+          <AssignForm value={structured} onChange={setStructured} members={members} />
+        ) : meta.customForm === "copy_field" ? (
+          <CopyFieldForm value={structured} onChange={setStructured} />
+        ) : meta.customForm === "update_field" ? (
+          <UpdateFieldForm value={structured} onChange={setStructured} />
         ) : meta.fields.length === 0 ? (
           <p className="text-sm text-gray-500">{meta.description}</p>
         ) : (

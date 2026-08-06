@@ -14,6 +14,7 @@ import { recalcParentRollup } from "@/lib/services/subtaskRollup";
 import { notifyMentions } from "@/lib/services/mentions";
 import {
   executeTransition,
+  postFunctionPatchToPrisma,
   TransitionNotAllowedError,
   ConditionsFailedError,
   ValidationFailedError,
@@ -264,10 +265,8 @@ export const PATCH = withOrgAuth<{ id: string }>(
           ...allowedFields,
           startDate: dateValue("startDate"),
           dueDate: dateValue("dueDate"),
-          // Workflow post-function effects (resolution / assignee / priority).
-          ...("assigneeId" in workflowPatch ? { assigneeId: workflowPatch.assigneeId } : {}),
-          ...("resolutionId" in workflowPatch ? { resolutionId: workflowPatch.resolutionId } : {}),
-          ...(typeof workflowPatch.priority === "string" ? { priority: workflowPatch.priority } : {}),
+          // Workflow post-function effects (writable scalar columns only).
+          ...postFunctionPatchToPrisma(workflowPatch),
           updatedBy: userId,
         },
       });

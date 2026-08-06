@@ -9,6 +9,7 @@ import {
 } from "@/lib/services/issueHistory";
 import {
   executeTransition,
+  postFunctionPatchToPrisma,
   TransitionNotAllowedError,
   ConditionsFailedError,
   ValidationFailedError,
@@ -123,11 +124,8 @@ export const PATCH = withOrgAuth<{ id: string }>(
           sprintId: parsed.data.sprintId === undefined ? undefined : parsed.data.sprintId,
           parentId: parsed.data.parentId === undefined ? undefined : parsed.data.parentId,
           orderInColumn: parsed.data.orderInColumn,
-          // Apply post-function effects. assigneeId/resolutionId are nullable
-          // columns; priority is non-null so a null patch is ignored.
-          ...("assigneeId" in workflowPatch ? { assigneeId: workflowPatch.assigneeId } : {}),
-          ...("resolutionId" in workflowPatch ? { resolutionId: workflowPatch.resolutionId } : {}),
-          ...(typeof workflowPatch.priority === "string" ? { priority: workflowPatch.priority } : {}),
+          // Apply post-function effects (writable scalar columns only).
+          ...postFunctionPatchToPrisma(workflowPatch),
           updatedBy: userId,
         },
       });

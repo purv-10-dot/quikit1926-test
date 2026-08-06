@@ -28,6 +28,7 @@ import type {
   RuleIssueSnapshot,
   RuleSpec,
   ValidatorFailure,
+  PostFunctionPatch,
 } from "./rules/context";
 
 export class ConditionsFailedError extends Error {
@@ -50,11 +51,31 @@ export interface ExecuteResult {
   /** True when a published workflow governed this move (rules ran). */
   gated: boolean;
   /** Field patch from post-functions to merge into the issue update. */
-  patch: Partial<Pick<RuleIssueSnapshot, "assigneeId" | "resolutionId" | "priority">>;
+  patch: PostFunctionPatch;
   /** Comment bodies from add_comment post-functions (persist in the same txn). */
   comments: string[];
   /** The transition id taken (for the audit log), if gated. */
   transitionId: string | null;
+}
+
+/**
+ * Map a post-function patch to a Prisma issue-update fragment. Only the
+ * post-function-writable scalar columns; date fields (ISO strings) become Date.
+ * `priority` is a non-null column, so a null priority is skipped.
+ */
+export function postFunctionPatchToPrisma(patch: PostFunctionPatch): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if ("assigneeId" in patch) out.assigneeId = patch.assigneeId ?? null;
+  if ("resolutionId" in patch) out.resolutionId = patch.resolutionId ?? null;
+  if ("reporterId" in patch) out.reporterId = patch.reporterId ?? null;
+  if (typeof patch.priority === "string") out.priority = patch.priority;
+  if ("title" in patch && typeof patch.title === "string") out.title = patch.title;
+  if ("description" in patch) out.description = patch.description ?? null;
+  if ("storyPoints" in patch) out.storyPoints = patch.storyPoints ?? null;
+  if ("eta" in patch) out.eta = patch.eta ?? null;
+  if ("dueDate" in patch) out.dueDate = patch.dueDate ? new Date(patch.dueDate) : null;
+  if ("startDate" in patch) out.startDate = patch.startDate ? new Date(patch.startDate) : null;
+  return out;
 }
 
 const toRuleSpec = (r: GraphRule): RuleSpec => ({
@@ -130,6 +151,23 @@ export async function executeTransition(params: {
           select: { parent: { select: { statusId: true } } },
         });
         return self?.parent?.statusId ?? null;
+      },
+      projectLeadId: async () => {
+        const project = await db.qtProject.findUnique({
+          where: { id: issue.projectId },
+          select: { leadUserId: true },
+        });
+        return project?.leadUserId ?? null;
+      },
+      parentFieldValue: async (key) => {
+        if (!issue.id) return null;
+        const self = await db.qtIssue.findUnique({
+          where: { id: issue.id },
+          select: { parent: true },
+        });
+        const parent = self?.parent as Record<string, unknown> | null | undefined;
+        const v = parent ? parent[key] : null;
+        return v == null ? null : String(v);
       },
     },
   };

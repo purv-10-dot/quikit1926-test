@@ -34,6 +34,8 @@ function ctx(overrides: {
       subtaskStatusIds: async () => [],
       transitionHistory: async () => [],
       parentStatusId: async () => null,
+      projectLeadId: async () => null,
+      parentFieldValue: async () => null,
     },
   };
 }

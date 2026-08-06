@@ -25,6 +25,8 @@ function ctx(over: {
       subtaskStatusIds: async () => [],
       transitionHistory: async () => over.history ?? [],
       parentStatusId: async () => over.parentStatusId ?? null,
+      projectLeadId: async () => null,
+      parentFieldValue: async () => null,
     },
   };
 }

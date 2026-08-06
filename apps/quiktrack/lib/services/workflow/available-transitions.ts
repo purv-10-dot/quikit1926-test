@@ -64,6 +64,23 @@ export async function listAvailableTransitionsForIssue(params: {
       });
       return self?.parent?.statusId ?? null;
     },
+    projectLeadId: async () => {
+      const project = await db.qtProject.findUnique({
+        where: { id: issue.projectId },
+        select: { leadUserId: true },
+      });
+      return project?.leadUserId ?? null;
+    },
+    parentFieldValue: async (key: string) => {
+      if (!issue.id) return null;
+      const self = await db.qtIssue.findUnique({
+        where: { id: issue.id },
+        select: { parent: true },
+      });
+      const parent = self?.parent as Record<string, unknown> | null | undefined;
+      const v = parent ? parent[key] : null;
+      return v == null ? null : String(v);
+    },
   };
 
   const out: AvailableTransition[] = [];

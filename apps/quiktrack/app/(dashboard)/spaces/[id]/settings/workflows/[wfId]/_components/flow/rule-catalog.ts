@@ -46,7 +46,10 @@ export interface RuleTypeMeta {
     | "validate_been_through"
     | "validate_parent_status"
     | "validate_permission"
-    | "show_screen";
+    | "show_screen"
+    | "assign"
+    | "copy_field"
+    | "update_field";
 }
 
 /** Jira's 4 rule buckets shown in the Add-rule modal's left rail. */
@@ -167,7 +170,32 @@ export const RULE_TYPE_META: RuleTypeMeta[] = [
     fields: [],
     customForm: "show_screen",
   },
-  // ── POSTFUNCTION → Perform actions ──────────────────────────────────────
+  // ── POSTFUNCTION → Perform actions (Jira catalog) ───────────────────────
+  {
+    kind: "POSTFUNCTION",
+    type: "assign",
+    label: "Assign a work item",
+    description: "Automatically assign a work item to someone after moving the work item using a particular transition.",
+    fields: [],
+    customForm: "assign",
+  },
+  {
+    kind: "POSTFUNCTION",
+    type: "copy_field",
+    label: "Copy the value of one field to another",
+    description: "Automatically copy the value of one field to another after moving a work item using a particular transition.",
+    fields: [],
+    customForm: "copy_field",
+  },
+  {
+    kind: "POSTFUNCTION",
+    type: "update_field",
+    label: "Update a work item field",
+    description: "Automatically change the value of a work item field after moving the work item using a particular transition.",
+    fields: [],
+    customForm: "update_field",
+  },
+  // Additional actions QuikTrack supports (kept from the base engine).
   {
     kind: "POSTFUNCTION",
     type: "set_resolution",
@@ -181,23 +209,6 @@ export const RULE_TYPE_META: RuleTypeMeta[] = [
     label: "Clear resolution",
     description: "Automatically clear the resolution field (e.g. on reopen).",
     fields: [],
-  },
-  {
-    kind: "POSTFUNCTION",
-    type: "assign",
-    label: "Assign the work item",
-    description: "Automatically assign the work item when it moves.",
-    fields: [{ key: "to", label: "Assign to", type: "assignee", required: true }],
-  },
-  {
-    kind: "POSTFUNCTION",
-    type: "set_field",
-    label: "Update a work item field",
-    description: "Automatically set a field's value when the work item moves.",
-    fields: [
-      { key: "fieldId", label: "Field", type: "text", required: true },
-      { key: "value", label: "Value", type: "text", required: true },
-    ],
   },
   {
     kind: "POSTFUNCTION",

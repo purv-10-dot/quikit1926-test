@@ -13,6 +13,7 @@ export { assertTransitionForIssue } from "./assert-transition-for-issue";
 export { listAvailableTransitionsForIssue } from "./available-transitions";
 export {
   executeTransition,
+  postFunctionPatchToPrisma,
   ConditionsFailedError,
   ValidationFailedError,
 } from "./execute-transition";

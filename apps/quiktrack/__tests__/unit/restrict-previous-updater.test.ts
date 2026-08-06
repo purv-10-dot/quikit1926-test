@@ -20,6 +20,8 @@ function ctx(userId: string, history: TransitionHistoryEntry[]): RuleContext {
       subtaskStatusIds: async () => [],
       transitionHistory: async () => history,
       parentStatusId: async () => null,
+      projectLeadId: async () => null,
+      parentFieldValue: async () => null,
     },
   };
 }
