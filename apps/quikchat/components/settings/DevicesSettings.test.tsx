@@ -148,6 +148,98 @@ describe("DevicesSettings", () => {
     expect(getUserMedia).toHaveBeenCalledWith({ video: true });
   });
 
+  // Before this, a denied/missing/busy device produced UI identical to success —
+  // the click appeared to do nothing at all.
+  it("shows why the mic unlock failed instead of silently doing nothing", async () => {
+    installMediaDevices([{ deviceId: "", kind: "audioinput", label: "" }]);
+    const denied = new Error("Permission denied");
+    denied.name = "NotAllowedError";
+    getUserMedia.mockRejectedValue(denied);
+    render(<DevicesSettings />);
+
+    const button = await screen.findByRole("button", { name: "Allow access" });
+    await act(async () => {
+      fireEvent.click(button);
+    });
+
+    const error = screen.getByTestId("mic-permission-error");
+    expect(error).toHaveTextContent("Microphone access was blocked");
+    expect(error).toHaveAttribute("role", "alert");
+  });
+
+  it("reports a busy device distinctly from a denied one", async () => {
+    installMediaDevices([{ deviceId: "", kind: "audioinput", label: "" }]);
+    const busy = new Error("in use");
+    busy.name = "NotReadableError";
+    getUserMedia.mockRejectedValue(busy);
+    render(<DevicesSettings />);
+
+    const button = await screen.findByRole("button", { name: "Allow access" });
+    await act(async () => {
+      fireEvent.click(button);
+    });
+
+    expect(screen.getByTestId("mic-permission-error")).toHaveTextContent(
+      "Your microphone is already in use by another app.",
+    );
+  });
+
+  it("shows camera wording for a camera failure, in its own slot", async () => {
+    installMediaDevices([{ deviceId: "", kind: "videoinput", label: "" }]);
+    const denied = new Error("Permission denied");
+    denied.name = "NotAllowedError";
+    getUserMedia.mockRejectedValue(denied);
+    render(<DevicesSettings />);
+
+    const button = await screen.findByRole("button", { name: "Allow camera access" });
+    await act(async () => {
+      fireEvent.click(button);
+    });
+
+    expect(screen.getByTestId("camera-permission-error")).toHaveTextContent(
+      "Camera access was blocked",
+    );
+    // The mic slot stays empty — the two kinds report independently.
+    expect(screen.queryByTestId("mic-permission-error")).toBeNull();
+  });
+
+  it("shows no error when the unlock succeeds", async () => {
+    installMediaDevices([{ deviceId: "", kind: "audioinput", label: "" }]);
+    render(<DevicesSettings />);
+
+    const button = await screen.findByRole("button", { name: "Allow access" });
+    enumerate.mockResolvedValue(DEVICES);
+    await act(async () => {
+      fireEvent.click(button);
+    });
+
+    expect(screen.queryByTestId("mic-permission-error")).toBeNull();
+    await waitFor(() => expect(screen.getByText("Headset Mic")).toBeInTheDocument());
+  });
+
+  it("clears a previous failure when a retry succeeds", async () => {
+    installMediaDevices([{ deviceId: "", kind: "audioinput", label: "" }]);
+    const denied = new Error("Permission denied");
+    denied.name = "NotAllowedError";
+    getUserMedia.mockRejectedValueOnce(denied);
+    render(<DevicesSettings />);
+
+    const button = await screen.findByRole("button", { name: "Allow access" });
+    await act(async () => {
+      fireEvent.click(button);
+    });
+    expect(screen.getByTestId("mic-permission-error")).toBeInTheDocument();
+
+    // Retry: the user granted it this time.
+    getUserMedia.mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] });
+    enumerate.mockResolvedValue(DEVICES);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Allow access" }));
+    });
+
+    expect(screen.queryByTestId("mic-permission-error")).toBeNull();
+  });
+
   it("disables the speaker picker with a note when output routing is unsupported", async () => {
     delete (HTMLMediaElement.prototype as unknown as { setSinkId?: unknown }).setSinkId;
     render(<DevicesSettings />);

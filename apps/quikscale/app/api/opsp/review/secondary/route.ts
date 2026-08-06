@@ -5,6 +5,7 @@ import { writeAuditLog } from "@/lib/api/auditLog";
 import { validationError } from "@/lib/api/validationError";
 import { opspReviewSecondarySaveSchema } from "@/lib/schemas/opspReviewSchema";
 import { resolveOpspOwnerOrSelf } from "@/lib/api/opspOwner";
+import { userCan, forbidden } from "@/lib/api/permissions";
 
 const reviewAuth = withOrgAuthForResource("opsp.review", "OPSP.Review");
 
@@ -31,7 +32,7 @@ export const POST = reviewAuth.update(async ({ orgId, userId }, req) => {
       where: {
         orgId_userId_year_quarter: { orgId, userId: ownerId, year: yearNum, quarter },
       },
-      select: { id: true },
+      select: { id: true, status: true },
     });
 
     if (!opsp) {
@@ -39,6 +40,15 @@ export const POST = reviewAuth.update(async ({ orgId, userId }, req) => {
         { success: false, error: "No OPSP found for this period" },
         { status: 404 },
       );
+    }
+
+    // 1b. Same post-submit lock as the primary review route (EditFinalize
+    // holders can still edit; see comment there for the full rationale).
+    if (opsp.status === "reviewed") {
+      const canEditAfterFinalize = await userCan(userId, orgId, "OPSP.History.EditFinalize", "update");
+      if (!canEditAfterFinalize) {
+        return forbidden("This OPSP's review has been submitted. Editing requires the 'Edit after Finalize' permission.");
+      }
     }
 
     // 2a. Snapshot pre-update state. comment field stores JSON {status, text}.

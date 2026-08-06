@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Avatar,
   Bell,
@@ -8,6 +8,7 @@ import {
   Check,
   Headphones,
   Info,
+  LifeBuoy,
   Palette,
   Phone,
   Search,
@@ -17,11 +18,13 @@ import {
   Switch,
   Users,
 } from "@/components/ui";
+import { fetchMyPresence, updateMyPresence } from "@/lib/api";
 import { CalendarsSettings } from "@/components/settings/CalendarsSettings";
 import { DevicesSettings } from "@/components/settings/DevicesSettings";
 import { NotificationSettingsPanel } from "@/components/notifications/NotificationSettingsModal";
 import { ThemeToggle } from "@/components/settings/ThemeToggle";
 import { RolesTab } from "@/app/(dashboard)/settings/roles/components/RolesTab";
+import { SupportStatusTab } from "@quikit/ui/support";
 import { useMyPermissions } from "@/lib/authz/useMyPermissions";
 import { STORAGE_KEY, THEMES } from "./ColorThemePicker";
 
@@ -33,7 +36,8 @@ type SettingsCat =
   | "devices"
   | "calls"
   | "privacy"
-  | "roles";
+  | "roles"
+  | "support";
 
 const CATEGORIES: { key: SettingsCat; label: string; icon: ReactNode }[] = [
   { key: "general", label: "General", icon: <Settings size={17} /> },
@@ -43,6 +47,9 @@ const CATEGORIES: { key: SettingsCat; label: string; icon: ReactNode }[] = [
   { key: "privacy", label: "Privacy", icon: <Info size={17} /> },
   { key: "devices", label: "Devices", icon: <Headphones size={17} /> },
   { key: "calls", label: "Calls", icon: <Phone size={17} /> },
+  // Per-user, so it sits in the always-visible list rather than the
+  // admin-only tail below — every member sees their own support requests.
+  { key: "support", label: "Support Status", icon: <LifeBuoy size={17} /> },
 ];
 
 // Admin-only section. Appended to the nav only when the caller is a QuikChat
@@ -103,6 +110,47 @@ export function SettingsModule({ currentUserId, displayName, avatarUrl }: Settin
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [readReceipts, setReadReceipts] = useState(true);
   const [typingIndicators, setTypingIndicators] = useState(true);
+
+  // "Share my last seen" — REAL, persisted to QcUserPresence.shareLastSeen via
+  // /api/me/presence (unlike the two demo toggles above it in the Privacy panel).
+  // Seeded from the server; the switch is optimistic and reverts on failure.
+  const [shareLastSeen, setShareLastSeen] = useState(true);
+  // Set the instant the user touches the switch, and checked before applying
+  // the seed GET's result below. Without this, clicking before that GET
+  // resolves — a real window: StrictMode double-invokes this effect in dev, and
+  // the first request pays a compile — lets the LATE response's
+  // `setShareLastSeen(server value)` silently overwrite the optimistic flip.
+  // The PUT still persists, so the UI would end up lying about which way a
+  // privacy switch is set. Never reset: this effect only ever seeds once, on
+  // mount, so there's no later legitimate seed to un-guard for.
+  const touchedRef = useRef(false);
+  useEffect(() => {
+    let alive = true;
+    void fetchMyPresence()
+      .then((p) => {
+        if (alive && !touchedRef.current) setShareLastSeen(p.shareLastSeen);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const toggleShareLastSeen = (next: boolean) => {
+    touchedRef.current = true;
+    setShareLastSeen(next);
+    // Privacy-only patch: no `status`, so the server leaves the current status
+    // (and its message/expiry) untouched and skips the presence fan-out.
+    void updateMyPresence({ shareLastSeen: next }).catch(() => {
+      // The UI must land on the server's ACTUAL value, not a guessed inverse:
+      // `!next` is only correct if the pre-click display was already synced
+      // with the server, which a click landing inside the seed-GET window
+      // breaks. Re-read the truth; fall back to the guess only if that fails
+      // too (no connectivity — nothing better available).
+      void fetchMyPresence()
+        .then((p) => setShareLastSeen(p.shareLastSeen))
+        .catch(() => setShareLastSeen(!next));
+    });
+  };
 
   // Accent color theme (persisted to localStorage under STORAGE_KEY; applied via data-accent).
   const [accent, setAccent] = useState("mist");
@@ -215,7 +263,11 @@ export function SettingsModule({ currentUserId, displayName, avatarUrl }: Settin
         <header className="qc-set-head">
           <h1 className="qc-set-htitle">{activeLabel}</h1>
         </header>
-        {cat === "roles" ? (
+        {cat === "support" ? (
+          <div className="qc-set-scroll">
+            <SupportStatusTab />
+          </div>
+        ) : cat === "roles" ? (
           // Full-bleed: RolesTab brings its own two-pane chrome. `.qc-set-embed`
           // clamps its `h-screen` root to the content area (see theme.css) so it
           // doesn't overflow the panel — reused verbatim, no restyle.
@@ -325,6 +377,12 @@ export function SettingsModule({ currentUserId, displayName, avatarUrl }: Settin
                 <Info size={16} aria-hidden /> Privacy
               </div>
               <div className="qc-set-section__body">
+                <ToggleRow
+                  title="Share my last seen"
+                  desc="Show when you were last online. You'll only see other people's last seen if you share yours."
+                  checked={shareLastSeen}
+                  onChange={toggleShareLastSeen}
+                />
                 <ToggleRow
                   title="Read receipts"
                   desc="Let others know when you've read their messages."

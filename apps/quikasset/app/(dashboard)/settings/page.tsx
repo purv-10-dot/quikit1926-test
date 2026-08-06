@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { UserCog, ChevronRight } from "lucide-react";
+import { UserCog, ChevronRight, LifeBuoy } from "lucide-react";
 
 export default function SettingsPage() {
   return (
@@ -16,6 +16,26 @@ export default function SettingsPage() {
             <h2 className="text-sm font-semibold text-gray-800">User Management</h2>
             <p className="text-xs text-gray-500">
               Invite members, assign roles, and configure permissions for QuikAsset.
+            </p>
+          </div>
+        </div>
+        <ChevronRight className="h-4 w-4 flex-shrink-0 text-gray-400" />
+      </Link>
+
+      {/* Per-user, unlike User Management above — every member sees their own
+          requests here, so this card is never role-gated. */}
+      <Link
+        href="/settings/support"
+        className="flex items-center justify-between gap-4 rounded-xl border border-gray-200 bg-white p-5 transition-colors hover:border-accent-300 hover:bg-accent-50/40"
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-100 text-accent-600">
+            <LifeBuoy className="h-5 w-5" />
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold text-gray-800">Support Status</h2>
+            <p className="text-xs text-gray-500">
+              Track the support requests you have raised and the QuikIT team&apos;s replies.
             </p>
           </div>
         </div>

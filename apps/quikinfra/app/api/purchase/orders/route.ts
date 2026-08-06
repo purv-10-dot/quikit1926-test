@@ -21,12 +21,15 @@ import { assertVendorGstActiveForPo } from "@/lib/integrations/whitebooks-gst";
 import { findProjectById } from "@/lib/masters/projects-repository";
 import { listPOs, countPOs, poStatusCounts, createPO } from "@/lib/purchase/po-repository";
 import { db } from "@/lib/db";
-import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 
 interface PoVendorRowInput {
   vendorId?: string;
   email?: string | null;
   assignedItemIds?: unknown[];
+  /** Per-vendor T&C override — empty/absent means "use the PO default". */
+  termsAndConditions?: string | null;
+  termsTemplateId?: string | null;
 }
 interface PoContactInput {
   name?: string;
@@ -77,8 +80,6 @@ interface PoCreateBody {
   sourceRfqNumber?: string;
   projectId?: string;
   lines?: POLineInput[];
-  termsAndConditions?: string;
-  termsTemplateId?: string;
   contacts?: PoContactInput[];
   contactPerson?: string;
   contactMobile?: string;
@@ -146,6 +147,7 @@ export async function GET(req: NextRequest) {
     searchParams,
     ["poNumber", "poDate", "status", "totalAmount", "createdAt"],
     { field: "poDate", order: "desc" },
+    NEWEST_FIRST_TIEBREAK,
   );
   const result = await paginateDb(
     p,
@@ -178,6 +180,8 @@ export async function POST(req: NextRequest) {
       vendorId: string;
       email?: string | null;
       assignedItemIds?: string[];
+      termsAndConditions?: string | null;
+      termsTemplateId?: string | null;
     }> = Array.isArray(body.vendors)
       ? body.vendors
           .filter((v: PoVendorRowInput) => v?.vendorId)
@@ -187,6 +191,12 @@ export async function POST(req: NextRequest) {
             assignedItemIds: Array.isArray(v.assignedItemIds)
               ? v.assignedItemIds.map((x) => String(x))
               : [],
+            termsAndConditions: v.termsAndConditions
+              ? String(v.termsAndConditions).trim() || null
+              : null,
+            termsTemplateId: v.termsTemplateId
+              ? String(v.termsTemplateId).trim() || null
+              : null,
           }))
       : [];
     if (vendorRows.length === 0 && body.vendorId) {
@@ -194,6 +204,8 @@ export async function POST(req: NextRequest) {
         vendorId: String(body.vendorId),
         email: body.vendorEmail ?? null,
         assignedItemIds: [],
+        termsAndConditions: null,
+        termsTemplateId: null,
       });
     }
     if (vendorRows.length === 0) {
@@ -358,19 +370,61 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // T&C snapshot — same body stamped on every per-vendor PO.
-    let termsAndConditions = body.termsAndConditions ?? "";
-    if (!termsAndConditions && body.termsTemplateId) {
-      try {
-        const tpl = await db.cnTermsCondition.findFirst({
-          where: { id: body.termsTemplateId, orgId: ctx.orgId },
-          select: { body: true },
-        });
-        if (tpl?.body) termsAndConditions = String(tpl.body);
-      } catch {
-        /* fall through */
+    // Tenant-level fallback when a vendor row has no T&C override at
+    // all — there's no shared document-level default on the PO itself
+    // (each vendor row carries its own, or falls back here). Preference
+    // mirrors the RFQ side: PO-tagged default, any PO-tagged template,
+    // general-tagged default, any general-tagged template.
+    const resolvePoDefaultTerms = async (): Promise<string | null> => {
+      const base = { orgId: ctx.orgId, status: "active" as const };
+      const tiers = [
+        { ...base, applicableTo: "po", isDefault: true },
+        { ...base, applicableTo: "po" },
+        { ...base, applicableTo: "general", isDefault: true },
+        { ...base, applicableTo: "general" },
+      ];
+      for (const where of tiers) {
+        try {
+          const row = await db.cnTermsCondition.findFirst({
+            where,
+            orderBy: { updatedAt: "desc" },
+            select: { body: true },
+          });
+          if (row?.body) return String(row.body);
+        } catch {
+          /* try the next tier */
+        }
       }
-    }
+      return null;
+    };
+
+    // Resolve a vendor row's own T&C text, if it wrote one — falls
+    // back to the tenant default when the row has neither text nor a
+    // picked template.
+    const resolveVendorTerms = async (
+      vRow: (typeof vendorRows)[number],
+    ): Promise<{ text: string; templateId: string | null }> => {
+      if (vRow.termsAndConditions && vRow.termsAndConditions.trim()) {
+        return {
+          text: vRow.termsAndConditions,
+          templateId: vRow.termsTemplateId ?? null,
+        };
+      }
+      if (vRow.termsTemplateId) {
+        try {
+          const tpl = await db.cnTermsCondition.findFirst({
+            where: { id: vRow.termsTemplateId, orgId: ctx.orgId },
+            select: { body: true },
+          });
+          if (tpl?.body) {
+            return { text: String(tpl.body), templateId: vRow.termsTemplateId };
+          }
+        } catch {
+          /* fall through to the tenant default */
+        }
+      }
+      return { text: (await resolvePoDefaultTerms()) ?? "", templateId: null };
+    };
 
     // Buyer-side contacts flattened from the drawer's multi-row
     // "Contact Persons" section. Same list goes on every PO.
@@ -535,6 +589,8 @@ export async function POST(req: NextRequest) {
       const ptMatch = /(\d+)/.exec(String(ptRaw));
       if (ptMatch) paymentTermsDays = parseInt(ptMatch[1], 10);
 
+      const vendorTerms = await resolveVendorTerms(vRow);
+
       // Wrap createPO in a doc-number retry — under concurrent submissions
       // (two users hitting the endpoint at once), both can pick the same
       // `max + 1`. The unique constraint (`orgId, poNumber`) makes
@@ -561,8 +617,8 @@ export async function POST(req: NextRequest) {
           (project as { address?: string | null }).address ??
           null,
         paymentTermsDays,
-        termsConditionId: body.termsTemplateId ?? null,
-        termsAndConditions,
+        termsConditionId: vendorTerms.templateId,
+        termsAndConditions: vendorTerms.text,
         remarks: body.remarks ?? null,
         isUrgentLocal:
           body.isUrgentLocal === true || body.isUrgentLocal === "true",

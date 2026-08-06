@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Sun, Moon, ChevronDown, Check, UserCog, LogOut, Grid3x3, ExternalLink, Loader2 } from 'lucide-react';
+import { SupportLauncher } from '@quikit/ui/support';
 import { Sidebar } from './Sidebar';
 import { useTheme, useFeatures, useCurrentUser } from '@/app/providers';
 import { useTranslation, LOCALES, type Locale } from '@/lib/i18n';
@@ -341,6 +342,16 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
                   >
                     Profile settings
                   </Link>
+                  {/* Role-agnostic, like /profile — every role sees their own
+                      requests, so it sits in the shared menu rather than any
+                      one portal's sidebar. */}
+                  <Link
+                    href="/settings/support"
+                    onClick={() => setMenuOpen(false)}
+                    className="block px-3 py-2 text-sm text-fg transition-colors hover:bg-surface-muted"
+                  >
+                    Support status
+                  </Link>
                   <button
                     onClick={handleSignOut}
                     disabled={signingOut}
@@ -360,6 +371,13 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
           <div className="mx-auto w-full max-w-[1400px] p-6">{children}</div>
         </main>
       </div>
+
+      {/* Floating support launcher. Mounted HERE rather than in each route
+          group's layout: all eight authenticated groups (learner, teacher,
+          parent, manager, tenant-admin, sub-admin, super-admin, shared) render
+          through this shell, so one mount covers every role. Outside <main> so
+          it stays pinned to the viewport instead of scrolling with the page. */}
+      <SupportLauncher appSlug="quiklms" />
     </div>
   );
 }

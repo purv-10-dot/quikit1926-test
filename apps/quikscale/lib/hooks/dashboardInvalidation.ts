@@ -54,18 +54,29 @@ export const ENTITY_INVALIDATION_KEYS: Record<DashboardEntity, readonly (readonl
  * inactive queries in the background the moment any edit lands, so the Dashboard
  * is already fresh whenever the user switches to it (and updates live if it's
  * already open).
+ *
+ * Returns the combined refetch promise — callers whose `onSuccess` `return`s
+ * (or `await`s) it get correctly-ordered settling: react-query holds a
+ * `mutateAsync()` caller's promise open until `onSuccess` resolves, so awaiting
+ * this closes the window where, e.g., the Dashboard's summary cards (`["dashboard"]`)
+ * and its infinite KPI table (`["kpi-infinite"]`) refetch at different speeds and
+ * briefly show two different values for the same row. Callers that ignore the
+ * return value keep the previous fire-and-forget behavior — this is additive.
  */
 export function invalidateEntity(
   queryClient: QueryClient,
   entity: DashboardEntity,
   opts?: { id?: string },
-): void {
+): Promise<unknown> {
   const families =
     ENTITY_INVALIDATION_KEYS[entity] ?? [[entity, "list"], ["dashboard"]];
-  for (const key of families) {
-    queryClient.invalidateQueries({ queryKey: key as readonly unknown[], refetchType: "all" });
-  }
+  const promises = families.map((key) =>
+    queryClient.invalidateQueries({ queryKey: key as readonly unknown[], refetchType: "all" }),
+  );
   if (opts?.id) {
-    queryClient.invalidateQueries({ queryKey: [entity, "detail", opts.id], refetchType: "all" });
+    promises.push(
+      queryClient.invalidateQueries({ queryKey: [entity, "detail", opts.id], refetchType: "all" }),
+    );
   }
+  return Promise.all(promises);
 }

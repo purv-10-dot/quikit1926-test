@@ -11,13 +11,14 @@ import type { PrismaClient } from "@prisma/client";
 // mockDeep proxy auto-stubs any property access.
 export const mockDb: DeepMockProxy<PrismaClient> = mockDeep<PrismaClient>();
 
-// QuikInfra reaches the Prisma client through TWO specifiers:
-//   - `import { db } from "@quikit/database"`  (context.ts, central libs)
-//   - `import { db } from "@/lib/db"`          (every masters/* repository —
-//                                               a thin re-export that also
-//                                               eagerly validates env on import)
-// Mock both so neither the real client nor the env-validation side-effect
-// loads. Both point at the same `mockDb` instance — one control surface.
+// Every QuikInfra module reaches the Prisma client through ONE specifier —
+// `import { db } from "@/lib/db"` (a thin re-export of @quikit/database that
+// also eagerly validates env on import). Mocking it keeps both the real
+// client and the env-validation side-effect out of tests.
+//
+// `@quikit/database` is still mocked below because ~60 modules import the
+// `Prisma` namespace/enums from it, and loading the real module would
+// instantiate a PrismaClient (which demands DATABASE_URL).
 
 vi.mock("@quikit/database", async () => {
   // Re-export the Prisma namespace / enums from @prisma/client directly so

@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
-    "db:seed:dummy": "tsx --env-file=.env.local scripts/seed-dummy.ts"
+    "db:seed:dummy": "tsx --env-file=.env.local scripts/seed-dummy.ts",
+    "kb:screens": "tsx scripts/capture-kb-screens.ts"
   },
   "dependencies": {
     "@google/genai": "^2.10.0",

@@ -16,6 +16,8 @@ import {
 } from "@/lib/services/workspace/activity-target-config";
 import { countActivitiesForUsers, activityWindow } from "./activity-target-count";
 import { computeAttainment, type ActivityTargetStatus } from "./activity-target-status";
+import { getActivityTypeTargetsForUsers } from "@/lib/services/workspace/activity-type-target-config";
+import { getTypeProgressForUsers, type TypeProgressRow } from "./activity-type-count";
 
 export interface ActivityTargetTrackerRow {
   userId: string;
@@ -28,6 +30,11 @@ export interface ActivityTargetTrackerRow {
   weeklyTarget: number;
   weeklyActivities: number;
   status: ActivityTargetStatus;
+  /**
+   * Per-activity-type daily progress ("Calls: 12 / 20"). Empty when the user
+   * has no type targets assigned — the overall row is unaffected either way.
+   */
+  typeProgress: TypeProgressRow[];
 }
 
 export interface ActivityTargetTrackerDto {
@@ -57,18 +64,35 @@ export async function getActivityTargetTracker(
     }),
   ]);
 
-  // Opt-in: only users with an ASSIGNED (enabled) target are tracked. Everyone
-  // else is "No Target Assigned" — excluded from the tracker, the counts, and
-  // the team totals entirely.
-  const assignedMembers = members.filter((m) => isTargetAssigned(config, m.userId));
+  // Type targets are INDEPENDENT of the overall opt-in: a salesperson may be
+  // tracked because they have an overall target, because they have at least one
+  // activity-type target, or both. Read type targets for every member so the
+  // second case can be detected.
+  const allUserIds = members.map((m) => m.userId);
+  const typeTargets = await getActivityTypeTargetsForUsers(orgId, allUserIds);
+  const hasTypeTarget = (userId: string) =>
+    (typeTargets.get(userId) ?? []).some((t) => t.dailyTarget > 0);
+
+  // Opt-in preserved: a user with neither an assigned overall target nor any
+  // type target is "No Target Assigned" — excluded from the tracker, the counts,
+  // and the team totals entirely.
+  const assignedMembers = members.filter(
+    (m) => isTargetAssigned(config, m.userId) || hasTypeTarget(m.userId),
+  );
 
   const userIds = assignedMembers.map((m) => m.userId);
   const win = activityWindow(tz);
-  const counts = await countActivitiesForUsers(orgId, userIds, win);
+  const [counts, typeProgress] = await Promise.all([
+    countActivitiesForUsers(orgId, userIds, win),
+    getTypeProgressForUsers(orgId, userIds, typeTargets, win),
+  ]);
 
   const rows: ActivityTargetTrackerRow[] = assignedMembers.map((m) => {
-    const dailyTarget = resolveDailyTarget(config, m.userId);
-    const weeklyTarget = resolveWeeklyTarget(config, m.userId);
+    // Users tracked ONLY via type targets have no overall target: report 0 so
+    // they never inflate the team's overall target roll-up.
+    const overallAssigned = isTargetAssigned(config, m.userId);
+    const dailyTarget = overallAssigned ? resolveDailyTarget(config, m.userId) : 0;
+    const weeklyTarget = overallAssigned ? resolveWeeklyTarget(config, m.userId) : 0;
     const c = counts.get(m.userId) ?? { today: 0, week: 0 };
     const daily = computeAttainment(dailyTarget, c.today);
     return {
@@ -82,6 +106,7 @@ export async function getActivityTargetTracker(
       weeklyTarget,
       weeklyActivities: c.week,
       status: daily.status,
+      typeProgress: typeProgress.get(m.userId) ?? [],
     };
   });
 

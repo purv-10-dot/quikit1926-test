@@ -37,6 +37,8 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useStockTransfer } from "@/hooks/use-store";
 import { useAssets } from "@/hooks/use-masters";
 import { usePermissions, type MeResponse } from "@/hooks/use-permissions";
+import { RepairApprovalNotice } from "@/components/RepairApprovalNotice";
+import { MasterApprovalAction } from "@/components/MasterApprovalAction";
 import { USER_TYPE_CATALOG } from "@/lib/rbac/user-types";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
 
@@ -476,11 +478,26 @@ export default function StockTransferDetailPage() {
                 />
               );
             })()}
+            <MasterApprovalAction
+              approval={st.approval}
+              me={me}
+              entityLabel="stock transfer"
+              actionEndpoint={`/api/store/transfers/${id}/approve`}
+              invalidateKeys={[["stock-transfers"], ["stock-transfer", id]]}
+            />
           </div>
         }
       />
 
       <PageContainer>
+        <RepairApprovalNotice
+          repair={st?.approval?.repair}
+          entityLabel="stock transfer"
+          actionEndpoint={`/api/store/transfers/${id}/approve`}
+          invalidateKeys={[["stock-transfers"], ["stock-transfer", id]]}
+          me={me}
+        />
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           <div className="lg:col-span-2 space-y-6">
             {/* Overview card */}

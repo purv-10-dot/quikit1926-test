@@ -8,6 +8,7 @@ import { AuthGuard } from "@/components/hrms/layout/auth-guard";
 import { RouteGuard } from "@/components/hrms/layout/route-guard";
 import { SessionGuard } from "@/components/session-guard";
 import { SetupGate } from "@/components/hrms/setup/setup-gate";
+import { SupportLauncher } from "@quikit/ui/support";
 
 // Reads the session per request and gates on app access — never prerender.
 export const dynamic = "force-dynamic";
@@ -54,6 +55,9 @@ export default async function HRMSLayout({ children }: { children: React.ReactNo
             </div>
           </main>
         </div>
+        {/* Floating support launcher — outside <main> so it stays pinned to the
+            viewport rather than scrolling with the page. */}
+        <SupportLauncher appSlug="quikhrms" />
       </SessionGuard>
     </AuthGuard>
   );

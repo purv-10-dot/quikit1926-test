@@ -45,6 +45,10 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./"),
       "@quikit/database": path.resolve(__dirname, "../../packages/database"),
       "@quikit/auth": path.resolve(__dirname, "../../packages/auth"),
+      // Subpath exports must be aliased BEFORE the bare package alias —
+      // Vite matches these in order, and "@quikit/ui" alone would rewrite
+      // "@quikit/ui/support" to a non-existent packages/ui/support.
+      "@quikit/ui/support": path.resolve(__dirname, "../../packages/ui/components/support"),
       "@quikit/ui": path.resolve(__dirname, "../../packages/ui"),
       "@quikit/shared/rateLimit": path.resolve(__dirname, "../../packages/shared/lib/rateLimit"),
       "@quikit/shared/pagination": path.resolve(__dirname, "../../packages/shared/lib/pagination"),
@@ -57,6 +61,7 @@ export default defineConfig({
       "@quikit/shared/email": path.resolve(__dirname, "../../packages/shared/lib/email"),
       "@quikit/shared/env": path.resolve(__dirname, "../../packages/shared/lib/env"),
       "@quikit/shared/constants": path.resolve(__dirname, "../../packages/shared/lib/constants"),
+      "@quikit/shared/supportContent": path.resolve(__dirname, "../../packages/shared/lib/supportContent"),
       "@quikit/shared/temp-password": path.resolve(__dirname, "../../packages/shared/lib/temp-password"),
       "@quikit/shared/types": path.resolve(__dirname, "../../packages/shared/types"),
       "@quikit/shared": path.resolve(__dirname, "../../packages/shared"),

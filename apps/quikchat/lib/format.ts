@@ -27,6 +27,34 @@ export function dateDividerLabel(value: string | Date): string {
   return format(date, "d MMM yyyy");
 }
 
+/** Unread-divider label: "1 unread message" / "N unread messages". */
+export function unreadDividerLabel(count: number): string {
+  return `${count} unread message${count === 1 ? "" : "s"}`;
+}
+
+/**
+ * DM header last-seen readout, e.g. "last seen today at 3:42 PM".
+ *
+ * Calendar buckets rather than "x minutes ago", matching `dateDividerLabel`'s
+ * rule so the two readouts never disagree about which day something happened.
+ * The relative phrasing would also go silently stale: the header re-renders on
+ * presence/channel changes, not on a timer, so "5 minutes ago" could sit there
+ * for an hour.
+ *
+ * Returns "" for null/unparseable input so callers can fall back with `||`.
+ */
+export function formatLastSeen(value?: string | Date | null): string {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const time = format(d, "p");
+  if (isToday(d)) return `last seen today at ${time}`;
+  if (isYesterday(d)) return `last seen yesterday at ${time}`;
+  const daysAgo = differenceInCalendarDays(new Date(), d);
+  if (daysAgo > 0 && daysAgo < 7) return `last seen ${format(d, "EEEE")} at ${time}`;
+  return `last seen ${format(d, "d MMM")} at ${time}`;
+}
+
 /** Full date heading, e.g. "Friday, 8 May 2026" (call-details pane). */
 export function formatFullDate(value: string | Date): string {
   const d = new Date(value);

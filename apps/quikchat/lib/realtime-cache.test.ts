@@ -5,6 +5,7 @@ import {
   applyDeliveredEvent,
   applyReadEvent,
   bumpChannelList,
+  dmChannelIdsWithMember,
   markChannelRead,
   mergeMessageEvent,
   patchMessageEvent,
@@ -109,6 +110,20 @@ describe("mergeMessageEvent", () => {
     expect(out).toHaveLength(1);
     expect(out[0]!.id).toBe("real-1");
   });
+
+  it("dedupes stale optimistic and server rows that share the same logical message", () => {
+    const list = [
+      msg({ id: "temp-1", senderId: "me", content: "draft", clientMessageId: "c1" }),
+      msg({ id: "real-1", senderId: "me", content: "final", clientMessageId: "c1" }),
+    ];
+    const out = mergeMessageEvent(
+      list,
+      msg({ id: "real-1", senderId: "me", content: "final", clientMessageId: "c1" }),
+      "me",
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0]!.id).toBe("real-1");
+  });
 });
 
 describe("patchMessageEvent", () => {
@@ -166,6 +181,44 @@ describe("bumpChannelList", () => {
     expect(bumpChannelList(state, "nope", last("m1"), { active: false, fromSelf: false })).toBe(
       state,
     );
+  });
+});
+
+describe("dmChannelIdsWithMember (last-seen invalidation scope)", () => {
+  const user = (id: string) => ({ id, displayName: id, avatarUrl: null });
+  const state: ChannelList = {
+    priority: [chan({ channelId: "dm-pinned", type: "dm", members: [user("me"), user("peer")] })],
+    recent: [
+      chan({ channelId: "dm-peer", type: "dm", members: [user("me"), user("peer")] }),
+      chan({ channelId: "dm-other", type: "dm", members: [user("me"), user("other")] }),
+      // A group containing the peer: last-seen is a 1:1 readout, and the route
+      // rejects non-DMs, so this must never be invalidated.
+      chan({ channelId: "grp", type: "group", members: [user("me"), user("peer")] }),
+    ],
+  };
+
+  it("returns every DM with that member, across priority and recent", () => {
+    expect(dmChannelIdsWithMember(state, "peer").sort()).toEqual(["dm-peer", "dm-pinned"]);
+  });
+
+  it("excludes groups the member belongs to", () => {
+    expect(dmChannelIdsWithMember(state, "peer")).not.toContain("grp");
+  });
+
+  it("excludes DMs the member is not in", () => {
+    expect(dmChannelIdsWithMember(state, "peer")).not.toContain("dm-other");
+  });
+
+  it("returns nothing for a user who shares no DM", () => {
+    expect(dmChannelIdsWithMember(state, "stranger")).toEqual([]);
+  });
+
+  it("never repeats a channel id", () => {
+    const dup: ChannelList = {
+      priority: [chan({ channelId: "dm-1", type: "dm", members: [user("peer"), user("peer")] })],
+      recent: [],
+    };
+    expect(dmChannelIdsWithMember(dup, "peer")).toEqual(["dm-1"]);
   });
 });
 

@@ -30,6 +30,10 @@ export interface RfqPreviewItem {
 }
 
 export interface RfqPreviewVendor {
+  /** RFQ vendor row id — the identity key. Two rows can share the same
+   *  `vendorId` (same vendor added twice), so this is what callers must
+   *  key state/lookups on, not `vendorId`. */
+  id: string;
   vendorId: string;
   vendorName: string;
   email: string | null;
@@ -62,10 +66,17 @@ interface RfqEmailLine {
   specification?: string | null;
 }
 interface RfqEmailVendor {
+  /** Unique id of THIS vendor row (`Rfq_vendors.id`) — the same vendor
+   *  can legitimately be added to an RFQ more than once (e.g. split
+   *  across two item subsets with different terms), so `vendorId`
+   *  alone is not a safe identity key for a row. */
+  id?: string;
   vendorId: string;
   vendorName?: string | null;
   email?: string | null;
   assignedItemIds?: string[] | null;
+  /** Per-vendor T&C override — empty/absent means "use the RFQ default". */
+  termsAndConditions?: string | null;
 }
 interface RfqEmailInput {
   rfqNumber?: string | null;
@@ -77,6 +88,7 @@ interface RfqEmailInput {
   contactMobile?: string | null;
   address?: string | null;
   termsTemplateId?: string | null;
+  termsAndConditions?: string | null;
   lines?: RfqEmailLine[] | null;
   vendors?: RfqEmailVendor[] | null;
 }
@@ -212,6 +224,32 @@ async function resolveRfqTerms(orgId: string): Promise<string | null> {
   return null;
 }
 
+/**
+ * Body to stamp on a vendor's copy of this RFQ's PDF. Preference order:
+ *   1. That vendor's own T&C override (edited specifically for them —
+ *      never touches the master or the RFQ default).
+ *   2. The per-RFQ `termsAndConditions` snapshot — what the raiser saw
+ *      (and possibly edited) on the create drawer.
+ *   3. The picked template, then the tenant default — legacy rows
+ *      created before the snapshot columns existed.
+ */
+async function resolveTermsBodyForRfq(
+  orgId: string,
+  rfq: { termsAndConditions?: unknown; termsTemplateId?: unknown } | null,
+  vendor?: { termsAndConditions?: unknown } | null,
+): Promise<string | null> {
+  const vendorOverride = vendor?.termsAndConditions;
+  if (vendorOverride && String(vendorOverride).trim()) {
+    return String(vendorOverride);
+  }
+  const snapshot = rfq?.termsAndConditions;
+  if (snapshot && String(snapshot).trim()) return String(snapshot);
+  const picked = rfq?.termsTemplateId
+    ? await findTermsBodyById(orgId, String(rfq.termsTemplateId))
+    : null;
+  return picked ?? (await resolveRfqTerms(orgId));
+}
+
 function escapeHtml(s: string): string {
   return String(s ?? "")
     .replace(/&/g, "&amp;")
@@ -245,10 +283,7 @@ export async function buildRfqPreview(
     .filter((id): id is string => !!id);
   const vendorMasters = await findVendorsByIds(orgId, vendorIds);
 
-  const pickedBody = rfq?.termsTemplateId
-    ? await findTermsBodyById(orgId, String(rfq.termsTemplateId))
-    : null;
-  const termsBody = pickedBody ?? (await resolveRfqTerms(orgId));
+  const termsBody = await resolveTermsBodyForRfq(orgId, rfq);
 
   const subject = subjectFor(rfq);
 
@@ -256,7 +291,7 @@ export async function buildRfqPreview(
     const master = v.vendorId ? vendorMasters.get(v.vendorId) : null;
     const email = (v.email || master?.email || "").trim() || null;
     const vendorName =
-      v.vendorName || master?.companyName || master?.name || "Vendor";
+      v.vendorName || master?.name || master?.companyName || "Vendor";
 
     const picked = resolveLinesForVendor(v.assignedItemIds, allLines);
     const items: RfqPreviewItem[] = picked.map((l) => ({
@@ -271,6 +306,7 @@ export async function buildRfqPreview(
     else if (picked.length === 0) skipReason = "no items assigned";
 
     return {
+      id: v.id ?? v.vendorId ?? "",
       vendorId: v.vendorId ?? "",
       vendorName,
       email,
@@ -292,25 +328,30 @@ export async function buildRfqPreview(
 
 /**
  * Generates the per-vendor PDF exactly as `sendRfqEmailsToVendors` would
- * attach it to the email. Returns `null` if the vendor is not on the RFQ
- * or has no items to send.
+ * attach it to the email. Returns `null` if the row isn't on the RFQ or
+ * has no items to send.
+ *
+ * Matches on the RFQ vendor ROW id (`rowId`) when given — required to
+ * disambiguate when the same vendor was added to the RFQ more than
+ * once (different item subsets / different T&C per row). `vendorId` is
+ * accepted as a legacy fallback (matches the FIRST row with that
+ * vendor) for callers that don't have a specific row in hand.
  */
 export async function buildRfqPreviewPdfForVendor(
   orgId: string,
   rfq: RfqEmailInput,
-  vendorId: string,
+  target: { rowId?: string | null; vendorId?: string | null },
 ): Promise<Buffer | null> {
   const vendors: RfqEmailVendor[] = Array.isArray(rfq?.vendors) ? rfq.vendors : [];
-  const v = vendors.find((x) => String(x.vendorId) === String(vendorId));
+  const v = target.rowId
+    ? vendors.find((x) => String(x.id) === String(target.rowId))
+    : vendors.find((x) => String(x.vendorId) === String(target.vendorId));
   if (!v) return null;
 
   const vendorMasters = await findVendorsByIds(orgId, [v.vendorId]);
   const master = vendorMasters.get(v.vendorId) ?? null;
 
-  const pickedBody = rfq?.termsTemplateId
-    ? await findTermsBodyById(orgId, String(rfq.termsTemplateId))
-    : null;
-  const termsBody = pickedBody ?? (await resolveRfqTerms(orgId));
+  const termsBody = await resolveTermsBodyForRfq(orgId, rfq, v);
 
   const allLines: RfqEmailLine[] = Array.isArray(rfq?.lines) ? rfq.lines : [];
   const picked = resolveLinesForVendor(v.assignedItemIds, allLines);
@@ -318,7 +359,7 @@ export async function buildRfqPreviewPdfForVendor(
 
   const email = (v.email || master?.email || "").trim();
   const vendorName =
-    v.vendorName || master?.companyName || master?.name || "Vendor";
+    v.vendorName || master?.name || master?.companyName || "Vendor";
 
   return generateRfqPdf({
     rfq: {
@@ -350,10 +391,14 @@ export async function buildRfqPreviewPdfForVendor(
 export interface SendRfqEmailsOptions {
   /**
    * Optional per-vendor HTML overrides for the cover-email body. Keyed
-   * by `vendorId`. When an entry exists and is non-empty, that vendor
-   * receives the override verbatim instead of the default
-   * `emailBodyHtml(rfq, vendorName)` template — used by the Submit-RFQ
-   * preview modal once the buyer has tweaked an individual email.
+   * by the RFQ vendor ROW id (`v.id`), NOT `vendorId` — the same
+   * vendor can be added to an RFQ more than once (different item
+   * subsets / different T&C per row), so `vendorId` alone would let
+   * one row's edit leak onto another row for the same vendor. When an
+   * entry exists and is non-empty, that row receives the override
+   * verbatim instead of the default `emailBodyHtml(rfq, vendorName)`
+   * template — used by the Submit-RFQ preview modal once the buyer
+   * has tweaked an individual email.
    */
   emailHtmlBodies?: Record<string, string> | null;
 }
@@ -374,27 +419,22 @@ export async function sendRfqEmailsToVendors(
     .map((v) => v.vendorId)
     .filter((id): id is string => !!id);
   const vendorMasters = await findVendorsByIds(orgId, vendorIds);
-  // One T&C lookup for the whole fan-out — every vendor gets the same
-  // template body on the PDF. Preference:
-  //   1. The template the raiser explicitly picked on the create form
-  //      (rfq.termsTemplateId → demo-store row). This is the expected
-  //      path now that the form has a T&C dropdown.
-  //   2. Tenant-level fallback lookup against Prisma (for legacy rows
-  //      that predate the dropdown, or tenants that keep their T&C in
-  //      Prisma rather than demo-store).
-  //   3. The PDF generator's built-in default list (null here).
-  const pickedBody = rfq?.termsTemplateId
-    ? await findTermsBodyById(orgId, String(rfq.termsTemplateId))
-    : null;
-  const termsBody = pickedBody ?? (await resolveRfqTerms(orgId));
 
   const allLines: RfqEmailLine[] = Array.isArray(rfq.lines) ? rfq.lines : [];
 
   for (const v of vendors) {
+    // Resolved per vendor — preference:
+    //   1. That vendor's own T&C override (edited specifically for
+    //      them; the master and the RFQ default stay untouched).
+    //   2. The per-RFQ snapshot saved from the create drawer.
+    //   3. The picked template, then a tenant-level default — legacy
+    //      rows created before the snapshot columns existed.
+    //   4. The PDF generator's built-in default list (null here).
+    const termsBody = await resolveTermsBodyForRfq(orgId, rfq, v);
     const master = v.vendorId ? vendorMasters.get(v.vendorId) : null;
     const email = (v.email || master?.email || "").trim();
     const vendorName =
-      v.vendorName || master?.companyName || master?.name || "Vendor";
+      v.vendorName || master?.name || master?.companyName || "Vendor";
     if (!email) {
       result.skipped.push({
         vendorId: v.vendorId ?? "(unknown)",
@@ -443,8 +483,8 @@ export async function sendRfqEmailsToVendors(
       const filename = `${safeNo}.pdf`;
 
       const overrideHtml =
-        v.vendorId && options?.emailHtmlBodies
-          ? options.emailHtmlBodies[v.vendorId]
+        v.id && options?.emailHtmlBodies
+          ? options.emailHtmlBodies[v.id]
           : undefined;
       const html =
         typeof overrideHtml === "string" && overrideHtml.trim().length > 0

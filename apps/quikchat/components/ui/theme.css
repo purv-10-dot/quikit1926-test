@@ -482,11 +482,37 @@ body {
   min-height: 0;
 }
 .qc-pane-convo {
+  position: relative; /* anchors .qc-drop-overlay */
   flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+}
+/* Pane-wide file-drop affordance. `pointer-events: none` keeps it purely
+   visual — the drag/drop listeners live on .qc-pane-convo itself, and an
+   overlay that could catch its own drag events would throw off the
+   dragenter/dragleave depth counter that drives `dropActive`. */
+.qc-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--qc-accent) 10%, transparent);
+  border: 2px dashed var(--qc-accent);
+  border-radius: inherit;
+}
+.qc-drop-overlay__label {
+  padding: 8px 16px;
+  border-radius: var(--qc-r-md);
+  background: var(--qc-surface);
+  color: var(--qc-text);
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: var(--qc-shadow-card);
 }
 .qc-drawer {
   width: 260px;
@@ -741,6 +767,28 @@ body {
   background: var(--qc-surface-2);
   border-radius: var(--qc-r-pill);
   padding: 3px 10px;
+}
+/* Unread-messages divider: same centered-label idiom as the date divider
+   above, but with a line either side (Teams-style) so it reads as a distinct
+   marker rather than another date pill, using existing tokens only. */
+.qc-unread-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0;
+}
+.qc-unread-divider::before,
+.qc-unread-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--qc-border);
+}
+.qc-unread-divider span {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--qc-accent);
+  white-space: nowrap;
 }
 /* Bubble layout (S14a): own messages right + accent-soft, others left + surface-2. */
 .qc-row {
@@ -2970,6 +3018,24 @@ body {
   font-size: 13px;
   color: var(--qc-text);
   max-width: 240px;
+  min-width: 0; /* so the (truncating) name gives way first when the row is tight */
+}
+/* Upload failed but the file is STILL staged — Send retries it. Same treatment as
+   .qc-assist-error, the app's other persistent failure surface. */
+.qc-attach-chip[data-failed="true"] {
+  border-color: var(--qc-danger);
+  background: color-mix(in srgb, var(--qc-danger) 8%, var(--qc-surface));
+}
+.qc-attach-chip[data-failed="true"] .qc-attach-chip__icon {
+  color: var(--qc-danger);
+}
+.qc-attach-chip__error {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  font-size: 12px;
+  color: var(--qc-danger);
 }
 
 /* Voice-note recording bar — a SIBLING above .qc-composer__box (like the attach
@@ -3018,6 +3084,40 @@ body {
 }
 .qc-voice-bar__spacer {
   flex: 1 1 auto;
+}
+
+/* Voice typing: the privacy note inside the listening bar. Allowed to shrink
+   away on a narrow composer rather than pushing the Stop button off the row. */
+.qc-speech-note {
+  min-width: 0;
+  flex: 0 1 auto;
+  font-size: 11px;
+  color: var(--qc-text-3, var(--qc-text-2));
+}
+
+/* Two-state dictation locale pill ("EN" / "हि"). Sits in the composer's button
+   row, so it matches an IconButton's height and hit area without being one. */
+.qc-speech-lang {
+  flex: none;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 6px;
+  border: 0.5px solid var(--qc-border-strong);
+  border-radius: var(--qc-r-pill);
+  background: transparent;
+  color: var(--qc-text-2);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+.qc-speech-lang:hover:not(:disabled) {
+  background: var(--qc-surface-2);
+  color: var(--qc-text);
+}
+.qc-speech-lang:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* Received voice note: label above the (untouched) native <audio controls>. */

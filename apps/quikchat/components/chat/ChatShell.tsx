@@ -17,7 +17,6 @@ import {
   Popover,
   PresenceIndicator,
   Settings,
-  Sun,
   ToastProvider,
   useToast,
 } from "@/components/ui";
@@ -213,11 +212,6 @@ function ShellInner({
     document.documentElement.setAttribute("data-accent", saved);
   }, []);
 
-  const openSettings = () => {
-    setView("settings");
-    setMenuOpen(false);
-  };
-
   // Single-logout, identical to every other app: clear this app's session
   // cookie + storage, run the auth-host + launcher SLO chain, and land the user
   // back on the QuikChat landing page (not NextAuth's default confirm screen).
@@ -336,12 +330,6 @@ function ShellInner({
                 }}
               >
                 Profile
-              </MenuItem>
-              <MenuItem icon={<Settings size={14} />} onSelect={() => openSettings()}>
-                Settings
-              </MenuItem>
-              <MenuItem icon={<Sun size={14} />} onSelect={() => openSettings()}>
-                Theme
               </MenuItem>
             </Menu>
           </Popover>

@@ -12,6 +12,7 @@ import {
   Search,
 } from "@/components/ui";
 import { useProfile } from "@/components/profile/ProfileProvider";
+import { formatLastSeen } from "@/lib/format";
 import type { EffectiveStatus } from "@/lib/presence-store";
 
 export interface ConversationHeaderProps {
@@ -22,6 +23,12 @@ export interface ConversationHeaderProps {
   statusOf?: (userId: string) => EffectiveStatus;
   /** Excluded from the "N online" count and the DM presence sub-line. */
   currentUserId?: string;
+  /**
+   * DM peer's last-seen instant, already privacy-resolved server-side. Only read
+   * when the peer is offline. null/absent → the plain "Direct message" fallback:
+   * "hidden by privacy" and "never recorded" must look identical here.
+   */
+  lastSeen?: string | null;
   onToggleInfo: () => void;
   /** Open the scheduling modal seeded with the channel's members (S15a). */
   onSchedule?: () => void;
@@ -36,6 +43,7 @@ export function ConversationHeader({
   online,
   statusOf,
   currentUserId,
+  lastSeen,
   onToggleInfo,
   onSchedule,
   onCall,
@@ -53,12 +61,16 @@ export function ConversationHeader({
     !isGroup && online
       ? channel.members.some((m) => m.id !== currentUserId && online.has(m.id))
       : false;
+  // Offline DM only: "last seen today at 3:42 PM", falling back to the static
+  // label when there's no value to show. The "Active now" path is unchanged —
+  // a live peer's last-seen is irrelevant even when one is loaded.
+  const lastSeenLabel = !isGroup && !dmOnline ? formatLastSeen(lastSeen) : "";
   const sub = isGroup
     ? `${channel.members.length} members${onlineCount ? ` · ${onlineCount} online` : ""}`
     : channel.members.length > 0
       ? dmOnline
         ? "Active now"
-        : "Direct message"
+        : lastSeenLabel || "Direct message"
       : "";
 
   return (

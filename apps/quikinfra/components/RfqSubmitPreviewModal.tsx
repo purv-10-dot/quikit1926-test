@@ -29,6 +29,11 @@ interface PreviewItem {
 }
 
 interface PreviewVendor {
+  /** RFQ vendor row id — the identity key for all state/lookups below.
+   *  The same vendor can be added to an RFQ more than once (different
+   *  item subsets / different T&C per row), so `vendorId` alone can't
+   *  tell two rows apart. */
+  id: string;
   vendorId: string;
   vendorName: string;
   email: string | null;
@@ -75,23 +80,27 @@ export function RfqSubmitPreviewModal({
   const [preview, setPreview] = useState<PreviewPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
+  // Identity key for everything below is the RFQ vendor ROW id, not
+  // `vendorId` — the same vendor can be added to an RFQ more than once
+  // (different item subsets / different T&C per row), and keying on
+  // `vendorId` would collapse those distinct rows into one entry.
+  const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [tab, setTab] = useState<"email" | "pdf">("email");
 
-  // Per-vendor edited cover-email bodies. We persist edits across
-  // vendor switches in `bodies` so toggling between recipients in the
+  // Per-row edited cover-email bodies. We persist edits across row
+  // switches in `bodies` so toggling between recipients in the
   // sidebar doesn't lose the user's in-progress changes. The
   // contentEditable div itself stays uncontrolled (writing on every
-  // keystroke would clobber the caret); on each vendor switch /
-  // mount we seed it from `bodies[vendorId]` if present, otherwise
-  // from the default template.
+  // keystroke would clobber the caret); on each row switch / mount we
+  // seed it from `bodies[rowId]` if present, otherwise from the
+  // default template.
   const editorRef = useRef<HTMLDivElement | null>(null);
   const [bodies, setBodies] = useState<Record<string, string>>({});
   const [editedSet, setEditedSet] = useState<Set<string>>(() => new Set());
-  // Tracks which (vendorId, htmlBody) the editor was last seeded
-  // with, so re-renders triggered by unrelated state (submitting /
-  // tab toggles / loadError) don't re-seed and wipe edits.
-  const seededFor = useRef<{ vendorId: string; html: string } | null>(null);
+  // Tracks which (rowId, htmlBody) the editor was last seeded with, so
+  // re-renders triggered by unrelated state (submitting / tab toggles /
+  // loadError) don't re-seed and wipe edits.
+  const seededFor = useRef<{ rowId: string; html: string } | null>(null);
 
   // Lock body scroll while open
   useEffect(() => {
@@ -124,12 +133,12 @@ export function RfqSubmitPreviewModal({
       .then((data) => {
         if (cancelled) return;
         setPreview(data);
-        // Default to the first vendor that would actually receive an
-        // email — falls back to the first vendor overall so the user
-        // can still see why a vendor is being skipped.
+        // Default to the first vendor row that would actually receive
+        // an email — falls back to the first row overall so the user
+        // can still see why a row is being skipped.
         const first =
           data.vendors.find((v) => !v.skipReason) ?? data.vendors[0] ?? null;
-        setSelectedVendorId(first?.vendorId ?? null);
+        setSelectedRowId(first?.id ?? null);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -147,7 +156,7 @@ export function RfqSubmitPreviewModal({
   useEffect(() => {
     if (!open) {
       setPreview(null);
-      setSelectedVendorId(null);
+      setSelectedRowId(null);
       setTab("email");
       setBodies({});
       setEditedSet(new Set());
@@ -156,26 +165,26 @@ export function RfqSubmitPreviewModal({
   }, [open]);
 
   // Capture the current editor HTML into `bodies` before we tear it
-  // down (vendor switch, tab swap, modal close). We use a ref-based
-  // closure instead of state because the latest selectedVendorId is
+  // down (row switch, tab swap, modal close). We use a ref-based
+  // closure instead of state because the latest selectedRowId is
   // needed at unmount time.
   const selectedRefForUnmount = useRef<string | null>(null);
-  selectedRefForUnmount.current = selectedVendorId;
+  selectedRefForUnmount.current = selectedRowId;
   const captureCurrent = () => {
-    const vid = selectedRefForUnmount.current;
-    if (!vid) return;
+    const rid = selectedRefForUnmount.current;
+    if (!rid) return;
     const node = editorRef.current;
     if (!node) return;
     const html = node.innerHTML;
     setBodies((prev) =>
-      prev[vid] === html ? prev : { ...prev, [vid]: html },
+      prev[rid] === html ? prev : { ...prev, [rid]: html },
     );
   };
 
-  // Seed the editor whenever the active vendor changes, the email
-  // tab is on, or fresh preview data arrives. Order:
-  //   1. user-edited body persisted in `bodies[vendorId]`
-  //   2. preview's default htmlBody for that vendor
+  // Seed the editor whenever the active row changes, the email tab is
+  // on, or fresh preview data arrives. Order:
+  //   1. user-edited body persisted in `bodies[rowId]`
+  //   2. preview's default htmlBody for that row
   // Skips re-seeding when `seededFor` matches what we'd write — that
   // keeps in-progress edits alive across re-renders triggered by
   // unrelated state (submitting flag, etc).
@@ -183,25 +192,23 @@ export function RfqSubmitPreviewModal({
     if (!open || tab !== "email") return;
     const node = editorRef.current;
     if (!node) return;
-    const vendor = preview?.vendors.find(
-      (v) => v.vendorId === selectedVendorId,
-    );
+    const vendor = preview?.vendors.find((v) => v.id === selectedRowId);
     if (!vendor) return;
-    const target = bodies[vendor.vendorId] ?? vendor.htmlBody;
+    const target = bodies[vendor.id] ?? vendor.htmlBody;
     if (
-      seededFor.current?.vendorId === vendor.vendorId &&
+      seededFor.current?.rowId === vendor.id &&
       seededFor.current.html === target
     ) {
       return;
     }
     node.innerHTML = target;
-    seededFor.current = { vendorId: vendor.vendorId, html: target };
-  }, [open, tab, selectedVendorId, preview?.vendors, bodies]);
+    seededFor.current = { rowId: vendor.id, html: target };
+  }, [open, tab, selectedRowId, preview?.vendors, bodies]);
 
-  // Capture when the user clicks a different vendor in the sidebar.
-  const handleSelectVendor = (vendorId: string) => {
+  // Capture when the user clicks a different row in the sidebar.
+  const handleSelectVendor = (rowId: string) => {
     captureCurrent();
-    setSelectedVendorId(vendorId);
+    setSelectedRowId(rowId);
   };
   // …and when they switch tabs (the editor unmounts on the PDF tab).
   const handleSelectTab = (next: "email" | "pdf") => {
@@ -209,32 +216,30 @@ export function RfqSubmitPreviewModal({
     setTab(next);
   };
 
-  const markEdited = (vendorId: string) => {
+  const markEdited = (rowId: string) => {
     setEditedSet((prev) => {
-      if (prev.has(vendorId)) return prev;
+      if (prev.has(rowId)) return prev;
       const next = new Set(prev);
-      next.add(vendorId);
+      next.add(rowId);
       return next;
     });
   };
 
   const handleResetEmail = () => {
-    if (!selectedVendorId) return;
-    const vendor = preview?.vendors.find(
-      (v) => v.vendorId === selectedVendorId,
-    );
+    if (!selectedRowId) return;
+    const vendor = preview?.vendors.find((v) => v.id === selectedRowId);
     if (!vendor || !editorRef.current) return;
     editorRef.current.innerHTML = vendor.htmlBody;
-    seededFor.current = { vendorId: vendor.vendorId, html: vendor.htmlBody };
+    seededFor.current = { rowId: vendor.id, html: vendor.htmlBody };
     setBodies((prev) => {
       const next = { ...prev };
-      delete next[vendor.vendorId];
+      delete next[vendor.id];
       return next;
     });
     setEditedSet((prev) => {
-      if (!prev.has(vendor.vendorId)) return prev;
+      if (!prev.has(vendor.id)) return prev;
       const next = new Set(prev);
-      next.delete(vendor.vendorId);
+      next.delete(vendor.id);
       return next;
     });
   };
@@ -245,22 +250,21 @@ export function RfqSubmitPreviewModal({
       onConfirm();
       return;
     }
-    // Build a clean overrides map: only vendors the user actually
-    // edited, only when their body differs from the default and is
-    // non-empty. Falls back to the default per-vendor template
-    // otherwise.
+    // Build a clean overrides map: only rows the user actually edited,
+    // only when their body differs from the default and is non-empty.
+    // Falls back to the default per-row template otherwise. Keyed by
+    // row id — the server matches on the same key (see
+    // `SendRfqEmailsOptions.emailHtmlBodies`).
     const overrides: Record<string, string> = {};
     const live = editorRef.current?.innerHTML ?? "";
     for (const v of preview.vendors) {
-      if (!editedSet.has(v.vendorId) && v.vendorId !== selectedVendorId)
-        continue;
-      const stored =
-        v.vendorId === selectedVendorId ? live : bodies[v.vendorId];
+      if (!editedSet.has(v.id) && v.id !== selectedRowId) continue;
+      const stored = v.id === selectedRowId ? live : bodies[v.id];
       if (typeof stored !== "string") continue;
       const trimmed = stored.trim();
       if (trimmed.length === 0) continue;
       if (trimmed === v.htmlBody.trim()) continue;
-      overrides[v.vendorId] = stored;
+      overrides[v.id] = stored;
     }
     onConfirm(
       Object.keys(overrides).length > 0
@@ -271,13 +275,12 @@ export function RfqSubmitPreviewModal({
 
   if (!open) return null;
 
-  const selected =
-    preview?.vendors.find((v) => v.vendorId === selectedVendorId) ?? null;
+  const selected = preview?.vendors.find((v) => v.id === selectedRowId) ?? null;
 
   const pdfUrl =
     selected && !selected.skipReason
-      ? `/api/purchase/rfqs/${rfqId}/preview/pdf?vendorId=${encodeURIComponent(
-          selected.vendorId,
+      ? `/api/purchase/rfqs/${rfqId}/preview/pdf?rowId=${encodeURIComponent(
+          selected.id,
         )}`
       : null;
 
@@ -343,12 +346,12 @@ export function RfqSubmitPreviewModal({
             )}
             <ul>
               {preview?.vendors.map((v) => {
-                const active = v.vendorId === selectedVendorId;
+                const active = v.id === selectedRowId;
                 return (
-                  <li key={v.vendorId}>
+                  <li key={v.id}>
                     <button
                       type="button"
-                      onClick={() => handleSelectVendor(v.vendorId)}
+                      onClick={() => handleSelectVendor(v.id)}
                       className={`w-full text-left px-4 py-3 border-b border-gray-100 flex items-start gap-3 transition-colors ${
                         active ? "bg-white" : "hover:bg-white/60"
                       }`}
@@ -380,7 +383,7 @@ export function RfqSubmitPreviewModal({
                               • {v.skipReason}
                             </span>
                           )}
-                          {editedSet.has(v.vendorId) && (
+                          {editedSet.has(v.id) && (
                             <span className="ml-1 text-orange-600">• edited</span>
                           )}
                         </div>
@@ -469,7 +472,7 @@ export function RfqSubmitPreviewModal({
                         <Pencil className="w-3 h-3" />
                         Click the body below to edit before sending.
                       </span>
-                      {editedSet.has(selected.vendorId) && (
+                      {editedSet.has(selected.id) && (
                         <button
                           type="button"
                           onClick={handleResetEmail}
@@ -485,7 +488,7 @@ export function RfqSubmitPreviewModal({
                       ref={editorRef}
                       contentEditable={!submitting}
                       suppressContentEditableWarning
-                      onInput={() => markEdited(selected.vendorId)}
+                      onInput={() => markEdited(selected.id)}
                       spellCheck
                       className="px-6 py-5 text-sm text-gray-800 leading-relaxed min-h-[200px] focus:outline-none focus:bg-accent-50 focus:ring-1 focus:ring-inset focus:ring-accent-200"
                     />
@@ -496,7 +499,7 @@ export function RfqSubmitPreviewModal({
                       <strong>{selected.skipReason}</strong>.
                     </div>
                   )}
-                  {editedSet.has(selected.vendorId) && !selected.skipReason && (
+                  {editedSet.has(selected.id) && !selected.skipReason && (
                     <div className="mt-3 rounded-lg border border-orange-200 bg-orange-50 px-4 py-2 text-xs text-orange-800">
                       Your edits will be sent to this vendor instead of the
                       default email.

@@ -41,7 +41,7 @@ import {
   parseReportFormat,
 } from "@/lib/services/reports/format-dispatch";
 
-export const runtime = "nodejs";
+export const runtime = "nodejs";    
 
 export async function GET(req: NextRequest) {
   try {

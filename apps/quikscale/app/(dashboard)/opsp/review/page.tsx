@@ -8,6 +8,7 @@ import {
   fiscalYearLabel,
   QUARTER_STARTS,
 } from "@/lib/utils/fiscal";
+import { useCurrentQuarter } from "@/lib/hooks/useCurrentWeek";
 import { achievedPctColor, formatReviewValue, showOpspReviewOwnerColumn } from "./helpers";
 import { reviewRowVisible } from "./reviewRows";
 import { ReviewPeriodPicker } from "./ReviewPeriodPicker";
@@ -28,6 +29,7 @@ import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 import { resolveReviewAccess } from "./lib/reviewAccess";
 import { AuditLogDrawer } from "@/components/logs/audit-log-drawer";
 import { OPSPHistoryDrawer } from "../components/OPSPHistoryDrawer";
+import { FinalizeStatusBanner } from "../components/FinalizeStatusBanner";
 import { OPSP_FIELD_LABELS } from "@/lib/utils/auditLog";
 import { useSession } from "next-auth/react";
 import { useOpspAck } from "@/lib/hooks/useOpspAck";
@@ -89,6 +91,12 @@ interface PeriodData {
   achievedPct: number | null;
   comment: string | null;
   autoPopulated?: boolean;
+  /** True when this category exists in the lower-horizon source (Quarterly
+   *  Actions) for this period — regardless of whether it has an achieved
+   *  value yet. `false`/`undefined` means the category was never configured
+   *  in Quarterly at all, so Achieved has nothing to ever roll up from and
+   *  should be directly enterable here instead of staying read-only. */
+  hasLowerHorizonSource?: boolean;
   /** Achieved value from the same period one year ago — null when no prior
    *  data was found AND no manual entry exists. */
   lastYearAchieved: number | null;
@@ -473,6 +481,20 @@ export default function OPSPReviewPage() {
   // Permission-driven access: full (OPSP.Review/admin), critical-only (just
   // Critical Review), or none. Drives tab/scope visibility + the picker.
   const myPerms = useMyPermissions();
+  // Same permission the OPSP Form already uses for its own post-finalize edit
+  // override — reused here, not a new permission. Unlike the Form (which locks
+  // for EVERYONE once reviewed, even EditFinalize holders — the plan itself is
+  // meant to be immutable post-submission), Review DATA (actuals/achieved
+  // values) may legitimately need a correction after submission, so
+  // EditFinalize holders keep edit access here.
+  //
+  // Plain grant lookup — NOT useResourcePermissions, whose `canUpdate` is
+  // `isAdmin || has(...)` and would silently bypass this for anyone holding
+  // the admin role, ignoring whether they hold this specific grant. This
+  // must be a pure per-user check (matches the Form page's own
+  // `canEditFinalized`, opsp/page.tsx) — admin or not, only the grant itself
+  // decides.
+  const canEditAfterFinalize = myPerms.has("OPSP.History.EditFinalize", "update");
   const access = resolveReviewAccess({
     isAdmin: myPerms.isAdmin,
     hasReview: myPerms.has("OPSP.Review", "view"),
@@ -481,7 +503,24 @@ export default function OPSPReviewPage() {
   });
   const accessReady = !myPerms.loading;
   const [year, setYear] = useState(getFiscalYear);
-  const [quarter, setQuarter] = useState<string>(getFiscalQuarter);
+  const [quarter, setQuarterRaw] = useState<string>(getFiscalQuarter);
+  // Correct the calendar-derived default (getFiscalQuarter assumes an
+  // April-start fiscal year) to the org's REAL current quarter, resolved
+  // from its actual QuarterSetting date ranges — but only until the user
+  // picks a period themselves via the period picker. Without this, an org
+  // whose fiscal year doesn't start in April (the schema default is
+  // January) lands on the wrong quarter and shows "No OPSP found" even
+  // when the current quarter has data.
+  const userPickedPeriod = useRef(false);
+  const resolvedCurrentQuarter = useCurrentQuarter(year);
+  useEffect(() => {
+    if (userPickedPeriod.current || !resolvedCurrentQuarter) return;
+    setQuarterRaw(resolvedCurrentQuarter);
+  }, [resolvedCurrentQuarter]);
+  const setQuarter = useCallback((q: string) => {
+    userPickedPeriod.current = true;
+    setQuarterRaw(q);
+  }, []);
   const [horizon, setHorizon] = useState<Horizon>("quarter");
   const [viewMode, setViewMode] = useState<ViewMode>("primary");
   // Top-level Review / Critical Review tab.
@@ -644,6 +683,11 @@ export default function OPSPReviewPage() {
   // shows the "OPSP Not Finalized" warning.
   const isCommitted = isFinalized || isReviewed;
   const hasOPSP = !!data?.opspId;
+  // Once submitted ("reviewed"), Achieved/Comments/Last Year Same Period and
+  // the Rocks/Key Initiatives/Key Thrusts drawer become read-only for
+  // everyone except OPSP.History.EditFinalize holders. Before submission
+  // (draft/finalized-not-yet-reviewed), editing is unaffected by this flag.
+  const canEditReviewedData = !isReviewed || canEditAfterFinalize;
 
   /* ── Submit gate (Quarter horizon only) ──
      Enable when every Action row has an achieved value across every period,
@@ -731,6 +775,18 @@ export default function OPSPReviewPage() {
     return row.periods[primaryActiveTab]?.autoPopulated === true;
   }, [data, primaryIdx, primaryActiveTab]);
 
+  /** Whether this category even exists in the lower-horizon source (Quarterly
+   *  Actions) for the active period — regardless of whether it's been
+   *  achieved yet. A category with no lower-horizon counterpart (e.g. a
+   *  Goal-only metric never tracked quarterly) has nothing to ever roll up
+   *  from, so it must NOT be treated the same as "waiting on a rollup". */
+  const isTabLowerHorizonTracked = useMemo(() => {
+    if (!data?.rows) return false;
+    const row = data.rows.find((r) => r.rowIndex === primaryIdx);
+    if (!row) return false;
+    return row.periods[primaryActiveTab]?.hasLowerHorizonSource === true;
+  }, [data, primaryIdx, primaryActiveTab]);
+
   /* ── Open secondary modal ── same useCallback rationale as primary. */
   const openSecondaryModal = useCallback((index: number) => {
     const row = secondaryTableRows[index];
@@ -744,16 +800,27 @@ export default function OPSPReviewPage() {
 
   /* ── Save primary ── */
   async function handlePrimarySave() {
-    if (!data?.opspId) return;
+    if (!data?.opspId || !canEditReviewedData) return;
     setSaving(true);
     try {
       const row = data.rows.find((r) => r.rowIndex === primaryIdx);
+      // Every period always submits `comment` (+ `lastYearSamePeriod` when not
+      // auto) — those are genuinely user-entered on every horizon. `targetValue`/
+      // `achievedValue` are only ever entered on the Quarter horizon; elsewhere
+      // (Yearly/3-5yr, or an auto-populated Quarter-derived period) they're
+      // derived/read-only in the drawer, so we omit the keys entirely rather
+      // than resubmit a value QuikScale itself computed — the API's upsert
+      // already treats an omitted key as "leave this column untouched".
       const entries = Object.entries(primaryEdits)
-        .filter(([period]) => {
-          // Skip auto-populated periods — their achieved values are derived, not user-entered
-          return !row?.periods[period]?.autoPopulated;
-        })
         .map(([period, vals]) => {
+          // Achieved (and the Target key alongside it, harmless either way
+          // since Target itself is never user-edited) is only submittable
+          // when this period isn't a read-only Quarterly rollup — i.e. Quarter
+          // itself, or a Yearly/3-5yr period with no Quarterly counterpart at
+          // all (`hasLowerHorizonSource` false/undefined). Mirrors the drawer's
+          // own `achievedReadOnly` gate so save always matches what was editable.
+          const hasLowerHorizonSource = row?.periods[period]?.hasLowerHorizonSource ?? false;
+          const includeTargetAchieved = !hasLowerHorizonSource;
           // Only persist `lastYearSamePeriod` when the source isn't "auto"
           // — auto means the value comes from the prior-year entry and the
           // drawer disables the input. Sending it would shadow the auto
@@ -762,8 +829,7 @@ export default function OPSPReviewPage() {
           const includeLyp = source !== "auto";
           return {
             period,
-            targetValue: vals.target,
-            achievedValue: vals.achieved,
+            ...(includeTargetAchieved ? { targetValue: vals.target, achievedValue: vals.achieved } : {}),
             ...(includeLyp ? { lastYearSamePeriod: vals.lastYearSamePeriod } : {}),
             comment: vals.comment || null,
           };
@@ -783,7 +849,7 @@ export default function OPSPReviewPage() {
 
   /* ── Save secondary ── */
   async function handleSecondarySave() {
-    if (!data?.opspId) return;
+    if (!data?.opspId || !canEditReviewedData) return;
     setSaving(true);
     try {
       const row = secondaryTableRows[secondaryIdx];
@@ -845,6 +911,15 @@ export default function OPSPReviewPage() {
   const primaryRow = data?.rows.find((r) => r.rowIndex === primaryIdx);
   const primaryDataType = primaryRow?.dataType;
   const primaryCurrency = primaryRow?.currency ?? null;
+  // Achieved is read-only on Yearly/3-5yr ONLY when this category is actually
+  // tracked in Quarterly Actions (`isTabLowerHorizonTracked`) — it's then a
+  // derived rollup, whether or not that rollup has arrived yet
+  // (`isTabAutoPopulated`). A category with NO Quarterly counterpart (e.g. a
+  // Goal-only metric never meant to be tracked quarterly) has nothing to ever
+  // roll up from, so it stays directly editable here instead — same as Quarter.
+  // Once the review is submitted, EVERY period locks too unless the user
+  // holds Edit after Finalize (`canEditReviewedData`).
+  const achievedReadOnly = (horizon !== "quarter" && isTabLowerHorizonTracked) || !canEditReviewedData;
 
   /* ── Column definitions ── */
 
@@ -908,10 +983,11 @@ export default function OPSPReviewPage() {
       align: "center",
       render: (row) => {
         if (!row.isFirstInGroup) return null;
-        // Read-only as plain text when: Yearly/3-5yr (Achieved is derived from
-        // the lower horizon) OR the user lacks OPSP.Review:update. Only an
-        // update-holder editing the Quarter source gets the edit button.
-        if (horizon !== "quarter" || !canUpdateReview) {
+        // Read-only as plain text only when the user lacks OPSP.Review:update.
+        // The drawer opens on all 3 horizons; Target/Achieved render read-only
+        // inside it for Yearly/3-5yr (derived from the lower horizon) — only
+        // Comments/Last Year Same Period are genuinely editable there.
+        if (!canUpdateReview) {
           return <span className="text-gray-700 font-medium">{row.rowIndex + 1}</span>;
         }
         return (
@@ -1414,6 +1490,23 @@ export default function OPSPReviewPage() {
         </div>
       )}
 
+      {/* ── Review-submitted status banner — Review tab only, once "reviewed" ── */}
+      {topTab === "review" && isReviewed && (
+        canEditAfterFinalize ? (
+          <FinalizeStatusBanner
+            tone="amber"
+            title="OPSP Review Finalized — Editing enabled"
+            subtitle="You have permission to edit this reviewed OPSP. Changes will be autosaved."
+          />
+        ) : (
+          <FinalizeStatusBanner
+            tone="green"
+            title="OPSP Review Finalized"
+            subtitle="This OPSP's review has been submitted and is now read-only. All Achieved values are locked."
+          />
+        )
+      )}
+
       {/* ── Critical Review branch — completely independent of the
             Review tab's content area. Owns its own data fetch + sub-tabs. ── */}
       {topTab === "critical" && (
@@ -1580,10 +1673,12 @@ export default function OPSPReviewPage() {
               </div>
               <div>
                 <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
-                  Achieved{isTabAutoPopulated && <span className="ml-1 text-accent-500 normal-case font-normal">(auto-populated from quarterly review)</span>}
+                  Achieved
+                  {isTabAutoPopulated && <span className="ml-1 text-accent-500 normal-case font-normal">(auto-populated from quarterly review)</span>}
+                  {!isTabAutoPopulated && isTabLowerHorizonTracked && <span className="ml-1 text-gray-400 normal-case font-normal">(derived from Quarterly review — not yet available)</span>}
                 </label>
-                {isTabAutoPopulated ? (
-                  <div className="px-3 py-2 bg-accent-50 border border-accent-200 rounded-lg text-xs text-gray-700 font-medium">{formatReviewValue(tabData.achieved, primaryDataType, primaryCurrency)}</div>
+                {achievedReadOnly ? (
+                  <div className={cn("px-3 py-2 border rounded-lg text-xs text-gray-700", isTabAutoPopulated ? "bg-accent-50 border-accent-200 font-medium" : "bg-gray-50 border-gray-200")}>{formatReviewValue(tabData.achieved, primaryDataType, primaryCurrency)}</div>
                 ) : (
                   <input type="number" step="any" value={tabData.achieved ?? ""} onChange={(e) => updatePrimaryField("achieved", e.target.value)} placeholder="Enter value" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-accent-400 focus:border-transparent" />
                 )}
@@ -1600,17 +1695,20 @@ export default function OPSPReviewPage() {
               </div>
               <div>
                 <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Comments</label>
-                <textarea value={tabData.comment ?? ""} onChange={(e) => updatePrimaryField("comment", e.target.value)} placeholder="Enter comment" rows={4} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-accent-400 focus:border-transparent resize-none" />
+                <textarea value={tabData.comment ?? ""} onChange={(e) => updatePrimaryField("comment", e.target.value)} placeholder="Enter comment" rows={4} disabled={!canEditReviewedData} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-accent-400 focus:border-transparent resize-none disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed" />
               </div>
               {/* Last Year Same Period — disabled when the prior-year OPSP
-                  Review supplies the value (source = "auto"). Otherwise the
-                  user can enter / clear it manually and the value persists on
+                  Review supplies the value (source = "auto"), OR when the
+                  review has been submitted and the user lacks Edit after
+                  Finalize (`canEditReviewedData`). Otherwise the user can
+                  enter / clear it manually and the value persists on
                   OPSPReviewEntry.lastYearSamePeriod. */}
               {(() => {
                 const row = data?.rows.find((r) => r.rowIndex === primaryIdx);
                 const periodData = row?.periods[primaryActiveTab];
                 const source = periodData?.lastYearSamePeriodSource ?? "none";
                 const isAuto = source === "auto";
+                const isLocked = !canEditReviewedData;
                 const autoValue = isAuto ? periodData?.lastYearAchieved ?? null : null;
                 const displayValue = isAuto
                   ? (autoValue != null ? autoValue : "")
@@ -1631,12 +1729,14 @@ export default function OPSPReviewPage() {
                       value={displayValue}
                       onChange={(e) => updatePrimaryField("lastYearSamePeriod", e.target.value)}
                       placeholder={isAuto ? "—" : "Enter value"}
-                      disabled={isAuto}
+                      disabled={isAuto || isLocked}
                       className={cn(
                         "w-full px-3 py-2 border rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-accent-400 focus:border-transparent",
                         isAuto
                           ? "bg-accent-50 border-accent-200 text-gray-700 font-medium cursor-not-allowed"
-                          : "border-gray-200",
+                          : isLocked
+                            ? "bg-gray-50 border-gray-200 text-gray-500 cursor-not-allowed"
+                            : "border-gray-200",
                       )}
                     />
                   </div>
@@ -1647,7 +1747,7 @@ export default function OPSPReviewPage() {
             {/* Footer */}
             <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-gray-200 flex-shrink-0">
               <Button size="sm" variant="outline" onClick={() => setPrimaryOpen(false)}>Cancel</Button>
-              <Button size="sm" loading={saving} onClick={handlePrimarySave}>Save Changes</Button>
+              <Button size="sm" loading={saving} disabled={saving || !canEditReviewedData} onClick={handlePrimarySave}>Save Changes</Button>
             </div>
           </div>
         </div>
@@ -1680,17 +1780,18 @@ export default function OPSPReviewPage() {
                 onChange={(e) => setSecondaryStatus(e.target.value)}
                 options={STATUS_SELECT_OPTIONS}
                 placeholder="Select status"
+                disabled={!canEditReviewedData}
               />
               <div>
                 <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Comments</label>
-                <textarea value={secondaryComment} onChange={(e) => setSecondaryComment(e.target.value)} placeholder="Enter comment" rows={4} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-accent-400 focus:border-transparent resize-none" />
+                <textarea value={secondaryComment} onChange={(e) => setSecondaryComment(e.target.value)} placeholder="Enter comment" rows={4} disabled={!canEditReviewedData} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-accent-400 focus:border-transparent resize-none disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed" />
               </div>
             </div>
 
             {/* Footer */}
             <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-gray-200 flex-shrink-0">
               <Button size="sm" variant="outline" onClick={() => setSecondaryOpen(false)}>Cancel</Button>
-              <Button size="sm" loading={saving} onClick={handleSecondarySave}>Save Changes</Button>
+              <Button size="sm" loading={saving} disabled={saving || !canEditReviewedData} onClick={handleSecondarySave}>Save Changes</Button>
             </div>
           </div>
         </div>

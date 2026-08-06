@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   AssistSource,
@@ -15,6 +15,7 @@ import {
   deleteMessageApi,
   editMessageApi,
   fetchChannelDetail,
+  fetchChannelLastSeen,
   ingestDocument,
   fetchMembers,
   fetchPinned,
@@ -37,7 +38,7 @@ import {
 import { whoIsTyping, type TypingState } from "@/lib/typing-store";
 import type { MediaMeta } from "@/lib/server/storage/types";
 import { useProfile } from "@/components/profile/ProfileProvider";
-import { Composer } from "./Composer";
+import { Composer, type ComposerHandle } from "./Composer";
 import { ConversationHeader } from "./ConversationHeader";
 import { ForwardModal } from "./ForwardModal";
 import { InfoDrawer } from "./InfoDrawer";
@@ -55,7 +56,24 @@ export interface ConversationViewProps {
   currentUserId: string;
   messages: MessageDto[] | undefined;
   loadingMessages: boolean;
+  /**
+   * True while `messages` is being (re)fetched, INCLUDING a background
+   * refetch of already-cached data — i.e. `messagesQuery.isFetching`, not
+   * `.isLoading`. `loadingMessages` alone can't gate the unread divider's
+   * resolution: it's false the instant any cached page exists, even a stale
+   * one from a previous visit, which is exactly when `messages` can be
+   * incomplete relative to `openedUnreadCount`. Threaded straight through to
+   * MessageList.
+   */
+  messagesFetching?: boolean;
   channels: ChannelList | undefined;
+  /**
+   * This user's unread count for `channel`, captured the instant it was
+   * opened (before the read-PATCH zeroes it) — see ChatWorkspace's
+   * pickChannel/selectChannel. Threaded straight through to MessageList,
+   * which resolves it to a stable divider position once per mount.
+   */
+  openedUnreadCount?: number;
   /** User ids currently online (shared-channel presence). */
   online?: ReadonlySet<string>;
   /** Effective presence status accessor (rich status dot). Falls back to online-only. */
@@ -113,7 +131,9 @@ export function ConversationView({
   currentUserId,
   messages,
   loadingMessages,
+  messagesFetching,
   channels,
+  openedUnreadCount,
   online,
   statusOf,
   typing,
@@ -153,6 +173,49 @@ export function ConversationView({
   // Scheduling modal (S15a). Seeded with channel members (header button) or one
   // user (profile card "Schedule meeting"), which registers the opener below.
   const [scheduleSeed, setScheduleSeed] = useState<string[] | null>(null);
+
+  // Pane-wide file drop (Slack/Teams/WhatsApp accept a drop anywhere over the
+  // conversation, not just the composer). This view owns the drag listeners
+  // and the overlay; Composer owns the actual staging via one narrow ref
+  // entry point (ComposerHandle.stageExternalFiles) so pending/uploading/
+  // recording stay private to it.
+  const composerRef = useRef<ComposerHandle>(null);
+  const [dropActive, setDropActive] = useState(false);
+  // dragenter/dragleave fire per element as the pointer crosses children
+  // inside the pane (header, message list, composer…) — a depth counter is
+  // the standard way to avoid the overlay flickering off between them.
+  const dropDepthRef = useRef(0);
+
+  /** Only react to a drag that's actually carrying files — `dataTransfer.files`
+   *  itself isn't reliably populated until `drop`, but `types` always is. */
+  function isFileDrag(e: React.DragEvent): boolean {
+    return !!e.dataTransfer?.types?.includes("Files");
+  }
+
+  function handlePaneDragEnter(e: React.DragEvent) {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    dropDepthRef.current += 1;
+    setDropActive(true);
+  }
+  function handlePaneDragOver(e: React.DragEvent) {
+    // Required on every dragover for the element to remain a valid drop
+    // target — without it the browser rejects the eventual `drop`.
+    if (isFileDrag(e)) e.preventDefault();
+  }
+  function handlePaneDragLeave(e: React.DragEvent) {
+    if (!isFileDrag(e)) return;
+    dropDepthRef.current = Math.max(0, dropDepthRef.current - 1);
+    if (dropDepthRef.current === 0) setDropActive(false);
+  }
+  function handlePaneDrop(e: React.DragEvent) {
+    dropDepthRef.current = 0;
+    setDropActive(false);
+    const files = e.dataTransfer?.files;
+    if (!files || files.length === 0) return; // a text-selection drag — leave it alone
+    e.preventDefault();
+    composerRef.current?.stageExternalFiles(files);
+  }
 
   // Register THIS (active) channel's scheduler so the profile card's "Schedule
   // meeting" opens here seeded with that user; clear it on unmount/switch.
@@ -208,6 +271,33 @@ export function ConversationView({
     queryKey: ["members", channelId],
     queryFn: () => fetchMembers(channelId),
     enabled: infoOpen,
+  });
+
+  // DM last-seen (header sub-line). Fetched ONLY for a real DM whose peer is
+  // currently offline: an online peer reads "Active now" regardless, and groups /
+  // AI chats have no single peer. The query re-enables on its own when presence
+  // flips the peer offline. Privacy is resolved server-side — this is just a
+  // string or null.
+  //
+  // NO `staleTime`: the default 0 is load-bearing here, not an oversight. This
+  // query's subscriber switches off and on with presence, and the answer is
+  // privacy-gated — the peer can revoke `shareLastSeen` with NO event reaching us,
+  // because a privacy-only PUT deliberately skips the presence fan-out. Any
+  // non-zero window let a re-subscribing observer be served a cached answer that
+  // privacy had since changed, which is how a 60s cache became an indefinite leak
+  // (nothing refetches on staleness alone). It also makes the fix in
+  // ChatWorkspace's presence handlers order-independent: an invalidation that
+  // lands while this query is still disabled only marks it stale, and stale is
+  // enough to force the refetch when presence re-enables it a render later.
+  const dmPeerId =
+    channel.type === "dm"
+      ? channel.members.find((m) => m.id !== currentUserId)?.id
+      : undefined;
+  const dmPeerOnline = dmPeerId ? !!online?.has(dmPeerId) : false;
+  const lastSeenQuery = useQuery({
+    queryKey: ["last-seen", channelId],
+    queryFn: () => fetchChannelLastSeen(channelId),
+    enabled: !!dmPeerId && !dmPeerOnline,
   });
   const detailQuery = useQuery({
     queryKey: ["channel-detail", channelId],
@@ -304,12 +394,24 @@ export function ConversationView({
 
   return (
     <>
-      <section className="qc-pane-convo">
+      <section
+        className="qc-pane-convo"
+        onDragEnter={handlePaneDragEnter}
+        onDragOver={handlePaneDragOver}
+        onDragLeave={handlePaneDragLeave}
+        onDrop={handlePaneDrop}
+      >
+        {dropActive ? (
+          <div className="qc-drop-overlay" aria-hidden="true">
+            <span className="qc-drop-overlay__label">Drop file to attach</span>
+          </div>
+        ) : null}
         <ConversationHeader
           channel={channel}
           online={online}
           statusOf={statusOf}
           currentUserId={currentUserId}
+          lastSeen={lastSeenQuery.data?.lastSeen ?? null}
           onToggleInfo={() => setInfoOpen((v) => !v)}
           onSchedule={isAiChat ? undefined : () => setScheduleSeed(channel.members.map((m) => m.id))}
           onCall={isAiChat ? undefined : onCall}
@@ -322,7 +424,10 @@ export function ConversationView({
           </div>
         ) : (
           <MessageList
-            key={channelId}
+            // Prefixed so this can't collide with Composer's key below — React's
+            // key uniqueness spans ALL siblings of one parent, across component
+            // types. Still channel-scoped, so the remount-per-switch stands.
+            key={`ml-${channelId}`}
             messages={messages ?? []}
             currentUserId={currentUserId}
             members={channel.members}
@@ -330,6 +435,8 @@ export function ConversationView({
             memberDeliveredAt={channel.memberDeliveredAt}
             loading={loadingMessages}
             actions={actions}
+            openedUnreadCount={openedUnreadCount}
+            messagesFetching={messagesFetching}
           />
         )}
         {replyTarget ? (
@@ -419,7 +526,10 @@ export function ConversationView({
           // builds the editor (and `Placeholder.configure`) once per mount and
           // never re-reads the prop, so without this the placeholder — and any
           // half-typed text — stays frozen on whichever channel was open first.
-          key={channelId}
+          // Prefixed to stay distinct from MessageList's key (same parent).
+          key={`composer-${channelId}`}
+          ref={composerRef}
+          currentUserId={currentUserId}
           members={mentionableMembers(
             channel.members.map((m) => ({ id: m.id, displayName: m.displayName })),
             currentUserId,

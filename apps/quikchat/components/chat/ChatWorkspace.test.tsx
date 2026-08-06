@@ -3,6 +3,7 @@ import type { ChannelListItem } from "@/lib/shared";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ToastProvider } from "@/components/ui";
 
 // createClientSpy counts how many times the realtime socket is constructed —
 // Bug 1 asserts it's exactly once per session (no disconnect/recreate churn).
@@ -137,12 +138,14 @@ function renderWorkspace() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <ChatWorkspace
-        currentUserId="u-me"
-        currentUserName="Alice"
-        workspaceName="Acme"
-        realtimeUrl="http://rt"
-      />
+      <ToastProvider>
+        <ChatWorkspace
+          currentUserId="u-me"
+          currentUserName="Alice"
+          workspaceName="Acme"
+          realtimeUrl="http://rt"
+        />
+      </ToastProvider>
     </QueryClientProvider>,
   );
 }
@@ -204,5 +207,52 @@ describe("ChatWorkspace group-live (new-channel first message)", () => {
     // onMessage saw an unknown channel → invalidated ["channels"] → refetch →
     // the group row appears live.
     expect(await screen.findByText("Team Rocket")).toBeInTheDocument();
+  });
+});
+
+describe("ChatWorkspace group call live notification (CALL-3 §3)", () => {
+  it("ignores call_group_started for a call we ourselves started", async () => {
+    renderWorkspace();
+    await screen.findByRole("button", { name: "New direct message" });
+
+    act(() => {
+      fireClientEvent("call_group_started", {
+        callId: "call-1",
+        channelId: "grp1",
+        initiatorId: "u-me",
+        type: "video",
+      });
+    });
+
+    expect(screen.queryByText(/Group call started/)).not.toBeInTheDocument();
+  });
+
+  it("shows a joinable toast when another member starts a group call, and clicking it opens the call window", async () => {
+    remotePresent = true;
+    renderWorkspace();
+    // Get "grp1" → "Team Rocket" into the channels cache before the event fires.
+    await screen.findByText("Team Rocket");
+
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
+
+    act(() => {
+      fireClientEvent("call_group_started", {
+        callId: "call-1",
+        channelId: "grp1",
+        initiatorId: "u-bob",
+        type: "video",
+      });
+    });
+
+    // Click the toast's title text; the click bubbles to the toast's own
+    // onClick handler (the toast div itself, not this text node, owns it).
+    const toastTitle = await screen.findByText(/Group call started in #Team Rocket/);
+    fireEvent.click(toastTitle);
+
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    const [url] = openSpy.mock.calls[0]!;
+    expect(String(url)).toContain("/call/call-1?");
+    expect(String(url)).toContain("group=1");
+    expect(String(url)).toContain("myUserId=u-me");
   });
 });

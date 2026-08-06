@@ -8,7 +8,7 @@ import {
   countLabourRates,
   createLabourRate,
 } from "@/lib/masters/labour-rates-repository";
-import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 
 export async function GET(req: NextRequest) {
   const ctxOrResp = await requireMastersAction("construction.master_labour", "view");
@@ -36,6 +36,7 @@ export async function GET(req: NextRequest) {
     searchParams,
     ["effectiveFrom", "rate", "rateType", "approvalStatus", "createdAt"],
     { field: "effectiveFrom", order: "desc" },
+    NEWEST_FIRST_TIEBREAK,
   );
   const result = await paginateDb(
     parsePagination(req),

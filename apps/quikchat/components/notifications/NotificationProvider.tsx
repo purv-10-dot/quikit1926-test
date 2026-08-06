@@ -160,6 +160,9 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
           title: `QuikChat — ${channelLabel(n)}`,
           body: [fullSummary(n), n.preview].filter(Boolean).join(" — "),
           tag: n.channelId ?? n.id,
+          // Distinct from `tag` (which falls back to a message id): the desktop
+          // bridge turns this into its `quikchat://open/<channelId>` deep link.
+          channelId: n.channelId,
           onClick: () => openChannel(n.channelId, n.messageId),
         });
       }

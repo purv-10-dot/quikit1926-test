@@ -4,14 +4,33 @@
  * Verification is timing-safe and rejects tampering + expiry.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { logger } from "@/lib/shared";
 
 /**
  * The HMAC secret used to sign/verify upload + download tokens — shared by every
  * app-proxied storage driver (local + GCS) so both resolve the same secret from
- * one place. Dev fallback is intentional; production sets `UPLOAD_TOKEN_SECRET`.
+ * one place. Dev fallback is intentional; production sets `UPLOAD_TOKEN_SECRET`
+ * (and `instrumentation.ts` refuses to boot in production without it — this
+ * fallback is reached only in dev/test, where we still warn once so it's never
+ * silent).
  */
+let warnedFallback = false;
+
 export function uploadTokenSecret(): string {
-  return process.env.UPLOAD_TOKEN_SECRET || "dev-only-upload-secret-change-me";
+  const secret = process.env.UPLOAD_TOKEN_SECRET;
+  if (secret) return secret;
+  if (!warnedFallback) {
+    warnedFallback = true;
+    logger.warn(
+      "UPLOAD_TOKEN_SECRET is unset — signing upload/download tokens with a hardcoded dev secret",
+    );
+  }
+  return "dev-only-upload-secret-change-me";
+}
+
+/** Test hook: drop the warn-once latch so a test can re-observe the warning. */
+export function __resetUploadTokenSecretWarnForTest(): void {
+  warnedFallback = false;
 }
 
 export interface UploadTokenPayload {

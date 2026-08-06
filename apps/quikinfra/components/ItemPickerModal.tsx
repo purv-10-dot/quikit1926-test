@@ -137,13 +137,13 @@ export function ItemPickerModal({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search items…"
-              className="w-full text-xs pl-7 pr-2 py-1.5 border border-gray-200 rounded-lg bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full text-xs pl-7 pr-2 py-1.5 border border-gray-200 rounded-lg bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-accent-500"
             />
           </div>
           <button
             type="button"
             onClick={selectAll}
-            className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 px-2"
+            className="text-xs font-semibold text-accent-600 hover:text-accent-800 px-2"
           >
             Select all
           </button>

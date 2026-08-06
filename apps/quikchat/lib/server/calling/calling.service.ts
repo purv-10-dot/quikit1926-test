@@ -535,9 +535,13 @@ export async function listHistory(ctx: OrgContext): Promise<CallHistoryItem[]> {
     // 1:1 is decided by participant count, NOT by channelId — a DM call carries
     // its channel id too, so channelId presence doesn't imply a group call.
     const isGroup = call.participants.length !== 2;
-    const other = isGroup
-      ? undefined
-      : users.get(call.participants.find((p) => p.userId !== ctx.userId)?.userId ?? "");
+    // Kept as its own binding (not inlined into the users.get below) because the
+    // raw id is now returned too — the history pane's quick-reply needs it to
+    // find-or-create the DM when the call carried no channel.
+    const otherUserId = isGroup
+      ? null
+      : (call.participants.find((p) => p.userId !== ctx.userId)?.userId ?? null);
+    const other = otherUserId ? users.get(otherUserId) : undefined;
     const name = isGroup
       ? ((call.channelId ? channelNames.get(call.channelId) : null) ?? "Group call")
       : (other?.displayName ?? "Unknown");
@@ -553,6 +557,8 @@ export async function listHistory(ctx: OrgContext): Promise<CallHistoryItem[]> {
       // Unanswered calls have no talk time; normalize 0 to null so the UI hides it.
       durationSeconds: call.duration && call.duration > 0 ? call.duration : null,
       status,
+      channelId: call.channelId ?? null,
+      otherUserId,
     };
   });
 }

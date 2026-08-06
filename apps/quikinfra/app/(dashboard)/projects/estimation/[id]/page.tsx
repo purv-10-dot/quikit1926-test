@@ -11,6 +11,9 @@
  */
 
 import { formatDateTimeIST } from "@/lib/format/datetime";
+import { MasterApprovalAction } from "@/components/MasterApprovalAction";
+import { usePermissions } from "@/hooks/use-permissions";
+import { RepairApprovalNotice } from "@/components/RepairApprovalNotice";
 import { useParams } from "next/navigation";
 import {
   Check,
@@ -48,6 +51,7 @@ const HEADER_PILL =
 
 export default function EstimationDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const { me } = usePermissions();
   const {
     router,
     estimation,
@@ -75,6 +79,7 @@ export default function EstimationDetailPage() {
     isApproved,
     isRejected,
     baseLocked,
+    lockReason,
     materials,
     editTotals,
     openWorkflow,
@@ -175,11 +180,7 @@ export default function EstimationDetailPage() {
                         ? `${PILL_TONE.disabled} cursor-not-allowed`
                         : `${PILL_TONE.blue} hover:bg-orange-100`
                     }`}
-                    title={
-                      baseLocked
-                        ? "Locked — estimation is approved"
-                        : "Edit estimation"
-                    }
+                    title={baseLocked ? lockReason ?? "Locked" : "Edit estimation"}
                   >
                     <Pencil className="w-4 h-4" /> Edit
                   </button>
@@ -193,6 +194,13 @@ export default function EstimationDetailPage() {
                     <Send className="w-4 h-4" /> Submit for Approval
                   </button>
                 )}
+                <MasterApprovalAction
+                  approval={estimation?.approval}
+                  me={me}
+                  entityLabel="estimation"
+                  actionEndpoint={`/api/estimations/${id}/approve`}
+                  invalidateKeys={[["estimations"], ["estimation", id]]}
+                />
                 {isPending && canApprove && (
                   <>
                     <button
@@ -233,6 +241,14 @@ export default function EstimationDetailPage() {
             in a right sidebar so reviewers always see the audit trail
             next to the totals without scrolling. Collapses to a single
             column under lg. */}
+        <RepairApprovalNotice
+          repair={estimation?.approval?.repair}
+          entityLabel="estimation"
+          actionEndpoint={`/api/estimations/${id}/approve`}
+          invalidateKeys={[["estimations"], ["estimation", id]]}
+          me={me}
+        />
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className={`${isEditing ? "lg:col-span-3" : "lg:col-span-2"} space-y-6`}>
           {/* Inline save-error banner — surfaces failures from the edit

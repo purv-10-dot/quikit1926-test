@@ -20,9 +20,21 @@
  * `value` as a fallback for pure-code options). Keyboard: Enter
  * commits the highlighted option, Escape closes, Arrow Up/Down moves
  * the highlight.
+ *
+ * The dropdown panel renders through a portal into `document.body`,
+ * positioned from the trigger's bounding rect (same pattern as
+ * `GroupedMaterialSelect`). Rendering inline with `position: absolute`
+ * broke when this select sits inside a repeated card row (e.g. the
+ * RFQ/PO Vendors grid) — later sibling rows/sections painted on top of
+ * the open dropdown instead of the dropdown winning purely on z-index,
+ * since intervening ancestors don't all form one stacking context.
+ * Anchoring to the viewport with `position: fixed` sidesteps that
+ * entirely, and also stops the panel being clipped by any scrollable
+ * ancestor (the drawer body, in particular).
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown, Search, X as XIcon } from "lucide-react";
 
 export interface Option {
@@ -47,6 +59,53 @@ export interface SearchableSelectProps {
   emptyText?: string;
 }
 
+type PanelPosition = {
+  top?: number;
+  bottom?: number;
+  left: number;
+  width: number;
+  maxHeight: number;
+};
+
+const ESTIMATED_PANEL_HEIGHT = 240;
+
+function usePanelPosition(
+  open: boolean,
+  triggerRef: React.RefObject<HTMLElement>,
+): PanelPosition | null {
+  const [pos, setPos] = useState<PanelPosition | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open || typeof window === "undefined") {
+      setPos(null);
+      return;
+    }
+    const update = () => {
+      const r = triggerRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const vh = window.innerHeight;
+      const spaceBelow = vh - r.bottom;
+      const spaceAbove = r.top;
+      if (spaceBelow >= ESTIMATED_PANEL_HEIGHT || spaceBelow >= spaceAbove) {
+        const maxHeight = Math.max(120, Math.min(ESTIMATED_PANEL_HEIGHT, spaceBelow - 8));
+        setPos({ top: r.bottom + 4, left: r.left, width: r.width, maxHeight });
+      } else {
+        const maxHeight = Math.max(120, Math.min(ESTIMATED_PANEL_HEIGHT, spaceAbove - 8));
+        setPos({ bottom: vh - r.top + 4, left: r.left, width: r.width, maxHeight });
+      }
+    };
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [open, triggerRef]);
+
+  return pos;
+}
+
 export function SearchableSelect({
   value,
   onChange,
@@ -62,7 +121,11 @@ export function SearchableSelect({
   const [query, setQuery] = useState("");
   const [highlight, setHighlight] = useState(0);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const panelPos = usePanelPosition(open, triggerRef);
 
   const selected = useMemo(
     () => options.find((o) => o.value === value) ?? null,
@@ -79,11 +142,14 @@ export function SearchableSelect({
     );
   }, [options, query]);
 
-  // Close when clicking outside.
+  // Close when clicking outside the trigger AND the (portalled) panel.
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (wrapRef.current?.contains(t)) return;
+      if (panelRef.current?.contains(t)) return;
+      setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -138,6 +204,7 @@ export function SearchableSelect({
   return (
     <div ref={wrapRef} className={`relative ${className}`}>
       <button
+        ref={triggerRef}
         type="button"
         disabled={disabled}
         onClick={() => !disabled && setOpen((o) => !o)}
@@ -165,48 +232,65 @@ export function SearchableSelect({
         </span>
       </button>
 
-      {open && (
-        <div className="absolute z-50 mt-1 w-full rounded-lg border border-gray-200 bg-white shadow-lg">
-          <div className="px-2 py-2 border-b border-gray-100">
-            <div className="flex items-center gap-2 px-2 py-1.5 rounded-md border border-gray-200 bg-gray-50 focus-within:bg-white focus-within:ring-2 focus-within:ring-accent-500">
-              <Search className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-              <input
-                ref={inputRef}
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={onKeyDown}
-                placeholder="Search…"
-                className="flex-1 bg-transparent text-sm outline-none placeholder:text-gray-400"
-              />
-            </div>
-          </div>
-          <div className="max-h-60 overflow-y-auto py-1">
-            {filtered.length === 0 ? (
-              <div className="px-3 py-6 text-center text-xs text-gray-400">
-                {emptyText}
+      {open &&
+        panelPos &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            ref={panelRef}
+            style={{
+              position: "fixed",
+              top: panelPos.top,
+              bottom: panelPos.bottom,
+              left: panelPos.left,
+              width: panelPos.width,
+            }}
+            className="z-[100] rounded-lg border border-gray-200 bg-white shadow-lg flex flex-col"
+          >
+            <div className="px-2 py-2 border-b border-gray-100 shrink-0">
+              <div className="flex items-center gap-2 px-2 py-1.5 rounded-md border border-gray-200 bg-gray-50 focus-within:bg-white focus-within:ring-2 focus-within:ring-accent-500">
+                <Search className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                <input
+                  ref={inputRef}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={onKeyDown}
+                  placeholder="Search…"
+                  className="flex-1 bg-transparent text-sm outline-none placeholder:text-gray-400"
+                />
               </div>
-            ) : (
-              filtered.map((o, idx) => {
-                const isActive = idx === highlight;
-                const isSelected = o.value === value;
-                return (
-                  <button
-                    key={o.value}
-                    type="button"
-                    onClick={() => commit(o.value)}
-                    onMouseEnter={() => setHighlight(idx)}
-                    className={`w-full text-left px-3 py-1.5 text-sm flex items-center gap-2 ${
-                      isActive ? "bg-accent-50 text-accent-900" : "hover:bg-gray-50 text-gray-800"
-                    } ${isSelected ? "font-semibold" : ""}`}
-                  >
-                    <span className="truncate">{o.label}</span>
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </div>
-      )}
+            </div>
+            <div
+              className="overflow-y-auto py-1"
+              style={{ maxHeight: panelPos.maxHeight }}
+            >
+              {filtered.length === 0 ? (
+                <div className="px-3 py-6 text-center text-xs text-gray-400">
+                  {emptyText}
+                </div>
+              ) : (
+                filtered.map((o, idx) => {
+                  const isActive = idx === highlight;
+                  const isSelected = o.value === value;
+                  return (
+                    <button
+                      key={o.value}
+                      type="button"
+                      onClick={() => commit(o.value)}
+                      onMouseEnter={() => setHighlight(idx)}
+                      className={`w-full text-left px-3 py-1.5 text-sm flex items-center gap-2 ${
+                        isActive ? "bg-accent-50 text-accent-900" : "hover:bg-gray-50 text-gray-800"
+                      } ${isSelected ? "font-semibold" : ""}`}
+                    >
+                      <span className="truncate">{o.label}</span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

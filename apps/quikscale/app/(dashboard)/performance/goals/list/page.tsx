@@ -19,6 +19,7 @@ import { useGoals, useCreateGoal, useUpdateGoal, useDeleteGoal } from "@/lib/hoo
 import { useUsers } from "@/lib/hooks/useUsers";
 import { AddButton, EmptyState, useConfirm, Pagination, DEFAULT_PAGE_SIZE } from "@quikit/ui";
 import { getFiscalYear, getFiscalQuarter } from "@/lib/utils/fiscal";
+import { useCurrentQuarter } from "@/lib/hooks/useCurrentWeek";
 import { GOAL_STATUSES, type GoalStatus } from "@/lib/schemas/goalSchema";
 
 interface GoalRow {
@@ -52,8 +53,14 @@ export default function GoalsPage() {
   const confirm = useConfirm();
 
   const [scope, setScope] = useState<"me" | "all">("me");
-  const [year] = useState(getFiscalYear());
-  const [quarter] = useState<string | "">(getFiscalQuarter());
+  const year = getFiscalYear();
+  // getFiscalQuarter() assumes an April-start fiscal year; resolve the org's
+  // REAL current quarter from its actual QuarterSetting date ranges instead,
+  // falling back to the calendar guess while loading / if unresolved. An org
+  // whose fiscalYearStart isn't April (schema default is January) otherwise
+  // permanently filters this page to the wrong quarter — there's no picker
+  // here to work around it, unlike other pages.
+  const quarter = useCurrentQuarter(year) ?? getFiscalQuarter();
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState("createdAt:desc");
   const [page, setPage] = useState(1);

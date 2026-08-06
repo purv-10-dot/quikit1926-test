@@ -29,6 +29,16 @@ function getTransporter(): Transporter | null {
     auth: { user, pass },
     requireTLS: !secure,
     tls: ciphers ? { ciphers } : undefined,
+    // Pooled + bounded concurrency. Without this, nodemailer opens a NEW
+    // connection per `sendMail`, so notifying N assignees in parallel opened N
+    // simultaneous connections. Office365 caps concurrent connections per
+    // mailbox (~3) and rejects the overflow, which meant some assignees never
+    // received their email. The pool reuses connections and queues anything
+    // above `maxConnections` instead of failing it — so a 10-assignee item
+    // still delivers all 10, just sequenced.
+    pool: true,
+    maxConnections: 2,
+    maxMessages: 100,
   });
 
   console.log(
@@ -398,4 +408,96 @@ function escapeHtml(s: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+// ── Rockefeller Habits assessment ────────────────────────────────────────────
+
+export type HabitCampaignEvent = "created" | "launched" | "deadline_changed" | "closed";
+
+export interface HabitCampaignEmailParams {
+  recipientName: string;
+  /** e.g. "Q2 2026". */
+  periodLabel: string;
+  actorName: string;
+  /** Formatted deadline, or null when none is set. */
+  deadlineLabel: string | null;
+  campaignUrl?: string;
+}
+
+/**
+ * One builder for all four campaign lifecycle events — the body differs only in
+ * its headline and lead sentence, so a single template keeps them consistent.
+ *
+ * `created` deliberately says the assessment is being PREPARED rather than
+ * asking anyone to fill it in: members cannot submit to a draft (the API
+ * rejects it until launch), so promising otherwise would send them to a dead end.
+ */
+export function buildHabitCampaignEmail(
+  event: HabitCampaignEvent,
+  { recipientName, periodLabel, actorName, deadlineLabel, campaignUrl }: HabitCampaignEmailParams,
+) {
+  const copy: Record<HabitCampaignEvent, { subject: string; lead: string; cta: string | null }> = {
+    created: {
+      subject: `A Rockefeller Habits assessment is being prepared for ${periodLabel}`,
+      lead: `${actorName} created the ${periodLabel} Rockefeller Habits assessment. You'll be notified again once it opens for responses.`,
+      cta: null,
+    },
+    launched: {
+      subject: `The ${periodLabel} Rockefeller Habits assessment is open`,
+      lead: `${actorName} opened the ${periodLabel} Rockefeller Habits assessment. Your responses are anonymous — only the aggregate is shown.`,
+      cta: "Fill it in",
+    },
+    deadline_changed: {
+      subject: `Deadline updated — ${periodLabel} Rockefeller Habits assessment`,
+      lead: `${actorName} changed the deadline for the ${periodLabel} Rockefeller Habits assessment.`,
+      cta: "Fill it in",
+    },
+    closed: {
+      subject: `The ${periodLabel} Rockefeller Habits assessment is closed`,
+      lead: `${actorName} closed the ${periodLabel} Rockefeller Habits assessment. No further responses are accepted.`,
+      cta: "View results",
+    },
+  };
+  const { subject, lead, cta } = copy[event];
+  const deadlineLine = deadlineLabel ? `Deadline: ${deadlineLabel}` : "Deadline: not set";
+
+  const text = [
+    `Hi ${recipientName},`,
+    "",
+    lead,
+    "",
+    event === "closed" ? "" : deadlineLine,
+    "",
+    campaignUrl ? `Open it here: ${campaignUrl}` : "",
+    "",
+    "— QuikScale",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const html = `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#0f172a;">
+      <h2 style="margin:0 0 16px;font-size:20px;color:#0f172a;">${escapeHtml(subject)}</h2>
+      <p style="margin:0 0 16px;line-height:1.5;">Hi <strong>${escapeHtml(recipientName)}</strong>,</p>
+      <p style="margin:0 0 16px;line-height:1.5;">${escapeHtml(lead)}</p>
+      <table style="border-collapse:collapse;margin:0 0 16px;">
+        <tbody>
+          <tr><td style="padding:6px 12px 6px 0;color:#64748b;">Assessment</td><td style="padding:6px 0;font-weight:600;">${escapeHtml(periodLabel)} Rockefeller Habits</td></tr>
+          ${
+            event === "closed"
+              ? ""
+              : `<tr><td style="padding:6px 12px 6px 0;color:#64748b;">Deadline</td><td style="padding:6px 0;font-weight:600;">${escapeHtml(deadlineLabel ?? "Not set")}</td></tr>`
+          }
+        </tbody>
+      </table>
+      ${
+        campaignUrl && cta
+          ? `<p style="margin:24px 0;"><a href="${escapeHtml(campaignUrl)}" style="background:#0066cc;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:600;">${escapeHtml(cta)}</a></p>`
+          : ""
+      }
+      <p style="margin:24px 0 0;color:#94a3b8;font-size:12px;">This is an automated notification from QuikScale.</p>
+    </div>
+  `;
+
+  return { subject, html, text };
 }

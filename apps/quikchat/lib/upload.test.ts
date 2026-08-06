@@ -126,4 +126,18 @@ describe("uploadFile", () => {
     expect(meta.mediaType).toBe("application/octet-stream");
     expect(meta.originalName).toBe("script.py");
   });
+
+  it("rejects a malformed sign response instead of crashing on null headers", async () => {
+    signUploadApi.mockResolvedValue({
+      uploadUrl: "/api/uploads/local/tok",
+      method: "PUT",
+      headers: null,
+      objectPath: "quikchat/o/c/uuid-bad.png",
+      maxBytes: 1024,
+      expiresAt: new Date().toISOString(),
+    });
+    const file = new File(["bytes"], "a.png", { type: "image/png" });
+
+    await expect(uploadFile(file, "c1")).rejects.toThrow(/upload target/i);
+  });
 });
