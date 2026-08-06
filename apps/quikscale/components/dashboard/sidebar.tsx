@@ -257,6 +257,7 @@ function NavGroup({ item }: { item: NavItem }) {
     return (
       <Link href={item.href!}
         data-tour={item.tourId}
+        data-tour-module={item.moduleKey}
         className={cn(
           "flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors min-w-0",
           isActive ? "bg-accent-50 text-accent-700" : "text-gray-700 hover:bg-gray-50"
@@ -269,7 +270,7 @@ function NavGroup({ item }: { item: NavItem }) {
 
   // Group with children
   return (
-    <div data-tour={item.tourId}>
+    <div data-tour={item.tourId} data-tour-module={item.moduleKey}>
       <div className={cn(
         "flex items-center rounded-md transition-colors",
         isActive ? "text-accent-700" : "text-gray-700",
