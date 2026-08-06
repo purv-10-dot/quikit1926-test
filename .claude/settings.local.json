@@ -9,7 +9,10 @@
       "Bash(npm run *)",
       "Bash(DATABASE_URL='postgresql://postgres:sa%40123@localhost:5432/quikit_dev' npx tsx prisma/seed-moreyeahs.ts)",
       "WebFetch(domain:unpkg.com)",
-      "Bash(node --check linkedIn.js)"
+      "Bash(node --check linkedIn.js)",
+      "Bash(echo \"=== lint exit: $? ===\")",
+      "Bash(awk '/^model CrmLead \\\\{/,/^\\\\}/' packages/database/prisma/schema.prisma)",
+      "Bash(DATABASE_URL=\"postgresql://u:p@localhost:5432/d\" DATABASE_URL_DIRECT=\"postgresql://u:p@localhost:5432/d\" npx prisma validate)"
     ],
     "additionalDirectories": [
       "c:\\wwwwwwwwww\\Authmergewithmainbranch\\QuikIT\\apps\\auth\\app\\api\\auth\\me"

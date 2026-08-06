@@ -44,6 +44,9 @@ const fromLinkedinSchema = z.object({
   posts: jsonValue.optional(),
   companyData: jsonValue.optional(),
   experiences: jsonValue.optional(),
+  // ICP chosen in the extension before saving. Optional — saving without one is
+  // valid and leaves the prospect (and any lead converted from it) untagged.
+  icpId: z.string().trim().optional(),
   // Accepted for backward-compat with the current extension payload; not used
   // by the prospect record itself.
   searchEmailEnabled: z.boolean().optional(),
@@ -123,6 +126,24 @@ export async function POST(request: NextRequest) {
     const linkedinUrl = clean(data.linkedinUrl);
     const savedByName = extUser.name || extUser.email || null;
 
+    // Validate the ICP against the RESOLVED org, not the posted one: a client
+    // could otherwise attach another tenant's ICP by guessing a cuid. Also
+    // requires the profile to be active + not trashed, matching the dropdown the
+    // extension populated from /api/extension-auth/icp.
+    const icpId = clean(data.icpId);
+    if (icpId) {
+      const icp = await db.crmIcpProfile.findFirst({
+        where: { id: icpId, orgId, isActive: true, deletedAt: null },
+        select: { id: true },
+      });
+      if (!icp) {
+        return NextResponse.json(
+          { success: false, error: "Selected ICP not found for this organization" },
+          { status: 400 },
+        );
+      }
+    }
+
     // Shared scalar fields for both create and update. JSON blobs are only set
     // when present so a partial re-save doesn't wipe previously captured data.
     const jsonFields = {
@@ -142,6 +163,10 @@ export async function POST(request: NextRequest) {
       savedById: extUser.userId,
       savedByName,
     };
+    // Only written when the caller actually sent one, so a re-save from an older
+    // extension build (no ICP field) cannot clear a previously chosen ICP. Same
+    // reasoning as the JSON blobs above.
+    const icpFields = icpId ? { icpId } : {};
 
     // Upsert on (orgId, linkedinUrl) when we have a URL; otherwise always create
     // (URL-less captures can't be deduped and Postgres treats NULLs as distinct).
@@ -149,12 +174,12 @@ export async function POST(request: NextRequest) {
     if (linkedinUrl) {
       prospect = await db.crmProspect.upsert({
         where: { prospect_org_linkedin_uk: { orgId, linkedinUrl } },
-        create: { orgId, linkedinUrl, ...scalarFields, ...jsonFields },
-        update: { ...scalarFields, ...jsonFields },
+        create: { orgId, linkedinUrl, ...scalarFields, ...jsonFields, ...icpFields },
+        update: { ...scalarFields, ...jsonFields, ...icpFields },
       });
     } else {
       prospect = await db.crmProspect.create({
-        data: { orgId, ...scalarFields, ...jsonFields },
+        data: { orgId, ...scalarFields, ...jsonFields, ...icpFields },
       });
     }
 

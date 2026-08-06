@@ -41,6 +41,11 @@ export default async function ProspectsPage() {
       status: true,
       convertedLeadId: true,
       createdAt: true,
+      icpId: true,
+      // Reference only — we read the ICP's name for display rather than storing
+      // a copy on the prospect. `isActive` lets the table flag a prospect tagged
+      // with an ICP that has since been deactivated.
+      icp: { select: { id: true, name: true, isActive: true } },
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: 500,

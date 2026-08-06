@@ -8137,6 +8137,11 @@ model CrmLead {
   ownerId                String?
   ownerName              String?
   accountId              String?
+  /// Ideal Customer Profile. Copied by reference from CrmProspect.icpId during
+  /// Convert-to-Lead (the user is not asked again), and settable directly on the
+  /// lead form. Nullable + SetNull: pre-existing leads have none, and deleting an
+  /// ICP must not delete leads.
+  icpId                  String?
   linkedContactId        String?
   externalId             String?
   sourceSystem           String?
@@ -8184,6 +8189,7 @@ model CrmLead {
   updatedAt              DateTime             @updatedAt
   deletedAt              DateTime?
   account                CrmAccount?          @relation(fields: [accountId], references: [id])
+  icp                    CrmIcpProfile?       @relation(fields: [icpId], references: [id], onDelete: SetNull)
   attachments            CrmLeadAttachment[]
   contacts               CrmContact[]
   activities             CrmActivity[]
@@ -8199,6 +8205,7 @@ model CrmLead {
   @@index([orgId, accountId])
   @@index([orgId, isStarred])
   @@index([orgId, deletedAt])
+  @@index([orgId, icpId])
   @@schema("app_quikcrm")
 }
 
@@ -8284,6 +8291,11 @@ model CrmProspect {
   experiences    Json?
   savedById      String?
   savedByName    String?
+  /// Ideal Customer Profile chosen in the extension before saving. Reference
+  /// only — never a copy of the ICP's fields. Nullable + SetNull so existing
+  /// prospects stay valid and deleting an ICP does not delete prospects.
+  icpId          String?
+  icp            CrmIcpProfile? @relation(fields: [icpId], references: [id], onDelete: SetNull)
   // Conversion state. "New" until the prospect is converted into a CrmLead via
   // the Prospects page; then "Converted" with a pointer to the created lead.
   status         String    @default("New")
@@ -8298,6 +8310,7 @@ model CrmProspect {
   @@index([orgId])
   @@index([orgId, createdAt])
   @@index([orgId, status])
+  @@index([orgId, icpId])
   @@schema("app_quikcrm")
 }
 
@@ -9433,6 +9446,11 @@ model CrmIcpProfile {
   taxonomyLinks CrmIcpProfileTaxonomy[]
   productLinks  CrmIcpProfileProduct[]
   accountLinks  CrmIcpProfileAccount[]
+  /// Prospects/leads tagged with this ICP. Plain back-relations (no join table):
+  /// a prospect or lead belongs to at most ONE ICP, unlike the many-to-many
+  /// account/product/taxonomy links above.
+  prospects     CrmProspect[]
+  leads         CrmLead[]
 
   @@unique([orgId, name])
   @@index([orgId])
@@ -9472,6 +9490,11 @@ model CrmIcpTaxonomy {
 
   profileLinks CrmIcpProfileTaxonomy[]
 
+  /// NOTE: this @@unique does NOT cover top-level entries. `parentId` is NULL for
+  /// them and Postgres treats NULL != NULL, so two identical root rows would both
+  /// insert. A partial unique index (…_orgId_kind_name_root_key, WHERE parentId IS
+  /// NULL) closes that hole — it lives in the migration SQL because Prisma cannot
+  /// express partial indexes. Do not "simplify" either one away.
   @@unique([orgId, kind, name, parentId])
   @@index([orgId])
   @@index([orgId, kind])
@@ -9540,6 +9563,12 @@ model CrmIcpProfileAccount {
   icpProfileId String
   accountId    String
   /// Why this company exemplifies the profile — optional curator's note.
+  ///
+  /// RESERVED / not yet writable: the detail API returns it, but the ICP form
+  /// links accounts by id only, so nothing sets it today. Kept because adding a
+  /// nullable column later is a migration while the read path already carries it.
+  /// Wire it up by extending `accountIds: string[]` to accept
+  /// `{ id, note }` objects in lib/validators/icp.ts.
   note         String?
   createdAt    DateTime @default(now())
 

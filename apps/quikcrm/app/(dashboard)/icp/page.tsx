@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/require";
-import { getEffectiveMatrix, hasPermission } from "@/lib/auth/permissions";
+import { getEffectiveMatrix } from "@/lib/auth/permissions";
+import { hasPermission } from "@/lib/auth/require-permission";
 import { PageHeader } from "@/components/shared/page-header";
 import { PageContainer } from "@/components/ui/container";
 import { computeIcpStats } from "@/lib/services/icp/icp-service";

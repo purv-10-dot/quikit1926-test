@@ -60,6 +60,9 @@ interface LeadInput {
   /** Conversion facts — used to surface a "Lead Converted" entry in Recent Activity. */
   convertedAt?: string | null;
   linkedContactId?: string | null;
+  /** ICP reference + joined name — rendered read-only in Lead Information. */
+  icpId?: string | null;
+  icp?: { id: string; name: string } | null;
   dynamicFields?: Record<string, unknown> | null;
   // Contact information
   firstName?: string | null;

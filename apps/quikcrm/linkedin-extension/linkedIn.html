@@ -145,6 +145,35 @@
                   </div>
                 </div>
 
+                <!-- ICP (Ideal Customer Profile) — searchable single-select.
+                     Options are the org's ACTIVE ICPs, loaded from
+                     /api/extension-auth/icp. Optional: saving without one is
+                     valid and leaves the prospect untagged. -->
+                <div style="margin-top: 12px;">
+                  <label class="form-label" for="icpSearch">ICP</label>
+                  <div id="icpPicker" class="icp-picker">
+                    <input
+                      type="text"
+                      id="icpSearch"
+                      class="form-input"
+                      style="font-size: 14px;"
+                      placeholder="Search ICPs…"
+                      autocomplete="off"
+                      role="combobox"
+                      aria-expanded="false"
+                      aria-controls="icpOptions"
+                      aria-autocomplete="list"
+                    >
+                    <input type="hidden" id="icpId" value="">
+                    <div id="icpOptions" class="icp-options hidden" role="listbox"></div>
+                  </div>
+                  <div id="icpSelected" class="icp-selected hidden">
+                    <span id="icpSelectedName"></span>
+                    <button type="button" id="icpClear" class="icp-clear" aria-label="Clear selected ICP">×</button>
+                  </div>
+                  <div id="icpHint" class="icp-hint"></div>
+                </div>
+
                 <!-- Short Summary -->
                 <div style="margin-top: 12px;">
                   <label class="form-label">Short Summary *</label>

@@ -110,6 +110,9 @@ export function IcpListClient({
   const [pageSize, setPageSize] = useState(25);
   const [filterSegment, setFilterSegment] = useState("");
   const [filterActive, setFilterActive] = useState("");
+  // "Has any linked Industry / Vertical / Technology" — narrows to profiles whose
+  // fit is defined along that dimension. Backed by the API's `kind` param.
+  const [filterKind, setFilterKind] = useState("");
   const [sortBy, setSortBy] = useState<"updatedAt" | "createdAt" | "name">("updatedAt");
 
   useEffect(() => {
@@ -131,6 +134,7 @@ export function IcpListClient({
       if (debouncedSearch) params.set("q", debouncedSearch);
       if (filterSegment) params.set("segment", filterSegment);
       if (filterActive) params.set("isActive", filterActive);
+      if (filterKind) params.set("kind", filterKind);
 
       const res = await fetch(`/api/icp?${params.toString()}`, { credentials: "include" });
       const body = await res.json();
@@ -142,7 +146,7 @@ export function IcpListClient({
     } finally {
       setLoading(false);
     }
-  }, [viewTrash, page, pageSize, debouncedSearch, filterSegment, filterActive, sortBy]);
+  }, [viewTrash, page, pageSize, debouncedSearch, filterSegment, filterActive, filterKind, sortBy]);
 
   useEffect(() => {
     void load();
@@ -151,7 +155,7 @@ export function IcpListClient({
   // Any filter change invalidates the current page offset.
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, filterSegment, filterActive, viewTrash, sortBy]);
+  }, [debouncedSearch, filterSegment, filterActive, filterKind, viewTrash, sortBy]);
 
   const onSoftDelete = useCallback(
     async (row: IcpRow) => {
@@ -318,6 +322,17 @@ export function IcpListClient({
               <option value="">All status</option>
               <option value="true">Active</option>
               <option value="false">Inactive</option>
+            </Select>
+            <Select
+              value={filterKind}
+              onChange={(e) => setFilterKind(e.target.value)}
+              aria-label="Linked dimension filter"
+              className="w-auto min-w-[150px]"
+            >
+              <option value="">Any dimension</option>
+              <option value="Industry">Has industries</option>
+              <option value="Vertical">Has verticals</option>
+              <option value="Technology">Has technologies</option>
             </Select>
             <Select
               value={sortBy}

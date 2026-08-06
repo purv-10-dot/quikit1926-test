@@ -92,6 +92,19 @@ CREATE INDEX IF NOT EXISTS "CrmIcpTaxonomy_orgId_kind_isActive_idx"
 CREATE INDEX IF NOT EXISTS "CrmIcpTaxonomy_orgId_parentId_idx"
   ON app_quikcrm."CrmIcpTaxonomy" ("orgId", "parentId");
 
+-- Root-level uniqueness. The @@unique above includes "parentId", and in Postgres
+-- NULL != NULL — so it does NOT constrain top-level entries (parentId IS NULL),
+-- which is the common case for a flat industry/technology list. Without this
+-- partial index two identical root entries insert cleanly and the API's P2002
+-- duplicate handling never fires.
+--
+-- Prisma cannot express a partial unique index, so it lives only here; the
+-- taxonomy service also does a pre-insert existence check to return a friendly
+-- 409 rather than relying on the DB error alone.
+CREATE UNIQUE INDEX IF NOT EXISTS "CrmIcpTaxonomy_orgId_kind_name_root_key"
+  ON app_quikcrm."CrmIcpTaxonomy" ("orgId", kind, name)
+  WHERE "parentId" IS NULL;
+
 -- ── CrmIcpProfileTaxonomy (ICP <-> industry/vertical/technology) ──────────────
 CREATE TABLE IF NOT EXISTS app_quikcrm."CrmIcpProfileTaxonomy" (
   id             text PRIMARY KEY,

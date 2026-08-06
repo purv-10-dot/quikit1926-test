@@ -411,6 +411,162 @@ function getSelectedOrganization() {
   });
 }
 
+// ── ICP picker ───────────────────────────────────────────────────────────────
+// Searchable single-select over the org's ACTIVE ICPs. Options come from
+// /api/extension-auth/icp (Bearer-authed, same as the org list); the search
+// filters the already-loaded list client-side so typing never waits on a
+// request. Selection is optional — saving with no ICP is valid.
+let icpOptionsCache = [];
+let icpLoadedForOrgId = null;
+
+/** Fetch the active ICP list once per org and cache it for the session. */
+async function loadIcpOptions() {
+  const hintEl = document.getElementById('icpHint');
+  const searchEl = document.getElementById('icpSearch');
+  if (!searchEl) return;
+
+  const selectedOrg = await getSelectedOrganization();
+  const orgId = selectedOrg && selectedOrg.id ? selectedOrg.id : '';
+
+  // Already loaded for this org — nothing to do.
+  if (icpLoadedForOrgId === (orgId || '__default__') && icpOptionsCache.length > 0) return;
+
+  try {
+    if (hintEl) hintEl.textContent = 'Loading ICPs…';
+    const endpoint = orgId
+      ? `/api/extension-auth/icp?orgId=${encodeURIComponent(orgId)}`
+      : '/api/extension-auth/icp';
+    const response = await window.apiFetch(endpoint);
+    const result = await response.json();
+    if (!response.ok || result.success === false) {
+      throw new Error(result.error || 'Failed to load ICPs');
+    }
+    icpOptionsCache = Array.isArray(result.data && result.data.icps) ? result.data.icps : [];
+    icpLoadedForOrgId = orgId || '__default__';
+    if (hintEl) {
+      hintEl.textContent = icpOptionsCache.length === 0
+        ? 'No active ICPs in this organization.'
+        : 'Optional — leave blank if none applies.';
+    }
+    if (icpOptionsCache.length === 0) {
+      searchEl.disabled = true;
+      searchEl.placeholder = 'No active ICPs';
+    } else {
+      searchEl.disabled = false;
+      searchEl.placeholder = 'Search ICPs…';
+    }
+  } catch (error) {
+    console.error('Error loading ICPs:', error);
+    // Non-blocking: the prospect can still be saved without an ICP.
+    icpOptionsCache = [];
+    if (hintEl) hintEl.textContent = 'Could not load ICPs — you can still save without one.';
+  }
+}
+
+function renderIcpOptions(filter) {
+  const listEl = document.getElementById('icpOptions');
+  if (!listEl) return;
+  const q = (filter || '').trim().toLowerCase();
+  const matches = q
+    ? icpOptionsCache.filter((icp) => (icp.name || '').toLowerCase().includes(q))
+    : icpOptionsCache;
+
+  listEl.innerHTML = '';
+  if (matches.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'icp-empty';
+    empty.textContent = icpOptionsCache.length === 0 ? 'No active ICPs.' : 'No matches.';
+    listEl.appendChild(empty);
+    return;
+  }
+
+  matches.forEach(function (icp) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'icp-option';
+    btn.setAttribute('role', 'option');
+    btn.dataset.icpId = icp.id;
+
+    const name = document.createElement('span');
+    name.textContent = icp.name;
+    btn.appendChild(name);
+
+    if (icp.segment) {
+      const seg = document.createElement('span');
+      seg.className = 'icp-option-segment';
+      // MidMarket -> "Mid-Market", matching the app's ICP labels.
+      seg.textContent = icp.segment === 'MidMarket' ? 'Mid-Market' : icp.segment;
+      btn.appendChild(seg);
+    }
+
+    btn.addEventListener('click', function () {
+      selectIcp(icp);
+    });
+    listEl.appendChild(btn);
+  });
+}
+
+function openIcpOptions() {
+  const listEl = document.getElementById('icpOptions');
+  const searchEl = document.getElementById('icpSearch');
+  if (!listEl || !searchEl || searchEl.disabled) return;
+  renderIcpOptions(searchEl.value);
+  listEl.classList.remove('hidden');
+  searchEl.setAttribute('aria-expanded', 'true');
+}
+
+function closeIcpOptions() {
+  const listEl = document.getElementById('icpOptions');
+  const searchEl = document.getElementById('icpSearch');
+  if (listEl) listEl.classList.add('hidden');
+  if (searchEl) searchEl.setAttribute('aria-expanded', 'false');
+}
+
+function selectIcp(icp) {
+  const hiddenEl = document.getElementById('icpId');
+  const searchEl = document.getElementById('icpSearch');
+  const chipEl = document.getElementById('icpSelected');
+  const chipNameEl = document.getElementById('icpSelectedName');
+  if (hiddenEl) hiddenEl.value = icp.id;
+  if (searchEl) searchEl.value = '';
+  if (chipNameEl) chipNameEl.textContent = icp.name;
+  if (chipEl) chipEl.classList.remove('hidden');
+  closeIcpOptions();
+}
+
+function clearIcpSelection() {
+  const hiddenEl = document.getElementById('icpId');
+  const chipEl = document.getElementById('icpSelected');
+  if (hiddenEl) hiddenEl.value = '';
+  if (chipEl) chipEl.classList.add('hidden');
+}
+
+/** Wire the picker once; safe to call again (guards on a data flag). */
+function setupIcpPicker() {
+  const searchEl = document.getElementById('icpSearch');
+  const clearEl = document.getElementById('icpClear');
+  const pickerEl = document.getElementById('icpPicker');
+  if (!searchEl || searchEl.dataset.wired === '1') return;
+  searchEl.dataset.wired = '1';
+
+  searchEl.addEventListener('focus', openIcpOptions);
+  searchEl.addEventListener('input', function () {
+    // Typing after a selection replaces it — the hidden id is only meaningful
+    // while the chip is shown.
+    renderIcpOptions(searchEl.value);
+    openIcpOptions();
+  });
+  searchEl.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') closeIcpOptions();
+  });
+  if (clearEl) clearEl.addEventListener('click', clearIcpSelection);
+
+  // Close on outside click.
+  document.addEventListener('click', function (e) {
+    if (pickerEl && !pickerEl.contains(e.target)) closeIcpOptions();
+  });
+}
+
 function enableSaveLinkedInData() {
   const saveButton = document.getElementById('saveLinkedInData');
   const extractCompanyBtn = document.getElementById('extractCompanyDataBtn');
@@ -497,6 +653,10 @@ function enableSaveLinkedInData() {
           searchEmailEnabled
         };
         if (orgId) payload.orgId = orgId;
+        // Optional ICP selection. Only sent when the user picked one, so the
+        // backend never receives an empty string to validate.
+        const selectedIcpId = (document.getElementById('icpId')?.value || '').trim();
+        if (selectedIcpId) payload.icpId = selectedIcpId;
         const response = await window.apiFetch('/api/leads/from-linkedin', {
           method: 'POST',
           body: JSON.stringify(payload)
@@ -666,6 +826,12 @@ function populateForm(data) {
 
   // Show the form
   document.getElementById('intialdata').style.display = 'block';
+
+  // Wire + populate the ICP dropdown now that the form is visible. Fire-and-
+  // forget: a failed ICP load must never block the extracted profile from being
+  // reviewed and saved.
+  setupIcpPicker();
+  void loadIcpOptions();
   
   // Show sticky action bar (Individual Mode Only)
   const actionBar = document.getElementById('individualActionBar');

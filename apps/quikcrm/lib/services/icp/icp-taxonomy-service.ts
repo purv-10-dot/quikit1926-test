@@ -153,6 +153,7 @@ export async function createIcpTaxonomy(args: {
 }) {
   const { orgId, input } = args;
   await assertParent(orgId, input.kind, input.parentId);
+  await assertNameFree(orgId, input.kind, input.name, input.parentId ?? null);
   try {
     return await db.crmIcpTaxonomy.create({
       data: { ...input, orgId },
@@ -163,6 +164,40 @@ export async function createIcpTaxonomy(args: {
       throw conflict(`A ${input.kind.toLowerCase()} with this name already exists.`);
     }
     throw e;
+  }
+}
+
+/**
+ * Reject a duplicate (kind, name) among the same siblings, case-insensitively.
+ *
+ * Two reasons this cannot rely on the DB alone:
+ *   1. The @@unique includes `parentId`, and Postgres treats NULL != NULL — so
+ *      root-level entries were never constrained by it. A partial unique index in
+ *      the migration now covers that, but only exact-case matches.
+ *   2. Neither index is case-insensitive, so "Manufacturing" and "manufacturing"
+ *      would both insert and then render as two identical-looking picker options.
+ *
+ * `excludeId` lets rename reuse this without colliding with the row itself.
+ */
+async function assertNameFree(
+  orgId: string,
+  kind: IcpTaxonomyKind,
+  name: string,
+  parentId: string | null,
+  excludeId?: string,
+): Promise<void> {
+  const clash = await db.crmIcpTaxonomy.findFirst({
+    where: {
+      orgId,
+      kind,
+      parentId,
+      name: { equals: name, mode: "insensitive" },
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+    },
+    select: { id: true },
+  });
+  if (clash) {
+    throw conflict(`A ${kind.toLowerCase()} with this name already exists.`);
   }
 }
 
@@ -180,12 +215,24 @@ export async function updateIcpTaxonomy(args: {
   const { orgId, id, input } = args;
   const existing = await db.crmIcpTaxonomy.findFirst({
     where: { id, orgId },
-    select: { id: true, kind: true },
+    select: { id: true, kind: true, name: true, parentId: true },
   });
   if (!existing) throw notFound();
 
   if (input.parentId !== undefined) {
     await assertParent(orgId, existing.kind as IcpTaxonomyKind, input.parentId, id);
+  }
+
+  // A rename — or a reparent, which changes the sibling set the name must be
+  // unique within — needs the same duplicate check as create.
+  if (input.name !== undefined || input.parentId !== undefined) {
+    await assertNameFree(
+      orgId,
+      existing.kind as IcpTaxonomyKind,
+      input.name ?? existing.name,
+      input.parentId !== undefined ? input.parentId : existing.parentId,
+      id,
+    );
   }
 
   try {
