@@ -3,7 +3,7 @@
 import { useSession, signOut } from "next-auth/react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
-import { Menu, Settings, Building2, HelpCircle, Compass } from "lucide-react";
+import { Menu, Settings, Building2, HelpCircle } from "lucide-react";
 import { AppSwitcher, UserMenu, globalSignOut } from "@quikit/ui";
 import { useOrgInfo } from "@/lib/hooks/useOrgInfo";
 
@@ -50,17 +50,6 @@ export function Header({ onMenuClick }: HeaderProps) {
 
   function handleSettings() {
     router.push("/settings");
-  }
-
-  /**
-   * Replay the Scout onboarding tour. The tour component (mounted in the
-   * dashboard shell) listens for `qs:tour-start`, clears its completion flags
-   * on both the client and the server, and reopens at step 1. The tour's
-   * spotlights anchor to the dashboard chrome, so send the user home first.
-   */
-  function handleRestartTour() {
-    if (pathname !== "/dashboard") router.push("/dashboard");
-    window.dispatchEvent(new Event("qs:tour-start"));
   }
 
   return (
@@ -123,7 +112,6 @@ export function Header({ onMenuClick }: HeaderProps) {
             onExitImpersonation={handleExitImpersonation}
             items={[
               { label: "Settings", icon: Settings, onClick: handleSettings },
-              { label: "Take the tour again", icon: Compass, onClick: handleRestartTour },
             ]}
             avatarClassName="bg-accent-600"
           />

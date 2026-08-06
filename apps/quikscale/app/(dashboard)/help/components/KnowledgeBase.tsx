@@ -88,24 +88,25 @@ export function KnowledgeBase() {
     <div className="flex h-full min-h-0 flex-col">
       {/* Masthead */}
       <div className="flex flex-wrap items-end justify-between gap-4 border-b border-gray-200 px-6 py-5">
-        <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-3">
           <button
             type="button"
             onClick={goBack}
             aria-label="Back"
-            className="mb-2 inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 transition-colors hover:text-accent-700"
+            className="inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition-colors hover:border-accent-200 hover:bg-accent-50 hover:text-accent-700"
           >
             <ArrowLeft className="h-4 w-4" />
-            Back
           </button>
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-accent-600">
-            Reference
-          </p>
-          <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold text-gray-900">
-            <BookOpen className="h-5 w-5 text-accent-600" />
-            {KB_META.title}
-          </h1>
-          <p className="mt-1 text-sm text-gray-500">{KB_META.subtitle}</p>
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-accent-600">
+              Reference
+            </p>
+            <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold text-gray-900">
+              <BookOpen className="h-5 w-5 text-accent-600" />
+              {KB_META.title}
+            </h1>
+            <p className="mt-1 text-sm text-gray-500">{KB_META.subtitle}</p>
+          </div>
         </div>
         <KBDownloadButton orgName={org?.name ?? ""} />
       </div>
