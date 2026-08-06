@@ -19,11 +19,11 @@ export const gettingStarted: KBChapter = {
       blocks: [
         {
           type: "p",
-          text: "QuikScale is a Performance Operating System. It takes the Scaling Up / Rockefeller Habits operating rhythm — the one most leadership teams try to run in spreadsheets and slide decks — and turns it into a single, always-current system of record. Strategy is written once in the One-Page Strategic Plan, cascaded into quarterly Priorities and weekly KPIs, executed through Who-What-When commitments, and reviewed in a fixed meeting rhythm. Nothing lives in a private spreadsheet, and nothing has to be re-typed to be reported.",
+          text: "QuikScale is a Performance Operating System. It takes the Scaling Up / Rockefeller Habits operating rhythm — the one most leadership teams try to run in spreadsheets and slide decks — and turns it into a single, always-current system of record. Strategy is written once in the One-Page Strategic Plan, cascaded into quarterly Priorities and weekly KPIs, executed through Who-What-When commitments, and reviewed in a fixed meeting rhythm. Very little needs to live in a private spreadsheet, and very little has to be re-typed to be reported.",
         },
         {
           type: "p",
-          text: "The application is organised around the four Scaling Up pillars — People, Strategy, Execution and Cash. The left sidebar mirrors that structure exactly, so the software you are looking at and the framework your leadership team already uses are the same shape. If you know where something belongs in the book, you know where to find it in the product.",
+          text: "The application is organised around the four Scaling Up pillars — People, Strategy, Execution and Cash. The left sidebar closely mirrors that structure, so the software you are looking at and the framework your leadership team already uses are the same shape. If you know where something belongs in the book, you know where to find it in the product.",
         },
         {
           type: "figure",
@@ -37,7 +37,7 @@ export const gettingStarted: KBChapter = {
             { k: "Execution", v: "KPI (Individual + Teams), Priority, WWW, Meeting Rhythm, Analytics — the weekly cadence that turns plans into results." },
             { k: "Strategy", v: "OPSP (One-Page Strategic Plan), Rockefeller Habits checklist, SWT (Strengths / Weaknesses / Trends) — the thinking layer, reviewed quarterly and annually." },
             { k: "People", v: "Goals & Pillars (cycle, self-assessment, reviews, 1:1s, feedback, talent), FACe, PACe, Survey — who is accountable for what, and how they are doing." },
-            { k: "Cash", v: "Cash-flow tracking. On the roadmap; the section is visible so the four-pillar model stays complete." },
+            { k: "Cash", v: "Cash-flow tracking is on the roadmap. The section is currently visible to maintain the complete four-pillar model." },
           ],
         },
         {
@@ -90,9 +90,9 @@ export const gettingStarted: KBChapter = {
           items: [
             { title: "Sign in and confirm your organisation", text: "Sign in at /login. When the dashboard paints, check the organisation chip beside 'Welcome, <name>!' in the header. If it is not the org you expect, use the app switcher (the nine-dot grid) to move, or contact your administrator." },
             { title: "Set the period you are working in", text: "Every module header carries a fiscal-year and quarter picker (for example '2026–2027 · Q2'). It is shared across modules and remembered for your session, so setting it once on the dashboard carries into KPI, Priority, WWW and OPSP." },
-            { title: "Read your dashboard", text: "The dashboard is your personal view: the KPIs you own, your Priorities and your WWW commitments for the selected quarter, plus a KPI Overview strip that scores you at a glance. Anything red or amber here is what your next week is about." },
+            { title: "Read your dashboard", text: "The dashboard is your personal view: the KPIs you own, your Priorities and your WWW commitments for the selected quarter, plus a KPI Overview strip that scores you at a glance. Focus on the red and amber items, as they require your attention for the upcoming week." },
             { title: "Open the module you own", text: "Most contributors live in three screens: Individual KPI, Priority and WWW. Open each, confirm the rows assigned to you look right, and raise anything missing with your team head." },
-            { title: "Create your fiscal quarters", text: "Administrators: go to Org Setup → Quarter Settings and generate the fiscal year before anything else. Weeks, targets and every grid in the app are sized from this. QuikScale will keep prompting you until at least one quarter exists." },
+            { title: "Create your fiscal quarters", text: "Administrators: go to Org Setup → Quarter Settings and generate the fiscal year before inviting users or configuring the organisation. Weeks, targets and every grid in the app are sized from this. QuikScale will keep prompting you until at least one quarter exists." },
             { title: "Add teams and users", text: "Org Setup → Teams, then Org Setup → Users. Create teams first so users can be assigned as you invite them, and nominate a team head for each team." },
             { title: "Set units and currency", text: "Org Setup → Unit Master defines the display labels for Number KPIs (Leads, Calls, Tickets…). Settings → Company sets the organisation's currency, timezone and accent colour." },
             { title: "Write the OPSP", text: "Strategy → OPSP → Create OPSP. Fill Core Values, Purpose, Targets, Goals, Actions and Quarterly Priorities. When it is finalised you can export the Priorities and KPIs straight into the Execution modules instead of re-typing them." },
