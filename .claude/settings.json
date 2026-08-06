@@ -57,7 +57,13 @@
       "Bash(DISTDIR=.next-buildcheck node -e ' *)",
       "Bash(rm -f /tmp/empty-state.json /tmp/probe.ts)",
       "Bash(python -c ' *)",
-      "Bash(curl -s -o /dev/null -w \"dev-server-3003:%{http_code}\\\\n\" --max-time 4 http://localhost:3003/)"
+      "Bash(curl -s -o /dev/null -w \"dev-server-3003:%{http_code}\\\\n\" --max-time 4 http://localhost:3003/)",
+      "Bash(psql 'postgresql://neondb_owner:npg_q5rxgspPJ4vn@ep-green-wildflower-aqyjilrc.c-8.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require' --single-transaction -v ON_ERROR_STOP=1 -f '/c/Users/user/Downloads/migration 1.sql')",
+      "Bash(echo \"=== verify ===\")",
+      "Bash(psql 'postgresql://neondb_owner:npg_q5rxgspPJ4vn@ep-green-wildflower-aqyjilrc.c-8.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require' -t -c 'SELECT count\\(*\\) AS qsuserviewpref_table FROM information_schema.tables WHERE table_schema='\\\\''app_quikscale'\\\\'' AND table_name='\\\\''QsUserViewPref'\\\\'';')",
+      "Bash(vercel link *)",
+      "Bash(vercel deploy *)",
+      "Bash(curl -s -o /dev/null -w \"health: %{http_code}\\\\n\" https://quikit-quikscale.vercel.app/api/health)"
     ],
     "additionalDirectories": [
       "C:\\Users\\user\\AppData\\Local\\Temp\\qs-doc-build\\sections"
