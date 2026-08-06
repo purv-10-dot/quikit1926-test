@@ -5,7 +5,8 @@
 --  Feature : Contact Support panel (QuikScale + any app) and the QuikIT
 --            Super Admin "Support Status" triage queue.
 --  Target  : Postgres `public` schema.
---  Scope   : 3 tables, 1 sequence, 12 indexes, 3 foreign keys.
+--  Scope   : 3 tables, 1 sequence, 14 indexes (11 explicit + 3 PK),
+--            3 foreign keys. No enums, no data changes.
 --
 --  Run this by hand in UAT and PRODUCTION. It is standalone and does NOT
 --  depend on Prisma migration history — it consolidates these two repo
@@ -37,10 +38,14 @@
 --    See the commented block at the foot of this file. It is destructive
 --    (drops the tables and all ticket data) — deliberately left commented.
 --
---  NOTE ON DATABASES
---    As of writing, these objects exist in the `neondb` database but NOT in
---    `quikit`. Point DATABASE_URL at whichever database the target
---    environment actually uses and verify with the STEP 6 output.
+--  APPLIED SO FAR  (update this list as you deploy)
+--    [x] neondb  — dev
+--    [x] quikit  — the database every app's DATABASE_URL currently points at
+--    [ ] UAT
+--    [ ] PRODUCTION
+--
+--    Re-running against an already-migrated database is safe and is a no-op;
+--    the STEP 6 verification block confirms the end state either way.
 -- =====================================================================
 
 BEGIN;
