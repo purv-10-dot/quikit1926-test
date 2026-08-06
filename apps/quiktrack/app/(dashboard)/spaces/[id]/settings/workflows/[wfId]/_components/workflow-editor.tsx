@@ -28,6 +28,14 @@ async function fetchResolutions(projectId: string): Promise<{ id: string; name: 
   return j.data as { id: string; name: string }[];
 }
 
+/** Org screens → { id, name } for the "Show a screen" (Request input) rule. */
+async function fetchScreens(): Promise<{ id: string; name: string }[]> {
+  const r = await fetch("/api/screens");
+  const j = await r.json();
+  if (!r.ok || !j.success) return [];
+  return (j.data as { id: string; name: string }[]).map((s) => ({ id: s.id, name: s.name }));
+}
+
 /** Project members → { userId, name } for the field-value rule's user dropdowns. */
 async function fetchMembers(projectId: string): Promise<{ userId: string; name: string }[]> {
   const r = await fetch(`/api/projects/${projectId}/members`);
@@ -146,6 +154,10 @@ function EditorBody({
   const members = useQuery({
     queryKey: ["quiktrack", "members", projectId],
     queryFn: () => fetchMembers(projectId),
+  });
+  const screens = useQuery({
+    queryKey: ["quiktrack", "screens", projectId],
+    queryFn: fetchScreens,
   });
 
 
@@ -569,6 +581,7 @@ function EditorBody({
           resolutions={resolutions.data ?? []}
           statuses={pool.map((s) => ({ id: s.id, name: s.name, category: s.category }))}
           members={members.data ?? []}
+          screens={screens.data ?? []}
           onSubmit={(rule) => {
             if (rulePick.index != null) ed.updateRule(selectedTransition.id, rulePick.index, rule);
             else ed.addRule(selectedTransition.id, rule);

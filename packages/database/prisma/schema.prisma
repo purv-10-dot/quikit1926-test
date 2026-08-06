@@ -237,6 +237,7 @@ model Org {
   qtWorkflows              QtWorkflow[]
   qtResolutions            QtResolution[]
   qtWorkflowSchemes        QtWorkflowScheme[]
+  qtScreens                QtScreen[]
   QtTimesheetEntry         QtTimesheetEntry[]
   QtUserActivity           QtUserActivity[]
   QtUserViewPref           QtUserViewPref[]
@@ -6912,6 +6913,56 @@ model QtWorkflowSchemeItem {
 
   @@unique([schemeId, issueTypeId])
   @@index([workflowId])
+  @@schema("app_quiktrack")
+}
+
+/// A Screen — an org-level, ordered arrangement of fields shown when a work
+/// item is transitioned (the workflow "Show a screen" rule references one). A
+/// screen owns one or more tabs; each tab owns ordered field rows. `isDefault`
+/// marks the seeded "Default Screen".
+model QtScreen {
+  id          String         @id @default(cuid())
+  orgId       String
+  name        String
+  description String?
+  isDefault   Boolean        @default(false)
+  isDeleted   Boolean        @default(false)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  createdBy   String?
+  updatedBy   String?
+  org         Org            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  tabs        QtScreenTab[]
+
+  @@unique([orgId, name])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+/// A tab within a screen (Jira "Field Tab"). Ordered by `orderNo`.
+model QtScreenTab {
+  id       String          @id @default(cuid())
+  screenId String
+  name     String
+  orderNo  Int             @default(0)
+  screen   QtScreen        @relation(fields: [screenId], references: [id], onDelete: Cascade)
+  fields   QtScreenField[]
+
+  @@index([screenId])
+  @@schema("app_quiktrack")
+}
+
+/// One field row on a screen tab. `fieldKey` is a key from the app's screen
+/// field registry (Summary / Priority / Assignee / …). Ordered by `orderNo`.
+model QtScreenField {
+  id       String      @id @default(cuid())
+  tabId    String
+  fieldKey String
+  orderNo  Int         @default(0)
+  tab      QtScreenTab @relation(fields: [tabId], references: [id], onDelete: Cascade)
+
+  @@unique([tabId, fieldKey])
+  @@index([tabId])
   @@schema("app_quiktrack")
 }
 

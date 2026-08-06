@@ -193,11 +193,11 @@ export function ShowScreenForm({
         selected={selected ? [selected] : []}
         onChange={(next) => onChange({ ...value, screenId: next[0] ?? "" })}
       />
-      {screens.length === 0 && (
-        <p className="mt-1.5 text-[11px] text-gray-400">
-          No screens are configured yet.
-        </p>
-      )}
+      <p className="mt-1.5 text-[11px] text-gray-500">
+        {screens.length === 0
+          ? "No screens are configured yet."
+          : "Each screen has a selection of fields."}
+      </p>
     </div>
   );
 }

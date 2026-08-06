@@ -192,6 +192,7 @@ export function EditRuleDialog({
   resolutions,
   statuses,
   members,
+  screens,
   onSubmit,
   onDelete,
   onClose,
@@ -206,6 +207,8 @@ export function EditRuleDialog({
   statuses: { id: string; name: string; category: string }[];
   /** Project members (for the field-value rule's Assignee/Reporter dropdowns). */
   members: { userId: string; name: string }[];
+  /** Org screens (for the "Show a screen" request-input rule). */
+  screens: { id: string; name: string }[];
   onSubmit: (rule: EditorRule) => void;
   onDelete?: () => void;
   onClose: () => void;
@@ -328,7 +331,7 @@ export function EditRuleDialog({
         ) : meta.customForm === "validate_permission" ? (
           <ValidatePermissionForm value={structured} onChange={setStructured} />
         ) : meta.customForm === "show_screen" ? (
-          <ShowScreenForm value={structured} onChange={setStructured} />
+          <ShowScreenForm value={structured} onChange={setStructured} screens={screens} />
         ) : meta.fields.length === 0 ? (
           <p className="text-sm text-gray-500">{meta.description}</p>
         ) : (
