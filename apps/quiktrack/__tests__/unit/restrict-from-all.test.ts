@@ -20,6 +20,7 @@ function ctx(isApiActor?: boolean): RuleContext {
       userCanInProject: async () => false,
       subtaskStatusIds: async () => [],
       transitionHistory: async () => [],
+      parentStatusId: async () => null,
     },
   };
 }

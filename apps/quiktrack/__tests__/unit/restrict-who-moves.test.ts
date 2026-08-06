@@ -33,6 +33,7 @@ function ctx(overrides: {
       userCanInProject: async (resource, action) => perms.has(`${resource}:${action}`),
       subtaskStatusIds: async () => [],
       transitionHistory: async () => [],
+      parentStatusId: async () => null,
     },
   };
 }

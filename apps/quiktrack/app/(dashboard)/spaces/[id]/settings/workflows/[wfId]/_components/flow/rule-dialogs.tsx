@@ -17,11 +17,19 @@ import {
   RestrictFieldValueForm,
   BeenThroughStatusForm,
   PreviousUpdaterForm,
+  ValidateFieldForm,
+  ValidateBeenThroughForm,
+  ValidateParentStatusForm,
+  ValidatePermissionForm,
   isRestrictWhoMovesValid,
   isRestrictFromAllValid,
   isRestrictFieldValueValid,
   isBeenThroughStatusValid,
   isPreviousUpdaterValid,
+  isValidateFieldValid,
+  isValidateBeenThroughValid,
+  isValidateParentValid,
+  isValidatePermissionValid,
 } from "./rule-forms";
 
 function BucketIcon({ kind }: { kind: RuleKind }) {
@@ -210,19 +218,23 @@ export function EditRuleDialog({
   // flat string map above.
   const [structured, setStructured] = useState<Record<string, unknown>>(() => ({ ...(initialConfig ?? {}) }));
 
-  const valid = meta.customForm === "restrict_who_moves"
-    ? isRestrictWhoMovesValid(structured)
-    : meta.customForm === "restrict_from_all"
-      ? isRestrictFromAllValid(structured)
-      : meta.customForm === "restrict_field_value"
-        ? isRestrictFieldValueValid(structured)
-        : meta.customForm === "restrict_been_through_status"
-          ? isBeenThroughStatusValid(structured)
-          : meta.customForm === "restrict_previous_updater"
-            ? isPreviousUpdaterValid(structured)
-            : meta.customForm === "restrict_subtask_status"
-              ? Array.isArray(structured.statusIds) && (structured.statusIds as unknown[]).length > 0
-              : meta.fields.every((f) => !f.required || (config[f.key] ?? "").trim().length > 0);
+  // Each custom form validates its own structured config; generic (fields-based)
+  // rules fall back to the required-field check.
+  const CUSTOM_VALID: Record<string, (c: Record<string, unknown>) => boolean> = {
+    restrict_who_moves: isRestrictWhoMovesValid,
+    restrict_from_all: isRestrictFromAllValid,
+    restrict_field_value: isRestrictFieldValueValid,
+    restrict_been_through_status: isBeenThroughStatusValid,
+    restrict_previous_updater: isPreviousUpdaterValid,
+    restrict_subtask_status: (c) => Array.isArray(c.statusIds) && (c.statusIds as unknown[]).length > 0,
+    validate_field: isValidateFieldValid,
+    validate_been_through: isValidateBeenThroughValid,
+    validate_parent_status: isValidateParentValid,
+    validate_permission: isValidatePermissionValid,
+  };
+  const valid = meta.customForm
+    ? (CUSTOM_VALID[meta.customForm]?.(structured) ?? true)
+    : meta.fields.every((f) => !f.required || (config[f.key] ?? "").trim().length > 0);
 
   const submit = () => {
     if (meta.customForm) {
@@ -302,6 +314,14 @@ export function EditRuleDialog({
           <PreviousUpdaterForm value={structured} onChange={setStructured} statuses={statuses} />
         ) : meta.customForm === "restrict_subtask_status" ? (
           <SubtaskStatusForm value={structured} onChange={setStructured} statuses={statuses} />
+        ) : meta.customForm === "validate_field" ? (
+          <ValidateFieldForm value={structured} onChange={setStructured} />
+        ) : meta.customForm === "validate_been_through" ? (
+          <ValidateBeenThroughForm value={structured} onChange={setStructured} statuses={statuses} />
+        ) : meta.customForm === "validate_parent_status" ? (
+          <ValidateParentStatusForm value={structured} onChange={setStructured} statuses={statuses} />
+        ) : meta.customForm === "validate_permission" ? (
+          <ValidatePermissionForm value={structured} onChange={setStructured} />
         ) : meta.fields.length === 0 ? (
           <p className="text-sm text-gray-500">{meta.description}</p>
         ) : (

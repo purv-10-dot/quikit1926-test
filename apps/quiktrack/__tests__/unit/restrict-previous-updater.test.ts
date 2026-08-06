@@ -19,6 +19,7 @@ function ctx(userId: string, history: TransitionHistoryEntry[]): RuleContext {
       userCanInProject: async () => false,
       subtaskStatusIds: async () => [],
       transitionHistory: async () => history,
+      parentStatusId: async () => null,
     },
   };
 }

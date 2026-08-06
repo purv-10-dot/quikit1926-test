@@ -20,6 +20,7 @@ function ctx(issue: Partial<RuleIssueSnapshot>): RuleContext {
       userCanInProject: async () => false,
       subtaskStatusIds: async () => [],
       transitionHistory: async () => [],
+      parentStatusId: async () => null,
     },
   };
 }

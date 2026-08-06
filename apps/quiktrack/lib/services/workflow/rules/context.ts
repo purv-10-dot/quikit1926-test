@@ -56,6 +56,11 @@ export interface RulePrimitives {
    * "been through a status" and "previous updater" rules.
    */
   transitionHistory: () => Promise<TransitionHistoryEntry[]>;
+  /**
+   * The status id of this work item's parent, or null when it has no parent.
+   * Used by the "validate parent work items are in a specific status" rule.
+   */
+  parentStatusId: () => Promise<string | null>;
 }
 
 export interface RuleContext {

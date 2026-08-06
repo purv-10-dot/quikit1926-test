@@ -32,7 +32,11 @@ export interface RuleTypeMeta {
     | "restrict_from_all"
     | "restrict_field_value"
     | "restrict_been_through_status"
-    | "restrict_previous_updater";
+    | "restrict_previous_updater"
+    | "validate_field"
+    | "validate_been_through"
+    | "validate_parent_status"
+    | "validate_permission";
 }
 
 /** Jira's 4 rule buckets shown in the Add-rule modal's left rail. */
@@ -105,33 +109,38 @@ export const RULE_TYPE_META: RuleTypeMeta[] = [
     fields: [],
     customForm: "restrict_previous_updater",
   },
-  // ── VALIDATOR → Validate details ────────────────────────────────────────
+  // ── VALIDATOR → Validate details (Jira catalog) ─────────────────────────
   {
     kind: "VALIDATOR",
-    type: "field_required",
-    label: "Require a field",
-    description: "The work item must have a value in a field before it can move.",
-    fields: [{ key: "fieldId", label: "Field", type: "text", required: true }],
+    type: "validate_field",
+    label: "Validate a field",
+    description: "Ensure that a field is a certain value when moving a work item using a particular transition.",
+    fields: [],
+    customForm: "validate_field",
   },
   {
     kind: "VALIDATOR",
-    type: "permission_required",
-    label: "Require a permission",
-    description: "The user must have a permission for the move to succeed.",
-    fields: [
-      { key: "resource", label: "Resource", type: "text", required: true },
-      { key: "action", label: "Action", type: "text", required: true },
-    ],
+    type: "validate_been_through",
+    label: "Validate that a work item has been through a specific status",
+    description: "Ensure that a work item has been through a specific status when moving a work item.",
+    fields: [],
+    customForm: "validate_been_through",
   },
   {
     kind: "VALIDATOR",
-    type: "field_regex",
-    label: "Field matches a pattern",
-    description: "A field's value must match a regular expression.",
-    fields: [
-      { key: "fieldId", label: "Field", type: "text", required: true },
-      { key: "pattern", label: "Pattern (regex)", type: "text", required: true },
-    ],
+    type: "validate_parent_status",
+    label: "Validate that parent work items are in a specific status",
+    description: "Ensure that a work item's parent has a specific status when moving a work item.",
+    fields: [],
+    customForm: "validate_parent_status",
+  },
+  {
+    kind: "VALIDATOR",
+    type: "validate_permission",
+    label: "Validate that people have a specific permission",
+    description: "Ensure people have a specific permission when moving a work item using a particular transition.",
+    fields: [],
+    customForm: "validate_permission",
   },
   // ── POSTFUNCTION → Perform actions ──────────────────────────────────────
   {

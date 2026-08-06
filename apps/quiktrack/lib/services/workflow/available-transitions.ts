@@ -56,6 +56,14 @@ export async function listAvailableTransitionsForIssue(params: {
       });
       return rows;
     },
+    parentStatusId: async () => {
+      if (!issue.id) return null;
+      const self = await db.qtIssue.findUnique({
+        where: { id: issue.id },
+        select: { parent: { select: { statusId: true } } },
+      });
+      return self?.parent?.statusId ?? null;
+    },
   };
 
   const out: AvailableTransition[] = [];
