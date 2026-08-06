@@ -619,3 +619,50 @@
     box-shadow: inset 0 0 0 1px rgb(248 113 113 / 0.55);
   }
 }
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+   @quikit/ui design tokens.
+
+   This app has its own token namespace and does NOT import
+   "@quikit/ui/styles", so the platform's `--color-*` variables were simply
+   undefined here. Every shared @quikit/ui component (Contact Support,
+   DataTable, EmptyState, Pagination, …) styles itself with them, so they were
+   rendering with transparent backgrounds and invisible borders.
+
+   Declaring them is additive and cannot regress anything: nothing in this app
+   referenced these names before, so the only rules they can affect are the
+   shared-component rules that were previously broken. The app's own
+   brand tokens are untouched.
+   ───────────────────────────────────────────────────────────────────────── */
+:root {
+  --color-secondary: #6366F1;
+  --color-secondary-light: #E0E8FF;
+  --color-secondary-dark: #4F46E5;
+  --color-success: #10B981;
+  --color-success-light: #D1FAE5;
+  --color-success-dark: #047857;
+  --color-warning: #F59E0B;
+  --color-warning-light: #FEF3C7;
+  --color-warning-dark: #B45309;
+  --color-danger: #EF4444;
+  --color-danger-light: #FEE2E2;
+  --color-danger-dark: #B91C1C;
+  --color-neutral-50: #F8FAFC;
+  --color-neutral-100: #F1F5F9;
+  --color-neutral-200: #E2E8F0;
+  --color-neutral-300: #CBD5E1;
+  --color-neutral-400: #94A3B8;
+  --color-neutral-500: #64748B;
+  --color-neutral-600: #475569;
+  --color-neutral-700: #334155;
+  --color-neutral-800: #1E293B;
+  --color-neutral-900: #0F172A;
+  --color-bg-primary: #FFFFFF;
+  --color-bg-secondary: #F8FAFC;
+  --color-text-primary: #0F172A;
+  --color-text-secondary: #64748B;
+  --color-text-tertiary: #94A3B8;
+  --color-border: #E2E8F0;
+  --color-border-light: #F1F5F9;
+}

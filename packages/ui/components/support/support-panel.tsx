@@ -118,12 +118,12 @@ export function SupportPanel({
                            attachments are added and removed.
              `maxHeight` still caps everything to the viewport, and the inner
              views own their scrolling via `flex-1 overflow-y-auto`. */
-          className={`fixed z-[201] right-4 sm:right-6 w-[calc(100vw-2rem)] sm:w-[380px] flex flex-col rounded-2xl bg-[var(--color-bg-primary)] border border-[var(--color-border)] shadow-2xl overflow-hidden ${
+          className={`fixed z-[201] right-4 sm:right-6 w-[calc(100vw-2rem)] sm:w-[380px] flex flex-col rounded-2xl bg-[var(--color-bg-primary,#FFFFFF)] border border-[var(--color-border,#E2E8F0)] shadow-2xl overflow-hidden ${
             view === "menu" ? "" : "h-[560px]"
           }`}
         >
           {/* Header — back arrow on every view except the menu */}
-          <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--color-border)] bg-accent-600 flex-shrink-0">
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--color-border,#E2E8F0)] bg-accent-600 flex-shrink-0">
             {view !== "menu" && (
               <button
                 type="button"

@@ -50,16 +50,16 @@ export function SupportMenu({
           key={view}
           type="button"
           onClick={() => onSelect(view)}
-          className="w-full flex items-start gap-3 text-left p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-primary)] hover:border-accent-300 hover:bg-accent-50/50 transition-colors focus:outline-none focus:ring-2 focus:ring-accent-400"
+          className="w-full flex items-start gap-3 text-left p-3 rounded-xl border border-[var(--color-border,#E2E8F0)] bg-[var(--color-bg-primary,#FFFFFF)] hover:border-accent-300 hover:bg-accent-50/50 transition-colors focus:outline-none focus:ring-2 focus:ring-accent-400"
         >
           <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-100 text-accent-700">
             <Icon className="h-4 w-4" />
           </span>
           <span className="min-w-0">
-            <span className="block text-sm font-medium text-[var(--color-text-primary)]">
+            <span className="block text-sm font-medium text-[var(--color-text-primary,#0F172A)]">
               {label}
             </span>
-            <span className="block text-xs text-[var(--color-text-secondary)] mt-0.5 leading-relaxed">
+            <span className="block text-xs text-[var(--color-text-secondary,#64748B)] mt-0.5 leading-relaxed">
               {desc(appName)}
             </span>
           </span>
