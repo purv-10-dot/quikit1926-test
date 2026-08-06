@@ -4,12 +4,14 @@ import { useState } from "react";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { Header } from "@/components/dashboard/header";
 import { OPSPDeadlineBanner } from "@/components/dashboard/opsp-deadline-banner";
+import { DemoDataBanner } from "@/components/dashboard/demo-data-banner";
 import { FilterProvider } from "@/lib/context/FilterContext";
 import { SessionGuard } from "@/components/session-guard";
 import { ThemeApplier } from "@quikit/ui/theme-applier";
 import { FeatureDisabledToast, ImpersonationBanner } from "@quikit/ui";
 import { QuarterRequiredGuard } from "@/components/quarter-required-guard";
-import { SupportLauncher } from "@quikit/ui/support";
+import { QuikScaleTour } from "@/components/tour/quikscale-tour";
+import { QuikScaleSupportLauncher } from "@/components/support/support-launcher";
 import { Toaster } from "sonner";
 
 /**
@@ -26,6 +28,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     <ThemeApplier />
     <ImpersonationBanner />
     <FeatureDisabledToast />
+    <QuikScaleTour />
     <Toaster
       richColors
       closeButton
@@ -45,6 +48,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           {/* OPSP Deadline Banner — global, shows when threshold is active */}
           <OPSPDeadlineBanner />
 
+          {/* Demo Data Banner — global, shows while the org has seeded sample data */}
+          <DemoDataBanner />
+
           {/* Page Content */}
           <main className="flex-1 overflow-y-auto bg-[var(--color-bg-secondary)]">
             <div className="h-full">
@@ -57,8 +63,10 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* Floating support launcher — outside the scroll containers above so it
-          stays pinned to the viewport on every dashboard route. */}
-      <SupportLauncher appSlug="quikscale" />
+          stays pinned to the viewport on every dashboard route. QuikScale-local
+          (not @quikit/ui/support) because "Read the guide" routes to the
+          Knowledge Base at /help instead of opening an in-panel guide. */}
+      <QuikScaleSupportLauncher />
     </FilterProvider>
     </SessionGuard>
   );
