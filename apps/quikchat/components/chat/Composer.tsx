@@ -1,6 +1,14 @@
 "use client";
 
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import {
+  forwardRef,
+  lazy,
+  Suspense,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import { useEditor, EditorContent, type Editor } from "@tiptap/react";
 import { Fragment, Slice, type Node as PMNode } from "@tiptap/pm/model";
 import StarterKit from "@tiptap/starter-kit";
@@ -66,6 +74,16 @@ export interface ComposerProps {
   placeholder?: string;
 }
 
+/**
+ * The one thing a parent is allowed to trigger on a Composer it doesn't
+ * otherwise control — pending/uploading/recording stay private. Used by
+ * ConversationView's pane-wide drop zone, which owns the drag listeners but
+ * has no business knowing the attachment state machine.
+ */
+export interface ComposerHandle {
+  stageExternalFiles: (files: FileList | File[]) => void;
+}
+
 /** Detect a `/ai …` or `/ask …` slash-command; returns the stripped prompt. */
 export function parseAssistCommand(text: string): string | null {
   const m = /^\/(?:ai|ask)\s+([\s\S]+)$/i.exec(text.trim());
@@ -79,17 +97,20 @@ const TYPING_THROTTLE_MS = 3_000;
  *  which the unmount-time save (the channel-switch case) can't. */
 const DRAFT_SAVE_DEBOUNCE_MS = 500;
 
-export function Composer({
-  members,
-  onSend,
-  onTyping,
-  currentUserId,
-  channelId,
-  onSendMedia,
-  onAssist,
-  disabled,
-  placeholder,
-}: ComposerProps) {
+export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
+  {
+    members,
+    onSend,
+    onTyping,
+    currentUserId,
+    channelId,
+    onSendMedia,
+    onAssist,
+    disabled,
+    placeholder,
+  },
+  ref,
+) {
   const toast = useToast();
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -294,10 +315,13 @@ export function Composer({
         return true;
       },
       handleDrop: (_view, event) => {
-        // Same forward-guard as handlePaste: a dropped file is inert while
-        // recording. Text drops fall through to ProseMirror's default.
-        const dropped = (event as DragEvent).dataTransfer?.files?.length;
-        return !!(recordingRef.current && dropped);
+        // A file drop anywhere over the conversation (including directly on
+        // the editable) routes through ConversationView's pane-wide drop
+        // zone → stageExternalFiles, never through ProseMirror's own
+        // content-insertion. Swallow unconditionally so PM never parses a
+        // dropped file into text/link content; a text-selection drag carries
+        // no `files` and falls through to PM's default untouched.
+        return !!(event as DragEvent).dataTransfer?.files?.length;
       },
     },
     onUpdate: ({ editor }) => {
@@ -463,19 +487,17 @@ export function Composer({
     }
   }, [emojiOpen, emojiData]);
 
-  function onFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (fileRef.current) fileRef.current.value = ""; // allow re-picking the same file
-    if (!file || !channelId || !onSendMedia) return;
-    // Mutual exclusion (the other direction): the single funnel every file entry
-    // passes through, so nothing can stage a file mid-recording.
-    if (recording) return;
+  /**
+   * Stage (do NOT upload/send yet), replacing any prior staged file. The
+   * single funnel both the paperclip (`onFilePicked`) and a drag-and-drop
+   * (`stageExternalFiles`) go through, so there is exactly one staging path.
+   */
+  function stageFile(file: File) {
     const err = validateFile(file);
     if (err) {
       toast.error({ title: "Can't attach that", body: err });
       return;
     }
-    // Stage (do NOT upload/send yet). Replace any prior staged file.
     setPending((prev) => {
       if (prev) URL.revokeObjectURL(prev.localUrl);
       // `failed: false` for the same reason as stageRecording — a newly picked
@@ -483,6 +505,37 @@ export function Composer({
       return { file, localUrl: URL.createObjectURL(file), failed: false };
     });
   }
+
+  function onFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (fileRef.current) fileRef.current.value = ""; // allow re-picking the same file
+    if (!file || !channelId || !onSendMedia) return;
+    // Mutual exclusion (the other direction): the single funnel every file entry
+    // passes through, so nothing can stage a file mid-recording.
+    if (recording) return;
+    stageFile(file);
+  }
+
+  /**
+   * ConversationView's pane-wide drop zone hands off here. Unlike the
+   * paperclip/mic buttons, a drop has no `disabled` affordance to lean on, so
+   * every mutual-exclusion guard those buttons normally encode has to be
+   * checked explicitly. Silently no-ops when blocked, same as the editor's
+   * own recording-guard in `handleDrop` below — a drop mid-recording isn't an
+   * error, it's just not a valid time to attach anything.
+   */
+  function stageExternalFiles(files: FileList | File[]) {
+    if (!canAttach || uploading || pending || recording || listening) return;
+    const list = Array.from(files);
+    if (list.length === 0) return;
+    if (list.length > 1) {
+      toast.error({ title: "Can't attach that", body: "Drop one file at a time." });
+      return;
+    }
+    stageFile(list[0]!);
+  }
+
+  useImperativeHandle(ref, () => ({ stageExternalFiles }));
 
   function removePending() {
     setPending((prev) => {
@@ -870,4 +923,4 @@ export function Composer({
       </div>
     </div>
   );
-}
+});

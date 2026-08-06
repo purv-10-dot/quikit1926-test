@@ -114,6 +114,11 @@ export function ChatWorkspace({
   // the public-channel option (DECISION 2). Server 403s any ungranted action.
   const perms = useMyPermissions();
   const [activeId, setActiveId] = useState<string | null>(null);
+  // The unread count for whichever channel was most recently opened, captured
+  // BEFORE markChannelRead zeroes it below — see pickChannel/selectChannel.
+  // Drives MessageList's unread divider; separate from `activeChannel.
+  // unreadCount`, which is already zero by the time this renders.
+  const [openedUnreadCount, setOpenedUnreadCount] = useState(0);
   const [connected, setConnected] = useState(true);
   const [newChatOpen, setNewChatOpen] = useState(false);
   const [newGroupOpen, setNewGroupOpen] = useState(false);
@@ -498,8 +503,23 @@ export function ChatWorkspace({
     return () => clearTimeout(t);
   }, [presence]);
 
+  /**
+   * The channel's unread count as it stands RIGHT NOW, before anything below
+   * zeroes it — the snapshot the unread divider is built from. Must run before
+   * `markChannelRead`/`markChannelReadApi` in both callers below.
+   */
+  const captureOpenedUnread = useCallback(
+    (id: string) => {
+      const list = qc.getQueryData<ChannelList>(["channels"]);
+      const found = list && [...list.priority, ...list.recent].find((c) => c.channelId === id);
+      setOpenedUnreadCount(found?.unreadCount ?? 0);
+    },
+    [qc],
+  );
+
   const pickChannel = useCallback(
     (id: string) => {
+      captureOpenedUnread(id);
       setActiveId(id);
       qc.setQueryData<ChannelList>(["channels"], (old) => (old ? markChannelRead(old, id) : old));
       void markChannelReadApi(id);
@@ -507,7 +527,7 @@ export function ChatWorkspace({
       // read-by-channel; this keeps the notification badge in sync locally).
       void notifications.markChannelRead(id);
     },
-    [qc, notifications],
+    [qc, notifications, captureOpenedUnread],
   );
 
   /**
@@ -515,9 +535,15 @@ export function ChatWorkspace({
    * refetch the list, ensure the realtime room is joined (auto-join also fires
    * via `channel_created`, but join() is belt-and-suspenders for the actor),
    * select it, and clear its unread.
+   *
+   * Also the deep-link (`?channel=...`) and notification-click entry points —
+   * both call this, not `pickChannel` — so capturing here too is required, not
+   * belt-and-suspenders: without it, opening a channel either way would leave
+   * the unread divider silently absent.
    */
   const selectChannel = useCallback(
     (id: string) => {
+      captureOpenedUnread(id);
       setActiveId(id);
       void clientRef.current?.join(id);
       void qc.invalidateQueries({ queryKey: ["channels"] });
@@ -525,7 +551,7 @@ export function ChatWorkspace({
       void markChannelReadApi(id);
       void notifications.markChannelRead(id);
     },
-    [qc, notifications],
+    [qc, notifications, captureOpenedUnread],
   );
 
   // Let the notification bell / toasts / OS clicks jump to a channel.
@@ -941,7 +967,9 @@ export function ChatWorkspace({
             currentUserId={currentUserId}
             messages={messagesQuery.data}
             loadingMessages={messagesQuery.isLoading}
+            messagesFetching={messagesQuery.isFetching}
             channels={channelsQuery.data}
+            openedUnreadCount={openedUnreadCount}
             online={presence.online}
             statusOf={statusOfUser}
             typing={typing}
