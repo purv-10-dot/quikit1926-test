@@ -11,10 +11,11 @@
  *   3+ table of contents (flows over as many pages as it needs)
  *   4+ one chapter per page break, sections and blocks in authored order
  *
- * Figures: `availableScreens` is the set of screenshot filenames that actually
- * resolved over the network (probed by KBDownloadButton before generating).
- * Anything not in that set renders as a described placeholder instead — react-pdf
- * throws on a 404 <Image>, so we must never hand it a file we have not verified.
+ * Figures: `availableScreens` and `screenSizes` come from KBDownloadButton,
+ * which loads every screenshot before generating. Anything that did not load
+ * renders as a described placeholder — react-pdf does not fail loudly on an
+ * unreachable <Image>, it logs "fetch failed" and silently omits it, so the
+ * pre-flight check is what turns a missing file into visible, useful text.
  */
 
 import {
@@ -114,10 +115,7 @@ const s = StyleSheet.create({
 
   /* Figures */
   figure: { marginVertical: 10 },
-  // width is REQUIRED. Without it react-pdf lays the image out at its intrinsic
-  // pixel size — a 1600px-wide capture then runs off the page instead of
-  // fitting the text column.
-  figureImg: { width: "100%", objectFit: "contain", borderWidth: 1, borderColor: RULE, borderRadius: 3 },
+  figureImg: { objectFit: "contain", borderWidth: 1, borderColor: RULE, borderRadius: 3 },
   figurePlaceholder: {
     borderWidth: 1, borderStyle: "dashed", borderColor: "#D1D5DB",
     backgroundColor: "#F9FAFB", borderRadius: 4, paddingVertical: 14, paddingHorizontal: 12,
@@ -150,6 +148,26 @@ const PILLARS = [
   { name: "Cash", color: "#2563EB", desc: "The fourth pillar — on the roadmap" },
 ];
 
+/** A4 (595.28pt) minus the page's 56pt horizontal padding on each side. */
+const CONTENT_WIDTH = 483;
+/** Tallest a figure may be, so a portrait crop cannot swallow a whole page. */
+const MAX_FIGURE_HEIGHT = 420;
+
+/**
+ * Fit a capture into the text column without ever upscaling it.
+ *
+ * react-pdf gives an <Image> no intrinsic sizing, so this has to be computed:
+ * `width: "100%"` stretched a 219×935 sidebar crop across the full column and
+ * blew it up 5×. Screen pixels are converted to points at 0.75 (96dpi → 72dpi),
+ * then clamped to the column width and the height cap, whichever binds first.
+ */
+export function figureSize(px?: { w: number; h: number }): { width: number; height: number } | null {
+  if (!px || !px.w || !px.h) return null;
+  const natural = { width: px.w * 0.75, height: px.h * 0.75 };
+  const scale = Math.min(1, CONTENT_WIDTH / natural.width, MAX_FIGURE_HEIGHT / natural.height);
+  return { width: natural.width * scale, height: natural.height * scale };
+}
+
 function widthsFor(head: string[], widths?: number[]): string[] {
   const w = widths && widths.length === head.length ? widths : head.map(() => 1);
   const total = w.reduce((a, c) => a + c, 0);
@@ -159,8 +177,13 @@ function widthsFor(head: string[], widths?: number[]): string[] {
 /* ─── Block rendering ─────────────────────────────────────────────────────── */
 
 function PdfBlock({
-  block: b, screens, screenBase,
-}: { block: KBBlock; screens: Set<string>; screenBase: string }) {
+  block: b, screens, screenBase, screenSizes,
+}: {
+  block: KBBlock;
+  screens: Set<string>;
+  screenBase: string;
+  screenSizes: Record<string, { w: number; h: number }>;
+}) {
   switch (b.type) {
     case "p":
       return <Text style={s.p}>{b.text}</Text>;
@@ -237,13 +260,17 @@ function PdfBlock({
       );
     }
 
-    case "figure":
+    case "figure": {
+      const size = figureSize(screenSizes[b.file]);
       return (
         <View style={s.figure} wrap={false}>
           {screens.has(b.file) ? (
             // react-pdf's <Image> is a PDF primitive, not an <img> — it has no alt prop.
             // eslint-disable-next-line jsx-a11y/alt-text
-            <Image style={s.figureImg} src={`${screenBase}/${b.file}`} />
+            <Image
+              style={[s.figureImg, size ?? { width: "100%" }]}
+              src={`${screenBase}/${b.file}`}
+            />
           ) : (
             <View style={s.figurePlaceholder}>
               <Text style={s.figurePlaceholderLabel}>SCREENSHOT NOT CAPTURED YET</Text>
@@ -257,6 +284,7 @@ function PdfBlock({
           <Text style={s.figureCaption}>{b.caption}</Text>
         </View>
       );
+    }
 
     case "faq":
       return (
@@ -305,6 +333,11 @@ export interface KBPdfProps {
    * dropped silently. Tests may pass a filesystem directory instead.
    */
   screenBase: string;
+  /**
+   * Pixel dimensions per screenshot filename. Without these every figure falls
+   * back to full column width, which upscales small crops — see figureSize().
+   */
+  screenSizes: Record<string, { w: number; h: number }>;
 }
 
 function Furniture({ chapterTitle, orgName }: { chapterTitle: string; orgName: string }) {
@@ -323,7 +356,7 @@ function Furniture({ chapterTitle, orgName }: { chapterTitle: string; orgName: s
 }
 
 export default function KBPdfDoc({
-  chapters, groups, meta, orgName, generatedOn, availableScreens, screenBase,
+  chapters, groups, meta, orgName, generatedOn, availableScreens, screenBase, screenSizes,
 }: KBPdfProps) {
   const screens = new Set(availableScreens);
   const byId = new Map(chapters.map((c) => [c.id, c]));
@@ -440,7 +473,7 @@ export default function KBPdfDoc({
             <View key={sec.id}>
               <Text style={s.sectionTitle}>{sec.title}</Text>
               {sec.blocks.map((b, i) => (
-                <PdfBlock key={i} block={b} screens={screens} screenBase={screenBase} />
+                <PdfBlock key={i} block={b} screens={screens} screenBase={screenBase} screenSizes={screenSizes} />
               ))}
             </View>
           ))}

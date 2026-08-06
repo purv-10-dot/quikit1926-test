@@ -90,13 +90,17 @@ export function KBFigure({
           </p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+        <div className="flex justify-center overflow-hidden rounded-lg border border-gray-200 bg-gray-50 p-2">
+          {/* Never upscale. Captures range from a 219px-wide sidebar strip to a
+              4273px-wide week grid; `w-full` blew the narrow ones up ~5× into a
+              blurry mess. `w-auto` + max constraints means small crops render at
+              their true size and only oversized ones are scaled down. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={`${KB_SCREEN_DIR}/${file}`}
             alt={caption}
             onError={() => setMissing(true)}
-            className="block w-full"
+            className="block h-auto max-h-[560px] w-auto max-w-full rounded"
           />
         </div>
       )}

@@ -13,21 +13,31 @@ import { useState } from "react";
 import { Download, Loader2 } from "lucide-react";
 import { KB_CHAPTERS, KB_GROUPS, KB_META, collectFigures } from "@/lib/knowledge-base";
 
-async function probeScreens(files: string[]): Promise<string[]> {
+interface ScreenInfo { file: string; w: number; h: number }
+
+/**
+ * Load every figure slot and report which ones exist, with their pixel size.
+ *
+ * The size matters as much as the existence: react-pdf gives an <Image> no
+ * intrinsic dimensions, so without a real width/height the document has to fall
+ * back to full column width — which upscales a narrow crop (a 219px sidebar
+ * strip) roughly 5× into a blurry smear. Decoding the image is the only way to
+ * learn its true size on the client.
+ */
+async function probeScreens(files: string[]): Promise<ScreenInfo[]> {
   const results = await Promise.all(
-    files.map(async (f) => {
-      try {
-        const res = await fetch(`/kb/screens/${f}`, { method: "HEAD", cache: "force-cache" });
-        // A Next.js dev server answers 404 for a missing public file; some hosts
-        // answer 200 with an HTML error page, so check the content type too.
-        const type = res.headers.get("content-type") ?? "";
-        return res.ok && type.startsWith("image/") ? f : null;
-      } catch {
-        return null;
-      }
-    }),
+    files.map(
+      (file) =>
+        new Promise<ScreenInfo | null>((resolve) => {
+          const img = new window.Image();
+          img.onload = () =>
+            resolve({ file, w: img.naturalWidth, h: img.naturalHeight });
+          img.onerror = () => resolve(null);
+          img.src = `/kb/screens/${file}`;
+        }),
+    ),
   );
-  return results.filter((f): f is string => f !== null);
+  return results.filter((r): r is ScreenInfo => r !== null && r.w > 0 && r.h > 0);
 }
 
 export function KBDownloadButton({ orgName }: { orgName: string }) {
@@ -38,7 +48,9 @@ export function KBDownloadButton({ orgName }: { orgName: string }) {
     try {
       const figures = collectFigures(KB_CHAPTERS);
       const unique = Array.from(new Set(figures.map((f) => f.file)));
-      const availableScreens = await probeScreens(unique);
+      const found = await probeScreens(unique);
+      const availableScreens = found.map((f) => f.file);
+      const screenSizes = Object.fromEntries(found.map((f) => [f.file, { w: f.w, h: f.h }]));
 
       const [{ pdf }, { default: KBPdfDoc }] = await Promise.all([
         import("@react-pdf/renderer"),
@@ -57,6 +69,7 @@ export function KBDownloadButton({ orgName }: { orgName: string }) {
           orgName={orgName || "QuikScale"}
           generatedOn={generatedOn}
           availableScreens={availableScreens}
+          screenSizes={screenSizes}
           // Absolute — react-pdf fetches the image itself and has no document
           // base to resolve a root-relative path against.
           screenBase={`${window.location.origin}/kb/screens`}

@@ -29,7 +29,7 @@ export const peopleCycle: KBChapter = {
             ["Self-Assessment", "Individual contributors", "Your own view of your quarter, written before your manager writes theirs."],
             ["Reviews", "Managers", "The formal performance review: rating, strengths, improvements and notes."],
             ["1:1 Meetings", "Manager and report", "Recurring syncs with talking points, action items, notes and a mood check."],
-            ["Feedback", "Everyone", "Continuous, lightweight feedback between colleagues, outside the review cycle."],
+            ["Feedback", "—", "Continuous peer feedback. Listed in the sidebar but not yet built — see below."],
             ["Talent", "Leadership", "The nine-box grid: performance against potential, with flight risk and succession readiness."],
           ],
         },
@@ -130,17 +130,23 @@ export const peopleCycle: KBChapter = {
     },
     {
       id: "pc-feedback",
-      title: "Feedback",
+      title: "Feedback (not yet available)",
       blocks: [
         {
+          type: "callout",
+          tone: "warn",
+          title: "This page is not built yet",
+          text: "Feedback appears in the Goals & Pillars sidebar group, but opening it leads nowhere — the page has not been implemented. Until it ships, record peer feedback in the 1:1 Meetings notes, and capture anything that needs following up as a WWW commitment.",
+        },
+        {
           type: "p",
-          text: "Feedback is continuous and lightweight — a note from one colleague to another, captured at the moment it is relevant rather than saved for the quarterly review. Over a quarter it becomes the evidence base that makes reviews specific instead of impressionistic.",
+          text: "The intent is continuous, lightweight feedback — a note from one colleague to another, captured at the moment it is relevant rather than saved for the quarterly review. Over a quarter that becomes the evidence base that makes reviews specific instead of impressionistic.",
         },
         {
           type: "callout",
           tone: "tip",
-          title: "Feed it into the Start / Stop / Keep habit",
-          text: "Rockefeller Habit five asks every leader to have a Start/Stop/Keep conversation with at least one employee each week. Recording the outcome as feedback is what turns that habit from an intention into something you can score." },
+          title: "The habit it supports",
+          text: "Rockefeller Habit five asks every leader to have a Start/Stop/Keep conversation with at least one employee each week. Recording the outcome — wherever you record it — is what turns that habit from an intention into something you can score." },
       ],
     },
     {

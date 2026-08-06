@@ -193,7 +193,6 @@ export const appendixRoutes: KBChapter = {
             ["Self-Assessment", "/performance/self", "Goals & Pillars"],
             ["Reviews", "/performance/reviews", "Goals & Pillars"],
             ["1:1 Meetings", "/performance/one-on-one", "Goals & Pillars"],
-            ["Feedback", "/performance/feedback", "Goals & Pillars"],
             ["Talent", "/performance/talent", "Goals & Pillars"],
             ["FACe", "/performance/face", "FACe & PACe"],
             ["PACe", "/performance/pace", "FACe & PACe"],
@@ -224,6 +223,44 @@ export const appendixRoutes: KBChapter = {
           tone: "info",
           title: "Not every route is visible to everyone",
           text: "A screen appears in your sidebar only when the module is enabled for your organisation and your role grants view on it. Navigating directly to a route you are not permitted to see will not bypass that.",
+        },
+        {
+          type: "h3",
+          text: "Keeping this guide current",
+        },
+        {
+          type: "p",
+          text: "This appendix is not maintained by hand alone. An automated check compares every route the application actually serves against the routes this guide mentions, and fails the build when a module ships undocumented — so a new feature cannot quietly appear in the product without appearing here too.",
+        },
+        {
+          type: "steps",
+          items: [
+            { title: "Build the feature", text: "Add the module as normal." },
+            { title: "Write it up", text: "Add a chapter under lib/knowledge-base/content/, or a section in the closest existing chapter, and list it in a contents group." },
+            { title: "Add it to this appendix", text: "One row: screen name, route, chapter." },
+            { title: "Add a screenshot slot if it helps", text: "Add a figure block, then a matching capture recipe. A separate check makes sure the two never drift apart." },
+            { title: "Run the checks", text: "The coverage, structure and capture-recipe tests all run with the normal test suite. Green means the guide is complete." },
+          ],
+        },
+        {
+          type: "callout",
+          tone: "rule",
+          title: "Undocumented modules fail the build",
+          text: "If a route genuinely needs no write-up — a redirect hub, a sub-view of a documented module, an unbuilt placeholder — it must be exempted explicitly, with a stated reason. Exemptions are themselves checked, so one left behind for a deleted route is caught rather than quietly handing the next module a free pass.",
+        },
+        {
+          type: "h3",
+          text: "Sidebar entries with no page yet",
+        },
+        {
+          type: "table",
+          caption: "Listed in the sidebar, not yet implemented",
+          head: ["Sidebar entry", "Route", "Status"],
+          widths: [1.3, 1.5, 1.4],
+          rows: [
+            ["Goals & Pillars → Feedback", "/performance/feedback", "No page — the link leads nowhere"],
+            ["Cash", "/cash", "Placeholder page — module on the roadmap"],
+          ],
         },
       ],
     },

@@ -56,7 +56,8 @@
       "Bash(npx cross-env *)",
       "Bash(DISTDIR=.next-buildcheck node -e ' *)",
       "Bash(rm -f /tmp/empty-state.json /tmp/probe.ts)",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "Bash(curl -s -o /dev/null -w \"dev-server-3003:%{http_code}\\\\n\" --max-time 4 http://localhost:3003/)"
     ],
     "additionalDirectories": [
       "C:\\Users\\user\\AppData\\Local\\Temp\\qs-doc-build\\sections"

@@ -18,8 +18,12 @@ import type { KPIRow } from "@/lib/types/kpi";
  */
 
 let mockCurrentWeek: number | null = 4;
+// StatsTab reads useQtdReferenceWeek + useQuarterWeekCount too — a partial mock
+// throws "No <name> export is defined on the mock", so keep all four listed.
 vi.mock("@/lib/hooks/useCurrentWeek", () => ({
   useCurrentWeek: () => mockCurrentWeek,
+  useQtdReferenceWeek: () => mockCurrentWeek,
+  useQuarterWeekCount: () => 13,
   useWeekLabels: () => Array.from({ length: 13 }, (_, i) => `W${i + 1}`),
 }));
 

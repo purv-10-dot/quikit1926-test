@@ -68,6 +68,9 @@ const MANUAL_LOGIN =
 const VIEWPORT = { width: 1600, height: 1000 };
 const DEVICE_SCALE = Number(opt("scale", "KB_SCALE", "1")) || 1;
 
+/** Blur tenant data out of the captures. On unless `--no-redact` is passed. */
+const REDACT = flag("no-redact") !== "true" && process.env.KB_REDACT !== "0";
+
 interface Shot {
   /** Output filename — must match the `file` on the figure block in the content. */
   file: string;
@@ -76,6 +79,41 @@ interface Shot {
   /** Optional interaction + region selection. Return a locator-ish selector to clip to. */
   prepare?: (page: Page) => Promise<string | undefined>;
 }
+
+/* ── Redaction ───────────────────────────────────────────────────────────── */
+
+/**
+ * Blur the tenant's real data out of every capture, while leaving the interface
+ * itself sharp — the screenshots teach the UI, not the numbers.
+ *
+ * ON BY DEFAULT (`--no-redact` turns it off). The manual is downloaded as a PDF
+ * and circulated, so shipping legible customer names, revenue figures and staff
+ * emails inside it is a data-leak waiting to happen. Blurring at capture time
+ * means the raw data never reaches the PNG at all — unlike blurring in the
+ * reader, which would still leave it recoverable in the file.
+ *
+ * Deliberately NOT blurred: column headers, toolbars, buttons, labels, nav,
+ * section titles and status colours. Those carry the instructional value, and a
+ * KPI cell keeps its traffic-light colour through the blur.
+ */
+export const REDACT_CSS = `
+  /* Table row content — names, owners, values, notes */
+  tbody td, tbody th { filter: blur(5px) !important; }
+
+  /* Identity in the header: signed-in user, org chip */
+  header [data-tour="user-menu"],
+  header span[title] { filter: blur(5px) !important; }
+
+  /* Values typed into forms, drawers and modals */
+  [role="dialog"] input, [role="dialog"] textarea, [role="dialog"] select,
+  aside input, aside textarea, aside select { filter: blur(5px) !important; }
+
+  /* Free-text bodies: OPSP sections, SWT entries, notes, feedback */
+  [contenteditable="true"] { filter: blur(5px) !important; }
+
+  /* Escape hatch — mark anything else in the app with data-kb-redact */
+  [data-kb-redact] { filter: blur(5px) !important; }
+`;
 
 /* ── Small helpers ───────────────────────────────────────────────────────── */
 
@@ -325,7 +363,11 @@ async function capture(browser: Browser, shot: Shot): Promise<"captured" | "skip
     }
 
     const clip = shot.prepare ? await shot.prepare(page) : undefined;
-    await page.waitForTimeout(300);
+
+    // Inject AFTER prepare() — a modal or drawer opened there needs redacting
+    // too, and a style tag added earlier would not cover nodes mounted since.
+    if (REDACT) await page.addStyleTag({ content: REDACT_CSS });
+    await page.waitForTimeout(400);
 
     const target = clip ? page.locator(clip).first() : null;
     const dest = path.join(OUT_DIR, shot.file);
@@ -356,7 +398,12 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`Capturing ${shots.length} screenshot(s) from ${BASE_URL}\n`);
+  console.log(`Capturing ${shots.length} screenshot(s) from ${BASE_URL}`);
+  console.log(
+    REDACT
+      ? "Tenant data will be blurred out of every capture (--no-redact to disable)\n"
+      : "WARNING: redaction disabled — captures will contain real tenant data\n",
+  );
 
   // A stale state file from an aborted run would silently reuse a dead session.
   fs.rmSync(STATE_FILE, { force: true });
