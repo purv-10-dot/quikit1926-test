@@ -70,11 +70,18 @@ describe("MasterListPage", () => {
     );
   });
 
-  it("shows the loading shimmer when isLoading is true", () => {
-    const { container } = setup({ isLoading: true });
+  it("shows the loading shimmer on first load (loading with no rows yet)", () => {
+    const { container } = setup({ isLoading: true, data: [], total: 0 });
     // Shimmer renders animate-shimmer bars; no rows should be present.
     expect(container.querySelector(".animate-shimmer")).toBeTruthy();
     expect(screen.queryByText("Engineering")).not.toBeInTheDocument();
+  });
+
+  it("keeps existing rows visible while refetching instead of shimmering", () => {
+    // Once a page has rows, a background refetch must not blank the table.
+    const { container } = setup({ isLoading: true });
+    expect(container.querySelector(".animate-shimmer")).toBeNull();
+    expect(screen.getByText("Engineering")).toBeInTheDocument();
   });
 
   it("shows the empty state with an Add button when there are no rows", () => {

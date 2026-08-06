@@ -10,7 +10,6 @@ export type ImportMode =
   | "STRICT_TEMPLATE"
   | "GENERIC_SOR"
   | "ALPHABETIC_SOR"
-  | "SELF_FILL"
   | "UNIVERSAL";
 
 // Standard BOQ fields a user can map a detected column to (spec §1.1 + §4).
@@ -118,41 +117,3 @@ export type Stage =
   | "preview"
   | "confirming"
   | "done";
-
-// Self-Fill tree model — user builds parent groups with children that are either
-// leaves (hold qty/rate directly, no sub-items) or groups (contain line items).
-// String inputs so fields can be cleared while typing; parsed when flattened.
-export interface SFLineItem {
-  id: string;
-  /** Override the last numeric segment of the BOQ No (e.g. "3" for 2.7.3).
-   *  Empty string falls back to the sequential position (1-based). */
-  boqNoOverride: string;
-  displayName: string;
-  unit: string;
-  tenderQty: string;
-  rate: string;
-}
-
-export type SFChildMode = "leaf" | "group";
-
-export interface SFChild {
-  id: string;
-  /** Override the last numeric segment (e.g. "6" → "2.6"). Empty = auto. */
-  boqNoOverride: string;
-  mode: SFChildMode;
-  displayName: string;
-  // leaf fields (used when mode === "leaf")
-  unit: string;
-  tenderQty: string;
-  rate: string;
-  // group fields (used when mode === "group")
-  lineItems: SFLineItem[];
-}
-
-export interface SFParent {
-  id: string;
-  /** Override the top-level BOQ No (e.g. "4"). Empty = auto. */
-  boqNoOverride: string;
-  displayName: string;
-  children: SFChild[];
-}

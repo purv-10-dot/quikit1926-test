@@ -11,6 +11,7 @@ import {
   APPROVAL_INSTANCE_INCLUDE,
   buildApprovalDto,
   type ApprovalDto,
+  collectApprovalUserIds,
 } from "@/lib/approvals/approval-dto";
 
 function enrichWO(
@@ -33,8 +34,7 @@ function enrichWO(
     scopeType: l.scopeType ?? null,
     scopeId: l.scopeId ?? null,
     description: l.description ?? "",
-    uomId: l.uomId ?? "",
-    uomCode: l.uomId ?? "",
+    uomCode: l.uomCode ?? "",
     quantity: l.quantity?.toString?.() ?? "0",
     rate: l.negotiatedRate?.toString?.() ?? "0",
     amount: l.amount?.toString?.() ?? "0",
@@ -124,16 +124,7 @@ export async function GET(
       include: APPROVAL_INSTANCE_INCLUDE,
     });
     if (instance) {
-      const userIds = Array.from(
-        new Set<string>([
-          instance.requestedById,
-          ...instance.history.map((h) => h.actionById),
-          ...(instance.workflow.steps
-            .map((s) => s.approverUserId)
-            .filter(Boolean) as string[]),
-        ]),
-      );
-      const nameById = await resolveUserNames(userIds);
+      const nameById = await resolveUserNames(collectApprovalUserIds(instance));
       const callerCanActOnCurrentStep = canActOnCurrentStep(
         {
           userId: ctx.userId,
@@ -273,7 +264,7 @@ async function handleUpdate(req: NextRequest, id: string) {
             boqItemId: String(it.boqNo ?? it.boqItemId ?? ""),
             description: String(it.description ?? ""),
             quantity: String(Number(it.quantity) || 0),
-            uomId: String(it.uomCode ?? it.uomId ?? ""),
+            uomCode: String(it.uomCode ?? it.uomId ?? ""),
             negotiatedRate: String(Number(it.rate) || 0),
             amount: String(Number(it.amount) || 0),
             lineDate: it.lineDate ? new Date(it.lineDate) : null,

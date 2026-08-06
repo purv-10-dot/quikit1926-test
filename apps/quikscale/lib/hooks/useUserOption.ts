@@ -13,7 +13,7 @@
  * id is supplied, and cached for 5 min so revisiting a filter is instant.
  */
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueries } from "@tanstack/react-query";
 import { userToFilterOption, type FilterOption } from "@quikit/ui";
 import type { User } from "@/lib/types/kpi";
 
@@ -33,4 +33,29 @@ export function useUserOption(userId?: string): FilterOption | undefined {
   });
 
   return data ? userToFilterOption(data) : undefined;
+}
+
+/**
+ * Multi-select counterpart of `useUserOption` — resolves a LIST of user ids to
+ * `FilterOption`s for a `FilterPicker` in `multiple` mode (pass as
+ * `selectedOptions`). Shares the same per-user query keys / 5-min cache as
+ * `useUserOption`, so ids already fetched by the single-select hook resolve
+ * instantly and no duplicate requests are issued.
+ *
+ * Ids still in flight are simply omitted; the picker falls back to rendering
+ * the raw id until the name lands.
+ */
+export function useUserOptions(userIds: string[]): FilterOption[] {
+  const results = useQueries({
+    queries: userIds.map((id) => ({
+      queryKey: ["user-option", id],
+      queryFn: () => fetchUserById(id),
+      enabled: !!id,
+      staleTime: 1000 * 60 * 5,
+    })),
+  });
+
+  return results
+    .map((r) => (r.data ? userToFilterOption(r.data as User) : undefined))
+    .filter((o): o is FilterOption => Boolean(o));
 }

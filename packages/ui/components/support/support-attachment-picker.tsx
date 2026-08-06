@@ -114,10 +114,10 @@ export function SupportAttachmentPicker({
     <div>
       <label
         htmlFor="support-attachments"
-        className="block text-sm font-medium text-[var(--color-text-primary)] mb-1.5"
+        className="block text-sm font-medium text-[var(--color-text-primary,#0F172A)] mb-1.5"
       >
         Attachments{" "}
-        <span className="font-normal text-[var(--color-text-secondary)]">(optional)</span>
+        <span className="font-normal text-[var(--color-text-secondary,#64748B)]">(optional)</span>
       </label>
 
       <input
@@ -138,17 +138,17 @@ export function SupportAttachmentPicker({
       <label
         htmlFor="support-attachments"
         aria-disabled={disabled || atLimit}
-        className={`flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-[var(--color-border)] px-3 py-4 text-center transition-colors ${
+        className={`flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-[var(--color-border,#E2E8F0)] px-3 py-4 text-center transition-colors ${
           disabled || atLimit
             ? "opacity-50 cursor-not-allowed"
             : "cursor-pointer hover:border-accent-300 hover:bg-accent-50/40"
         }`}
       >
         <Paperclip className="h-4 w-4 text-accent-600" />
-        <span className="text-xs font-medium text-[var(--color-text-primary)]">
+        <span className="text-xs font-medium text-[var(--color-text-primary,#0F172A)]">
           {atLimit ? "Attachment limit reached" : "Add a screenshot or file"}
         </span>
-        <span className="text-[11px] text-[var(--color-text-secondary)]">
+        <span className="text-[11px] text-[var(--color-text-secondary,#64748B)]">
           Images or PDF · up to {MAX_MB} MB · max {SUPPORT_ATTACHMENT_MAX_COUNT}
         </span>
       </label>
@@ -160,9 +160,9 @@ export function SupportAttachmentPicker({
           {files.map((f) => (
             <li
               key={f.id}
-              className="flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-1.5"
+              className="flex items-center gap-2 rounded-lg border border-[var(--color-border,#E2E8F0)] bg-[var(--color-bg-primary,#FFFFFF)] p-1.5"
             >
-              <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded bg-[var(--color-neutral-100)]">
+              <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded bg-[var(--color-neutral-100,#F1F5F9)]">
                 {f.previewUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -171,17 +171,17 @@ export function SupportAttachmentPicker({
                     className="h-full w-full object-cover"
                   />
                 ) : f.file.type === "application/pdf" ? (
-                  <FileText className="h-4 w-4 text-[var(--color-text-secondary)]" />
+                  <FileText className="h-4 w-4 text-[var(--color-text-secondary,#64748B)]" />
                 ) : (
-                  <ImageIcon className="h-4 w-4 text-[var(--color-text-secondary)]" />
+                  <ImageIcon className="h-4 w-4 text-[var(--color-text-secondary,#64748B)]" />
                 )}
               </span>
 
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-xs font-medium text-[var(--color-text-primary)]">
+                <span className="block truncate text-xs font-medium text-[var(--color-text-primary,#0F172A)]">
                   {f.file.name}
                 </span>
-                <span className="block text-[11px] text-[var(--color-text-secondary)]">
+                <span className="block text-[11px] text-[var(--color-text-secondary,#64748B)]">
                   {formatBytes(f.file.size)}
                 </span>
               </span>
@@ -191,7 +191,7 @@ export function SupportAttachmentPicker({
                 onClick={() => removeFile(f.id)}
                 disabled={disabled}
                 aria-label={`Remove ${f.file.name}`}
-                className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded text-[var(--color-text-secondary)] hover:bg-[var(--color-neutral-100)] hover:text-[var(--color-text-primary)] disabled:opacity-50"
+                className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded text-[var(--color-text-secondary,#64748B)] hover:bg-[var(--color-neutral-100,#F1F5F9)] hover:text-[var(--color-text-primary,#0F172A)] disabled:opacity-50"
               >
                 <X className="h-3.5 w-3.5" />
               </button>

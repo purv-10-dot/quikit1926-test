@@ -29,6 +29,8 @@ import {
   useApproveStockReconciliation,
 } from "@/hooks/use-store";
 import { usePermissions } from "@/hooks/use-permissions";
+import { RepairApprovalNotice } from "@/components/RepairApprovalNotice";
+import { MasterApprovalAction } from "@/components/MasterApprovalAction";
 import { USER_TYPE_CATALOG } from "@/lib/rbac/user-types";
 
 function roleLabel(key: string | null | undefined): string {
@@ -101,7 +103,7 @@ export default function ReconciliationDetailPage() {
   const { data: recon, isLoading } = useStockReconciliation(id);
   const submitMutation = useSubmitStockReconciliation();
   const approveMutation = useApproveStockReconciliation();
-  const { isSuper } = usePermissions();
+  const { isSuper, me } = usePermissions();
 
   // Workflow action modal — same pattern PR / MI / Estimation use.
   const [workflowAction, setWorkflowAction] = useState<
@@ -227,6 +229,13 @@ export default function ReconciliationDetailPage() {
                 </button>
               </>
             )}
+            <MasterApprovalAction
+              approval={recon?.approval}
+              me={me}
+              entityLabel="reconciliation"
+              actionEndpoint={`/api/store/reconciliations/${id}/approve`}
+              invalidateKeys={[["reconciliations"], ["reconciliation", id]]}
+            />
             {isPending && !canApprove && (
               <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border bg-amber-50 text-amber-700 border-amber-200">
                 Awaiting approver
@@ -237,6 +246,14 @@ export default function ReconciliationDetailPage() {
       />
 
       <PageContainer>
+        <RepairApprovalNotice
+          repair={recon?.approval?.repair}
+          entityLabel="reconciliation"
+          actionEndpoint={`/api/store/reconciliations/${id}/approve`}
+          invalidateKeys={[["reconciliations"], ["reconciliation", id]]}
+          me={me}
+        />
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
             {/* Overview */}

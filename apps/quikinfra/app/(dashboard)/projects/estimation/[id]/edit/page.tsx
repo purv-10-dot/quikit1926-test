@@ -7,7 +7,7 @@
 
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { AlertTriangle, ArrowLeft } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Lock } from "lucide-react";
 import { PageContainer } from "@/components/PageShell";
 import { ShimmerBlock } from "@/components/Shimmer";
 import { useEstimation } from "@/hooks/use-projects";
@@ -65,6 +65,40 @@ export default function EditEstimationPage() {
               className="mt-3 inline-flex items-center gap-1 text-xs font-semibold underline"
             >
               <ArrowLeft className="w-3 h-3" /> Back to Material Estimation
+            </Link>
+          </div>
+        </div>
+      </PageContainer>
+    );
+  }
+
+  // Deep-link guard. The Edit affordances are already disabled once the
+  // row leaves draft, but the edit URL is guessable — and PUT answers
+  // these statuses with a 409, so rendering the form would only let the
+  // user type a change that cannot be saved.
+  const status = String(estimation.status ?? "").trim().toLowerCase();
+  const lockReason =
+    status === "pending_approval" || status === "submitted"
+      ? "This estimation is awaiting approval. It stays locked until an approver approves or rejects it."
+      : status === "approved"
+        ? "This estimation is approved and locked — it is the baseline downstream procurement reads."
+        : status === "inactive"
+          ? "This estimation has been deleted."
+          : null;
+
+  if (lockReason) {
+    return (
+      <PageContainer>
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-sm text-amber-900 flex items-start gap-3">
+          <Lock className="w-5 h-5 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <div className="font-semibold">Editing is locked</div>
+            <div className="text-xs mt-1 opacity-90">{lockReason}</div>
+            <Link
+              href={`/projects/estimation/${id}`}
+              className="mt-3 inline-flex items-center gap-1 text-xs font-semibold underline"
+            >
+              <ArrowLeft className="w-3 h-3" /> View estimation
             </Link>
           </div>
         </div>

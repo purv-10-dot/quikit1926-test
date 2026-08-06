@@ -110,7 +110,12 @@ export function SendOfferWizard({ app, onClose, onSent }: { app: SendOfferApp; o
   const [expiresAt, setExpiresAt] = useState("");
   const [supportingDocs, setSupportingDocs] = useState<{ key: string; name: string }[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [ccInput, setCcInput] = useState("");
   const MAX_DOCS = 10;
+
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const ccEmails = ccInput.split(",").map((s) => s.trim()).filter(Boolean);
+  const ccInvalid = ccEmails.filter((e) => !EMAIL_RE.test(e));
 
   const designation = app.latestOffer?.designation || app.requisition.title;
 
@@ -231,7 +236,7 @@ export function SendOfferWizard({ app, onClose, onSent }: { app: SendOfferApp; o
     mutationFn: async () => {
       await ensureSaved();
       // Email the letter (→ OfferSent).
-      await api.post("/api/v1/hrms/mail/offer", { offerId: app.id });
+      await api.post("/api/v1/hrms/mail/offer", { offerId: app.id, cc: ccEmails.length ? ccEmails : undefined });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pipeline-apps"] });
@@ -440,6 +445,21 @@ export function SendOfferWizard({ app, onClose, onSent }: { app: SendOfferApp; o
                 )}
               </div>
 
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">CC (optional)</label>
+                <input
+                  type="text"
+                  value={ccInput}
+                  onChange={(e) => setCcInput(e.target.value)}
+                  placeholder="hr@company.com, manager@company.com"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">Comma-separated emails to CC on the offer letter.</p>
+                {ccInvalid.length > 0 && (
+                  <p className="text-[11px] text-red-500 mt-1">Invalid email{ccInvalid.length > 1 ? "s" : ""}: {ccInvalid.join(", ")}</p>
+                )}
+              </div>
+
               <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5 pt-1"><Check size={12} /> Review</p>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-3 gap-x-4 bg-slate-50 ring-1 ring-slate-100 rounded-xl px-4 py-3.5 text-xs">
                 <Review label="Employment" value={employmentType} />
@@ -474,7 +494,7 @@ export function SendOfferWizard({ app, onClose, onSent }: { app: SendOfferApp; o
                 disabled={previewMut.isPending || sendMut.isPending || !joiningDate || annualCTC <= 0 || !salaryStructureId}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium text-emerald-700 border border-emerald-300 bg-white hover:bg-emerald-50 disabled:opacity-50 disabled:cursor-not-allowed">
                 {previewMut.isPending ? <><Loader2 size={13} className="animate-spin" /> Preview…</> : <><Eye size={13} /> Preview letter</>}</button>
-              <button onClick={() => toast.promise(sendMut.mutateAsync(), { loading: "Sending offer…", success: "Offer sent", error: "Couldn't send offer" })} disabled={sendMut.isPending || previewMut.isPending || !joiningDate || annualCTC <= 0 || !salaryStructureId}
+              <button onClick={() => toast.promise(sendMut.mutateAsync(), { loading: "Sending offer…", success: "Offer sent", error: "Couldn't send offer" })} disabled={sendMut.isPending || previewMut.isPending || !joiningDate || annualCTC <= 0 || !salaryStructureId || ccInvalid.length > 0}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium text-white shadow-sm transition bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 disabled:opacity-50 disabled:cursor-not-allowed">
                 {sendMut.isPending ? <><Loader2 size={13} className="animate-spin" /> Sending…</> : <><Send size={13} /> Send</>}</button>
             </div>

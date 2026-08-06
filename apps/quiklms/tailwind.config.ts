@@ -9,6 +9,11 @@ const config: Config = {
     './app/**/*.{js,ts,jsx,tsx,mdx}',
     './components/**/*.{js,ts,jsx,tsx,mdx}',
     './lib/**/*.{js,ts,jsx,tsx,mdx}',
+    // Required for any @quikit/ui component rendered here (Contact Support,
+    // DataTable, …). Without it Tailwind never emits the utilities those
+    // components use — `w-[380px]`, `z-[201]`, `bg-[var(--color-bg-primary)]` —
+    // and they render unstyled: no width, no background, no rounding.
+    '../../packages/ui/**/*.{js,ts,jsx,tsx}',
   ],
   theme: {
     screens: {

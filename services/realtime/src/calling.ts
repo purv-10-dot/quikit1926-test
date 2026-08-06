@@ -10,13 +10,18 @@
  *    names a raw socket to forward to.
  * 4. One-active-call-per-user is enforced server-side in calling.service.ts.
  *
+ * Media no longer flows through this gateway (CALL-3 §4): 1:1 and group calls
+ * both join a LiveKit room directly (token minted by POST /api/calls/:id/token),
+ * so there's no offer/answer/ICE-candidate relay here anymore — only the
+ * pre-connect ring lifecycle (invite/accepted/reject/cancel/end/timeout).
+ *
  * Phase 0 hardening:
  *  - §2.1: ringing timeouts are Redis-backed (see ringing.ts) instead of an
  *    in-process Map, so accept-on-instance-B clears a ring started on A and the
  *    per-instance sweeper fires timeouts exactly once.
  *  - §2.2: the verified participant set is cached socket-locally after the first
- *    strict DB verify; offer/answer/ice-candidate reuse it. Invalidated on
- *    call:end / call:cancel.
+ *    strict DB verify; reject/cancel/end reuse it. Invalidated on call:end /
+ *    call:cancel.
  */
 import { db } from "@quikit/database";
 import type { Server as IOServer, Socket } from "socket.io";
@@ -194,7 +199,7 @@ export function registerCallingHandlers(
           return;
         }
 
-        // Seed the §2.2 cache for subsequent offer/answer/ice on this socket.
+        // Seed the §2.2 cache for subsequent reject/cancel/end on this socket.
         cacheFor(socket)[callId] = {
           participantIds: call.participants.map((p) => p.userId),
           initiatorId: call.initiatorId,
@@ -259,155 +264,6 @@ export function registerCallingHandlers(
         ack?.({ ok: true });
       } catch (e) {
         logger.error({ error: e, socketId: socket.id }, "call:accepted handler error");
-        ack?.({ ok: false });
-      }
-    },
-  );
-
-  // --- call:ready ---
-  // Relay readiness signal from callee to other participants (write-free).
-  socket.on(
-    "call:ready",
-    async (payload: { callId: string }, ack?: (r: { ok: boolean }) => void) => {
-      try {
-        const { callId } = payload ?? {};
-        if (typeof callId !== "string") {
-          ack?.({ ok: false });
-          return;
-        }
-        const auth = await resolveCallAuth(socket, callId, orgId, userId);
-        if (!auth) {
-          ack?.({ ok: false });
-          return;
-        }
-        for (const pUserId of auth.participantIds) {
-          if (pUserId === userId) continue;
-          io.to(userRoom(orgId, pUserId)).emit("call:ready", { callId, fromUserId: userId });
-        }
-        ack?.({ ok: true });
-      } catch (e) {
-        logger.error({ error: e, socketId: socket.id }, "call:ready handler error");
-        ack?.({ ok: false });
-      }
-    },
-  );
-
-  // --- call:offer ---
-  // Relay WebRTC offer to the call's participants (excluding sender)
-  socket.on(
-    "call:offer",
-    async (
-      payload: { callId: string; sdp?: string; offer?: RTCSessionDescriptionInit },
-      ack?: (r: { ok: boolean }) => void,
-    ) => {
-      try {
-        const { callId, sdp, offer } = payload ?? {};
-        const sdpData = sdp ?? JSON.stringify(offer);
-        if (typeof callId !== "string" || !sdpData) {
-          ack?.({ ok: false });
-          return;
-        }
-        const auth = await resolveCallAuth(socket, callId, orgId, userId);
-        if (!auth) {
-          ack?.({ ok: false });
-          return;
-        }
-        for (const pUserId of auth.participantIds) {
-          if (pUserId === userId) continue;
-          io.to(userRoom(orgId, pUserId)).emit("call:offer", {
-            callId,
-            sdp: sdpData,
-            fromUserId: userId,
-          });
-        }
-        ack?.({ ok: true });
-      } catch (e) {
-        logger.error({ error: e, socketId: socket.id }, "call:offer handler error");
-        ack?.({ ok: false });
-      }
-    },
-  );
-
-  // --- call:answer ---
-  // Relay WebRTC answer to the call's initiator
-  socket.on(
-    "call:answer",
-    async (
-      payload: { callId: string; sdp?: string; answer?: RTCSessionDescriptionInit },
-      ack?: (r: { ok: boolean }) => void,
-    ) => {
-      try {
-        const { callId, sdp, answer } = payload ?? {};
-        const sdpData = sdp ?? JSON.stringify(answer);
-        if (typeof callId !== "string" || !sdpData) {
-          ack?.({ ok: false });
-          return;
-        }
-        const auth = await resolveCallAuth(socket, callId, orgId, userId);
-        if (!auth) {
-          ack?.({ ok: false });
-          return;
-        }
-        io.to(userRoom(orgId, auth.initiatorId)).emit("call:answer", {
-          callId,
-          sdp: sdpData,
-          fromUserId: userId,
-        });
-        ack?.({ ok: true });
-      } catch (e) {
-        logger.error({ error: e, socketId: socket.id }, "call:answer handler error");
-        ack?.({ ok: false });
-      }
-    },
-  );
-
-  // --- call:ice-candidate ---
-  // Relay ICE candidate to all other participants
-  socket.on(
-    "call:ice-candidate",
-    async (
-      payload: {
-        callId: string;
-        candidate?: string | RTCIceCandidateInit;
-        sdpMid?: string;
-        sdpMLineIndex?: number;
-      },
-      ack?: (r: { ok: boolean }) => void,
-    ) => {
-      try {
-        const { callId, candidate: rawCandidate, sdpMid, sdpMLineIndex } = payload ?? {};
-        if (typeof callId !== "string" || rawCandidate == null) {
-          ack?.({ ok: false });
-          return;
-        }
-
-        // Normalize: accept either a JSON string or an object
-        const candidateStr =
-          typeof rawCandidate === "string" ? rawCandidate : JSON.stringify(rawCandidate);
-        const mid = sdpMid ?? (typeof rawCandidate === "object" ? rawCandidate.sdpMid : undefined);
-        const mLineIndex =
-          sdpMLineIndex ??
-          (typeof rawCandidate === "object" ? rawCandidate.sdpMLineIndex : undefined);
-
-        const auth = await resolveCallAuth(socket, callId, orgId, userId);
-        if (!auth) {
-          ack?.({ ok: false });
-          return;
-        }
-
-        for (const pUserId of auth.participantIds) {
-          if (pUserId === userId) continue;
-          io.to(userRoom(orgId, pUserId)).emit("call:ice-candidate", {
-            callId,
-            candidate: candidateStr,
-            sdpMid: mid,
-            sdpMLineIndex: mLineIndex,
-            fromUserId: userId,
-          });
-        }
-        ack?.({ ok: true });
-      } catch (e) {
-        logger.error({ error: e, socketId: socket.id }, "call:ice-candidate handler error");
         ack?.({ ok: false });
       }
     },

@@ -28,7 +28,9 @@ export const kpiAuditConfig: AuditEntityConfig<KPIRow> = {
   useMarkRead: () => useMarkAuditRead(),
   useWeekLabels: (k) => useWeekLabels(k.year, k.quarter),
   statusDot: (k) => {
-    const goal = k.qtdGoal ?? k.target ?? 0;
+    // Goal priority mirrors the "Quarterly Goal" column shown on-screen
+    // (quarterlyGoal ?? target ?? qtdGoal) — see kpiStats.ts resolveProgressOverall.
+    const goal = k.quarterlyGoal ?? k.target ?? k.qtdGoal ?? 0;
     const achieved = k.qtdAchieved ?? 0;
     const rag = getProgressBadgeColors(achieved, goal, achieved > 0, k.reverseColor ?? false);
     return { className: rag.bar, label: `RAG indicator: ${rag.label}` };

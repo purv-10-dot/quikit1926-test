@@ -28,6 +28,7 @@ import { getTenantContext, type TenantContext } from "@/lib/auth/context";
 export type ProjectsFinanceResource =
   | "construction.project"
   | "construction.boq"
+  | "construction.activity_scope"
   | "construction.wbs"
   | "construction.estimation"
   | "construction.wo"

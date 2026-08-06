@@ -10,6 +10,7 @@
 import { Prisma } from "@quikit/database";
 import { db } from "@/lib/db";
 import { isOrgAdmin, getMyTeamIds } from "@/lib/api/visibility";
+import { parseMultiFilter, parseMultiListFilter } from "@/lib/api/multiFilter";
 
 export interface KpiScopeParams {
   status?: string;
@@ -39,13 +40,20 @@ export async function buildKpiScopeWhere(
   // Trash toggle: by default return only active (not soft-deleted). When
   // includeDeleted, return ONLY soft-deleted records for the trash view.
   where.deletedAt = params.includeDeleted ? { not: null } : null;
-  if (params.status) where.status = params.status;
+  // Multi-select: one value stays a scalar equality, several become an IN.
+  const statusFilter = parseMultiFilter(params.status);
+  if (statusFilter !== undefined) where.status = statusFilter;
   if (params.kpiLevel) where.kpiLevel = params.kpiLevel;
   // Owner filter semantics depend on level: individual KPIs carry a single
-  // `owner` scalar; team KPIs carry an `ownerIds[]` co-owner list.
+  // `owner` scalar; team KPIs carry an `ownerIds[]` co-owner list — so the
+  // multi-select translates to `IN` for one and `hasSome` for the other.
   if (params.owner) {
-    if (params.kpiLevel === "team") where.ownerIds = { has: params.owner };
-    else where.owner = params.owner;
+    if (params.kpiLevel === "team") {
+      where.ownerIds = parseMultiListFilter(params.owner);
+    } else {
+      const ownerFilter = parseMultiFilter(params.owner);
+      if (ownerFilter !== undefined) where.owner = ownerFilter;
+    }
   }
   // Team filter semantics depend on kpiLevel (see GET /api/kpi for the full
   // rationale): team KPIs filter on KPI.teamId; individual KPIs resolve the

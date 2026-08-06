@@ -13,6 +13,11 @@ import { db } from "@/lib/db";
 import { Prisma } from "@quikit/database";
 import { DomainError } from "@/lib/http";
 import { withDocNumberRetry } from "@/lib/db/doc-number";
+import { recordAudit } from "@/lib/workflow/audit";
+
+// Must match the `historyEntityType` the Workmen grid passes to DataTable —
+// /api/history filters CnAuditLog on this exact string.
+const WORKMAN_ENTITY_TYPE = "workman";
 
 export const ENGAGEMENT_TYPES = ["CONTRACTOR", "DEPARTMENTAL"] as const;
 export type EngagementType = (typeof ENGAGEMENT_TYPES)[number];
@@ -257,32 +262,44 @@ export async function createWorkman(input: CreateWorkmanInput): Promise<WorkmanR
   const row = await withDocNumberRetry(
     () => nextWorkmanCode(input.orgId),
     (workmanCode: string) =>
-      db.cnWorkman.create({
-        data: {
-          orgId: input.orgId,
-          workmanCode,
-          fullName: String(input.fullName).trim(),
-          fatherOrSpouse: input.fatherOrSpouse ? String(input.fatherOrSpouse).trim() : null,
-          gender: input.gender ? String(input.gender).trim().toUpperCase().slice(0, 1) : null,
-          dateOfBirth: parseDate(input.dateOfBirth),
-          phone: input.phone ? String(input.phone).trim() : null,
-          photoFileId: input.photoFileId ? String(input.photoFileId) : null,
-          idProofType: input.idProofType ? String(input.idProofType).trim() : null,
-          idProofLast4,
-          labourCategoryId: input.labourCategoryId,
-          engagementType,
-          contractorId,
-          dailyWage: input.dailyWage != null && input.dailyWage !== "" ? new Prisma.Decimal(input.dailyWage) : null,
-          bankAccountLast4,
-          ifsc: input.ifsc ? String(input.ifsc).trim().toUpperCase() : null,
-          joiningDate: parseDate(input.joiningDate),
-          exitDate: parseDate(input.exitDate),
-          projectIds: Array.isArray(input.projectIds) ? input.projectIds : [],
-          safetyInductionDone: !!input.safetyInductionDone,
-          status: input.status ?? "active",
-          createdBy: input.createdBy,
-          updatedBy: input.createdBy,
-        },
+      // Audit row is written in the same transaction as the insert, so the
+      // history timeline can never disagree with the record itself. The retry
+      // wrapper re-runs the whole transaction on a code collision.
+      db.$transaction(async (tx) => {
+        const created = await tx.cnWorkman.create({
+          data: {
+            orgId: input.orgId,
+            workmanCode,
+            fullName: String(input.fullName).trim(),
+            fatherOrSpouse: input.fatherOrSpouse ? String(input.fatherOrSpouse).trim() : null,
+            gender: input.gender ? String(input.gender).trim().toUpperCase().slice(0, 1) : null,
+            dateOfBirth: parseDate(input.dateOfBirth),
+            phone: input.phone ? String(input.phone).trim() : null,
+            photoFileId: input.photoFileId ? String(input.photoFileId) : null,
+            idProofType: input.idProofType ? String(input.idProofType).trim() : null,
+            idProofLast4,
+            labourCategoryId: input.labourCategoryId,
+            engagementType,
+            contractorId,
+            dailyWage: input.dailyWage != null && input.dailyWage !== "" ? new Prisma.Decimal(input.dailyWage) : null,
+            bankAccountLast4,
+            ifsc: input.ifsc ? String(input.ifsc).trim().toUpperCase() : null,
+            joiningDate: parseDate(input.joiningDate),
+            exitDate: parseDate(input.exitDate),
+            projectIds: Array.isArray(input.projectIds) ? input.projectIds : [],
+            safetyInductionDone: !!input.safetyInductionDone,
+            status: input.status ?? "active",
+            createdBy: input.createdBy,
+            updatedBy: input.createdBy,
+          },
+        });
+        await recordAudit(tx, { orgId: input.orgId, userId: input.createdBy }, {
+          entityType: WORKMAN_ENTITY_TYPE,
+          entityId: created.id,
+          action: "create",
+          changes: { workmanCode: created.workmanCode, fullName: created.fullName },
+        });
+        return created;
       }),
     "workmanCode",
   );
@@ -350,7 +367,31 @@ export async function updateWorkman(
     data.safetyInductionDone = !!patch.safetyInductionDone;
   if (patch.status !== undefined) data.status = patch.status;
 
-  const row = await db.cnWorkman.update({ where: { id }, data });
+  const row = await db.$transaction(async (tx) => {
+    const updated = await tx.cnWorkman.update({ where: { id }, data });
+    // Field-level diff drives the "Changes" list in the history drawer. Only
+    // keys present in `data` are compared, so untouched fields stay out of it.
+    const changes: Record<string, { from: unknown; to: unknown }> = {};
+    for (const key of Object.keys(data)) {
+      if (key === "updatedBy") continue;
+      const before = (existing as unknown as Record<string, unknown>)[key];
+      const after = (updated as unknown as Record<string, unknown>)[key];
+      const norm = (v: unknown) =>
+        v instanceof Date ? v.toISOString() : v == null ? null : String(v);
+      if (norm(before) !== norm(after)) {
+        changes[key] = { from: norm(before), to: norm(after) };
+      }
+    }
+    if (Object.keys(changes).length > 0) {
+      await recordAudit(tx, { orgId, userId: patch.updatedBy }, {
+        entityType: WORKMAN_ENTITY_TYPE,
+        entityId: id,
+        action: "update",
+        changes,
+      });
+    }
+    return updated;
+  });
   return toRecord(row);
 }
 
@@ -359,9 +400,18 @@ export async function deleteWorkman(
   id: string,
   updatedBy: string,
 ): Promise<boolean> {
-  const res = await db.cnWorkman.updateMany({
-    where: { id, orgId },
-    data: { status: "deleted", updatedBy },
+  return db.$transaction(async (tx) => {
+    const res = await tx.cnWorkman.updateMany({
+      where: { id, orgId },
+      data: { status: "deleted", updatedBy },
+    });
+    if (res.count === 0) return false;
+    await recordAudit(tx, { orgId, userId: updatedBy }, {
+      entityType: WORKMAN_ENTITY_TYPE,
+      entityId: id,
+      action: "delete",
+      changes: { status: { from: "active", to: "deleted" } },
+    });
+    return true;
   });
-  return res.count > 0;
 }

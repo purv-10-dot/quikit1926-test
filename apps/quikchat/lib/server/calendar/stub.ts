@@ -1,32 +1,21 @@
 /**
- * Deterministic, fully-hermetic calendar stub (active default until 15b wires
- * real Google via domain-wide delegation). Free/busy is derived from a hash of
- * (email + day) so the grid looks realistic and tests are stable; createMeeting
- * returns a synthetic event + a fake Meet link.
+ * Hermetic calendar stub (active default until 15b wires real Google via
+ * domain-wide delegation). No real provider is configured, so this returns
+ * honest "I can't see this" data rather than fabricating a plausible-looking
+ * calendar: `getFreeBusy` reports every email as `"unknown"` — the same value a
+ * real provider uses for a calendar it can't see — which the free/busy grid
+ * already renders as a distinct hatched "Availability unknown" lane, never as
+ * free. `createMeeting` never invents a join link, event id, or html link;
+ * `MeetingCard` already omits the "Join meeting" button when `joinUrl` is
+ * null, so no client change was needed to make either honest.
  */
-import { randomUUID } from "node:crypto";
 import type {
   CalendarProvider,
   CreateMeetingInput,
   CreateMeetingResult,
-  FreeBusyBlock,
+  FreeBusyForEmail,
   RsvpStatus,
 } from "./types";
-
-function hash(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-  return Math.abs(h);
-}
-
-const pad = (n: number) => String(n).padStart(2, "0");
-
-/** One busy block at `hour:00` UTC on `day` lasting one hour. */
-function block(day: string, hour: number): FreeBusyBlock {
-  const start = new Date(`${day}T${pad(hour)}:00:00.000Z`);
-  const end = new Date(start.getTime() + 60 * 60_000);
-  return { start: start.toISOString(), end: end.toISOString() };
-}
 
 export class StubCalendarProvider implements CalendarProvider {
   async getFreeBusy(input: {
@@ -34,23 +23,17 @@ export class StubCalendarProvider implements CalendarProvider {
     userEmails: string[];
     from: string;
     to: string;
-  }): Promise<Record<string, FreeBusyBlock[]>> {
-    const day = input.from.slice(0, 10); // YYYY-MM-DD
-    const out: Record<string, FreeBusyBlock[]> = {};
-    for (const email of input.userEmails) {
-      const h = hash(`${email}|${day}`);
-      // Two deterministic busy blocks in the working day.
-      out[email] = [block(day, 9 + (h % 3)), block(day, 13 + (h % 4))];
-    }
+  }): Promise<Record<string, FreeBusyForEmail>> {
+    const out: Record<string, FreeBusyForEmail> = {};
+    for (const email of input.userEmails) out[email] = "unknown";
     return out;
   }
 
-  async createMeeting(input: CreateMeetingInput): Promise<CreateMeetingResult> {
-    const id = randomUUID();
+  async createMeeting(_input: CreateMeetingInput): Promise<CreateMeetingResult> {
     return {
-      externalEventId: `stub-evt-${id}`,
-      joinUrl: input.conferencing ? `https://meet.stub/${id}` : null,
-      htmlLink: `https://calendar.stub/${id}`,
+      externalEventId: null,
+      joinUrl: null,
+      htmlLink: null,
     };
   }
 

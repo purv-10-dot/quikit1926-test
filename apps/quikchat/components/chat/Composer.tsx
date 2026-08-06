@@ -1,12 +1,21 @@
 "use client";
 
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import {
+  forwardRef,
+  lazy,
+  Suspense,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import { useEditor, EditorContent, type Editor } from "@tiptap/react";
 import { Fragment, Slice, type Node as PMNode } from "@tiptap/pm/model";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import type { MentionRefInput } from "@/lib/shared";
 import {
+  AlertCircle,
   AudioLines,
   Bold,
   Check,
@@ -24,6 +33,7 @@ import {
   useToast,
   X,
 } from "@/components/ui";
+import { clearDraft, getDraft, saveDraft } from "@/lib/composer-drafts";
 import { formatVoiceDuration } from "@/lib/format";
 import { computeMentions, findMentionQuery, type MentionMember } from "@/lib/mentions";
 import { serializeToMarkdown } from "@/lib/tiptap-markdown";
@@ -52,7 +62,9 @@ export interface ComposerProps {
   onSend: (content: string, mentions: MentionRefInput[]) => void;
   /** Fired (debounced to ≤ once/3s) while the user is actively typing. */
   onTyping?: () => void;
-  /** Channel id — required for the attach/upload flow. */
+  /** Current user — namespaces the per-channel draft so a shared machine never mixes drafts. */
+  currentUserId: string;
+  /** Channel id — required for the attach/upload flow AND for draft persistence. */
   channelId?: string;
   /** Send a Media message after a successful upload (with a local preview URL). */
   onSendMedia?: (media: MediaMeta, caption: string, localUrl: string) => void;
@@ -60,6 +72,16 @@ export interface ComposerProps {
   onAssist?: (prompt: string) => void;
   disabled?: boolean;
   placeholder?: string;
+}
+
+/**
+ * The one thing a parent is allowed to trigger on a Composer it doesn't
+ * otherwise control — pending/uploading/recording stay private. Used by
+ * ConversationView's pane-wide drop zone, which owns the drag listeners but
+ * has no business knowing the attachment state machine.
+ */
+export interface ComposerHandle {
+  stageExternalFiles: (files: FileList | File[]) => void;
 }
 
 /** Detect a `/ai …` or `/ask …` slash-command; returns the stripped prompt. */
@@ -71,16 +93,24 @@ export function parseAssistCommand(text: string): string | null {
 /** Debounce window for typing notifications — never emit more than once per 3s. */
 const TYPING_THROTTLE_MS = 3_000;
 
-export function Composer({
-  members,
-  onSend,
-  onTyping,
-  channelId,
-  onSendMedia,
-  onAssist,
-  disabled,
-  placeholder,
-}: ComposerProps) {
+/** Debounce window for the draft-save backstop — covers a hard reload/crash,
+ *  which the unmount-time save (the channel-switch case) can't. */
+const DRAFT_SAVE_DEBOUNCE_MS = 500;
+
+export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
+  {
+    members,
+    onSend,
+    onTyping,
+    currentUserId,
+    channelId,
+    onSendMedia,
+    onAssist,
+    disabled,
+    placeholder,
+  },
+  ref,
+) {
   const toast = useToast();
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -90,16 +120,28 @@ export function Composer({
   // A finished voice recording stages here TOO — same shape, plus `voice`, which
   // both flags the chip's rendering and carries the recorder's measured duration
   // through to `MediaMeta.durationSec` on send.
+  //
+  // `failed` survives a failed upload: the file stays staged so Send retries it.
+  // A boolean, not the error message — the message is operator-facing ("Upload
+  // failed (413)") and belongs in the toast, and a string field would go falsy on
+  // a non-Error throw, rendering a failed chip as if nothing had happened.
   const [pending, setPending] = useState<{
     file: File;
     localUrl: string;
     voice?: { durationSec: number };
+    failed?: boolean;
   } | null>(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [formatOpen, setFormatOpen] = useState(false);
   const [emojiData, setEmojiData] = useState<unknown>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const lastTypingAt = useRef(0);
+  // Debounced draft-save timer — the hard-reload/crash backstop (see
+  // scheduleDraftSave). Cleared on unmount and on every successful send so a
+  // stale timer can't fire after the content it captured is gone (it would be
+  // harmless anyway — persistDraft reads live editor state, not a snapshot —
+  // but there's no reason to let a pointless write happen).
+  const draftSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Always points at the latest submit() so the editor's once-created
   // handleKeyDown closure calls the current version.
   const submitRef = useRef<() => void>(() => {});
@@ -155,6 +197,9 @@ export function Composer({
         file,
         localUrl: URL.createObjectURL(file),
         voice: { durationSec: rec.durationSec },
+        // Explicit, though this is a fresh literal: a later refactor to
+        // `{...prev, file}` must not let a new recording inherit a stale failure.
+        failed: false,
       };
     });
   }
@@ -270,15 +315,19 @@ export function Composer({
         return true;
       },
       handleDrop: (_view, event) => {
-        // Same forward-guard as handlePaste: a dropped file is inert while
-        // recording. Text drops fall through to ProseMirror's default.
-        const dropped = (event as DragEvent).dataTransfer?.files?.length;
-        return !!(recordingRef.current && dropped);
+        // A file drop anywhere over the conversation (including directly on
+        // the editable) routes through ConversationView's pane-wide drop
+        // zone → stageExternalFiles, never through ProseMirror's own
+        // content-insertion. Swallow unconditionally so PM never parses a
+        // dropped file into text/link content; a text-selection drag carries
+        // no `files` and falls through to PM's default untouched.
+        return !!(event as DragEvent).dataTransfer?.files?.length;
       },
     },
     onUpdate: ({ editor }) => {
       if (editor.getText().trim()) notifyTyping();
       refreshMentionQuery(editor);
+      scheduleDraftSave(editor);
     },
     onSelectionUpdate: ({ editor }) => refreshMentionQuery(editor),
     immediatelyRender: false, // Next SSR guard
@@ -288,6 +337,70 @@ export function Composer({
   useEffect(() => {
     editor?.setEditable(!disabled);
   }, [editor, disabled]);
+
+  /** Save now if there's real content, else clear a leftover draft. Reads
+   *  live editor state at call time — never a stale snapshot from when a
+   *  debounce/unmount timer was armed. */
+  function persistDraft(ed: Editor) {
+    if (!channelId) return;
+    if (ed.getText().trim()) saveDraft(currentUserId, channelId, ed.getJSON());
+    else clearDraft(currentUserId, channelId);
+  }
+
+  /** The hard-reload/crash backstop: unmount (below) covers a clean channel
+   *  switch, but nothing runs React's unmount lifecycle on a tab close or
+   *  crash, so this keeps the persisted draft within 500ms of what's typed. */
+  function scheduleDraftSave(ed: Editor) {
+    if (!channelId) return;
+    if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
+    draftSaveTimer.current = setTimeout(() => persistDraft(ed), DRAFT_SAVE_DEBOUNCE_MS);
+  }
+
+  /** Every successful-send path clears the editor through here instead of a
+   *  bare `clearContent()`, so a sent draft can never resurface. Cancelling
+   *  the pending debounce timer is a courtesy, not a correctness fix —
+   *  `persistDraft` reads live (now-empty) editor state even if a stale timer
+   *  fired anyway, so it would just re-clear the same key. */
+  function clearComposerAndDraft(ed: Editor) {
+    if (draftSaveTimer.current) {
+      clearTimeout(draftSaveTimer.current);
+      draftSaveTimer.current = null;
+    }
+    ed.commands.clearContent();
+    if (channelId) clearDraft(currentUserId, channelId);
+  }
+
+  // Restore a saved draft once, after the editor exists. Deliberately a
+  // post-mount `setContent` rather than Tiptap's constructor-time `content`
+  // option: a stored doc whose shape no longer matches the current
+  // extensions (e.g. a future StarterKit config change) must not crash the
+  // whole render — `setContent` defaults `emitUpdate` to false, so this can't
+  // fire `onUpdate`/notifyTyping either. On a shape mismatch, self-heal by
+  // clearing the bad entry so the next mount doesn't retry it.
+  useEffect(() => {
+    if (!editor || !channelId) return;
+    const doc = getDraft(currentUserId, channelId);
+    if (doc == null) return;
+    try {
+      editor.commands.setContent(doc);
+    } catch {
+      clearDraft(currentUserId, channelId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, channelId, currentUserId]);
+
+  // Save on unmount — the channel-switch case. Declared AFTER `useEditor()`
+  // so its cleanup runs BEFORE Tiptap's own internal `editor.destroy()`
+  // cleanup (React unwinds one component's effect cleanups in reverse
+  // declaration order), meaning the editor is still alive and `.getJSON()`
+  // still reflects the last keystroke when this fires.
+  useEffect(() => {
+    return () => {
+      if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
+      if (editor && channelId) persistDraft(editor);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, channelId, currentUserId]);
 
   // ---- Voice typing (dictation) ----
   // Chosen locale is read after mount (localStorage is unavailable during SSR).
@@ -374,6 +487,25 @@ export function Composer({
     }
   }, [emojiOpen, emojiData]);
 
+  /**
+   * Stage (do NOT upload/send yet), replacing any prior staged file. The
+   * single funnel both the paperclip (`onFilePicked`) and a drag-and-drop
+   * (`stageExternalFiles`) go through, so there is exactly one staging path.
+   */
+  function stageFile(file: File) {
+    const err = validateFile(file);
+    if (err) {
+      toast.error({ title: "Can't attach that", body: err });
+      return;
+    }
+    setPending((prev) => {
+      if (prev) URL.revokeObjectURL(prev.localUrl);
+      // `failed: false` for the same reason as stageRecording — a newly picked
+      // file never shows the previous one's failure.
+      return { file, localUrl: URL.createObjectURL(file), failed: false };
+    });
+  }
+
   function onFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (fileRef.current) fileRef.current.value = ""; // allow re-picking the same file
@@ -381,17 +513,29 @@ export function Composer({
     // Mutual exclusion (the other direction): the single funnel every file entry
     // passes through, so nothing can stage a file mid-recording.
     if (recording) return;
-    const err = validateFile(file);
-    if (err) {
-      toast.error({ title: "Can't attach that", body: err });
+    stageFile(file);
+  }
+
+  /**
+   * ConversationView's pane-wide drop zone hands off here. Unlike the
+   * paperclip/mic buttons, a drop has no `disabled` affordance to lean on, so
+   * every mutual-exclusion guard those buttons normally encode has to be
+   * checked explicitly. Silently no-ops when blocked, same as the editor's
+   * own recording-guard in `handleDrop` below — a drop mid-recording isn't an
+   * error, it's just not a valid time to attach anything.
+   */
+  function stageExternalFiles(files: FileList | File[]) {
+    if (!canAttach || uploading || pending || recording || listening) return;
+    const list = Array.from(files);
+    if (list.length === 0) return;
+    if (list.length > 1) {
+      toast.error({ title: "Can't attach that", body: "Drop one file at a time." });
       return;
     }
-    // Stage (do NOT upload/send yet). Replace any prior staged file.
-    setPending((prev) => {
-      if (prev) URL.revokeObjectURL(prev.localUrl);
-      return { file, localUrl: URL.createObjectURL(file) };
-    });
+    stageFile(list[0]!);
   }
+
+  useImperativeHandle(ref, () => ({ stageExternalFiles }));
 
   function removePending() {
     setPending((prev) => {
@@ -400,12 +544,20 @@ export function Composer({
     });
   }
 
-  /** Upload the staged file then post it as a Media message (caption = text). */
+  /**
+   * Upload the staged file then post it as a Media message (caption = text).
+   *
+   * Also the retry path: on failure the staged file, its preview and the caption
+   * all survive, so clicking Send again re-runs this against the same `pending`.
+   */
   async function sendPending() {
     if (!pending || !channelId || !onSendMedia || uploading) return;
     const { file, localUrl, voice: staged } = pending;
     setUploading(true);
     setProgress(0);
+    // Clear the flag at the START of the attempt, not just on success: a second
+    // failure must re-render the failed state rather than sit on a stale one.
+    setPending((prev) => (prev?.failed ? { ...prev, failed: false } : prev));
     try {
       // A voice note carries its measured duration onto MediaMeta → the message
       // `data` (persisted, so it survives a reload). Plain files pass nothing.
@@ -415,12 +567,16 @@ export function Composer({
       // Keep localUrl alive — handleSendMedia uses it for the optimistic preview
       // until the realtime echo reconciles with the server URL.
       onSendMedia(media, serializeToMarkdown(editor?.getJSON()).trim(), localUrl);
-      editor?.commands.clearContent();
+      if (editor) clearComposerAndDraft(editor);
       setPending(null);
       lastTypingAt.current = 0;
     } catch (uploadErr) {
-      URL.revokeObjectURL(localUrl);
-      setPending(null);
+      // Keep the attachment staged — do NOT revoke `localUrl` and do NOT clear
+      // `pending`. Re-picking a file (or re-recording a voice note) from scratch
+      // just to retry is the bug; the caption was never cleared here either, so
+      // losing only the file made it worse, not gentler. `prev &&` so a chip the
+      // user discarded mid-flight is never resurrected.
+      setPending((prev) => (prev ? { ...prev, failed: true } : prev));
       toast.error({
         title: "Upload failed",
         body: uploadErr instanceof Error ? uploadErr.message : undefined,
@@ -467,13 +623,13 @@ export function Composer({
     const askPrompt = onAssist ? parseAssistCommand(content) : null;
     if (askPrompt) {
       onAssist!(askPrompt);
-      editor.commands.clearContent();
+      clearComposerAndDraft(editor);
       lastTypingAt.current = 0;
       return;
     }
     const mentions = computeMentions(content, members);
     onSend(content, mentions);
-    editor.commands.clearContent();
+    clearComposerAndDraft(editor);
     // Reset so the next keystroke after sending re-notifies immediately.
     lastTypingAt.current = 0;
   }
@@ -573,7 +729,11 @@ export function Composer({
         </div>
       ) : null}
       {pending ? (
-        <div className="qc-attach-chip" data-testid="attach-preview">
+        <div
+          className="qc-attach-chip"
+          data-testid="attach-preview"
+          data-failed={pending.failed || undefined}
+        >
           {/* A voice note gets a mic pill + its recorded length, never a file
               thumbnail — the filename is machine-generated and meaningless here. */}
           {pending.voice ? (
@@ -597,6 +757,15 @@ export function Composer({
               <span className="qc-attach-chip__name qc-truncate">{pending.file.name}</span>
             </>
           )}
+          {/* Persistent failure indicator. The toast that also fires is gone in
+              ~3s while the file can sit staged indefinitely, so the chip has to
+              carry the state itself — and say what to do about it. */}
+          {pending.failed ? (
+            <span className="qc-attach-chip__error" data-testid="attach-failed" role="status">
+              <AlertCircle size={13} aria-hidden />
+              Upload failed — tap Send to retry
+            </span>
+          ) : null}
           <IconButton
             label={pending.voice ? "Discard voice message" : "Remove attachment"}
             onClick={removePending}
@@ -754,4 +923,4 @@ export function Composer({
       </div>
     </div>
   );
-}
+});

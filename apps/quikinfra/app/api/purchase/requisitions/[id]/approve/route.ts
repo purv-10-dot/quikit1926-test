@@ -7,6 +7,24 @@ import { tenantCreate, hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { findPRById } from "@/lib/purchase/pr-repository";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
+import { resolveEffectiveStep } from "@/lib/approvals/step-resolution";
+import {
+  repairHistoryComment,
+  repointNote,
+  validateRepairCompletion,
+} from "@/lib/approvals/complete-repaired-approval";
+import {
+  masterApprovalComment,
+  masterApprovalSkipComment,
+  validateMasterApproval,
+} from "@/lib/approvals/master-approve";
+import {
+  claimInstanceForAdvance,
+  claimInstanceForSettlement,
+  conflictMessage,
+  describeSettledInstance,
+  type ClaimResult,
+} from "@/lib/approvals/claim-instance";
 
 /**
  * POST /api/purchase/requisitions/:id/approve
@@ -27,7 +45,7 @@ import { canActOnStep } from "@/lib/approvals/workflow-rbac";
  * Body: { action: "approve" | "reject" | "return", comments?, sourceLocationId? }
  */
 
-type Action = "approve" | "reject" | "return";
+type Action = "approve" | "reject" | "return" | "complete" | "master_approve";
 
 export async function POST(
   req: NextRequest,
@@ -51,7 +69,11 @@ export async function POST(
   const comments = String(body.comments ?? "").trim();
   const sourceLocationId: string = body?.sourceLocationId ?? "";
 
-  if (!["approve", "reject", "return"].includes(action)) {
+  if (
+    !["approve", "reject", "return", "complete", "master_approve"].includes(
+      action,
+    )
+  ) {
     return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
   }
   if ((action === "reject" || action === "return") && !comments) {
@@ -77,28 +99,86 @@ export async function POST(
     return NextResponse.json({ error: "Approval instance not found" }, { status: 404 });
   }
   if (instance.status !== "pending_approval") {
+    // Name whoever settled it — the step's own approver needs to see that the
+    // master approver closed the request, not a bare "already approved".
+    const settled = await describeSettledInstance(db, instance.id);
+    const winner = settled.byUserId
+      ? await findCnUserById(settled.byUserId)
+      : null;
     return NextResponse.json(
-      { error: `Approval already ${instance.status} — no further actions allowed.` },
+      { error: conflictMessage(settled, winner?.fullName ?? null, "PR") },
       { status: 409 },
     );
   }
 
-  const currentStep = await db.cnApprovalWorkflowStep.findFirst({
-    where: {
-      workflowId: instance.workflowId,
-      stepOrder: instance.currentStepOrder,
-    },
-  });
+  // Resolve against the instance's own chain (its submit-time snapshot when it
+  // has one), falling back to the highest surviving step below when a workflow
+  // edit removed the one it is parked on. The old hard 500 fired before the
+  // actor check, so nobody could action the PR at all.
+  const resolved = await resolveEffectiveStep(db, instance);
+  const currentStep = resolved.step;
   if (!currentStep) {
     return NextResponse.json(
       {
-        error: `Workflow step ${instance.currentStepOrder} is missing — the workflow may have been edited while this PR was mid-flight.`,
+        error:
+          "This PR's workflow has no steps configured, so it cannot be actioned. " +
+          "Reconfigure it under Settings → Workflows.",
       },
       { status: 500 },
     );
   }
 
+  // `complete` closes an instance whose chain is already fully approved — no
+  // approver has anything left to act on. Authorised here, then routed through
+  // the normal final-approve branch so the PR's own side effects (status flip,
+  // auto Material Issue) still run exactly once.
+  let repair: { closingStep: number; totalSteps: number; reason: string } | null =
+    null;
+  if (action === "complete") {
+    const check = await validateRepairCompletion({
+      ctx,
+      instance,
+      entityLabel: "PR",
+      reason: comments,
+    });
+    if (check.kind === "error") {
+      return NextResponse.json(check.body, { status: check.status });
+    }
+    repair = {
+      closingStep: check.closingStep,
+      totalSteps: check.totalSteps,
+      reason: check.reason,
+    };
+  }
+
+  // Master approval outranks the chain: it closes the PR from whatever step it
+  // sits on and skips the rest. Authorised here, then routed through the normal
+  // final-approve branch so the PR's own side effects still run exactly once.
+  let master: {
+    actingStepOrder: number;
+    skippedStepOrders: number[];
+    reason: string;
+  } | null = null;
+  if (action === "master_approve") {
+    const check = await validateMasterApproval({
+      ctx,
+      instance,
+      entityLabel: "PR",
+      reason: comments,
+    });
+    if (check.kind === "error") {
+      return NextResponse.json(check.body, { status: check.status });
+    }
+    master = {
+      actingStepOrder: check.actingStepOrder,
+      skippedStepOrders: check.skippedStepOrders,
+      reason: check.reason,
+    };
+  }
+
   if (
+    !repair &&
+    !master &&
     !canActOnStep(
       { userId: ctx.userId, roleKey: ctx.roleKey, projectIds: ctx.projectIds },
       {
@@ -123,21 +203,26 @@ export async function POST(
     }
     return NextResponse.json(
       {
-        error: `You are not authorized to ${action} this PR at step ${instance.currentStepOrder}. Expected: ${expected}.`,
+        error: `You are not authorized to ${action} this PR at step ${resolved.effectiveStepOrder}. Expected: ${expected}.`,
       },
       { status: 403 },
     );
   }
 
-  // Find the next step by ascending stepOrder so approvals follow the
-  // admin's actual numbering, even if it's non-contiguous (e.g. [1,3,5]).
-  const nextStep = await db.cnApprovalWorkflowStep.findFirst({
-    where: {
-      workflowId: instance.workflowId,
-      stepOrder: { gt: instance.currentStepOrder },
-    },
-    orderBy: { stepOrder: "asc" },
-  });
+  // The step the history row is written against.
+  const actingStepOrder =
+    repair?.closingStep ?? master?.actingStepOrder ?? resolved.effectiveStepOrder;
+
+  // Next step by ascending stepOrder within the instance's own chain, so
+  // approvals follow the admin's actual numbering even if it's non-contiguous
+  // (e.g. [1,3,5]). Both a repair and a master approval are terminal.
+  const nextStep =
+    repair || master
+      ? null
+      : (resolved.steps.find((s) => s.stepOrder > actingStepOrder) ?? null);
+
+  // Both take the approve branch: same side effects, different authority.
+  const effectiveAction: Action = repair || master ? "approve" : action;
 
   const summary = String(pr.stockCheckSummary ?? "").toUpperCase();
   const finalPRStatusOnApprove =
@@ -145,24 +230,82 @@ export async function POST(
 
   let finalPRStatus: string | null = null;
 
+  // Settled step order for the terminal branches — after a master approval the
+  // instance lands on the last step in the chain, so the request reads as fully
+  // walked rather than parked mid-way.
+  const settledStepOrder =
+    master && master.skippedStepOrders.length > 0
+      ? master.skippedStepOrders[master.skippedStepOrders.length - 1]
+      : actingStepOrder;
+
+  // Claimed before any write. The step's own approver and the master approver
+  // can both be entitled to act right now; without this both transactions
+  // commit and the PR ends up with two auto-created Material Issues.
+  let conflict: ClaimResult["conflict"] | undefined;
+
   await db.$transaction(async (tx) => {
+    const claim =
+      effectiveAction === "approve" && nextStep
+        ? await claimInstanceForAdvance(tx, instance.id, nextStep.stepOrder)
+        : await claimInstanceForSettlement(tx, instance.id, {
+            status:
+              effectiveAction === "approve"
+                ? "approved"
+                : effectiveAction === "reject"
+                  ? "rejected"
+                  : "returned",
+            completedAt: new Date(),
+            currentStepOrder: settledStepOrder,
+          });
+    if (!claim.claimed) {
+      conflict = claim.conflict;
+      return;
+    }
+
     await tx.cnApprovalHistory.create({
       data: {
         instanceId: instance.id,
-        stepOrder: instance.currentStepOrder,
-        action,
+        stepOrder: actingStepOrder,
+        action: effectiveAction,
         actionById: ctx.userId,
-        comments: comments || null,
+        comments: repair
+          ? repairHistoryComment({
+              missingStepOrder: instance.currentStepOrder,
+              totalSteps: repair.totalSteps,
+              reason: repair.reason,
+            })
+          : master
+            ? masterApprovalComment({
+                actingStepOrder,
+                skippedStepOrders: master.skippedStepOrders,
+                reason: master.reason,
+              })
+            : resolved.repointed
+              ? repointNote({
+                  parkedStepOrder: instance.currentStepOrder,
+                  actedStepOrder: actingStepOrder,
+                  comments,
+                })
+              : comments || null,
       },
     });
 
-    if (action === "approve") {
+    // One row per skipped step so the timeline has no silent gaps.
+    if (master && master.skippedStepOrders.length > 0) {
+      await tx.cnApprovalHistory.createMany({
+        data: master.skippedStepOrders.map((stepOrder) => ({
+          instanceId: instance.id,
+          stepOrder,
+          action: "approve",
+          actionById: ctx.userId,
+          comments: masterApprovalSkipComment(actingStepOrder),
+        })),
+      });
+    }
+
+    if (effectiveAction === "approve") {
       if (!nextStep) {
         // No step after this one — close the instance and flip the PR.
-        await tx.cnApprovalInstance.update({
-          where: { id: instance.id },
-          data: { status: "approved", completedAt: new Date() },
-        });
         await tx.cnPurchaseRequisition.update({
           where: { id: pr.id },
           data: { status: finalPRStatusOnApprove, updatedBy: ctx.userId },
@@ -170,16 +313,8 @@ export async function POST(
         finalPRStatus = finalPRStatusOnApprove;
       } else {
         // Intermediate step — advance to the next configured step's order.
-        await tx.cnApprovalInstance.update({
-          where: { id: instance.id },
-          data: { currentStepOrder: nextStep.stepOrder },
-        });
       }
-    } else if (action === "reject") {
-      await tx.cnApprovalInstance.update({
-        where: { id: instance.id },
-        data: { status: "rejected", completedAt: new Date() },
-      });
+    } else if (effectiveAction === "reject") {
       await tx.cnPurchaseRequisition.update({
         where: { id: pr.id },
         data: { status: "rejected", updatedBy: ctx.userId },
@@ -187,10 +322,6 @@ export async function POST(
       finalPRStatus = "rejected";
     } else {
       // "return" — sends the PR back to draft for the requester to edit.
-      await tx.cnApprovalInstance.update({
-        where: { id: instance.id },
-        data: { status: "returned", completedAt: new Date() },
-      });
       await tx.cnPurchaseRequisition.update({
         where: { id: pr.id },
         data: { status: "draft", approvalId: null, updatedBy: ctx.userId },
@@ -199,12 +330,25 @@ export async function POST(
     }
   });
 
+  // Lost the claim — someone else settled this PR first. Nothing was written, so
+  // return before the Material Issue block below, which is the one side effect
+  // that lives outside the transaction and would otherwise duplicate.
+  if (conflict) {
+    const winner = conflict.byUserId
+      ? await findCnUserById(conflict.byUserId)
+      : null;
+    return NextResponse.json(
+      { error: conflictMessage(conflict, winner?.fullName ?? null, "PR") },
+      { status: 409 },
+    );
+  }
+
   // Preserve the existing auto-create Material Issue side effect on final
   // approval when stock is all available. MI lives in Postgres
   // (`cn_material_issues`) — write directly via Prisma so the MR queue
   // and the stock register both see the new issue.
   if (
-    action === "approve" &&
+    effectiveAction === "approve" &&
     finalPRStatus === "approved_stock_available" &&
     summary === "ALL_AVAILABLE"
   ) {

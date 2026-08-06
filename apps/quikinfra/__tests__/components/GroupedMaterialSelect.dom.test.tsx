@@ -1,6 +1,10 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+
+const fetchJsonMock = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/react-query/fetch-json", () => ({ fetchJson: fetchJsonMock }));
+
 import {
   GroupedMaterialSelect,
   GroupedMaterialMultiSelect,
@@ -49,7 +53,7 @@ describe("GroupedMaterialSelect", () => {
   it("filters groups by the search query", () => {
     render(<GroupedMaterialSelect value="" onChange={() => {}} items={ITEMS} groups={GROUPS} />);
     fireEvent.click(screen.getByRole("button"));
-    fireEvent.change(screen.getByPlaceholderText("Search groups…"), { target: { value: "steel" } });
+    fireEvent.change(screen.getByPlaceholderText("Search groups or materials…"), { target: { value: "steel" } });
     expect(screen.getByText("Steel")).toBeInTheDocument();
     expect(screen.queryByText("Cement & Aggregates")).not.toBeInTheDocument();
   });
@@ -84,6 +88,88 @@ describe("GroupedMaterialSelect", () => {
     expect(screen.getByText("Cement & Aggregates")).toBeInTheDocument();
     // "Steel" is inactive → not selectable even though it still has items.
     expect(screen.queryByText("Steel")).not.toBeInTheDocument();
+  });
+});
+
+describe("GroupedMaterialSelect — cross-group material search", () => {
+  const typeOnGroupStep = (value: string) =>
+    fireEvent.change(screen.getByPlaceholderText("Search groups or materials…"), { target: { value } });
+
+  it("surfaces matching materials from every group on the groups step", () => {
+    render(<GroupedMaterialSelect value="" onChange={() => {}} items={ITEMS} groups={GROUPS} />);
+    fireEvent.click(screen.getByRole("button"));
+    typeOnGroupStep("sand");
+    // No group is named "sand", but the material shows with its group as subtitle.
+    expect(screen.getByText("River Sand")).toBeInTheDocument();
+    expect(screen.getByText("SAND · CUM · Cement & Aggregates")).toBeInTheDocument();
+  });
+
+  it("picking a cross-group material selects it without drilling into the group", () => {
+    const onChange = vi.fn();
+    const onSelect = vi.fn();
+    render(
+      <GroupedMaterialSelect value="" onChange={onChange} onSelect={onSelect} items={ITEMS} groups={GROUPS} />,
+    );
+    fireEvent.click(screen.getByRole("button"));
+    typeOnGroupStep("tmt");
+    fireEvent.click(screen.getByText("TMT Bar"));
+    expect(onChange).toHaveBeenCalledWith("i3");
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: "i3", uomCode: "KG" }));
+  });
+
+  it("stays quiet below the 2-character minimum", () => {
+    render(<GroupedMaterialSelect value="" onChange={() => {}} items={ITEMS} groups={GROUPS} />);
+    fireEvent.click(screen.getByRole("button"));
+    typeOnGroupStep("t");
+    expect(screen.queryByText("TMT Bar")).not.toBeInTheDocument();
+  });
+
+  it("never offers a material whose group is inactive", () => {
+    const groups: ItemGroupOption[] = [
+      { id: "g1", name: "Cement & Aggregates", status: "active" },
+      { id: "g2", name: "Steel", status: "inactive" },
+    ];
+    render(<GroupedMaterialSelect value="" onChange={() => {}} items={ITEMS} groups={groups} />);
+    fireEvent.click(screen.getByRole("button"));
+    typeOnGroupStep("tmt");
+    expect(screen.queryByText("TMT Bar")).not.toBeInTheDocument();
+  });
+
+  it("keyboard nav walks group rows then material rows", () => {
+    const onChange = vi.fn();
+    render(<GroupedMaterialSelect value="" onChange={onChange} items={ITEMS} groups={GROUPS} />);
+    fireEvent.click(screen.getByRole("button"));
+    const input = screen.getByPlaceholderText("Search groups or materials…");
+    // "steel" matches the Steel group (index 0) and TMT Bar via its group name (index 1).
+    fireEvent.change(input, { target: { value: "steel" } });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onChange).toHaveBeenCalledWith("i3");
+  });
+
+  it("lazy mode queries the item API unscoped by group", async () => {
+    fetchJsonMock.mockResolvedValue({
+      data: [
+        { id: "i9", name: "Cement OPC 43", code: "CEM43", uomCode: "BAG", groupId: "g1", groupName: "Cement & Aggregates" },
+      ],
+      total: 1,
+    });
+    render(
+      <GroupedMaterialSelect
+        lazy
+        value=""
+        onChange={() => {}}
+        items={[]}
+        groups={[{ id: "g1", name: "Cement & Aggregates", itemCount: 5 }]}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button"));
+    typeOnGroupStep("cem");
+    await waitFor(() => expect(fetchJsonMock).toHaveBeenCalled());
+    const url = String(fetchJsonMock.mock.calls[0][0]);
+    expect(url).toContain("search=cem");
+    expect(url).not.toContain("groupId");
+    expect(await screen.findByText("Cement OPC 43")).toBeInTheDocument();
   });
 });
 

@@ -12,6 +12,11 @@ export interface WWWFormValues {
   whoIds: string[];
   what: string;
   when: string;
+  /**
+   * "To Be Decided" due date. When true, `when` may be blank — the user has
+   * explicitly deferred the date instead of picking one.
+   */
+  dueDateTBD?: boolean;
   /** Edit-mode only; ignored on create. */
   revisedDate?: string;
   notes: string;
@@ -34,10 +39,21 @@ export function validateWWWForm(
     errs.whoIds = "At least one assignee is required";
   }
   if (!form.what.trim()) errs.what = "What is required";
-  if (!form.when) errs.when = "When is required";
+  // Due date: EITHER a picked date OR the To-Be-Decided flag. Marking TBD
+  // satisfies the requirement, so the date input may be left blank.
+  if (!form.when && !form.dueDateTBD) {
+    errs.when = "Select a due date or mark it To Be Decided";
+  }
 
-  // Edit mode only: revised date must not be earlier than When.
-  if (opts.mode === "edit" && form.revisedDate && form.when && form.revisedDate < form.when) {
+  // Edit mode only: revised date must not be earlier than When. Skipped for TBD
+  // items — there is no due date to compare against.
+  if (
+    opts.mode === "edit" &&
+    !form.dueDateTBD &&
+    form.revisedDate &&
+    form.when &&
+    form.revisedDate < form.when
+  ) {
     errs.revisedDate = "Revised date cannot be earlier than When";
   }
 

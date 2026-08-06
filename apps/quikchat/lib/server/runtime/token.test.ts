@@ -1,9 +1,11 @@
 import jwt from "jsonwebtoken";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { logger } from "@/lib/shared";
 import {
   mintRuntimeToken,
   RUNTIME_TOKEN_AUDIENCE,
   RUNTIME_TOKEN_ISSUER,
+  __resetAgentSecretWarnForTest,
   type RuntimeTokenClaims,
 } from "./token";
 
@@ -43,5 +45,34 @@ describe("mintRuntimeToken", () => {
     expect(() =>
       jwt.verify(token, SECRET, { audience: "quikchat", issuer: "quikverse-runtime" }),
     ).toThrow();
+  });
+});
+
+describe("AGENT_JWT_SECRET fallback", () => {
+  afterEach(() => {
+    __resetAgentSecretWarnForTest();
+    vi.restoreAllMocks();
+  });
+
+  it("warns exactly once when unset, then signs with the dev secret", async () => {
+    delete process.env.AGENT_JWT_SECRET;
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined as never);
+
+    const a = await mintRuntimeToken({ orgId: "o1", botAgentId: "bot-1", userId: "u1" });
+    const b = await mintRuntimeToken({ orgId: "o1", botAgentId: "bot-1", userId: "u1" });
+
+    expect(() =>
+      jwt.verify(a, "dev-only-agent-secret-change-me", {
+        audience: RUNTIME_TOKEN_AUDIENCE,
+        issuer: RUNTIME_TOKEN_ISSUER,
+      }),
+    ).not.toThrow();
+    expect(() =>
+      jwt.verify(b, "dev-only-agent-secret-change-me", {
+        audience: RUNTIME_TOKEN_AUDIENCE,
+        issuer: RUNTIME_TOKEN_ISSUER,
+      }),
+    ).not.toThrow();
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 });

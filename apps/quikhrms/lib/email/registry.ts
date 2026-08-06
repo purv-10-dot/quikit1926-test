@@ -496,6 +496,15 @@ const EVENTS: EmailEvent[] = [
       v("signedFileUrl", "Signed form link", "https://…"),
     ],
   },
+  {
+    key: "document.insurance-expiry", label: "Insurance Policy Expiry Reminder", group: "Documents & Tax",
+    variables: [
+      v("recipientName", "Recipient's name", "Anita Rao"),
+      v("policyName", "Insurance policy name", "Group Health Insurance 2026"),
+      v("expiryDate", "Policy expiry date", "30 Aug 2026"),
+      v("daysLeft", "Days remaining until expiry", "30"),
+    ],
+  },
 ];
 
 /** Every event, each with `companyName` guaranteed present in its variables. */

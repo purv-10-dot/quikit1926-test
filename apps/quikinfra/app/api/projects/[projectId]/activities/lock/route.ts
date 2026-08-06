@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireMastersAction } from "@/lib/auth/requireMastersAction";
+import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { setActivitiesLocked } from "@/lib/scope/activity-repository";
@@ -13,14 +13,14 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { projectId: string } }
 ) {
-  const ctxOrResp = await requireMastersAction("construction.project", "edit");
+  const ctxOrResp = await requireProjectsFinanceAction("construction.activity_scope", "lock");
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
   if (outOfProjectScope(ctx.projectIds, params.projectId)) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
-  if (!hasMatrixAction(ctx, "master.project", "edit")) {
-    return envelopeErr("FORBIDDEN", `Action "edit" not allowed for master.project`, 403);
+  if (!hasMatrixAction(ctx, "pm.activity_scope", "edit")) {
+    return envelopeErr("FORBIDDEN", `Action "edit" not allowed for pm.activity_scope`, 403);
   }
 
   const body = await req.json().catch(() => ({}));
