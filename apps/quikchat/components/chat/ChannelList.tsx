@@ -195,6 +195,9 @@ export function ChannelList({
             <IconButton label="AI Chat" onClick={onOpenAiChat} disabled={!onOpenAiChat}>
               <Sparkles size={16} />
             </IconButton>
+            <IconButton label="Discover channels" onClick={onDiscover} disabled={!onDiscover}>
+              <Hash size={16} />
+            </IconButton>
             <IconButton label="New group" onClick={onNewGroup} disabled={!onNewGroup}>
               <Users size={16} />
             </IconButton>
