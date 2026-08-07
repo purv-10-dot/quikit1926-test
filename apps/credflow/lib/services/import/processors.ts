@@ -9,6 +9,12 @@ import { logActivity } from "@/lib/services/activities/log-activity";
 import { isPrimaryKind } from "@/lib/services/activities/target-existence";
 import { upsertImportedLeadRow } from "@/lib/services/import/lead-import-row";
 import { resolveImportRow } from "@/lib/services/import/lead-field-mapping";
+import {
+  buildPipelineMatchers,
+  normalizePipelineFields,
+  normalizeSourceValue,
+  type NormalizationFlag,
+} from "@/lib/services/import/normalize-pipeline-values";
 import { buildOwnerEmailIndex } from "@/lib/services/import/resolve-owner";
 import { listLeadFields } from "@/lib/services/fields/repo";
 import { validateDynamicFields } from "@/lib/services/fields/validate";
@@ -47,6 +53,34 @@ export async function processLeadsImport(job: LeadImportJob): Promise<ProcessorR
   const defs = await listLeadFields(job.tenantId);
   const columnMap = parseColumnMap(job.payloadJsonText);
 
+  // Load the tenant's configured pipeline once so incoming stage/status/substatus
+  // can be snapped to VALID configured values on the way in (LSQ exports carry
+  // spacing + numeric-prefix variants that otherwise land invalid). Also load the
+  // source values already present, so "Mobile Signup" collapses onto an existing
+  // "mobile signup" (source is free-text, no configured list to match against).
+  const ws = await prisma.crmOrgWorkspaceSettings.findUnique({ where: { tenantId: job.tenantId } });
+  const pipelineCfg = ((ws?.settings as Record<string, unknown> | null) ?? {})["leadPipelineConfig"] as
+    | { stages?: string[]; statuses?: string[]; substatuses?: string[] }
+    | undefined;
+  const matchers = buildPipelineMatchers({
+    stages: Array.isArray(pipelineCfg?.stages) ? pipelineCfg!.stages! : [],
+    statuses: Array.isArray(pipelineCfg?.statuses) ? pipelineCfg!.statuses! : [],
+    substatuses: Array.isArray(pipelineCfg?.substatuses) ? pipelineCfg!.substatuses! : [],
+  });
+  const existingSourceRows = await prisma.crmLead.findMany({
+    where: { tenantId: job.tenantId, deletedAt: null, source: { not: null } },
+    select: { source: true },
+    distinct: ["source"],
+  });
+  const existingSources = existingSourceRows
+    .map((r) => r.source)
+    .filter((s): s is string => !!s && s.trim() !== "");
+
+  // Accumulated pipeline-normalization warnings (value not in configured list).
+  // Non-blocking: the row still imports with its raw value; these surface in the
+  // job's rowErrors summary so the agent can review the handful that didn't match.
+  const normalizationFlags: Array<{ row: number; flag: NormalizationFlag }> = [];
+
   // Build a one-shot email -> real user index so an imported lead can be linked
   // to its actual owner (ownerId), not just carry owner text. Owner email comes
   // from the mapped `owner_email` custom field on each row (see below). Built
@@ -58,7 +92,17 @@ export async function processLeadsImport(job: LeadImportJob): Promise<ProcessorR
   let updated = 0;
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i]!;
-    const { standard, dynamicInput } = resolveImportRow(r, columnMap, defs);
+    const resolved = resolveImportRow(r, columnMap, defs);
+    // Snap incoming pipeline values to configured spellings (LSQ spacing +
+    // numeric-prefix variants); collect any that don't match a configured value
+    // as non-blocking warnings. Source is case-folded against existing values.
+    const { standard: normalizedStandard, flags } = normalizePipelineFields(resolved.standard, matchers);
+    if (typeof normalizedStandard.source === "string" && normalizedStandard.source !== "") {
+      normalizedStandard.source = normalizeSourceValue(normalizedStandard.source, existingSources);
+    }
+    for (const flag of flags) normalizationFlags.push({ row: i + 2, flag });
+    const standard = normalizedStandard;
+    const dynamicInput = resolved.dynamicInput;
     // Split the explicit dedupe/common columns from the rest of the standard set.
     const {
       name: rawName,
@@ -139,6 +183,14 @@ export async function processLeadsImport(job: LeadImportJob): Promise<ProcessorR
       errors.push({ row: i + 2, error: e instanceof Error ? e.message : "insert failed" });
     }
   }
+  // Fold pipeline-normalization warnings into rowErrors so the import summary
+  // shows them. These are NON-BLOCKING: the affected rows already imported (with
+  // their raw pipeline value); this is a "review these values" notice, marked so
+  // it reads distinctly from a hard row failure.
+  for (const { row, flag } of normalizationFlags) {
+    errors.push({ row, error: `note: ${flag.field} "${flag.value}" is not a configured value (imported as-is)` });
+  }
+
   return {
     totalRows: rows.length,
     importedCount: created + updated,

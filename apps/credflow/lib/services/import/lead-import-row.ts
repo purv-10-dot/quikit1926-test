@@ -56,6 +56,59 @@ function mergeDynamic(
   return { dynamicFields: { ...base, ...incoming } as Prisma.InputJsonValue };
 }
 
+/**
+ * Pipeline fields that hold a lead's live workflow position. On a MATCHED
+ * (existing) lead we treat the CRM as the source of truth for these: an import
+ * may FILL them when the lead is UNWORKED, but must NOT OVERWRITE a value set by
+ * real work done in the app. A re-uploaded (possibly stale) export otherwise
+ * rolls a lead back — wiping this week's progress and even re-triggering
+ * automations on the rollback. (New leads are unaffected: the create branch
+ * writes them in full.)
+ */
+const PROTECTED_PIPELINE_FIELDS = ["stage", "status", "substatus"] as const;
+
+/**
+ * "Unworked" values that should NOT be protected — the import is allowed to set a
+ * real value over these. `stage`/`status` are NOT-NULL columns with DB defaults
+ * ('New' / 'Open'), so a never-worked lead is never literally blank; it sits at
+ * the default. Protecting the default would freeze such leads and defeat the
+ * import for genuinely-new records. Note the default 'New' is DISTINCT from the
+ * real workflow stage 'New Lead', so treating literal 'New'/'Open' as unworked
+ * does not collide with a real pipeline value. `substatus` is nullable, so its
+ * unworked state is simply blank/null.
+ */
+const UNWORKED_PIPELINE_VALUES: Record<string, ReadonlySet<string>> = {
+  stage: new Set(["new"]),
+  status: new Set(["open"]),
+  substatus: new Set([]),
+};
+
+/** Is this field's current value the unworked/default state (so a fill is OK)? */
+function isUnworkedPipelineValue(field: string, current: string | null | undefined): boolean {
+  if (current == null || current.trim() === "") return true; // blank (substatus) = unworked
+  return (UNWORKED_PIPELINE_VALUES[field] ?? new Set<string>()).has(current.trim().toLowerCase());
+}
+
+/**
+ * Return a copy of `standardExtra` with pipeline fields removed WHEN the existing
+ * lead already holds a REAL (worked) value for them — fill-blanks-only on update,
+ * where "blank" also covers the DB defaults ('New'/'Open') that mark an unworked
+ * lead. Other standard columns pass through unchanged. `existing` carries the
+ * lead's current pipeline values.
+ */
+function protectExistingPipeline(
+  standardExtra: Record<string, unknown>,
+  existing: { stage?: string | null; status?: string | null; substatus?: string | null },
+): Record<string, unknown> {
+  const out = { ...standardExtra };
+  for (const f of PROTECTED_PIPELINE_FIELDS) {
+    const current = existing[f];
+    // Protect only when the lead has been WORKED (a real value, not blank/default).
+    if (!isUnworkedPipelineValue(f, current) && f in out) delete out[f];
+  }
+  return out;
+}
+
 export type ImportRowAction = "created" | "updated";
 export interface ImportRowResult {
   lead: CrmLead;
@@ -107,9 +160,12 @@ export async function upsertImportedLeadRow(
           externalId: row.externalId,
         },
       },
-      select: { id: true, dynamicFields: true },
+      select: { id: true, dynamicFields: true, stage: true, status: true, substatus: true },
     });
     if (existing) {
+      // Fill-blanks-only for pipeline fields: never overwrite a stage/status/
+      // substatus the CRM already has (protects in-app work from a stale re-upload).
+      const safeExtra = protectExistingPipeline(standardExtra, existing);
       const lead = await prisma.crmLead.update({
         where: { id: existing.id },
         data: {
@@ -121,7 +177,7 @@ export async function upsertImportedLeadRow(
           // sync); a re-upload WITHOUT a resolved owner leaves the existing
           // owner untouched, so it never clobbers a manual reassignment.
           ...(data.ownerId ? { ownerId: data.ownerId, ownerName: data.ownerName || null } : {}),
-          ...standardExtra,
+          ...safeExtra,
           ...mergeDynamic(existing.dynamicFields, data.dynamicFields),
         },
       });
@@ -145,8 +201,11 @@ export async function upsertImportedLeadRow(
   if (dupe) {
     const existing = await prisma.crmLead.findUnique({
       where: { id: dupe.id },
-      select: { dynamicFields: true },
+      select: { dynamicFields: true, stage: true, status: true, substatus: true },
     });
+    // Fill-blanks-only for pipeline fields (see externalId branch above): protect
+    // any stage/status/substatus the CRM already has from a stale re-upload.
+    const safeExtra = protectExistingPipeline(standardExtra, existing ?? {});
     const lead = await prisma.crmLead.update({
       where: { id: dupe.id },
       data: {
@@ -160,7 +219,7 @@ export async function upsertImportedLeadRow(
         // Same owner rule as the externalId branch: update the link only when a
         // fresh owner was resolved; never wipe an existing owner on re-upload.
         ...(data.ownerId ? { ownerId: data.ownerId, ownerName: data.ownerName || null } : {}),
-        ...standardExtra,
+        ...safeExtra,
         ...mergeDynamic(existing?.dynamicFields, data.dynamicFields),
       },
     });

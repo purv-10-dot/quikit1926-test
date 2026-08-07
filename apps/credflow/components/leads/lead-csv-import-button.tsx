@@ -46,6 +46,51 @@ async function fileToCsvText(file: File): Promise<string> {
 
 const lc = (s: string) => s.trim().toLowerCase();
 
+/**
+ * LSQ (LeadSquared) export headers use a vocabulary that does NOT exact-match our
+ * standard column keys/labels — e.g. their "Contact Stage" column is our `stage`,
+ * "Contact Source" is our `source`, "Sub Status"/"Sub Stage" is our `substatus`.
+ * Exact header↔key/label matching therefore MISSED these, so the real pipeline
+ * values were stranded (either skipped → DB default, or captured by a same-named
+ * CUSTOM field like `contact_stage`/`contact_source`) — which is what forced the
+ * post-import stage/source migrations.
+ *
+ * This alias map lets the auto-suggest map those LSQ headers straight to the
+ * STANDARD column on the way in. Keys are lowercased header text; values are the
+ * standard field key. Extend as new LSQ header spellings surface.
+ *
+ * NOTE: this only pre-fills the mapping grid; the user still reviews/adjusts every
+ * row before importing. Standard-column precedence (below) ensures a standard key
+ * claims its header before any same-named custom field can.
+ */
+const LSQ_HEADER_ALIASES: Record<string, string> = {
+  // Stage
+  "contact stage": "stage",
+  "lead stage": "stage",
+  // Source
+  "contact source": "source",
+  "lead source": "source",
+  // Status / Sub-status
+  "contact status": "status",
+  "lead status": "status",
+  "sub status": "substatus",
+  "sub stage": "substatus",
+  "substage": "substatus",
+  // Owner
+  "owner": "ownerName",
+  "owner name": "ownerName",
+  "lead owner": "ownerName",
+  // Common contact/company aliases
+  "lead name": "name",
+  "full name": "name",
+  "contact name": "name",
+  "phone number": "phone",
+  "mobile number": "mobile",
+  "company name": "company",
+  "lead quality": "leadQuality",
+  "contact quality": "leadQuality",
+};
+
 export function LeadCsvImportButton() {
   const router = useRouter();
   const toast = useToast();
@@ -107,11 +152,45 @@ export function LeadCsvImportButton() {
         ...customs,
       ].map((d) => ({ key: d.key, label: d.label, required: d.key === "name", custom: !d.isStandard }));
 
-      // Auto-suggest: match each field to a header by key or label (case-insensitive).
+      // Auto-suggest each field's source column. Two passes so STANDARD columns
+      // win their header before any same-named CUSTOM field can claim it:
+      //   Pass 1 (standard fields): exact key/label match OR an LSQ alias
+      //           (e.g. "Contact Source" → standard `source`).
+      //   Pass 2 (custom fields):   exact key/label match ONLY, and never a
+      //           header a standard field already took.
+      // This is what stops "Contact Source"/"Contact Stage"/"Sub Status" from
+      // being stranded on a same-named custom field (the bug that forced the
+      // post-import migrations). The user still reviews the grid before import.
       const auto: Record<string, string> = {};
+      const claimedHeaders = new Set<string>();
+
+      // Which standard key (if any) does a header alias to?
+      const aliasFor = (h: string): string | undefined => LSQ_HEADER_ALIASES[lc(h)];
+
+      // Pass 1 — standard fields.
       for (const f of ordered) {
-        const hit = hdrs.find((h) => lc(h) === lc(f.key) || lc(h) === lc(f.label));
-        if (hit) auto[f.key] = hit;
+        if (f.custom) continue;
+        const hit = hdrs.find(
+          (h) =>
+            !claimedHeaders.has(h) &&
+            (lc(h) === lc(f.key) || lc(h) === lc(f.label) || aliasFor(h) === f.key),
+        );
+        if (hit) {
+          auto[f.key] = hit;
+          claimedHeaders.add(hit);
+        }
+      }
+
+      // Pass 2 — custom fields (exact only, and only unclaimed headers).
+      for (const f of ordered) {
+        if (!f.custom) continue;
+        const hit = hdrs.find(
+          (h) => !claimedHeaders.has(h) && (lc(h) === lc(f.key) || lc(h) === lc(f.label)),
+        );
+        if (hit) {
+          auto[f.key] = hit;
+          claimedHeaders.add(hit);
+        }
       }
 
       setFileName(file.name);
