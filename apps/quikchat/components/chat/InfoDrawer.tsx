@@ -40,6 +40,8 @@ export interface InfoDrawerProps {
   onUpdateDetails?: (patch: { name?: string; description?: string; avatarUrl?: string }) => void;
   /** Delete the whole group for everyone. Admin-only (group). */
   onDeleteGroup?: () => void;
+  /** Leave this channel/group (self-removal). Any member, group-only. */
+  onLeaveChannel?: () => void;
   /**
    * Pin / unpin this conversation for the viewer (QC_010). Per-user state, so it
    * sits with the other per-user channel prefs (notifications) rather than in
@@ -65,6 +67,7 @@ export function InfoDrawer({
   roleError,
   onUpdateDetails,
   onDeleteGroup,
+  onLeaveChannel,
   onTogglePin,
   onCall,
   onBack,
@@ -79,6 +82,12 @@ export function InfoDrawer({
   const canManage = isGroup && isAdmin && !!onAddMembers;
   const canEdit = isGroup && isAdmin && !!onUpdateDetails;
   const canDelete = isGroup && isAdmin && !!onDeleteGroup;
+  const canLeave = isGroup && !!onLeaveChannel;
+  // The server lets the sole admin leave a group with members still in it
+  // (no last-admin guard — see channels.service.ts leave()), orphaning it.
+  // Purely informational: surfaced in the confirm copy, never blocks the click.
+  const isSoleAdminLeaving =
+    isAdmin && members.length > 1 && members.filter((m) => m.role === "admin").length === 1;
 
   // Edit-details state (name/description inline + avatar upload).
   const [editing, setEditing] = useState(false);
@@ -91,6 +100,11 @@ export function InfoDrawer({
   // Delete confirm — explicit typed confirmation ("DELETE").
   const [confirming, setConfirming] = useState(false);
   const [confirmText, setConfirmText] = useState("");
+
+  // Leave confirm — lightweight two-step (not typed): leaving only affects the
+  // caller, it doesn't destroy anyone else's data, so the heavier typed
+  // confirmation reserved for "Delete for everyone" isn't proportionate here.
+  const [leaveConfirming, setLeaveConfirming] = useState(false);
 
   const startEdit = () => {
     setNameDraft(channel.name ?? "");
@@ -399,6 +413,55 @@ export function InfoDrawer({
           ))
         )}
       </section>
+
+      {canLeave ? (
+        <section className="qc-drawer-section" data-testid="leave-section">
+          <div className="qc-label">Leave</div>
+          {leaveConfirming ? (
+            <div className="qc-danger-confirm">
+              <p className="qc-danger-text">
+                {channel.visibility === "public" ? (
+                  <>
+                    Leave <strong>#{channel.name}</strong>? You can rejoin anytime from Discover.
+                  </>
+                ) : (
+                  <>
+                    Leave <strong>{channel.name}</strong>? This is a private group — you&apos;ll
+                    need a new invite to rejoin.
+                  </>
+                )}
+                {isSoleAdminLeaving ? (
+                  <>
+                    {" "}
+                    You&apos;re the only admin — no one will be able to manage this group after
+                    you leave.
+                  </>
+                ) : null}
+              </p>
+              <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                <Button variant="ghost" onClick={() => setLeaveConfirming(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  variant={channel.visibility === "public" ? "secondary" : "danger"}
+                  onClick={() => onLeaveChannel?.()}
+                  data-testid="leave-confirm"
+                >
+                  {channel.visibility === "public" ? "Leave channel" : "Leave group"}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Button
+              variant="ghost"
+              onClick={() => setLeaveConfirming(true)}
+              data-testid="leave-channel"
+            >
+              {channel.visibility === "public" ? "Leave channel" : "Leave group"}
+            </Button>
+          )}
+        </section>
+      ) : null}
 
       {canDelete ? (
         <section className="qc-drawer-section qc-danger-zone" data-testid="danger-zone">

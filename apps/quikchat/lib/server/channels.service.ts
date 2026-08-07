@@ -964,6 +964,14 @@ export async function deleteChannel(
 /**
  * Caller leaves. If they were the last member, the channel and its messages are
  * deleted. Otherwise a "left the chat" system message is posted (groups only).
+ *
+ * No last-admin guard: unlike `updateMemberRole`, this lets the sole admin
+ * leave a group with members still in it, orphaning it (no one left who can
+ * add members, change roles, or delete it). Deliberately not blocked here — a
+ * hard block would trap that admin permanently if no one else can be promoted
+ * first. Backlog: either auto-promote the longest-tenured remaining member
+ * (WhatsApp-style) or require assigning a new owner before leave succeeds
+ * (Teams-style).
  */
 export async function leave(ctx: OrgContext, channelId: string): Promise<{ deleted: boolean }> {
   const member = await prisma.qcChannelMember.findUnique({

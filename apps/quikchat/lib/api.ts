@@ -299,6 +299,22 @@ export function deleteChannel(channelId: string): Promise<{ deleted: true }> {
 }
 
 /**
+ * Leave a channel (self-removal). Plain `send()` isn't used here because it
+ * discards the response body on failure — a future server-side refusal (e.g.
+ * a last-admin guard) needs its real message surfaced, not a generic
+ * "DELETE ... → 400".
+ */
+export async function leaveChannel(channelId: string): Promise<{ deleted: boolean }> {
+  const res = await fetch(`/api/channels/${channelId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  const body = (await res.json().catch(() => ({}))) as { deleted?: boolean; error?: string };
+  if (!res.ok) throw new Error(body.error ?? `leave → ${res.status}`);
+  return { deleted: !!body.deleted };
+}
+
+/**
  * Pin / unpin a conversation for the CALLING user (QC_010). Per-member state on
  * `qcChannelMember.isPinned` — it moves the channel between the list's
  * `priority` and `recent` buckets. Not fanned out (nobody else's list changes),

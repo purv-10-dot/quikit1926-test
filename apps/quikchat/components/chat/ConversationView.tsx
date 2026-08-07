@@ -25,6 +25,7 @@ import {
   setMemberRole,
   updateChannel,
   deleteChannel,
+  leaveChannel,
   setMessagePinApi,
   toggleReactionApi,
 } from "@/lib/api";
@@ -115,6 +116,14 @@ export interface ConversationViewProps {
   onToggleKbWiden?: () => void;
   /** How many docs are in this conversation's auto-scope (drives the hint). */
   kbDocCount?: number;
+  /**
+   * Reuses ChatWorkspace's `onChannelDeleted` teardown (removes the channel
+   * from the list cache, clears `activeId` if it was open) — leaving publishes
+   * no realtime event for the actor's own client, unlike delete-for-everyone,
+   * so this view calls it directly after a successful leave instead of
+   * waiting for a socket echo that will never arrive.
+   */
+  onChannelLeft?: (p: { channelId: string }) => void;
 }
 
 export function PinnedBanner({ count, onOpen }: { count: number; onOpen?: () => void }) {
@@ -153,6 +162,7 @@ export function ConversationView({
   kbWiden,
   onToggleKbWiden,
   kbDocCount,
+  onChannelLeft,
 }: ConversationViewProps) {
   const qc = useQueryClient();
   const toast = useToast();
@@ -608,6 +618,18 @@ export function ConversationView({
               void qc.invalidateQueries({ queryKey: ["channels"] });
             } catch (e) {
               setRoleError(e instanceof Error ? e.message : "Could not delete group");
+            }
+          }}
+          onLeaveChannel={async () => {
+            setRoleError(null);
+            try {
+              await leaveChannel(channelId);
+              // `leave` publishes no realtime event for the actor's own client
+              // (unlike delete-for-everyone), so drive the same teardown directly.
+              setInfoOpen(false);
+              onChannelLeft?.({ channelId });
+            } catch (e) {
+              setRoleError(e instanceof Error ? e.message : "Could not leave");
             }
           }}
         />

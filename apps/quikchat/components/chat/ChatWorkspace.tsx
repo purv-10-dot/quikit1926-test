@@ -995,6 +995,7 @@ export function ChatWorkspace({
             kbWiden={kbWiden}
             onToggleKbWiden={toggleKbWiden}
             kbDocCount={kbSourceIds.length}
+            onChannelLeft={onChannelDeleted}
           />
         ) : (
           <section className="qc-pane-convo">
