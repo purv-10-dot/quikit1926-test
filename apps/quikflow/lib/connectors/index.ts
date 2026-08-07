@@ -444,3 +444,96 @@ export async function deleteCalendarEventsForOrg(
   }
   return { deleted };
 }
+
+/** Is a Microsoft (Teams) calendar connected for this org? (light DB check). */
+export async function isCalendarConnectedForOrg(orgId: string): Promise<boolean> {
+  return (await findCalendarConnection(orgId)) !== null;
+}
+
+/** Local "YYYY-MM-DDTHH:mm:00" from a date + "HH:mm", or null when malformed. */
+function composeLocalDateTime(date: string, time: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{1,2}:\d{2}$/.test(time)) return null;
+  const [h, m] = time.split(":");
+  return `${date}T${h.padStart(2, "0")}:${m}:00`;
+}
+
+const DEFAULT_WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday"];
+
+/** One meeting window from a client (times as HH:mm, dates as YYYY-MM-DD). */
+export interface ClientMeetingWindow {
+  start: string;
+  end: string;
+  /** Weekday names — daily huddle days, or a single weekly-meeting day. Empty ⇒ Mon–Fri. */
+  days?: string[];
+  startDate: string;
+  until?: string | null;
+}
+
+/** The two recurring meetings a Client Master row schedules on the calendar. */
+export interface ClientMeetingSpec {
+  refType: string;
+  refId: string;
+  name: string;
+  timeZone: string;
+  attendees: string[];
+  daily?: ClientMeetingWindow;
+  weekly?: ClientMeetingWindow;
+  createdBy?: string;
+}
+
+type ScheduledEvent = (CalendarEventResult & { organizer: string; updated: boolean }) | null;
+
+function buildMeetingEvent(title: string, spec: ClientMeetingSpec, w: ClientMeetingWindow): CalendarEventInput | null {
+  const start = composeLocalDateTime(w.startDate, w.start);
+  const end = composeLocalDateTime(w.startDate, w.end);
+  if (!start || !end) return null;
+  const days = w.days && w.days.length ? w.days : DEFAULT_WEEKDAYS;
+  return {
+    subject: `${title} — ${spec.name}`,
+    start,
+    end,
+    timeZone: spec.timeZone,
+    attendees: spec.attendees,
+    onlineMeeting: true,
+    recurrence: { pattern: "weekly", interval: 1, daysOfWeek: days, startDate: w.startDate, endDate: w.until ?? null },
+  };
+}
+
+/**
+ * Create (or idempotently update) BOTH the Daily Huddle and Weekly Meeting for a
+ * client in one call — the direct "Create Teams meetings" button path (no
+ * QuikFlow workflow needed). Each is pinned by kind via WfCalendarLink, so
+ * re-clicking updates the same events. Returns { connected: false } when the org
+ * has no connected calendar.
+ */
+export async function scheduleClientMeetingsForOrg(
+  orgId: string,
+  spec: ClientMeetingSpec,
+): Promise<{ connected: boolean; organizer?: string; daily?: ScheduledEvent; weekly?: ScheduledEvent }> {
+  const found = await findCalendarConnection(orgId);
+  if (!found) return { connected: false };
+
+  const out: { connected: boolean; organizer?: string; daily?: ScheduledEvent; weekly?: ScheduledEvent } = {
+    connected: true,
+    organizer: found.conn.label,
+  };
+  if (spec.daily) {
+    const ev = buildMeetingEvent("Daily Huddle", spec, spec.daily);
+    if (ev) {
+      out.daily = await createCalendarEventForOrg(orgId, ev, {
+        link: { refType: spec.refType, refId: spec.refId, kind: "daily" },
+        createdBy: spec.createdBy,
+      });
+    }
+  }
+  if (spec.weekly) {
+    const ev = buildMeetingEvent("Weekly Meeting", spec, spec.weekly);
+    if (ev) {
+      out.weekly = await createCalendarEventForOrg(orgId, ev, {
+        link: { refType: spec.refType, refId: spec.refId, kind: "weekly" },
+        createdBy: spec.createdBy,
+      });
+    }
+  }
+  return out;
+}

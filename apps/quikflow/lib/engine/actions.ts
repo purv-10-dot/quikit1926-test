@@ -417,23 +417,52 @@ function resolveRecurrence(p: Record<string, unknown>, anchorDate: string): Cale
  */
 const calendarCreate: ActionExecutor = async (ctx) => {
   const p = ctx.params ?? {};
-  const subject = firstString(p.subject, p.title) ?? "(no title)";
-  const dateStr = firstString(p.date, p.start_date) ?? null;
-  const start = firstString(p.start) ?? composeDateTime(dateStr, firstString(p.start_time, p.startTime));
-  const end = firstString(p.end) ?? composeDateTime(dateStr, firstString(p.end_time, p.endTime));
-  if (!start || !end) return skipStep("Calendar event needs a start and end (full date-time, or start_time/end_time)");
+  const d = ctx.event.data;
+  const kind = firstString(p.kind); // "daily" | "weekly" | undefined
 
-  const attendeesRaw = firstString(p.attendees, p.to);
+  // Auto-source from the triggering client by `kind` when a param is omitted, so
+  // a Client Master workflow works with just `kind` set — times, attendees, days
+  // and until all ride the clientMaster.* payload (QuikScale workflowEvents.ts).
+  const byKind = (dailyKey: string, weeklyKey: string): string | null =>
+    kind === "weekly" ? firstString(d[weeklyKey]) : kind === "daily" ? firstString(d[dailyKey]) : null;
+
+  const clientName = firstString(d.name, d.clientName) ?? "meeting";
+  const subjectDefault =
+    kind === "daily" ? `Daily Huddle — ${clientName}`
+    : kind === "weekly" ? `Weekly Meeting — ${clientName}`
+    : "(no title)";
+  const subject = firstString(p.subject, p.title) ?? subjectDefault;
+
+  const dateStr = firstString(p.date, p.start_date, d.startDate) ?? null;
+  const startTime = firstString(p.start_time, p.startTime) ?? byKind("dailyStartTime", "weeklyStartTime");
+  const endTime = firstString(p.end_time, p.endTime) ?? byKind("dailyEndTime", "weeklyEndTime");
+  const start = firstString(p.start) ?? composeDateTime(dateStr, startTime);
+  const end = firstString(p.end) ?? composeDateTime(dateStr, endTime);
+  if (!start || !end) {
+    return skipStep(
+      "Calendar event needs start/end times — set the action's `kind` (daily/weekly) to auto-fill from the client, or provide start_time/end_time.",
+    );
+  }
+
+  const attendeesRaw = firstString(p.attendees, p.to, d.teamMemberEmails);
   const attendees = attendeesRaw
     ? attendeesRaw.split(",").map((s) => s.trim()).filter(Boolean)
     : [];
   const onlineRaw = p.online_meeting ?? p.onlineMeeting;
 
+  // Recurrence: explicit flat params win; else auto-fill from the client by kind.
+  const recParams: Record<string, unknown> = {
+    ...p,
+    recurrence: firstString(p.recurrence) ?? (kind === "daily" ? "weekdays" : kind === "weekly" ? "weekly" : ""),
+    recurrence_days: firstString(p.recurrence_days) ?? byKind("dailyDays", "weeklyDay") ?? "",
+    recurrence_until: firstString(p.recurrence_until, p.recurrence_end, d.meetingUntil) ?? "",
+  };
+
   // Idempotency link: pin to the source record so re-runs update, not duplicate.
-  const refId = firstString(p.ref_id, ctx.event.data.recordId);
+  const refId = firstString(p.ref_id, d.recordId);
   const refType =
     firstString(p.ref_type) ?? moduleForEvent(ctx.event.event)?.key ?? ctx.event.app;
-  const link = refId ? { refType, refId, kind: firstString(p.kind) ?? "" } : undefined;
+  const link = refId ? { refType, refId, kind: kind ?? "" } : undefined;
 
   try {
     const result = await createCalendarEventForOrg(
@@ -449,7 +478,7 @@ const calendarCreate: ActionExecutor = async (ctx) => {
         location: firstString(p.location) ?? undefined,
         // Attach a Teams meeting by default; opt out with online_meeting=false.
         onlineMeeting: onlineRaw === undefined ? true : boolParam(onlineRaw),
-        recurrence: resolveRecurrence(p, dateStr ?? start.slice(0, 10)),
+        recurrence: resolveRecurrence(recParams, dateStr ?? start.slice(0, 10)),
       },
       { connectionId: firstString(p.from_connection) ?? undefined, link, createdBy: actorFor(ctx) },
     );

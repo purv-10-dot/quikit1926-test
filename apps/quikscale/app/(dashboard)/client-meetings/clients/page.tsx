@@ -164,10 +164,13 @@ export default function ClientsPage() {
   // Filter popover — Client name + Status.
   const [showFilter, setShowFilter] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
-  // Is an ACTIVE QuikFlow "Client Master → calendar" automation configured? When
-  // true, the Add/Edit form surfaces the Teams-meeting scheduling model; when
-  // false the form behaves exactly as today (degrades safely — never blocks).
-  const { calendarAutomation } = useClientMeetingAutomation();
+  // Is a Microsoft Teams calendar connected for this org? When true, the Add/Edit
+  // form surfaces the Teams-meeting scheduling model + "Create Teams meetings"
+  // button; when false the form behaves exactly as today (degrades — never blocks).
+  const { calendarConnected } = useClientMeetingAutomation();
+  // Direct "Create Teams meetings" call state (per open form).
+  const [scheduling, setScheduling] = useState(false);
+  const [scheduleMsg, setScheduleMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const filterRef = useRef<HTMLDivElement>(null);
   const [filterClientId, setFilterClientId] = useState("");
   const [filterStatus, setFilterStatus] = useState<"" | "active" | "inactive">("");
@@ -516,11 +519,13 @@ export default function ClientsPage() {
   function openCreate() {
     if (!canCreate) return;
     setError("");
+    setScheduleMsg(null);
     setEditSeedMembers([]);
     setEditing({ id: null, form: { ...emptyForm } });
   }
   function openEdit(row: ClientRow) {
     setError("");
+    setScheduleMsg(null);
     // Seed the selected roster objects so their chips render even though the
     // option list is now a paginated 25/page slice.
     setEditSeedMembers(rosterSeed(row.teamMembers));
@@ -578,13 +583,57 @@ export default function ClientsPage() {
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const json = await res.json();
       if (!json.success) { setError(json.error ?? "Failed to save"); return; }
+      const savedId: string | undefined = editing.id ?? (json.data?.id as string | undefined);
       notify.saved("Client", editing.id ? "updated" : "created");
+      // On save, create/update the Teams meetings when a calendar is connected.
+      if (calendarConnected && savedId) {
+        const r = await scheduleMeetings(savedId);
+        if (r.ok) notify.success(r.text);
+        else notify.warning(r.text);
+      }
       setEditing(null);
       await refresh();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to save");
       notify.error(err, { context: "client", fallback: "Couldn't save. Please try again." });
     } finally { setSaving(false); }
+  }
+
+  /**
+   * Direct "Create Teams meetings" — create/update this client's Daily + Weekly
+   * recurring Teams events via QuikFlow (no workflow needed). Idempotent, so it's
+   * safe to click again. Used on save and by the in-form button.
+   */
+  async function scheduleMeetings(clientId: string): Promise<{ ok: boolean; text: string }> {
+    setScheduling(true);
+    setScheduleMsg(null);
+    try {
+      const res = await fetch(`/api/client-meetings/clients/${clientId}/schedule-meetings`, { method: "POST" });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        const r = { ok: false, text: json?.error ?? "Couldn't create Teams meetings." };
+        setScheduleMsg(r);
+        return r;
+      }
+      const d = (json.data ?? {}) as { connected?: boolean; daily?: { id?: string }; weekly?: { id?: string } };
+      if (!d.connected) {
+        const r = { ok: false, text: "No Microsoft Teams calendar connected (QuikFlow → Connections)." };
+        setScheduleMsg(r);
+        return r;
+      }
+      const made: string[] = [];
+      if (d.daily?.id) made.push("Daily Huddle");
+      if (d.weekly?.id) made.push("Weekly Meeting");
+      const r = { ok: true, text: made.length ? `Scheduled ${made.join(" + ")} in Teams.` : "No meeting times to schedule." };
+      setScheduleMsg(r);
+      return r;
+    } catch (e) {
+      const r = { ok: false, text: e instanceof Error ? e.message : "Couldn't create Teams meetings." };
+      setScheduleMsg(r);
+      return r;
+    } finally {
+      setScheduling(false);
+    }
   }
 
   async function handleBulkDelete() {
@@ -1024,12 +1073,11 @@ export default function ClientsPage() {
               className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 resize-none" />
           </div>
 
-          {/* Teams-meeting scheduling model — shown ONLY when a QuikFlow calendar
-              automation is active. When absent, the form is unchanged (today's
-              behavior). The recurrence editor (below) feeds the Teams series; the
-              preview shows what will be scheduled (events are created async by
-              the workflow on save). */}
-          {calendarAutomation && (
+          {/* Teams-meeting scheduling model — shown ONLY when a Microsoft Teams
+              calendar is connected. When absent, the form is unchanged (today's
+              behavior). The recurrence editor feeds the series; the preview shows
+              what will be scheduled; the button creates both meetings directly. */}
+          {calendarConnected && (
             <>
               <div className="rounded-lg border border-gray-200 p-3 space-y-3">
                 <p className="text-xs font-semibold text-gray-700">Meeting recurrence</p>
@@ -1104,6 +1152,29 @@ export default function ClientsPage() {
                   return optName || memberNameById.get(id) || id;
                 })}
               />
+
+              {/* Direct create — makes both recurring Teams meetings now. Saving
+                  also creates them; this button is for re-creating on demand. */}
+              <div className="space-y-2">
+                {scheduleMsg && (
+                  <div className={`rounded-md px-3 py-2 text-xs ${scheduleMsg.ok ? "bg-green-50 text-green-700 border border-green-200" : "bg-amber-50 text-amber-700 border border-amber-200"}`}>
+                    {scheduleMsg.text}
+                  </div>
+                )}
+                {editing.id ? (
+                  <button
+                    type="button"
+                    onClick={() => { if (editing.id) void scheduleMeetings(editing.id); }}
+                    disabled={scheduling}
+                    className="inline-flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white hover:bg-accent-700 disabled:opacity-50"
+                  >
+                    <CalendarDays className="h-4 w-4" />
+                    {scheduling ? "Creating…" : "Create Teams meetings"}
+                  </button>
+                ) : (
+                  <p className="text-[11px] text-gray-400">Save the client to create the Teams meetings.</p>
+                )}
+              </div>
             </>
           )}
           </fieldset>

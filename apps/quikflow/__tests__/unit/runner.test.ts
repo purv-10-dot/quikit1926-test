@@ -21,6 +21,10 @@ const workflow = {
   graphEdges: [{ from: "t", to: "a" }],
 };
 
+// Enriched evaluation context (normally built by loadContext). For these unit
+// tests the raw event data doubles as both the flat `data` and token `trigger`.
+const context = { data: event.data, trigger: event.data, moduleKey: null, record: null };
+
 beforeEach(() => resetMockDb());
 
 describe("runWorkflow", () => {
@@ -31,7 +35,7 @@ describe("runWorkflow", () => {
     mockDb.wfRun.update.mockResolvedValue({} as never);
     mockDb.wfWorkflow.update.mockResolvedValue({} as never);
 
-    const result = await runWorkflow(workflow, event, "evt1:wf1");
+    const result = await runWorkflow(workflow, event, "evt1:wf1", context);
 
     expect(result).not.toBeNull();
     expect(result!.status).toBe("success");
@@ -45,7 +49,7 @@ describe("runWorkflow", () => {
 
   it("is idempotent — a duplicate (orgId, dedupeKey) returns null without a new run", async () => {
     mockDb.wfRun.findUnique.mockResolvedValue({ id: "run1", status: "success" } as never);
-    const result = await runWorkflow(workflow, event, "evt1:wf1");
+    const result = await runWorkflow(workflow, event, "evt1:wf1", context);
     expect(result).toBeNull();
     expect(mockDb.wfRun.create).not.toHaveBeenCalled();
   });
@@ -69,7 +73,7 @@ describe("runWorkflow", () => {
         { from: "c", to: "a" },
       ],
     };
-    const result = await runWorkflow(wf, event, "evt2:wf2");
+    const result = await runWorkflow(wf, event, "evt2:wf2", context);
     expect(result!.status).toBe("success");
     // trigger + condition executed; action never reached (condition stopped)
     expect(result!.steps).toBe(2);

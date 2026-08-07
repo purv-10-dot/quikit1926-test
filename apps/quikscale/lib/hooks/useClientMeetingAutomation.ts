@@ -9,25 +9,34 @@
  */
 import { useQuery } from "@tanstack/react-query";
 
+interface AutomationStatus {
+  calendarConnected: boolean;
+  calendarAutomation: boolean;
+}
 interface AutomationStatusResponse {
   success?: boolean;
-  data?: { calendarAutomation?: boolean };
+  data?: Partial<AutomationStatus>;
 }
 
-export function useClientMeetingAutomation(): { calendarAutomation: boolean; isLoading: boolean } {
+const DISABLED: AutomationStatus = { calendarConnected: false, calendarAutomation: false };
+
+export function useClientMeetingAutomation(): AutomationStatus & { isLoading: boolean } {
   const q = useQuery({
     queryKey: ["client-meetings", "automation-status"],
-    queryFn: async (): Promise<boolean> => {
+    queryFn: async (): Promise<AutomationStatus> => {
       try {
         const res = await fetch("/api/client-meetings/automation-status", { cache: "no-store" });
         const json = (await res.json().catch(() => null)) as AutomationStatusResponse | null;
-        if (!res.ok || !json?.success) return false;
-        return Boolean(json.data?.calendarAutomation);
+        if (!res.ok || !json?.success) return DISABLED;
+        return {
+          calendarConnected: Boolean(json.data?.calendarConnected),
+          calendarAutomation: Boolean(json.data?.calendarAutomation),
+        };
       } catch {
-        return false;
+        return DISABLED;
       }
     },
     staleTime: 60_000,
   });
-  return { calendarAutomation: q.data ?? false, isLoading: q.isLoading };
+  return { ...(q.data ?? DISABLED), isLoading: q.isLoading };
 }
